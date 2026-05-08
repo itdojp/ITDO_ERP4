@@ -225,6 +225,8 @@ describe('Reports', () => {
               revenue: 10000,
               directCost: 3000,
               laborCost: 1200,
+              payrollConfirmedLaborCost: 1500,
+              laborCostVariance: 300,
               vendorCost: 1000,
               expenseCost: 800,
               grossProfit: 7000,
@@ -259,6 +261,8 @@ describe('Reports', () => {
               revenue: 10000,
               directCost: 3000,
               laborCost: 1200,
+              payrollConfirmedLaborCost: 1500,
+              laborCostVariance: 300,
               vendorCost: 1000,
               expenseCost: 800,
               grossProfit: 7000,
@@ -270,6 +274,11 @@ describe('Reports', () => {
           revenue: null,
           directCost: null,
           laborCost: null,
+          payrollConfirmedLaborCost: null,
+          laborCostVariance: null,
+          payrollConfirmedStatus: 'confirmed',
+          payrollConfirmedPeriodKeys: ['2026-03'],
+          payrollMissingPeriodKeys: [],
           vendorCost: null,
           expenseCost: null,
           grossProfit: null,
@@ -307,6 +316,14 @@ describe('Reports', () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByText('Currency: JPY / Projects: 1')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `Payroll confirmed: ${(1500).toLocaleString()} / Labor variance: ${(300).toLocaleString()}`,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Payroll confirmed status: confirmed/),
+    ).toBeInTheDocument();
     expect(screen.getAllByText('Red projects: 1').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/P001 \/ Project One/).length).toBeGreaterThan(
       0,
@@ -317,6 +334,8 @@ describe('Reports', () => {
       `Source: department_master / Currency: JPY / Projects: 1 / ` +
       `Revenue: ${(10000).toLocaleString()} / ` +
       `Direct Cost: ${(3000).toLocaleString()} / ` +
+      `Payroll confirmed: ${(1500).toLocaleString()} / ` +
+      `Labor variance: ${(300).toLocaleString()} / ` +
       `Gross Profit: ${(7000).toLocaleString()} / ` +
       `Margin: ${(0.7 * 100).toFixed(2)}% / Red projects: 1`;
     expect(screen.getByText(expectedDepartmentLine)).toBeInTheDocument();

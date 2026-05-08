@@ -17,6 +17,8 @@ type ManagementAccountingProjectBucket = {
   revenue: number;
   directCost: number;
   laborCost: number;
+  payrollConfirmedLaborCost: number | null;
+  laborCostVariance: number | null;
   vendorCost: number;
   expenseCost: number;
   grossProfit: number;
@@ -30,6 +32,8 @@ type ManagementAccountingCurrencyBreakdown = {
   revenue: number;
   directCost: number;
   laborCost: number;
+  payrollConfirmedLaborCost: number | null;
+  laborCostVariance: number | null;
   vendorCost: number;
   expenseCost: number;
   grossProfit: number;
@@ -46,6 +50,11 @@ type ManagementAccountingDepartmentSource =
   | 'legacy_org_unit'
   | 'unassigned';
 
+type ManagementAccountingPayrollConfirmedStatus =
+  | 'confirmed'
+  | 'partial'
+  | 'missing';
+
 type ManagementAccountingDepartmentBreakdown = {
   departmentKey: string | null;
   departmentName: string | null;
@@ -56,6 +65,8 @@ type ManagementAccountingDepartmentBreakdown = {
   revenue: number;
   directCost: number;
   laborCost: number;
+  payrollConfirmedLaborCost: number | null;
+  laborCostVariance: number | null;
   vendorCost: number;
   expenseCost: number;
   grossProfit: number;
@@ -96,6 +107,59 @@ function buildDepartmentCurrencyKey(
   currency: string | null,
 ) {
   return `${departmentKey ?? ''}|${currency ?? ''}`;
+}
+
+function periodKeyFromDate(date: Date) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(
+    2,
+    '0',
+  )}`;
+}
+
+function enumeratePeriodKeys(from: Date, to: Date) {
+  const keys: string[] = [];
+  let year = from.getUTCFullYear();
+  let month = from.getUTCMonth();
+  const endYear = to.getUTCFullYear();
+  const endMonth = to.getUTCMonth();
+  while (year < endYear || (year === endYear && month <= endMonth)) {
+    keys.push(periodKeyFromDate(new Date(Date.UTC(year, month, 1))));
+    month += 1;
+    if (month > 11) {
+      year += 1;
+      month = 0;
+    }
+  }
+  return keys;
+}
+
+function utcDateOnlyTime(date: Date) {
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+function enumerateFullyCoveredPeriodKeys(from: Date, to: Date) {
+  const fromTime = utcDateOnlyTime(from);
+  const toTime = utcDateOnlyTime(to);
+  return enumeratePeriodKeys(from, to).filter((periodKey) => {
+    const [yearText, monthText] = periodKey.split('-');
+    const year = Number(yearText);
+    const monthIndex = Number(monthText) - 1;
+    const monthStart = Date.UTC(year, monthIndex, 1);
+    const monthEnd = Date.UTC(year, monthIndex + 1, 0);
+    return fromTime <= monthStart && toTime >= monthEnd;
+  });
+}
+
+function addNullableAmount(
+  current: number | null,
+  value: number | null | undefined,
+) {
+  if (value == null) return current;
+  return (current ?? 0) + value;
+}
+
+function nullableVariance(confirmed: number | null, baseline: number) {
+  return confirmed == null ? null : confirmed - baseline;
 }
 
 function buildDepartmentMasterLookup(
@@ -503,6 +567,11 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
   const projectIds = projects.map((project) => project.id);
   const projectIdSet = new Set(projectIds);
   const projectById = new Map(projects.map((project) => [project.id, project]));
+  const payrollPeriodKeys = enumeratePeriodKeys(from, to);
+  const fullyCoveredPayrollPeriodKeys = enumerateFullyCoveredPeriodKeys(
+    from,
+    to,
+  );
   const projectDepartmentKeys = Array.from(
     new Set(
       projects
@@ -530,63 +599,83 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
     : [];
   const departmentLookup = buildDepartmentMasterLookup(departmentMasters);
 
-  const [invoiceSums, vendorSums, expenseSums, timeEntries, deliveryDueItems] =
-    await Promise.all([
-      projectIds.length
-        ? prisma.invoice.groupBy({
-            by: ['projectId', 'currency'],
-            where: {
-              projectId: { in: projectIds },
-              deletedAt: null,
-              status: { in: ['approved', 'sent', 'paid'] },
-              issueDate: { gte: from, lte: to },
-            },
-            _sum: { totalAmount: true },
-          })
-        : [],
-      projectIds.length
-        ? prisma.vendorInvoice.groupBy({
-            by: ['projectId', 'currency'],
-            where: {
-              projectId: { in: projectIds },
-              deletedAt: null,
-              status: { in: ['received', 'approved', 'paid'] },
-              receivedDate: { gte: from, lte: to },
-            },
-            _sum: { totalAmount: true },
-          })
-        : [],
-      projectIds.length
-        ? prisma.expense.groupBy({
-            by: ['projectId', 'currency'],
-            where: {
-              projectId: { in: projectIds },
-              deletedAt: null,
-              status: 'approved',
-              incurredOn: { gte: from, lte: to },
-            },
-            _sum: { amount: true },
-          })
-        : [],
-      projectIds.length
-        ? prisma.timeEntry.findMany({
-            where: {
-              projectId: { in: projectIds },
-              deletedAt: null,
-              status: { in: ['submitted', 'approved'] },
-              workDate: { gte: from, lte: to },
-            },
-            select: {
-              projectId: true,
-              userId: true,
-              workDate: true,
-              workType: true,
-              minutes: true,
-            },
-          })
-        : [],
-      reportDeliveryDue(from, to),
-    ]);
+  const [
+    invoiceSums,
+    vendorSums,
+    expenseSums,
+    timeEntries,
+    payrollConfirmedLaborCosts,
+    deliveryDueItems,
+  ] = await Promise.all([
+    projectIds.length
+      ? prisma.invoice.groupBy({
+          by: ['projectId', 'currency'],
+          where: {
+            projectId: { in: projectIds },
+            deletedAt: null,
+            status: { in: ['approved', 'sent', 'paid'] },
+            issueDate: { gte: from, lte: to },
+          },
+          _sum: { totalAmount: true },
+        })
+      : [],
+    projectIds.length
+      ? prisma.vendorInvoice.groupBy({
+          by: ['projectId', 'currency'],
+          where: {
+            projectId: { in: projectIds },
+            deletedAt: null,
+            status: { in: ['received', 'approved', 'paid'] },
+            receivedDate: { gte: from, lte: to },
+          },
+          _sum: { totalAmount: true },
+        })
+      : [],
+    projectIds.length
+      ? prisma.expense.groupBy({
+          by: ['projectId', 'currency'],
+          where: {
+            projectId: { in: projectIds },
+            deletedAt: null,
+            status: 'approved',
+            incurredOn: { gte: from, lte: to },
+          },
+          _sum: { amount: true },
+        })
+      : [],
+    projectIds.length
+      ? prisma.timeEntry.findMany({
+          where: {
+            projectId: { in: projectIds },
+            deletedAt: null,
+            status: { in: ['submitted', 'approved'] },
+            workDate: { gte: from, lte: to },
+          },
+          select: {
+            projectId: true,
+            userId: true,
+            workDate: true,
+            workType: true,
+            minutes: true,
+          },
+        })
+      : [],
+    projectIds.length && fullyCoveredPayrollPeriodKeys.length
+      ? prisma.payrollConfirmedLaborCost.findMany({
+          where: {
+            projectId: { in: projectIds },
+            periodKey: { in: fullyCoveredPayrollPeriodKeys },
+          },
+          select: {
+            periodKey: true,
+            projectId: true,
+            currency: true,
+            amount: true,
+          },
+        })
+      : [],
+    reportDeliveryDue(from, to),
+  ]);
 
   const revenueByProjectCurrency = new Map<string, number>();
   for (const item of invoiceSums) {
@@ -619,6 +708,31 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
       (expenseCostByProjectCurrency.get(key) ?? 0) + toNumber(item._sum.amount),
     );
   }
+
+  const payrollConfirmedLaborCostByProjectCurrency = new Map<string, number>();
+  const payrollConfirmedPeriodKeySet = new Set<string>();
+  for (const item of payrollConfirmedLaborCosts) {
+    if (!item.projectId || !projectIdSet.has(item.projectId)) continue;
+    const key = buildProjectCurrencyKey(item.projectId, item.currency ?? null);
+    payrollConfirmedLaborCostByProjectCurrency.set(
+      key,
+      (payrollConfirmedLaborCostByProjectCurrency.get(key) ?? 0) +
+        toNumber(item.amount),
+    );
+    payrollConfirmedPeriodKeySet.add(item.periodKey);
+  }
+  const payrollConfirmedPeriodKeys = payrollPeriodKeys.filter((key) =>
+    payrollConfirmedPeriodKeySet.has(key),
+  );
+  const payrollMissingPeriodKeys = payrollPeriodKeys.filter(
+    (key) => !payrollConfirmedPeriodKeySet.has(key),
+  );
+  const payrollConfirmedStatus: ManagementAccountingPayrollConfirmedStatus =
+    payrollConfirmedPeriodKeys.length === 0
+      ? 'missing'
+      : payrollMissingPeriodKeys.length > 0
+        ? 'partial'
+        : 'confirmed';
 
   const prefetchedRateCards = await preloadRateCardsForRange(
     projectIds,
@@ -702,6 +816,8 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
     projectCurrencyKeys.add(key);
   for (const key of minutesByProjectCurrency.keys())
     projectCurrencyKeys.add(key);
+  for (const key of payrollConfirmedLaborCostByProjectCurrency.keys())
+    projectCurrencyKeys.add(key);
 
   const items = Array.from(projectCurrencyKeys)
     .map((key) => {
@@ -712,6 +828,8 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
       const vendorCost = vendorCostByProjectCurrency.get(key) ?? 0;
       const expenseCost = expenseCostByProjectCurrency.get(key) ?? 0;
       const laborCost = laborCostByProjectCurrency.get(key) ?? 0;
+      const payrollConfirmedLaborCost =
+        payrollConfirmedLaborCostByProjectCurrency.get(key) ?? null;
       const directCost = vendorCost + expenseCost + laborCost;
       const grossProfit = revenue - directCost;
       const grossMargin = revenue > 0 ? grossProfit / revenue : 0;
@@ -729,6 +847,11 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
         revenue,
         directCost,
         laborCost,
+        payrollConfirmedLaborCost,
+        laborCostVariance: nullableVariance(
+          payrollConfirmedLaborCost,
+          laborCost,
+        ),
         vendorCost,
         expenseCost,
         grossProfit,
@@ -738,7 +861,10 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
     })
     .filter(
       (item) =>
-        item.revenue !== 0 || item.directCost !== 0 || item.totalMinutes !== 0,
+        item.revenue !== 0 ||
+        item.directCost !== 0 ||
+        item.totalMinutes !== 0 ||
+        item.payrollConfirmedLaborCost != null,
     );
 
   const currencyBreakdownMap = new Map<
@@ -754,6 +880,8 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
         revenue: 0,
         directCost: 0,
         laborCost: 0,
+        payrollConfirmedLaborCost: null,
+        laborCostVariance: null,
         vendorCost: 0,
         expenseCost: 0,
         grossProfit: 0,
@@ -771,6 +899,10 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
     bucket.revenue += item.revenue;
     bucket.directCost += item.directCost;
     bucket.laborCost += item.laborCost;
+    bucket.payrollConfirmedLaborCost = addNullableAmount(
+      bucket.payrollConfirmedLaborCost,
+      item.payrollConfirmedLaborCost,
+    );
     bucket.vendorCost += item.vendorCost;
     bucket.expenseCost += item.expenseCost;
     bucket.grossProfit += item.grossProfit;
@@ -782,6 +914,10 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
   const currencyBreakdown = Array.from(currencyBreakdownMap.values())
     .map((bucket) => ({
       ...bucket,
+      laborCostVariance: nullableVariance(
+        bucket.payrollConfirmedLaborCost,
+        bucket.laborCost,
+      ),
       grossMargin: bucket.revenue > 0 ? bucket.grossProfit / bucket.revenue : 0,
       topRedProjects: bucket.topRedProjects
         .filter((item) => item.grossProfit < 0)
@@ -810,6 +946,8 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
         revenue: 0,
         directCost: 0,
         laborCost: 0,
+        payrollConfirmedLaborCost: null,
+        laborCostVariance: null,
         vendorCost: 0,
         expenseCost: 0,
         grossProfit: 0,
@@ -824,6 +962,10 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
     bucket.revenue += item.revenue;
     bucket.directCost += item.directCost;
     bucket.laborCost += item.laborCost;
+    bucket.payrollConfirmedLaborCost = addNullableAmount(
+      bucket.payrollConfirmedLaborCost,
+      item.payrollConfirmedLaborCost,
+    );
     bucket.vendorCost += item.vendorCost;
     bucket.expenseCost += item.expenseCost;
     bucket.grossProfit += item.grossProfit;
@@ -834,6 +976,10 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
   const departmentBreakdown = Array.from(departmentBreakdownMap.values())
     .map((bucket) => ({
       ...bucket,
+      laborCostVariance: nullableVariance(
+        bucket.payrollConfirmedLaborCost,
+        bucket.laborCost,
+      ),
       grossMargin: bucket.revenue > 0 ? bucket.grossProfit / bucket.revenue : 0,
     }))
     .sort((a, b) => {
@@ -852,6 +998,10 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
       acc.revenue += item.revenue;
       acc.directCost += item.directCost;
       acc.laborCost += item.laborCost;
+      acc.payrollConfirmedLaborCost = addNullableAmount(
+        acc.payrollConfirmedLaborCost,
+        item.payrollConfirmedLaborCost,
+      );
       acc.vendorCost += item.vendorCost;
       acc.expenseCost += item.expenseCost;
       acc.grossProfit += item.grossProfit;
@@ -863,6 +1013,7 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
       revenue: 0,
       directCost: 0,
       laborCost: 0,
+      payrollConfirmedLaborCost: null as number | null,
       vendorCost: 0,
       expenseCost: 0,
       grossProfit: 0,
@@ -888,6 +1039,15 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
     revenue: singleCurrencyBucket ? totals.revenue : null,
     directCost: singleCurrencyBucket ? totals.directCost : null,
     laborCost: singleCurrencyBucket ? totals.laborCost : null,
+    payrollConfirmedLaborCost: singleCurrencyBucket
+      ? totals.payrollConfirmedLaborCost
+      : null,
+    laborCostVariance: singleCurrencyBucket
+      ? nullableVariance(totals.payrollConfirmedLaborCost, totals.laborCost)
+      : null,
+    payrollConfirmedStatus,
+    payrollConfirmedPeriodKeys,
+    payrollMissingPeriodKeys,
     vendorCost: singleCurrencyBucket ? totals.vendorCost : null,
     expenseCost: singleCurrencyBucket ? totals.expenseCost : null,
     grossProfit: singleCurrencyBucket ? totals.grossProfit : null,

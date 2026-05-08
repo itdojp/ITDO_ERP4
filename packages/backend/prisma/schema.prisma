@@ -2259,6 +2259,28 @@ model EmployeePayrollProfile {
   @@index([titleCode])
 }
 
+model PayrollConfirmedLaborCost {
+  id             String   @id @default(uuid())
+  periodKey      String
+  projectId      String?
+  userId         String?
+  employeeCode   String?
+  departmentCode String?
+  currency       String
+  amount         Decimal
+  totalMinutes   Int?
+  sourceRef      String?
+  confirmedAt    DateTime @default(now())
+  createdAt      DateTime @default(now())
+  createdBy      String?
+  updatedAt      DateTime @updatedAt
+  updatedBy      String?
+
+  @@index([periodKey, projectId])
+  @@index([periodKey, departmentCode])
+  @@index([periodKey, userId])
+}
+
 model UserGroup {
   id        String       @id @default(uuid())
   user      UserAccount  @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -31,7 +31,8 @@
 - from/to は `YYYY-MM-DD` 形式で入力する（UI/Api仕様に合わせる）
 - 管理会計サマリで複数通貨が混在する場合、金額系 KPI は通貨別表示になる
 - 管理会計サマリは `DepartmentMaster` を正規部門マスタとして照合した部門別損益を表示する。`Project.orgUnitId` は `DepartmentMaster.id` / `code` / `externalCode` のいずれかへ照合され、未照合の旧データは `legacy_org_unit` として区別される
-- 管理会計サマリ CSV は summary / currency_breakdown / department_breakdown / top_red_project の各行で出力する。部門列には `departmentKey` / `departmentName` / `departmentExternalCode` / `departmentSource` が含まれる
+- 管理会計サマリは管理単価ベースの `laborCost` と、給与締め後に取り込まれた `PayrollConfirmedLaborCost` の `payrollConfirmedLaborCost` を併記する。差分は `laborCostVariance`、未締め・未取込の月は `payrollConfirmedStatus` / `payrollMissingPeriodKeys` で確認する。部分月の期間指定では、月次締め単位の給与確定値は金額集計に含めず missing として表示する
+- 管理会計サマリ CSV は summary / currency_breakdown / department_breakdown / top_red_project の各行で出力する。部門列には `departmentKey` / `departmentName` / `departmentExternalCode` / `departmentSource`、給与確定値列には `payrollConfirmedLaborCost` / `laborCostVariance` / `payrollConfirmedStatus` が含まれる
 
 ## ダッシュボード（インサイト/アラート）
 

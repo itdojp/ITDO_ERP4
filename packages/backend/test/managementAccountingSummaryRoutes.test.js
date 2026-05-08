@@ -137,6 +137,28 @@ test('GET /reports/management-accounting/summary returns aggregate management ac
           currency: 'JPY',
         },
       ],
+      'payrollConfirmedLaborCost.findMany': async (args) => {
+        assert.deepEqual(args.where.periodKey.in, ['2026-03']);
+        assert.deepEqual(args.where.projectId.in, [
+          'project-1',
+          'project-2',
+          'project-3',
+        ]);
+        return [
+          {
+            periodKey: '2026-03',
+            projectId: 'project-1',
+            currency: 'JPY',
+            amount: 1300,
+          },
+          {
+            periodKey: '2026-03',
+            projectId: 'project-2',
+            currency: 'JPY',
+            amount: 900,
+          },
+        ];
+      },
       'projectMilestone.findMany': async () => [
         {
           id: 'milestone-1',
@@ -169,6 +191,11 @@ test('GET /reports/management-accounting/summary returns aggregate management ac
         assert.equal(body.revenue, 10750);
         assert.equal(body.directCost, 6050);
         assert.equal(body.laborCost, 1850);
+        assert.equal(body.payrollConfirmedLaborCost, 2200);
+        assert.equal(body.laborCostVariance, 350);
+        assert.equal(body.payrollConfirmedStatus, 'confirmed');
+        assert.deepEqual(body.payrollConfirmedPeriodKeys, ['2026-03']);
+        assert.deepEqual(body.payrollMissingPeriodKeys, []);
         assert.equal(body.vendorCost, 3000);
         assert.equal(body.expenseCost, 1200);
         assert.equal(body.grossProfit, 4700);
@@ -180,6 +207,8 @@ test('GET /reports/management-accounting/summary returns aggregate management ac
         assert.equal(body.topRedProjects.length, 1);
         assert.equal(body.topRedProjects[0].projectId, 'project-2');
         assert.equal(body.topRedProjects[0].grossProfit, -1050);
+        assert.equal(body.topRedProjects[0].payrollConfirmedLaborCost, 900);
+        assert.equal(body.topRedProjects[0].laborCostVariance, 50);
         assert.equal(body.departmentBreakdown.length, 3);
         const departmentD001 = body.departmentBreakdown.find(
           (item) => item.departmentKey === 'D001',
@@ -198,15 +227,21 @@ test('GET /reports/management-accounting/summary returns aggregate management ac
         assert.equal(departmentD001.departmentSource, 'department_master');
         assert.equal(departmentD001.revenue, 10000);
         assert.equal(departmentD001.directCost, 4500);
+        assert.equal(departmentD001.payrollConfirmedLaborCost, 1300);
+        assert.equal(departmentD001.laborCostVariance, 300);
         assert.equal(departmentD001.grossProfit, 5500);
         assert.equal(departmentD002.departmentName, null);
         assert.equal(departmentD002.departmentExternalCode, null);
         assert.equal(departmentD002.departmentSource, 'legacy_org_unit');
+        assert.equal(departmentD002.payrollConfirmedLaborCost, 900);
+        assert.equal(departmentD002.laborCostVariance, 50);
         assert.equal(departmentD002.redProjectCount, 1);
         assert.equal(departmentUnassigned.departmentKey, null);
         assert.equal(departmentUnassigned.departmentName, null);
         assert.equal(departmentUnassigned.departmentExternalCode, null);
         assert.equal(departmentUnassigned.revenue, 250);
+        assert.equal(departmentUnassigned.payrollConfirmedLaborCost, null);
+        assert.equal(departmentUnassigned.laborCostVariance, null);
       } finally {
         await server.close();
       }
@@ -329,6 +364,20 @@ test('GET /reports/management-accounting/summary returns csv export', async () =
           currency: '=JPY',
         },
       ],
+      'payrollConfirmedLaborCost.findMany': async () => [
+        {
+          periodKey: '2026-03',
+          projectId: 'project-1',
+          currency: '=JPY',
+          amount: 1300,
+        },
+        {
+          periodKey: '2026-03',
+          projectId: 'project-2',
+          currency: '=JPY',
+          amount: 900,
+        },
+      ],
       'projectMilestone.findMany': async () => [
         {
           id: 'milestone-1',
@@ -359,21 +408,28 @@ test('GET /reports/management-accounting/summary returns csv export', async () =
         );
         assert.match(
           res.body,
-          /^section,currency,departmentKey,departmentName,departmentExternalCode,departmentSource,projectId,projectCode,projectName,projectCount,revenue,directCost,laborCost,vendorCost,expenseCost,grossProfit,grossMargin,totalMinutes,overtimeTotalMinutes,deliveryDueCount,deliveryDueAmount,redProjectCount/m,
-        );
-        assert.match(res.body, /summary,'=JPY,,,,/, res.body);
-        assert.match(res.body, /currency_breakdown,'=JPY,,,,,,,,3,10750,6050/);
-        assert.match(
-          res.body,
-          /department_breakdown,'=JPY,,,,unassigned,,,,1,250,0/,
+          /^section,currency,departmentKey,departmentName,departmentExternalCode,departmentSource,projectId,projectCode,projectName,projectCount,revenue,directCost,laborCost,payrollConfirmedLaborCost,laborCostVariance,payrollConfirmedStatus,vendorCost,expenseCost,grossProfit,grossMargin,totalMinutes,overtimeTotalMinutes,deliveryDueCount,deliveryDueAmount,redProjectCount/m,
         );
         assert.match(
           res.body,
-          /department_breakdown,'=JPY,D001,営業部,OU-D001,department_master,,,,1,10000,4500/,
+          /summary,'=JPY,,,,,,,,3,10750,6050,1850,2200,350,confirmed,3000/,
+          res.body,
         );
         assert.match(
           res.body,
-          /top_red_project,'=JPY,D002,,,legacy_org_unit,project-2,'=PRJ-002,'@Project 2/,
+          /currency_breakdown,'=JPY,,,,,,,,3,10750,6050,1850,2200,350,,3000/,
+        );
+        assert.match(
+          res.body,
+          /department_breakdown,'=JPY,,,,unassigned,,,,1,250,0,0,,,,0/,
+        );
+        assert.match(
+          res.body,
+          /department_breakdown,'=JPY,D001,営業部,OU-D001,department_master,,,,1,10000,4500,1000,1300,300,,3000/,
+        );
+        assert.match(
+          res.body,
+          /top_red_project,'=JPY,D002,,,legacy_org_unit,project-2,'=PRJ-002,'@Project 2,,500,1550,850,900,50,/,
         );
       } finally {
         await server.close();
@@ -461,6 +517,7 @@ test('GET /reports/management-accounting/summary returns currency breakdown when
           currency: 'USD',
         },
       ],
+      'payrollConfirmedLaborCost.findMany': async () => [],
       'projectMilestone.findMany': async () => [
         {
           id: 'milestone-usd',
@@ -506,6 +563,161 @@ test('GET /reports/management-accounting/summary returns currency breakdown when
         assert.equal(jpy.directCost, 4800);
         assert.equal(usd.revenue, 1000);
         assert.equal(usd.deliveryDueAmount, 300);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('GET /reports/management-accounting/summary reports missing payroll confirmed periods', async () => {
+  await withPrismaStubs(
+    {
+      'project.findMany': async () => [
+        {
+          id: 'project-1',
+          code: 'PRJ-001',
+          name: 'Project 1',
+          currency: 'JPY',
+          orgUnitId: null,
+        },
+      ],
+      'invoice.groupBy': async () => [
+        {
+          projectId: 'project-1',
+          currency: 'JPY',
+          _sum: { totalAmount: 1000 },
+        },
+      ],
+      'vendorInvoice.groupBy': async () => [],
+      'expense.groupBy': async () => [],
+      'timeEntry.findMany': async () => [
+        {
+          projectId: 'project-1',
+          userId: 'user-1',
+          workDate: new Date('2026-03-10T00:00:00.000Z'),
+          workType: null,
+          minutes: 60,
+        },
+      ],
+      'rateCard.findMany': async () => [
+        {
+          id: 'rate-1',
+          projectId: 'project-1',
+          workType: null,
+          validFrom: new Date('2026-01-01T00:00:00.000Z'),
+          validTo: null,
+          unitPrice: 60,
+          currency: 'JPY',
+        },
+      ],
+      'payrollConfirmedLaborCost.findMany': async (args) => {
+        assert.deepEqual(args.where.periodKey.in, ['2026-03']);
+        return [];
+      },
+      'projectMilestone.findMany': async () => [],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/reports/management-accounting/summary?from=2026-03-01&to=2026-03-31',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.payrollConfirmedStatus, 'missing');
+        assert.deepEqual(body.payrollConfirmedPeriodKeys, []);
+        assert.deepEqual(body.payrollMissingPeriodKeys, ['2026-03']);
+        assert.equal(body.payrollConfirmedLaborCost, null);
+        assert.equal(body.laborCostVariance, null);
+        assert.equal(body.currencyBreakdown[0].payrollConfirmedLaborCost, null);
+        assert.equal(body.currencyBreakdown[0].laborCostVariance, null);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('GET /reports/management-accounting/summary excludes partial-month payroll confirmed amounts', async () => {
+  let payrollFindManyCalled = false;
+  await withPrismaStubs(
+    {
+      'project.findMany': async () => [
+        {
+          id: 'project-1',
+          code: 'PRJ-001',
+          name: 'Project 1',
+          currency: 'JPY',
+          orgUnitId: null,
+        },
+      ],
+      'invoice.groupBy': async () => [
+        {
+          projectId: 'project-1',
+          currency: 'JPY',
+          _sum: { totalAmount: 1000 },
+        },
+      ],
+      'vendorInvoice.groupBy': async () => [],
+      'expense.groupBy': async () => [],
+      'timeEntry.findMany': async () => [
+        {
+          projectId: 'project-1',
+          userId: 'user-1',
+          workDate: new Date('2026-03-20T00:00:00.000Z'),
+          workType: null,
+          minutes: 60,
+        },
+      ],
+      'rateCard.findMany': async () => [
+        {
+          id: 'rate-1',
+          projectId: 'project-1',
+          workType: null,
+          validFrom: new Date('2026-01-01T00:00:00.000Z'),
+          validTo: null,
+          unitPrice: 60,
+          currency: 'JPY',
+        },
+      ],
+      'payrollConfirmedLaborCost.findMany': async () => {
+        payrollFindManyCalled = true;
+        return [
+          {
+            periodKey: '2026-03',
+            projectId: 'project-1',
+            currency: 'JPY',
+            amount: 3000,
+          },
+        ];
+      },
+      'projectMilestone.findMany': async () => [],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/reports/management-accounting/summary?from=2026-03-15&to=2026-04-14',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(payrollFindManyCalled, false);
+        assert.equal(body.payrollConfirmedStatus, 'missing');
+        assert.deepEqual(body.payrollConfirmedPeriodKeys, []);
+        assert.deepEqual(body.payrollMissingPeriodKeys, ['2026-03', '2026-04']);
+        assert.equal(body.payrollConfirmedLaborCost, null);
+        assert.equal(body.laborCostVariance, null);
       } finally {
         await server.close();
       }

@@ -148,10 +148,14 @@
   - ERP4 内の売上、直接原価、粗利、納期未請求、残業、赤字案件件数を 1 API で返す
   - 複数通貨が混在する場合は、金額系 KPI の top-level 合算値は返さず、`currencyBreakdown[]` で通貨別内訳を返す
   - `departmentBreakdown[]` は正規部門マスタ照合後の `departmentKey`（`DepartmentMaster.code`）、`departmentName`、`departmentExternalCode`、`departmentSource` と通貨単位で、売上・直接原価・労務原価・外注/仕入・経費・粗利・粗利率・工数・赤字案件数を返す
+  - `laborCost` は従来どおり `TimeEntry * RateCard` による管理単価ベースの労務原価として保持し、給与締め後に取り込んだ `PayrollConfirmedLaborCost` は `payrollConfirmedLaborCost` として併記する
+  - `PayrollConfirmedLaborCost.periodKey` は `YYYY-MM` 形式の月次締めキーとし、`projectId` / `currency` / `amount` を持つ案件配賦済みレコードを管理会計の給与確定値ソースとする。`confirmedAt` は給与締め・取り込み完了時点の監査情報として扱う
+  - `laborCostVariance` は `payrollConfirmedLaborCost - laborCost` とし、給与確定値が未取込の通貨・部門・案件では `null` を返す。`directCost` / `grossProfit` は互換性維持のため管理単価ベースを維持し、差分検知は `laborCostVariance` で行う
+  - 対象期間に含まれる月次 `periodKey` のうち、案件配賦済み給与確定値が存在する月を `payrollConfirmedPeriodKeys`、未取込または未締めの月を `payrollMissingPeriodKeys` として返す。全月取込済みは `payrollConfirmedStatus: confirmed`、一部のみは `partial`、未取込は `missing` とする。給与確定値は月次締め単位のため、`from/to` が月全体をカバーしない部分月の `periodKey` は金額集計へ含めず、`payrollMissingPeriodKeys` として表示する
   - 過去期間の再現性を優先し、非アクティブ化された `DepartmentMaster` も既存 `Project.orgUnitId` の照合対象に含める
   - `Project.orgUnitId` が複数の照合候補に一致する場合は `DepartmentMaster.id`、`DepartmentMaster.code`、`DepartmentMaster.externalCode` の順で決定する
   - 未設定の `Project.orgUnitId` は `departmentKey: null` / `departmentSource: unassigned`、正規部門マスタに未照合の旧データは `departmentSource: legacy_org_unit` として旧 `Project.orgUnitId` を `departmentKey` に保持する
-  - CSV は `summary` / `currency_breakdown` / `department_breakdown` / `top_red_project` の 4 section で flatten し、部門列として `departmentKey` / `departmentName` / `departmentExternalCode` / `departmentSource` を出力する
+  - CSV は `summary` / `currency_breakdown` / `department_breakdown` / `top_red_project` の 4 section で flatten し、部門列として `departmentKey` / `departmentName` / `departmentExternalCode` / `departmentSource`、給与確定値列として `payrollConfirmedLaborCost` / `laborCostVariance` / `payrollConfirmedStatus` を出力する
   - UI は `Reports` セクションの管理会計サマリ表示、部門別損益の初期表示、CSV 出力を初期導線とし、案件単位の確認には既存 `project-profit` を併用する
 
 ### R5. 管理部向け締め前照合レポート
@@ -238,17 +242,18 @@
 
 ## KPI 一覧（初期案）
 
-| KPI            | 定義                                             | 既存実装ソース                    | 実装状態                       |
-| -------------- | ------------------------------------------------ | --------------------------------- | ------------------------------ |
-| 月次売上       | 対象月の `Invoice.totalAmount` 合計              | `project-profit` 集計ロジック     | 一部流用可                     |
-| 月次直接原価   | `VendorInvoice + Expense + laborCost`            | `project-profit` 集計ロジック     | 一部流用可                     |
-| 月次粗利       | 売上 - 直接原価                                  | `project-profit` 集計ロジック     | 一部流用可                     |
-| 粗利率         | 粗利 / 売上                                      | `project-profit` 集計ロジック     | 一部流用可                     |
-| 工数実績       | `TimeEntry.minutes` 合計                         | `project-effort`, `group-effort`  | 実装済み                       |
-| 残業時間       | `reportOvertime` の時間合計                      | `overtime`                        | 実装済みだが定義見直し余地あり |
-| 納期未請求件数 | `delivery-due` 件数                              | `delivery-due`                    | 実装済み                       |
-| 赤字案件数     | 粗利 < 0 の案件数                                | `project-profit` の横断集計が必要 | 未実装                         |
-| 部門別損益     | 正規部門マスタ照合後の部門ごとの売上・原価・粗利 | `management-accounting/summary`   | `#1748` で正本化済み           |
+| KPI              | 定義                                                        | 既存実装ソース                    | 実装状態                       |
+| ---------------- | ----------------------------------------------------------- | --------------------------------- | ------------------------------ |
+| 月次売上         | 対象月の `Invoice.totalAmount` 合計                         | `project-profit` 集計ロジック     | 一部流用可                     |
+| 月次直接原価     | `VendorInvoice + Expense + laborCost`                       | `project-profit` 集計ロジック     | 一部流用可                     |
+| 給与確定労務原価 | `PayrollConfirmedLaborCost.amount` の月次・案件配賦済み合計 | `management-accounting/summary`   | `#1749` で併記・差分検知を実装 |
+| 月次粗利         | 売上 - 直接原価                                             | `project-profit` 集計ロジック     | 一部流用可                     |
+| 粗利率           | 粗利 / 売上                                                 | `project-profit` 集計ロジック     | 一部流用可                     |
+| 工数実績         | `TimeEntry.minutes` 合計                                    | `project-effort`, `group-effort`  | 実装済み                       |
+| 残業時間         | `reportOvertime` の時間合計                                 | `overtime`                        | 実装済みだが定義見直し余地あり |
+| 納期未請求件数   | `delivery-due` 件数                                         | `delivery-due`                    | 実装済み                       |
+| 赤字案件数       | 粗利 < 0 の案件数                                           | `project-profit` の横断集計が必要 | 未実装                         |
+| 部門別損益       | 正規部門マスタ照合後の部門ごとの売上・原価・粗利            | `management-accounting/summary`   | `#1748` で正本化済み           |
 
 ## 初期フェーズの境界
 
@@ -259,10 +264,10 @@
 - 工数予実、納期未請求、残業
 - 管理会計ダッシュボードに必要な KPI 要件定義
 - `Project.orgUnitId` 暫定キーによる部門別損益の初期表示
+- 給与確定値ベースの人件費（`#1749` で管理会計サマリへの併記と差分検知を実装。給与データ import 自体は連携仕様に従う）
 
 ### 初期フェーズで要件化のみ行い、実装を後続に回す
 
-- 給与確定値ベースの人件費
 - 勘定科目別集計
 - 間接費の全社配賦
 - 月次締めスナップショット
@@ -278,14 +283,14 @@
 - `#1441`: 会計イベント・仕訳変換ルール整備
 - `#1447`: 本書で定義した初期レポートの実装
 - `#1748`: 管理会計 `departmentBreakdown` の正規部門マスタ連携（`DepartmentMaster` 照合）
-- `#1749`: 給与確定値ベース労務原価の管理会計反映
+- `#1749`: 給与確定値ベース労務原価の管理会計反映（`PayrollConfirmedLaborCost` 取込済みレコードの併記・差分検知・未締め月表示）
 - `#1750`: 制度会計実績戻し import と管理会計照合
 
 ## `#1744` での再確認結果とテスト方針
 
 - 現行 summary report のデータソースは `Invoice`（売上）、`VendorInvoice` / `Expense` / `TimeEntry * RateCard`（直接原価）、`ProjectMilestone`（納期未請求）、`TimeEntry`（残業・工数）である。
 - 部門別損益の最小実装単位は、既存 `Project.orgUnitId` を暫定部門キーとして summary API / CSV / Reports UI に `departmentBreakdown` を追加することとする。
-- 給与確定値ベース原価は、勤怠締め・給与確定値の正本と月次配賦ルールが未確定のため、`#1749` で管理単価ベース原価との併存仕様を定義してから実装する。
+- 給与確定値ベース原価は、`#1749` で月次 `PayrollConfirmedLaborCost` を管理単価ベース `laborCost` と併記し、`laborCostVariance` と `payrollConfirmedStatus` で差分・未締め月を検知する。
 - 制度会計実績戻しは、取り込み方式と粒度（部門・勘定科目・PJ）が未確定のため、`#1750` で import/staging と差分照合を設計する。
 - 最小実装のテスト方針:
   - backend route test で `departmentBreakdown[]` の集計、赤字案件数、CSV `department_breakdown` section を検証する。
