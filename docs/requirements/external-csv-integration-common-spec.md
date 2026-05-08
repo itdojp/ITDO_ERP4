@@ -207,7 +207,7 @@
   - attendance closing の summary count / 各種 minutes 合計
   - full 社員マスタ export と attendance closing の社員コード差分
   - accounting journal staging の `ready / pending_mapping / blocked`
-  - ready 行の借方合計 / 貸方合計 / 借貸一致フラグ（`readyDebitTotal` は借方科目ありの ready 金額、`readyCreditTotal` は貸方科目ありの ready 金額を個別集計する）
+  - ready 行の借方合計 / 貸方合計 / 借貸一致フラグ（`readyDebitTotal` は借方科目ありの ready 金額、`readyCreditTotal` は貸方科目ありの ready 金額を個別集計する。複合仕訳の片側明細では借方・貸方の少なくとも一方があれば ready 行として扱い、両方欠落している行を invalid ready とする）
   - 最新 ICS export の件数と ready 件数の一致
 - 現在の details 比較項目
   - payroll: 社員コード差分の全件

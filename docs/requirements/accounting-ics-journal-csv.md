@@ -38,8 +38,7 @@
 - `AccountingJournalStaging.status='ready'` の行だけを対象にする
 - 同一 scope 内に `pending_mapping` または `blocked` が残っている場合、export は `409 accounting_journal_mapping_incomplete` で停止する
 - ready 行でも以下が未設定なら `409 accounting_journal_ready_row_incomplete` で停止する
-  - `debitAccountCode`
-  - `creditAccountCode`
+  - `debitAccountCode` または `creditAccountCode` の少なくとも一方
   - `taxCode`
   - 正の `amount`
 
@@ -219,7 +218,7 @@
 - 2026-03-18 時点の拡張では、`AccountingMappingRule` に `requireDepartmentCode` / `requireDebitSubaccountCode` / `requireCreditSubaccountCode` を持たせ、条件付き必須を rule 側で判定する
 - 2026-03-21 時点の拡張では、`AccountingMappingRule` に `debitAccountName` / `creditAccountName` を持たせ、staging 行へ snapshot した名称を ICS CSV の名称列へ反映する
 - `#1443` の baseline 実装では、`ready` 化された staging 行だけを CSV に変換する
-- 照合 summary の `readyDebitTotal` / `readyCreditTotal` は、`AccountingJournalStaging.status='ready'` の行について借方科目あり / 貸方科目ありを別々に合計し、`debitCreditBalanced` は invalid ready がなく両合計が一致する場合のみ `true` とする
+- `#1743` の照合拡張では、複合仕訳の片側明細を表現できるよう、ready 行は借方または貸方の少なくとも一方を持てば export 対象とし、両方欠落している行を invalid ready とみなす。照合 summary の `readyDebitTotal` / `readyCreditTotal` は、`AccountingJournalStaging.status='ready'` の行について借方科目あり / 貸方科目ありを別々に合計し、`debitCreditBalanced` は invalid ready がなく両合計が一致する場合のみ `true` とする
 
 ### 最低限必要な mapping
 
@@ -362,7 +361,7 @@
 | ICS-03 | invalid period             | `periodKey=2026-13`                                              | `400 invalid_period_key`                                        |
 | ICS-04 | template metadata missing  | `format=ics_template` で `companyCode` または `companyName` 欠落 | `400 accounting_ics_template_metadata_required`                 |
 | ICS-05 | incomplete scope           | `pending_mapping` または `blocked` 行が scope に残る             | `409 accounting_journal_mapping_incomplete`                     |
-| ICS-06 | incomplete ready row       | `debit/credit/taxCode/amount` のいずれか不足                     | `409 accounting_journal_ready_row_incomplete`                   |
+| ICS-06 | incomplete ready row       | 借方・貸方の両方欠落、または `taxCode/amount` のいずれか不足     | `409 accounting_journal_ready_row_incomplete`                   |
 | ICS-07 | invalid description        | 改行・タブ・`CP932` 非対応文字・120 bytes 超過                   | `409 accounting_journal_description_invalid`                    |
 | ICS-08 | idempotent dispatch replay | 同一 `idempotencyKey` + 同一条件で再実行                         | 既存成功 log を replay                                          |
 | ICS-09 | redispatch                 | 成功済み export log を指定                                       | 新規 log を作成し `reexportOfId` を保持                         |

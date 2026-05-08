@@ -313,10 +313,10 @@ function validateReadyRow(row: {
   taxCode: string | null;
 }) {
   const missingFields: string[] = [];
-  if (!normalizeText(row.debitAccountCode)) {
+  const debitAccountCode = normalizeText(row.debitAccountCode);
+  const creditAccountCode = normalizeText(row.creditAccountCode);
+  if (!debitAccountCode && !creditAccountCode) {
     missingFields.push('debitAccountCode');
-  }
-  if (!normalizeText(row.creditAccountCode)) {
     missingFields.push('creditAccountCode');
   }
   if (!normalizeText(row.taxCode)) {

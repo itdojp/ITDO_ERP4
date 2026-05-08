@@ -173,6 +173,124 @@ test('GET /integrations/accounting/exports/journals falls back to account codes 
   );
 });
 
+test('GET /integrations/accounting/exports/journals allows single-sided ready rows for compound vouchers', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'accountingJournalStaging.count': async () => 0,
+      'accountingJournalStaging.findMany': async () => [
+        {
+          id: 'stg-single-sided',
+          eventId: 'evt-single-sided',
+          mappingKey: 'compound:debit',
+          lineNo: 1,
+          entryDate: new Date('2026-02-14T00:00:00.000Z'),
+          amount: '12000',
+          description: '複合仕訳借方行',
+          debitAccountCode: '6001',
+          debitAccountName: '旅費交通費',
+          debitSubaccountCode: null,
+          creditAccountCode: null,
+          creditAccountName: null,
+          creditSubaccountCode: null,
+          departmentCode: 'D001',
+          taxCode: 'T10',
+          event: {
+            id: 'evt-single-sided',
+            sourceTable: 'manual_journal',
+            sourceId: 'journal-001',
+            periodKey: '2026-02',
+            externalRef: 'JRN-001',
+            description: '複合仕訳',
+          },
+        },
+      ],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/accounting/exports/journals?periodKey=2026-02',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.items[0].debitAccountCode, '6001');
+        assert.equal(body.items[0].creditAccountCode, '');
+        assert.equal(body.items[0].amount, '12000');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('GET /integrations/accounting/exports/journals rejects ready rows with neither debit nor credit side', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'accountingJournalStaging.count': async () => 0,
+      'accountingJournalStaging.findMany': async () => [
+        {
+          id: 'stg-no-side',
+          eventId: 'evt-no-side',
+          mappingKey: 'compound:invalid',
+          lineNo: 1,
+          entryDate: new Date('2026-02-14T00:00:00.000Z'),
+          amount: '12000',
+          description: '科目なし',
+          debitAccountCode: null,
+          debitAccountName: null,
+          debitSubaccountCode: null,
+          creditAccountCode: ' ',
+          creditAccountName: null,
+          creditSubaccountCode: null,
+          departmentCode: 'D001',
+          taxCode: 'T10',
+          event: {
+            id: 'evt-no-side',
+            sourceTable: 'manual_journal',
+            sourceId: 'journal-invalid',
+            periodKey: '2026-02',
+            externalRef: 'JRN-INVALID',
+            description: '科目なし',
+          },
+        },
+      ],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/accounting/exports/journals?periodKey=2026-02',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error, 'accounting_journal_ready_row_incomplete');
+        assert.deepEqual(body.details.missingFields, [
+          'debitAccountCode',
+          'creditAccountCode',
+        ]);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
 test('GET /integrations/accounting/exports/journals uses staged account names without live rule lookup', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';

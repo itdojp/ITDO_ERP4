@@ -504,8 +504,10 @@ async function fetchIntegrationReconciliationBaseData(options: {
       WHERE ae."periodKey" = ${periodKey}
         AND ajs."status" = 'ready'
         AND (
-          ajs."debitAccountCode" IS NULL OR BTRIM(ajs."debitAccountCode") = ''
-          OR ajs."creditAccountCode" IS NULL OR BTRIM(ajs."creditAccountCode") = ''
+          (
+            (ajs."debitAccountCode" IS NULL OR BTRIM(ajs."debitAccountCode") = '')
+            AND (ajs."creditAccountCode" IS NULL OR BTRIM(ajs."creditAccountCode") = '')
+          )
           OR ajs."taxCode" IS NULL OR BTRIM(ajs."taxCode") = ''
           OR ajs."amount" <= 0
         )
@@ -574,9 +576,10 @@ export async function buildIntegrationReconciliationDetails(options: {
         COUNT(*) FILTER (
           WHERE ajs."status" = 'ready'
             AND (
-              ajs."debitAccountCode" IS NULL OR ajs."debitAccountCode" = ''
-              OR BTRIM(ajs."debitAccountCode") = ''
-              OR ajs."creditAccountCode" IS NULL OR BTRIM(ajs."creditAccountCode") = ''
+              (
+                (ajs."debitAccountCode" IS NULL OR BTRIM(ajs."debitAccountCode") = '')
+                AND (ajs."creditAccountCode" IS NULL OR BTRIM(ajs."creditAccountCode") = '')
+              )
               OR ajs."taxCode" IS NULL OR BTRIM(ajs."taxCode") = ''
               OR ajs."amount" <= 0
             )
@@ -601,9 +604,10 @@ export async function buildIntegrationReconciliationDetails(options: {
         COUNT(*) FILTER (
           WHERE ajs."status" = 'ready'
             AND (
-              ajs."debitAccountCode" IS NULL OR ajs."debitAccountCode" = ''
-              OR BTRIM(ajs."debitAccountCode") = ''
-              OR ajs."creditAccountCode" IS NULL OR BTRIM(ajs."creditAccountCode") = ''
+              (
+                (ajs."debitAccountCode" IS NULL OR BTRIM(ajs."debitAccountCode") = '')
+                AND (ajs."creditAccountCode" IS NULL OR BTRIM(ajs."creditAccountCode") = '')
+              )
               OR ajs."taxCode" IS NULL OR BTRIM(ajs."taxCode") = ''
               OR ajs."amount" <= 0
             )
@@ -675,8 +679,10 @@ export async function buildIntegrationReconciliationDetails(options: {
       WHERE ae."periodKey" = ${summary.periodKey}
         AND ajs."status" = 'ready'
         AND (
-          ajs."debitAccountCode" IS NULL OR BTRIM(ajs."debitAccountCode") = ''
-          OR ajs."creditAccountCode" IS NULL OR BTRIM(ajs."creditAccountCode") = ''
+          (
+            (ajs."debitAccountCode" IS NULL OR BTRIM(ajs."debitAccountCode") = '')
+            AND (ajs."creditAccountCode" IS NULL OR BTRIM(ajs."creditAccountCode") = '')
+          )
           OR ajs."taxCode" IS NULL OR BTRIM(ajs."taxCode") = ''
           OR ajs."amount" <= 0
         )
