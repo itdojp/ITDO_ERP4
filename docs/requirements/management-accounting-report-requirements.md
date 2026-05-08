@@ -151,7 +151,7 @@
   - `laborCost` は従来どおり `TimeEntry * RateCard` による管理単価ベースの労務原価として保持し、給与締め後に取り込んだ `PayrollConfirmedLaborCost` は `payrollConfirmedLaborCost` として併記する
   - `PayrollConfirmedLaborCost.periodKey` は `YYYY-MM` 形式の月次締めキーとし、`projectId` / `currency` / `amount` を持つ案件配賦済みレコードを管理会計の給与確定値ソースとする。`confirmedAt` は給与締め・取り込み完了時点の監査情報として扱う
   - `laborCostVariance` は `payrollConfirmedLaborCost - laborCost` とし、給与確定値が未取込の通貨・部門・案件では `null` を返す。`directCost` / `grossProfit` は互換性維持のため管理単価ベースを維持し、差分検知は `laborCostVariance` で行う
-  - 対象期間に含まれる月次 `periodKey` のうち、案件配賦済み給与確定値が存在する月を `payrollConfirmedPeriodKeys`、未取込または未締めの月を `payrollMissingPeriodKeys` として返す。全月取込済みは `payrollConfirmedStatus: confirmed`、一部のみは `partial`、未取込は `missing` とする
+  - 対象期間に含まれる月次 `periodKey` のうち、案件配賦済み給与確定値が存在する月を `payrollConfirmedPeriodKeys`、未取込または未締めの月を `payrollMissingPeriodKeys` として返す。全月取込済みは `payrollConfirmedStatus: confirmed`、一部のみは `partial`、未取込は `missing` とする。給与確定値は月次締め単位のため、`from/to` が月全体をカバーしない部分月の `periodKey` は金額集計へ含めず、`payrollMissingPeriodKeys` として表示する
   - 過去期間の再現性を優先し、非アクティブ化された `DepartmentMaster` も既存 `Project.orgUnitId` の照合対象に含める
   - `Project.orgUnitId` が複数の照合候補に一致する場合は `DepartmentMaster.id`、`DepartmentMaster.code`、`DepartmentMaster.externalCode` の順で決定する
   - 未設定の `Project.orgUnitId` は `departmentKey: null` / `departmentSource: unassigned`、正規部門マスタに未照合の旧データは `departmentSource: legacy_org_unit` として旧 `Project.orgUnitId` を `departmentKey` に保持する

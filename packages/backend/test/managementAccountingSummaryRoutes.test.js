@@ -644,6 +644,87 @@ test('GET /reports/management-accounting/summary reports missing payroll confirm
   );
 });
 
+test('GET /reports/management-accounting/summary excludes partial-month payroll confirmed amounts', async () => {
+  let payrollFindManyCalled = false;
+  await withPrismaStubs(
+    {
+      'project.findMany': async () => [
+        {
+          id: 'project-1',
+          code: 'PRJ-001',
+          name: 'Project 1',
+          currency: 'JPY',
+          orgUnitId: null,
+        },
+      ],
+      'invoice.groupBy': async () => [
+        {
+          projectId: 'project-1',
+          currency: 'JPY',
+          _sum: { totalAmount: 1000 },
+        },
+      ],
+      'vendorInvoice.groupBy': async () => [],
+      'expense.groupBy': async () => [],
+      'timeEntry.findMany': async () => [
+        {
+          projectId: 'project-1',
+          userId: 'user-1',
+          workDate: new Date('2026-03-20T00:00:00.000Z'),
+          workType: null,
+          minutes: 60,
+        },
+      ],
+      'rateCard.findMany': async () => [
+        {
+          id: 'rate-1',
+          projectId: 'project-1',
+          workType: null,
+          validFrom: new Date('2026-01-01T00:00:00.000Z'),
+          validTo: null,
+          unitPrice: 60,
+          currency: 'JPY',
+        },
+      ],
+      'payrollConfirmedLaborCost.findMany': async () => {
+        payrollFindManyCalled = true;
+        return [
+          {
+            periodKey: '2026-03',
+            projectId: 'project-1',
+            currency: 'JPY',
+            amount: 3000,
+          },
+        ];
+      },
+      'projectMilestone.findMany': async () => [],
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/reports/management-accounting/summary?from=2026-03-15&to=2026-04-14',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(payrollFindManyCalled, false);
+        assert.equal(body.payrollConfirmedStatus, 'missing');
+        assert.deepEqual(body.payrollConfirmedPeriodKeys, []);
+        assert.deepEqual(body.payrollMissingPeriodKeys, ['2026-03', '2026-04']);
+        assert.equal(body.payrollConfirmedLaborCost, null);
+        assert.equal(body.laborCostVariance, null);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
 test('GET /reports/management-accounting/summary returns 400 when from/to are invalid', async () => {
   const server = await buildServer({ logger: false });
   try {

@@ -133,6 +133,23 @@ function enumeratePeriodKeys(from: Date, to: Date) {
   return keys;
 }
 
+function utcDateOnlyTime(date: Date) {
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+function enumerateFullyCoveredPeriodKeys(from: Date, to: Date) {
+  const fromTime = utcDateOnlyTime(from);
+  const toTime = utcDateOnlyTime(to);
+  return enumeratePeriodKeys(from, to).filter((periodKey) => {
+    const [yearText, monthText] = periodKey.split('-');
+    const year = Number(yearText);
+    const monthIndex = Number(monthText) - 1;
+    const monthStart = Date.UTC(year, monthIndex, 1);
+    const monthEnd = Date.UTC(year, monthIndex + 1, 0);
+    return fromTime <= monthStart && toTime >= monthEnd;
+  });
+}
+
 function addNullableAmount(
   current: number | null,
   value: number | null | undefined,
@@ -551,6 +568,10 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
   const projectIdSet = new Set(projectIds);
   const projectById = new Map(projects.map((project) => [project.id, project]));
   const payrollPeriodKeys = enumeratePeriodKeys(from, to);
+  const fullyCoveredPayrollPeriodKeys = enumerateFullyCoveredPeriodKeys(
+    from,
+    to,
+  );
   const projectDepartmentKeys = Array.from(
     new Set(
       projects
@@ -639,11 +660,11 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
           },
         })
       : [],
-    projectIds.length && payrollPeriodKeys.length
+    projectIds.length && fullyCoveredPayrollPeriodKeys.length
       ? prisma.payrollConfirmedLaborCost.findMany({
           where: {
             projectId: { in: projectIds },
-            periodKey: { in: payrollPeriodKeys },
+            periodKey: { in: fullyCoveredPayrollPeriodKeys },
           },
           select: {
             periodKey: true,
