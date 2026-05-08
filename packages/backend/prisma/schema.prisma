@@ -1731,6 +1731,49 @@ model AccountingJournalStaging {
   @@index([mappingKey, status])
 }
 
+model StatutoryAccountingActualImportBatch {
+  importBatchKey  String   @id
+  periodKey        String
+  accountingSystem String
+  importedAt       DateTime @default(now())
+  importedCount    Int      @default(0)
+  createdBy        String?
+  updatedAt        DateTime @updatedAt
+  updatedBy        String?
+  actuals          StatutoryAccountingActual[]
+
+  @@index([periodKey, importedAt])
+}
+
+model StatutoryAccountingActual {
+  id               String   @id @default(uuid())
+  importBatch      StatutoryAccountingActualImportBatch @relation(fields: [importBatchKey], references: [importBatchKey], onDelete: Cascade)
+  periodKey        String
+  importBatchKey   String
+  rowNo            Int
+  accountingSystem String
+  sourceRef        String?
+  projectCode      String?
+  departmentCode   String?
+  accountCode      String
+  accountName      String?
+  amountType       String
+  currency         String
+  amount           Decimal
+  importedAt       DateTime @default(now())
+  createdAt        DateTime @default(now())
+  createdBy        String?
+  updatedAt        DateTime @updatedAt
+  updatedBy        String?
+
+  @@unique([importBatchKey, rowNo])
+  @@index([periodKey, amountType, currency])
+  @@index([periodKey, currency])
+  @@index([periodKey, projectCode, currency])
+  @@index([periodKey, departmentCode, currency])
+  @@index([importBatchKey, importedAt])
+}
+
 model AccountingMappingRule {
   id                          String   @id @default(uuid())
   mappingKey                  String   @unique

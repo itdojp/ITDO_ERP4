@@ -23,6 +23,11 @@ import {
   buildIntegrationReconciliationSummary,
 } from '../services/integrationReconciliation.js';
 import {
+  StatutoryAccountingActualImportError,
+  importStatutoryAccountingActuals,
+  type StatutoryAccountingActualImportPayload,
+} from '../services/statutoryAccountingActuals.js';
+import {
   AccountingIcsExportError,
   type AccountingIcsTemplateOptions,
   type AccountingIcsExportPayload,
@@ -62,6 +67,7 @@ import {
   integrationRunMetricsQuerySchema,
   integrationSettingPatchSchema,
   integrationSettingSchema,
+  integrationStatutoryAccountingActualImportSchema,
 } from './validators.js';
 
 type IntegrationSettingBody = {
@@ -976,6 +982,23 @@ function accountingIcsExportStatusCode(code: string) {
   }
 }
 
+function statutoryAccountingActualImportStatusCode(code: string) {
+  switch (code) {
+    case 'invalid_statutory_accounting_actual_import':
+      return 400;
+    case 'statutory_accounting_actual_import_batch_conflict':
+      return 409;
+    default:
+      return 400;
+  }
+}
+
+function sanitizeSpreadsheetCsvCell(value: unknown) {
+  if (value === null || value === undefined) return '';
+  const text = String(value);
+  return /^[=+\-@]/.test(text) ? `'${text}` : text;
+}
+
 function buildAccountingIcsExportLogResponse(item: {
   id: string;
   idempotencyKey: string;
@@ -1000,6 +1023,57 @@ function buildAccountingIcsExportLogResponse(item: {
     finishedAt: item.finishedAt,
     message: item.message,
   };
+}
+
+type IntegrationReconciliationDetailsResponse = Awaited<
+  ReturnType<typeof buildIntegrationReconciliationDetails>
+>;
+
+function buildIntegrationReconciliationDetailsCsv(
+  details: IntegrationReconciliationDetailsResponse,
+) {
+  const headers = [
+    'section',
+    'key',
+    'currency',
+    'totalCount',
+    'readyCount',
+    'pendingMappingCount',
+    'blockedCount',
+    'invalidReadyCount',
+    'readyAmountTotal',
+    'statutoryActualAmountTotal',
+    'varianceAmount',
+  ];
+  const rows = [
+    ...details.accounting.byProject.map((row) => [
+      'project',
+      sanitizeSpreadsheetCsvCell(row.key),
+      sanitizeSpreadsheetCsvCell(row.currency),
+      row.totalCount,
+      row.readyCount,
+      row.pendingMappingCount,
+      row.blockedCount,
+      row.invalidReadyCount,
+      row.readyAmountTotal,
+      row.statutoryActualAmountTotal,
+      row.varianceAmount,
+    ]),
+    ...details.accounting.byDepartment.map((row) => [
+      'department',
+      sanitizeSpreadsheetCsvCell(row.key),
+      sanitizeSpreadsheetCsvCell(row.currency),
+      row.totalCount,
+      row.readyCount,
+      row.pendingMappingCount,
+      row.blockedCount,
+      row.invalidReadyCount,
+      row.readyAmountTotal,
+      row.statutoryActualAmountTotal,
+      row.varianceAmount,
+    ]),
+  ];
+  return toCsv(headers, rows);
 }
 
 function buildAccountingMappingRuleResponse(item: {
@@ -4344,6 +4418,54 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
     },
   );
 
+  app.post(
+    '/integrations/accounting/statutory-actuals/import',
+    {
+      preHandler: requireRole(['admin', 'mgmt']),
+      schema: integrationStatutoryAccountingActualImportSchema,
+    },
+    async (req, reply) => {
+      try {
+        const result = await importStatutoryAccountingActuals({
+          payload: req.body as StatutoryAccountingActualImportPayload,
+          actorUserId: req.user?.userId ?? null,
+        });
+        await logAudit({
+          ...auditContextFromRequest(req),
+          action: 'integration_statutory_accounting_actual_imported',
+          targetTable: 'StatutoryAccountingActual',
+          targetId: result.importBatchKey,
+          metadata: {
+            periodKey: result.periodKey,
+            importBatchKey: result.importBatchKey,
+            accountingSystem: result.accountingSystem,
+            importedCount: result.importedCount,
+            importedAt: result.importedAt,
+          } as Prisma.InputJsonValue,
+        });
+        return reply.code(201).send(result);
+      } catch (error) {
+        if (error instanceof StatutoryAccountingActualImportError) {
+          return reply
+            .code(statutoryAccountingActualImportStatusCode(error.code))
+            .send({
+              error: error.code,
+              message: error.message,
+              details: error.details,
+            });
+        }
+        if (error instanceof AttendanceClosingError) {
+          return reply.code(attendanceClosingStatusCode(error.code)).send({
+            error: error.code,
+            message: error.message,
+            details: error.details,
+          });
+        }
+        throw error;
+      }
+    },
+  );
+
   app.get(
     '/integrations/reconciliation/summary',
     {
@@ -4400,6 +4522,7 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
             countsAligned: summary.accounting.countsAligned,
             mappingComplete: summary.accounting.mappingComplete,
             staging: summary.accounting.staging,
+            statutoryActuals: summary.accounting.statutoryActuals,
           },
           hasBlockingDifferences: summary.hasBlockingDifferences,
         };
@@ -4423,11 +4546,22 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
       schema: integrationReconciliationDetailsQuerySchema,
     },
     async (req, reply) => {
-      const { periodKey } = req.query as {
+      const { periodKey, format } = req.query as {
         periodKey: string;
+        format?: 'json' | 'csv';
       };
       try {
-        return await buildIntegrationReconciliationDetails({ periodKey });
+        const details = await buildIntegrationReconciliationDetails({
+          periodKey,
+        });
+        if (format === 'csv') {
+          return sendCsv(
+            reply,
+            `integration-reconciliation-details-${details.periodKey}.csv`,
+            buildIntegrationReconciliationDetailsCsv(details),
+          );
+        }
+        return details;
       } catch (error) {
         if (error instanceof AttendanceClosingError) {
           return reply.code(attendanceClosingStatusCode(error.code)).send({

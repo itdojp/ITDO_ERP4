@@ -55,18 +55,43 @@ export type IntegrationReconciliationSummary = {
       readyCreditTotal: string;
       debitCreditBalanced: boolean;
     };
+    statutoryActuals?: {
+      latestImportBatchKey?: string | null;
+      latestAccountingSystem?: string | null;
+      latestImportedAt?: string | null;
+      importedCount: number;
+      currency?: string | null;
+      currencyCount?: number;
+      amountTotal: string;
+      internalReadyDebitTotal: string;
+      varianceAmount?: string | null;
+      actualTotalsByCurrency?: Array<{
+        currency: string;
+        amountTotal: string;
+        count: number;
+      }>;
+      readyDebitTotalsByCurrency?: Array<{
+        currency: string;
+        amountTotal: string;
+        count: number;
+      }>;
+      comparisonStatus: string;
+    } | null;
   };
   hasBlockingDifferences: boolean;
 };
 
 export type IntegrationReconciliationBreakdownRow = {
   key: string;
+  currency: string;
   totalCount: number;
   readyCount: number;
   pendingMappingCount: number;
   blockedCount: number;
   invalidReadyCount: number;
   readyAmountTotal: string;
+  statutoryActualAmountTotal?: string;
+  varianceAmount?: string;
 };
 
 export type IntegrationReconciliationSampleRow = {
@@ -169,24 +194,32 @@ function renderBreakdownTable(
             <thead>
               <tr>
                 <th style={{ textAlign: 'left' }}>key</th>
+                <th style={{ textAlign: 'left' }}>currency</th>
                 <th style={numericCellStyle}>total</th>
                 <th style={numericCellStyle}>ready</th>
                 <th style={numericCellStyle}>pending_mapping</th>
                 <th style={numericCellStyle}>blocked</th>
                 <th style={numericCellStyle}>invalid ready</th>
                 <th style={numericCellStyle}>ready amount</th>
+                <th style={numericCellStyle}>statutory actual</th>
+                <th style={numericCellStyle}>variance</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={`${testId}:${row.key}`}>
+                <tr key={`${testId}:${row.key}:${row.currency}`}>
                   <td>{row.key}</td>
+                  <td>{row.currency}</td>
                   <td style={numericCellStyle}>{row.totalCount}</td>
                   <td style={numericCellStyle}>{row.readyCount}</td>
                   <td style={numericCellStyle}>{row.pendingMappingCount}</td>
                   <td style={numericCellStyle}>{row.blockedCount}</td>
                   <td style={numericCellStyle}>{row.invalidReadyCount}</td>
                   <td style={numericCellStyle}>{row.readyAmountTotal}</td>
+                  <td style={numericCellStyle}>
+                    {row.statutoryActualAmountTotal ?? '0'}
+                  </td>
+                  <td style={numericCellStyle}>{row.varianceAmount ?? '0'}</td>
                 </tr>
               ))}
             </tbody>
@@ -410,6 +443,26 @@ export const IntegrationReconciliationCard = ({
               debit={summary.accounting.staging.readyDebitTotal} / credit=
               {summary.accounting.staging.readyCreditTotal} / balanced=
               {summary.accounting.staging.debitCreditBalanced ? 'yes' : 'no'}
+            </div>
+            <div style={{ marginTop: 6 }}>
+              {`statutoryActuals: status=${
+                summary.accounting.statutoryActuals?.comparisonStatus ??
+                'not_imported'
+              } / imported=${
+                summary.accounting.statutoryActuals?.importedCount ?? 0
+              } / currency=${
+                summary.accounting.statutoryActuals?.currency ?? '-'
+              } / amount=${
+                summary.accounting.statutoryActuals?.amountTotal ?? '0'
+              } / variance=${
+                summary.accounting.statutoryActuals?.varianceAmount ?? '-'
+              }`}
+            </div>
+            <div style={{ fontSize: 12, color: '#475569' }}>
+              latestStatutoryImport:{' '}
+              {summary.accounting.statutoryActuals?.latestImportBatchKey
+                ? `${summary.accounting.statutoryActuals.latestImportBatchKey} / ${summary.accounting.statutoryActuals.latestAccountingSystem || '-'} / importedAt=${formatDateTime(summary.accounting.statutoryActuals.latestImportedAt || null)}`
+                : '-'}
             </div>
           </div>
         </div>

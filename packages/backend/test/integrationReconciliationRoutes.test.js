@@ -11,7 +11,20 @@ const { prisma } = await import('../dist/services/db.js');
 
 function withPrismaStubs(stubs, fn) {
   const restores = [];
-  for (const [path, stub] of Object.entries(stubs)) {
+  const defaultStubs = {
+    'statutoryAccountingActualImportBatch.findFirst': async () => null,
+    'statutoryAccountingActualImportBatch.create': async () => ({}),
+    'statutoryAccountingActual.aggregate': async () => ({
+      _count: { _all: 0 },
+      _sum: { amount: null },
+    }),
+    'statutoryAccountingActual.groupBy': async () => [],
+    'statutoryAccountingActual.createMany': async (args) => ({
+      count: Array.isArray(args?.data) ? args.data.length : 0,
+    }),
+    $transaction: async (fn) => fn(prisma),
+  };
+  for (const [path, stub] of Object.entries({ ...defaultStubs, ...stubs })) {
     const [model, method] = path.split('.');
     const target = method ? prisma[model] : prisma;
     const key = method ?? model;
@@ -133,6 +146,9 @@ test('GET /integrations/reconciliation/summary returns aggregate reconciliation 
             },
           ];
         }
+        if (sql.includes('GROUP BY ajs."currency"')) {
+          return [{ currency: 'JPY', count: 3, amountTotal: '12345' }];
+        }
         if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
           return [{ count: 0 }];
         }
@@ -230,6 +246,9 @@ test('GET /integrations/reconciliation/summary treats missing prerequisites as b
             },
           ];
         }
+        if (sql.includes('GROUP BY ajs."currency"')) {
+          return [];
+        }
         if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
           return [{ count: 0 }];
         }
@@ -322,6 +341,9 @@ test('GET /integrations/reconciliation/summary reports missing full export and e
             },
           ];
         }
+        if (sql.includes('GROUP BY ajs."currency"')) {
+          return [{ currency: 'JPY', count: 2, amountTotal: '2500' }];
+        }
         if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
           return [{ count: 1 }];
         }
@@ -393,6 +415,9 @@ test('GET /integrations/reconciliation/summary reports true debit and credit tot
             },
           ];
         }
+        if (sql.includes('GROUP BY ajs."currency"')) {
+          return [{ currency: 'JPY', count: 1, amountTotal: '3000' }];
+        }
         if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
           return [{ count: 0 }];
         }
@@ -422,6 +447,238 @@ test('GET /integrations/reconciliation/summary reports true debit and credit tot
         assert.equal(body.accounting.staging.readyCreditTotal, '2500');
         assert.equal(body.accounting.staging.debitCreditBalanced, false);
         assert.equal(body.hasBlockingDifferences, true);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('GET /integrations/reconciliation/summary compares statutory actuals with internal ready debit total', async () => {
+  await withPrismaStubs(
+    {
+      'attendanceClosingPeriod.findFirst': async () => ({
+        id: 'closing-statutory-001',
+        periodKey: '2026-06',
+        version: 1,
+        status: 'closed',
+        closedAt: new Date('2026-06-30T15:00:00.000Z'),
+        summaryCount: 1,
+        workedDayCountTotal: 20,
+        scheduledWorkMinutesTotal: 9600,
+        approvedWorkMinutesTotal: 9600,
+        overtimeTotalMinutesTotal: 0,
+        paidLeaveMinutesTotal: 0,
+        unpaidLeaveMinutesTotal: 0,
+        totalLeaveMinutesTotal: 0,
+        sourceTimeEntryCount: 20,
+        sourceLeaveRequestCount: 0,
+      }),
+      'attendanceMonthlySummary.findMany': async () => [
+        { employeeCode: 'EMP-020' },
+      ],
+      'hrEmployeeMasterExportLog.findFirst': async () => ({
+        id: 'emp-full-statutory-001',
+        idempotencyKey: 'emp-full-statutory-key',
+        reexportOfId: null,
+        status: 'success',
+        updatedSince: null,
+        exportedUntil: new Date('2026-06-30T15:10:00.000Z'),
+        exportedCount: 1,
+        startedAt: new Date('2026-06-30T15:10:00.000Z'),
+        finishedAt: new Date('2026-06-30T15:10:05.000Z'),
+        message: 'exported',
+        payload: {
+          items: [{ employeeCode: 'EMP-020' }],
+        },
+      }),
+      'accountingIcsExportLog.findFirst': async () => ({
+        id: 'ics-statutory-001',
+        idempotencyKey: 'ics-statutory-key',
+        reexportOfId: null,
+        periodKey: '2026-06',
+        status: 'success',
+        exportedUntil: new Date('2026-06-30T15:30:00.000Z'),
+        exportedCount: 1,
+        startedAt: new Date('2026-06-30T15:30:00.000Z'),
+        finishedAt: new Date('2026-06-30T15:30:05.000Z'),
+        message: 'exported',
+      }),
+      'accountingJournalStaging.groupBy': async () => [
+        { status: 'ready', _count: { _all: 1 } },
+      ],
+      'statutoryAccountingActual.groupBy': async (args) => {
+        if (args?.by?.includes('currency')) {
+          return [
+            {
+              currency: 'JPY',
+              _count: { _all: 2 },
+              _sum: { amount: '5300' },
+            },
+          ];
+        }
+        return [];
+      },
+      'statutoryAccountingActualImportBatch.findFirst': async () => ({
+        importBatchKey: 'statutory-actual-2026-06-v1',
+        accountingSystem: 'keiri-jokun-alpha',
+        importedAt: new Date('2026-07-01T01:00:00.000Z'),
+      }),
+      $queryRaw: async (query) => {
+        const sql = Array.isArray(query?.strings)
+          ? query.strings.join(' ')
+          : String(query);
+        if (sql.includes('"readyDebitTotal"')) {
+          return [
+            {
+              readyAmountTotal: '10000',
+              readyDebitTotal: '5000',
+              readyCreditTotal: '5000',
+            },
+          ];
+        }
+        if (sql.includes('GROUP BY ajs."currency"')) {
+          return [{ currency: 'JPY', count: 1, amountTotal: '5000' }];
+        }
+        if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
+          return [{ count: 0 }];
+        }
+        throw new Error(`unexpected $queryRaw: ${sql}`);
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/reconciliation/summary?periodKey=2026-06',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.accounting.comparisonStatus, 'ok');
+        assert.equal(
+          body.accounting.statutoryActuals.comparisonStatus,
+          'amount_mismatch',
+        );
+        assert.equal(body.accounting.statutoryActuals.importedCount, 2);
+        assert.equal(body.accounting.statutoryActuals.currency, 'JPY');
+        assert.equal(body.accounting.statutoryActuals.amountTotal, '5300');
+        assert.equal(
+          body.accounting.statutoryActuals.internalReadyDebitTotal,
+          '5000',
+        );
+        assert.equal(body.accounting.statutoryActuals.varianceAmount, '300');
+        assert.equal(
+          body.accounting.statutoryActuals.latestImportBatchKey,
+          'statutory-actual-2026-06-v1',
+        );
+        assert.equal(body.hasBlockingDifferences, true);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('GET /integrations/reconciliation/summary treats missing statutory actuals as non-blocking when other checks pass', async () => {
+  await withPrismaStubs(
+    {
+      'attendanceClosingPeriod.findFirst': async () => ({
+        id: 'closing-no-statutory',
+        periodKey: '2026-09',
+        version: 1,
+        status: 'closed',
+        closedAt: new Date('2026-09-30T15:00:00.000Z'),
+        summaryCount: 1,
+        workedDayCountTotal: 20,
+        scheduledWorkMinutesTotal: 9600,
+        approvedWorkMinutesTotal: 9600,
+        overtimeTotalMinutesTotal: 0,
+        paidLeaveMinutesTotal: 0,
+        unpaidLeaveMinutesTotal: 0,
+        totalLeaveMinutesTotal: 0,
+        sourceTimeEntryCount: 20,
+        sourceLeaveRequestCount: 0,
+      }),
+      'attendanceMonthlySummary.findMany': async () => [
+        { employeeCode: 'EMP-090' },
+      ],
+      'hrEmployeeMasterExportLog.findFirst': async () => ({
+        id: 'emp-full-no-statutory',
+        idempotencyKey: 'emp-full-no-statutory-key',
+        reexportOfId: null,
+        status: 'success',
+        updatedSince: null,
+        exportedUntil: new Date('2026-09-30T15:10:00.000Z'),
+        exportedCount: 1,
+        startedAt: new Date('2026-09-30T15:10:00.000Z'),
+        finishedAt: new Date('2026-09-30T15:10:05.000Z'),
+        message: 'exported',
+        payload: {
+          items: [{ employeeCode: 'EMP-090' }],
+        },
+      }),
+      'accountingIcsExportLog.findFirst': async () => ({
+        id: 'ics-no-statutory',
+        idempotencyKey: 'ics-no-statutory-key',
+        reexportOfId: null,
+        periodKey: '2026-09',
+        status: 'success',
+        exportedUntil: new Date('2026-09-30T15:30:00.000Z'),
+        exportedCount: 1,
+        startedAt: new Date('2026-09-30T15:30:00.000Z'),
+        finishedAt: new Date('2026-09-30T15:30:05.000Z'),
+        message: 'exported',
+      }),
+      'accountingJournalStaging.groupBy': async () => [
+        { status: 'ready', _count: { _all: 1 } },
+      ],
+      $queryRaw: async (query) => {
+        const sql = Array.isArray(query?.strings)
+          ? query.strings.join(' ')
+          : String(query);
+        if (sql.includes('"readyDebitTotal"')) {
+          return [
+            {
+              readyAmountTotal: '1000',
+              readyDebitTotal: '1000',
+              readyCreditTotal: '1000',
+            },
+          ];
+        }
+        if (sql.includes('GROUP BY ajs."currency"')) {
+          return [{ currency: 'JPY', count: 1, amountTotal: '1000' }];
+        }
+        if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
+          return [{ count: 0 }];
+        }
+        throw new Error(`unexpected $queryRaw: ${sql}`);
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/reconciliation/summary?periodKey=2026-09',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.payroll.comparisonStatus, 'ok');
+        assert.equal(body.accounting.comparisonStatus, 'ok');
+        assert.equal(
+          body.accounting.statutoryActuals.comparisonStatus,
+          'not_imported',
+        );
+        assert.equal(body.hasBlockingDifferences, false);
       } finally {
         await server.close();
       }
@@ -498,6 +755,41 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
         { status: 'pending_mapping', _count: { _all: 1 } },
         { status: 'blocked', _count: { _all: 1 } },
       ],
+      'statutoryAccountingActual.groupBy': async (args) => {
+        if (args?.by?.includes('projectCode')) {
+          return [
+            {
+              projectCode: 'PRJ-001',
+              currency: 'JPY',
+              _count: { _all: 1 },
+              _sum: { amount: '2100' },
+            },
+            {
+              projectCode: 'PRJ-003',
+              currency: 'JPY',
+              _count: { _all: 1 },
+              _sum: { amount: '500' },
+            },
+          ];
+        }
+        if (args?.by?.includes('departmentCode')) {
+          return [
+            {
+              departmentCode: 'DEP-A',
+              currency: 'JPY',
+              _count: { _all: 1 },
+              _sum: { amount: '1800' },
+            },
+            {
+              departmentCode: 'DEP-C',
+              currency: 'JPY',
+              _count: { _all: 1 },
+              _sum: { amount: '750' },
+            },
+          ];
+        }
+        return [];
+      },
       'accountingJournalStaging.aggregate': async () => ({
         _sum: { amount: '5000' },
       }),
@@ -515,6 +807,9 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
             },
           ];
         }
+        if (sql.includes('GROUP BY ajs."currency"')) {
+          return [{ currency: 'JPY', count: 2, amountTotal: '5000' }];
+        }
         if (sql.includes('SELECT ajs."id"')) {
           return [{ id: 'stg-004' }];
         }
@@ -522,6 +817,7 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
           return [
             {
               key: '(unassigned)',
+              currency: 'JPY',
               totalCount: 1,
               readyCount: 1,
               pendingMappingCount: 0,
@@ -531,6 +827,7 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
             },
             {
               key: 'PRJ-001',
+              currency: 'JPY',
               totalCount: 2,
               readyCount: 1,
               pendingMappingCount: 1,
@@ -540,6 +837,7 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
             },
             {
               key: 'PRJ-002',
+              currency: 'JPY',
               totalCount: 1,
               readyCount: 0,
               pendingMappingCount: 0,
@@ -552,6 +850,7 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
         return [
           {
             key: '(unassigned)',
+            currency: 'JPY',
             totalCount: 1,
             readyCount: 0,
             pendingMappingCount: 0,
@@ -561,6 +860,7 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
           },
           {
             key: 'DEP-A',
+            currency: 'JPY',
             totalCount: 2,
             readyCount: 1,
             pendingMappingCount: 1,
@@ -570,6 +870,7 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
           },
           {
             key: 'DEP-B',
+            currency: 'JPY',
             totalCount: 1,
             readyCount: 1,
             pendingMappingCount: 0,
@@ -691,15 +992,35 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
         ]);
         assert.deepEqual(
           body.accounting.byProject.map((item) => item.key),
-          ['(unassigned)', 'PRJ-001', 'PRJ-002'],
+          ['(unassigned)', 'PRJ-001', 'PRJ-002', 'PRJ-003'],
         );
         assert.equal(body.accounting.byProject[1].pendingMappingCount, 1);
         assert.equal(body.accounting.byProject[2].blockedCount, 1);
         assert.equal(body.accounting.byProject[0].invalidReadyCount, 1);
+        assert.equal(
+          body.accounting.byProject[1].statutoryActualAmountTotal,
+          '2100',
+        );
+        assert.equal(body.accounting.byProject[1].varianceAmount, '100');
+        assert.equal(
+          body.accounting.byProject[3].statutoryActualAmountTotal,
+          '500',
+        );
+        assert.equal(body.accounting.byProject[3].varianceAmount, '500');
         assert.deepEqual(
           body.accounting.byDepartment.map((item) => item.key),
-          ['(unassigned)', 'DEP-A', 'DEP-B'],
+          ['(unassigned)', 'DEP-A', 'DEP-B', 'DEP-C'],
         );
+        assert.equal(
+          body.accounting.byDepartment[1].statutoryActualAmountTotal,
+          '1800',
+        );
+        assert.equal(body.accounting.byDepartment[1].varianceAmount, '-200');
+        assert.equal(
+          body.accounting.byDepartment[3].statutoryActualAmountTotal,
+          '750',
+        );
+        assert.equal(body.accounting.byDepartment[3].varianceAmount, '750');
         assert.equal(body.accounting.pendingMappingSamples[0].id, 'stg-002');
         assert.equal(body.accounting.blockedSamples[0].id, 'stg-003');
         assert.equal(body.accounting.invalidReadySamples[0].id, 'stg-004');
@@ -774,4 +1095,238 @@ test('GET /integrations/reconciliation/details returns empty details when prereq
       }
     },
   );
+});
+
+test('GET /integrations/reconciliation/details exports statutory actual reconciliation as CSV', async () => {
+  await withPrismaStubs(
+    {
+      'attendanceClosingPeriod.findFirst': async () => null,
+      'hrEmployeeMasterExportLog.findFirst': async () => null,
+      'accountingIcsExportLog.findFirst': async () => null,
+      'attendanceMonthlySummary.findMany': async () => [],
+      'accountingJournalStaging.groupBy': async () => [],
+      'accountingJournalStaging.findMany': async () => [],
+      'statutoryAccountingActual.groupBy': async (args) => {
+        if (args?.by?.includes('projectCode')) {
+          return [
+            {
+              projectCode: '=PRJ-CSV',
+              currency: 'JPY',
+              _count: { _all: 1 },
+              _sum: { amount: '123' },
+            },
+          ];
+        }
+        if (args?.by?.includes('departmentCode')) {
+          return [
+            {
+              departmentCode: 'DEP-CSV',
+              currency: 'JPY',
+              _count: { _all: 1 },
+              _sum: { amount: '456' },
+            },
+          ];
+        }
+        return [];
+      },
+      $queryRaw: async (query) => {
+        const sql = Array.isArray(query?.strings)
+          ? query.strings.join(' ')
+          : String(query);
+        if (sql.includes('"readyDebitTotal"')) {
+          return [
+            {
+              readyAmountTotal: '0',
+              readyDebitTotal: '0',
+              readyCreditTotal: '0',
+            },
+          ];
+        }
+        if (sql.includes('GROUP BY ajs."currency"')) {
+          return [];
+        }
+        if (
+          sql.includes('SELECT COUNT(*)::int AS "count"') ||
+          sql.includes('SELECT ajs."id"') ||
+          sql.includes('GROUP BY 1')
+        ) {
+          return [];
+        }
+        throw new Error(`unexpected $queryRaw: ${sql}`);
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/reconciliation/details?periodKey=2026-08&format=csv',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        assert.match(
+          String(res.headers['content-type']),
+          /text\/csv; charset=utf-8/,
+        );
+        assert.match(
+          String(res.headers['content-disposition']),
+          /integration-reconciliation-details-2026-08\.csv/,
+        );
+        assert.match(
+          res.body,
+          /section,key,currency,totalCount,readyCount,pendingMappingCount,blockedCount,invalidReadyCount,readyAmountTotal,statutoryActualAmountTotal,varianceAmount/,
+        );
+        assert.match(res.body, /project,'=PRJ-CSV,JPY,0,0,0,0,0,0,123,123/);
+        assert.match(res.body, /department,DEP-CSV,JPY,0,0,0,0,0,0,456,456/);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('POST /integrations/accounting/statutory-actuals/import validates and persists rows', async () => {
+  await withPrismaStubs(
+    {
+      'statutoryAccountingActualImportBatch.create': async (args) => {
+        assert.equal(args?.data?.importBatchKey, 'statutory-actual-2026-06-v1');
+        assert.equal(args.data.periodKey, '2026-06');
+        assert.equal(args.data.accountingSystem, 'keiri-jokun-alpha');
+        assert.equal(args.data.importedCount, 2);
+        assert.equal(args.data.createdBy, 'admin-user');
+        assert.equal(args.data.updatedBy, 'admin-user');
+        return {};
+      },
+      'statutoryAccountingActual.createMany': async (args) => {
+        assert.equal(args?.data?.length, 2);
+        assert.equal(args.data[0].periodKey, '2026-06');
+        assert.equal(
+          args.data[0].importBatchKey,
+          'statutory-actual-2026-06-v1',
+        );
+        assert.equal(args.data[0].rowNo, 1);
+        assert.equal(args.data[0].accountingSystem, 'keiri-jokun-alpha');
+        assert.equal(args.data[0].projectCode, 'PRJ-001');
+        assert.equal(args.data[0].departmentCode, 'DEP-A');
+        assert.equal(args.data[0].accountCode, '6100');
+        assert.equal(args.data[0].amountType, 'direct_cost');
+        assert.equal(args.data[0].currency, 'JPY');
+        assert.equal(String(args.data[0].amount), '1200');
+        assert.equal(args.data[0].createdBy, 'admin-user');
+        assert.equal(args.data[0].updatedBy, 'admin-user');
+        assert.equal(args.data[1].rowNo, 2);
+        assert.equal(args.data[1].amountType, 'labor_cost');
+        return { count: 2 };
+      },
+      'auditLog.create': async () => ({}),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/accounting/statutory-actuals/import',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            periodKey: '2026-06',
+            importBatchKey: 'statutory-actual-2026-06-v1',
+            accountingSystem: 'keiri-jokun-alpha',
+            rows: [
+              {
+                rowNo: 1,
+                sourceRef: 'GL-001',
+                projectCode: ' PRJ-001 ',
+                departmentCode: 'DEP-A',
+                accountCode: '6100',
+                accountName: '外注費',
+                amountType: 'direct_cost',
+                currency: 'JPY',
+                amount: '1200',
+              },
+              {
+                rowNo: 2,
+                departmentCode: 'DEP-A',
+                accountCode: '6200',
+                accountName: '労務費',
+                amountType: 'labor_cost',
+                currency: 'JPY',
+                amount: 800,
+              },
+            ],
+          },
+        });
+        assert.equal(res.statusCode, 201, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.periodKey, '2026-06');
+        assert.equal(body.importBatchKey, 'statutory-actual-2026-06-v1');
+        assert.equal(body.accountingSystem, 'keiri-jokun-alpha');
+        assert.equal(body.importedCount, 2);
+        assert.match(body.importedAt, /^\d{4}-\d{2}-\d{2}T/);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('POST /integrations/accounting/statutory-actuals/import returns 400 for invalid rows', async () => {
+  await withPrismaStubs({}, async () => {
+    const server = await buildServer({ logger: false });
+    try {
+      const res = await server.inject({
+        method: 'POST',
+        url: '/integrations/accounting/statutory-actuals/import',
+        headers: {
+          'x-user-id': 'admin-user',
+          'x-roles': 'admin',
+        },
+        payload: {
+          periodKey: '2026-06',
+          importBatchKey: 'statutory-actual-2026-06-invalid',
+          rows: [
+            {
+              rowNo: 1,
+              accountCode: '6100',
+              amountType: 'direct_cost',
+              currency: 'JPY',
+              amount: '1200',
+            },
+            {
+              rowNo: 1,
+              departmentCode: 'DEP-A',
+              accountCode: '6200',
+              amountType: 'labor_cost',
+              currency: 'JPY',
+              amount: '800',
+            },
+          ],
+        },
+      });
+      assert.equal(res.statusCode, 400, res.body);
+      const body = JSON.parse(res.body);
+      assert.equal(body.error, 'invalid_statutory_accounting_actual_import');
+      assert.ok(
+        body.details.some(
+          (item) =>
+            item.field === 'projectCode' &&
+            /projectCode or departmentCode/.test(item.message),
+        ),
+      );
+      assert.ok(
+        body.details.some(
+          (item) =>
+            item.field === 'rowNo' &&
+            /unique within an import batch/.test(item.message),
+        ),
+      );
+    } finally {
+      await server.close();
+    }
+  });
 });

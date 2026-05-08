@@ -78,6 +78,24 @@ function createSummary(
         readyCreditTotal: '600',
         debitCreditBalanced: true,
       },
+      statutoryActuals: {
+        latestImportBatchKey: 'statutory-actual-2026-03-v1',
+        latestAccountingSystem: 'keiri-jokun-alpha',
+        latestImportedAt: '2026-04-01T00:00:00.000Z',
+        importedCount: 3,
+        currency: 'JPY',
+        currencyCount: 1,
+        amountTotal: '650',
+        internalReadyDebitTotal: '600',
+        varianceAmount: '50',
+        actualTotalsByCurrency: [
+          { currency: 'JPY', amountTotal: '650', count: 3 },
+        ],
+        readyDebitTotalsByCurrency: [
+          { currency: 'JPY', amountTotal: '600', count: 2 },
+        ],
+        comparisonStatus: 'amount_mismatch',
+      },
     },
     hasBlockingDifferences: true,
     ...overrides,
@@ -99,23 +117,29 @@ function createDetails(
       byProject: [
         {
           key: 'PRJ-001',
+          currency: 'JPY',
           totalCount: 3,
           readyCount: 1,
           pendingMappingCount: 1,
           blockedCount: 1,
           invalidReadyCount: 0,
           readyAmountTotal: '2000',
+          statutoryActualAmountTotal: '2100',
+          varianceAmount: '100',
         },
       ],
       byDepartment: [
         {
           key: 'DEP-A',
+          currency: 'JPY',
           totalCount: 2,
           readyCount: 1,
           pendingMappingCount: 1,
           blockedCount: 0,
           invalidReadyCount: 0,
           readyAmountTotal: '2000',
+          statutoryActualAmountTotal: '1800',
+          varianceAmount: '-200',
         },
       ],
       pendingMappingSamples: [
@@ -277,8 +301,19 @@ describe('IntegrationReconciliationCard', () => {
     expect(
       screen.getByText('debit=600 / credit=600 / balanced=yes'),
     ).toBeInTheDocument();
+    expect(
+      getByTextContent(
+        'statutoryActuals: status=amount_mismatch / imported=3 / currency=JPY / amount=650 / variance=50',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'latestStatutoryImport: statutory-actual-2026-03-v1 / keiri-jokun-alpha / importedAt=fmt:2026-04-01T00:00:00.000Z',
+      ),
+    ).toBeInTheDocument();
 
     expect(formatDateTime).toHaveBeenCalledWith('2026-03-26T00:00:00.000Z');
+    expect(formatDateTime).toHaveBeenCalledWith('2026-04-01T00:00:00.000Z');
   });
 
   it('renders ok badge and fallbacks when optional values are absent', () => {
@@ -338,6 +373,12 @@ describe('IntegrationReconciliationCard', () => {
     expect(
       screen.getByText('debit=0 / credit=0 / balanced=no'),
     ).toBeInTheDocument();
+    expect(
+      getByTextContent(
+        'statutoryActuals: status=not_imported / imported=0 / currency=- / amount=0 / variance=-',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText('latestStatutoryImport: -')).toBeInTheDocument();
 
     expect(formatDateTime).toHaveBeenCalledWith(null);
   });
@@ -365,8 +406,12 @@ describe('IntegrationReconciliationCard', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('PJ別 breakdown')).toBeInTheDocument();
     expect(screen.getByText('部門別 breakdown')).toBeInTheDocument();
+    expect(screen.getAllByText('statutory actual')).toHaveLength(2);
+    expect(screen.getAllByText('variance')).toHaveLength(2);
     expect(screen.getByText('PRJ-001')).toBeInTheDocument();
     expect(screen.getByText('DEP-A')).toBeInTheDocument();
+    expect(screen.getByText('2100')).toBeInTheDocument();
+    expect(screen.getByText('-200')).toBeInTheDocument();
     expect(screen.getByText('pending_mapping サンプル')).toBeInTheDocument();
     expect(screen.getByText('blocked サンプル')).toBeInTheDocument();
     expect(screen.getByText('invalid ready サンプル')).toBeInTheDocument();

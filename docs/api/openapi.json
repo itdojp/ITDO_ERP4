@@ -11510,6 +11510,143 @@
         }
       }
     },
+    "/integrations/accounting/statutory-actuals/import": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "accountingSystem": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "importBatchKey": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "periodKey": {
+                    "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+                    "type": "string"
+                  },
+                  "rows": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "accountCode": {
+                          "maxLength": 100,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "accountName": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "amount": {
+                          "anyOf": [
+                            {
+                              "exclusiveMinimum": true,
+                              "minimum": 0,
+                              "type": "number"
+                            },
+                            {
+                              "maxLength": 100,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "amountType": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "revenue"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "enum": [
+                                "direct_cost"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "enum": [
+                                "labor_cost"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "enum": [
+                                "vendor_cost"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "enum": [
+                                "expense_cost"
+                              ],
+                              "type": "string"
+                            }
+                          ]
+                        },
+                        "currency": {
+                          "pattern": "^[A-Z]{3}$",
+                          "type": "string"
+                        },
+                        "departmentCode": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "projectCode": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "rowNo": {
+                          "maximum": 100000,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "sourceRef": {
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "accountCode",
+                        "amountType",
+                        "currency",
+                        "amount"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 1000,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "periodKey",
+                  "importBatchKey",
+                  "rows"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/integrations/crm/exports/contacts": {
       "get": {
         "responses": {
@@ -12320,6 +12457,27 @@
             "schema": {
               "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "json"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "csv"
+                  ],
+                  "type": "string"
+                }
+              ]
             }
           }
         ],
