@@ -239,6 +239,9 @@ describe('Reports', () => {
                   projectCode: 'P001',
                   projectName: 'Project One',
                   departmentKey: 'D001',
+                  departmentName: '営業部',
+                  departmentExternalCode: 'OU-D001',
+                  departmentSource: 'department_master',
                   grossProfit: -500,
                   grossMargin: -0.05,
                 },
@@ -248,6 +251,9 @@ describe('Reports', () => {
           departmentBreakdown: [
             {
               departmentKey: 'D001',
+              departmentName: '営業部',
+              departmentExternalCode: 'OU-D001',
+              departmentSource: 'department_master',
               currency: 'JPY',
               projectCount: 1,
               revenue: 10000,
@@ -307,7 +313,8 @@ describe('Reports', () => {
     );
     expect(screen.getByText('部門別損益')).toBeInTheDocument();
     const expectedDepartmentLine =
-      `Department: D001 / Currency: JPY / Projects: 1 / ` +
+      `Department: 営業部 (D001) / External: OU-D001 / ` +
+      `Source: department_master / Currency: JPY / Projects: 1 / ` +
       `Revenue: ${(10000).toLocaleString()} / ` +
       `Direct Cost: ${(3000).toLocaleString()} / ` +
       `Gross Profit: ${(7000).toLocaleString()} / ` +

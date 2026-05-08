@@ -10,6 +10,9 @@ type ManagementAccountingProjectBucket = {
   projectCode?: string | null;
   projectName?: string | null;
   departmentKey?: string | null;
+  departmentName?: string | null;
+  departmentExternalCode?: string | null;
+  departmentSource: ManagementAccountingDepartmentSource;
   currency: string | null;
   revenue: number;
   directCost: number;
@@ -38,8 +41,16 @@ type ManagementAccountingCurrencyBreakdown = {
   topRedProjects: ManagementAccountingProjectBucket[];
 };
 
+type ManagementAccountingDepartmentSource =
+  | 'department_master'
+  | 'legacy_org_unit'
+  | 'unassigned';
+
 type ManagementAccountingDepartmentBreakdown = {
   departmentKey: string | null;
+  departmentName: string | null;
+  departmentExternalCode: string | null;
+  departmentSource: ManagementAccountingDepartmentSource;
   currency: string | null;
   projectCount: number;
   revenue: number;
@@ -51,6 +62,19 @@ type ManagementAccountingDepartmentBreakdown = {
   grossMargin: number;
   totalMinutes: number;
   redProjectCount: number;
+};
+
+type ManagementAccountingDepartmentReference = {
+  departmentKey: string | null;
+  departmentName: string | null;
+  departmentExternalCode: string | null;
+  departmentSource: ManagementAccountingDepartmentSource;
+};
+
+type ManagementAccountingDepartmentLookup = {
+  byId: Map<string, ManagementAccountingDepartmentReference>;
+  byCode: Map<string, ManagementAccountingDepartmentReference>;
+  byExternalCode: Map<string, ManagementAccountingDepartmentReference>;
 };
 
 function normalizeWorkType(workType?: string | null) {
@@ -72,6 +96,61 @@ function buildDepartmentCurrencyKey(
   currency: string | null,
 ) {
   return `${departmentKey ?? ''}|${currency ?? ''}`;
+}
+
+function buildDepartmentMasterLookup(
+  departments: Array<{
+    id: string;
+    code: string;
+    name: string;
+    externalCode?: string | null;
+  }>,
+) {
+  const lookup: ManagementAccountingDepartmentLookup = {
+    byId: new Map(),
+    byCode: new Map(),
+    byExternalCode: new Map(),
+  };
+  for (const department of departments) {
+    const reference: ManagementAccountingDepartmentReference = {
+      departmentKey: normalizeReportingKey(department.code),
+      departmentName: normalizeReportingKey(department.name),
+      departmentExternalCode: normalizeReportingKey(department.externalCode),
+      departmentSource: 'department_master',
+    };
+    const idKey = normalizeReportingKey(department.id);
+    const codeKey = normalizeReportingKey(department.code);
+    const externalCodeKey = normalizeReportingKey(department.externalCode);
+    if (idKey) lookup.byId.set(idKey, reference);
+    if (codeKey) lookup.byCode.set(codeKey, reference);
+    if (externalCodeKey) lookup.byExternalCode.set(externalCodeKey, reference);
+  }
+  return lookup;
+}
+
+function resolveProjectDepartmentReference(
+  orgUnitId: string | null | undefined,
+  departmentLookup: ManagementAccountingDepartmentLookup,
+): ManagementAccountingDepartmentReference {
+  const normalizedOrgUnitId = normalizeReportingKey(orgUnitId);
+  if (!normalizedOrgUnitId) {
+    return {
+      departmentKey: null,
+      departmentName: null,
+      departmentExternalCode: null,
+      departmentSource: 'unassigned',
+    };
+  }
+  return (
+    departmentLookup.byId.get(normalizedOrgUnitId) ??
+    departmentLookup.byCode.get(normalizedOrgUnitId) ??
+    departmentLookup.byExternalCode.get(normalizedOrgUnitId) ?? {
+      departmentKey: normalizedOrgUnitId,
+      departmentName: null,
+      departmentExternalCode: null,
+      departmentSource: 'legacy_org_unit',
+    }
+  );
 }
 
 function preloadRateCardKey(match: {
@@ -424,6 +503,32 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
   const projectIds = projects.map((project) => project.id);
   const projectIdSet = new Set(projectIds);
   const projectById = new Map(projects.map((project) => [project.id, project]));
+  const projectDepartmentKeys = Array.from(
+    new Set(
+      projects
+        .map((project) => normalizeReportingKey(project.orgUnitId))
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+  const departmentMasters = projectDepartmentKeys.length
+    ? await prisma.departmentMaster.findMany({
+        where: {
+          OR: [
+            { id: { in: projectDepartmentKeys } },
+            { code: { in: projectDepartmentKeys } },
+            { externalCode: { in: projectDepartmentKeys } },
+          ],
+        },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          externalCode: true,
+        },
+        orderBy: [{ code: 'asc' }, { id: 'asc' }],
+      })
+    : [];
+  const departmentLookup = buildDepartmentMasterLookup(departmentMasters);
 
   const [invoiceSums, vendorSums, expenseSums, timeEntries, deliveryDueItems] =
     await Promise.all([
@@ -611,11 +716,15 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
       const grossProfit = revenue - directCost;
       const grossMargin = revenue > 0 ? grossProfit / revenue : 0;
       const totalMinutes = minutesByProjectCurrency.get(key) ?? 0;
+      const departmentReference = resolveProjectDepartmentReference(
+        project?.orgUnitId,
+        departmentLookup,
+      );
       return {
         projectId,
         projectCode: project?.code ?? null,
         projectName: project?.name ?? null,
-        departmentKey: normalizeReportingKey(project?.orgUnitId),
+        ...departmentReference,
         currency,
         revenue,
         directCost,
@@ -693,6 +802,9 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
     if (!departmentBreakdownMap.has(key)) {
       departmentBreakdownMap.set(key, {
         departmentKey: item.departmentKey ?? null,
+        departmentName: item.departmentName ?? null,
+        departmentExternalCode: item.departmentExternalCode ?? null,
+        departmentSource: item.departmentSource,
         currency: item.currency,
         projectCount: 0,
         revenue: 0,
@@ -725,9 +837,11 @@ export async function reportManagementAccountingSummary(from: Date, to: Date) {
       grossMargin: bucket.revenue > 0 ? bucket.grossProfit / bucket.revenue : 0,
     }))
     .sort((a, b) => {
-      const departmentCompare = (a.departmentKey ?? '').localeCompare(
-        b.departmentKey ?? '',
-      );
+      const departmentCompare = (
+        a.departmentName ??
+        a.departmentKey ??
+        ''
+      ).localeCompare(b.departmentName ?? b.departmentKey ?? '');
       return departmentCompare !== 0
         ? departmentCompare
         : (a.currency ?? '').localeCompare(b.currency ?? '');

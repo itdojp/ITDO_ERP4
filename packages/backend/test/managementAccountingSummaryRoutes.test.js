@@ -48,7 +48,32 @@ test('GET /reports/management-accounting/summary returns aggregate management ac
           currency: 'JPY',
           orgUnitId: 'D002',
         },
+        {
+          id: 'project-3',
+          code: 'PRJ-003',
+          name: 'Project 3',
+          currency: 'JPY',
+          orgUnitId: null,
+        },
       ],
+      'departmentMaster.findMany': async (args) => {
+        assert.equal(Object.hasOwn(args.where, 'active'), false);
+        assert.ok(args.where.OR.some((condition) => condition.externalCode));
+        return [
+          {
+            id: 'department-master-collision',
+            code: 'A001',
+            name: '外部コード衝突部',
+            externalCode: 'D001',
+          },
+          {
+            id: 'department-master-1',
+            code: 'D001',
+            name: '営業部',
+            externalCode: 'OU-D001',
+          },
+        ];
+      },
       'invoice.groupBy': async () => [
         {
           projectId: 'project-1',
@@ -56,6 +81,7 @@ test('GET /reports/management-accounting/summary returns aggregate management ac
           _sum: { totalAmount: 10000 },
         },
         { projectId: 'project-2', currency: 'JPY', _sum: { totalAmount: 500 } },
+        { projectId: 'project-3', currency: 'JPY', _sum: { totalAmount: 250 } },
       ],
       'vendorInvoice.groupBy': async () => [
         {
@@ -136,16 +162,16 @@ test('GET /reports/management-accounting/summary returns aggregate management ac
         });
         assert.equal(res.statusCode, 200, res.body);
         const body = JSON.parse(res.body);
-        assert.equal(body.projectCount, 2);
+        assert.equal(body.projectCount, 3);
         assert.equal(body.currency, 'JPY');
         assert.equal(body.mixedCurrency, false);
         assert.equal(body.currencyBreakdown.length, 1);
-        assert.equal(body.revenue, 10500);
+        assert.equal(body.revenue, 10750);
         assert.equal(body.directCost, 6050);
         assert.equal(body.laborCost, 1850);
         assert.equal(body.vendorCost, 3000);
         assert.equal(body.expenseCost, 1200);
-        assert.equal(body.grossProfit, 4450);
+        assert.equal(body.grossProfit, 4700);
         assert.equal(body.totalMinutes, 1620);
         assert.equal(body.overtimeTotalMinutes, 660);
         assert.equal(body.deliveryDueCount, 1);
@@ -154,19 +180,33 @@ test('GET /reports/management-accounting/summary returns aggregate management ac
         assert.equal(body.topRedProjects.length, 1);
         assert.equal(body.topRedProjects[0].projectId, 'project-2');
         assert.equal(body.topRedProjects[0].grossProfit, -1050);
-        assert.equal(body.departmentBreakdown.length, 2);
+        assert.equal(body.departmentBreakdown.length, 3);
         const departmentD001 = body.departmentBreakdown.find(
           (item) => item.departmentKey === 'D001',
         );
         const departmentD002 = body.departmentBreakdown.find(
           (item) => item.departmentKey === 'D002',
         );
+        const departmentUnassigned = body.departmentBreakdown.find(
+          (item) => item.departmentSource === 'unassigned',
+        );
         assert.ok(departmentD001);
         assert.ok(departmentD002);
+        assert.ok(departmentUnassigned);
+        assert.equal(departmentD001.departmentName, '営業部');
+        assert.equal(departmentD001.departmentExternalCode, 'OU-D001');
+        assert.equal(departmentD001.departmentSource, 'department_master');
         assert.equal(departmentD001.revenue, 10000);
         assert.equal(departmentD001.directCost, 4500);
         assert.equal(departmentD001.grossProfit, 5500);
+        assert.equal(departmentD002.departmentName, null);
+        assert.equal(departmentD002.departmentExternalCode, null);
+        assert.equal(departmentD002.departmentSource, 'legacy_org_unit');
         assert.equal(departmentD002.redProjectCount, 1);
+        assert.equal(departmentUnassigned.departmentKey, null);
+        assert.equal(departmentUnassigned.departmentName, null);
+        assert.equal(departmentUnassigned.departmentExternalCode, null);
+        assert.equal(departmentUnassigned.revenue, 250);
       } finally {
         await server.close();
       }
@@ -192,7 +232,32 @@ test('GET /reports/management-accounting/summary returns csv export', async () =
           currency: '=JPY',
           orgUnitId: 'D002',
         },
+        {
+          id: 'project-3',
+          code: 'PRJ-003',
+          name: 'Project 3',
+          currency: '=JPY',
+          orgUnitId: null,
+        },
       ],
+      'departmentMaster.findMany': async (args) => {
+        assert.equal(Object.hasOwn(args.where, 'active'), false);
+        assert.ok(args.where.OR.some((condition) => condition.externalCode));
+        return [
+          {
+            id: 'department-master-collision',
+            code: 'A001',
+            name: '外部コード衝突部',
+            externalCode: 'D001',
+          },
+          {
+            id: 'department-master-1',
+            code: 'D001',
+            name: '営業部',
+            externalCode: 'OU-D001',
+          },
+        ];
+      },
       'invoice.groupBy': async () => [
         {
           projectId: 'project-1',
@@ -203,6 +268,11 @@ test('GET /reports/management-accounting/summary returns csv export', async () =
           projectId: 'project-2',
           currency: '=JPY',
           _sum: { totalAmount: 500 },
+        },
+        {
+          projectId: 'project-3',
+          currency: '=JPY',
+          _sum: { totalAmount: 250 },
         },
       ],
       'vendorInvoice.groupBy': async () => [
@@ -289,17 +359,21 @@ test('GET /reports/management-accounting/summary returns csv export', async () =
         );
         assert.match(
           res.body,
-          /^section,currency,departmentKey,projectId,projectCode,projectName,projectCount,revenue,directCost,laborCost,vendorCost,expenseCost,grossProfit,grossMargin,totalMinutes,overtimeTotalMinutes,deliveryDueCount,deliveryDueAmount,redProjectCount/m,
+          /^section,currency,departmentKey,departmentName,departmentExternalCode,departmentSource,projectId,projectCode,projectName,projectCount,revenue,directCost,laborCost,vendorCost,expenseCost,grossProfit,grossMargin,totalMinutes,overtimeTotalMinutes,deliveryDueCount,deliveryDueAmount,redProjectCount/m,
         );
         assert.match(res.body, /summary,'=JPY,,,,/, res.body);
-        assert.match(res.body, /currency_breakdown,'=JPY,,,,,2,10500,6050/);
+        assert.match(res.body, /currency_breakdown,'=JPY,,,,,,,,3,10750,6050/);
         assert.match(
           res.body,
-          /department_breakdown,'=JPY,D001,,,,1,10000,4500/,
+          /department_breakdown,'=JPY,,,,unassigned,,,,1,250,0/,
         );
         assert.match(
           res.body,
-          /top_red_project,'=JPY,D002,project-2,'=PRJ-002,'@Project 2/,
+          /department_breakdown,'=JPY,D001,営業部,OU-D001,department_master,,,,1,10000,4500/,
+        );
+        assert.match(
+          res.body,
+          /top_red_project,'=JPY,D002,,,legacy_org_unit,project-2,'=PRJ-002,'@Project 2/,
         );
       } finally {
         await server.close();
