@@ -219,6 +219,7 @@
 - 2026-03-18 時点の拡張では、`AccountingMappingRule` に `requireDepartmentCode` / `requireDebitSubaccountCode` / `requireCreditSubaccountCode` を持たせ、条件付き必須を rule 側で判定する
 - 2026-03-21 時点の拡張では、`AccountingMappingRule` に `debitAccountName` / `creditAccountName` を持たせ、staging 行へ snapshot した名称を ICS CSV の名称列へ反映する
 - `#1443` の baseline 実装では、`ready` 化された staging 行だけを CSV に変換する
+- 照合 summary の `readyDebitTotal` / `readyCreditTotal` は、`AccountingJournalStaging.status='ready'` の行について借方科目あり / 貸方科目ありを別々に合計し、`debitCreditBalanced` は invalid ready がなく両合計が一致する場合のみ `true` とする
 
 ### 最低限必要な mapping
 

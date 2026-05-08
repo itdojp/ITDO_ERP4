@@ -58,6 +58,8 @@ type ReconciliationBaseData = {
   latestIcsExport: AccountingExportSnapshot | null;
   stagingCounts: Array<{ status: string; _count: { _all: number } }>;
   readyAmountTotal: string;
+  readyDebitTotal: string;
+  readyCreditTotal: string;
   invalidReadyCount: number;
 };
 
@@ -90,6 +92,7 @@ type ReconciliationSummary = {
       | 'export_missing'
       | 'mapping_incomplete'
       | 'ready_row_incomplete'
+      | 'debit_credit_unbalanced'
       | 'count_mismatch';
     latestExportedCount: number | null;
     countsAligned: boolean | null;
@@ -194,6 +197,14 @@ function toStringAmount(
   return String(value);
 }
 
+function areAmountsEqual(left: string, right: string) {
+  try {
+    return new Prisma.Decimal(left).equals(new Prisma.Decimal(right));
+  } catch {
+    return left === right;
+  }
+}
+
 function buildReconciliationSampleRow(row: {
   id: string;
   eventId: string;
@@ -273,7 +284,9 @@ function buildIntegrationReconciliationSummaryFromBaseData(
     0,
   );
   const mappingComplete = pendingMappingCount === 0 && blockedCount === 0;
-  const debitCreditBalanced = base.invalidReadyCount === 0;
+  const debitCreditBalanced =
+    base.invalidReadyCount === 0 &&
+    areAmountsEqual(base.readyDebitTotal, base.readyCreditTotal);
 
   let accountingComparisonStatus: ReconciliationSummary['accounting']['comparisonStatus'];
   let accountingCountsAligned: boolean | null;
@@ -282,6 +295,9 @@ function buildIntegrationReconciliationSummaryFromBaseData(
     accountingCountsAligned = null;
   } else if (base.invalidReadyCount > 0) {
     accountingComparisonStatus = 'ready_row_incomplete';
+    accountingCountsAligned = false;
+  } else if (!debitCreditBalanced) {
+    accountingComparisonStatus = 'debit_credit_unbalanced';
     accountingCountsAligned = false;
   } else if (!base.latestIcsExport) {
     accountingComparisonStatus = 'export_missing';
@@ -340,8 +356,8 @@ function buildIntegrationReconciliationSummaryFromBaseData(
         blockedCount,
         invalidReadyCount: base.invalidReadyCount,
         readyAmountTotal: base.readyAmountTotal,
-        readyDebitTotal: base.readyAmountTotal,
-        readyCreditTotal: base.readyAmountTotal,
+        readyDebitTotal: base.readyDebitTotal,
+        readyCreditTotal: base.readyCreditTotal,
         debitCreditBalanced,
       },
     },
@@ -385,7 +401,7 @@ async function fetchIntegrationReconciliationBaseData(options: {
     latestEmployeeMasterFullExport,
     latestIcsExport,
     stagingCounts,
-    readyAmountAggregate,
+    readyTotalsRows,
     invalidReadyCountRows,
   ] = await Promise.all([
     latestClosing
@@ -450,10 +466,37 @@ async function fetchIntegrationReconciliationBaseData(options: {
       where: { event: { periodKey } },
       _count: { _all: true },
     }),
-    client.accountingJournalStaging.aggregate({
-      where: { event: { periodKey }, status: 'ready' },
-      _sum: { amount: true },
-    }),
+    client.$queryRaw<
+      Array<{
+        readyAmountTotal: string | Prisma.Decimal | number | null;
+        readyDebitTotal: string | Prisma.Decimal | number | null;
+        readyCreditTotal: string | Prisma.Decimal | number | null;
+      }>
+    >(Prisma.sql`
+      SELECT
+        COALESCE(SUM(CASE WHEN ajs."status" = 'ready' THEN ajs."amount" ELSE 0 END), 0)::text AS "readyAmountTotal",
+        COALESCE(SUM(
+          CASE
+            WHEN ajs."status" = 'ready'
+              AND ajs."debitAccountCode" IS NOT NULL
+              AND BTRIM(ajs."debitAccountCode") <> ''
+            THEN ajs."amount"
+            ELSE 0
+          END
+        ), 0)::text AS "readyDebitTotal",
+        COALESCE(SUM(
+          CASE
+            WHEN ajs."status" = 'ready'
+              AND ajs."creditAccountCode" IS NOT NULL
+              AND BTRIM(ajs."creditAccountCode") <> ''
+            THEN ajs."amount"
+            ELSE 0
+          END
+        ), 0)::text AS "readyCreditTotal"
+      FROM "AccountingJournalStaging" ajs
+      INNER JOIN "AccountingEvent" ae ON ae."id" = ajs."eventId"
+      WHERE ae."periodKey" = ${periodKey}
+    `),
     client.$queryRaw<Array<{ count: bigint | number }>>(Prisma.sql`
       SELECT COUNT(*)::int AS "count"
       FROM "AccountingJournalStaging" ajs
@@ -478,7 +521,9 @@ async function fetchIntegrationReconciliationBaseData(options: {
     latestEmployeeMasterFullExport,
     latestIcsExport,
     stagingCounts,
-    readyAmountTotal: toStringAmount(readyAmountAggregate._sum.amount ?? 0),
+    readyAmountTotal: toStringAmount(readyTotalsRows[0]?.readyAmountTotal),
+    readyDebitTotal: toStringAmount(readyTotalsRows[0]?.readyDebitTotal),
+    readyCreditTotal: toStringAmount(readyTotalsRows[0]?.readyCreditTotal),
     invalidReadyCount: Number(invalidReadyCountRows[0]?.count ?? 0),
   };
 }
