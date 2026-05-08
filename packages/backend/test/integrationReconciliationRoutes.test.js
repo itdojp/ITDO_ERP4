@@ -124,6 +124,15 @@ test('GET /integrations/reconciliation/summary returns aggregate reconciliation 
         const sql = Array.isArray(query?.strings)
           ? query.strings.join(' ')
           : String(query);
+        if (sql.includes('"readyDebitTotal"')) {
+          return [
+            {
+              readyAmountTotal: '12345',
+              readyDebitTotal: '12345',
+              readyCreditTotal: '12345',
+            },
+          ];
+        }
         if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
           return [{ count: 0 }];
         }
@@ -212,6 +221,15 @@ test('GET /integrations/reconciliation/summary treats missing prerequisites as b
         const sql = Array.isArray(query?.strings)
           ? query.strings.join(' ')
           : String(query);
+        if (sql.includes('"readyDebitTotal"')) {
+          return [
+            {
+              readyAmountTotal: '0',
+              readyDebitTotal: '0',
+              readyCreditTotal: '0',
+            },
+          ];
+        }
         if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
           return [{ count: 0 }];
         }
@@ -295,6 +313,15 @@ test('GET /integrations/reconciliation/summary reports missing full export and e
         const sql = Array.isArray(query?.strings)
           ? query.strings.join(' ')
           : String(query);
+        if (sql.includes('"readyDebitTotal"')) {
+          return [
+            {
+              readyAmountTotal: '2500',
+              readyDebitTotal: '2500',
+              readyCreditTotal: '0',
+            },
+          ];
+        }
         if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
           return [{ count: 1 }];
         }
@@ -322,6 +349,77 @@ test('GET /integrations/reconciliation/summary reports missing full export and e
         assert.equal(body.accounting.comparisonStatus, 'ready_row_incomplete');
         assert.equal(body.accounting.countsAligned, false);
         assert.equal(body.accounting.staging.invalidReadyCount, 1);
+        assert.equal(body.accounting.staging.readyDebitTotal, '2500');
+        assert.equal(body.accounting.staging.readyCreditTotal, '0');
+        assert.equal(body.accounting.staging.debitCreditBalanced, false);
+        assert.equal(body.hasBlockingDifferences, true);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('GET /integrations/reconciliation/summary reports true debit and credit totals', async () => {
+  await withPrismaStubs(
+    {
+      'attendanceClosingPeriod.findFirst': async () => null,
+      'hrEmployeeMasterExportLog.findFirst': async () => null,
+      'accountingIcsExportLog.findFirst': async () => ({
+        id: 'ics-true-totals',
+        idempotencyKey: 'ics-key-true-totals',
+        reexportOfId: null,
+        periodKey: '2026-05',
+        status: 'success',
+        exportedUntil: new Date('2026-05-31T15:30:00.000Z'),
+        exportedCount: 2,
+        startedAt: new Date('2026-05-31T15:30:00.000Z'),
+        finishedAt: new Date('2026-05-31T15:30:05.000Z'),
+        message: 'exported',
+      }),
+      'accountingJournalStaging.groupBy': async () => [
+        { status: 'ready', _count: { _all: 2 } },
+      ],
+      $queryRaw: async (query) => {
+        const sql = Array.isArray(query?.strings)
+          ? query.strings.join(' ')
+          : String(query);
+        if (sql.includes('"readyDebitTotal"')) {
+          return [
+            {
+              readyAmountTotal: '5500',
+              readyDebitTotal: '3000',
+              readyCreditTotal: '2500',
+            },
+          ];
+        }
+        if (sql.includes('SELECT COUNT(*)::int AS "count"')) {
+          return [{ count: 0 }];
+        }
+        throw new Error(`unexpected $queryRaw: ${sql}`);
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/integrations/reconciliation/summary?periodKey=2026-05',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(
+          body.accounting.comparisonStatus,
+          'debit_credit_unbalanced',
+        );
+        assert.equal(body.accounting.countsAligned, false);
+        assert.equal(body.accounting.staging.readyAmountTotal, '5500');
+        assert.equal(body.accounting.staging.readyDebitTotal, '3000');
+        assert.equal(body.accounting.staging.readyCreditTotal, '2500');
         assert.equal(body.accounting.staging.debitCreditBalanced, false);
         assert.equal(body.hasBlockingDifferences, true);
       } finally {
@@ -408,6 +506,15 @@ test('GET /integrations/reconciliation/details returns payroll diffs and account
         const sql = Array.isArray(query?.strings)
           ? query.strings.join(' ')
           : String(query);
+        if (sql.includes('"readyDebitTotal"')) {
+          return [
+            {
+              readyAmountTotal: '5000',
+              readyDebitTotal: '5000',
+              readyCreditTotal: '5000',
+            },
+          ];
+        }
         if (sql.includes('SELECT ajs."id"')) {
           return [{ id: 'stg-004' }];
         }
