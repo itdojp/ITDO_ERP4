@@ -1,0 +1,290 @@
+# Google Cloud 事前設定 Runbook（さくらVPS 導入前）
+
+## 目的
+
+さくらVPS へ ERP4 を導入する前に、Google Cloud / Google Auth Platform / Google Drive で必要な設定を完了し、VPS 側の env に安全に転記できる状態を作る。
+
+この Runbook は「Google Cloud 側で先に決める値」と「VPS 導入時に検証する値」を分離する。Google OIDC ログインの詳細は [google-oidc-google-cloud-console](google-oidc-google-cloud-console.md)、チャット添付の Google Drive 連携詳細は [../requirements/chat-attachments-google-drive](../requirements/chat-attachments-google-drive.md) を参照する。
+
+## 対象構成
+
+| 項目           | 推奨                                                     | 備考                                                         |
+| -------------- | -------------------------------------------------------- | ------------------------------------------------------------ |
+| ERP4 hosting   | さくらVPS + Podman + Quadlet                             | 導入手順は [sakura-vps-deployment](sakura-vps-deployment.md) |
+| Auth           | Google OIDC + `AUTH_MODE=jwt_bff`                        | backend callback は FQDN + HTTPS                             |
+| 添付ストレージ | Google Drive または local                                | Drive は `CHAT_ATTACHMENT_PROVIDER=gdrive`                   |
+| secrets        | VPS runtime env / GitHub Secrets / Google Secret Manager | 値そのものはリポジトリへ入れない                             |
+| automation     | gcloud / GitHub Actions                                  | 可能なら keyless auth を採用                                 |
+
+## 0. 作業前に決める値
+
+| 種別                 | 値の例                                         | 使用箇所                                    |
+| -------------------- | ---------------------------------------------- | ------------------------------------------- |
+| Google Cloud project | `erp4-prod` / `erp4-stg`                       | API / OAuth / Secrets の管理単位            |
+| frontend origin      | `https://app.example.com`                      | `ALLOWED_ORIGINS`, `AUTH_FRONTEND_ORIGIN`   |
+| backend origin       | `https://api.example.com`                      | `VITE_API_BASE`, OAuth redirect URI         |
+| OIDC redirect URI    | `https://api.example.com/auth/google/callback` | Google OAuth client                         |
+| Drive folder name    | `ERP4 Chat Attachments`                        | `CHAT_ATTACHMENT_GDRIVE_FOLDER_ID` の作成元 |
+| support email        | `ops@example.com`                              | OAuth Branding / verification               |
+| ops owner            | GitHub user / Google group                     | secret owner / reviewer                     |
+
+判断基準:
+
+- production と trial/staging で Google Cloud project または OAuth client を共有しない。
+- raw IP / plain HTTP は Google OIDC の実ログイン確認に使わない。VPS 実機でも FQDN + HTTPS を前提にする。
+- OAuth client secret / refresh token / service account key は作成直後に安全な保管先へ移し、ローカルメモや Issue コメントに貼らない。
+
+## 1. Google Cloud project / IAM
+
+### 1-1. project を作成または選択する
+
+1. Google Cloud Console で ERP4 用 project を作成または選択する。
+2. billing が必要な API / Secret Manager を使う場合は billing link を確認する。
+3. staging / production の分離方針を Issue に記録する。
+
+記録項目:
+
+```text
+Google Cloud project id:
+Environment: trial | staging | production
+Billing linked: yes | no | n/a
+Primary owner:
+Backup owner:
+Created/confirmed at:
+```
+
+### 1-2. IAM を最小化する
+
+推奨ロールの考え方:
+
+| 作業                        | 必要な権限の例                                         | 備考                         |
+| --------------------------- | ------------------------------------------------------ | ---------------------------- |
+| API 有効化                  | Project Editor 相当または Service Usage 管理権限       | 恒久付与せず作業後に見直す   |
+| OAuth client 作成           | Google Auth Platform / Cloud Console の管理権限        | 組織ポリシーに依存           |
+| Secret Manager 管理         | Secret Manager Admin                                   | 値の閲覧者は分ける           |
+| secret 参照                 | Secret Manager Secret Accessor                         | runtime / CI のみ            |
+| GitHub Actions keyless auth | Workload Identity Pool / Service Account Token Creator | service account key を避ける |
+
+## 2. API 有効化
+
+最低限確認する API:
+
+| API                 | 使う条件                                                           | 確認              |
+| ------------------- | ------------------------------------------------------------------ | ----------------- |
+| Google Drive API    | `CHAT_ATTACHMENT_PROVIDER=gdrive` を使う                           | 有効化必須        |
+| Secret Manager API  | Google Cloud 側に secrets を置く                                   | 推奨              |
+| IAM Credentials API | Workload Identity Federation で service account impersonation する | CI 自動化時に必要 |
+| Service Usage API   | gcloud で API 有効化状態を扱う                                     | 自動化時に便利    |
+
+確認例:
+
+```bash
+gcloud config get-value project
+gcloud services list --enabled --filter='name:drive.googleapis.com OR name:secretmanager.googleapis.com OR name:iamcredentials.googleapis.com OR name:serviceusage.googleapis.com'
+```
+
+変更を伴う操作は、対象 project を確認してから実行する。
+
+```bash
+gcloud services enable drive.googleapis.com secretmanager.googleapis.com
+```
+
+## 3. Google OIDC ログイン設定
+
+詳細手順は [google-oidc-google-cloud-console](google-oidc-google-cloud-console.md) を正とする。この Runbook では導入前の完了条件だけを管理する。
+
+完了条件:
+
+- [ ] Google Auth Platform の Branding が設定済み
+- [ ] Audience が `Internal` / `External` のどちらかに決まっている
+- [ ] `openid`, `email`, `profile` 以外の scope を追加していない
+- [ ] OAuth client 種別は `Web application`
+- [ ] `Authorized redirect URIs` に `https://api.example.com/auth/google/callback` 相当を登録済み
+- [ ] client ID を `GOOGLE_OIDC_CLIENT_ID` / `JWT_AUDIENCE` へ反映する方針が決まっている
+- [ ] client secret の保管先が決まっている
+- [ ] secret ローテーション手順が [secrets-and-access](secrets-and-access.md) と矛盾していない
+
+ERP4 側への対応:
+
+| Google 側           | ERP4 env                                  |
+| ------------------- | ----------------------------------------- |
+| OAuth client ID     | `GOOGLE_OIDC_CLIENT_ID`, `JWT_AUDIENCE`   |
+| OAuth client secret | `GOOGLE_OIDC_CLIENT_SECRET`               |
+| redirect URI        | `GOOGLE_OIDC_REDIRECT_URI`                |
+| frontend origin     | `AUTH_FRONTEND_ORIGIN`, `ALLOWED_ORIGINS` |
+| backend origin      | `VITE_API_BASE`                           |
+
+## 4. Google Drive 添付設定
+
+### 4-1. scope 方針
+
+推奨は `https://www.googleapis.com/auth/drive.file` とする。
+
+- アプリが作成・開いたファイルにアクセス範囲を寄せやすい。
+- ERP4 の添付フォルダはアプリで作成する運用にする。
+- 既存フォルダや Shared Drive を使う場合のみ、`drive` scope が必要かを個別判断する。
+
+### 4-2. OAuth client / refresh token
+
+チャット添付の Google Drive 連携は refresh token を長期鍵として扱う。
+
+完了条件:
+
+- [ ] Drive API が有効化されている
+- [ ] OAuth client が作成済み
+- [ ] `https://developers.google.com/oauthplayground` が redirect URI に登録されている（Playground を使う場合）
+- [ ] `drive.file` または採用 scope が記録されている
+- [ ] refresh token を取得済み
+- [ ] refresh token の保管先・閲覧者・ローテーション手順が決まっている
+- [ ] token revoke 手順を確認済み
+
+ERP4 側への対応:
+
+| Google 側           | ERP4 env                               |
+| ------------------- | -------------------------------------- |
+| OAuth client ID     | `CHAT_ATTACHMENT_GDRIVE_CLIENT_ID`     |
+| OAuth client secret | `CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET` |
+| refresh token       | `CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN` |
+| folder ID           | `CHAT_ATTACHMENT_GDRIVE_FOLDER_ID`     |
+| provider switch     | `CHAT_ATTACHMENT_PROVIDER=gdrive`      |
+
+### 4-3. フォルダ作成/疎通確認
+
+```bash
+export CHAT_ATTACHMENT_GDRIVE_CLIENT_ID=...
+export CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET=...
+export CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN=...
+export CHAT_ATTACHMENT_GDRIVE_FOLDER_NAME='ERP4 Chat Attachments'
+
+npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/provision-chat-gdrive-folder.ts
+```
+
+取得した folder ID を設定して read/write を確認する。
+
+```bash
+export CHAT_ATTACHMENT_PROVIDER=gdrive
+export CHAT_ATTACHMENT_GDRIVE_FOLDER_ID=...
+
+npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/check-chat-gdrive.ts
+GDRIVE_CHECK_MODE=write \
+  npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/check-chat-gdrive.ts
+```
+
+証跡には成功/失敗と時刻だけを残し、secret 値は残さない。
+
+## 5. Secrets 保管方針
+
+### 5-1. 保管先の使い分け
+
+| 保管先                 | 用途                                 | 注意                               |
+| ---------------------- | ------------------------------------ | ---------------------------------- |
+| VPS runtime env        | systemd/Quadlet runtime が直接読む値 | file mode を `0600` に寄せる       |
+| GitHub Actions Secrets | CI/CD が使う値                       | Environment Secrets を優先         |
+| Google Secret Manager  | Google Cloud 側で管理する値          | version disable / destroy を分ける |
+| ローカル端末           | 初回作業の一時保持のみ               | 作業後に削除する                   |
+
+### 5-2. リポジトリへ入れてよいもの/いけないもの
+
+入れてよいもの:
+
+- env key 名
+- placeholder
+- secret の保管場所名
+- rotation 手順
+- 失効手順
+
+入れてはいけないもの:
+
+- OAuth client secret の実値
+- refresh token
+- service account key JSON
+- private key
+- 実DB password
+- 本番 URL と紐づく bearer token
+
+## 6. GitHub Actions / 自動化
+
+Google Cloud を GitHub Actions から操作する場合は、原則として service account key JSON を repository secret に保存しない。可能なら Workload Identity Federation を採用する。
+
+判断基準:
+
+| 方式                         | 採用条件                          | 注意                                                  |
+| ---------------------------- | --------------------------------- | ----------------------------------------------------- |
+| Workload Identity Federation | GitHub Actions から gcloud を使う | provider / audience / repository condition を絞る     |
+| service account key          | WIF が使えない例外                | 有効期限、保管先、rotation、失効日を必ず Issue に記録 |
+| 手動 gcloud                  | 初期導入や小規模運用              | 実行者と対象 project を証跡に残す                     |
+
+## 7. 導入前 Go/No-Go チェック
+
+VPS 導入へ進む前に、以下を Issue または導入証跡へ記録する。
+
+```text
+Date:
+Operator:
+Google Cloud project id:
+Environment:
+Frontend origin:
+Backend origin:
+OIDC client created: yes/no/n/a
+OIDC redirect URI verified: yes/no/n/a
+Drive API enabled: yes/no/n/a
+Drive scope:
+Drive folder id stored: yes/no/n/a
+Secrets storage:
+Refresh token stored: yes/no/n/a
+WIF configured: yes/no/n/a
+Manual exceptions:
+Next action:
+```
+
+Go 条件:
+
+- Google OIDC を使う場合、OAuth client と redirect URI が確定している。
+- Google Drive 添付を使う場合、Drive API / OAuth client / refresh token / folder ID が揃っている。
+- secret の保管先と閲覧者が明確である。
+- VPS 側へ転記する env key と値の受け渡し方法が決まっている。
+
+No-Go 条件:
+
+- refresh token や client secret を平文チャット/Issue/PR に貼る必要がある。
+- project / environment が曖昧である。
+- redirect URI が raw IP / plain HTTP 前提である。
+- scope が過大で、承認理由が記録されていない。
+
+## 8. トラブルシュート
+
+### refresh token が取得できない
+
+- 既に同じ client/scope/user で許可済みの場合、再同意が必要なことがある。
+- Google アカウント側でアプリのアクセス権を削除してから再実行する。
+- OAuth Playground で自前 OAuth credentials を使っているか確認する。
+
+### `redirect_uri_mismatch`
+
+- Google Console の redirect URI と `GOOGLE_OIDC_REDIRECT_URI` が一致していない。
+- `http` / `https`、host、path、末尾 slash を確認する。
+- 変更直後は反映待ちが必要な場合がある。
+
+### Drive read/write が失敗する
+
+- Drive API が有効か確認する。
+- refresh token の scope が不足していないか確認する。
+- `drive.file` の場合、対象フォルダがアプリで作成されたものか確認する。
+- folder の共有設定が専用アカウントに閉じているか確認する。
+
+## 関連 Runbook
+
+- さくらVPS 導入: [sakura-vps-deployment](sakura-vps-deployment.md)
+- さくらVPS Quadlet 手順: [sakura-vps-podman-trial](sakura-vps-podman-trial.md)
+- Google OIDC Console 設定: [google-oidc-google-cloud-console](google-oidc-google-cloud-console.md)
+- Google OIDC Auth Gateway: [google-oidc-auth-gateway-rollout](google-oidc-auth-gateway-rollout.md)
+- Secrets/アクセス権限: [secrets-and-access](secrets-and-access.md)
+- Google Drive 添付: [../requirements/chat-attachments-google-drive](../requirements/chat-attachments-google-drive.md)
+
+## 参考（2026-05-10 確認）
+
+- Google Drive API scopes: <https://developers.google.com/drive/api/guides/api-specific-auth>
+- Google Drive API enablement: <https://developers.google.com/drive/api/guides/enable-sdk>
+- OAuth 2.0 Playground: <https://developers.google.com/oauthplayground>
+- Workload Identity Federation: <https://cloud.google.com/iam/docs/workload-identity-federation>
+- Secret Manager best practices: <https://cloud.google.com/secret-manager/docs/best-practices>

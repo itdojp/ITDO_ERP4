@@ -127,7 +127,7 @@
 ## 最小権限（例）
 
 - DB: アプリ用ユーザはスキーマ単位で必要権限のみ（DDL/スーパーユーザ不可）
-- ストレージ（Google Drive 等）: 専用フォルダ/専用アカウント、必要スコープ最小化
+- ストレージ（Google Drive 等）: 専用フォルダ/専用アカウント、必要スコープ最小化。さくらVPS導入前のGoogle Cloud / Drive / OAuth確認は [google-cloud-predeployment](google-cloud-predeployment.md) を参照する。
 - GitHub: Fine-grained PAT / Actions Secrets のアクセス範囲を最小化
 
 ### DBユーザ（アプリ用ロール分離）

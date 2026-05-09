@@ -1,16 +1,21 @@
 # さくらVPS（Ubuntu）+ Podman + Quadlet 手順書
 
 ## 目的
+
 - ITDO_ERP4 を 1 台のさくらVPS 上で rootless Podman + Quadlet により常駐運用する。
 - PostgreSQL / backend / frontend を user systemd 管理へ寄せ、再起動後も自動復帰できる状態にする。
 
-試験稼働の Go/No-Go 判定だけを短時間で回したい場合は、別紙の [sakura-vps-trial-checklist](sakura-vps-trial-checklist.md) を使う。
+この手順書は Quadlet stack の詳細手順です。導入前チェック、OS hardening、Secrets、backup、Go/No-Go を含む入口は [sakura-vps-deployment](sakura-vps-deployment.md) を使う。Google Cloud / Drive / OAuth の事前設定は [google-cloud-predeployment](google-cloud-predeployment.md) を先に確認する。試験稼働の Go/No-Go 判定だけを短時間で回したい場合は、別紙の [sakura-vps-trial-checklist](sakura-vps-trial-checklist.md) を使う。
 
 関連資料:
+
+- 導入 Runbook: [sakura-vps-deployment](sakura-vps-deployment.md)
+- Google Cloud 事前設定: [google-cloud-predeployment](google-cloud-predeployment.md)
 - env チェックリスト: [sakura-vps-env-checklist](sakura-vps-env-checklist.md)
 - 試験稼働記録テンプレート: [../test-results/sakura-vps-trial-template.md](../test-results/sakura-vps-trial-template.md)
 
 ## 想定バージョン / 前提
+
 - OS: Ubuntu 24.04 LTS
 - Podman: 4.9 系
 - systemd: 255 系
@@ -23,6 +28,7 @@
   - PostgreSQL: `127.0.0.1:55432/tcp` のみ
 
 補足:
+
 - frontend は nginx コンテナで静的配信します。`vite preview` は常駐運用に使いません。
 - frontend の API 接続先は build-time に `VITE_API_BASE` へ焼き込まれます。
 - backend の本番認証は `AUTH_MODE=jwt_bff` を前提にします。`AUTH_MODE=header` は公開環境では非推奨です。
@@ -30,6 +36,7 @@
 ## 1. OS 初期セットアップ
 
 ### 1-1. 基本更新
+
 ```bash
 sudo apt update
 sudo apt -y upgrade
@@ -37,6 +44,7 @@ sudo apt -y install git curl jq make ca-certificates uidmap slirp4netns passt fu
 ```
 
 ### 1-2. Podman / Node.js
+
 ```bash
 sudo apt -y install podman
 podman --version
@@ -50,18 +58,21 @@ npm -v
 ```
 
 ### 1-3. rootless Podman 前提
+
 ```bash
 id -un
 grep "^$(id -un):" /etc/subuid /etc/subgid
 ```
 
 不足している場合:
+
 ```bash
 echo "deploy:100000:65536" | sudo tee -a /etc/subuid
 echo "deploy:100000:65536" | sudo tee -a /etc/subgid
 ```
 
 boot 後の user service 自動起動を有効化:
+
 ```bash
 sudo loginctl enable-linger "$(id -un)"
 ```
@@ -86,6 +97,7 @@ vi deploy/quadlet/env/erp4-frontend-build.env
 ```
 
 最低限修正する値:
+
 - `VITE_API_BASE`
   - plain HTTP の stack smoke のみ: `http://YOUR_VPS_HOST:3001`
   - Google OIDC を含む受入確認: `https://api.example.com`
@@ -97,16 +109,19 @@ Google OIDC をさくらVPS 実機で使う場合、Google 側へ登録する or
 plain HTTP の `8080/3001` 構成は Podman stack 自体の smoke 確認用です。Google OIDC の実 login / session 維持 / CORS 確認は、HTTPS reverse proxy 導入後の `app.example.com` / `api.example.com` で実施してください。
 
 build 前に frontend build 用 env だけ検証します。
+
 ```bash
 ./scripts/quadlet/check-env.sh --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
 ```
 
 build:
+
 ```bash
 ./scripts/quadlet/build-images.sh
 ```
 
 生成されるイメージ:
+
 - `localhost/erp4-backend:latest`
 - `localhost/erp4-frontend:latest`
 
@@ -117,6 +132,7 @@ build:
 ```
 
 配置先:
+
 - `~/.config/containers/systemd/*.container`
 - `~/.config/containers/systemd/*.network`
 - `~/.config/containers/systemd/*.volume`
@@ -126,6 +142,7 @@ build:
 - `~/.config/containers/systemd/erp4-backend.env`
 
 `erp4-postgres.env` の例:
+
 ```dotenv
 POSTGRES_USER=erp4
 POSTGRES_PASSWORD=REPLACE_WITH_STRONG_PASSWORD
@@ -133,6 +150,7 @@ POSTGRES_DB=postgres
 ```
 
 `erp4-backend.env` の最低限（Google OIDC + HTTPS reverse proxy を使う場合の例）:
+
 ```dotenv
 DATABASE_URL=postgresql://erp4:REPLACE_WITH_STRONG_PASSWORD@erp4-postgres:5432/postgres?schema=public
 PORT=3001
@@ -159,18 +177,21 @@ REPORT_STORAGE_DIR=/var/lib/erp4/reports
 ```
 
 補足:
+
 - `DATABASE_URL` の host は `localhost` ではなく Podman network 上の `erp4-postgres` です。
 - `ALLOWED_ORIGINS` には frontend の公開 origin を必ず含めます。
 - backend は `erp4-backend-data.volume` を `/var/lib/erp4` へ mount します。PDF・Evidence archive・添付・report 出力先はこの配下に寄せます。
 - plain HTTP の stack smoke では、この例をそのまま使わず、Google OIDC を伴う受入確認まで行う場合だけ HTTPS/FQDN 前提の値へ切り替えます。
 
 runtime env を編集したら、unit 起動前に検証します。
+
 ```bash
 ./scripts/quadlet/check-env.sh
 ```
 
 任意で backup / prune / DB backup 用の maintenance env を編集します。
 `erp4-maintenance.env` の例:
+
 ```dotenv
 ERP4_REPO_DIR=/opt/itdo/ITDO_ERP4
 QUADLET_BACKUP_DIR=/home/YOUR_USER/.local/share/erp4/quadlet-backups
@@ -184,16 +205,19 @@ ERP4_DB_BACKUP_SKIP_GLOBALS=0
 ## 5. 起動順
 
 通常起動:
+
 ```bash
 ./scripts/quadlet/start-stack.sh
 ```
 
 proxy も起動する場合:
+
 ```bash
 ./scripts/quadlet/start-stack.sh --include-proxy
 ```
 
 手動で分ける場合:
+
 ```bash
 systemctl --user daemon-reload
 systemctl --user enable --now erp4-postgres.service
@@ -203,12 +227,14 @@ systemctl --user enable --now erp4-frontend.service
 ```
 
 まとめて確認:
+
 ```bash
 ./scripts/quadlet/check-stack.sh
 systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.service erp4-frontend.service
 ```
 
 稼働状況の一覧確認:
+
 ```bash
 ./scripts/quadlet/status-stack.sh
 ./scripts/quadlet/status-stack.sh --include-proxy
@@ -217,6 +243,7 @@ systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.
 `start-stack.sh` は `check-env.sh` による runtime env 検証、user systemd unit の有効化・起動、`check-stack.sh` による post-start 検証を直列で実行します。`--include-proxy` を付け、かつ `--skip-env-check` を付けていない場合は、`check-proxy.sh` による Caddy 設定検証も追加で行ったうえで `erp4-caddy.service` を有効化・起動します。さらに `--skip-stack-check` を付けていない場合は、`status-stack.sh --include-proxy` による `erp4-caddy.service` を含む状態確認まで実行します。公開ドメイン経由の疎通まで確認したい場合は、`check-proxy.sh` または外部からの `curl` probe を別途実行してください。`QUADLET_TARGET_DIR` を設定している場合はその配下を検証対象に使います。手動の `systemctl --user enable --now ...` 群はトラブルシュート用の fallback として残しています。
 
 試験稼働の受入確認を 1 コマンドで回す場合は、次を使います。
+
 ```bash
 ./scripts/quadlet/check-trial-readiness.sh
 ./scripts/quadlet/check-trial-readiness.sh --include-proxy --resolve-ip <VPS_IP>
@@ -225,6 +252,7 @@ systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.
 `check-trial-readiness.sh` は `check-host-prereqs.sh` → `check-env.sh` → `check-stack.sh` を順に実行し、`--include-proxy` 指定時だけ `check-https.sh` を追加します。DNS 切替前に公開ドメイン疎通を仮確認したい場合は `--resolve-ip` を使います。
 
 試験稼働の証跡をまとめて採取する場合:
+
 ```bash
 ./scripts/quadlet/collect-trial-evidence.sh --lines 100
 ./scripts/quadlet/collect-trial-evidence.sh --include-proxy --resolve-ip <VPS_IP>
@@ -233,11 +261,13 @@ systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.
 `collect-trial-evidence.sh` は `status-stack.sh` / `logs-stack.sh` / `systemctl --user list-timers 'erp4-*'` を timestamp 付きディレクトリへ保存し、`--include-proxy` 指定時だけ `check-https.sh` の結果も追加します。`status-stack.sh` や `check-https.sh` が失敗しても採取自体は継続し、最後に non-zero で終了します。
 
 試験稼働記録のたたき台を生成する場合:
+
 ```bash
 ./scripts/record-sakura-vps-trial.sh
 ```
 
 定期 backup を有効化する場合:
+
 ```bash
 systemctl --user enable --now erp4-config-backup.timer
 systemctl --user list-timers erp4-config-backup.timer
@@ -246,6 +276,7 @@ systemctl --user list-timers erp4-config-backup.timer
 既定では毎日 03:15 に `erp4-config-backup.service` が実行され、`backup-and-check.sh --include-units` が呼ばれます。`ERP4_BACKUP_INCLUDE_PROXY=1` のときだけ proxy 設定も backup に含めます。backup 対象には `erp4-maintenance.env` も含まれ、`--include-units` を付けた実行では `erp4-config-backup.service` / `erp4-config-backup.timer` / `erp4-db-backup.service` / `erp4-db-backup.timer` / `erp4-config-prune.service` / `erp4-config-prune.timer` も archive に含まれます。
 
 定期 DB backup を有効化する場合:
+
 ```bash
 systemctl --user enable --now erp4-db-backup.timer
 systemctl --user list-timers erp4-db-backup.timer
@@ -254,27 +285,32 @@ systemctl --user list-timers erp4-db-backup.timer
 既定では毎日 04:15 に `erp4-db-backup.service` が実行され、`backup-db.sh` が PostgreSQL dump と globals dump を取得します。出力先は `erp4-maintenance.env` の `QUADLET_DB_BACKUP_DIR` で上書きでき、`ERP4_DB_BACKUP_SKIP_GLOBALS=1` を付けると globals dump を省略できます。globals dump にはロール/権限に加えてパスワードハッシュ等の機微情報が含まれる可能性があるため、`QUADLET_DB_BACKUP_DIR` は `0700` などの厳しい権限で管理し、保管/転送時は暗号化とアクセス制御を前提にしてください。現時点では DB backup 用の自動 prune は提供していないため、`enable-maintenance-timers.sh` の既定対象には含めていません。`erp4-db-backup.timer` を有効化する場合は、保持本数/保持日数を別途運用で決め、手動削除または外部ローテーションを併用してください。
 
 定期 prune を有効化する場合:
+
 ```bash
 systemctl --user enable --now erp4-config-prune.timer
 systemctl --user list-timers erp4-config-prune.timer
 ```
 
 backup / prune timer をまとめて有効化する場合:
+
 ```bash
 ./scripts/quadlet/enable-maintenance-timers.sh
 ```
 
 backup / prune timer をまとめて無効化する場合:
+
 ```bash
 ./scripts/quadlet/disable-maintenance-timers.sh
 ```
 
 backup / prune timer の状態を確認する場合:
+
 ```bash
 ./scripts/quadlet/status-maintenance-timers.sh
 ```
 
 backup / prune を手動で 1 回実行する場合:
+
 ```bash
 ./scripts/quadlet/run-maintenance-now.sh --include-units
 ```
@@ -285,10 +321,10 @@ backup / prune を手動で 1 回実行する場合:
 
 `check-stack.sh` は backend health/readiness、frontend、PostgreSQL、および user systemd service を最大 60 秒・2 秒間隔で再試行しながら検証します。HTTP probe には残り時間ベースの timeout をかけているため、到達不能時でも無制限に待機しません。起動直後の偽陰性を避けたい場合は、個別 `curl` / `pg_isready` よりこちらを優先してください。
 
-
 `status-stack.sh` は定常監視や切り分け向けの即時確認コマンドです。`erp4-postgres.service` / `erp4-migrate.service` / `erp4-backend.service` / `erp4-frontend.service` の active 状態を一覧し、必要に応じて `erp4-caddy.service` も含められます。あわせて backend health/readiness、frontend の HTTP HEAD、PostgreSQL の `pg_isready` を 1 回ずつ実行して結果を表示します。`--skip-systemd` を付けると user systemd 依存を外して runtime probe のみ確認できます。
 
 停止する場合:
+
 ```bash
 ./scripts/quadlet/stop-stack.sh
 ./scripts/quadlet/stop-stack.sh --include-proxy
@@ -297,6 +333,7 @@ backup / prune を手動で 1 回実行する場合:
 `stop-stack.sh` は依存の逆順で `erp4-frontend.service` / `erp4-backend.service` / `erp4-migrate.service` / `erp4-postgres.service` を停止します。`--include-proxy` を付けると `erp4-caddy.service` も先に停止します。`systemctl --user` の user bus が利用できない場合は、`sudo loginctl enable-linger <user>` を含む対処メッセージを返します。
 
 再起動する場合:
+
 ```bash
 ./scripts/quadlet/restart-stack.sh
 ./scripts/quadlet/restart-stack.sh --include-proxy
@@ -305,6 +342,7 @@ backup / prune を手動で 1 回実行する場合:
 `restart-stack.sh` は `stop-stack.sh` と `start-stack.sh` を直列実行します。`--include-proxy` を付けると `erp4-caddy.service` も再起動対象に含まれます。さらに `--skip-stack-check` を指定していない場合のみ、post-start 確認として `status-stack.sh --include-proxy` まで実行します。`--skip-env-check` と `--skip-stack-check` は `start-stack.sh` に透過的に渡されるため、`--skip-stack-check` 指定時は proxy を含む post-start の状態確認も省略されます。
 
 自動起動設定ごと停止する場合:
+
 ```bash
 ./scripts/quadlet/disable-stack.sh
 ./scripts/quadlet/disable-stack.sh --include-proxy
@@ -313,6 +351,7 @@ backup / prune を手動で 1 回実行する場合:
 `disable-stack.sh` は stack を停止したうえで、対象 unit の user systemd 自動起動設定も解除します。`--include-proxy` を付けると `erp4-caddy.service` も対象に含め、disable 後に明示停止します。メンテナンス期間中に reboot 後の自動復帰を止めたい場合はこちらを使います。再開時は `start-stack.sh` を実行し、proxy も無効化していた場合は `start-stack.sh --include-proxy` を使ってください。
 
 Quadlet の unit 定義ファイル自体を取り除く場合:
+
 ```bash
 ./scripts/quadlet/uninstall-stack.sh
 ./scripts/quadlet/uninstall-stack.sh --include-proxy
@@ -364,17 +403,20 @@ stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の 
 ## 6. 疎通確認
 
 backend:
+
 ```bash
 curl -fsS http://127.0.0.1:3001/healthz
 curl -fsS http://127.0.0.1:3001/readyz
 ```
 
 frontend:
+
 ```bash
 curl -I http://127.0.0.1:8080/
 ```
 
 PostgreSQL:
+
 ```bash
 podman exec erp4-postgres pg_isready -U erp4
 ```
@@ -382,6 +424,7 @@ podman exec erp4-postgres pg_isready -U erp4
 ## 7. 更新手順
 
 アプリ更新:
+
 ```bash
 cd /opt/itdo/ITDO_ERP4
 git fetch origin
@@ -407,17 +450,20 @@ journalctl --user -u erp4-frontend.service -f
 ```
 
 まとめて確認する場合:
+
 ```bash
 ./scripts/quadlet/logs-stack.sh --follow
 ```
 
 個別 unit や proxy を見る場合:
+
 ```bash
 ./scripts/quadlet/logs-stack.sh --service erp4-backend.service --lines 200
 ./scripts/quadlet/logs-stack.sh --service erp4-backend.service --include-proxy --follow
 ```
 
 Podman 側:
+
 ```bash
 podman ps
 podman logs erp4-backend
@@ -426,21 +472,25 @@ podman logs erp4-postgres
 ```
 
 よくある原因:
+
 - `erp4-migrate.service` 失敗: `DATABASE_URL` / Prisma schema 差分 / DB 接続不可
 - `erp4-backend.service` 失敗: `AUTH_MODE=jwt` に対して `JWT_*` が不足
 - frontend だけ起動して API 呼び出しが失敗: `VITE_API_BASE` と `ALLOWED_ORIGINS` の不整合
 
 ローカル smoke:
+
 ```bash
 ./scripts/quadlet/smoke-stack.sh
 ```
 
 起動済み stack を手動確認する場合:
+
 ```bash
 ./scripts/quadlet/check-stack.sh --skip-systemd
 ```
 
 状態を即時確認する場合:
+
 ```bash
 ./scripts/quadlet/status-stack.sh
 ./scripts/quadlet/status-stack.sh --include-proxy
@@ -450,6 +500,7 @@ podman logs erp4-postgres
 ## 9. 品質確認
 
 デプロイ前に最低限実行:
+
 ```bash
 make lint
 make format-check
@@ -460,6 +511,7 @@ make audit
 ```
 
 ## 10. 運用上の制約
+
 - 単一 VPS 構成のため SPOF です。
 - TLS は別の reverse proxy / LB で終端する前提です。
 - PostgreSQL のバックアップ方針は `docs/ops/backup-restore.md` に従って別途設計してください。
