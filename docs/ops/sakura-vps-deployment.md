@@ -262,6 +262,20 @@ runtime env は `~/.config/containers/systemd/` 配下で管理する。
 ./scripts/quadlet/check-proxy.sh
 ```
 
+HTTPS reverse proxy で Caddy を rootless Podman から `80/443` に bind する場合は、起動前に host prerequisite も確認する。
+
+```bash
+./scripts/quadlet/check-host-prereqs.sh
+```
+
+`net.ipv4.ip_unprivileged_port_start` が 80 より大きい場合は、[sakura-vps-https-proxy](sakura-vps-https-proxy.md) の手順に従い、以下のように明示的に開放してから再確認する。
+
+```bash
+echo 'net.ipv4.ip_unprivileged_port_start=80' | sudo tee /etc/sysctl.d/90-itdo-rootless-ports.conf
+sudo sysctl --system
+./scripts/quadlet/check-host-prereqs.sh
+```
+
 ## 8. 起動/疎通
 
 proxyなしの内部確認:
@@ -295,7 +309,17 @@ Google OIDC / Drive を使う場合:
 
 ## 9. backup / restore / rollback
 
-導入当日に最低限確認する。
+導入当日に最低限確認する。backup timer を有効化する前に、`~/.config/containers/systemd/erp4-maintenance.env` の placeholder を実値へ置き換え、backup 出力先を作成・保護する。
+
+```bash
+vi ~/.config/containers/systemd/erp4-maintenance.env
+grep -n 'REPLACE_ME' ~/.config/containers/systemd/erp4-maintenance.env && echo 'replace placeholders before enabling timers' && exit 1 || true
+mkdir -p ~/.local/share/erp4/quadlet-backups ~/.local/share/erp4/db-backups
+chmod 700 ~/.local/share/erp4 ~/.local/share/erp4/quadlet-backups ~/.local/share/erp4/db-backups
+./scripts/quadlet/check-env.sh
+```
+
+そのうえで timer を有効化し、手動 backup を 1 回実行する。
 
 ```bash
 systemctl --user enable --now erp4-config-backup.timer
