@@ -89,7 +89,9 @@ run_ts_node() {
   local script="$1"
   shift || true
   if [[ "$DRY_RUN" -eq 1 ]]; then
-    printf '[ops][dry-run] '
+    printf '[ops][dry-run] cd '
+    printf '%q' "$ROOT_DIR"
+    printf ' && '
     ops_quote_command npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json "$script" "$@"
   else
     (cd "$ROOT_DIR" && npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json "$script" "$@")

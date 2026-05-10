@@ -109,8 +109,8 @@ ops_check_private_file_mode() {
   [[ -e "$file" ]] || return 0
   mode="$(stat -c '%a' "$file" 2>/dev/null || stat -f '%Lp' "$file" 2>/dev/null || true)"
   [[ -n "$mode" ]] || return 0
-  if (( 10#$mode > 600 )); then
-    ops_warn "$file should normally be chmod 600 or stricter (current: $mode)"
+  if (( (8#$mode & 8#077) != 0 )); then
+    ops_warn "$file should not be readable, writable, or executable by group/other (current: $mode)"
     return 1
   fi
   return 0

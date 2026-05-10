@@ -93,7 +93,7 @@ run_deploy() {
     ops_run "$MODE" npm ci --prefix "$REPO_DIR/packages/frontend"
   fi
 
-  ops_run "$MODE" "$REPO_DIR/scripts/quadlet/check-env.sh" --skip-runtime --frontend-build-env "$FRONTEND_BUILD_ENV"
+  ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$REPO_DIR/scripts/quadlet/check-env.sh" --target-dir "$TARGET_DIR" --skip-runtime --frontend-build-env "$FRONTEND_BUILD_ENV"
   if [[ "$SKIP_BUILD_IMAGES" -eq 0 ]]; then
     ops_run "$MODE" env FRONTEND_BUILD_ENV_FILE="$FRONTEND_BUILD_ENV" "$REPO_DIR/scripts/quadlet/build-images.sh"
   fi
