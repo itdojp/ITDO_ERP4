@@ -22,6 +22,21 @@ ERP4 を 1 台のさくらVPSで小規模本番相当または長期試験稼働
 11. Go/No-Go 記録
 ```
 
+## 補助スクリプト
+
+手順漏れと証跡不足を抑えるため、以下の wrapper を利用できる。詳細は [ops-automation](ops-automation.md) を参照する。
+
+| フェーズ      | コマンド                                                                                                                          | 変更有無                      |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| 事前診断      | `./scripts/ops/sakura-vps-preflight.sh --check`                                                                                   | 読み取り専用                  |
+| bootstrap確認 | `./scripts/ops/sakura-vps-bootstrap.sh --dry-run --deploy-user deploy --repo-dir /opt/itdo/ITDO_ERP4`                             | 変更なし                      |
+| bootstrap実行 | `./scripts/ops/sakura-vps-bootstrap.sh --apply --deploy-user deploy --repo-dir /opt/itdo/ITDO_ERP4`                               | apt/install/dir/linger を変更 |
+| deploy確認    | `./scripts/ops/sakura-vps-deploy.sh --check --repo-dir /opt/itdo/ITDO_ERP4 --include-proxy`                                       | 読み取り専用                  |
+| deploy実行    | `./scripts/ops/sakura-vps-deploy.sh --apply --repo-dir /opt/itdo/ITDO_ERP4 --include-proxy`                                       | git/build/Quadlet を変更      |
+| 導入後確認    | `./scripts/ops/sakura-vps-verify.sh --check --include-proxy --markdown-summary docs/test-results/sakura-vps-verify-YYYY-MM-DD.md` | 読み取り中心                  |
+
+rootless Podman で Caddy を 80/443 に bind する sysctl 変更は、`sakura-vps-bootstrap.sh --apply --set-unprivileged-port-start` を明示した場合だけ実行する。DB reset やOS再インストールのような破壊的操作はこれらのスクリプトに含めない。
+
 ## 0. 導入前提
 
 | 項目          | 推奨値                    | 備考                                            |
@@ -170,6 +185,13 @@ podman --version
 node -v || true
 ```
 
+補助スクリプトで事前確認する場合:
+
+```bash
+./scripts/ops/sakura-vps-preflight.sh --check
+./scripts/ops/sakura-vps-bootstrap.sh --dry-run --deploy-user deploy --repo-dir /opt/itdo/ITDO_ERP4
+```
+
 Node.js は nvm または運用で選んだ方式で 20 LTS に固定する。
 
 ```bash
@@ -209,6 +231,13 @@ cd /opt/itdo/ITDO_ERP4
 git fetch origin main
 git checkout main
 git pull --ff-only origin main
+```
+
+更新を自動化する場合は、事前に `--dry-run` を確認してから `--apply --update-existing` を使う。
+
+```bash
+./scripts/ops/sakura-vps-deploy.sh --dry-run --repo-dir /opt/itdo/ITDO_ERP4 --include-proxy --update-existing
+./scripts/ops/sakura-vps-deploy.sh --apply --repo-dir /opt/itdo/ITDO_ERP4 --include-proxy --update-existing
 ```
 
 証跡:
@@ -305,6 +334,7 @@ Google OIDC / Drive を使う場合:
 - `/auth/google/start` から Google 認証へ遷移する。
 - callback後にERP4へ戻る。
 - `scripts/check-chat-gdrive.ts` の read/write が成功する。
+- wrapper として `./scripts/ops/gcp-drive-check.sh --mode read` / `--mode write` を使える。
 - 失敗時は [google-cloud-predeployment](google-cloud-predeployment.md) のトラブルシュートへ戻る。
 
 ## 9. backup / restore / rollback

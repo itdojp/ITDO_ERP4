@@ -10,6 +10,7 @@
 
 - ローカル/PoC 起動: [deploy-start](deploy-start.md)
 - さくらVPS 導入 Runbook（本番準備レベル）: [sakura-vps-deployment](sakura-vps-deployment.md)
+  - 導入自動化スクリプト: [ops-automation](ops-automation.md)
   - Google Cloud 事前設定: [google-cloud-predeployment](google-cloud-predeployment.md)
   - Quadlet 詳細手順: [sakura-vps-podman-trial](sakura-vps-podman-trial.md)
   - env チェックリスト: [sakura-vps-env-checklist](sakura-vps-env-checklist.md)
