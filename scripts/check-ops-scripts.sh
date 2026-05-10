@@ -37,17 +37,17 @@ for script in "${OPS_ENTRYPOINTS[@]}"; do
   printf 'help ok: %s\n' "$script"
 done
 
-printf '==> Checking destructive command guard\n'
+printf '==> Checking destructive or secret-exposing command guard\n'
 if grep -RInE '(rm[[:space:]].*(-r|-f|-rf|-fr)|git[[:space:]]+reset[[:space:]].*--hard|git[[:space:]]+clean[[:space:]].*(-f|-d)|podman[[:space:]]+volume[[:space:]]+rm|gcloud[[:space:]]+secrets[[:space:]]+versions[[:space:]]+access|gcloud[[:space:]]+secrets[[:space:]]+delete|gcloud[[:space:]]+projects[[:space:]]+delete|sudo[[:space:]]+(rm|shutdown|reboot))' scripts/ops; then
-  printf 'Potentially destructive command found in scripts/ops. Add an explicit reviewed guard before allowing it.\n' >&2
+  printf 'Potentially destructive or secret-exposing command found in scripts/ops. Add an explicit reviewed guard before allowing it.\n' >&2
   exit 1
 fi
-printf 'destructive command guard ok\n'
+printf 'destructive or secret-exposing command guard ok\n'
 
 require_env_key() {
   local file="$1"
   local key="$2"
-  if ! grep -Eq "^[[:space:]]*${key}=" "$file"; then
+  if ! grep -Eq "^${key}=" "$file"; then
     printf 'missing required sample env key: %s in %s\n' "$key" "$file" >&2
     return 1
   fi

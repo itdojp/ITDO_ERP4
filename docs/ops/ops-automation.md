@@ -217,7 +217,7 @@ make ops-quality
 - `shellcheck` がある環境での shellcheck warning 以上（未導入環境では skip を明示）
 - 各 ops entrypoint の `--help`
 - Google Cloud / Sakura VPS helper の dry-run / check smoke
-- destructive command guard（例: `rm -rf`、`git reset --hard`、`git clean -fd`、`podman volume rm`、Secret Manager の secret value access/delete）
+- destructive or secret-exposing command guard（例: `rm -rf`、`git reset --hard`、`git clean -fd`、`podman volume rm`、Secret Manager の secret value access/delete）
 - `docs/ops/examples/*.env.example` の必須キーと、OAuth client secret / token / webhook など実secretらしい値の混入検出（ログは path:line のみ）
 
 VPSホスト依存の `--check` は、CI runner に Podman / systemd / Quadlet 実体がない場合に controlled failure として扱う。これは「構文や引数処理が壊れていないこと」と「ホスト依存の不足が明示的な診断として出ること」をCIで検証するためであり、本番適用前の実ホスト preflight / verify を代替しない。
