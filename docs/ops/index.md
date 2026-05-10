@@ -17,6 +17,7 @@
   - 試験稼働 Go/No-Go チェックリスト: [sakura-vps-trial-checklist](sakura-vps-trial-checklist.md)
   - 試験稼働記録テンプレート: [../test-results/sakura-vps-trial-template.md](../test-results/sakura-vps-trial-template.md)
 - さくらVPS HTTPS reverse proxy: [sakura-vps-https-proxy](sakura-vps-https-proxy.md)
+- Codex 導入・運用ワークフロー: [codex-ops-workflows](codex-ops-workflows.md)
 - Google Workspace OIDC + Auth Gateway 導入: [google-oidc-auth-gateway-rollout](google-oidc-auth-gateway-rollout.md)
   - Google Cloud Console 側設定: [google-oidc-google-cloud-console](google-oidc-google-cloud-console.md)
 - 設定（環境変数/シークレット）: [configuration](configuration.md)

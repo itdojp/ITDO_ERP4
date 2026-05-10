@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CodexOpsRiskReport",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "human_approval_required",
+    "findings",
+    "verification"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "Short summary of the runbook, CI, or ops-script review."
+    },
+    "human_approval_required": {
+      "type": "array",
+      "description": "Production-impacting actions that must not be executed by Codex without a human decision.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action", "reason", "owner"],
+        "properties": {
+          "action": { "type": "string" },
+          "reason": { "type": "string" },
+          "owner": { "type": "string" }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "file", "finding", "suggested_action"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["blocker", "high", "medium", "low", "info"]
+          },
+          "file": { "type": "string" },
+          "finding": { "type": "string" },
+          "suggested_action": { "type": "string" }
+        }
+      }
+    },
+    "verification": {
+      "type": "array",
+      "description": "Commands or manual checks that were run or should be run next.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status", "evidence"],
+        "properties": {
+          "name": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["pass", "fail", "not_run", "not_applicable"]
+          },
+          "evidence": { "type": "string" }
+        }
+      }
+    }
+  }
+}
