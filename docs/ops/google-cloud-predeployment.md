@@ -89,6 +89,30 @@ gcloud services list --enabled --filter='name:drive.googleapis.com OR name:secre
 gcloud services enable drive.googleapis.com secretmanager.googleapis.com
 ```
 
+### 2-1. gcloud preflight wrapper
+
+手順漏れを抑えるため、`scripts/ops/gcp-preflight.sh` で account / project / API / billing / secret metadata / WIF を確認できる。詳細は [ops-automation](ops-automation.md) を参照する。
+
+読み取り専用の確認:
+
+```bash
+./scripts/ops/gcp-preflight.sh --check \
+  --project erp4-prod \
+  --secret erp4-google-oidc-client-secret \
+  --secret erp4-chat-gdrive-refresh-token \
+  --markdown-summary docs/test-results/gcp-preflight-YYYY-MM-DD.md
+```
+
+API有効化を自動化する場合は `--apply` と `--confirm-project` を必須にする。
+
+```bash
+./scripts/ops/gcp-preflight.sh --apply \
+  --project erp4-prod \
+  --confirm-project erp4-prod
+```
+
+この wrapper は secret値を読み取らず、Secret Manager の secret名と version metadata のみを確認する。
+
 ## 3. Google OIDC ログイン設定
 
 詳細手順は [google-oidc-google-cloud-console](google-oidc-google-cloud-console.md) を正とする。この Runbook では導入前の完了条件だけを管理する。
@@ -170,7 +194,14 @@ GDRIVE_CHECK_MODE=write \
   npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/check-chat-gdrive.ts
 ```
 
-証跡には成功/失敗と時刻だけを残し、secret 値は残さない。
+wrapper を使う場合:
+
+```bash
+./scripts/ops/gcp-drive-check.sh --env-file ./.env.gdrive --mode read
+./scripts/ops/gcp-drive-check.sh --env-file ./.env.gdrive --mode write
+```
+
+`--mode write` はテストファイルを作成し、削除または trash する。証跡には成功/失敗と時刻だけを残し、secret 値は残さない。
 
 ## 5. Secrets 保管方針
 
