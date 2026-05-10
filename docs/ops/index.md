@@ -9,7 +9,9 @@
 ### 起動/デプロイ
 
 - ローカル/PoC 起動: [deploy-start](deploy-start.md)
-- さくらVPS（Ubuntu）+ Podman + Quadlet: [sakura-vps-podman-trial](sakura-vps-podman-trial.md)
+- さくらVPS 導入 Runbook（本番準備レベル）: [sakura-vps-deployment](sakura-vps-deployment.md)
+  - Google Cloud 事前設定: [google-cloud-predeployment](google-cloud-predeployment.md)
+  - Quadlet 詳細手順: [sakura-vps-podman-trial](sakura-vps-podman-trial.md)
   - env チェックリスト: [sakura-vps-env-checklist](sakura-vps-env-checklist.md)
   - 試験稼働 Go/No-Go チェックリスト: [sakura-vps-trial-checklist](sakura-vps-trial-checklist.md)
   - 試験稼働記録テンプレート: [../test-results/sakura-vps-trial-template.md](../test-results/sakura-vps-trial-template.md)
