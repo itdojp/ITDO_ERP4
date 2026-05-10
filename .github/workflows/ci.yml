@@ -57,6 +57,8 @@ jobs:
       - run: npm install --prefix packages/backend
       - run: npm run lint --prefix packages/backend
       - run: npm run format:check --prefix packages/backend
+      - run: ./scripts/check-ops-docs.sh
+      - run: ./scripts/check-ops-scripts.sh
       - run: npm install --prefix packages/frontend
       - run: npm run lint --prefix packages/frontend
       - run: npm run format:check --prefix packages/frontend

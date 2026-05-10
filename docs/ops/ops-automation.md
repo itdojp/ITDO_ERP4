@@ -196,20 +196,31 @@ CHAT_ATTACHMENT_GDRIVE_FOLDER_ID=...
 
 ## 品質チェック
 
-PR作成前に最低限以下を実行する。
+PR作成前に最低限以下を実行する。CI では既存の `CI / lint` job 内で同じチェックを実行し、backend 側の `npm install` 済み環境を再利用して所要時間の増加を抑える。
 
 ```bash
-bash -n scripts/ops/*.sh scripts/ops/lib/*.sh
-npx --prefix packages/backend prettier --check docs/ops/ops-automation.md docs/ops/google-cloud-predeployment.md docs/ops/sakura-vps-deployment.md docs/ops/index.md
+make ops-quality
 ```
 
-`shellcheck` が利用可能な環境では以下も実行する。
+個別に確認する場合は以下を実行する。
 
 ```bash
-shellcheck scripts/ops/*.sh scripts/ops/lib/*.sh
+./scripts/check-ops-docs.sh
+./scripts/check-ops-scripts.sh
 ```
 
-CI組み込みと dry-run の継続検証は Issue #1760 で扱う。
+`check-ops-docs.sh` は導入Runbook系 Markdown / JSON examples に対して Prettier と相対リンク存在確認を行う。外部リンクは既存の `Link Check / lychee` job が検証する。
+
+`check-ops-scripts.sh` は以下を blocking gate とする。
+
+- `scripts/ops/*.sh` と `scripts/ops/lib/*.sh` の `bash -n`
+- `shellcheck` がある環境での shellcheck warning 以上（未導入環境では skip を明示）
+- 各 ops entrypoint の `--help`
+- Google Cloud / Sakura VPS helper の dry-run / check smoke
+- destructive command guard（例: `rm -rf`、`git reset --hard`、`git clean -fd`、`podman volume rm`、Secret Manager の secret value access/delete）
+- `docs/ops/examples/*.env.example` の必須キーと、OAuth client secret / token / webhook など実secretらしい値の混入検出（ログは path:line のみ）
+
+VPSホスト依存の `--check` は、CI runner に Podman / systemd / Quadlet 実体がない場合に controlled failure として扱う。これは「構文や引数処理が壊れていないこと」と「ホスト依存の不足が明示的な診断として出ること」をCIで検証するためであり、本番適用前の実ホスト preflight / verify を代替しない。
 
 ## 関連Runbook
 

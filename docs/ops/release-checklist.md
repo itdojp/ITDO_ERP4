@@ -1,7 +1,9 @@
 # リリースチェックリスト（短縮版）
 
 ## 事前（必須）
+
 - [ ] CI が green（`CI` / リンクチェック）
+- [ ] 導入Runbook / ops scripts に変更がある場合、`make ops-quality` または CI `lint` job 内の ops quality gate が成功している
 - [ ] `security-audit` が許容範囲（High/Critical なし、または例外が Issue 化済み）
 - [ ] DB migration 有無を確認（`packages/backend/prisma/migrations/`）
 - [ ] 過去30日以内に成功した backup と restore verification の証跡を確認（`docs/ops/backup-restore.md`）
@@ -14,13 +16,16 @@
 - [ ] Issue / PR コメントや Runbook には証跡本文を分散させず、証跡ファイルへのリンクのみを記載
 
 ## Go/No-Go 判定（記録必須）
+
 - [ ] `main` の required CI が release 対象コミットで成功している
 - [ ] リンクチェック（現行 job: `lychee`）が成功している
+- [ ] 導入Runbook / ops scripts の変更が release 対象に含まれる場合、ops quality gate の成功ログを確認している
 - [ ] `security-audit` が最新実行で成功、または例外が Issue / 運用記録に明記されている
 - [ ] 既知の運用残課題を解消、または受容判断を記録している
 - [ ] Go/No-Go 判定ログを当日の release Issue または change record に集約している
 
 ## 実施
+
 - [ ] タグ付け（`vX.Y.Z`）
 - [ ] Release workflow 実行（`.github/workflows/release.yml`）
 - [ ] DB migration 適用（必要時）
@@ -28,6 +33,7 @@
 - [ ] frontend 配信（静的アセット）
 
 ## 事後（必須）
+
 - [ ] 手動確認（最小）: `docs/manual/manual-test-checklist.md`
 - [ ] 監視（エラー率/遅延/依存障害）
 - [ ] 問題があれば Feature Flag で無効化、または成果物ロールバック
