@@ -95,25 +95,25 @@ run_deploy() {
 
   ops_run "$MODE" "$REPO_DIR/scripts/quadlet/check-env.sh" --skip-runtime --frontend-build-env "$FRONTEND_BUILD_ENV"
   if [[ "$SKIP_BUILD_IMAGES" -eq 0 ]]; then
-    ops_run "$MODE" "$REPO_DIR/scripts/quadlet/build-images.sh"
+    ops_run "$MODE" env FRONTEND_BUILD_ENV_FILE="$FRONTEND_BUILD_ENV" "$REPO_DIR/scripts/quadlet/build-images.sh"
   fi
 
   if [[ "$SKIP_START" -eq 0 ]]; then
-    ops_run "$MODE" "$REPO_DIR/scripts/quadlet/install-user-units.sh"
+    ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$REPO_DIR/scripts/quadlet/install-user-units.sh"
     local stack_cmd
     if [[ "$UPDATE_EXISTING" -eq 1 ]]; then
       stack_cmd="$REPO_DIR/scripts/quadlet/update-stack.sh"
       if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
-        ops_run "$MODE" "$stack_cmd" --include-proxy --skip-build
+        ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$stack_cmd" --include-proxy --skip-build
       else
-        ops_run "$MODE" "$stack_cmd" --skip-build
+        ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$stack_cmd" --skip-build
       fi
     else
       stack_cmd="$REPO_DIR/scripts/quadlet/start-stack.sh"
       if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
-        ops_run "$MODE" "$stack_cmd" --include-proxy
+        ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$stack_cmd" --include-proxy
       else
-        ops_run "$MODE" "$stack_cmd"
+        ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$stack_cmd"
       fi
     fi
   fi
