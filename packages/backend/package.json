@@ -22,7 +22,7 @@
     "schema": "./prisma/schema.prisma"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1041.0",
+    "@aws-sdk/client-s3": "^3.1045.0",
     "@fastify/cors": "^11.2.0",
     "@fastify/helmet": "^13.0.2",
     "@fastify/multipart": "^10.0.0",
@@ -41,17 +41,17 @@
     "nodemailer": "^8.0.7",
     "pdfkit": "^0.18.0",
     "pg": "^8.20.0",
-    "rate-limiter-flexible": "^11.0.2",
+    "rate-limiter-flexible": "^11.1.0",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@fastify/swagger": "^9.7.0",
-    "@types/node": "^25.6.0",
+    "@types/node": "^25.6.2",
     "@types/nodemailer": "^8.0.0",
     "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.20.0",
-    "@typescript-eslint/eslint-plugin": "^8.59.1",
+    "@typescript-eslint/eslint-plugin": "^8.59.2",
     "@typescript-eslint/parser": "^8.58.2",
     "c8": "^11.0.0",
     "dotenv": "^17.4.2",
