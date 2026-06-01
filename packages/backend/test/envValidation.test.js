@@ -456,6 +456,61 @@ test('auth plugin: production + AUTH_MODE=jwt_bff rejects direct non-delegated b
   assert.equal(body.error?.details?.reason, 'missing_session');
 });
 
+test('auth plugin: production + AUTH_MODE=jwt_bff rejects scoped bearer auth without delegated actor', () => {
+  const result = runDelegatedJwtRequest({
+    overrides: {
+      NODE_ENV: 'production',
+      AUTH_MODE: 'jwt_bff',
+      GOOGLE_OIDC_CLIENT_SECRET: 'secret',
+      GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
+      AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
+    },
+    payload: {
+      sub: 'principal-user',
+      scp: ['read'],
+      roles: ['user'],
+      jti: 'tok-scoped-direct-jwt-bff',
+    },
+    method: 'GET',
+    url: '/me',
+    stubDb: true,
+  });
+
+  assert.equal(result.status, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.statusCode, 401);
+  const body = JSON.parse(payload.body);
+  assert.equal(body.error?.details?.reason, 'missing_session');
+});
+
+test('auth plugin: production + AUTH_MODE=jwt_bff rejects scoped bearer auth with same actor and principal', () => {
+  const result = runDelegatedJwtRequest({
+    overrides: {
+      NODE_ENV: 'production',
+      AUTH_MODE: 'jwt_bff',
+      GOOGLE_OIDC_CLIENT_SECRET: 'secret',
+      GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
+      AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
+    },
+    payload: {
+      sub: 'principal-user',
+      act: { sub: 'principal-user' },
+      scp: ['write'],
+      roles: ['user'],
+      jti: 'tok-self-actor-jwt-bff',
+    },
+    method: 'GET',
+    url: '/me',
+    stubDb: true,
+  });
+
+  assert.equal(result.status, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.statusCode, 401);
+  const body = JSON.parse(payload.body);
+  assert.equal(body.error?.details?.reason, 'missing_session');
+});
+
 test('auth plugin: production + AUTH_MODE=jwt_bff allows SCIM route-level bearer auth', () => {
   const result = runInjectedRequest({
     overrides: {

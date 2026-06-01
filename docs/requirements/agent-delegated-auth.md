@@ -23,13 +23,23 @@
 - `JWT_SCOPE_CLAIM=scp`
 - `JWT_TOKEN_ID_CLAIM=jti`
 
+## 明示的な委任 marker
+
+`jwt_bff` mode では、bearer token を委任エージェント呼び出しとして扱うために明示的な actor marker を必須とする。
+
+- `act.sub` が存在し、かつ `sub`（principal）と異なる場合のみ委任トークンとして扱う。
+- `scp` に scope が含まれているだけの通常ユーザートークンは委任トークンとして扱わない。
+- `act.sub` が未指定、空文字、または `sub` と同一の場合は、BFF session cookie 経路を要求する通常ユーザー認証として扱う。
+
 ## スコープ表現
 
 MVPでは次の3段階を扱う。
 
-- `read-only`（同義語: `read`, `agent:read-only`, `agent:read`）
-- `write-limited`（同義語: `write`, `agent:write-limited`, `agent:write`）
+- `read-only`（同義語: `agent:read-only`, `agent:read`）
+- `write-limited`（同義語: `agent:write-limited`, `agent:write`）
 - `approval-required`（同義語: `agent:approval-required`）
+
+`read` / `write` のような汎用scope名は、通常ユーザーJWTに含まれる可能性があるため既定の委任scopeには含めない。既存IdPとの互換目的で利用する場合は、`AUTH_AGENT_READ_SCOPES` / `AUTH_AGENT_WRITE_SCOPES` に明示的に追加し、専用audience/client等と組み合わせる。
 
 ### 判定ルール
 

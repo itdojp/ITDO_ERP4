@@ -110,10 +110,7 @@ const JWT_REVOKED_JTI = new Set(
     .filter(Boolean),
 );
 const AGENT_SCOPE_READ = new Set(
-  (
-    process.env.AUTH_AGENT_READ_SCOPES ||
-    'read-only,read,agent:read-only,agent:read'
-  )
+  (process.env.AUTH_AGENT_READ_SCOPES || 'read-only,agent:read-only,agent:read')
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean),
@@ -121,7 +118,7 @@ const AGENT_SCOPE_READ = new Set(
 const AGENT_SCOPE_WRITE = new Set(
   (
     process.env.AUTH_AGENT_WRITE_SCOPES ||
-    'write-limited,write,agent:write-limited,agent:write'
+    'write-limited,agent:write-limited,agent:write'
   )
     .split(',')
     .map((value) => value.trim())
@@ -626,7 +623,7 @@ function buildUserContext(payload: JWTPayload): UserContext | null {
       : undefined;
   const audience = normalizeAudience(resolveClaim(payload, 'aud'));
   const expiresAt = normalizeExpiresAt(resolveClaim(payload, 'exp'));
-  const delegated = actorUserId !== principalUserId || scopes.length > 0;
+  const delegated = actorUserId !== principalUserId;
   const tokenIssuer = resolveClaim(payload, 'iss');
   const roles = expandRoles(
     normalizeList(resolveClaim(payload, JWT_ROLE_CLAIM)),

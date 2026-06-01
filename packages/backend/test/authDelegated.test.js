@@ -27,6 +27,35 @@ test('buildUserContextFromJwtPayload: principal/actor/scopes are mapped', () => 
   assert.equal(user?.auth?.delegated, true);
 });
 
+test('buildUserContextFromJwtPayload: scopes alone do not mark JWT as delegated', () => {
+  const user = buildUserContextFromJwtPayload({
+    sub: 'principal-user',
+    scp: ['read'],
+    roles: ['user'],
+    jti: 'tok-scoped-user',
+  });
+
+  assert.equal(user?.auth?.principalUserId, 'principal-user');
+  assert.equal(user?.auth?.actorUserId, 'principal-user');
+  assert.deepEqual(user?.auth?.scopes, ['read']);
+  assert.equal(user?.auth?.delegated, false);
+});
+
+test('buildUserContextFromJwtPayload: same actor/principal is not delegated even with scopes', () => {
+  const user = buildUserContextFromJwtPayload({
+    sub: 'principal-user',
+    act: { sub: 'principal-user' },
+    scp: ['write'],
+    roles: ['user'],
+    jti: 'tok-self-actor',
+  });
+
+  assert.equal(user?.auth?.principalUserId, 'principal-user');
+  assert.equal(user?.auth?.actorUserId, 'principal-user');
+  assert.deepEqual(user?.auth?.scopes, ['write']);
+  assert.equal(user?.auth?.delegated, false);
+});
+
 test('evaluateDelegatedScope: read-only scope allows GET', () => {
   const decision = evaluateDelegatedScope(
     {
