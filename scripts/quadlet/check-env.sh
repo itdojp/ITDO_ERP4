@@ -61,13 +61,27 @@ require_env_key() {
 }
 
 check_http_cookie_flag() {
-  local origin redirect secure
+  local auth_mode node_env origin redirect secure
+  auth_mode="$(read_env_value "$BACKEND_ENV" AUTH_MODE)"
+  node_env="$(read_env_value "$BACKEND_ENV" NODE_ENV)"
   origin="$(read_env_value "$BACKEND_ENV" AUTH_FRONTEND_ORIGIN)"
   redirect="$(read_env_value "$BACKEND_ENV" GOOGLE_OIDC_REDIRECT_URI)"
   secure="$(read_env_value "$BACKEND_ENV" AUTH_SESSION_COOKIE_SECURE)"
+  auth_mode="${auth_mode,,}"
+  node_env="${node_env,,}"
+  secure="${secure,,}"
+
+  if [[ "$node_env" == "production" && "$auth_mode" == "jwt_bff" ]]; then
+    if [[ "$secure" == "false" || "$secure" == "0" ]]; then
+      fail "AUTH_SESSION_COOKIE_SECURE must not be false for production jwt_bff"
+    fi
+    if [[ "$origin" == http://* || "$redirect" == http://* ]]; then
+      fail "production jwt_bff requires HTTPS AUTH_FRONTEND_ORIGIN and GOOGLE_OIDC_REDIRECT_URI"
+    fi
+  fi
 
   if [[ "$origin" == http://* || "$redirect" == http://* ]]; then
-    if [[ "$secure" != "false" ]]; then
+    if [[ "$secure" != "false" && "$secure" != "0" ]]; then
       warn "AUTH_SESSION_COOKIE_SECURE should be false for plain HTTP trial endpoints"
     fi
   fi

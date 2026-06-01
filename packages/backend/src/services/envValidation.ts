@@ -39,6 +39,15 @@ function isHttpUrl(value: string) {
   }
 }
 
+function isHttpsUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function isRedisUrl(value: string) {
   try {
     const url = new URL(value);
@@ -273,6 +282,16 @@ export function assertValidBackendEnv() {
         'GOOGLE_OIDC_REDIRECT_URI',
         'http(s) URL を指定してください',
       );
+    } else if (
+      nodeEnv === 'production' &&
+      redirectUri &&
+      !isHttpsUrl(redirectUri)
+    ) {
+      addIssue(
+        issues,
+        'GOOGLE_OIDC_REDIRECT_URI',
+        'production の jwt_bff では https URL を指定してください',
+      );
     }
     const frontendOrigin = normalizeString(process.env.AUTH_FRONTEND_ORIGIN);
     if (frontendOrigin && !isHttpUrl(frontendOrigin)) {
@@ -281,18 +300,32 @@ export function assertValidBackendEnv() {
         'AUTH_FRONTEND_ORIGIN',
         'http(s) URL を指定してください',
       );
+    } else if (
+      nodeEnv === 'production' &&
+      frontendOrigin &&
+      !isHttpsUrl(frontendOrigin)
+    ) {
+      addIssue(
+        issues,
+        'AUTH_FRONTEND_ORIGIN',
+        'production の jwt_bff では https URL を指定してください',
+      );
     }
     const cookieSecureRaw = normalizeString(
       process.env.AUTH_SESSION_COOKIE_SECURE,
     );
-    if (
-      cookieSecureRaw &&
-      parseBoolean(process.env.AUTH_SESSION_COOKIE_SECURE) === undefined
-    ) {
+    const cookieSecure = parseBoolean(process.env.AUTH_SESSION_COOKIE_SECURE);
+    if (cookieSecureRaw && cookieSecure === undefined) {
       addIssue(
         issues,
         'AUTH_SESSION_COOKIE_SECURE',
         'true|false|1|0 のいずれかを指定してください',
+      );
+    } else if (nodeEnv === 'production' && cookieSecure === false) {
+      addIssue(
+        issues,
+        'AUTH_SESSION_COOKIE_SECURE',
+        'production の jwt_bff では false にできません。HTTPS 前提で true または未指定にしてください',
       );
     }
     assertPositiveIntegerEnv(issues, 'AUTH_SESSION_ABSOLUTE_TTL_HOURS');

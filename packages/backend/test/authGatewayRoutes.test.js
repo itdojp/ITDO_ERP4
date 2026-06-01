@@ -117,6 +117,17 @@ function baseBffEnv() {
   };
 }
 
+function productionBffEnv(overrides = {}) {
+  return {
+    ...baseBffEnv(),
+    NODE_ENV: 'production',
+    GOOGLE_OIDC_REDIRECT_URI: 'https://api.example.com/auth/google/callback',
+    AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
+    AUTH_SESSION_COOKIE_SECURE: undefined,
+    ...overrides,
+  };
+}
+
 test('envValidation: AUTH_MODE=jwt_bff requires Google BFF settings', async () => {
   const { assertValidBackendEnv } =
     await import('../dist/services/envValidation.js');
@@ -129,6 +140,49 @@ test('envValidation: AUTH_MODE=jwt_bff requires Google BFF settings', async () =
       assert.throws(() => assertValidBackendEnv(), /GOOGLE_OIDC_CLIENT_SECRET/);
     },
   );
+});
+
+test('production jwt_bff auth cookies include Secure by default', async () => {
+  await withEnv(productionBffEnv(), async () => {
+    const { createAuthSession, createGoogleAuthFlow, ensureAuthCsrfToken } =
+      await import(
+        new URL(
+          `../dist/services/authGateway.js?bust=${backendModulesCacheBust}`,
+          import.meta.url,
+        ).href
+      );
+    const db = {
+      authOidcFlow: {
+        create: async () => ({ id: 'flow-001' }),
+      },
+      authSession: {
+        create: async ({ data }) => ({
+          id: 'sess-001',
+          ...data,
+          createdAt: new Date('2026-06-01T00:00:00.000Z'),
+          lastSeenAt: new Date('2026-06-01T00:00:00.000Z'),
+          revokedAt: null,
+          revokedReason: null,
+        }),
+      },
+    };
+
+    const flow = await createGoogleAuthFlow(db, { returnTo: '/dashboard' });
+    assert.match(flow.setCookie, /;\s*Secure/i);
+
+    const csrf = ensureAuthCsrfToken(undefined);
+    assert.ok(csrf.setCookie);
+    assert.match(csrf.setCookie, /;\s*Secure/i);
+
+    const session = await createAuthSession(db, {
+      userAccountId: 'user-001',
+      userIdentityId: 'identity-001',
+      providerType: 'google_oidc',
+      issuer: 'https://accounts.google.com',
+      providerSubject: 'google-sub-001',
+    });
+    assert.match(session.setCookie, /;\s*Secure/i);
+  });
 });
 
 test('GET /auth/google/start redirects to Google and sets auth flow cookie', async () => {
