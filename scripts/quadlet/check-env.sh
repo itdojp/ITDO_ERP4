@@ -81,7 +81,7 @@ check_http_cookie_flag() {
   fi
 
   if [[ "$origin" == http://* || "$redirect" == http://* ]]; then
-    if [[ "$secure" != "false" ]]; then
+    if [[ "$secure" != "false" && "$secure" != "0" ]]; then
       warn "AUTH_SESSION_COOKIE_SECURE should be false for plain HTTP trial endpoints"
     fi
   fi
