@@ -40,7 +40,7 @@ POSTGRES
 cat > "$TMP_DIR/backend.env" <<BACKEND
 DATABASE_URL=postgresql://erp4:erp4pass@${POSTGRES_CONTAINER}:5432/postgres?schema=public
 PORT=3001
-NODE_ENV=production
+NODE_ENV=development
 AUTH_MODE=jwt_bff
 ALLOWED_ORIGINS=http://127.0.0.1:${FRONTEND_HOST_PORT}
 JWT_ISSUER=test-issuer

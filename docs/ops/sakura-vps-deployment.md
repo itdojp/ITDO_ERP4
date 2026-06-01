@@ -282,7 +282,7 @@ runtime env は `~/.config/containers/systemd/` 配下で管理する。
 - `erp4-backend.env` に secret が入るため、backup/転送先も secret として扱う。
 - `DATABASE_URL` の host は Podman network の `erp4-postgres` を使う。
 - `ALLOWED_ORIGINS` は frontend の公開 origin のみに絞る。
-- `AUTH_SESSION_COOKIE_SECURE=true` は HTTPS 公開時に必須。
+- production の `AUTH_MODE=jwt_bff` では HTTPS 公開を前提にし、`AUTH_SESSION_COOKIE_SECURE=true` または未指定（production default true）にする。`AUTH_SESSION_COOKIE_SECURE=false` と HTTP origin / redirect URL は production validation で拒否される。
 
 確認:
 

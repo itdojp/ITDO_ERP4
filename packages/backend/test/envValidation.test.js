@@ -254,6 +254,42 @@ test('envValidation: production + AUTH_MODE=jwt_bff is allowed with required set
   assert.match(result.stdout.toString(), /OK/);
 });
 
+test('envValidation: production + AUTH_MODE=jwt_bff rejects insecure cookie override', () => {
+  const result = runEnvValidation({
+    NODE_ENV: 'production',
+    AUTH_MODE: 'jwt_bff',
+    JWT_ISSUER: 'https://accounts.google.com',
+    JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
+    JWT_JWKS_URL: 'https://www.googleapis.com/oauth2/v3/certs',
+    GOOGLE_OIDC_CLIENT_SECRET: 'secret',
+    GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
+    AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
+    AUTH_SESSION_COOKIE_SECURE: 'false',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /AUTH_SESSION_COOKIE_SECURE/);
+  assert.match(result.stderr.toString(), /production/);
+});
+
+test('envValidation: production + AUTH_MODE=jwt_bff rejects plain HTTP origins', () => {
+  const result = runEnvValidation({
+    NODE_ENV: 'production',
+    AUTH_MODE: 'jwt_bff',
+    JWT_ISSUER: 'https://accounts.google.com',
+    JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
+    JWT_JWKS_URL: 'https://www.googleapis.com/oauth2/v3/certs',
+    GOOGLE_OIDC_CLIENT_SECRET: 'secret',
+    GOOGLE_OIDC_REDIRECT_URI: 'http://app.example.com/auth/google/callback',
+    AUTH_FRONTEND_ORIGIN: 'http://app.example.com',
+    AUTH_SESSION_COOKIE_SECURE: 'true',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr.toString(), /GOOGLE_OIDC_REDIRECT_URI/);
+  assert.match(result.stderr.toString(), /AUTH_FRONTEND_ORIGIN/);
+});
+
 test('envValidation: AUTH_ALLOW_HEADER_FALLBACK_IN_PROD validates boolean values', () => {
   const result = runEnvValidation({
     NODE_ENV: 'development',
