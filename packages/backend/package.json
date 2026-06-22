@@ -22,7 +22,7 @@
     "schema": "./prisma/schema.prisma"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1068.0",
+    "@aws-sdk/client-s3": "^3.1073.0",
     "@fastify/cors": "^11.2.0",
     "@fastify/helmet": "^13.0.2",
     "@fastify/multipart": "^10.0.0",
@@ -40,7 +40,7 @@
     "jose": "^6.2.3",
     "nodemailer": "^9.0.1",
     "pdfkit": "^0.19.1",
-    "pg": "^8.21.0",
+    "pg": "^8.22.0",
     "rate-limiter-flexible": "^11.2.0",
     "web-push": "^3.6.7"
   },
@@ -51,7 +51,7 @@
     "@types/nodemailer": "^8.0.1",
     "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.20.0",
-    "@typescript-eslint/eslint-plugin": "^8.61.0",
+    "@typescript-eslint/eslint-plugin": "^8.61.1",
     "@typescript-eslint/parser": "^8.58.2",
     "c8": "^11.0.0",
     "dotenv": "^17.4.2",
