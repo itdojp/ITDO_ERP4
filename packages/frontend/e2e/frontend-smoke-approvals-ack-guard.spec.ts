@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { resolveProjectRoomId } from './chat-room-e2e-helpers';
+import { withDisabledCompetingPolicies } from './approval-e2e-helpers';
 
 const dateTag = new Date().toISOString().slice(0, 10);
 const rootDir = process.env.E2E_ROOT_DIR || process.cwd();
@@ -159,9 +160,11 @@ test('frontend smoke approvals ack guard requires override reason @extended', as
   test.setTimeout(180_000);
   const id = runId();
   const projectId = authState.projectIds[0];
+  const actorUserId = `e2e-approval-guard-actor-${id}`;
   const ackTargetUserId = 'e2e-member-1@example.com';
   const scopedGroupId = `e2e-approval-guard-${id}`;
   const scopedAuth = {
+    userId: actorUserId,
     groupIds: [...authState.groupIds, scopedGroupId],
   };
   const scopedHeaders = buildAuthHeaders(scopedAuth);
@@ -200,13 +203,19 @@ test('frontend smoke approvals ack guard requires override reason @extended', as
   const ackPayload = (await ackRes.json()) as {
     id?: string;
     messageId?: string;
+    ackRequest?: { id?: string };
   };
+  const ackRequestId =
+    typeof ackPayload.ackRequest?.id === 'string'
+      ? ackPayload.ackRequest.id
+      : '';
   const ackMessageId =
     typeof ackPayload.id === 'string'
       ? ackPayload.id
       : typeof ackPayload.messageId === 'string'
         ? ackPayload.messageId
         : '';
+  expect(ackRequestId).toBeTruthy();
   expect(ackMessageId).toBeTruthy();
 
   const estimateCreateRes = await page.request.post(
@@ -256,7 +265,7 @@ test('frontend smoke approvals ack guard requires override reason @extended', as
   const linkRes = await page.request.post(`${apiBase}/chat-ack-links`, {
     headers: scopedHeaders,
     data: {
-      messageId: ackMessageId,
+      ackRequestId,
       targetTable: 'approval_instances',
       targetId: approvalInstanceId,
       flowType: 'estimate',
@@ -270,86 +279,131 @@ test('frontend smoke approvals ack guard requires override reason @extended', as
     data: {
       flowType: 'estimate',
       actionKey: 'approve',
-      // Keep this test-specific guard ahead of broad demo policies that may
-      // allow admin approvals and would otherwise mask the ack guard.
+      // Scope to this test actor and keep the priority high so broad demo
+      // policies cannot mask the ack guard while this scenario runs.
       priority: 1_000_000,
       isEnabled: true,
-      subjects: { groupIds: [scopedGroupId] },
+      subjects: { userIds: [actorUserId] },
       stateConstraints: { statusIn: ['pending_qa', 'pending_exec'] },
       requireReason: false,
       guards: [{ type: 'chat_ack_completed' }],
     },
   });
   await ensureOk(policyRes);
+  const policyPayload = (await policyRes.json()) as { id?: string };
+  const guardedPolicyId = policyPayload.id || '';
+  expect(guardedPolicyId).toBeTruthy();
 
-  const missingReasonRes = await page.request.post(
-    `${apiBase}/approval-instances/${encodeURIComponent(approvalInstanceId)}/act`,
-    {
-      headers: scopedHeaders,
-      data: { action: 'approve' },
+  await withDisabledCompetingPolicies({
+    request: page.request,
+    apiBase,
+    headers: scopedHeaders,
+    flowType: 'estimate',
+    actionKey: 'approve',
+    keepIds: [guardedPolicyId],
+    run: async () => {
+      const evaluateRes = await page.request.post(
+        `${apiBase}/action-policies/evaluate`,
+        {
+          headers: scopedHeaders,
+          data: {
+            flowType: 'estimate',
+            actionKey: 'approve',
+            actor: {
+              userId: actorUserId,
+              roles: authState.roles,
+              groupIds: scopedAuth.groupIds,
+            },
+            state: { status: approvalInstance?.status, projectId },
+            targetTable: 'approval_instances',
+            targetId: approvalInstanceId,
+          },
+        },
+      );
+      await ensureOk(evaluateRes);
+      const evaluatePayload = (await evaluateRes.json()) as {
+        allowed?: boolean;
+        reason?: string;
+        guardFailures?: Array<{ type?: string }>;
+      };
+      expect(evaluatePayload.allowed).toBe(false);
+      expect(evaluatePayload.reason).toBe('guard_failed');
+      expect(evaluatePayload.guardFailures?.[0]?.type).toBe(
+        'chat_ack_completed',
+      );
+
+      const missingReasonRes = await page.request.post(
+        `${apiBase}/approval-instances/${encodeURIComponent(approvalInstanceId)}/act`,
+        {
+          headers: scopedHeaders,
+          data: { action: 'approve' },
+        },
+      );
+      expect(missingReasonRes.status()).toBe(400);
+      const missingReasonPayload = (await missingReasonRes.json()) as {
+        error?: { code?: string };
+      };
+      expect(missingReasonPayload.error?.code).toBe('REASON_REQUIRED');
+
+      await prepare(page, scopedAuth);
+      await navigateToSection(page, '承認', '承認一覧');
+      const approvalsSection = page
+        .locator('main')
+        .locator('h2', { hasText: '承認一覧' })
+        .locator('..')
+        .first();
+      await approvalsSection.scrollIntoViewIfNeeded();
+      const flowTypeSelect = await findSelectContainingOption(
+        approvalsSection,
+        '見積',
+      );
+      await selectByLabelOrFirst(flowTypeSelect, '見積');
+      await approvalsSection.getByRole('button', { name: '再読込' }).click();
+
+      const approvalItem = approvalsSection.locator('li', {
+        hasText: estimateId,
+      });
+      await expect(approvalItem).toHaveCount(1, { timeout: actionTimeout });
+      await expect(approvalItem).toBeVisible({ timeout: actionTimeout });
+      const reasonInput = approvalItem.getByPlaceholder('却下理由 (任意)');
+
+      await reasonInput.fill('');
+      await approvalItem.getByRole('button', { name: '承認' }).click();
+      await expect(
+        approvalsSection.getByText('理由入力が必要です（管理者上書き）'),
+      ).toBeVisible({
+        timeout: actionTimeout,
+      });
+
+      const overrideReason = `e2e approval guard override ${id}`;
+      await reasonInput.fill(overrideReason);
+      await approvalItem.getByRole('button', { name: '承認' }).click();
+      await expect(approvalsSection.getByText('承認しました')).toBeVisible({
+        timeout: actionTimeout,
+      });
+
+      const overrideAuditRes = await page.request.get(
+        `${apiBase}/audit-logs?action=action_policy_override&targetTable=approval_instances&targetId=${encodeURIComponent(approvalInstanceId)}&format=json&mask=0&limit=20`,
+        { headers: scopedHeaders },
+      );
+      await ensureOk(overrideAuditRes);
+      const overrideAuditPayload = (await overrideAuditRes.json()) as {
+        items?: Array<{
+          reasonText?: string;
+          metadata?: { guardOverride?: boolean };
+        }>;
+      };
+      expect(
+        (overrideAuditPayload.items ?? []).some(
+          (item) =>
+            item.reasonText === overrideReason &&
+            item.metadata?.guardOverride === true,
+        ),
+      ).toBeTruthy();
+      await captureSection(
+        approvalsSection,
+        '07-approvals-ack-guard-reason-required.png',
+      );
     },
-  );
-  expect(missingReasonRes.status()).toBe(400);
-  const missingReasonPayload = (await missingReasonRes.json()) as {
-    error?: { code?: string };
-  };
-  expect(missingReasonPayload.error?.code).toBe('REASON_REQUIRED');
-
-  await prepare(page, scopedAuth);
-  await navigateToSection(page, '承認', '承認一覧');
-  const approvalsSection = page
-    .locator('main')
-    .locator('h2', { hasText: '承認一覧' })
-    .locator('..')
-    .first();
-  await approvalsSection.scrollIntoViewIfNeeded();
-  const flowTypeSelect = await findSelectContainingOption(
-    approvalsSection,
-    '見積',
-  );
-  await selectByLabelOrFirst(flowTypeSelect, '見積');
-  await approvalsSection.getByRole('button', { name: '再読込' }).click();
-
-  const approvalItem = approvalsSection.locator('li', { hasText: estimateId });
-  await expect(approvalItem).toHaveCount(1, { timeout: actionTimeout });
-  await expect(approvalItem).toBeVisible({ timeout: actionTimeout });
-  const reasonInput = approvalItem.getByPlaceholder('却下理由 (任意)');
-
-  await reasonInput.fill('');
-  await approvalItem.getByRole('button', { name: '承認' }).click();
-  await expect(
-    approvalsSection.getByText('理由入力が必要です（管理者上書き）'),
-  ).toBeVisible({
-    timeout: actionTimeout,
   });
-
-  const overrideReason = `e2e approval guard override ${id}`;
-  await reasonInput.fill(overrideReason);
-  await approvalItem.getByRole('button', { name: '承認' }).click();
-  await expect(approvalsSection.getByText('承認しました')).toBeVisible({
-    timeout: actionTimeout,
-  });
-
-  const overrideAuditRes = await page.request.get(
-    `${apiBase}/audit-logs?action=action_policy_override&targetTable=approval_instances&targetId=${encodeURIComponent(approvalInstanceId)}&format=json&mask=0&limit=20`,
-    { headers: scopedHeaders },
-  );
-  await ensureOk(overrideAuditRes);
-  const overrideAuditPayload = (await overrideAuditRes.json()) as {
-    items?: Array<{
-      reasonText?: string;
-      metadata?: { guardOverride?: boolean };
-    }>;
-  };
-  expect(
-    (overrideAuditPayload.items ?? []).some(
-      (item) =>
-        item.reasonText === overrideReason &&
-        item.metadata?.guardOverride === true,
-    ),
-  ).toBeTruthy();
-  await captureSection(
-    approvalsSection,
-    '07-approvals-ack-guard-reason-required.png',
-  );
 });
