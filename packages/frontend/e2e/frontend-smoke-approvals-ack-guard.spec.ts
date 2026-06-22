@@ -270,7 +270,9 @@ test('frontend smoke approvals ack guard requires override reason @extended', as
     data: {
       flowType: 'estimate',
       actionKey: 'approve',
-      priority: 999,
+      // Keep this test-specific guard ahead of broad demo policies that may
+      // allow admin approvals and would otherwise mask the ack guard.
+      priority: 1_000_000,
       isEnabled: true,
       subjects: { groupIds: [scopedGroupId] },
       stateConstraints: { statusIn: ['pending_qa', 'pending_exec'] },
@@ -279,6 +281,19 @@ test('frontend smoke approvals ack guard requires override reason @extended', as
     },
   });
   await ensureOk(policyRes);
+
+  const missingReasonRes = await page.request.post(
+    `${apiBase}/approval-instances/${encodeURIComponent(approvalInstanceId)}/act`,
+    {
+      headers: scopedHeaders,
+      data: { action: 'approve' },
+    },
+  );
+  expect(missingReasonRes.status()).toBe(400);
+  const missingReasonPayload = (await missingReasonRes.json()) as {
+    error?: { code?: string };
+  };
+  expect(missingReasonPayload.error?.code).toBe('REASON_REQUIRED');
 
   await prepare(page, scopedAuth);
   await navigateToSection(page, '承認', '承認一覧');
