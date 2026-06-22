@@ -98,6 +98,13 @@ const AUTH_SESSION_ROUTE_RATE_LIMIT = getRouteRateLimitOptions(
     timeWindow: '1 minute',
   },
 );
+const AUTH_GUARD_ROUTE_RATE_LIMIT = getRouteRateLimitOptions(
+  'RATE_LIMIT_AUTH_GUARD',
+  {
+    max: 1800,
+    timeWindow: '1 minute',
+  },
+);
 const USER_ROLE_ALIASES = new Set(['project_lead', 'employee', 'probationary']);
 const AUTH_GROUP_TO_ROLE_MAP_RAW = process.env.AUTH_GROUP_TO_ROLE_MAP || '';
 const AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS = Number(
@@ -182,12 +189,12 @@ const authSessionFlexibleLimiter = new RateLimiterMemory({
   ),
 });
 const authJwtFlexibleLimiter = new RateLimiterMemory({
-  points: 1800,
-  duration: 60,
+  points: AUTH_GUARD_ROUTE_RATE_LIMIT.max,
+  duration: parseRateLimitWindowSeconds(AUTH_GUARD_ROUTE_RATE_LIMIT.timeWindow),
 });
 const authHeaderFlexibleLimiter = new RateLimiterMemory({
-  points: 1800,
-  duration: 60,
+  points: AUTH_GUARD_ROUTE_RATE_LIMIT.max,
+  duration: parseRateLimitWindowSeconds(AUTH_GUARD_ROUTE_RATE_LIMIT.timeWindow),
 });
 function parseBearerToken(req: any): string | null {
   const authHeader = req.headers?.authorization;
@@ -859,15 +866,7 @@ function handleAuthGuardError(req: any, reply: any, err: unknown) {
 
 async function authPlugin(fastify: any) {
   assertRuntimeAuthConfig();
-  fastify.addHook(
-    'onRequest',
-    fastify.rateLimit(
-      getRouteRateLimitOptions('RATE_LIMIT_AUTH_GUARD', {
-        max: 1800,
-        timeWindow: '1 minute',
-      }),
-    ),
-  );
+  fastify.addHook('onRequest', fastify.rateLimit(AUTH_GUARD_ROUTE_RATE_LIMIT));
   fastify.addHook('onRequest', async (req: any, reply: any) => {
     if (
       typeof req.url === 'string' &&
@@ -883,7 +882,11 @@ async function authPlugin(fastify: any) {
     }
     const mode = RESOLVED_AUTH_MODE;
     if (mode === 'header') {
-      await applyHeaderAuth(req, req.ip || 'unknown');
+      try {
+        await applyHeaderAuth(req, req.ip || 'unknown');
+      } catch (err) {
+        return handleAuthGuardError(req, reply, err);
+      }
       await ensureProjectIds(req);
       return;
     }
@@ -924,7 +927,11 @@ async function authPlugin(fastify: any) {
       if (IS_PRODUCTION && !AUTH_ALLOW_HEADER_FALLBACK_IN_PROD) {
         return respondUnauthorized(req, reply, 'missing_token');
       }
-      await applyHeaderAuth(req, req.ip || 'unknown');
+      try {
+        await applyHeaderAuth(req, req.ip || 'unknown');
+      } catch (err) {
+        return handleAuthGuardError(req, reply, err);
+      }
       await ensureProjectIds(req);
       return;
     }
