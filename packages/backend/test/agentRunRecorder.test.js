@@ -119,6 +119,9 @@ function runRecorderCheck(options = {}) {
         if (scenario === 'policyDenied' || scenario === 'approvalRequired') {
           return { method: 'POST', url: '/invoices/inv-001/send' };
         }
+        if (scenario === 'scopeDenied') {
+          return { method: 'POST', url: '/me' };
+        }
         return { method: 'GET', url: '/project-360' };
       })();
       const res = await server.inject({
@@ -176,6 +179,46 @@ test('agent run recorder: delegated request stores run/step and links audit meta
   const auditCreate = payload.capture?.auditCreate;
   assert.equal(auditCreate?.action, 'project_360_viewed');
   assert.equal(auditCreate?.metadata?._agent?.runId, 'run-001');
+});
+
+test('agent run recorder: scope_denied in auth guard persists failed run and step without decision request', () => {
+  const result = runRecorderCheck({
+    scenario: 'scopeDenied',
+    tokenClaims: {
+      sub: 'principal-user',
+      act: { sub: 'agent-bot' },
+      scp: ['read-only'],
+      roles: ['user'],
+    },
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout || '{}');
+  assert.equal(payload.statusCode, 403);
+
+  const runCreate = payload.capture?.runCreate;
+  assert.equal(runCreate?.source, 'agent');
+  assert.equal(runCreate?.principalUserId, 'principal-user');
+  assert.equal(runCreate?.actorUserId, 'agent-bot');
+  assert.deepEqual(runCreate?.scopes, ['read-only']);
+  assert.equal(runCreate?.method, 'POST');
+  assert.equal(runCreate?.path, '/me');
+  assert.equal(runCreate?.status, 'failed');
+  assert.equal(runCreate?.httpStatus, 403);
+  assert.equal(runCreate?.errorCode, 'scope_denied');
+  assert.equal(runCreate?.metadata?.deniedIn, 'auth_on_request');
+
+  const stepCreate = payload.capture?.stepCreate;
+  assert.equal(stepCreate?.runId, 'run-001');
+  assert.equal(stepCreate?.kind, 'api_request');
+  assert.equal(stepCreate?.status, 'failed');
+  assert.equal(stepCreate?.errorCode, 'scope_denied');
+  assert.equal(stepCreate?.output?.statusCode, 403);
+  assert.equal(stepCreate?.output?.errorCode, 'scope_denied');
+  assert.equal(stepCreate?.metadata?.deniedIn, 'auth_on_request');
+
+  assert.equal(payload.capture?.runUpdate, undefined);
+  assert.equal(payload.capture?.stepUpdate, undefined);
+  assert.equal(payload.capture?.decisionCreate, undefined);
 });
 
 test('agent run recorder: non delegated token does not create agent run records', () => {
