@@ -1356,6 +1356,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
     }
     try {
       await prisma.groupAccount.update({ where: { id }, data: update });
+      invalidateScimAuthContextCache();
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError) {
         if (err.code === 'P2025') {
@@ -1375,6 +1376,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
         try {
           const memberIds = await resolveMembersPayload(value?.members);
           await syncGroupMembers(id, memberIds);
+          invalidateScimAuthContextCache();
         } catch (err) {
           const scimErr = extractScimError(err);
           if (scimErr) {
@@ -1388,6 +1390,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
         try {
           const memberIds = await resolveMembersPayload(value?.members);
           await addGroupMembers(id, memberIds);
+          invalidateScimAuthContextCache();
         } catch (err) {
           const scimErr = extractScimError(err);
           if (scimErr) {
@@ -1401,6 +1404,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
         try {
           const memberIds = await resolveMembersPayload(value?.members);
           await removeGroupMembers(id, memberIds);
+          invalidateScimAuthContextCache();
         } catch (err) {
           const scimErr = extractScimError(err);
           if (scimErr) {

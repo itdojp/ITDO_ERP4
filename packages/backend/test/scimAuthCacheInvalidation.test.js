@@ -183,6 +183,26 @@ function runCacheInvalidationScenario(scenario) {
             members: [],
           },
         });
+      } else if (scenario === 'groupPatchPartialFailure') {
+        scim = await server.inject({
+          method: 'PATCH',
+          url: '/scim/v2/Groups/group-admin',
+          headers: { authorization: 'Bearer scim-test-token' },
+          payload: {
+            Operations: [
+              {
+                op: 'remove',
+                path: 'members',
+                value: { members: [{ value: 'ua-1' }] },
+              },
+              {
+                op: 'add',
+                path: 'members',
+                value: { members: [{ value: 'missing-user' }] },
+              },
+            ],
+          },
+        });
       } else {
         scim = await server.inject({
           method: 'PATCH',
@@ -240,6 +260,17 @@ test('SCIM group membership changes clear cached role-bearing auth context befor
   assert.equal(payload.firstStatus, 200);
   assert.equal(payload.firstRoles.includes('admin'), true);
   assert.equal(payload.scimStatus, 200);
+  assert.equal(payload.secondStatus, 200);
+  assert.equal(payload.secondBody.user?.roles.includes('admin'), false);
+});
+
+test('SCIM group PATCH membership changes clear cached role context before a later operation returns 400', () => {
+  const result = runCacheInvalidationScenario('groupPatchPartialFailure');
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout || '{}');
+  assert.equal(payload.firstStatus, 200);
+  assert.equal(payload.firstRoles.includes('admin'), true);
+  assert.equal(payload.scimStatus, 400);
   assert.equal(payload.secondStatus, 200);
   assert.equal(payload.secondBody.user?.roles.includes('admin'), false);
 });
