@@ -46,7 +46,7 @@
 - `VITE_AUTH_MODE=jwt_bff` の場合、未ログイン時は簡易ログインを表示せず、backend の Auth Gateway 経由の Google 認証と、例外ユーザ向けローカル認証フォームを表示します
 - ローカル認証フォームは例外ユーザ専用です。Google を利用できるユーザは Google 認証を優先します
 - 初期パスワードの更新が必要な credential では、`初期パスワードを更新` 完了後に新しいパスワードで再度ログインします
-- `mfaRequired=true` の credential は、MFA 実行経路が未実装のため session を発行しません
+- `mfaRequired=true` の credential は、MFA 実行経路が未実装のため session を発行しません。管理者発行のローカル credential は既定でこの状態になります
 - `認証セッション` 一覧は `VITE_AUTH_MODE=jwt_bff` かつログイン済みの場合のみ表示されます
 - `このセッションを終了` は現在の browser session を失効し、即時ログアウトします
 - `VITE_AUTH_MODE` 未設定時の Googleログインは `VITE_GOOGLE_CLIENT_ID` が未設定の場合は表示されません

@@ -45,7 +45,7 @@
 - `VITE_AUTH_MODE=jwt_bff` の場合、未ログイン時は簡易ログインを表示せず、backend の Auth Gateway 経由の Google 認証と、例外ユーザ向けローカル認証フォームを表示します
 - ローカル認証フォームは例外ユーザ専用です。Google を利用できるユーザは Google 認証を優先します
 - 初期パスワードの更新が必要な credential では、`初期パスワードを更新` 完了後に新しいパスワードで再度ログインします
-- `mfaRequired=true` の credential は、MFA 実行経路が未実装のため session を発行しません
+- 2026-06 時点で管理画面から追加するローカル credential は既定で `mfaRequired=true` です。MFA 実行経路が未実装のため session を発行しません
 - `VITE_AUTH_MODE` 未設定時の Googleログインは `VITE_GOOGLE_CLIENT_ID` が未設定の場合は表示されません
 - メール通知は `digest` の場合、配信間隔（分）が必要です
 - メール通知の既定は `digest` / 10分です

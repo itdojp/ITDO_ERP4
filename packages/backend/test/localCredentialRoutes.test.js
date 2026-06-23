@@ -215,7 +215,7 @@ test('POST /auth/local-credentials creates local credential and writes audit log
         const body = JSON.parse(res.body);
         assert.equal(body.loginId, 'local.user@example.com');
         assert.equal(body.status, 'active');
-        assert.equal(body.mfaRequired, false);
+        assert.equal(body.mfaRequired, true);
       } finally {
         await server.close();
       }
@@ -231,12 +231,156 @@ test('POST /auth/local-credentials creates local credential and writes audit log
   );
   assert.equal(
     capturedCreate?.data?.localCredential?.create?.mfaRequired,
-    false,
+    true,
   );
   assert.equal(typeof hash, 'string');
   assert.equal(await argon2.verify(hash, 'LocalPassword123'), true);
   assert.equal(capturedAudit?.data?.action, 'local_credential_created');
   assert.equal(capturedAudit?.data?.metadata?.ticketId, 'AUTH-001');
+  assert.equal(capturedAudit?.data?.metadata?.mfaRequired, true);
+  assert.equal(capturedAudit?.data?.metadata?.mfaDefaultOverridden, false);
+});
+
+test('POST /auth/local-credentials requires a reasonText for password-only MFA override', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'userAccount.findUnique': async () => {
+        throw new Error('validation should stop before account lookup');
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/auth/local-credentials',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+            ...LOCAL_CSRF_HEADERS,
+          },
+          payload: {
+            userAccountId: 'user-001',
+            loginId: 'Local.User@example.com ',
+            password: 'LocalPassword123',
+            mfaRequired: false,
+            ticketId: 'AUTH-001',
+            reasonCode: 'password_only_exception',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error.code, 'invalid_local_credential_payload');
+        assert.deepEqual(body.error.details.invalidFields, ['reasonText']);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('POST /auth/local-credentials allows an audited password-only MFA override', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let capturedCreate = null;
+  let capturedAudit = null;
+  await withPrismaStubs(
+    {
+      'userAccount.findUnique': async () => ({
+        id: 'user-001',
+        userName: 'legacy-user',
+        displayName: 'Legacy User',
+        active: true,
+        deletedAt: null,
+        identities: [],
+      }),
+      'localCredential.findUnique': async () => null,
+      'userIdentity.create': async (args) => {
+        capturedCreate = args;
+        return {
+          id: 'identity-001',
+          userAccountId: 'user-001',
+          providerType: 'local_password',
+          providerSubject: 'local-subject-001',
+          issuer: 'erp4_local',
+          status: 'active',
+          lastAuthenticatedAt: null,
+          linkedAt: new Date('2026-03-23T00:00:00.000Z'),
+          createdAt: new Date('2026-03-23T00:00:00.000Z'),
+          updatedAt: new Date('2026-03-23T00:00:00.000Z'),
+          userAccount: {
+            id: 'user-001',
+            userName: 'legacy-user',
+            displayName: 'Legacy User',
+            active: true,
+            deletedAt: null,
+          },
+          localCredential: {
+            id: 'cred-001',
+            loginId: args.data.localCredential.create.loginId,
+            passwordAlgo: 'argon2id',
+            mfaRequired: args.data.localCredential.create.mfaRequired,
+            mfaSecretRef: null,
+            mustRotatePassword: true,
+            failedAttempts: 0,
+            lockedUntil: null,
+            passwordChangedAt:
+              args.data.localCredential.create.passwordChangedAt,
+            createdAt: new Date('2026-03-23T00:00:00.000Z'),
+            updatedAt: new Date('2026-03-23T00:00:00.000Z'),
+          },
+        };
+      },
+      'auditLog.create': async (args) => {
+        capturedAudit = args;
+        return { id: 'audit-001' };
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/auth/local-credentials',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+            ...LOCAL_CSRF_HEADERS,
+          },
+          payload: {
+            userAccountId: 'user-001',
+            loginId: 'Local.User@example.com ',
+            password: 'LocalPassword123',
+            mfaRequired: false,
+            ticketId: 'AUTH-001',
+            reasonCode: 'password_only_exception',
+            reasonText: 'temporary break-glass local login exception',
+          },
+        });
+        assert.equal(res.statusCode, 201, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.mfaRequired, false);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(
+    capturedCreate?.data?.localCredential?.create?.mfaRequired,
+    false,
+  );
+  assert.equal(capturedAudit?.data?.reasonCode, 'password_only_exception');
+  assert.equal(
+    capturedAudit?.data?.reasonText,
+    'temporary break-glass local login exception',
+  );
+  assert.equal(capturedAudit?.data?.metadata?.mfaRequired, false);
+  assert.equal(capturedAudit?.data?.metadata?.mfaDefaultOverridden, true);
 });
 
 test('POST /auth/local-credentials rejects blank audit fields after trimming', async () => {

@@ -290,6 +290,7 @@ function buildLocalCredentialAuditMetadata(
     userAccountId: string;
     identityId?: string;
     mfaRequired?: boolean;
+    mfaDefaultOverridden?: boolean;
   },
 ) {
   return {
@@ -301,6 +302,7 @@ function buildLocalCredentialAuditMetadata(
     changedFields: payload.changedFields,
     status: payload.status,
     mfaRequired: payload.mfaRequired,
+    mfaDefaultOverridden: payload.mfaDefaultOverridden,
   } as Prisma.InputJsonValue;
 }
 
@@ -322,6 +324,8 @@ function buildIdentityAuditMetadata(
       string,
       Prisma.InputJsonValue | null | undefined
     > | null;
+    mfaRequired?: boolean;
+    mfaDefaultOverridden?: boolean;
   },
 ) {
   return {
@@ -335,7 +339,23 @@ function buildIdentityAuditMetadata(
     changedFields: payload.changedFields,
     beforeState: payload.beforeState ?? null,
     afterState: payload.afterState ?? null,
+    mfaRequired: payload.mfaRequired,
+    mfaDefaultOverridden: payload.mfaDefaultOverridden,
   } as Prisma.InputJsonValue;
+}
+
+function resolveIssuedLocalCredentialMfaRequired(mfaRequired: unknown) {
+  return mfaRequired !== false;
+}
+
+function appendMfaPasswordOnlyOverrideValidation(
+  invalidFields: string[],
+  mfaRequired: boolean,
+  reasonText: string | undefined,
+) {
+  if (!mfaRequired && !reasonText) {
+    invalidFields.push('reasonText');
+  }
 }
 
 function snapshotIdentityState(identity: {
@@ -2106,6 +2126,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         ticketId: string;
         reasonCode: string;
         reasonText?: string;
+        mfaRequired?: boolean;
       };
       const userAccountId = normalizeOptionalString(body.userAccountId);
       const loginId = normalizeLocalLoginId(body.loginId);
@@ -2114,6 +2135,9 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       const ticketId = normalizeOptionalString(body.ticketId);
       const reasonCode = normalizeOptionalString(body.reasonCode);
       const reasonText = normalizeOptionalString(body.reasonText) || undefined;
+      const mfaRequired = resolveIssuedLocalCredentialMfaRequired(
+        body.mfaRequired,
+      );
       const effectiveUntil = parseIdentityWindow(
         body.effectiveUntil,
         'effectiveUntil',
@@ -2129,6 +2153,11 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       if (!loginId) invalidFields.push('loginId');
       if (!ticketId) invalidFields.push('ticketId');
       if (!reasonCode) invalidFields.push('reasonCode');
+      appendMfaPasswordOnlyOverrideValidation(
+        invalidFields,
+        mfaRequired,
+        reasonText,
+      );
       if (effectiveUntil.invalidField)
         invalidFields.push(effectiveUntil.invalidField);
       if (rollbackWindowUntil.invalidField) {
@@ -2234,7 +2263,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
                 loginId,
                 passwordHash,
                 passwordAlgo: 'argon2id',
-                mfaRequired: false,
+                mfaRequired,
                 mustRotatePassword: true,
                 failedAttempts: 0,
                 passwordChangedAt: now,
@@ -2266,10 +2295,13 @@ export async function registerAuthRoutes(app: FastifyInstance) {
               'effectiveUntil',
               'rollbackWindowUntil',
               'note',
+              'mfaRequired',
               'mustRotatePassword',
             ],
             beforeState: null,
             afterState: snapshotIdentityState(created),
+            mfaRequired: created.localCredential?.mfaRequired,
+            mfaDefaultOverridden: !mfaRequired,
           }),
           ...auditContextFromRequest(req),
         });
@@ -2664,6 +2696,9 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       const ticketId = normalizeOptionalString(body.ticketId);
       const reasonCode = normalizeOptionalString(body.reasonCode);
       const reasonText = normalizeOptionalString(body.reasonText) || undefined;
+      const mfaRequired = resolveIssuedLocalCredentialMfaRequired(
+        body.mfaRequired,
+      );
       const { password, invalidFields: passwordInvalidFields } =
         validateLocalPassword(body.password);
       const invalidFields = [...passwordInvalidFields];
@@ -2671,6 +2706,11 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       if (!loginId) invalidFields.push('loginId');
       if (!ticketId) invalidFields.push('ticketId');
       if (!reasonCode) invalidFields.push('reasonCode');
+      appendMfaPasswordOnlyOverrideValidation(
+        invalidFields,
+        mfaRequired,
+        reasonText,
+      );
       if (invalidFields.length) {
         return respondValidationError(
           reply,
@@ -2761,7 +2801,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
                 loginId,
                 passwordHash,
                 passwordAlgo: 'argon2id',
-                mfaRequired: body.mfaRequired ?? false,
+                mfaRequired,
                 mustRotatePassword: true,
                 failedAttempts: 0,
                 passwordChangedAt: now,
@@ -2785,6 +2825,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
             userAccountId: created.userAccountId,
             identityId: created.id,
             mfaRequired: created.localCredential?.mfaRequired,
+            mfaDefaultOverridden: !mfaRequired,
           }),
           ...auditContextFromRequest(req),
         });
