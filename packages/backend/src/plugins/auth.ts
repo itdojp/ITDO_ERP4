@@ -3,6 +3,7 @@ import { createRemoteJWKSet, importSPKI, jwtVerify } from 'jose';
 import type { CryptoKey, JWTPayload, JWTVerifyGetKey } from 'jose';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
 import { prisma } from '../services/db.js';
+import { persistDelegatedScopeDeniedAgentRun } from '../services/agentRuns.js';
 import { createApiErrorResponse } from '../services/errors.js';
 import {
   buildSessionUserContext,
@@ -297,9 +298,30 @@ export function evaluateDelegatedScope(
   return { allowed: false, reason: 'scope_denied' };
 }
 
-function enforceDelegatedScope(req: any, reply: any): any | null {
+async function persistScopeDeniedAgentRunForRequest(req: any) {
+  const auth = req.user?.auth;
+  if (!auth?.delegated) return;
+  try {
+    await persistDelegatedScopeDeniedAgentRun({
+      requestId: req.id,
+      method: req.method,
+      path: req.url,
+      principalUserId: auth.principalUserId,
+      actorUserId: auth.actorUserId,
+      scopes: auth.scopes,
+    });
+  } catch (err) {
+    req.log?.warn?.({ err }, 'scope_denied agent run persistence failed');
+  }
+}
+
+async function enforceDelegatedScope(
+  req: any,
+  reply: any,
+): Promise<any | null> {
   const decision = evaluateDelegatedScope(req.user, req.method);
   if (decision.allowed) return null;
+  await persistScopeDeniedAgentRunForRequest(req);
   return respondForbidden(req, reply, decision.reason);
 }
 
@@ -899,7 +921,7 @@ async function authPlugin(fastify: any) {
             return respondUnauthorized(req, reply, 'missing_session');
           }
           if (!(await validateAndEnrichUserContext(req, reply))) return;
-          const scopeDenied = enforceDelegatedScope(req, reply);
+          const scopeDenied = await enforceDelegatedScope(req, reply);
           if (scopeDenied) return scopeDenied;
           await ensureProjectIds(req);
           return;
@@ -938,7 +960,7 @@ async function authPlugin(fastify: any) {
     try {
       req.user = await authenticateJwt(token, req.ip || 'unknown');
       if (!(await validateAndEnrichUserContext(req, reply))) return;
-      const scopeDenied = enforceDelegatedScope(req, reply);
+      const scopeDenied = await enforceDelegatedScope(req, reply);
       if (scopeDenied) return scopeDenied;
       await ensureProjectIds(req);
     } catch (err) {
