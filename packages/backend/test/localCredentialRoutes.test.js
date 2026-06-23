@@ -668,6 +668,82 @@ test('PATCH /auth/local-credentials/:identityId updates password, lock state and
     [...(capturedAudit?.data?.metadata?.changedFields ?? [])].sort(),
     ['lockedUntil', 'loginId', 'mfaRequired', 'password', 'status'].sort(),
   );
+  assert.equal(capturedAudit?.data?.metadata?.mfaRequired, false);
+  assert.equal(capturedAudit?.data?.metadata?.mfaDefaultOverridden, true);
+});
+
+test('PATCH /auth/local-credentials/:identityId requires a reasonText for password-only MFA override', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let updateCalled = false;
+  await withPrismaStubs(
+    {
+      'userIdentity.findUnique': async () => ({
+        id: 'identity-001',
+        userAccountId: 'user-001',
+        providerType: 'local_password',
+        providerSubject: 'local-subject-001',
+        issuer: 'erp4_local',
+        status: 'active',
+        lastAuthenticatedAt: null,
+        linkedAt: new Date('2026-03-23T00:00:00.000Z'),
+        createdAt: new Date('2026-03-23T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-23T00:00:00.000Z'),
+        userAccount: {
+          id: 'user-001',
+          userName: 'legacy-user',
+          displayName: 'Legacy User',
+          active: true,
+          deletedAt: null,
+        },
+        localCredential: {
+          id: 'cred-001',
+          loginId: 'local-user@example.com',
+          passwordAlgo: 'argon2id',
+          mfaRequired: true,
+          mfaSecretRef: null,
+          mustRotatePassword: true,
+          failedAttempts: 0,
+          lockedUntil: null,
+          passwordChangedAt: new Date('2026-03-23T00:00:00.000Z'),
+          createdAt: new Date('2026-03-23T00:00:00.000Z'),
+          updatedAt: new Date('2026-03-23T00:00:00.000Z'),
+        },
+      }),
+      'userIdentity.update': async () => {
+        updateCalled = true;
+        throw new Error('validation should stop before credential update');
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'PATCH',
+          url: '/auth/local-credentials/identity-001',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+            ...LOCAL_CSRF_HEADERS,
+          },
+          payload: {
+            mfaRequired: false,
+            ticketId: 'AUTH-003A',
+            reasonCode: 'password_only_exception',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error.code, 'invalid_local_credential_payload');
+        assert.deepEqual(body.error.details.invalidFields, ['reasonText']);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(updateCalled, false);
 });
 
 test('PATCH /auth/local-credentials/:identityId returns current representation on no-op updates', async () => {

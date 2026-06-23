@@ -2953,6 +2953,16 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       if (lockedUntil.invalid) invalidFields.push('lockedUntil');
       if (!ticketId) invalidFields.push('ticketId');
       if (!reasonCode) invalidFields.push('reasonCode');
+      if (
+        body.mfaRequired === false &&
+        current.localCredential.mfaRequired !== false
+      ) {
+        appendMfaPasswordOnlyOverrideValidation(
+          invalidFields,
+          false,
+          reasonText,
+        );
+      }
       const updateCredentialData: Prisma.LocalCredentialUpdateInput = {
         updatedBy: actorId,
       };
@@ -3030,6 +3040,9 @@ export async function registerAuthRoutes(app: FastifyInstance) {
             userAccountId: updated.userAccountId,
             identityId: updated.id,
             mfaRequired: updated.localCredential?.mfaRequired,
+            mfaDefaultOverridden: changedFields.includes('mfaRequired')
+              ? updated.localCredential?.mfaRequired === false
+              : undefined,
           }),
           ...auditContextFromRequest(req),
         });
