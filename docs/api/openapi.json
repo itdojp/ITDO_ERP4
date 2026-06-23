@@ -7079,6 +7079,9 @@
                     "minLength": 1,
                     "type": "string"
                   },
+                  "mfaRequired": {
+                    "type": "boolean"
+                  },
                   "note": {
                     "maxLength": 2000,
                     "minLength": 1,

@@ -2564,6 +2564,7 @@ export const userIdentityLocalLinkSchema = {
       userAccountId: Type.String({ minLength: 1 }),
       loginId: Type.String({ minLength: 1, maxLength: 255 }),
       password: Type.String({ minLength: 12, maxLength: 128 }),
+      mfaRequired: Type.Optional(Type.Boolean()),
       effectiveUntil: Type.Optional(userIdentityWindowSchema),
       rollbackWindowUntil: Type.Optional(userIdentityWindowSchema),
       note: Type.Optional(

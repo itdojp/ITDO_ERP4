@@ -469,7 +469,7 @@ test('POST /auth/user-identities/local-link creates local identity with bootstra
         const body = JSON.parse(res.body);
         assert.equal(body.providerType, 'local_password');
         assert.equal(body.localCredential.loginId, 'local.user@example.com');
-        assert.equal(body.localCredential.mfaRequired, false);
+        assert.equal(body.localCredential.mfaRequired, true);
         assert.equal(body.localCredential.mustRotatePassword, true);
       } finally {
         await server.close();
@@ -482,13 +482,165 @@ test('POST /auth/user-identities/local-link creates local identity with bootstra
   assert.equal(capturedCreate?.data?.providerType, 'local_password');
   assert.equal(
     capturedCreate?.data?.localCredential?.create?.mfaRequired,
-    false,
+    true,
   );
   assert.equal(
     capturedCreate?.data?.localCredential?.create?.mustRotatePassword,
     true,
   );
   assert.equal(await argon2.verify(passwordHash, 'LocalPassword123'), true);
+});
+
+test('POST /auth/user-identities/local-link requires a reasonText for password-only MFA override', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  let lookupCalled = false;
+  await withPrismaStubs(
+    {
+      'userAccount.findUnique': async () => {
+        lookupCalled = true;
+        throw new Error('validation should stop before account lookup');
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          remoteAddress: nextRemoteAddress(),
+          method: 'POST',
+          url: '/auth/user-identities/local-link',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+            ...IDENTITY_CSRF_HEADERS,
+          },
+          payload: {
+            userAccountId: 'user-001',
+            loginId: 'Local.User@example.com ',
+            password: 'LocalPassword123',
+            mfaRequired: false,
+            ticketId: 'AUTH-MIG-002',
+            reasonCode: 'password_only_exception',
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error.code, 'invalid_local_credential_payload');
+        assert.deepEqual(body.error.details.invalidFields, ['reasonText']);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(lookupCalled, false);
+});
+
+test('POST /auth/user-identities/local-link allows an audited password-only MFA override', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  const rollbackWindowUntil = futureIso(7);
+  let capturedCreate = null;
+  let capturedAudit = null;
+  await withPrismaStubs(
+    {
+      'userAccount.findUnique': async () => ({
+        id: 'user-001',
+        userName: 'legacy-user',
+        displayName: 'Legacy User',
+        active: true,
+        deletedAt: null,
+        identities: [],
+      }),
+      'localCredential.findUnique': async () => null,
+      'userIdentity.create': async (args) => {
+        capturedCreate = args;
+        return {
+          id: 'identity-local-001',
+          userAccountId: 'user-001',
+          providerType: 'local_password',
+          issuer: 'erp4_local',
+          providerSubject: 'local-subject-001',
+          emailSnapshot: null,
+          status: 'active',
+          lastAuthenticatedAt: null,
+          linkedAt: new Date('2026-03-23T00:00:00.000Z'),
+          effectiveUntil: args.data.effectiveUntil,
+          rollbackWindowUntil: args.data.rollbackWindowUntil,
+          note: args.data.note,
+          createdAt: new Date('2026-03-23T00:00:00.000Z'),
+          updatedAt: new Date('2026-03-23T00:00:00.000Z'),
+          userAccount: {
+            id: 'user-001',
+            userName: 'legacy-user',
+            displayName: 'Legacy User',
+            active: true,
+            deletedAt: null,
+          },
+          localCredential: {
+            loginId: args.data.localCredential.create.loginId,
+            passwordAlgo: 'argon2id',
+            mfaRequired: args.data.localCredential.create.mfaRequired,
+            mfaSecretRef: null,
+            mustRotatePassword:
+              args.data.localCredential.create.mustRotatePassword,
+            failedAttempts: 0,
+            lockedUntil: null,
+            passwordChangedAt:
+              args.data.localCredential.create.passwordChangedAt,
+          },
+        };
+      },
+      'auditLog.create': async (args) => {
+        capturedAudit = args;
+        return { id: 'audit-identity-override' };
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          remoteAddress: nextRemoteAddress(),
+          method: 'POST',
+          url: '/auth/user-identities/local-link',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+            ...IDENTITY_CSRF_HEADERS,
+          },
+          payload: {
+            userAccountId: 'user-001',
+            loginId: 'Local.User@example.com ',
+            password: 'LocalPassword123',
+            mfaRequired: false,
+            rollbackWindowUntil,
+            ticketId: 'AUTH-MIG-002',
+            reasonCode: 'password_only_exception',
+            reasonText: 'temporary migration exception',
+          },
+        });
+        assert.equal(res.statusCode, 201, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.localCredential.mfaRequired, false);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(
+    capturedCreate?.data?.localCredential?.create?.mfaRequired,
+    false,
+  );
+  assert.equal(capturedAudit?.data?.reasonCode, 'password_only_exception');
+  assert.equal(
+    capturedAudit?.data?.reasonText,
+    'temporary migration exception',
+  );
+  assert.equal(capturedAudit?.data?.metadata?.mfaRequired, false);
+  assert.equal(capturedAudit?.data?.metadata?.mfaDefaultOverridden, true);
 });
 
 test('POST /auth/user-identities/local-link rejects blank audit fields after trimming', async () => {
