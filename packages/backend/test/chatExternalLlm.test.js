@@ -80,3 +80,38 @@ test('summarizeWithExternalLlm uses guarded fetch for allowed host', async () =>
     globalThis.fetch = originalFetch;
   }
 });
+
+test('summarizeWithExternalLlm redacts bounded provider error diagnostics', async () => {
+  const { summarizeWithExternalLlm } =
+    await import('../dist/services/chatExternalLlm.js');
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () =>
+      new Response(`token=sk_secret_value ${'x'.repeat(2000)}`, {
+        status: 502,
+        headers: { 'content-type': 'text/plain' },
+      });
+    await withEnv(
+      {
+        CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+        CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+        CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://api.openai.com/v1',
+        CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: 'api.openai.com',
+        CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: '',
+      },
+      async () => {
+        await assert.rejects(
+          summarizeWithExternalLlm({ bodies: ['secret prompt'] }),
+          (error) => {
+            assert.match(error.message, /openai_error_502/);
+            assert.equal(error.message.includes('sk_secret_value'), false);
+            assert.ok(error.message.length < 260);
+            return true;
+          },
+        );
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

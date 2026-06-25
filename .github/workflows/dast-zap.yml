@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 60
     services:
       postgres:
-        image: postgres:15
+        image: docker.io/library/postgres:15@sha256:6ab12ad4395ee49ab49fe19530f7e183c5a9c97fc47cf687b3e281bec5f91ee4
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -27,8 +27,8 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 20.19.0
 
@@ -76,7 +76,7 @@ jobs:
           mkdir -p tmp/zap-report
           docker run --rm --network=host \
             -v "$PWD/tmp/zap-report:/zap/wrk/:rw" \
-            ghcr.io/zaproxy/zaproxy:stable \
+            ghcr.io/zaproxy/zaproxy:stable@sha256:461415b7526ca60af0ddc15389419d05df243aed1b665b64d3a8c3ebd67c6056 \
             zap-baseline.py \
               -t "http://127.0.0.1:3002/readyz" \
               -J "zap-report.json" \
@@ -90,7 +90,7 @@ jobs:
         run: |
           docker run --rm --network=host \
             -v "$PWD/tmp/zap-report:/zap/wrk/:rw" \
-            ghcr.io/zaproxy/zaproxy:stable \
+            ghcr.io/zaproxy/zaproxy:stable@sha256:461415b7526ca60af0ddc15389419d05df243aed1b665b64d3a8c3ebd67c6056 \
             zap-api-scan.py \
               -t "/zap/wrk/openapi.json" \
               -f "openapi" \
@@ -112,7 +112,7 @@ jobs:
 
       - name: Upload ZAP report artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: zap-report-${{ github.run_id }}
           path: tmp/zap-report/*
@@ -121,7 +121,7 @@ jobs:
 
       - name: Upload DAST backend logs
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: dast-backend-log-${{ github.run_id }}
           path: tmp/dast-backend.log

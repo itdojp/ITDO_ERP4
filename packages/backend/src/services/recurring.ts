@@ -56,6 +56,40 @@ function nextRunAt(frequency: string | null | undefined, current: Date) {
   return addMonths(current, step);
 }
 
+function isUniqueConstraintError(error: unknown) {
+  if (!error || typeof error !== 'object' || !('code' in error)) {
+    return false;
+  }
+  return (error as { code?: unknown }).code === 'P2002';
+}
+
+async function claimGenerationLog(params: {
+  templateId: string;
+  projectId: string;
+  periodKey: string;
+  runAt: Date;
+}): Promise<'claimed' | 'already_claimed'> {
+  try {
+    await prisma.recurringGenerationLog.create({
+      data: {
+        templateId: params.templateId,
+        projectId: params.projectId,
+        periodKey: params.periodKey,
+        runAt: params.runAt,
+        status: 'running',
+        message: 'generation_claimed',
+        createdBy: 'recurring-job',
+      },
+    });
+    return 'claimed';
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      return 'already_claimed';
+    }
+    throw error;
+  }
+}
+
 export async function runRecurringTemplates(now = new Date()) {
   const templates = await prisma.recurringProjectTemplate.findMany({
     where: {
@@ -68,6 +102,21 @@ export async function runRecurringTemplates(now = new Date()) {
   for (const template of templates) {
     const runAt = template.nextRunAt ?? now;
     const periodKeyValue = periodKey(runAt);
+    const claimStatus = await claimGenerationLog({
+      templateId: template.id,
+      projectId: template.projectId,
+      periodKey: periodKeyValue,
+      runAt,
+    });
+    if (claimStatus === 'already_claimed') {
+      results.push({
+        templateId: template.id,
+        projectId: template.projectId,
+        status: 'skipped',
+        message: 'already_claimed',
+      });
+      continue;
+    }
     if (template.project && template.project.status !== 'active') {
       await prisma.recurringProjectTemplate.update({
         where: { id: template.id },

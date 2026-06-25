@@ -6,8 +6,28 @@ SRC_DIR="$ROOT_DIR/deploy/quadlet"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
 MODE="${QUADLET_INSTALL_MODE:-link}"
 
+fail() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
 warn() {
   printf 'WARN: %s\n' "$*" >&2
+}
+
+resolve_image_tag() {
+  local tag="${ERP4_IMAGE_TAG:-}"
+  if [[ -z "$tag" ]]; then
+    if tag="$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD 2>/dev/null)"; then
+      :
+    else
+      fail "ERP4_IMAGE_TAG is required when the repository commit cannot be resolved"
+    fi
+  fi
+  if [[ ! "$tag" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+    fail "ERP4_IMAGE_TAG contains characters that are unsafe for an image tag: $tag"
+  fi
+  printf '%s\n' "$tag"
 }
 
 run_daemon_reload() {
@@ -25,13 +45,18 @@ run_daemon_reload() {
 
 mkdir -p "$TARGET_DIR"
 shopt -s nullglob
+ERP4_IMAGE_TAG="$(resolve_image_tag)"
+export ERP4_IMAGE_TAG
 
 install_unit() {
   local src="$1"
   local name
   name="$(basename "$src")"
   local dst="$TARGET_DIR/$name"
-  if [[ "$MODE" == "copy" ]]; then
+  if grep -Fq 'REPLACE_WITH_COMMIT_SHA' "$src"; then
+    sed "s/REPLACE_WITH_COMMIT_SHA/${ERP4_IMAGE_TAG}/g" "$src" > "$dst"
+    chmod 0644 "$dst"
+  elif [[ "$MODE" == "copy" ]]; then
     install -m 0644 "$src" "$dst"
   else
     ln -sfn "$src" "$dst"
@@ -64,6 +89,7 @@ else
 fi
 
 printf 'installed units into %s\n' "$TARGET_DIR"
+printf 'rendered local application image tag: %s\n' "$ERP4_IMAGE_TAG"
 printf 'next: edit %s/erp4-postgres.env and %s/erp4-backend.env, then run:\n' "$TARGET_DIR" "$TARGET_DIR"
 printf '  systemctl --user enable --now erp4-postgres.service erp4-migrate.service erp4-backend.service erp4-frontend.service\n'
 printf 'optional HTTPS proxy: edit %s/erp4-caddy.env and %s/erp4-caddy.Caddyfile, then run:\n' "$TARGET_DIR" "$TARGET_DIR"

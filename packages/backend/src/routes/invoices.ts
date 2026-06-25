@@ -153,9 +153,50 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
   app.post(
     '/projects/:projectId/invoices',
     { preHandler: requireRole(['admin', 'mgmt']), schema: invoiceSchema },
-    async (req) => {
+    async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
       const body = req.body as any;
+      if (body.estimateId) {
+        const estimate = await prisma.estimate.findUnique({
+          where: { id: body.estimateId },
+          select: { id: true, projectId: true, deletedAt: true },
+        });
+        if (!estimate || estimate.deletedAt) {
+          return reply.status(400).send({
+            error: { code: 'INVALID_ESTIMATE', message: 'Estimate not found' },
+          });
+        }
+        if (estimate.projectId !== projectId) {
+          return reply.status(400).send({
+            error: {
+              code: 'ESTIMATE_PROJECT_MISMATCH',
+              message: 'Estimate must belong to the invoice project',
+            },
+          });
+        }
+      }
+      if (body.milestoneId) {
+        const milestone = await prisma.projectMilestone.findUnique({
+          where: { id: body.milestoneId },
+          select: { id: true, projectId: true, deletedAt: true },
+        });
+        if (!milestone || milestone.deletedAt) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_MILESTONE',
+              message: 'Milestone not found',
+            },
+          });
+        }
+        if (milestone.projectId !== projectId) {
+          return reply.status(400).send({
+            error: {
+              code: 'MILESTONE_PROJECT_MISMATCH',
+              message: 'Milestone must belong to the invoice project',
+            },
+          });
+        }
+      }
       const now = new Date();
       const { number, serial } = await nextNumber('invoice', now);
       const invoice = await prisma.invoice.create({

@@ -108,7 +108,8 @@
 - 出力:
   - `tmp/sbom/backend.cdx.json`
   - `tmp/sbom/frontend.cdx.json`
-  - 上記を Actions artifact としてアップロード
+  - `tmp/sbom/SHA256SUMS`
+  - 上記を Actions artifact としてアップロードし、`SHA256SUMS` を subject とした GitHub artifact attestation を発行
 
 ### ローカルでの生成
 
@@ -116,7 +117,24 @@
 ./scripts/export-sbom.sh --out tmp/sbom
 ```
 
-## Provenance/署名（現状）
+## Provenance / attestation
 
-現時点では署名や provenance の強制は行いません。
-導入する場合は、対象（成果物/コンテナ/依存）と運用（鍵管理・検証点）を含めて別 Issue で設計します。
+- workflow: `.github/workflows/ci.yml`, `.github/workflows/release.yml`
+- CI の SBOM artifact と manual release の `.tgz` / `metadata.json` は `sha256sum` で checksum manifest を作成し、GitHub artifact attestation を発行します。
+- workflow permissions は `id-token: write` と `attestations: write` を必要な job に限定します。
+- operator は artifact 取得後、対応する attestation と checksum manifest を照合してから配布・保管します。
+
+例:
+
+```bash
+gh attestation verify dist/release/app-release.tgz --repo itdojp/ITDO_ERP4
+sha256sum -c dist/release/SHA256SUMS
+```
+
+## Workflow / container pinning
+
+- security / release 系 workflow の reusable action は mutable tag ではなく commit SHA で固定します。
+- DAST ZAP image は digest 付き参照を使います。
+- Quadlet の Caddy / PostgreSQL image と Containerfile の Node / nginx base image は digest 付き参照を使います。
+- Caddy の `AutoUpdate=registry` は使わず、digest 更新はレビュー済み変更として扱います。
+- backend / frontend の local image は `latest` ではなく commit-derived tag を使い、`scripts/quadlet/build-images.sh` と `scripts/quadlet/install-user-units.sh` で同じ `ERP4_IMAGE_TAG` を展開します。

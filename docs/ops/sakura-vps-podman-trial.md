@@ -23,9 +23,9 @@
 - 作業ユーザー: `deploy`（`sudo` 可能）
 - リポジトリ配置先: `/opt/itdo/ITDO_ERP4`
 - 公開ポート:
-  - frontend: `8080/tcp`
-  - backend: `3001/tcp`
+  - Caddy proxy: `80/tcp`, `443/tcp`
   - PostgreSQL: `127.0.0.1:55432/tcp` のみ
+  - backend / frontend は Quadlet network 内に閉じ、host へ直接公開しない
 
 補足:
 
@@ -120,16 +120,24 @@ build:
 ./scripts/quadlet/build-images.sh
 ```
 
-生成されるイメージ:
+生成されるイメージは、既定では現在の Git commit 短縮 SHA を tag に使います。タグを明示したい場合は `ERP4_IMAGE_TAG` を設定します。
 
-- `localhost/erp4-backend:latest`
-- `localhost/erp4-frontend:latest`
+- `localhost/erp4-backend:<commit-sha>`
+- `localhost/erp4-frontend:<commit-sha>`
+
+```bash
+ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" ./scripts/quadlet/build-images.sh
+```
+
+`latest` tag は本番 Quadlet 手順では使いません。Containerfile の base image と Caddy/PostgreSQL image は digest 付き参照を使い、アプリケーション image は commit-derived tag を Quadlet unit へ展開します。
 
 ## 4. Quadlet 配置
 
 ```bash
 ./scripts/quadlet/install-user-units.sh
 ```
+
+`install-user-units.sh` は `deploy/quadlet/*.container` / `*.service` 内の `REPLACE_WITH_COMMIT_SHA` を `ERP4_IMAGE_TAG`（未指定時は現在の Git commit 短縮 SHA）で展開して配置します。`build-images.sh` と同じ tag を使うため、必要に応じて同じ `ERP4_IMAGE_TAG` を指定してください。
 
 配置先:
 

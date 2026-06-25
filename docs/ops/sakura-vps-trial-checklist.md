@@ -1,10 +1,12 @@
 # さくらVPS 試験稼働チェックリスト
 
 ## 目的
+
 - さくらVPS 上の rootless Podman + Quadlet 構成について、試験稼働の Go/No-Go 判定を 1 回で再実施できる形にする。
 - `sakura-vps-podman-trial.md` の詳細手順から、受入確認に必要な最小手順だけを抜き出す。
 
 ## 前提
+
 - 作業ユーザーは `deploy` を想定する。
 - リポジトリは `/opt/itdo/ITDO_ERP4` に配置済みで、`origin/main` と対象 PR の差分が反映済みであること。
 - build-time / runtime / proxy / maintenance の設定値は [sakura-vps-env-checklist](sakura-vps-env-checklist.md) を見ながら確認する。
@@ -17,37 +19,48 @@
 ## Go/No-Go 手順
 
 ### 1. host 前提確認
+
 ```bash
 cd /opt/itdo/ITDO_ERP4
 ./scripts/quadlet/check-host-prereqs.sh
 ```
 
 確認観点:
+
 - `loginctl enable-linger`
 - Podman / systemd / `sysctl`
 - 80/443 の bind 可否 / 占有有無
 - `subuid` / `subgid` はこのスクリプトでは検証しないため、別途手動確認する
 
 ### 2. build-time env 検証
+
 ```bash
 ./scripts/quadlet/check-env.sh --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
 ```
 
 ### 3. イメージ build
+
 ```bash
 ./scripts/quadlet/build-images.sh
 ```
 
 最低限の確認:
-- `localhost/erp4-backend:latest`
-- `localhost/erp4-frontend:latest`
+
+- `localhost/erp4-backend:<commit-sha>`
+- `localhost/erp4-frontend:<commit-sha>`
+
+`<commit-sha>` は既定で現在の Git commit 短縮 SHA です。明示したい場合は、`ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" ./scripts/quadlet/build-images.sh` のように同じ tag を指定します。`latest` tag は本番 Quadlet 手順では使いません。
 
 ### 4. Quadlet unit 配置
+
 ```bash
 ./scripts/quadlet/install-user-units.sh
 ```
 
+`install-user-units.sh` は backend / frontend / migrate の local image tag を `ERP4_IMAGE_TAG`（未指定時は現在の Git commit 短縮 SHA）で展開します。`build-images.sh` に `ERP4_IMAGE_TAG` を指定した場合は、unit 配置時にも同じ値を指定します。
+
 確認対象:
+
 - `~/.config/containers/systemd/erp4-postgres.container`
 - `~/.config/containers/systemd/erp4-backend.container`
 - `~/.config/containers/systemd/erp4-frontend.container`
@@ -57,6 +70,7 @@ cd /opt/itdo/ITDO_ERP4
   - `~/.config/containers/systemd/erp4-db-backup.timer`
 
 ### 5. runtime env / proxy 設定の編集と検証
+
 `install-user-units.sh` 実行後に、`~/.config/containers/systemd/` 配下の runtime env と必要時の proxy 設定を編集してから検証する。
 
 ```bash
@@ -64,53 +78,66 @@ cd /opt/itdo/ITDO_ERP4
 ```
 
 公開ドメイン確認まで含める場合:
+
 ```bash
 ./scripts/quadlet/check-proxy.sh
 ```
 
 ### 6. stack 起動
+
 通常:
+
 ```bash
 ./scripts/quadlet/start-stack.sh
 ```
 
 proxy も起動する場合:
+
 ```bash
 ./scripts/quadlet/start-stack.sh --include-proxy
 ```
 
 ### 7. 受入確認
+
 通常:
+
 ```bash
 ./scripts/quadlet/check-trial-readiness.sh
 ```
 
 proxy / 公開ドメイン仮確認を含める場合:
+
 ```bash
 ./scripts/quadlet/check-trial-readiness.sh --include-proxy --resolve-ip <VPS_IP>
 ```
 
 補足:
+
 - `--resolve-ip` と `--insecure` は `--include-proxy` 指定時のみ使える。
 - 既に DNS が切り替わっている場合は `--resolve-ip` を省略し、必要なら `check-https.sh` を単独実行する。
 
 ### 8. 稼働証跡の採取
+
 通常:
+
 ```bash
 ./scripts/quadlet/collect-trial-evidence.sh --lines 100
 ```
 
 proxy を含める場合:
+
 ```bash
 ./scripts/quadlet/collect-trial-evidence.sh --include-proxy --resolve-ip <VPS_IP>
 ```
 
 記録ファイルのたたき台を生成する場合:
+
 ```bash
 ./scripts/record-sakura-vps-trial.sh
 ```
 
 個別に採取する場合:
+
 ```bash
 ./scripts/quadlet/status-stack.sh
 ./scripts/quadlet/logs-stack.sh --lines 100
@@ -118,12 +145,14 @@ systemctl --user list-timers 'erp4-*'
 ```
 
 proxy を含める個別採取:
+
 ```bash
 ./scripts/quadlet/status-stack.sh --include-proxy
 ./scripts/quadlet/logs-stack.sh --include-proxy --lines 100
 ```
 
 残すべき証跡:
+
 - 実行日時
 - 対象ホスト名 / VPS IP
 - 参照 commit SHA
@@ -135,6 +164,7 @@ proxy を含める個別採取:
   - `systemctl --user list-timers` の結果
 
 ## Go 判定
+
 - `check-trial-readiness.sh` が成功終了する
 - `status-stack.sh` で `erp4-postgres.service`、`erp4-backend.service`、`erp4-frontend.service` が active
 - backend の `/healthz` / `/readyz` が成功
@@ -142,29 +172,34 @@ proxy を含める個別採取:
 - proxy を含める場合、`check-https.sh` が成功
 
 ## No-Go 時の最小切り戻し
+
 ```bash
 ./scripts/quadlet/logs-stack.sh --lines 200
 ./scripts/quadlet/stop-stack.sh
 ```
 
 proxy を含める場合:
+
 ```bash
 ./scripts/quadlet/logs-stack.sh --include-proxy --lines 200
 ./scripts/quadlet/stop-stack.sh --include-proxy
 ```
 
 既存設定へ戻す必要がある場合:
+
 ```bash
 ./scripts/quadlet/rollback-latest.sh --skip-stack-check
 ```
 
 設定だけ戻す場合:
+
 ```bash
 ./scripts/quadlet/restore-latest.sh --list
 ./scripts/quadlet/restore-latest.sh --overwrite
 ```
 
 ## 関連 Runbook
+
 - 詳細手順: [sakura-vps-podman-trial](sakura-vps-podman-trial.md)
 - HTTPS reverse proxy: [sakura-vps-https-proxy](sakura-vps-https-proxy.md)
 - バックアップ/リストア: [backup-restore](backup-restore.md)

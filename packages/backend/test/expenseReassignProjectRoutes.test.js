@@ -41,6 +41,14 @@ function adminHeaders() {
   };
 }
 
+function userHeaders(projectIds, userId = 'user-001') {
+  return {
+    'x-user-id': userId,
+    'x-roles': 'user',
+    'x-project-ids': projectIds,
+  };
+}
+
 function expenseDraft(overrides = {}) {
   return {
     id: 'exp-001',
@@ -100,6 +108,59 @@ test('POST /expenses/:id/reassign rejects invalid status before guard evaluation
       });
     },
   );
+});
+
+test('GET /expenses/:id/state-transitions requires owner current project access', async () => {
+  let transitionLogCalled = false;
+  await withPrismaStubs(
+    {
+      'expense.findUnique': async () => expenseDraft({ projectId: 'proj-001' }),
+      'expenseStateTransitionLog.findMany': async () => {
+        transitionLogCalled = true;
+        return [];
+      },
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/expenses/exp-001/state-transitions',
+          headers: userHeaders('proj-other'),
+        });
+        assert.equal(res.statusCode, 403, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'forbidden_project');
+      });
+    },
+  );
+  assert.equal(transitionLogCalled, false);
+});
+
+test('POST /expenses/:id/submit requires owner current project access', async () => {
+  let attachmentCountCalled = false;
+  await withPrismaStubs(
+    {
+      'expense.findUnique': async () => expenseDraft({ projectId: 'proj-001' }),
+      'expenseAttachment.count': async () => {
+        attachmentCountCalled = true;
+        return 1;
+      },
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/expenses/exp-001/submit',
+          headers: userHeaders('proj-other'),
+          payload: {},
+        });
+        assert.equal(res.statusCode, 403, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'forbidden_project');
+      });
+    },
+  );
+  assert.equal(attachmentCountCalled, false);
 });
 
 test('POST /expenses/:id/reassign maps approval_open guard failure to PENDING_APPROVAL', async () => {

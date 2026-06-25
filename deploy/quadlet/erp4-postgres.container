@@ -4,7 +4,7 @@ Wants=network-online.target
 After=network-online.target
 
 [Container]
-Image=docker.io/library/postgres:15
+Image=docker.io/library/postgres:15@sha256:6ab12ad4395ee49ab49fe19530f7e183c5a9c97fc47cf687b3e281bec5f91ee4
 ContainerName=erp4-postgres
 Network=erp4.network
 Volume=erp4-postgres.volume:/var/lib/postgresql/data:Z

@@ -18,12 +18,12 @@ function normalizeFormat(raw?: string) {
 
 function normalizeMask(raw: string | undefined, format: 'csv' | 'json') {
   if (raw === undefined || raw === '') {
-    return format === 'csv';
+    return true;
   }
   const normalized = String(raw).trim().toLowerCase();
   if (['1', 'true', 'yes'].includes(normalized)) return true;
   if (['0', 'false', 'no'].includes(normalized)) return false;
-  return format === 'csv';
+  return true;
 }
 
 function normalizeLimit(raw?: string | number) {
@@ -73,14 +73,30 @@ function maskFreeText(value: string) {
 
 const SENSITIVE_KEYS = [
   'email',
-  'userId',
-  'userName',
-  'displayName',
+  'userid',
+  'username',
+  'displayname',
   'name',
   'phone',
   'address',
   'recipient',
   'recipients',
+];
+
+const REDACTED_KEYS = [
+  'authorization',
+  'cookie',
+  'token',
+  'password',
+  'apikey',
+  'api_key',
+  'secret',
+  'credential',
+  'provider',
+  'responsebody',
+  'errorbody',
+  'errordetail',
+  'headers',
 ];
 
 function maskJsonValue(value: unknown): unknown {
@@ -91,6 +107,10 @@ function maskJsonValue(value: unknown): unknown {
     const output: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(value)) {
       if (
+        REDACTED_KEYS.some((sensitive) => key.toLowerCase().includes(sensitive))
+      ) {
+        output[key] = '[REDACTED]';
+      } else if (
         SENSITIVE_KEYS.some((sensitive) =>
           key.toLowerCase().includes(sensitive),
         )
@@ -215,6 +235,14 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
         });
       }
       const shouldMask = normalizeMask(mask, normalizedFormat);
+      if (!shouldMask && !(req.user?.roles || []).includes('admin')) {
+        return reply.status(403).send({
+          error: {
+            code: 'UNMASKED_EXPORT_REQUIRES_ADMIN',
+            message: 'Unmasked audit log export requires admin role',
+          },
+        });
+      }
       const fromDate = parseDateParam(from);
       const toDate = parseDateParam(to);
       const where: Prisma.AuditLogWhereInput = {};

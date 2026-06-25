@@ -271,7 +271,8 @@ test('GET /ref-candidates narrows project scope for non-admin before querying do
         return Object.values(projectGraph)
           .filter(
             (project) =>
-              project.deletedAt === null && parentIds.includes(project.parentId),
+              project.deletedAt === null &&
+              parentIds.includes(project.parentId),
           )
           .map((project) => ({ id: project.id }));
       },
@@ -309,4 +310,71 @@ test('GET /ref-candidates narrows project scope for non-admin before querying do
   assert.equal(lastAudit?.metadata?.scopeProjectCount, 2);
   assert.equal(lastAudit?.metadata?.canSeeAllProjects, false);
   assert.equal(lastAudit?.metadata?.canAccessMaster, false);
+});
+
+test('GET /ref-candidates filters chat_message candidates by room viewer groups', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+  const auditEntries = [];
+  await withPrismaStubs(
+    {
+      'project.findUnique': async ({ where }) => ({
+        id: where.id,
+        parentId: null,
+        deletedAt: null,
+      }),
+      'project.findMany': async () => [],
+      'projectMember.findMany': async () => [],
+      'chatMessage.findMany': async () => [
+        {
+          id: 'msg-1',
+          roomId: 'room-1',
+          userId: 'sender-1',
+          body: 'sensitive project update',
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          room: {
+            id: 'room-1',
+            type: 'project',
+            name: 'Restricted',
+            projectId: 'proj-1',
+            project: { code: 'P001', name: 'Alpha' },
+          },
+        },
+      ],
+      'chatRoom.findUnique': async ({ where }) => ({
+        id: where.id,
+        type: 'project',
+        projectId: 'proj-1',
+        isOfficial: true,
+        groupId: null,
+        viewerGroupIds: ['group-allowed'],
+        posterGroupIds: [],
+        deletedAt: null,
+        allowExternalUsers: false,
+      }),
+      'auditLog.create': async ({ data }) => {
+        auditEntries.push(data);
+        return { id: `audit-${auditEntries.length}` };
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/ref-candidates?projectId=proj-1&q=project&types=chat_message',
+          headers: {
+            ...userHeaders('proj-1'),
+            'x-group-ids': 'group-other',
+          },
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.deepEqual(body?.items, []);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+  assert.equal(auditEntries.at(-1)?.metadata?.types?.[0], 'chat_message');
 });

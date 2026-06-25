@@ -4,6 +4,7 @@ import { hasProjectAccess } from './rbac.js';
 type ChatRoomBase = {
   id: string;
   type: string;
+  projectId?: string | null;
   isOfficial: boolean;
   groupId: string | null;
   viewerGroupIds?: unknown;
@@ -56,6 +57,7 @@ export async function ensureChatRoomContentAccess(options: {
     select: {
       id: true,
       type: true,
+      projectId: true,
       isOfficial: true,
       groupId: true,
       viewerGroupIds: true,
@@ -100,7 +102,16 @@ export async function ensureChatRoomContentAccess(options: {
     if (accessLevel === 'post' && !hasPosterAccess) {
       return { ok: false, reason: 'forbidden_room_member' };
     }
-    if (hasProjectAccess(options.roles, options.projectIds, room.id)) {
+    const projectAccessProjectId =
+      room.projectId || (room.isOfficial ? room.id : null);
+    if (
+      projectAccessProjectId &&
+      hasProjectAccess(
+        options.roles,
+        options.projectIds,
+        projectAccessProjectId,
+      )
+    ) {
       return {
         ok: true,
         room,

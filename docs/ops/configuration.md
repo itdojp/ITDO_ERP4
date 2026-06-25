@@ -88,11 +88,12 @@ PDF:
 - `PDF_PROVIDER=local|external`（既定: `local`）
 - `PDF_PROVIDER=external` の場合
   - `PDF_EXTERNAL_URL` 必須（`http(s)` URL）
-  - `PDF_EXTERNAL_ALLOWED_HOSTS`（任意、カンマ区切り）で送信先ホストを制限（未設定時は全ホスト許可）
-  - `PDF_EXTERNAL_ALLOW_HTTP` / `PDF_EXTERNAL_ALLOW_PRIVATE_IP`（任意、既定: `false`）
+  - `PDF_EXTERNAL_ALLOWED_HOSTS`（カンマ区切り）で送信先ホストを制限。production では必須で、`PDF_EXTERNAL_URL` の host を含める
+  - `PDF_EXTERNAL_ALLOW_HTTP` / `PDF_EXTERNAL_ALLOW_PRIVATE_IP`（任意、既定: `false`。production では `false`）
 - 画像アセット取得時（logo/signature）
-  - `PDF_ASSET_ALLOWED_HOSTS`（任意、カンマ区切り）で取得先ホストを制限（未設定時は全ホスト許可）
-  - `PDF_ASSET_ALLOW_HTTP` / `PDF_ASSET_ALLOW_PRIVATE_IP`（任意、既定: `false`）
+  - `PDF_ASSET_ALLOWED_HOSTS`（任意、カンマ区切り）で取得先ホストを制限。production で HTTP(S) asset を使う場合は設定する
+  - `PDF_ASSET_DIR`（任意）を設定した場合のみ local file asset をその配下から読み込む
+  - `PDF_ASSET_ALLOW_HTTP` / `PDF_ASSET_ALLOW_PRIVATE_IP`（任意、既定: `false`。production では `false`）
 
 Evidence Pack アーカイブ:
 

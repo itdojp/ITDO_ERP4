@@ -4,7 +4,7 @@ Wants=erp4-backend.service erp4-frontend.service
 After=erp4-backend.service erp4-frontend.service
 
 [Container]
-Image=docker.io/library/caddy:2.9-alpine
+Image=docker.io/library/caddy:2.9-alpine@sha256:cf1bd22f2415bc99b785ece1df2c49d32985ac4ac42d84df335be17350593693
 ContainerName=erp4-caddy
 Network=erp4.network
 EnvironmentFile=%h/.config/containers/systemd/erp4-caddy.env
@@ -15,7 +15,6 @@ Volume=erp4-caddy-data:/data:Z
 Volume=erp4-caddy-config:/config:Z
 ReadOnly=true
 Tmpfs=/tmp:size=64m,mode=1777
-AutoUpdate=registry
 
 [Service]
 Restart=always

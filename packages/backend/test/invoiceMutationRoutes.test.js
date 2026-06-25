@@ -134,8 +134,14 @@ test('GET /projects/:projectId/invoices applies filters and take limit', async (
   );
   assert.equal(capturedArgs?.where?.projectId, 'proj-1');
   assert.equal(capturedArgs?.where?.status, 'approved');
-  assert.equal(capturedArgs?.where?.issueDate?.gte?.getTime(), new Date('2026-01-01').getTime());
-  assert.equal(capturedArgs?.where?.issueDate?.lte?.getTime(), new Date('2026-01-31').getTime());
+  assert.equal(
+    capturedArgs?.where?.issueDate?.gte?.getTime(),
+    new Date('2026-01-01').getTime(),
+  );
+  assert.equal(
+    capturedArgs?.where?.issueDate?.lte?.getTime(),
+    new Date('2026-01-31').getTime(),
+  );
   assert.deepEqual(capturedArgs?.include, { lines: true });
   assert.equal(capturedArgs?.take, 100);
 });
@@ -156,6 +162,76 @@ test('POST /projects/:projectId/invoices/from-time-entries rejects malformed fro
     const body = JSON.parse(res.body);
     assert.equal(body?.error?.code, 'VALIDATION_ERROR');
   });
+});
+
+test('POST /projects/:projectId/invoices rejects cross-project estimate reference before create', async () => {
+  let invoiceCreateCalled = false;
+  await withPrismaStubs(
+    {
+      'estimate.findUnique': async ({ where }) => ({
+        id: where.id,
+        projectId: 'proj-other',
+        deletedAt: null,
+      }),
+      'invoice.create': async () => {
+        invoiceCreateCalled = true;
+        return { id: 'unexpected' };
+      },
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/projects/proj-1/invoices',
+          headers: adminHeaders(),
+          payload: {
+            estimateId: 'estimate-other',
+            totalAmount: 12000,
+            lines: [],
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'ESTIMATE_PROJECT_MISMATCH');
+      });
+    },
+  );
+  assert.equal(invoiceCreateCalled, false);
+});
+
+test('POST /projects/:projectId/invoices rejects cross-project milestone reference before create', async () => {
+  let invoiceCreateCalled = false;
+  await withPrismaStubs(
+    {
+      'projectMilestone.findUnique': async ({ where }) => ({
+        id: where.id,
+        projectId: 'proj-other',
+        deletedAt: null,
+      }),
+      'invoice.create': async () => {
+        invoiceCreateCalled = true;
+        return { id: 'unexpected' };
+      },
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/projects/proj-1/invoices',
+          headers: adminHeaders(),
+          payload: {
+            milestoneId: 'milestone-other',
+            totalAmount: 12000,
+            lines: [],
+          },
+        });
+        assert.equal(res.statusCode, 400, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.error?.code, 'MILESTONE_PROJECT_MISMATCH');
+      });
+    },
+  );
+  assert.equal(invoiceCreateCalled, false);
 });
 
 test('POST /projects/:projectId/invoices/from-time-entries requires admin or mgmt', async () => {

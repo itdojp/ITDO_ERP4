@@ -11,7 +11,7 @@
     "build": "vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "preview": "vite preview",
-    "postinstall": "node ./scripts/build-design-system.cjs",
+    "build:design-system": "node ./scripts/build-design-system.cjs",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "coverage:ui-core": "FRONTEND_COVERAGE_SCOPE=ui-core vitest run --coverage",

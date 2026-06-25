@@ -11,9 +11,13 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 20.19.0
       - name: Prepare metadata
@@ -39,8 +43,13 @@ jobs:
           node -e 'const fs=require("fs"); const data={tag:process.env.TAG, sha:process.env.SHA, runId:process.env.RUN_ID, createdAt:new Date().toISOString()}; fs.writeFileSync("dist/release/metadata.json", JSON.stringify(data,null,2));'
           tar -czf "dist/release/backend-${TAG}-${SHA}.tgz" -C packages/backend dist prisma package.json package-lock.json
           tar -czf "dist/release/frontend-${TAG}-${SHA}.tgz" -C packages/frontend dist package.json package-lock.json
+          sha256sum dist/release/*.tgz dist/release/metadata.json > dist/release/SHA256SUMS
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661
+        with:
+          subject-checksums: dist/release/SHA256SUMS
       - name: Upload artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: erp4-release-${{ inputs.tag }}-${{ github.sha }}
           path: dist/release/*

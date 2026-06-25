@@ -48,6 +48,15 @@ function isHttpsUrl(value: string) {
   }
 }
 
+function parseCsvSet(value: string | undefined) {
+  return new Set(
+    (value || '')
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
 function isRedisUrl(value: string) {
   try {
     const url = new URL(value);
@@ -220,6 +229,7 @@ export function assertValidBackendEnv() {
     );
   }
   const nodeEnv = (process.env.NODE_ENV || '').trim().toLowerCase();
+  const isProd = nodeEnv === 'production';
   const allowHeaderFallbackRaw = normalizeString(
     process.env.AUTH_ALLOW_HEADER_FALLBACK_IN_PROD,
   );
@@ -417,6 +427,54 @@ export function assertValidBackendEnv() {
     const url = normalizeString(process.env.PDF_EXTERNAL_URL);
     if (url && !isHttpUrl(url)) {
       addIssue(issues, 'PDF_EXTERNAL_URL', 'http(s) URL を指定してください');
+    }
+    if (isProd) {
+      const allowedHosts = parseCsvSet(process.env.PDF_EXTERNAL_ALLOWED_HOSTS);
+      if (allowedHosts.size === 0) {
+        addIssue(
+          issues,
+          'PDF_EXTERNAL_ALLOWED_HOSTS',
+          'production の external PDF provider では送信先 host allowlist が必須です',
+        );
+      } else if (url) {
+        try {
+          const parsed = new URL(url);
+          if (!allowedHosts.has(parsed.hostname.toLowerCase())) {
+            addIssue(
+              issues,
+              'PDF_EXTERNAL_ALLOWED_HOSTS',
+              'PDF_EXTERNAL_URL の host を含めてください',
+            );
+          }
+        } catch {
+          // PDF_EXTERNAL_URL の形式エラーは上の検証で報告する。
+        }
+      }
+    }
+  }
+  for (const key of ['PDF_ASSET_ALLOW_HTTP', 'PDF_EXTERNAL_ALLOW_HTTP']) {
+    const raw = normalizeString(process.env[key]);
+    if (raw && parseBoolean(raw) === undefined) {
+      addIssue(issues, key, 'true|false|1|0 のいずれかを指定してください');
+    }
+    if (isProd && parseBoolean(raw) === true) {
+      addIssue(issues, key, 'production では HTTP 許可を無効にしてください');
+    }
+  }
+  for (const key of [
+    'PDF_ASSET_ALLOW_PRIVATE_IP',
+    'PDF_EXTERNAL_ALLOW_PRIVATE_IP',
+  ]) {
+    const raw = normalizeString(process.env[key]);
+    if (raw && parseBoolean(raw) === undefined) {
+      addIssue(issues, key, 'true|false|1|0 のいずれかを指定してください');
+    }
+    if (isProd && parseBoolean(raw) === true) {
+      addIssue(
+        issues,
+        key,
+        'production では private IP 許可を無効にしてください',
+      );
     }
   }
 

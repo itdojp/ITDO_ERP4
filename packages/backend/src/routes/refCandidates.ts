@@ -4,6 +4,7 @@ import { prisma } from '../services/db.js';
 import { requireUserContext } from '../services/authContext.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { requireProjectAccess, requireRole } from '../services/rbac.js';
+import { ensureChatRoomContentAccess } from '../services/chatRoomAccess.js';
 
 type RefCandidateKind =
   | 'invoice'
@@ -540,8 +541,23 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
               },
             },
           });
+          const accessibleMessages = [];
+          for (const message of messages) {
+            const access = await ensureChatRoomContentAccess({
+              roomId: message.roomId,
+              userId: req.user?.userId ?? '',
+              roles: req.user?.roles || [],
+              projectIds: req.user?.projectIds || [],
+              groupIds: req.user?.groupIds || [],
+              groupAccountIds: req.user?.groupAccountIds || [],
+              accessLevel: 'read',
+            });
+            if (access.ok) {
+              accessibleMessages.push(message);
+            }
+          }
           items.push(
-            ...messages.map((message) => {
+            ...accessibleMessages.map((message) => {
               const excerpt = message.body
                 .replace(/\s+/g, ' ')
                 .trim()
