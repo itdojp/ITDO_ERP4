@@ -304,7 +304,9 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
         ...auditContextFromRequest(req),
       });
       const outputItems = (shouldMask ? items.map(maskAuditLog) : items).map(
-        (item) => withAgentRunReference(item, { maskIdValue: shouldMask }),
+        // Keep AgentRun references usable for authorized drill-down even when
+        // the surrounding audit row is masked.
+        (item) => withAgentRunReference(item, { maskIdValue: false }),
       );
       if (normalizedFormat === 'csv') {
         const headers = [
