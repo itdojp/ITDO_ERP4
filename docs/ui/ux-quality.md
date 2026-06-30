@@ -44,4 +44,5 @@
 
 ## 参考
 - 品質ゲート: `docs/quality/quality-gates.md`
+- 採用判断用のUIUX提案サマリ: `docs/ui/world-class-uiux-proposal-v644.md`
 
