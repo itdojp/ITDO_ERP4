@@ -542,17 +542,28 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
             },
           });
           const accessibleMessages = [];
+          const roomAccessCache = new Map<string, boolean>();
+          const userId = req.user?.userId ?? '';
+          const roles = req.user?.roles || [];
+          const projectIds = req.user?.projectIds || [];
+          const groupIds = req.user?.groupIds || [];
+          const groupAccountIds = req.user?.groupAccountIds || [];
           for (const message of messages) {
-            const access = await ensureChatRoomContentAccess({
-              roomId: message.roomId,
-              userId: req.user?.userId ?? '',
-              roles: req.user?.roles || [],
-              projectIds: req.user?.projectIds || [],
-              groupIds: req.user?.groupIds || [],
-              groupAccountIds: req.user?.groupAccountIds || [],
-              accessLevel: 'read',
-            });
-            if (access.ok) {
+            let canRead = roomAccessCache.get(message.roomId);
+            if (canRead === undefined) {
+              const access = await ensureChatRoomContentAccess({
+                roomId: message.roomId,
+                userId,
+                roles,
+                projectIds,
+                groupIds,
+                groupAccountIds,
+                accessLevel: 'read',
+              });
+              canRead = access.ok;
+              roomAccessCache.set(message.roomId, canRead);
+            }
+            if (canRead) {
               accessibleMessages.push(message);
             }
           }
