@@ -38,7 +38,11 @@ async function captureSection(locator: Locator, filename: string) {
     await expect(locator).toBeVisible({ timeout: 5000 });
     await locator.screenshot({ path: capturePath });
   } catch {
-    await locator.page().screenshot({ path: capturePath, fullPage: true });
+    try {
+      await locator.page().screenshot({ path: capturePath, fullPage: true });
+    } catch {
+      // Evidence capture should not make the smoke test flaky.
+    }
   }
 }
 

@@ -144,7 +144,9 @@ export const WorkflowMetricGrid: React.FC<{
         >
           <p style={metricLabelStyle}>{item.label}</p>
           <div style={metricValueStyle}>{item.value}</div>
-          {item.helper ? <p style={metricHelperStyle}>{item.helper}</p> : null}
+          {item.helper ? (
+            <div style={metricHelperStyle}>{item.helper}</div>
+          ) : null}
         </div>
       );
     })}

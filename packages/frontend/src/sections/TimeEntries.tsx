@@ -790,7 +790,8 @@ export const TimeEntries: React.FC = () => {
     }
   };
 
-  const canOpenDailyReport = /^\d{4}-\d{2}-\d{2}$/.test(form.workDate.trim());
+  const trimmedWorkDate = form.workDate.trim();
+  const canOpenDailyReport = /^\d{4}-\d{2}-\d{2}$/.test(trimmedWorkDate);
 
   const timeMetrics = useMemo<WorkflowMetric[]>(() => {
     const totalMinutes = viewItems.reduce(
@@ -806,7 +807,7 @@ export const TimeEntries: React.FC = () => {
     return [
       {
         label: '入力対象日',
-        value: form.workDate || '未選択',
+        value: trimmedWorkDate || '未選択',
         helper: canOpenDailyReport
           ? '日報への導線を利用できます'
           : '日付を入力すると日報へ遷移できます',
@@ -833,10 +834,10 @@ export const TimeEntries: React.FC = () => {
     canOpenDailyReport,
     form.projectId,
     form.taskId,
-    form.workDate,
     projectMap,
     tasks.length,
     tasksLoading,
+    trimmedWorkDate,
     viewItems,
   ]);
 
@@ -854,7 +855,7 @@ export const TimeEntries: React.FC = () => {
               if (!canOpenDailyReport) return;
               navigateToOpen({
                 kind: 'daily_report',
-                id: form.workDate.trim(),
+                id: trimmedWorkDate,
               });
             }}
           >
