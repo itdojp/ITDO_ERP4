@@ -25,6 +25,11 @@ import {
   saveDraft,
 } from '../utils/drafts';
 import { enqueueOfflineItem, isOfflineError } from '../utils/offlineQueue';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  type WorkflowMetric,
+} from './workflowUx';
 
 const tags = [
   '仕事量が多い',
@@ -398,6 +403,58 @@ export const DailyReport: React.FC = () => {
     return { totalMinutes, byProject };
   }, [timeEntries]);
 
+  const dailyMetrics = useMemo<WorkflowMetric[]>(
+    () => [
+      {
+        label: '対象日',
+        value: reportDate || '未選択',
+        helper: isLocked
+          ? `${editableDays}日を超過しているため修正制限あり`
+          : `${editableDays}日以内の編集対象`,
+        tone: isLocked ? 'warning' : 'success',
+      },
+      {
+        label: '当日の工数',
+        value: `${timeEntrySummary.totalMinutes}分`,
+        helper: `${timeEntries.length}件 / ${timeEntrySummary.byProject.size}案件`,
+      },
+      {
+        label: '関連案件',
+        value: `${linkedProjectIds.length}件`,
+        helper:
+          linkedProjectIds.length > 0
+            ? '日報に紐付け済み'
+            : '工数から関連案件を追加できます',
+      },
+      {
+        label: 'コンディション',
+        value:
+          status === 'good'
+            ? 'Good'
+            : status === 'not_good'
+              ? 'Not Good'
+              : '未選択',
+        helper: 'Good / Not Good を明示して送信',
+        tone:
+          status === 'good'
+            ? 'success'
+            : status === 'not_good'
+              ? 'warning'
+              : 'default',
+      },
+    ],
+    [
+      editableDays,
+      isLocked,
+      linkedProjectIds.length,
+      reportDate,
+      status,
+      timeEntries.length,
+      timeEntrySummary.byProject.size,
+      timeEntrySummary.totalMinutes,
+    ],
+  );
+
   const addLinkedProject = (projectId: string) => {
     setLinkedProjectIds((prev) =>
       prev.includes(projectId) ? prev : [...prev, projectId],
@@ -507,7 +564,14 @@ export const DailyReport: React.FC = () => {
 
   return (
     <div>
-      <h2>日報 + ウェルビーイング</h2>
+      <WorkflowPageHeader
+        title="日報 + ウェルビーイング"
+        description="対象日の工数・関連案件・コンディションを同じ画面で確認し、日次報告と相談導線を迷わず完了できるようにします。"
+      />
+      <WorkflowMetricGrid
+        ariaLabel="日報とウェルビーイングの状態サマリー"
+        items={dailyMetrics}
+      />
       <div className="row" style={{ gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
         <Input
           label="対象日"

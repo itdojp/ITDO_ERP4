@@ -16,6 +16,35 @@
   gap: 12px;
   flex-wrap: wrap;
 }
+.workflow-control-grid {
+  align-items: flex-end;
+}
+.workflow-control-grid label {
+  display: grid;
+  gap: 4px;
+  color: var(--color-text-primary, #0f172a);
+  font-size: 13px;
+  font-weight: 600;
+}
+.workflow-control-grid input,
+.workflow-control-grid select,
+.workflow-control-grid textarea {
+  border: 1px solid var(--color-border-default, #cbd5e1);
+  border-radius: 8px;
+  background: var(--color-bg-base, #fff);
+  color: var(--color-text-primary, #0f172a);
+  min-height: 36px;
+  padding: 7px 10px;
+}
+.workflow-control-grid textarea {
+  line-height: 1.5;
+}
+.workflow-control-grid input:focus,
+.workflow-control-grid select:focus,
+.workflow-control-grid textarea:focus {
+  outline: 3px solid rgba(14, 165, 233, 0.25);
+  border-color: var(--color-action-primary, #0ea5e9);
+}
 .button {
   appearance: none;
   border: 1px solid var(--color-action-primary, #0ea5e9);

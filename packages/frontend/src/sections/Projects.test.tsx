@@ -233,6 +233,7 @@ describe('Projects', () => {
       expect(api).toHaveBeenCalledWith('/projects');
       expect(api).toHaveBeenCalledWith('/customers');
     });
+    expect(screen.getByLabelText('案件管理の状態サマリー')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '追加' }));
 

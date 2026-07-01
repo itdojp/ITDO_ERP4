@@ -2,6 +2,11 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { AnnotationsCard } from '../components/AnnotationsCard';
 import { Button, Dialog } from '../ui';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  type WorkflowMetric,
+} from './workflowUx';
 
 type Project = {
   id: string;
@@ -338,6 +343,52 @@ export const Projects: React.FC = () => {
       budgetCost,
     };
   }, [form]);
+
+  const projectMetrics = useMemo<WorkflowMetric[]>(() => {
+    const activeCount = projects.filter(
+      (item) => item.status === 'active',
+    ).length;
+    const draftCount = projects.filter(
+      (item) => item.status === 'draft',
+    ).length;
+    const plannedHours = projects.reduce((sum, item) => {
+      const value = Number(item.planHours ?? 0);
+      return Number.isFinite(value) ? sum + value : sum;
+    }, 0);
+    const budgetTotal = projects.reduce((sum, item) => {
+      const value = Number(item.budgetCost ?? 0);
+      return Number.isFinite(value) ? sum + value : sum;
+    }, 0);
+    return [
+      {
+        label: '案件数',
+        value: `${projects.length}件`,
+        helper: `進行中 ${activeCount}件 / 起案中 ${draftCount}件`,
+        tone: activeCount > 0 ? 'success' : 'default',
+      },
+      {
+        label: '顧客',
+        value: `${customers.length}社`,
+        helper: '案件登録時に顧客を紐付け',
+      },
+      {
+        label: '予定工数',
+        value: `${plannedHours}h`,
+        helper:
+          budgetTotal > 0
+            ? `予算 ${budgetTotal.toLocaleString()}`
+            : '予算未集計',
+      },
+      {
+        label: '作業モード',
+        value: editingProjectId ? '編集' : '新規',
+        helper: memberProjectId
+          ? 'メンバー管理を展開中'
+          : '案件情報を登録できます',
+        tone: editingProjectId || memberProjectId ? 'warning' : 'default',
+      },
+    ];
+  }, [customers.length, editingProjectId, memberProjectId, projects]);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -926,8 +977,15 @@ export const Projects: React.FC = () => {
 
   return (
     <div>
-      <h2>案件</h2>
-      <div className="row">
+      <WorkflowPageHeader
+        title="案件"
+        description="案件の基本情報、親子関係、顧客、期間、メンバー、定期案件テンプレートを同じ業務文脈で確認・更新します。"
+      />
+      <WorkflowMetricGrid
+        ariaLabel="案件管理の状態サマリー"
+        items={projectMetrics}
+      />
+      <div className="row workflow-control-grid">
         <input
           type="text"
           placeholder="コード"
@@ -954,7 +1012,7 @@ export const Projects: React.FC = () => {
           ))}
         </select>
       </div>
-      <div className="row" style={{ marginTop: 8 }}>
+      <div className="row workflow-control-grid" style={{ marginTop: 8 }}>
         <select
           aria-label="親案件選択"
           value={form.parentId}
@@ -982,7 +1040,7 @@ export const Projects: React.FC = () => {
           ))}
         </select>
       </div>
-      <div className="row" style={{ marginTop: 8 }}>
+      <div className="row workflow-control-grid" style={{ marginTop: 8 }}>
         <input
           type="date"
           aria-label="開始日"
@@ -996,7 +1054,7 @@ export const Projects: React.FC = () => {
           onChange={(e) => setForm({ ...form, endDate: e.target.value })}
         />
       </div>
-      <div className="row" style={{ marginTop: 8 }}>
+      <div className="row workflow-control-grid" style={{ marginTop: 8 }}>
         <input
           type="number"
           inputMode="decimal"

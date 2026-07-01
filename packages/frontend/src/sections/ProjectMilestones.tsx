@@ -1,6 +1,11 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { useProjects } from '../hooks/useProjects';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  type WorkflowMetric,
+} from './workflowUx';
 
 type Milestone = {
   id: string;
@@ -186,6 +191,51 @@ export const ProjectMilestones: React.FC = () => {
   );
   const [deliveryDueMessage, setDeliveryDueMessage] = useState('');
 
+  const milestoneMetrics = useMemo<WorkflowMetric[]>(() => {
+    const project = form.projectId ? projectMap.get(form.projectId) : null;
+    const selectedProject = project
+      ? `${project.code} / ${project.name}`
+      : form.projectId || '未選択';
+    const totalAmount = items.reduce((sum, item) => {
+      const value = Number(item.amount);
+      return Number.isFinite(value) ? sum + value : sum;
+    }, 0);
+    const dueDateCount = items.filter((item) => Boolean(item.dueDate)).length;
+    return [
+      {
+        label: '対象案件',
+        value: selectedProject,
+        helper: form.projectId
+          ? 'マイルストーンを案件単位で管理中'
+          : '未選択のため登録前に案件選択が必要です',
+        tone: form.projectId ? 'success' : 'warning',
+      },
+      {
+        label: 'マイルストーン',
+        value: `${items.length}件`,
+        helper: `納期あり ${dueDateCount}件`,
+      },
+      {
+        label: '請求予定額',
+        value: totalAmount.toLocaleString(),
+        helper: '表示中マイルストーンの合計',
+      },
+      {
+        label: '未請求レポート',
+        value: `${deliveryDueItems.length}件`,
+        helper: deliveryDueMessage
+          ? `レポート: ${deliveryDueMessage}`
+          : '納期範囲で取得できます',
+      },
+    ];
+  }, [
+    deliveryDueItems.length,
+    deliveryDueMessage,
+    form.projectId,
+    items,
+    projectMap,
+  ]);
+
   const loadDeliveryDue = async () => {
     try {
       const params = new URLSearchParams();
@@ -206,8 +256,18 @@ export const ProjectMilestones: React.FC = () => {
 
   return (
     <div>
-      <h2>マイルストーン</h2>
-      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+      <WorkflowPageHeader
+        title="マイルストーン"
+        description="案件の請求タイミング、納期、金額、未請求レポートをまとめて確認し、請求漏れを防ぐ画面です。"
+      />
+      <WorkflowMetricGrid
+        ariaLabel="マイルストーン管理の状態サマリー"
+        items={milestoneMetrics}
+      />
+      <div
+        className="row workflow-control-grid"
+        style={{ gap: 8, flexWrap: 'wrap' }}
+      >
         <select
           aria-label="案件選択"
           value={form.projectId}
@@ -229,7 +289,10 @@ export const ProjectMilestones: React.FC = () => {
 
       <div className="card" style={{ marginTop: 12, padding: 12 }}>
         <strong>{editing ? '編集' : '新規作成'}</strong>
-        <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+        <div
+          className="row workflow-control-grid"
+          style={{ gap: 8, flexWrap: 'wrap', marginTop: 8 }}
+        >
           <input
             aria-label="名称"
             value={form.name}
@@ -304,7 +367,10 @@ export const ProjectMilestones: React.FC = () => {
 
       <div className="card" style={{ marginTop: 12, padding: 12 }}>
         <strong>未請求（納期範囲）レポート</strong>
-        <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+        <div
+          className="row workflow-control-grid"
+          style={{ gap: 8, flexWrap: 'wrap', marginTop: 8 }}
+        >
           <input
             aria-label="from"
             type="date"
