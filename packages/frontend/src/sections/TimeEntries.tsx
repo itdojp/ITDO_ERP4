@@ -40,6 +40,11 @@ import {
   Toast,
   erpStatusDictionary,
 } from '../ui';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  type WorkflowMetric,
+} from './workflowUx';
 
 type TimeEntry = {
   id: string;
@@ -787,28 +792,81 @@ export const TimeEntries: React.FC = () => {
 
   const canOpenDailyReport = /^\d{4}-\d{2}-\d{2}$/.test(form.workDate.trim());
 
+  const timeMetrics = useMemo<WorkflowMetric[]>(() => {
+    const totalMinutes = viewItems.reduce(
+      (sum, entry) => sum + (entry.minutes || 0),
+      0,
+    );
+    const projectCount = new Set(viewItems.map((entry) => entry.projectId))
+      .size;
+    const selectedProject = projectMap.get(form.projectId);
+    const selectedProjectLabel = selectedProject
+      ? selectedProject.code
+      : form.projectId || '未選択';
+    return [
+      {
+        label: '入力対象日',
+        value: form.workDate || '未選択',
+        helper: canOpenDailyReport
+          ? '日報への導線を利用できます'
+          : '日付を入力すると日報へ遷移できます',
+        tone: canOpenDailyReport ? 'success' : 'default',
+      },
+      {
+        label: '選択案件',
+        value: selectedProjectLabel,
+        helper: form.taskId ? 'タスクまで選択済み' : '必要に応じてタスクを選択',
+      },
+      {
+        label: '登録済み工数',
+        value: `${totalMinutes}分`,
+        helper: `${viewItems.length}件 / ${projectCount}案件`,
+      },
+      {
+        label: '選択可能タスク',
+        value: `${tasks.length}件`,
+        helper: tasksLoading ? 'タスクを読み込み中' : '案件に紐づくタスク候補',
+        tone: tasksLoading ? 'warning' : 'default',
+      },
+    ];
+  }, [
+    canOpenDailyReport,
+    form.projectId,
+    form.taskId,
+    form.workDate,
+    projectMap,
+    tasks.length,
+    tasksLoading,
+    viewItems,
+  ]);
+
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr auto',
-        gap: 12,
-        alignItems: 'center',
-      }}
-    >
-      <h2 style={{ margin: 0 }}>工数入力</h2>
-      <Button
-        size="small"
-        variant="ghost"
-        disabled={!canOpenDailyReport}
-        onClick={() => {
-          if (!canOpenDailyReport) return;
-          navigateToOpen({ kind: 'daily_report', id: form.workDate.trim() });
-        }}
-      >
-        日報を開く
-      </Button>
-      <div style={{ gridColumn: '1 / -1' }}>
+    <div>
+      <WorkflowPageHeader
+        title="工数入力"
+        description="案件・タスク・日付・工数を一画面で確認し、登録後に日報へ戻れる日次作業の入口です。"
+        actions={
+          <Button
+            size="small"
+            variant="ghost"
+            disabled={!canOpenDailyReport}
+            onClick={() => {
+              if (!canOpenDailyReport) return;
+              navigateToOpen({
+                kind: 'daily_report',
+                id: form.workDate.trim(),
+              });
+            }}
+          >
+            日報を開く
+          </Button>
+        }
+      />
+      <WorkflowMetricGrid
+        ariaLabel="工数入力の状態サマリー"
+        items={timeMetrics}
+      />
+      <div>
         <Card padding="small" style={{ marginBottom: 12 }}>
           <div
             style={{

@@ -172,6 +172,9 @@ describe('DailyReport', () => {
     render(<DailyReport />);
 
     expect(await screen.findByDisplayValue('今日の日報')).toBeInTheDocument();
+    expect(
+      screen.getByLabelText('日報とウェルビーイングの状態サマリー'),
+    ).toBeInTheDocument();
 
     window.dispatchEvent(
       new CustomEvent('erp4_open_entity', {

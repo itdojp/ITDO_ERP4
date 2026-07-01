@@ -62,6 +62,9 @@ describe('ProjectMilestones', () => {
 
     render(<ProjectMilestones />);
 
+    expect(
+      screen.getByLabelText('マイルストーン管理の状態サマリー'),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '読み込み' }));
 
     await waitFor(() => {

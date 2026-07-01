@@ -259,6 +259,7 @@ describe('TimeEntries', () => {
     render(<TimeEntries />);
 
     expect(await screen.findByText(/monthly close/)).toBeInTheDocument();
+    expect(screen.getByLabelText('工数入力の状態サマリー')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('日付'), {
       target: { value: '2026-03-31' },

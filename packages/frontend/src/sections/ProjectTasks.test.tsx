@@ -225,6 +225,9 @@ describe('ProjectTasks', () => {
       expect(api).toHaveBeenCalledWith('/projects/project-1/tasks');
       expect(api).toHaveBeenCalledWith('/projects/project-1/baselines');
     });
+    expect(
+      screen.getByLabelText('タスク管理の状態サマリー'),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '読み込み' }));
 

@@ -1,6 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { useProjects } from '../hooks/useProjects';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  type WorkflowMetric,
+} from './workflowUx';
 
 type ProjectTask = {
   id: string;
@@ -118,6 +123,67 @@ export const ProjectTasks: React.FC = () => {
     const project = projectMap.get(projectId);
     return project ? `${project.code} / ${project.name}` : projectId;
   };
+
+  const taskMetrics = useMemo<WorkflowMetric[]>(() => {
+    const project = form.projectId ? projectMap.get(form.projectId) : null;
+    const selectedProject = project
+      ? `${project.code} / ${project.name}`
+      : form.projectId || '未選択';
+    const progressValues = items
+      .map((item) => item.progressPercent)
+      .filter((value): value is number => typeof value === 'number');
+    const averageProgress =
+      progressValues.length > 0
+        ? Math.round(
+            progressValues.reduce((sum, value) => sum + value, 0) /
+              progressValues.length,
+          )
+        : 0;
+    const completedCount = items.filter(
+      (item) =>
+        item.status === 'done' ||
+        item.status === 'closed' ||
+        item.progressPercent === 100,
+    ).length;
+    return [
+      {
+        label: '対象案件',
+        value: selectedProject,
+        helper: form.projectId
+          ? 'タスクを案件単位で管理中'
+          : '案件を選択してください',
+        tone: form.projectId ? 'success' : 'warning',
+      },
+      {
+        label: 'タスク数',
+        value: `${items.length}件`,
+        helper: `完了 ${completedCount}件 / 平均進捗 ${averageProgress}%`,
+      },
+      {
+        label: 'ベースライン',
+        value: `${baselines.length}件`,
+        helper: selectedBaselineId
+          ? '差分確認対象を選択中'
+          : '必要に応じて作成・選択',
+      },
+      {
+        label: '編集状態',
+        value: editing ? '編集中' : '新規',
+        helper: parentChanged
+          ? '親タスク変更理由が必要'
+          : '依存関係と親子関係を維持',
+        tone: parentChanged ? 'warning' : 'default',
+      },
+    ];
+  }, [
+    baselines.length,
+    editing,
+    form.projectId,
+    items,
+    parentChanged,
+    projectMap,
+    selectedBaselineId,
+  ]);
 
   const load = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -431,8 +497,18 @@ export const ProjectTasks: React.FC = () => {
 
   return (
     <div>
-      <h2>タスク</h2>
-      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+      <WorkflowPageHeader
+        title="タスク"
+        description="案件別にタスク、進捗、親子関係、依存関係、ベースラインを確認し、計画変更時の理由を残せる画面です。"
+      />
+      <WorkflowMetricGrid
+        ariaLabel="タスク管理の状態サマリー"
+        items={taskMetrics}
+      />
+      <div
+        className="row workflow-control-grid"
+        style={{ gap: 8, flexWrap: 'wrap' }}
+      >
         <select
           aria-label="案件選択"
           value={form.projectId}
@@ -521,7 +597,10 @@ export const ProjectTasks: React.FC = () => {
 
       <div className="card" style={{ marginTop: 12, padding: 12 }}>
         <strong>{editing ? '編集' : '新規作成'}</strong>
-        <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+        <div
+          className="row workflow-control-grid"
+          style={{ gap: 8, flexWrap: 'wrap', marginTop: 8 }}
+        >
           <input
             aria-label="タスク名"
             value={form.name}
