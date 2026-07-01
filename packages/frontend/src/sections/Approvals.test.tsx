@@ -206,6 +206,11 @@ describe('Approvals', () => {
     expect(
       await screen.findByText(/invoice \/ invoices:inv-1/),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole('region', { name: '承認判断サマリー' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('承認フィルタ')).toBeInTheDocument();
+    expect(screen.getByText('承認対象一覧')).toBeInTheDocument();
     expect(vi.mocked(api)).toHaveBeenCalledWith('/projects');
     expect(vi.mocked(api)).toHaveBeenCalledWith(
       '/approval-instances?status=pending_qa',

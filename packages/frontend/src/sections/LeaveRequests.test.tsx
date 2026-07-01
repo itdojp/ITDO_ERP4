@@ -192,6 +192,11 @@ describe('LeaveRequests', () => {
     render(<LeaveRequests />);
 
     await screen.findByText('有給休暇 (paid)');
+    expect(
+      screen.getByRole('region', { name: '休暇申請判断サマリー' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('新規申請')).toBeInTheDocument();
+    expect(screen.getByText('自分の休暇申請')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('休暇種別'), {
       target: { value: 'hourly-only' },
     });
