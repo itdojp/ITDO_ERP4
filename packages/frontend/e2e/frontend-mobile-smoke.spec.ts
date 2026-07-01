@@ -261,7 +261,9 @@ test.describe('mobile smoke 375x667 @core', () => {
       invoiceSection.getByLabel('案件選択'),
       'PRJ-DEMO-1 / Demo Project 1',
     );
-    await invoiceSection.getByRole('button', { name: '再取得' }).click();
+    await invoiceSection
+      .getByRole('button', { name: '再取得', exact: true })
+      .click();
 
     const invoiceAmountPattern = new RegExp(
       `¥${invoiceAmount.toLocaleString().replace(/,/g, ',?')}`,
