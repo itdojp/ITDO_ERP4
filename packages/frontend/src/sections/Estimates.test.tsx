@@ -114,6 +114,11 @@ describe('Estimates', () => {
 
     render(<Estimates />);
 
+    expect(
+      screen.getByRole('region', { name: '見積判断サマリー' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('見積作成')).toBeInTheDocument();
+
     fireEvent.change(screen.getByPlaceholderText('金額'), {
       target: { value: '250000' },
     });
@@ -148,6 +153,7 @@ describe('Estimates', () => {
     fireEvent.click(screen.getByRole('button', { name: '読み込み' }));
 
     expect(await screen.findByText(/EST-001/)).toBeInTheDocument();
+    expect(screen.getByText('見積一覧')).toBeInTheDocument();
     expect(api).toHaveBeenNthCalledWith(2, '/projects/project-1/estimates');
     expect(
       screen.getByText(
@@ -172,6 +178,39 @@ describe('Estimates', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '読み込み' }));
     expect(api).not.toHaveBeenCalled();
+  });
+
+  it('summarizes loaded estimate totals by each row currency', async () => {
+    api.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'estimate-jpy',
+          estimateNo: 'EST-JPY',
+          projectId: 'project-1',
+          totalAmount: 250000,
+          currency: 'JPY',
+          status: 'draft',
+        },
+        {
+          id: 'estimate-usd',
+          estimateNo: 'EST-USD',
+          projectId: 'project-1',
+          totalAmount: 100,
+          currency: 'USD',
+          status: 'approved',
+        },
+      ],
+    });
+
+    render(<Estimates />);
+
+    fireEvent.change(screen.getByLabelText('通貨'), {
+      target: { value: 'USD' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '読み込み' }));
+
+    expect(await screen.findByText(/EST-JPY/)).toBeInTheDocument();
+    expect(screen.getByText('250,000 JPY / 100 USD')).toBeInTheDocument();
   });
 
   it('submits, sends, and opens annotation dialog from detail', async () => {

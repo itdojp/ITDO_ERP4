@@ -88,119 +88,152 @@ export const VendorDocumentsVendorInvoicesSection: React.FC<
     }}
   >
     <h3>仕入請求</h3>
+    <p style={{ color: 'var(--color-text-muted, #475569)', marginTop: 0 }}>
+      仕入先請求の受領日・支払期限・PO紐づけを登録し、承認依頼、配賦、明細編集へつなげます。
+    </p>
     <div className="card" style={{ marginBottom: 12 }}>
-      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-        <select
-          value={invoiceForm.projectId}
-          onChange={(e) =>
-            onChangeInvoiceForm({
-              ...invoiceForm,
-              projectId: e.target.value,
-            })
-          }
-        >
-          <option value="">案件を選択</option>
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.code} / {project.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={invoiceForm.vendorId}
-          onChange={(e) =>
-            onChangeInvoiceForm({ ...invoiceForm, vendorId: e.target.value })
-          }
-        >
-          <option value="">業者を選択</option>
-          {vendors.map((vendor) => (
-            <option key={vendor.id} value={vendor.id}>
-              {vendor.code} / {vendor.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={invoiceForm.purchaseOrderId}
-          onChange={(e) =>
-            onChangeInvoiceForm({
-              ...invoiceForm,
-              purchaseOrderId: e.target.value,
-            })
-          }
-        >
-          <option value="">関連発注書 (任意)</option>
-          {availablePurchaseOrders.map((po) => (
-            <option key={po.id} value={po.id}>
-              {po.poNo || missingNumberLabel}
-            </option>
-          ))}
-        </select>
-        <input
-          type="text"
-          value={invoiceForm.vendorInvoiceNo}
-          onChange={(e) =>
-            onChangeInvoiceForm({
-              ...invoiceForm,
-              vendorInvoiceNo: e.target.value,
-            })
-          }
-          placeholder="請求番号"
-        />
-        <input
-          type="number"
-          min={0}
-          value={invoiceForm.totalAmount}
-          onChange={(e) =>
-            onChangeInvoiceForm({
-              ...invoiceForm,
-              totalAmount: Number(e.target.value),
-            })
-          }
-          placeholder="金額"
-          style={{ width: 120 }}
-        />
-        <input
-          type="text"
-          value={invoiceForm.currency}
-          onChange={(e) =>
-            onChangeInvoiceForm({
-              ...invoiceForm,
-              currency: normalizeCurrency(e.target.value),
-            })
-          }
-          placeholder="通貨"
-          style={{ width: 80 }}
-          maxLength={3}
-        />
-        <input
-          type="date"
-          value={invoiceForm.receivedDate}
-          onChange={(e) =>
-            onChangeInvoiceForm({
-              ...invoiceForm,
-              receivedDate: e.target.value,
-            })
-          }
-        />
-        <input
-          type="date"
-          value={invoiceForm.dueDate}
-          onChange={(e) =>
-            onChangeInvoiceForm({ ...invoiceForm, dueDate: e.target.value })
-          }
-        />
-        <input
-          type="text"
-          value={invoiceForm.documentUrl}
-          onChange={(e) =>
-            onChangeInvoiceForm({
-              ...invoiceForm,
-              documentUrl: e.target.value,
-            })
-          }
-          placeholder="書類URL"
-          style={{ minWidth: 180 }}
-        />
+      <div
+        className="row workflow-control-grid"
+        style={{ gap: 8, flexWrap: 'wrap' }}
+      >
+        <label>
+          案件
+          <select
+            value={invoiceForm.projectId}
+            onChange={(e) =>
+              onChangeInvoiceForm({
+                ...invoiceForm,
+                projectId: e.target.value,
+              })
+            }
+          >
+            <option value="">案件を選択</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.code} / {project.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          業者
+          <select
+            value={invoiceForm.vendorId}
+            onChange={(e) =>
+              onChangeInvoiceForm({ ...invoiceForm, vendorId: e.target.value })
+            }
+          >
+            <option value="">業者を選択</option>
+            {vendors.map((vendor) => (
+              <option key={vendor.id} value={vendor.id}>
+                {vendor.code} / {vendor.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          関連発注書
+          <select
+            value={invoiceForm.purchaseOrderId}
+            onChange={(e) =>
+              onChangeInvoiceForm({
+                ...invoiceForm,
+                purchaseOrderId: e.target.value,
+              })
+            }
+          >
+            <option value="">関連発注書 (任意)</option>
+            {availablePurchaseOrders.map((po) => (
+              <option key={po.id} value={po.id}>
+                {po.poNo || missingNumberLabel}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          請求番号
+          <input
+            type="text"
+            value={invoiceForm.vendorInvoiceNo}
+            onChange={(e) =>
+              onChangeInvoiceForm({
+                ...invoiceForm,
+                vendorInvoiceNo: e.target.value,
+              })
+            }
+            placeholder="請求番号"
+          />
+        </label>
+        <label>
+          金額
+          <input
+            type="number"
+            min={0}
+            value={invoiceForm.totalAmount}
+            onChange={(e) =>
+              onChangeInvoiceForm({
+                ...invoiceForm,
+                totalAmount: Number(e.target.value),
+              })
+            }
+            placeholder="金額"
+            style={{ width: 120 }}
+          />
+        </label>
+        <label>
+          通貨
+          <input
+            type="text"
+            value={invoiceForm.currency}
+            onChange={(e) =>
+              onChangeInvoiceForm({
+                ...invoiceForm,
+                currency: normalizeCurrency(e.target.value),
+              })
+            }
+            placeholder="通貨"
+            style={{ width: 80 }}
+            maxLength={3}
+          />
+        </label>
+        <label>
+          受領日
+          <input
+            type="date"
+            value={invoiceForm.receivedDate}
+            onChange={(e) =>
+              onChangeInvoiceForm({
+                ...invoiceForm,
+                receivedDate: e.target.value,
+              })
+            }
+          />
+        </label>
+        <label>
+          支払期限
+          <input
+            type="date"
+            value={invoiceForm.dueDate}
+            onChange={(e) =>
+              onChangeInvoiceForm({ ...invoiceForm, dueDate: e.target.value })
+            }
+          />
+        </label>
+        <label>
+          書類URL
+          <input
+            type="text"
+            value={invoiceForm.documentUrl}
+            onChange={(e) =>
+              onChangeInvoiceForm({
+                ...invoiceForm,
+                documentUrl: e.target.value,
+              })
+            }
+            placeholder="書類URL"
+            style={{ minWidth: 180 }}
+          />
+        </label>
         <Button onClick={onCreateVendorInvoice} disabled={isInvoiceSaving}>
           {isInvoiceSaving ? '登録中' : '登録'}
         </Button>

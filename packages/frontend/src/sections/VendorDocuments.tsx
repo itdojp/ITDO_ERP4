@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, apiResponse } from '../api';
 import { AnnotationsCard } from '../components/AnnotationsCard';
 import {
@@ -28,6 +28,7 @@ import { useVendorInvoiceSavedViews } from './vendor-documents/useVendorInvoiceS
 import { useVendorDocumentsLookups } from './vendor-documents/useVendorDocumentsLookups';
 import { useVendorDocumentsTableData } from './vendor-documents/useVendorDocumentsTableData';
 import { useVendorInvoiceDialogs } from './vendor-documents/useVendorInvoiceDialogs';
+import { WorkflowMetricGrid, WorkflowPageHeader } from './workflowUx';
 import {
   defaultPurchaseOrderForm,
   defaultVendorInvoiceForm,
@@ -54,6 +55,29 @@ import type {
   VendorQuote,
   VendorQuoteForm,
 } from './vendor-documents/vendorDocumentsShared';
+
+const formatTotalsByCurrency = (
+  invoices: VendorInvoice[],
+  fallbackCurrency = 'JPY',
+) => {
+  const totals = invoices.reduce((acc, invoice) => {
+    const amount = parseNumberValue(invoice.totalAmount);
+    if (amount === null) return acc;
+
+    const currency = invoice.currency?.trim() || fallbackCurrency;
+    acc.set(currency, (acc.get(currency) ?? 0) + amount);
+    return acc;
+  }, new Map<string, number>());
+
+  if (totals.size === 0) return `0 ${fallbackCurrency}`;
+
+  return [...totals.entries()]
+    .sort(([leftCurrency], [rightCurrency]) =>
+      leftCurrency.localeCompare(rightCurrency),
+    )
+    .map(([currency, amount]) => `${amount.toLocaleString()} ${currency}`)
+    .join(' / ');
+};
 
 export const VendorDocuments: React.FC = () => {
   const [annotationTarget, setAnnotationTarget] = useState<{
@@ -1007,9 +1031,91 @@ export const VendorDocuments: React.FC = () => {
     ? purchaseOrderMap.get(poSendLogDialogId)
     : null;
 
+  const pendingDocumentCount = useMemo(() => {
+    const needsAction = (status: string) =>
+      ['draft', 'pending_qa', 'pending_exec', 'approved'].includes(status);
+    return [
+      ...purchaseOrders.map((item) => item.status),
+      ...vendorQuotes.map((item) => item.status),
+      ...vendorInvoices.map((item) => item.status),
+    ].filter(needsAction).length;
+  }, [purchaseOrders, vendorInvoices, vendorQuotes]);
+
+  const vendorInvoiceDueCount = useMemo(
+    () =>
+      vendorInvoices.filter(
+        (invoice) => invoice.dueDate && invoice.status !== 'paid',
+      ).length,
+    [vendorInvoices],
+  );
+
+  const vendorInvoiceTotalLabel = useMemo(
+    () => formatTotalsByCurrency(vendorInvoices),
+    [vendorInvoices],
+  );
+
+  const activeTabLabel =
+    activeDocumentTab === 'purchase-orders'
+      ? '発注書'
+      : activeDocumentTab === 'vendor-quotes'
+        ? '仕入見積'
+        : '仕入請求';
+
   return (
     <div>
-      <h2>仕入/発注</h2>
+      <WorkflowPageHeader
+        title="仕入/発注"
+        description="発注書、仕入見積、仕入請求をタブごとに作成・確認し、PO紐づけ、承認、配賦、明細編集まで追跡します。"
+        actions={
+          <Button
+            variant="secondary"
+            onClick={() => {
+              void loadPurchaseOrders();
+              void loadVendorQuotes();
+              void loadVendorInvoices();
+            }}
+          >
+            仕入書類を再取得
+          </Button>
+        }
+      />
+      <WorkflowMetricGrid
+        ariaLabel="仕入/発注判断サマリー"
+        items={[
+          {
+            id: 'vendor-active-tab',
+            label: '現在の作業タブ',
+            value: activeTabLabel,
+            helper: 'タブで作成対象を切り替え',
+          },
+          {
+            id: 'vendor-po-count',
+            label: '発注書',
+            value: `${purchaseOrders.length}件`,
+            helper: `一覧表示 ${purchaseOrderRows.length}件`,
+          },
+          {
+            id: 'vendor-quote-count',
+            label: '仕入見積',
+            value: `${vendorQuotes.length}件`,
+            helper: `一覧表示 ${vendorQuoteRows.length}件`,
+          },
+          {
+            id: 'vendor-invoice-count',
+            label: '仕入請求',
+            value: `${vendorInvoices.length}件`,
+            helper: `期限あり未払 ${vendorInvoiceDueCount}件 / 合計 ${vendorInvoiceTotalLabel}`,
+            tone: vendorInvoiceDueCount > 0 ? 'warning' : 'default',
+          },
+          {
+            id: 'vendor-action-count',
+            label: '要確認状態',
+            value: `${pendingDocumentCount}件`,
+            helper: 'draft / pending / approved',
+            tone: pendingDocumentCount > 0 ? 'warning' : 'success',
+          },
+        ]}
+      />
       {projectMessage && (
         <div style={{ marginTop: 12 }}>
           <Alert variant="error">{projectMessage}</Alert>

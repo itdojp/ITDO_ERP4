@@ -75,84 +75,111 @@ export const VendorDocumentsVendorQuotesSection: React.FC<
     }}
   >
     <h3>仕入見積</h3>
+    <p style={{ color: 'var(--color-text-muted, #475569)', marginTop: 0 }}>
+      業者から受領した見積番号・金額・書類URLを登録し、発注前の比較材料を一覧化します。
+    </p>
     <div className="card" style={{ marginBottom: 12 }}>
-      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-        <select
-          value={quoteForm.projectId}
-          onChange={(e) =>
-            onChangeQuoteForm({ ...quoteForm, projectId: e.target.value })
-          }
-        >
-          <option value="">案件を選択</option>
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.code} / {project.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={quoteForm.vendorId}
-          onChange={(e) =>
-            onChangeQuoteForm({ ...quoteForm, vendorId: e.target.value })
-          }
-        >
-          <option value="">業者を選択</option>
-          {vendors.map((vendor) => (
-            <option key={vendor.id} value={vendor.id}>
-              {vendor.code} / {vendor.name}
-            </option>
-          ))}
-        </select>
-        <input
-          type="text"
-          value={quoteForm.quoteNo}
-          onChange={(e) =>
-            onChangeQuoteForm({ ...quoteForm, quoteNo: e.target.value })
-          }
-          placeholder="見積番号"
-        />
-        <input
-          type="number"
-          min={0}
-          value={quoteForm.totalAmount}
-          onChange={(e) =>
-            onChangeQuoteForm({
-              ...quoteForm,
-              totalAmount: Number(e.target.value),
-            })
-          }
-          placeholder="金額"
-          style={{ width: 120 }}
-        />
-        <input
-          type="text"
-          value={quoteForm.currency}
-          onChange={(e) =>
-            onChangeQuoteForm({
-              ...quoteForm,
-              currency: normalizeCurrency(e.target.value),
-            })
-          }
-          placeholder="通貨"
-          style={{ width: 80 }}
-          maxLength={3}
-        />
-        <input
-          type="date"
-          value={quoteForm.issueDate}
-          onChange={(e) =>
-            onChangeQuoteForm({ ...quoteForm, issueDate: e.target.value })
-          }
-        />
-        <input
-          type="text"
-          value={quoteForm.documentUrl}
-          onChange={(e) =>
-            onChangeQuoteForm({ ...quoteForm, documentUrl: e.target.value })
-          }
-          placeholder="書類URL"
-          style={{ minWidth: 180 }}
-        />
+      <div
+        className="row workflow-control-grid"
+        style={{ gap: 8, flexWrap: 'wrap' }}
+      >
+        <label>
+          案件
+          <select
+            value={quoteForm.projectId}
+            onChange={(e) =>
+              onChangeQuoteForm({ ...quoteForm, projectId: e.target.value })
+            }
+          >
+            <option value="">案件を選択</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.code} / {project.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          業者
+          <select
+            value={quoteForm.vendorId}
+            onChange={(e) =>
+              onChangeQuoteForm({ ...quoteForm, vendorId: e.target.value })
+            }
+          >
+            <option value="">業者を選択</option>
+            {vendors.map((vendor) => (
+              <option key={vendor.id} value={vendor.id}>
+                {vendor.code} / {vendor.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          見積番号
+          <input
+            type="text"
+            value={quoteForm.quoteNo}
+            onChange={(e) =>
+              onChangeQuoteForm({ ...quoteForm, quoteNo: e.target.value })
+            }
+            placeholder="見積番号"
+          />
+        </label>
+        <label>
+          金額
+          <input
+            type="number"
+            min={0}
+            value={quoteForm.totalAmount}
+            onChange={(e) =>
+              onChangeQuoteForm({
+                ...quoteForm,
+                totalAmount: Number(e.target.value),
+              })
+            }
+            placeholder="金額"
+            style={{ width: 120 }}
+          />
+        </label>
+        <label>
+          通貨
+          <input
+            type="text"
+            value={quoteForm.currency}
+            onChange={(e) =>
+              onChangeQuoteForm({
+                ...quoteForm,
+                currency: normalizeCurrency(e.target.value),
+              })
+            }
+            placeholder="通貨"
+            style={{ width: 80 }}
+            maxLength={3}
+          />
+        </label>
+        <label>
+          発行日
+          <input
+            type="date"
+            value={quoteForm.issueDate}
+            onChange={(e) =>
+              onChangeQuoteForm({ ...quoteForm, issueDate: e.target.value })
+            }
+          />
+        </label>
+        <label>
+          書類URL
+          <input
+            type="text"
+            value={quoteForm.documentUrl}
+            onChange={(e) =>
+              onChangeQuoteForm({ ...quoteForm, documentUrl: e.target.value })
+            }
+            placeholder="書類URL"
+            style={{ minWidth: 180 }}
+          />
+        </label>
         <Button onClick={onCreateVendorQuote} disabled={isQuoteSaving}>
           {isQuoteSaving ? '登録中' : '登録'}
         </Button>

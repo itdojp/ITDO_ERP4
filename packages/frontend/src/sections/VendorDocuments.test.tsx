@@ -614,6 +614,20 @@ function installApiMock(options?: {
               projectId: 'project-1',
               vendorId: 'vendor-1',
               purchaseOrderId: '',
+              dueDate: '2026-04-10T00:00:00.000Z',
+              currency: 'JPY',
+              totalAmount: 1200,
+            },
+            {
+              id: 'inv-2',
+              vendorInvoiceNo: 'INV-002',
+              status: 'received',
+              projectId: 'project-1',
+              vendorId: 'vendor-1',
+              purchaseOrderId: '',
+              dueDate: '2026-04-11T00:00:00.000Z',
+              currency: 'USD',
+              totalAmount: 50,
             },
           ],
         };
@@ -666,6 +680,11 @@ describe('VendorDocuments', () => {
   it('loads initial lookups and auto-selects the first project and vendor', async () => {
     render(<VendorDocuments />);
 
+    expect(
+      screen.getByRole('region', { name: '仕入/発注判断サマリー' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('現在の作業タブ')).toBeInTheDocument();
+
     await waitFor(() => {
       expect(screen.getByTestId('po-form-project')).toHaveTextContent(
         'project-1',
@@ -689,6 +708,9 @@ describe('VendorDocuments', () => {
     expect(screen.getByTestId('tab-vendor-invoices')).toHaveTextContent(
       '仕入請求 (1)',
     );
+    expect(
+      screen.getByText('期限あり未払 2件 / 合計 1,200 JPY / 50 USD'),
+    ).toBeInTheDocument();
   });
 
   it('shows top-level lookup failure alerts and ignores invalid tab changes', async () => {
