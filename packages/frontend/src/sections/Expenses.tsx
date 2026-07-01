@@ -272,7 +272,7 @@ export const Expenses: React.FC = () => {
   const clearFilters = useCallback(() => {
     setShowMissingOnly(false);
     setListFilter(defaultListFilter);
-  }, []);
+  }, [setListFilter, setShowMissingOnly]);
 
   const tableRows = useMemo<DataTableRow[]>(
     () =>
@@ -459,35 +459,32 @@ export const Expenses: React.FC = () => {
     ],
   );
 
-  const listContent = useMemo(
-    () => {
-      if (tableRows.length > 0) {
-        return <DataTable columns={tableColumns} rows={tableRows} />;
-      }
-      return (
-        <EmptyState
-          title={
-            items.length === 0
-              ? '経費データがありません'
-              : '条件に一致する経費がありません'
-          }
-          description={
-            items.length === 0
-              ? '上のフォームから経費を追加してください。'
-              : '条件をクリアするか、フィルタを変更してください。'
-          }
-          action={
-            hasActiveFilters ? (
-              <Button variant="ghost" onClick={clearFilters}>
-                条件をクリア
-              </Button>
-            ) : undefined
-          }
-        />
-      );
-    },
-    [tableRows, tableColumns, items.length, hasActiveFilters, clearFilters],
-  );
+  const listContent = useMemo(() => {
+    if (tableRows.length > 0) {
+      return <DataTable columns={tableColumns} rows={tableRows} />;
+    }
+    return (
+      <EmptyState
+        title={
+          items.length === 0
+            ? '経費データがありません'
+            : '条件に一致する経費がありません'
+        }
+        description={
+          items.length === 0
+            ? '上のフォームから経費を追加してください。'
+            : '条件をクリアするか、フィルタを変更してください。'
+        }
+        action={
+          hasActiveFilters ? (
+            <Button variant="ghost" onClick={clearFilters}>
+              条件をクリア
+            </Button>
+          ) : undefined
+        }
+      />
+    );
+  }, [tableRows, tableColumns, items.length, hasActiveFilters, clearFilters]);
 
   const add = async () => {
     if (!isValid) {
