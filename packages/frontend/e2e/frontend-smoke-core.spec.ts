@@ -351,19 +351,17 @@ test('frontend smoke core @core', async ({ page, request }) => {
   const expenseCurrency = 'USD';
   const expenseDate = shiftDateKey(new Date().toISOString().slice(0, 10), -2);
   const expenseReceiptUrl = `https://example.com/receipt/${expenseRunTag}`;
-  await expenseSection.getByPlaceholder('区分').fill(expenseCategory);
+  await expenseSection.getByLabel('経費区分').fill(expenseCategory);
   await expenseSection
     .locator('input[type="number"]')
     .fill(String(expenseAmount));
-  await expenseSection.getByPlaceholder('通貨').fill(expenseCurrency);
+  await expenseSection.getByLabel('通貨').fill(expenseCurrency);
   await expenseSection.getByLabel('経費日付').fill(expenseDate);
   await expenseSection.getByLabel('共通経費').check();
-  await expenseSection
-    .getByPlaceholder('領収書URL (任意)')
-    .fill(expenseReceiptUrl);
+  await expenseSection.getByLabel('領収書URL').fill(expenseReceiptUrl);
   await expenseSection.getByRole('button', { name: '追加' }).click();
   await expect(expenseSection.getByText('経費を保存しました')).toBeVisible();
-  const createdExpenseItem = expenseSection.locator('li', {
+  const createdExpenseItem = expenseSection.locator('tr', {
     hasText: expenseCategory,
   });
   await expect(createdExpenseItem).toHaveCount(1, { timeout: actionTimeout });
@@ -371,7 +369,9 @@ test('frontend smoke core @core', async ({ page, request }) => {
     timeout: actionTimeout,
   });
   await expect(createdExpenseItem).toContainText(
-    `${expenseAmount} ${expenseCurrency}`,
+    new RegExp(
+      `(${expenseAmount.toLocaleString()}|${expenseAmount})\\s+${expenseCurrency}`,
+    ),
     { timeout: actionTimeout },
   );
   await expect(createdExpenseItem).toContainText('共通', {

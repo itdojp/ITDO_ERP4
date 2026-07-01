@@ -30,13 +30,72 @@ vi.mock('../utils/offlineQueue', () => ({
   isOfflineError,
 }));
 vi.mock('../ui', () => ({
+  Alert: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   Button: ({
     children,
+    loading,
+    variant,
     ...props
-  }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+    loading?: boolean;
+    variant?: string;
+  }) => (
     <button type="button" {...props}>
-      {children}
+      {loading ? 'loading' : children}
     </button>
+  ),
+  Card: ({ children }: { children: React.ReactNode }) => (
+    <section>{children}</section>
+  ),
+  CrudList: ({
+    title,
+    description,
+    filters,
+    table,
+  }: {
+    title: string;
+    description: string;
+    filters?: React.ReactNode;
+    table: React.ReactNode;
+  }) => (
+    <section>
+      <h3>{title}</h3>
+      <p>{description}</p>
+      <div>{filters}</div>
+      <div>{table}</div>
+    </section>
+  ),
+  DataTable: ({
+    columns,
+    rows,
+  }: {
+    columns: Array<{
+      key: string;
+      header: string;
+      cell?: (row: Record<string, unknown>) => React.ReactNode;
+    }>;
+    rows: Array<Record<string, unknown> & { id: string }>;
+  }) => (
+    <table>
+      <thead>
+        <tr>
+          {columns.map((column) => (
+            <th key={column.key}>{column.header}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.id} data-testid={`expense-row-${row.id}`}>
+            {columns.map((column) => (
+              <td key={`${row.id}-${column.key}`}>
+                {column.cell ? column.cell(row) : String(row[column.key] ?? '')}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   ),
   Dialog: ({
     open,
@@ -74,6 +133,70 @@ vi.mock('../ui', () => ({
         <div>{footer}</div>
       </section>
     ) : null,
+  EmptyState: ({
+    title,
+    description,
+    action,
+  }: {
+    title: string;
+    description?: string;
+    action?: React.ReactNode;
+  }) => (
+    <div>
+      <h4>{title}</h4>
+      {description ? <p>{description}</p> : null}
+      {action}
+    </div>
+  ),
+  FilterBar: ({
+    children,
+    actions,
+  }: {
+    children: React.ReactNode;
+    actions?: React.ReactNode;
+  }) => (
+    <div>
+      <div>{children}</div>
+      <div>{actions}</div>
+    </div>
+  ),
+  Input: ({
+    label,
+    'aria-label': ariaLabel,
+    ...props
+  }: React.InputHTMLAttributes<HTMLInputElement> & {
+    label?: string;
+    'aria-label'?: string;
+  }) => (
+    <label>
+      <span>{label}</span>
+      <input aria-label={ariaLabel ?? label} {...props} />
+    </label>
+  ),
+  Select: ({
+    label,
+    children,
+    'aria-label': ariaLabel,
+    ...props
+  }: React.SelectHTMLAttributes<HTMLSelectElement> & {
+    label?: string;
+    'aria-label'?: string;
+  }) => (
+    <label>
+      <span>{label}</span>
+      <select aria-label={ariaLabel ?? label} {...props}>
+        {children}
+      </select>
+    </label>
+  ),
+  StatusBadge: ({ status }: { status: string }) => <span>{status}</span>,
+  Toast: ({ title, description }: { title?: string; description?: string }) => (
+    <div>
+      {title ? <strong>{title}</strong> : null}
+      {description ? <span>{description}</span> : null}
+    </div>
+  ),
+  erpStatusDictionary: {},
 }));
 
 import { Expenses } from './Expenses';
@@ -158,6 +281,7 @@ describe('Expenses', () => {
               category: '交通費',
               settlementStatus: 'unpaid',
               receiptUrl: null,
+              isShared: true,
             }),
           ],
         } as never;
@@ -169,7 +293,26 @@ describe('Expenses', () => {
 
     expect(await screen.findByText(/宿泊費/)).toBeInTheDocument();
     expect(screen.getByText(/交通費/)).toBeInTheDocument();
-    expect(screen.getByText('領収書未登録: 1件')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '経費入力' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('経費を登録')).toBeInTheDocument();
+    expect(screen.getByText('経費一覧')).toBeInTheDocument();
+    expect(screen.getByText('表示中')).toBeInTheDocument();
+    expect(screen.getAllByText('領収書未登録').length).toBeGreaterThan(0);
+    expect(
+      screen.getByRole('columnheader', { name: '日付' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: '案件' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: '金額' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: '共有' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('共通')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('経費精算フィルタ'), {
       target: { value: 'paid' },
@@ -180,7 +323,9 @@ describe('Expenses', () => {
     fireEvent.change(screen.getByLabelText('経費領収書フィルタ'), {
       target: { value: 'without' },
     });
-    expect(screen.getByText('データなし')).toBeInTheDocument();
+    expect(
+      screen.getByText('条件に一致する経費がありません'),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '条件クリア' }));
     expect(screen.getByText(/宿泊費/)).toBeInTheDocument();
@@ -196,7 +341,7 @@ describe('Expenses', () => {
 
     render(<Expenses />);
 
-    await screen.findByText('データなし');
+    await screen.findByText('経費データがありません');
     fireEvent.change(screen.getByDisplayValue('1000'), {
       target: { value: '0' },
     });
@@ -209,7 +354,7 @@ describe('Expenses', () => {
     fireEvent.change(screen.getByDisplayValue('0'), {
       target: { value: '1000' },
     });
-    fireEvent.change(screen.getByPlaceholderText('通貨'), {
+    fireEvent.change(screen.getByLabelText('通貨'), {
       target: { value: 'jp' },
     });
     expect(
@@ -260,6 +405,26 @@ describe('Expenses', () => {
     expect(screen.queryByText(/交通費/)).not.toBeInTheDocument();
   });
 
+  it('does not render unsafe receipt URLs as links', async () => {
+    vi.mocked(api).mockResolvedValue({
+      items: [
+        buildExpense({
+          id: 'expense-unsafe-receipt',
+          category: '備品',
+          receiptUrl: 'javascript:alert(1)',
+        }),
+      ],
+    } as never);
+
+    render(<Expenses />);
+
+    expect(await screen.findByText(/備品/)).toBeInTheDocument();
+    expect(screen.getByText('URL無効')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: '領収書' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('queues an expense when the save fails offline', async () => {
     const offlineError = new Error('offline');
     let loadCount = 0;
@@ -281,7 +446,7 @@ describe('Expenses', () => {
 
     render(<Expenses />);
 
-    await screen.findByText('データなし');
+    await screen.findByText('経費データがありません');
     fireEvent.click(screen.getByRole('button', { name: '追加' }));
 
     await waitFor(() => {
@@ -316,7 +481,7 @@ describe('Expenses', () => {
 
     render(<Expenses />);
 
-    await screen.findByText('データなし');
+    await screen.findByText('経費データがありません');
     fireEvent.click(screen.getByRole('button', { name: '追加' }));
 
     expect(await screen.findByText('保存に失敗しました')).toBeInTheDocument();
@@ -377,7 +542,7 @@ describe('Expenses', () => {
       );
     });
     expect(screen.getByText('支払済みに更新しました')).toBeInTheDocument();
-    expect(screen.getByText(/支払日: 2026-03-28/)).toBeInTheDocument();
+    expect(screen.getByText('2026-03-28')).toBeInTheDocument();
   });
 
   it('requires a reason before unmarking a paid expense and updates the item', async () => {
@@ -446,7 +611,7 @@ describe('Expenses', () => {
       );
     });
     expect(screen.getByText('支払済みを取り消しました')).toBeInTheDocument();
-    const itemRow = screen.getByText(/備品/).closest('li');
+    const itemRow = screen.getByText(/備品/).closest('tr');
     expect(itemRow).not.toBeNull();
     expect(
       within(itemRow as HTMLElement).getByText('未払い'),
