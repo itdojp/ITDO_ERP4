@@ -114,6 +114,11 @@ describe('Estimates', () => {
 
     render(<Estimates />);
 
+    expect(
+      screen.getByRole('region', { name: '見積判断サマリー' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('見積作成')).toBeInTheDocument();
+
     fireEvent.change(screen.getByPlaceholderText('金額'), {
       target: { value: '250000' },
     });
@@ -148,6 +153,7 @@ describe('Estimates', () => {
     fireEvent.click(screen.getByRole('button', { name: '読み込み' }));
 
     expect(await screen.findByText(/EST-001/)).toBeInTheDocument();
+    expect(screen.getByText('見積一覧')).toBeInTheDocument();
     expect(api).toHaveBeenNthCalledWith(2, '/projects/project-1/estimates');
     expect(
       screen.getByText(

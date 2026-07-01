@@ -74,74 +74,98 @@ export const VendorDocumentsPurchaseOrdersSection: React.FC<
     }}
   >
     <h3>発注書</h3>
+    <p style={{ color: 'var(--color-text-muted, #475569)', marginTop: 0 }}>
+      案件・業者・金額・発行/期限を揃えて、承認依頼や送信ログ確認の起点になる発注書を登録します。
+    </p>
     <div className="card" style={{ marginBottom: 12 }}>
-      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-        <select
-          value={poForm.projectId}
-          onChange={(e) =>
-            onChangePoForm({ ...poForm, projectId: e.target.value })
-          }
-        >
-          <option value="">案件を選択</option>
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.code} / {project.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={poForm.vendorId}
-          onChange={(e) =>
-            onChangePoForm({ ...poForm, vendorId: e.target.value })
-          }
-        >
-          <option value="">業者を選択</option>
-          {vendors.map((vendor) => (
-            <option key={vendor.id} value={vendor.id}>
-              {vendor.code} / {vendor.name}
-            </option>
-          ))}
-        </select>
-        <input
-          type="number"
-          min={0}
-          value={poForm.totalAmount}
-          onChange={(e) =>
-            onChangePoForm({
-              ...poForm,
-              totalAmount: Number(e.target.value),
-            })
-          }
-          placeholder="金額"
-          style={{ width: 120 }}
-        />
-        <input
-          type="text"
-          value={poForm.currency}
-          onChange={(e) =>
-            onChangePoForm({
-              ...poForm,
-              currency: normalizeCurrency(e.target.value),
-            })
-          }
-          placeholder="通貨"
-          style={{ width: 80 }}
-          maxLength={3}
-        />
-        <input
-          type="date"
-          value={poForm.issueDate}
-          onChange={(e) =>
-            onChangePoForm({ ...poForm, issueDate: e.target.value })
-          }
-        />
-        <input
-          type="date"
-          value={poForm.dueDate}
-          onChange={(e) =>
-            onChangePoForm({ ...poForm, dueDate: e.target.value })
-          }
-        />
+      <div
+        className="row workflow-control-grid"
+        style={{ gap: 8, flexWrap: 'wrap' }}
+      >
+        <label>
+          案件
+          <select
+            value={poForm.projectId}
+            onChange={(e) =>
+              onChangePoForm({ ...poForm, projectId: e.target.value })
+            }
+          >
+            <option value="">案件を選択</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.code} / {project.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          業者
+          <select
+            value={poForm.vendorId}
+            onChange={(e) =>
+              onChangePoForm({ ...poForm, vendorId: e.target.value })
+            }
+          >
+            <option value="">業者を選択</option>
+            {vendors.map((vendor) => (
+              <option key={vendor.id} value={vendor.id}>
+                {vendor.code} / {vendor.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          金額
+          <input
+            type="number"
+            min={0}
+            value={poForm.totalAmount}
+            onChange={(e) =>
+              onChangePoForm({
+                ...poForm,
+                totalAmount: Number(e.target.value),
+              })
+            }
+            placeholder="金額"
+            style={{ width: 120 }}
+          />
+        </label>
+        <label>
+          通貨
+          <input
+            type="text"
+            value={poForm.currency}
+            onChange={(e) =>
+              onChangePoForm({
+                ...poForm,
+                currency: normalizeCurrency(e.target.value),
+              })
+            }
+            placeholder="通貨"
+            style={{ width: 80 }}
+            maxLength={3}
+          />
+        </label>
+        <label>
+          発行日
+          <input
+            type="date"
+            value={poForm.issueDate}
+            onChange={(e) =>
+              onChangePoForm({ ...poForm, issueDate: e.target.value })
+            }
+          />
+        </label>
+        <label>
+          納期
+          <input
+            type="date"
+            value={poForm.dueDate}
+            onChange={(e) =>
+              onChangePoForm({ ...poForm, dueDate: e.target.value })
+            }
+          />
+        </label>
         <Button onClick={onCreatePurchaseOrder} disabled={isPoSaving}>
           {isPoSaving ? '登録中' : '登録'}
         </Button>

@@ -302,6 +302,11 @@ describe('Invoices', () => {
     render(<Invoices />);
 
     expect(
+      screen.getByRole('region', { name: '請求判断サマリー' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('請求作成')).toBeInTheDocument();
+
+    expect(
       await screen.findAllByText('請求一覧の取得に失敗しました'),
     ).not.toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: '再試行' }));
@@ -358,6 +363,8 @@ describe('Invoices', () => {
       }),
     });
     expect(screen.getByText('INV-001')).toBeInTheDocument();
+    expect(screen.getByText('請求一覧')).toBeInTheDocument();
+    expect(screen.getByText('表示中の請求')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '工数から作成' }));
     expect(

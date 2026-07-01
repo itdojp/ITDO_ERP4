@@ -21,6 +21,11 @@ import {
   erpStatusDictionary,
 } from '../ui';
 import type { DataTableColumn, DataTableRow } from '../ui';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  WorkflowPanel,
+} from './workflowUx';
 
 interface Invoice {
   id: string;
@@ -39,6 +44,9 @@ type InvoiceFromTimeEntriesResponse = {
 };
 
 type ListStatus = 'idle' | 'loading' | 'error' | 'success';
+
+const formatInvoiceAmount = (amount: number) =>
+  `¥${(amount || 0).toLocaleString()}`;
 
 const buildInitialForm = (projectId?: string) => ({
   projectId: projectId || 'demo-project',
@@ -227,13 +235,6 @@ export const Invoices: React.FC = () => {
     }
   };
 
-  const requestMarkPaid = (id: string) => {
-    if (!canMarkPaid) return;
-    const target = items.find((item) => item.id === id);
-    if (!target) return;
-    setMarkPaidTarget(target);
-  };
-
   const buildApproval = (status: string) => {
     if (status === 'pending_exec')
       return { step: 2, total: 2, status: 'pending_exec' };
@@ -279,6 +280,18 @@ export const Invoices: React.FC = () => {
     });
   }, [items, renderProject, search, statusFilter]);
 
+  const itemMap = useMemo(
+    () => new Map(items.map((item) => [item.id, item])),
+    [items],
+  );
+
+  const requestMarkPaid = (id: string) => {
+    if (!canMarkPaid) return;
+    const target = itemMap.get(id);
+    if (!target) return;
+    setMarkPaidTarget(target);
+  };
+
   const tableRows = useMemo<DataTableRow[]>(
     () =>
       filteredItems.map((item) => ({
@@ -286,11 +299,25 @@ export const Invoices: React.FC = () => {
         invoiceNo: item.invoiceNo || '(draft)',
         project: renderProject(item.projectId),
         status: item.status,
-        totalAmount: `¥${(item.totalAmount || 0).toLocaleString()}`,
+        totalAmount: formatInvoiceAmount(item.totalAmount),
         paidAt: item.paidAt || '-',
       })),
     [filteredItems, renderProject],
   );
+
+  const invoiceTotalAmount = filteredItems.reduce(
+    (sum, item) => sum + (Number(item.totalAmount) || 0),
+    0,
+  );
+  const unpaidCount = filteredItems.filter(
+    (item) => item.status !== 'paid',
+  ).length;
+  const paidCount = filteredItems.filter(
+    (item) => item.status === 'paid',
+  ).length;
+  const selectedProjectLabel = form.projectId
+    ? renderProject(form.projectId)
+    : '未選択';
 
   const tableColumns = useMemo<DataTableColumn[]>(
     () => [
@@ -360,7 +387,7 @@ export const Invoices: React.FC = () => {
             key: 'detail',
             label: '詳細',
             onSelect: (row: DataTableRow) => {
-              const target = items.find((item) => item.id === row.id);
+              const target = itemMap.get(row.id);
               if (!target) return;
               setSelected(target);
             },
@@ -376,7 +403,7 @@ export const Invoices: React.FC = () => {
             key: 'release',
             label: '工数リンク解除',
             onSelect: (row: DataTableRow) => {
-              const target = items.find((item) => item.id === row.id);
+              const target = itemMap.get(row.id);
               if (!target || target.status !== 'draft') {
                 setMessage({
                   text: '工数リンク解除は draft の請求のみ実行できます',
@@ -405,51 +432,58 @@ export const Invoices: React.FC = () => {
 
   return (
     <div>
-      <h2>請求</h2>
-      <div
-        style={{
-          display: 'flex',
-          gap: 12,
-          flexWrap: 'wrap',
-          alignItems: 'flex-end',
-        }}
+      <WorkflowPageHeader
+        title="請求"
+        description="案件別の請求作成、工数からのドラフト生成、送信、入金確認を一覧から追跡します。"
+        actions={
+          <Button
+            variant="secondary"
+            onClick={() => {
+              void load();
+            }}
+          >
+            請求を再取得
+          </Button>
+        }
+      />
+      <WorkflowMetricGrid
+        ariaLabel="請求判断サマリー"
+        items={[
+          {
+            id: 'invoice-project',
+            label: '対象案件',
+            value: selectedProjectLabel,
+            helper: '作成・読込対象の案件',
+            tone: form.projectId ? 'success' : 'warning',
+          },
+          {
+            id: 'invoice-visible',
+            label: '表示中の請求',
+            value: `${filteredItems.length}件`,
+            helper: `全体 ${items.length}件`,
+          },
+          {
+            id: 'invoice-total',
+            label: '表示中の金額',
+            value: formatInvoiceAmount(invoiceTotalAmount),
+            helper:
+              search || statusFilter !== 'all'
+                ? '絞り込み後の合計'
+                : '現在一覧の合計',
+          },
+          {
+            id: 'invoice-payment',
+            label: '入金状況',
+            value: `未入金 ${unpaidCount}件`,
+            helper: `入金済み ${paidCount}件`,
+            tone: unpaidCount > 0 ? 'warning' : 'success',
+          },
+        ]}
+      />
+      <WorkflowPanel
+        title="請求作成"
+        description="金額を直接指定するか、対象期間の工数から請求ドラフトを作成します。"
       >
-        <Select
-          label="案件"
-          aria-label="案件選択"
-          value={form.projectId}
-          onChange={(e) => setForm({ ...form, projectId: e.target.value })}
-          placeholder="案件を選択"
-        >
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.code} / {project.name}
-            </option>
-          ))}
-        </Select>
-        <Input
-          label="金額"
-          aria-label="金額"
-          type="number"
-          value={form.totalAmount}
-          onChange={(e) =>
-            setForm({ ...form, totalAmount: Number(e.target.value) })
-          }
-          placeholder="金額"
-          min={0}
-        />
-        <Button onClick={create}>作成</Button>
-        <Button
-          variant="secondary"
-          onClick={() => {
-            void load();
-          }}
-        >
-          読み込み
-        </Button>
-      </div>
-      <Card padding="small" style={{ marginTop: 12 }}>
-        <h3 style={{ marginTop: 0 }}>工数から請求ドラフト作成</h3>
         <div
           style={{
             display: 'flex',
@@ -458,36 +492,81 @@ export const Invoices: React.FC = () => {
             alignItems: 'flex-end',
           }}
         >
+          <Select
+            label="案件"
+            aria-label="案件選択"
+            value={form.projectId}
+            onChange={(e) => setForm({ ...form, projectId: e.target.value })}
+            placeholder="案件を選択"
+          >
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.code} / {project.name}
+              </option>
+            ))}
+          </Select>
           <Input
-            label="工数集計開始日"
-            aria-label="工数集計開始日"
-            type="date"
-            value={timeFrom}
-            onChange={(e) => setTimeFrom(e.target.value)}
-          />
-          <Input
-            label="工数集計終了日"
-            aria-label="工数集計終了日"
-            type="date"
-            value={timeTo}
-            onChange={(e) => setTimeTo(e.target.value)}
-          />
-          <Input
-            label="単価(円/時)"
-            aria-label="請求単価"
+            label="金額"
+            aria-label="金額"
             type="number"
-            value={timeUnitPrice}
-            onChange={(e) => setTimeUnitPrice(Number(e.target.value))}
-            min={1}
+            value={form.totalAmount}
+            onChange={(e) =>
+              setForm({ ...form, totalAmount: Number(e.target.value) })
+            }
+            placeholder="金額"
+            min={0}
           />
-          <Button onClick={createFromTimeEntries}>工数から作成</Button>
+          <Button onClick={create}>作成</Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              void load();
+            }}
+          >
+            読み込み
+          </Button>
         </div>
-        <div style={{ marginTop: 12 }}>
-          <Alert variant="warning">
-            対象工数は請求に紐づけられ、解除するまで編集/付け替えできません。
-          </Alert>
-        </div>
-      </Card>
+        <Card padding="small" style={{ marginTop: 12 }}>
+          <h3 style={{ marginTop: 0 }}>工数から請求ドラフト作成</h3>
+          <div
+            style={{
+              display: 'flex',
+              gap: 12,
+              flexWrap: 'wrap',
+              alignItems: 'flex-end',
+            }}
+          >
+            <Input
+              label="工数集計開始日"
+              aria-label="工数集計開始日"
+              type="date"
+              value={timeFrom}
+              onChange={(e) => setTimeFrom(e.target.value)}
+            />
+            <Input
+              label="工数集計終了日"
+              aria-label="工数集計終了日"
+              type="date"
+              value={timeTo}
+              onChange={(e) => setTimeTo(e.target.value)}
+            />
+            <Input
+              label="単価(円/時)"
+              aria-label="請求単価"
+              type="number"
+              value={timeUnitPrice}
+              onChange={(e) => setTimeUnitPrice(Number(e.target.value))}
+              min={1}
+            />
+            <Button onClick={createFromTimeEntries}>工数から作成</Button>
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <Alert variant="warning">
+              対象工数は請求に紐づけられ、解除するまで編集/付け替えできません。
+            </Alert>
+          </div>
+        </Card>
+      </WorkflowPanel>
       {projectMessage && (
         <div style={{ marginTop: 12 }}>
           <Alert variant="error">{projectMessage}</Alert>
@@ -504,7 +583,10 @@ export const Invoices: React.FC = () => {
           />
         </div>
       )}
-      <div style={{ marginTop: 12 }}>
+      <WorkflowPanel
+        title="請求一覧"
+        description="検索・状態絞り込み・行アクションで、送信/入金/注釈の次操作を判断します。"
+      >
         <CrudList
           title="一覧"
           description="検索・状態絞り込み・行アクションで運用できます。"
@@ -565,7 +647,7 @@ export const Invoices: React.FC = () => {
           }
           table={listContent}
         />
-      </div>
+      </WorkflowPanel>
       <Drawer
         open={Boolean(selected)}
         onClose={() => setSelected(null)}

@@ -666,6 +666,11 @@ describe('VendorDocuments', () => {
   it('loads initial lookups and auto-selects the first project and vendor', async () => {
     render(<VendorDocuments />);
 
+    expect(
+      screen.getByRole('region', { name: '仕入/発注判断サマリー' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('現在の作業タブ')).toBeInTheDocument();
+
     await waitFor(() => {
       expect(screen.getByTestId('po-form-project')).toHaveTextContent(
         'project-1',
