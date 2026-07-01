@@ -129,15 +129,18 @@ npm run test
   - PDF_STORAGE_DIR=/tmp/erp4/pdfs
   - PDF_BASE_URL=http://localhost:3001/pdf-files (未設定なら /pdf-files)
 - asset limits:
-  - PDF_ASSET_ALLOWED_HOSTS (optional)
+  - PDF_ASSET_ALLOWED_HOSTS (optional; production で HTTP(S) asset を使う場合は設定推奨)
+  - PDF_ASSET_DIR (optional; local file asset を許可する場合の唯一の root)
   - PDF_ASSET_MAX_BYTES / PDF_DATA_URL_MAX_BYTES
   - PDF_ASSET_TIMEOUT_MS
+  - PDF_ASSET_ALLOW_HTTP / PDF_ASSET_ALLOW_PRIVATE_IP (production では false)
 - env (external):
   - PDF_PROVIDER=external
   - PDF_EXTERNAL_URL
+  - PDF_EXTERNAL_ALLOWED_HOSTS (production では必須。`PDF_EXTERNAL_URL` の host を含める)
   - PDF_EXTERNAL_API_KEY (optional)
   - PDF_EXTERNAL_MAX_BYTES / PDF_EXTERNAL_TIMEOUT_MS
-- 備考: external は PDF バイナリを返すエンドポイントを想定。
+- 備考: external は PDF バイナリを返すエンドポイントを想定。production では allowlist と HTTPS/public endpoint を前提にする。
 
 ## Evidence Pack Archive
 

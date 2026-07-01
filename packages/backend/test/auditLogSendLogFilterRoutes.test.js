@@ -144,10 +144,94 @@ test('GET /audit-logs filters by metadata.sendLogId', async () => {
         (entry) => entry?.action === 'audit_log_exported',
       );
       assert.ok(exportAudit, 'Expected an audit_log_exported audit log entry');
-      assert.equal(
-        exportAudit?.metadata?.filters?.sendLogId,
-        'send-log-123',
+      assert.equal(exportAudit?.metadata?.filters?.sendLogId, 'send-log-123');
+    },
+  );
+});
+
+test('GET /audit-logs masks JSON output by default and redacts token metadata', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+    },
+    async () => {
+      await withPrismaStubs(
+        {
+          'auditLog.findMany': async () => [
+            {
+              id: 'audit-2',
+              action: 'provider_failed',
+              userId: 'operator@example.com',
+              actorRole: 'exec',
+              actorGroupId: null,
+              requestId: 'req-sensitive-12345',
+              ipAddress: '203.0.113.10',
+              userAgent: 'node-test',
+              source: 'api',
+              reasonCode: null,
+              reasonText: 'token sk_secret_value',
+              targetTable: 'providers',
+              targetId: 'provider-001',
+              createdAt: new Date('2026-03-06T00:00:00Z'),
+              metadata: {
+                authorization: 'Bearer reflected-secret',
+                providerResponseBody: 'token sk_secret_value',
+                nested: { apiKey: 'secret-api-key' },
+              },
+            },
+          ],
+          'auditLog.create': async ({ data }) => ({ id: data.action }),
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'GET',
+              url: '/audit-logs?format=json',
+              headers: {
+                'x-user-id': 'exec-user',
+                'x-roles': 'exec',
+              },
+            });
+            assert.equal(res.statusCode, 200, res.body);
+            const payload = JSON.parse(res.body);
+            const item = payload.items?.[0];
+            assert.notEqual(item.userId, 'operator@example.com');
+            assert.equal(item.metadata.authorization, '[REDACTED]');
+            assert.equal(item.metadata.nested.apiKey, '[REDACTED]');
+          } finally {
+            await server.close();
+          }
+        },
       );
+    },
+  );
+});
+
+test('GET /audit-logs denies unmasked export for exec role', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/audit-logs?format=json&mask=0',
+          headers: {
+            'x-user-id': 'exec-user',
+            'x-roles': 'exec',
+          },
+        });
+        assert.equal(res.statusCode, 403, res.body);
+        const payload = JSON.parse(res.body);
+        assert.equal(payload?.error?.code, 'UNMASKED_EXPORT_REQUIRES_ADMIN');
+      } finally {
+        await server.close();
+      }
     },
   );
 });

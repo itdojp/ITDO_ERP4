@@ -337,6 +337,44 @@ test('envValidation: RATE_LIMIT_DOC_SEND_MAX validates positive integer', () => 
   assert.match(result.stderr, /RATE_LIMIT_DOC_SEND_MAX/);
 });
 
+test('envValidation: production external PDF requires host allowlist matching endpoint', () => {
+  const result = runEnvValidation({
+    NODE_ENV: 'production',
+    AUTH_MODE: 'jwt_bff',
+    JWT_ISSUER: 'https://accounts.google.com',
+    JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
+    JWT_JWKS_URL: 'https://www.googleapis.com/oauth2/v3/certs',
+    GOOGLE_OIDC_CLIENT_SECRET: 'secret',
+    GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
+    AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
+    PDF_PROVIDER: 'external',
+    PDF_EXTERNAL_URL: 'https://pdf.example.com/render',
+    PDF_EXTERNAL_ALLOWED_HOSTS: 'other.example.com',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /PDF_EXTERNAL_ALLOWED_HOSTS/);
+});
+
+test('envValidation: production PDF fetch flags fail closed for HTTP and private IP', () => {
+  const result = runEnvValidation({
+    NODE_ENV: 'production',
+    AUTH_MODE: 'jwt_bff',
+    JWT_ISSUER: 'https://accounts.google.com',
+    JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
+    JWT_JWKS_URL: 'https://www.googleapis.com/oauth2/v3/certs',
+    GOOGLE_OIDC_CLIENT_SECRET: 'secret',
+    GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
+    AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
+    PDF_ASSET_ALLOW_HTTP: 'true',
+    PDF_EXTERNAL_ALLOW_PRIVATE_IP: 'true',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /PDF_ASSET_ALLOW_HTTP/);
+  assert.match(result.stderr, /PDF_EXTERNAL_ALLOW_PRIVATE_IP/);
+});
+
 test('envValidation: ACTION_POLICY_ENFORCEMENT_PRESET validates allowed values', () => {
   const result = runEnvValidation({
     ACTION_POLICY_ENFORCEMENT_PRESET: 'phase2',

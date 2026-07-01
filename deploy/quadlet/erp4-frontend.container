@@ -4,11 +4,10 @@ Wants=network-online.target
 After=network-online.target erp4-backend.service
 
 [Container]
-Image=localhost/erp4-frontend:latest
+Image=localhost/erp4-frontend:REPLACE_WITH_COMMIT_SHA
 Pull=never
 ContainerName=erp4-frontend
 Network=erp4.network
-PublishPort=8080:8080
 
 [Service]
 Restart=always

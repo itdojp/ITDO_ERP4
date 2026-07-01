@@ -125,6 +125,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
     projectId: string;
     userId: string | null;
     reply: any;
+    req?: any;
+    accessLevel?: 'read' | 'post';
   }) {
     const { projectId, userId, reply } = options;
     if (!(await ensureProjectRoom(projectId, userId))) {
@@ -149,6 +151,16 @@ export async function registerChatRoutes(app: FastifyInstance) {
         error: { code: 'NOT_FOUND', message: 'Room not found' },
       });
       return null;
+    }
+    if (options.req && userId) {
+      const access = await ensureRoomContentAccessFromRequest({
+        req: options.req,
+        reply,
+        roomId: room.id,
+        userId,
+        accessLevel: options.accessLevel ?? 'read',
+      });
+      if (!access) return null;
     }
     return room;
   }
@@ -191,12 +203,14 @@ export async function registerChatRoutes(app: FastifyInstance) {
     reply: any;
     roomId: string;
     userId: string;
+    accessLevel?: 'read' | 'post';
   }) {
     return ensureRoomAccessWithReasonError({
       req: options.req,
       reply: options.reply,
       roomId: options.roomId,
       userId: options.userId,
+      accessLevel: options.accessLevel,
     });
   }
 
@@ -388,6 +402,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         projectId,
         userId: req.user?.userId || null,
         reply,
+        req,
+        accessLevel: 'read',
       });
       if (!room) return reply;
       const where: Prisma.ChatMessageWhereInput = {
@@ -475,6 +491,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         projectId,
         userId: req.user?.userId || null,
         reply,
+        req,
+        accessLevel: 'read',
       });
       if (!room) return reply;
 
@@ -602,6 +620,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         projectId,
         userId: req.user?.userId || null,
         reply,
+        req,
+        accessLevel: 'read',
       });
       if (!room) return reply;
       const currentUserId = req.user?.userId || '';
@@ -644,6 +664,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         projectId,
         userId: req.user?.userId || null,
         reply,
+        req,
+        accessLevel: 'read',
       });
       if (!room) return reply;
       return searchChatAckCandidates({ room, q: keyword });
@@ -667,6 +689,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         projectId,
         userId,
         reply,
+        req,
+        accessLevel: 'read',
       });
       if (!room) return reply;
       return getChatUnreadSummary({ roomId: room.id, userId });
@@ -690,6 +714,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         projectId,
         userId,
         reply,
+        req,
+        accessLevel: 'read',
       });
       if (!room) return reply;
       return markChatAsRead({ roomId: room.id, userId });
@@ -719,6 +745,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         projectId,
         userId,
         reply,
+        req,
+        accessLevel: 'post',
       });
       if (!room) return reply;
 
@@ -833,6 +861,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         projectId,
         userId,
         reply,
+        req,
+        accessLevel: 'read',
       });
       if (!room) return reply;
 
@@ -909,6 +939,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         projectId,
         userId,
         reply,
+        req,
+        accessLevel: 'post',
       });
       if (!room) return reply;
       if (mentionsAll) {

@@ -1,4 +1,5 @@
 import { safeFetch } from './safeHttpClient.js';
+import { readBoundedResponseText, redactSensitiveText } from './redaction.js';
 
 type ExternalLlmProvider = 'disabled' | 'stub' | 'openai';
 
@@ -173,8 +174,9 @@ export async function summarizeWithExternalLlm(options: {
   );
 
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    const suffix = text ? `: ${text.slice(0, 200)}` : '';
+    const text = await readBoundedResponseText(res, 1024).catch(() => '');
+    const diagnostic = redactSensitiveText(text, 200);
+    const suffix = diagnostic ? `: ${diagnostic}` : '';
     throw new Error(`openai_error_${res.status}${suffix}`);
   }
 

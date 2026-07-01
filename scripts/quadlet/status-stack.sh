@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BACKEND_HEALTH_URL="${BACKEND_HEALTH_URL:-http://127.0.0.1:3001/healthz}"
-BACKEND_READY_URL="${BACKEND_READY_URL:-http://127.0.0.1:3001/readyz}"
-FRONTEND_URL="${FRONTEND_URL:-http://127.0.0.1:8080/}"
+BACKEND_HEALTH_URL="${BACKEND_HEALTH_URL:-}"
+BACKEND_READY_URL="${BACKEND_READY_URL:-}"
+FRONTEND_URL="${FRONTEND_URL:-}"
+BACKEND_CONTAINER="${BACKEND_CONTAINER:-erp4-backend}"
+FRONTEND_CONTAINER="${FRONTEND_CONTAINER:-erp4-frontend}"
+BACKEND_CONTAINER_HEALTH_URL="${BACKEND_CONTAINER_HEALTH_URL:-http://127.0.0.1:3001/healthz}"
+BACKEND_CONTAINER_READY_URL="${BACKEND_CONTAINER_READY_URL:-http://127.0.0.1:3001/readyz}"
+FRONTEND_CONTAINER_URL="${FRONTEND_CONTAINER_URL:-http://127.0.0.1:8080/}"
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-erp4-postgres}"
 POSTGRES_USER="${POSTGRES_USER:-erp4}"
 SKIP_SYSTEMD=0
@@ -14,13 +19,19 @@ FAILED=0
 usage() {
   cat <<USAGE
 Usage: $(basename "$0") [options]
-  --backend-health-url URL
-  --backend-ready-url URL
-  --frontend-url URL
+  --backend-health-url URL       Probe backend health through an explicit host/proxy URL
+  --backend-ready-url URL        Probe backend readiness through an explicit host/proxy URL
+  --frontend-url URL             Probe frontend through an explicit host/proxy URL
+  --backend-container NAME       Backend container name for default in-container probes
+  --frontend-container NAME      Frontend container name for default in-container probes
   --postgres-container NAME
   --postgres-user USER
   --include-proxy
   --skip-systemd
+
+If backend/frontend URLs are omitted, the checks run inside the Quadlet
+containers. This matches the default deployment where only Caddy publishes host
+ports and backend/frontend are private to the Podman network.
 USAGE
 }
 
@@ -86,6 +97,84 @@ check_http_status() {
   return 1
 }
 
+check_node_http_status() {
+  local label="$1"
+  local container="$2"
+  local url="$3"
+  local method="$4"
+  local output
+
+  if output="$(podman exec "$container" node -e '
+const http = require("node:http");
+const [target, method] = process.argv.slice(1);
+const request = http.request(target, { method, timeout: 5000 }, (response) => {
+  response.resume();
+  response.on("end", () => {
+    if (response.statusCode >= 200 && response.statusCode < 400) {
+      process.exit(0);
+    }
+    console.error("status " + response.statusCode);
+    process.exit(1);
+  });
+});
+request.on("timeout", () => request.destroy(new Error("timeout")));
+request.on("error", (error) => {
+  console.error(error.message);
+  process.exit(1);
+});
+request.end();
+' "$url" "$method" 2>&1)"; then
+    printf 'http    %-24s ok (container:%s:%s)\n' "$label" "$container" "$url"
+    return 0
+  fi
+
+  output="${output//$'\n'/ }"
+  printf 'http    %-24s failed (container:%s:%s) %s\n' "$label" "$container" "$url" "${output:-unknown}"
+  FAILED=1
+  return 1
+}
+
+check_wget_container_status() {
+  local label="$1"
+  local container="$2"
+  local url="$3"
+  local output
+
+  if output="$(podman exec "$container" sh -c 'wget -q -O /dev/null -T 5 "$1"' sh "$url" 2>&1)"; then
+    printf 'http    %-24s ok (container:%s:%s)\n' "$label" "$container" "$url"
+    return 0
+  fi
+
+  output="${output//$'\n'/ }"
+  printf 'http    %-24s failed (container:%s:%s) %s\n' "$label" "$container" "$url" "${output:-unknown}"
+  FAILED=1
+  return 1
+}
+
+check_backend_health_status() {
+  if [[ -n "$BACKEND_HEALTH_URL" ]]; then
+    check_http_status 'backend health' "$BACKEND_HEALTH_URL" GET
+    return $?
+  fi
+  check_node_http_status 'backend health' "$BACKEND_CONTAINER" "$BACKEND_CONTAINER_HEALTH_URL" GET
+}
+
+check_backend_ready_status() {
+  if [[ -n "$BACKEND_READY_URL" ]]; then
+    check_http_status 'backend ready' "$BACKEND_READY_URL" GET
+    return $?
+  fi
+  check_node_http_status 'backend ready' "$BACKEND_CONTAINER" "$BACKEND_CONTAINER_READY_URL" GET
+}
+
+check_frontend_status() {
+  if [[ -n "$FRONTEND_URL" ]]; then
+    check_http_status 'frontend' "$FRONTEND_URL" HEAD
+    return $?
+  fi
+  check_wget_container_status 'frontend' "$FRONTEND_CONTAINER" "$FRONTEND_CONTAINER_URL"
+}
+
 check_postgres_status() {
   if podman exec "$POSTGRES_CONTAINER" pg_isready -U "$POSTGRES_USER" -t 5 >/dev/null 2>&1; then
     printf 'db      %-24s ok (%s)\n' 'postgres ready' "$POSTGRES_CONTAINER"
@@ -112,6 +201,16 @@ while [[ $# -gt 0 ]]; do
     --frontend-url)
       [[ $# -ge 2 ]] || fail 'missing argument for --frontend-url'
       FRONTEND_URL="$2"
+      shift 2
+      ;;
+    --backend-container)
+      [[ $# -ge 2 ]] || fail 'missing argument for --backend-container'
+      BACKEND_CONTAINER="$2"
+      shift 2
+      ;;
+    --frontend-container)
+      [[ $# -ge 2 ]] || fail 'missing argument for --frontend-container'
+      FRONTEND_CONTAINER="$2"
       shift 2
       ;;
     --postgres-container)
@@ -142,7 +241,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-command -v curl >/dev/null 2>&1 || fail 'required command not found: curl'
+if [[ -n "$BACKEND_HEALTH_URL$BACKEND_READY_URL$FRONTEND_URL" ]]; then
+  command -v curl >/dev/null 2>&1 || fail 'required command not found: curl'
+fi
 command -v podman >/dev/null 2>&1 || fail 'required command not found: podman'
 
 if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
@@ -163,9 +264,9 @@ if [[ "$SKIP_SYSTEMD" -eq 0 ]]; then
 fi
 
 printf '[probes]\n'
-check_http_status 'backend health' "$BACKEND_HEALTH_URL" GET || true
-check_http_status 'backend ready' "$BACKEND_READY_URL" GET || true
-check_http_status 'frontend' "$FRONTEND_URL" HEAD || true
+check_backend_health_status || true
+check_backend_ready_status || true
+check_frontend_status || true
 check_postgres_status || true
 
 if [[ "$FAILED" -ne 0 ]]; then

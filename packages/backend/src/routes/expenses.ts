@@ -944,15 +944,21 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
       const { limit } = req.query as { limit?: number };
       const expense = await prisma.expense.findUnique({
         where: { id },
-        select: { id: true, userId: true },
+        select: { id: true, userId: true, projectId: true, deletedAt: true },
       });
-      if (!expense) {
+      if (!expense || expense.deletedAt) {
         return reply.code(404).send({ error: 'not_found' });
       }
       const roles = req.user?.roles || [];
       const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
       if (!isPrivileged && expense.userId !== req.user?.userId) {
         return reply.code(403).send({ error: 'forbidden' });
+      }
+      if (
+        !isPrivileged &&
+        !hasProjectAccess(roles, req.user?.projectIds || [], expense.projectId)
+      ) {
+        return reply.code(403).send({ error: 'forbidden_project' });
       }
       const cappedLimit = Math.min(Math.max(Number(limit || 100), 1), 500);
       const items = await prisma.expenseStateTransitionLog.findMany({
@@ -988,6 +994,13 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
         expense.userId !== userId
       ) {
         return reply.code(403).send({ error: 'forbidden' });
+      }
+      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
+      if (
+        !isPrivileged &&
+        !hasProjectAccess(roles, req.user?.projectIds || [], expense.projectId)
+      ) {
+        return reply.code(403).send({ error: 'forbidden_project' });
       }
       const hasReceiptEvidence = hasExpenseSubmitEvidence({
         receiptUrl: expense.receiptUrl,

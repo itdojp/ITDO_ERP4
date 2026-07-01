@@ -55,7 +55,9 @@
 
 ## PDF/アセットの安全対策
 
-- 画像URLは `PDF_ASSET_ALLOWED_HOSTS` の許可リストに限定可能。
+- 画像URLは `PDF_ASSET_ALLOWED_HOSTS` の許可リストに限定可能。production で HTTP(S) asset を使う場合は host allowlist を設定する。
+- ローカルファイル asset は `PDF_ASSET_DIR` を設定した場合のみ、その配下に限定して読み込む。
+- production では `PDF_ASSET_ALLOW_HTTP` / `PDF_ASSET_ALLOW_PRIVATE_IP` / `PDF_EXTERNAL_ALLOW_HTTP` / `PDF_EXTERNAL_ALLOW_PRIVATE_IP` を `false` にする。
 - `PDF_ASSET_MAX_BYTES` / `PDF_DATA_URL_MAX_BYTES` でサイズ制限。
 - `PDF_EXTERNAL_MAX_BYTES` / `PDF_EXTERNAL_TIMEOUT_MS` で外部PDFの制限。
 
@@ -90,6 +92,7 @@
 
 - `PDF_PROVIDER=external`
 - `PDF_EXTERNAL_URL`
+- `PDF_EXTERNAL_ALLOWED_HOSTS`（production では必須。`PDF_EXTERNAL_URL` の host を含める）
 - `PDF_EXTERNAL_API_KEY`（任意）
 
 ## QA/確認手順（本番運用前）

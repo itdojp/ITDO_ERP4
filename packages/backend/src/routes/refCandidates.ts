@@ -4,6 +4,7 @@ import { prisma } from '../services/db.js';
 import { requireUserContext } from '../services/authContext.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { requireProjectAccess, requireRole } from '../services/rbac.js';
+import { ensureChatRoomContentAccess } from '../services/chatRoomAccess.js';
 
 type RefCandidateKind =
   | 'invoice'
@@ -540,8 +541,34 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
               },
             },
           });
+          const accessibleMessages = [];
+          const roomAccessCache = new Map<string, boolean>();
+          const userId = req.user?.userId ?? '';
+          const roles = req.user?.roles || [];
+          const projectIds = req.user?.projectIds || [];
+          const groupIds = req.user?.groupIds || [];
+          const groupAccountIds = req.user?.groupAccountIds || [];
+          for (const message of messages) {
+            let canRead = roomAccessCache.get(message.roomId);
+            if (canRead === undefined) {
+              const access = await ensureChatRoomContentAccess({
+                roomId: message.roomId,
+                userId,
+                roles,
+                projectIds,
+                groupIds,
+                groupAccountIds,
+                accessLevel: 'read',
+              });
+              canRead = access.ok;
+              roomAccessCache.set(message.roomId, canRead);
+            }
+            if (canRead) {
+              accessibleMessages.push(message);
+            }
+          }
           items.push(
-            ...messages.map((message) => {
+            ...accessibleMessages.map((message) => {
               const excerpt = message.body
                 .replace(/\s+/g, ' ')
                 .trim()

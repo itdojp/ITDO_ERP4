@@ -125,3 +125,18 @@ test('safeFetch propagates caller abort signal', async () => {
   callerController.abort();
   await assert.rejects(call, (error) => error?.name === 'AbortError');
 });
+
+test('safeFetch exposes pinned lookup from validated DNS results', async () => {
+  const { createPinnedLookupForTest } = await loadSafeHttpClient();
+  const lookup = createPinnedLookupForTest([
+    { address: '2001:4860:4860::8888', family: 6 },
+    { address: '93.184.216.34', family: 4 },
+  ]);
+  assert.equal(typeof lookup, 'function');
+  let resolved = null;
+  lookup('example.com', {}, (err, address, family) => {
+    assert.equal(err, null);
+    resolved = { address, family };
+  });
+  assert.deepEqual(resolved, { address: '93.184.216.34', family: 4 });
+});

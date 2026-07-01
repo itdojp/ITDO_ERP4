@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 45
     services:
       postgres:
-        image: postgres:15
+        image: docker.io/library/postgres:15@sha256:6ab12ad4395ee49ab49fe19530f7e183c5a9c97fc47cf687b3e281bec5f91ee4
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -29,8 +29,8 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 20.19.0
       - run: sudo apt-get update
@@ -50,7 +50,7 @@ jobs:
             echo "baseline not found; skipping comparison"
           fi
       - name: Upload perf artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: perf-api-bench-${{ github.run_id }}
           path: tmp/perf-ci/*

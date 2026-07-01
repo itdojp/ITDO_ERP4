@@ -129,7 +129,11 @@ test('maskEvidencePackJsonExport: masks sensitive fields and rehashes', () => {
           actorRole: 'user',
           actorGroupId: 'g-1',
           reasonText: 'mail foo@example.com',
-          metadata: { step: 1 },
+          metadata: {
+            step: 1,
+            authorization: 'Bearer secret-token-value',
+            nested: { apiKey: 'sk_secret_value' },
+          },
         },
       ],
     },
@@ -161,6 +165,14 @@ test('maskEvidencePackJsonExport: masks sensitive fields and rehashes', () => {
       'foo@example.com',
     ),
     false,
+  );
+  assert.equal(
+    masked.payload.workflowHistory.events[0].metadata.authorization,
+    '[REDACTED]',
+  );
+  assert.equal(
+    masked.payload.workflowHistory.events[0].metadata.nested.apiKey,
+    '[REDACTED]',
   );
   assert.equal(
     masked.payload.attachments[0].filename.includes('foo@example.com'),

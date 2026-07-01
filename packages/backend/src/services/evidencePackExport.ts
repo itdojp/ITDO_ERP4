@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import PDFDocument from 'pdfkit';
+import { redactSensitiveValue } from './redaction.js';
 
 type ApprovalSummary = {
   id: string;
@@ -304,6 +305,7 @@ export function maskEvidencePackJsonExport(
             typeof event.reasonText === 'string'
               ? maskFreeText(event.reasonText)
               : event.reasonText,
+          metadata: redactSensitiveValue(event.metadata),
         }))
       : [];
   }

@@ -5,6 +5,7 @@ import { isIP } from 'node:net';
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { safeFetch } from './safeHttpClient.js';
+import { readBoundedResponseText, redactSensitiveText } from './redaction.js';
 
 export type NotifyResult = {
   channel: string;
@@ -279,12 +280,15 @@ async function sendEmailSendGrid(
       },
     );
     if (!res.ok) {
-      const text = await res.text();
-      const body =
-        process.env.NODE_ENV === 'production' ? text.slice(0, 2000) : text;
+      const text = await readBoundedResponseText(res, 2048).catch(() => '');
+      const body = redactSensitiveText(text, 500);
       console.error('[sendgrid send failed]', {
         status: res.status,
         body,
+        requestId:
+          res.headers.get('x-message-id') ||
+          res.headers.get('x-request-id') ||
+          undefined,
       });
       return {
         status: 'failed',

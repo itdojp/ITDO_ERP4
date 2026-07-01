@@ -6,13 +6,12 @@ Wants=network-online.target
 After=network-online.target
 
 [Container]
-Image=localhost/erp4-backend:latest
+Image=localhost/erp4-backend:REPLACE_WITH_COMMIT_SHA
 Pull=never
 ContainerName=erp4-backend
 Network=erp4.network
 Volume=erp4-backend-data.volume:/var/lib/erp4:Z
 EnvironmentFile=%h/.config/containers/systemd/erp4-backend.env
-PublishPort=3001:3001
 
 [Service]
 Restart=always

@@ -4,6 +4,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import PDFDocument from 'pdfkit';
 import { safeFetch } from './safeHttpClient.js';
+import { readBoundedResponseText, redactSensitiveText } from './redaction.js';
 
 type PdfPayload = Record<string, unknown>;
 
@@ -92,6 +93,15 @@ const PDF_ASSET_ALLOW_PRIVATE_IP =
   process.env.PDF_ASSET_ALLOW_PRIVATE_IP === 'true';
 const PDF_EXTERNAL_ALLOW_PRIVATE_IP =
   process.env.PDF_EXTERNAL_ALLOW_PRIVATE_IP === 'true';
+const PDF_ASSET_DIR = process.env.PDF_ASSET_DIR
+  ? path.resolve(process.env.PDF_ASSET_DIR)
+  : null;
+
+function requireProductionAllowlist(hosts: Set<string>, label: string) {
+  if (process.env.NODE_ENV === 'production' && hosts.size === 0) {
+    throw new Error(`${label}_allowed_hosts_required`);
+  }
+}
 
 export function resolvePdfStorageDir() {
   return process.env.PDF_STORAGE_DIR || '/tmp/erp4/pdfs';
@@ -191,6 +201,16 @@ function isAllowedAssetMime(value?: string | null) {
   return ALLOWED_ASSET_MIME.has(normalized);
 }
 
+export function resolvePdfAssetPath(assetDir: string, value: string) {
+  const resolvedAssetDir = path.resolve(assetDir);
+  const resolved = path.resolve(resolvedAssetDir, value);
+  const relative = path.relative(resolvedAssetDir, resolved);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    return null;
+  }
+  return resolved;
+}
+
 async function readResponseWithLimit(
   res: Response,
   maxBytes: number,
@@ -239,6 +259,7 @@ async function loadAssetBuffer(value?: string | null) {
   }
   if (isHttpUrl(value)) {
     try {
+      requireProductionAllowlist(ALLOWED_ASSET_HOSTS, 'pdf_asset');
       const res = await safeFetch(
         value,
         {},
@@ -264,10 +285,14 @@ async function loadAssetBuffer(value?: string | null) {
       return null;
     }
   }
+  const localPath = PDF_ASSET_DIR
+    ? resolvePdfAssetPath(PDF_ASSET_DIR, value)
+    : null;
+  if (!localPath) return null;
   try {
-    const stat = await fs.stat(value);
+    const stat = await fs.stat(localPath);
     if (stat.size > MAX_ASSET_BYTES) return null;
-    return await fs.readFile(value);
+    return await fs.readFile(localPath);
   } catch {
     return null;
   }
@@ -365,6 +390,7 @@ async function requestExternalPdf(
   if (!endpoint) {
     throw new Error('PDF_EXTERNAL_URL is required for external provider');
   }
+  requireProductionAllowlist(ALLOWED_EXTERNAL_HOSTS, 'pdf_external');
   const res = await safeFetch(
     endpoint,
     {
@@ -389,7 +415,10 @@ async function requestExternalPdf(
     },
   );
   if (!res.ok) {
-    const text = await res.text();
+    const text = redactSensitiveText(
+      await readBoundedResponseText(res, 1024),
+      200,
+    );
     throw new Error(`external_pdf_failed:${res.status}:${text.slice(0, 200)}`);
   }
   const contentType = res.headers.get('content-type');

@@ -6,7 +6,8 @@ type CsvReply = {
 
 export function formatCsvValue(value: unknown) {
   if (value == null) return '';
-  const text = String(value);
+  const rawText = String(value);
+  const text = /^[\s]*[=+\-@\t\r]/.test(rawText) ? `'${rawText}` : rawText;
   if (/[",\n\r]/.test(text)) {
     return `"${text.replace(/"/g, '""')}"`;
   }

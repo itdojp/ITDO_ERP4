@@ -1,7 +1,6 @@
 /* eslint-disable no-console */
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 
 const frontendRoot = path.resolve(__dirname, '..');
@@ -48,29 +47,6 @@ const removeNestedReact = () => {
   }
 };
 
-const sleep = (ms) => {
-  const waitArray = new Int32Array(new SharedArrayBuffer(4));
-  Atomics.wait(waitArray, 0, 0, ms);
-};
-
-const resolveSourceRef = () => {
-  try {
-    const pkgPath = path.join(frontendRoot, 'package.json');
-    const parsed = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-    const spec =
-      parsed?.dependencies?.['@itdo/design-system'] ??
-      parsed?.dependencies?.['@itdojp/design-system'];
-    if (typeof spec !== 'string') return 'v1.0.3';
-    const gitRef = spec.match(/#(.+)$/)?.[1];
-    if (gitRef) return String(gitRef);
-    const semver = spec.match(/(\d+\.\d+\.\d+)/)?.[1];
-    if (semver) return `v${semver}`;
-    return 'v1.0.3';
-  } catch {
-    return 'v1.0.3';
-  }
-};
-
 if (!exists(designSystemRoot)) {
   console.log('[design-system] not installed yet; skip build');
   process.exit(0);
@@ -81,74 +57,35 @@ if (exists(distEntry) && exists(distStyles)) {
   process.exit(0);
 }
 
-const sourceRef = resolveSourceRef();
+const allowSourceBuild =
+  process.env.DESIGN_SYSTEM_ALLOW_SOURCE_BUILD === 'true';
+if (!allowSourceBuild) {
+  console.error(
+    '[design-system] dist is missing. Install a prebuilt @itdo/design-system package or run this script with DESIGN_SYSTEM_ALLOW_SOURCE_BUILD=true and DESIGN_SYSTEM_SOURCE_REF=<commit-sha> in an isolated environment.',
+  );
+  process.exit(1);
+}
+
+const sourceRef = String(process.env.DESIGN_SYSTEM_SOURCE_REF || '').trim();
+if (!/^[a-f0-9]{40}$/i.test(sourceRef)) {
+  console.error(
+    '[design-system] DESIGN_SYSTEM_SOURCE_REF must be an immutable 40-character commit SHA when source builds are enabled.',
+  );
+  process.exit(1);
+}
+
 const sourceRefDir = sourceRef.replace(/[^A-Za-z0-9._-]/g, '_');
 const repoUrl = 'https://github.com/itdojp/itdo-design-system.git';
-const cacheRoot = path.join(os.tmpdir(), 'erp4-design-system-build');
+const cacheRoot = path.join(frontendRoot, '.cache', 'erp4-design-system-build');
 const repoDir = path.join(cacheRoot, `itdo-design-system-${sourceRefDir}`);
-const cloneRetriesRaw = process.env.DESIGN_SYSTEM_CLONE_RETRIES || '3';
-const cloneRetries = Math.max(1, Number(cloneRetriesRaw) || 1);
-
-const buildLocal = () => {
-  try {
-    console.log('[design-system] dist not found; building in-place...');
-    run('npm', ['install'], designSystemRoot);
-    run('npm', ['run', 'build:lib'], designSystemRoot);
-    removeNestedReact();
-    if (exists(distEntry) && exists(distStyles)) {
-      console.log('[design-system] local build complete');
-      return true;
-    }
-  } catch (err) {
-    console.warn('[design-system] local build failed; fallback to clone');
-  }
-  return false;
-};
-
-if (buildLocal()) {
-  process.exit(0);
-}
 
 console.log(`[design-system] building from source (${sourceRef})...`);
 
 fs.mkdirSync(cacheRoot, { recursive: true });
 
-let cloned = false;
-for (let attempt = 1; attempt <= cloneRetries; attempt += 1) {
-  try {
-    fs.rmSync(repoDir, { recursive: true, force: true });
-    run(
-      'git',
-      [
-        '-c',
-        'advice.detachedHead=false',
-        'clone',
-        '--quiet',
-        '--depth',
-        '1',
-        '--branch',
-        sourceRef,
-        repoUrl,
-        repoDir,
-      ],
-      cacheRoot,
-    );
-    cloned = true;
-    break;
-  } catch (err) {
-    if (attempt >= cloneRetries) {
-      throw err;
-    }
-    console.warn(
-      `[design-system] clone failed (attempt ${attempt}/${cloneRetries}). retrying...`,
-    );
-    sleep(1000 * attempt);
-  }
-}
-if (!cloned) {
-  console.error('[design-system] failed to clone design-system repository');
-  process.exit(1);
-}
+fs.rmSync(repoDir, { recursive: true, force: true });
+run('git', ['clone', '--quiet', repoUrl, repoDir], cacheRoot);
+run('git', ['checkout', '--detach', sourceRef], repoDir);
 run('npm', ['ci'], repoDir);
 run('npm', ['run', 'build:lib'], repoDir);
 

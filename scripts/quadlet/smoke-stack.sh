@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BACKEND_IMAGE="${BACKEND_IMAGE:-localhost/erp4-backend:latest}"
-FRONTEND_IMAGE="${FRONTEND_IMAGE:-localhost/erp4-frontend:latest}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ERP4_IMAGE_TAG="${ERP4_IMAGE_TAG:-$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD 2>/dev/null || true)}"
+if [[ -z "$ERP4_IMAGE_TAG" ]]; then
+  printf 'ERROR: ERP4_IMAGE_TAG is required when the repository commit cannot be resolved\n' >&2
+  exit 1
+fi
+if [[ ! "$ERP4_IMAGE_TAG" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+  printf 'ERROR: ERP4_IMAGE_TAG contains characters that are unsafe for an image tag: %s\n' "$ERP4_IMAGE_TAG" >&2
+  exit 1
+fi
+BACKEND_IMAGE="${BACKEND_IMAGE:-localhost/erp4-backend:${ERP4_IMAGE_TAG}}"
+FRONTEND_IMAGE="${FRONTEND_IMAGE:-localhost/erp4-frontend:${ERP4_IMAGE_TAG}}"
+POSTGRES_IMAGE="${POSTGRES_IMAGE:-docker.io/library/postgres:15@sha256:6ab12ad4395ee49ab49fe19530f7e183c5a9c97fc47cf687b3e281bec5f91ee4}"
 NETWORK_NAME="${NETWORK_NAME:-erp4-quadlet-smoke}"
 POSTGRES_VOLUME="${POSTGRES_VOLUME:-erp4-quadlet-smoke-pg}"
 BACKEND_VOLUME="${BACKEND_VOLUME:-erp4-quadlet-smoke-data}"
@@ -72,7 +83,7 @@ podman run -d \
   -e PGDATA=/var/lib/postgresql/data/pgdata \
   -v "$POSTGRES_VOLUME":/var/lib/postgresql/data:Z \
   -p "127.0.0.1:${POSTGRES_HOST_PORT}:5432" \
-  docker.io/library/postgres:15 >/dev/null
+  "$POSTGRES_IMAGE" >/dev/null
 
 for _ in $(seq 1 60); do
   if podman exec "$POSTGRES_CONTAINER" pg_isready -U erp4 >/dev/null 2>&1; then

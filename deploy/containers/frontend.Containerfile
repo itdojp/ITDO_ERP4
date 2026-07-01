@@ -1,5 +1,5 @@
-ARG NODE_IMAGE=docker.io/library/node:20-bookworm-slim
-ARG NGINX_IMAGE=docker.io/library/nginx:1.29-alpine
+ARG NODE_IMAGE=docker.io/library/node:20-bookworm-slim@sha256:3d0f05455dea2c82e2f76e7e2543964c30f6b7d673fc1a83286736d44fe4c41c
+ARG NGINX_IMAGE=docker.io/library/nginx:1.29-alpine@sha256:3bcf852aed06467cf075c6105892e4d5a6ebbbafa0ce22d35062db9e90ddef4c
 
 FROM ${NODE_IMAGE} AS builder
 
