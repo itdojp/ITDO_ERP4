@@ -2,6 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { api, apiResponse, getAuthState } from '../api';
 import { AnnotationsCard } from '../components/AnnotationsCard';
 import { navigateToOpen } from '../utils/deepLink';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  WorkflowPanel,
+} from './workflowUx';
 
 type LeaveRequest = {
   id: string;
@@ -473,6 +478,21 @@ export const LeaveRequests: React.FC = () => {
     return endMinutes - startMinutes;
   }, [form.endTime, form.requestUnit, form.startTime]);
 
+  const draftLeaveCount = items.filter(
+    (item) => item.status === 'draft',
+  ).length;
+  const pendingLeaveCount = items.filter((item) =>
+    ['submitted', 'pending_qa', 'pending_exec'].includes(item.status),
+  ).length;
+  const approvedLeaveCount = items.filter(
+    (item) => item.status === 'approved',
+  ).length;
+  const leaveBalanceLabel = paidLeaveBalance
+    ? `${paidLeaveBalance.remainingMinutes.toLocaleString()}min`
+    : '未取得';
+  const selectedLeaveTypeLabel =
+    leaveTypeLabelByCode.get(form.leaveType) || form.leaveType || '未選択';
+
   const submit = async (id: string) => {
     setSubmitConflict(undefined);
     try {
@@ -639,22 +659,71 @@ export const LeaveRequests: React.FC = () => {
 
   return (
     <div>
-      <h2>休暇</h2>
-      <div className="row" style={{ gap: 8 }}>
-        <button className="button secondary" onClick={() => load()}>
-          読み込み
-        </button>
-        <button
-          className="button secondary"
-          onClick={() => loadPaidLeaveBalance()}
-          disabled={!canOperate}
-        >
-          有給残高を再計算
-        </button>
-      </div>
+      <WorkflowPageHeader
+        title="休暇"
+        description="休暇の新規作成、申請前の相談証跡、工数重複、上長向け確認を同じ流れで追跡します。"
+        actions={
+          <>
+            <button className="button secondary" onClick={() => load()}>
+              読み込み
+            </button>
+            <button
+              className="button secondary"
+              onClick={() => loadPaidLeaveBalance()}
+              disabled={!canOperate}
+            >
+              有給残高を再計算
+            </button>
+          </>
+        }
+      />
+      <WorkflowMetricGrid
+        ariaLabel="休暇申請判断サマリー"
+        items={[
+          {
+            id: 'leave-actor',
+            label: '申請者',
+            value: userId || '未ログイン',
+            helper: canOperate
+              ? '自分の申請一覧を表示'
+              : '操作にはログインが必要',
+            tone: canOperate ? 'success' : 'warning',
+          },
+          {
+            id: 'leave-request-count',
+            label: '自分の申請',
+            value: `${items.length}件`,
+            helper: `下書き ${draftLeaveCount}件 / 申請中 ${pendingLeaveCount}件`,
+          },
+          {
+            id: 'leave-approved-count',
+            label: '承認済み',
+            value: `${approvedLeaveCount}件`,
+            helper: '読み込み済み申請の承認済み件数',
+            tone: approvedLeaveCount > 0 ? 'success' : 'default',
+          },
+          {
+            id: 'leave-balance',
+            label: '有給残高',
+            value: leaveBalanceLabel,
+            helper: paidLeaveWarning
+              ? `警告: ${paidLeaveWarning.shortageMinutes}min不足`
+              : `選択中: ${selectedLeaveTypeLabel}`,
+            tone: paidLeaveWarning ? 'warning' : 'default',
+          },
+          {
+            id: 'leave-leader-count',
+            label: '上長向け表示',
+            value: `${leaderItems.length}件`,
+            helper: '理由を伏せた確認用一覧',
+          },
+        ]}
+      />
       {message && <p>{message}</p>}
-      <div className="card" style={{ marginTop: 12, padding: 12 }}>
-        <strong>有給残高（概算）</strong>
+      <WorkflowPanel
+        title="有給残高（概算）"
+        description="申請前後の残高、引当、次回付与予定を確認します。"
+      >
         {paidLeaveBalance ? (
           <ul className="list" style={{ marginTop: 8 }}>
             <li>
@@ -689,10 +758,12 @@ export const LeaveRequests: React.FC = () => {
             {paidLeaveWarning.shortageMinutes}min）
           </p>
         ) : null}
-      </div>
+      </WorkflowPanel>
       {canManageLeaveGrant ? (
-        <div className="card" style={{ marginTop: 12, padding: 12 }}>
-          <strong>総務向け: 有給付与管理</strong>
+        <WorkflowPanel
+          title="総務向け: 有給付与管理"
+          description="基準日・次回付与予定・付与分数をまとめて確認し、残高へ反映します。"
+        >
           {grantMessage ? (
             <p style={{ marginTop: 8, marginBottom: 0 }}>{grantMessage}</p>
           ) : null}
@@ -770,10 +841,12 @@ export const LeaveRequests: React.FC = () => {
               付与登録
             </button>
           </div>
-        </div>
+        </WorkflowPanel>
       ) : null}
-      <div className="card" style={{ marginTop: 12, padding: 12 }}>
-        <strong>新規申請</strong>
+      <WorkflowPanel
+        title="新規申請"
+        description="休暇種別、申請単位、期間、時間休、備考を入力し、下書き作成後に相談証跡を確認して申請します。"
+      >
         <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
           <label className="row" style={{ gap: 6, alignItems: 'center' }}>
             <span>申請単位</span>
@@ -910,7 +983,7 @@ export const LeaveRequests: React.FC = () => {
             作成
           </button>
         </div>
-      </div>
+      </WorkflowPanel>
       {submitConflict?.code === 'TIME_ENTRY_OVERBOOKED' ? (
         <div className="card" style={{ marginTop: 12, padding: 12 }}>
           <strong>工数と時間休の合計超過</strong>
@@ -963,153 +1036,160 @@ export const LeaveRequests: React.FC = () => {
           </ul>
         </div>
       ) : null}
-      <ul className="list" style={{ marginTop: 12 }}>
-        {items.map((item) => {
-          const duration = formatLeaveDuration(item);
-          return (
-            <li key={item.id}>
-              <span className="badge">{item.status}</span>{' '}
-              {leaveTypeLabelByCode.get(item.leaveType) ?? item.leaveType} /{' '}
-              {formatDateLabel(item.startDate)}〜{formatDateLabel(item.endDate)}
-              {duration ? ` / ${duration}` : ''}
-              <div>
-                <button
-                  className="button"
-                  onClick={() => submit(item.id)}
-                  disabled={item.status !== 'draft'}
-                >
-                  申請
-                </button>
-                <button
-                  className="button secondary"
-                  onClick={() =>
-                    setDraftExtraById((prev) => {
-                      const current = prev[item.id];
-                      const next: LeaveDraftExtra = {
-                        detailsOpen: !(current?.detailsOpen ?? false),
-                        noConsultationConfirmed:
-                          current?.noConsultationConfirmed ?? false,
-                        noConsultationReason:
-                          current?.noConsultationReason ?? '',
-                      };
-                      return { ...prev, [item.id]: next };
-                    })
-                  }
-                >
-                  詳細
-                </button>
-              </div>
-              {draftExtraById[item.id]?.detailsOpen && (
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ marginBottom: 12 }}>
-                    <AnnotationsCard
-                      targetKind="leave_request"
-                      targetId={item.id}
-                      title="相談証跡/メモ"
-                    />
-                  </div>
-                  <div style={{ marginBottom: 12 }}>
-                    <button
-                      className="button secondary"
-                      onClick={openPersonalGaRoom}
-                      disabled={openingPersonalGaRoom || !canOperate}
-                    >
-                      {openingPersonalGaRoom
-                        ? '総務へ相談チャットを開いています...'
-                        : '総務へ相談チャットを開く'}
-                    </button>
-                    <p style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
-                      公開チャットに書きにくい事務連絡は個人総務チャットで相談し、共有可能な範囲を案件チャットへ共有してください。
-                    </p>
-                    {personalGaRoomError ? (
-                      <p
-                        role="alert"
-                        style={{
-                          marginTop: 8,
-                          marginBottom: 0,
-                          color: '#b00020',
-                        }}
-                      >
-                        {personalGaRoomError}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div
-                    className="row"
-                    style={{
-                      gap: 8,
-                      alignItems: 'center',
-                      flexWrap: 'wrap',
-                      marginBottom: 8,
-                    }}
+      <WorkflowPanel
+        title="自分の休暇申請"
+        description="下書き、相談証跡、申請可否を申請単位で確認します。"
+      >
+        <ul className="list" style={{ marginTop: 12 }}>
+          {items.map((item) => {
+            const duration = formatLeaveDuration(item);
+            return (
+              <li key={item.id}>
+                <span className="badge">{item.status}</span>{' '}
+                {leaveTypeLabelByCode.get(item.leaveType) ?? item.leaveType} /{' '}
+                {formatDateLabel(item.startDate)}〜
+                {formatDateLabel(item.endDate)}
+                {duration ? ` / ${duration}` : ''}
+                <div>
+                  <button
+                    className="button"
+                    onClick={() => submit(item.id)}
+                    disabled={item.status !== 'draft'}
                   >
-                    <label
+                    申請
+                  </button>
+                  <button
+                    className="button secondary"
+                    onClick={() =>
+                      setDraftExtraById((prev) => {
+                        const current = prev[item.id];
+                        const next: LeaveDraftExtra = {
+                          detailsOpen: !(current?.detailsOpen ?? false),
+                          noConsultationConfirmed:
+                            current?.noConsultationConfirmed ?? false,
+                          noConsultationReason:
+                            current?.noConsultationReason ?? '',
+                        };
+                        return { ...prev, [item.id]: next };
+                      })
+                    }
+                  >
+                    詳細
+                  </button>
+                </div>
+                {draftExtraById[item.id]?.detailsOpen && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ marginBottom: 12 }}>
+                      <AnnotationsCard
+                        targetKind="leave_request"
+                        targetId={item.id}
+                        title="相談証跡/メモ"
+                      />
+                    </div>
+                    <div style={{ marginBottom: 12 }}>
+                      <button
+                        className="button secondary"
+                        onClick={openPersonalGaRoom}
+                        disabled={openingPersonalGaRoom || !canOperate}
+                      >
+                        {openingPersonalGaRoom
+                          ? '総務へ相談チャットを開いています...'
+                          : '総務へ相談チャットを開く'}
+                      </button>
+                      <p
+                        style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}
+                      >
+                        公開チャットに書きにくい事務連絡は個人総務チャットで相談し、共有可能な範囲を案件チャットへ共有してください。
+                      </p>
+                      {personalGaRoomError ? (
+                        <p
+                          role="alert"
+                          style={{
+                            marginTop: 8,
+                            marginBottom: 0,
+                            color: '#b00020',
+                          }}
+                        >
+                          {personalGaRoomError}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div
                       className="row"
-                      style={{ gap: 6, alignItems: 'center' }}
+                      style={{
+                        gap: 8,
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        marginBottom: 8,
+                      }}
                     >
-                      <input
-                        type="checkbox"
-                        checked={
-                          draftExtraById[item.id]?.noConsultationConfirmed ??
-                          false
+                      <label
+                        className="row"
+                        style={{ gap: 6, alignItems: 'center' }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={
+                            draftExtraById[item.id]?.noConsultationConfirmed ??
+                            false
+                          }
+                          onChange={(e) =>
+                            setDraftExtraById((prev) => ({
+                              ...prev,
+                              [item.id]: {
+                                detailsOpen: prev[item.id]?.detailsOpen ?? true,
+                                noConsultationConfirmed: e.target.checked,
+                                noConsultationReason:
+                                  prev[item.id]?.noConsultationReason ?? '',
+                              },
+                            }))
+                          }
+                          disabled={item.status !== 'draft'}
+                        />
+                        <span>
+                          相談無し（証跡未添付の場合に必須。理由を入力してください）
+                        </span>
+                      </label>
+                    </div>
+                    <div>
+                      <textarea
+                        aria-label="相談無しの理由"
+                        value={
+                          draftExtraById[item.id]?.noConsultationReason ?? ''
                         }
                         onChange={(e) =>
                           setDraftExtraById((prev) => ({
                             ...prev,
                             [item.id]: {
                               detailsOpen: prev[item.id]?.detailsOpen ?? true,
-                              noConsultationConfirmed: e.target.checked,
-                              noConsultationReason:
-                                prev[item.id]?.noConsultationReason ?? '',
+                              noConsultationConfirmed:
+                                prev[item.id]?.noConsultationConfirmed ?? false,
+                              noConsultationReason: e.target.value,
                             },
                           }))
                         }
+                        placeholder="相談無しの理由（証跡未添付の場合に必須）"
+                        style={{ width: '100%', minHeight: 72 }}
                         disabled={item.status !== 'draft'}
                       />
-                      <span>
-                        相談無し（証跡未添付の場合に必須。理由を入力してください）
-                      </span>
-                    </label>
+                    </div>
                   </div>
-                  <div>
-                    <textarea
-                      aria-label="相談無しの理由"
-                      value={
-                        draftExtraById[item.id]?.noConsultationReason ?? ''
-                      }
-                      onChange={(e) =>
-                        setDraftExtraById((prev) => ({
-                          ...prev,
-                          [item.id]: {
-                            detailsOpen: prev[item.id]?.detailsOpen ?? true,
-                            noConsultationConfirmed:
-                              prev[item.id]?.noConsultationConfirmed ?? false,
-                            noConsultationReason: e.target.value,
-                          },
-                        }))
-                      }
-                      placeholder="相談無しの理由（証跡未添付の場合に必須）"
-                      style={{ width: '100%', minHeight: 72 }}
-                      disabled={item.status !== 'draft'}
-                    />
-                  </div>
-                </div>
-              )}
-            </li>
-          );
-        })}
-        {items.length === 0 && <li>データなし</li>}
-      </ul>
-      <div className="card" style={{ marginTop: 12, padding: 12 }}>
-        <div
-          className="row"
-          style={{ justifyContent: 'space-between', alignItems: 'center' }}
-        >
-          <strong>上長向け一覧（申請後・理由非表示）</strong>
+                )}
+              </li>
+            );
+          })}
+          {items.length === 0 && <li>データなし</li>}
+        </ul>
+      </WorkflowPanel>
+      <WorkflowPanel
+        title="上長向け一覧（申請後・理由非表示）"
+        description="上長・管理者が確認できる申請後の休暇一覧です。理由は表示せず、必要な期間・状態のみ確認します。"
+        actions={
           <button className="button secondary" onClick={loadLeaderItems}>
             上長向け一覧を読み込み
           </button>
-        </div>
+        }
+      >
         {leaderMessage ? (
           <p style={{ marginTop: 8, marginBottom: 8 }}>{leaderMessage}</p>
         ) : null}
@@ -1134,7 +1214,7 @@ export const LeaveRequests: React.FC = () => {
           })}
           {leaderItems.length === 0 ? <li>データなし</li> : null}
         </ul>
-      </div>
+      </WorkflowPanel>
     </div>
   );
 };

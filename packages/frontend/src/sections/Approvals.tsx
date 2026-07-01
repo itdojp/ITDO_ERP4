@@ -7,6 +7,11 @@ import React, {
 } from 'react';
 import { api, apiResponse, getAuthState } from '../api';
 import { navigateToOpen } from '../utils/deepLink';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  WorkflowPanel,
+} from './workflowUx';
 
 type ProjectOption = {
   id: string;
@@ -860,10 +865,73 @@ export const Approvals: React.FC = () => {
     return `#${step.stepOrder + 1} ${target} (${step.status})`;
   };
 
+  const actionableItems = items.filter(
+    (item) => item.status === 'pending_qa' || item.status === 'pending_exec',
+  );
+  const actionableByMeCount = actionableItems.filter(canActOnItem).length;
+  const approvedCount = items.filter(
+    (item) => item.status === 'approved',
+  ).length;
+  const visibleEvidenceCount =
+    Object.values(evidenceOpen).filter(Boolean).length;
+  const filterSummary = [
+    flowTypeOptions.find((option) => option.value === filters.flowType)
+      ?.label || 'すべて',
+    statusOptions.find((option) => option.value === filters.status)?.label ||
+      'すべて',
+  ].join(' / ');
+
   return (
     <div>
-      <h2>承認一覧</h2>
-      <div className="card" style={{ marginBottom: 12 }}>
+      <WorkflowPageHeader
+        title="承認一覧"
+        description="承認対象、現在ステップ、確認依頼リンク、注釈エビデンス、Snapshot を一覧内で確認して判断します。"
+        actions={
+          <button
+            className="button secondary"
+            onClick={loadApprovals}
+            disabled={isLoading}
+          >
+            {isLoading ? '承認一覧を取得中' : '承認一覧を再取得'}
+          </button>
+        }
+      />
+      <WorkflowMetricGrid
+        ariaLabel="承認判断サマリー"
+        items={[
+          {
+            id: 'approval-filter',
+            label: '現在のフィルタ',
+            value: filterSummary,
+            helper: 'flow / status',
+          },
+          {
+            id: 'approval-count',
+            label: '表示中の承認',
+            value: `${items.length}件`,
+            helper: `承認済み ${approvedCount}件`,
+          },
+          {
+            id: 'approval-actionable',
+            label: '自分が処理可能',
+            value: `${actionableByMeCount}件`,
+            helper: `未処理 ${actionableItems.length}件`,
+            tone: actionableByMeCount > 0 ? 'warning' : 'default',
+          },
+          {
+            id: 'approval-evidence',
+            label: 'エビデンス表示中',
+            value: `${visibleEvidenceCount}件`,
+            helper: canManageSnapshots
+              ? 'Snapshot 生成/再生成が可能'
+              : '注釈・Snapshot を参照',
+          },
+        ]}
+      />
+      <WorkflowPanel
+        title="承認フィルタ"
+        description="種別・状態・案件・承認者・起案者で承認対象を絞り込みます。"
+      >
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <select
             value={filters.flowType}
@@ -932,7 +1000,7 @@ export const Approvals: React.FC = () => {
             {isLoading ? '読み込み中' : '再読込'}
           </button>
         </div>
-      </div>
+      </WorkflowPanel>
       {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
       {listMessage && <p style={{ color: '#dc2626' }}>{listMessage}</p>}
       {message && (
@@ -945,66 +1013,179 @@ export const Approvals: React.FC = () => {
           {message.text}
         </p>
       )}
-      <ul className="list">
-        {items.map((item) => {
-          const isActionable =
-            item.status === 'pending_qa' || item.status === 'pending_exec';
-          const canAct = isActionable && canActOnItem(item);
-          const busy = actionState[item.id];
-          const ackLinks = ackLinkItems[item.id] || [];
-          const ackLoading = ackLinkLoading[item.id] || false;
-          const ackError = ackLinkErrors[item.id] || '';
-          const ackInput = ackLinkInputs[item.id] || '';
-          const ackBusy = ackLinkSaving[item.id] || false;
-          const evidenceVisible = evidenceOpen[item.id] || false;
-          const evidenceBusy = evidenceLoading[item.id] || false;
-          const evidenceError = evidenceErrors[item.id] || '';
-          const evidence = evidenceItems[item.id];
-          const snapshot = snapshotItems[item.id];
-          const snapshotBusy = snapshotLoading[item.id] || false;
-          const snapshotError = snapshotErrors[item.id] || '';
-          const snapshotBusySaving = snapshotSaving[item.id] || false;
-          const snapshotPayload = snapshot?.items || null;
-          const snapshotExternalCount = Array.isArray(
-            snapshotPayload?.externalUrls,
-          )
-            ? snapshotPayload.externalUrls.length
-            : 0;
-          const snapshotChatCount = Array.isArray(snapshotPayload?.chatMessages)
-            ? snapshotPayload.chatMessages.length
-            : 0;
-          const snapshotRefCount = Array.isArray(snapshotPayload?.internalRefs)
-            ? snapshotPayload.internalRefs.length
-            : 0;
-          const evidenceRefs = Array.isArray(evidence?.internalRefs)
-            ? evidence?.internalRefs
-            : [];
-          const chatEvidenceRefs = evidenceRefs.filter(
-            (ref) => ref.kind === 'chat_message' && typeof ref.id === 'string',
-          );
-          const externalEvidenceUrls = Array.isArray(evidence?.externalUrls)
-            ? evidence?.externalUrls
-            : [];
-          const evidenceNotes =
-            typeof evidence?.notes === 'string' ? evidence.notes.trim() : '';
-          return (
-            <li key={item.id}>
-              <div style={{ fontWeight: 600 }}>
-                <span className="badge">{item.status}</span> {item.flowType} /{' '}
-                {item.targetTable}:{item.targetId}
-              </div>
-              <div style={{ fontSize: 12, color: '#64748b' }}>
-                案件: {renderProject(item.projectId)} / 起案:{' '}
-                {item.createdBy || '-'}/ 作成: {formatDateTime(item.createdAt)}
-              </div>
-              <div style={{ fontSize: 12, color: '#64748b' }}>
-                ルール: {item.rule?.name || item.rule?.id || '-'} / ステップ:{' '}
-                {item.currentStep ?? '-'} / {item.steps.length}
-              </div>
-              <div style={{ fontSize: 12, color: '#64748b' }}>
-                承認者: {item.steps.map(formatStep).join(' / ') || '-'}
-              </div>
-              {canManageAckLinks && (
+      <WorkflowPanel
+        title="承認対象一覧"
+        description="対象ごとに現在ステップ、確認依頼リンク、エビデンス、承認/却下操作を確認します。"
+      >
+        <ul className="list">
+          {items.map((item) => {
+            const isActionable =
+              item.status === 'pending_qa' || item.status === 'pending_exec';
+            const canAct = isActionable && canActOnItem(item);
+            const busy = actionState[item.id];
+            const ackLinks = ackLinkItems[item.id] || [];
+            const ackLoading = ackLinkLoading[item.id] || false;
+            const ackError = ackLinkErrors[item.id] || '';
+            const ackInput = ackLinkInputs[item.id] || '';
+            const ackBusy = ackLinkSaving[item.id] || false;
+            const evidenceVisible = evidenceOpen[item.id] || false;
+            const evidenceBusy = evidenceLoading[item.id] || false;
+            const evidenceError = evidenceErrors[item.id] || '';
+            const evidence = evidenceItems[item.id];
+            const snapshot = snapshotItems[item.id];
+            const snapshotBusy = snapshotLoading[item.id] || false;
+            const snapshotError = snapshotErrors[item.id] || '';
+            const snapshotBusySaving = snapshotSaving[item.id] || false;
+            const snapshotPayload = snapshot?.items || null;
+            const snapshotExternalCount = Array.isArray(
+              snapshotPayload?.externalUrls,
+            )
+              ? snapshotPayload.externalUrls.length
+              : 0;
+            const snapshotChatCount = Array.isArray(
+              snapshotPayload?.chatMessages,
+            )
+              ? snapshotPayload.chatMessages.length
+              : 0;
+            const snapshotRefCount = Array.isArray(
+              snapshotPayload?.internalRefs,
+            )
+              ? snapshotPayload.internalRefs.length
+              : 0;
+            const evidenceRefs = Array.isArray(evidence?.internalRefs)
+              ? evidence?.internalRefs
+              : [];
+            const chatEvidenceRefs = evidenceRefs.filter(
+              (ref) =>
+                ref.kind === 'chat_message' && typeof ref.id === 'string',
+            );
+            const externalEvidenceUrls = Array.isArray(evidence?.externalUrls)
+              ? evidence?.externalUrls
+              : [];
+            const evidenceNotes =
+              typeof evidence?.notes === 'string' ? evidence.notes.trim() : '';
+            return (
+              <li key={item.id}>
+                <div style={{ fontWeight: 600 }}>
+                  <span className="badge">{item.status}</span> {item.flowType} /{' '}
+                  {item.targetTable}:{item.targetId}
+                </div>
+                <div style={{ fontSize: 12, color: '#64748b' }}>
+                  案件: {renderProject(item.projectId)} / 起案:{' '}
+                  {item.createdBy || '-'}/ 作成:{' '}
+                  {formatDateTime(item.createdAt)}
+                </div>
+                <div style={{ fontSize: 12, color: '#64748b' }}>
+                  ルール: {item.rule?.name || item.rule?.id || '-'} / ステップ:{' '}
+                  {item.currentStep ?? '-'} / {item.steps.length}
+                </div>
+                <div style={{ fontSize: 12, color: '#64748b' }}>
+                  承認者: {item.steps.map(formatStep).join(' / ') || '-'}
+                </div>
+                {canManageAckLinks && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      padding: 8,
+                      borderRadius: 8,
+                      background: '#f8fafc',
+                    }}
+                  >
+                    <div
+                      className="row"
+                      style={{ alignItems: 'center', gap: 8 }}
+                    >
+                      <strong>確認依頼リンク</strong>
+                      <button
+                        className="button secondary"
+                        onClick={() => loadAckLinks(item.id)}
+                        disabled={ackLoading}
+                      >
+                        {ackLoading ? '更新中' : '更新'}
+                      </button>
+                    </div>
+                    {ackError && (
+                      <div style={{ marginTop: 6, color: '#dc2626' }}>
+                        {ackError}
+                      </div>
+                    )}
+                    <div
+                      className="row"
+                      style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}
+                    >
+                      <input
+                        type="text"
+                        value={ackInput}
+                        onChange={(e) =>
+                          setAckLinkInputs((prev) => ({
+                            ...prev,
+                            [item.id]: e.target.value,
+                          }))
+                        }
+                        placeholder="発言URL / Markdown / messageId"
+                        style={{ minWidth: 260 }}
+                        disabled={ackBusy}
+                      />
+                      <button
+                        className="button"
+                        onClick={() => createAckLink(item.id)}
+                        disabled={ackBusy}
+                      >
+                        追加
+                      </button>
+                    </div>
+                    <div style={{ marginTop: 8 }}>
+                      {ackLinks.length === 0 && (
+                        <div style={{ fontSize: 12, color: '#64748b' }}>
+                          登録済みリンクはありません
+                        </div>
+                      )}
+                      {ackLinks.map((link) => (
+                        <div
+                          key={link.id}
+                          style={{
+                            display: 'flex',
+                            gap: 8,
+                            flexWrap: 'wrap',
+                            alignItems: 'center',
+                            marginTop: 6,
+                          }}
+                        >
+                          <span className="badge">
+                            {link.templateId ? 'テンプレ' : '手動'}
+                          </span>
+                          <span style={{ fontSize: 12, color: '#64748b' }}>
+                            {link.messageId}
+                          </span>
+                          <span style={{ fontSize: 12, color: '#64748b' }}>
+                            / {formatDateTime(link.createdAt)}
+                          </span>
+                          <span style={{ fontSize: 12, color: '#64748b' }}>
+                            / {link.flowType || '-'}:{link.actionKey || '-'}
+                          </span>
+                          <button
+                            className="button secondary"
+                            onClick={() =>
+                              navigateToOpen({
+                                kind: 'chat_message',
+                                id: link.messageId,
+                              })
+                            }
+                          >
+                            開く
+                          </button>
+                          <button
+                            className="button secondary"
+                            onClick={() => deleteAckLink(item.id, link.id)}
+                            disabled={ackBusy}
+                          >
+                            削除
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div
                   style={{
                     marginTop: 8,
@@ -1014,382 +1195,283 @@ export const Approvals: React.FC = () => {
                   }}
                 >
                   <div className="row" style={{ alignItems: 'center', gap: 8 }}>
-                    <strong>確認依頼リンク</strong>
+                    <strong>エビデンス（注釈）</strong>
                     <button
                       className="button secondary"
-                      onClick={() => loadAckLinks(item.id)}
-                      disabled={ackLoading}
+                      onClick={() => toggleEvidence(item)}
                     >
-                      {ackLoading ? '更新中' : '更新'}
+                      {evidenceVisible ? '隠す' : '表示'}
                     </button>
-                  </div>
-                  {ackError && (
-                    <div style={{ marginTop: 6, color: '#dc2626' }}>
-                      {ackError}
-                    </div>
-                  )}
-                  <div
-                    className="row"
-                    style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}
-                  >
-                    <input
-                      type="text"
-                      value={ackInput}
-                      onChange={(e) =>
-                        setAckLinkInputs((prev) => ({
-                          ...prev,
-                          [item.id]: e.target.value,
-                        }))
-                      }
-                      placeholder="発言URL / Markdown / messageId"
-                      style={{ minWidth: 260 }}
-                      disabled={ackBusy}
-                    />
-                    <button
-                      className="button"
-                      onClick={() => createAckLink(item.id)}
-                      disabled={ackBusy}
-                    >
-                      追加
-                    </button>
-                  </div>
-                  <div style={{ marginTop: 8 }}>
-                    {ackLinks.length === 0 && (
-                      <div style={{ fontSize: 12, color: '#64748b' }}>
-                        登録済みリンクはありません
-                      </div>
+                    {evidence?.updatedAt && (
+                      <span style={{ fontSize: 12, color: '#64748b' }}>
+                        最終更新: {formatDateTime(evidence.updatedAt)}
+                        {evidence.updatedBy ? ` / ${evidence.updatedBy}` : ''}
+                      </span>
                     )}
-                    {ackLinks.map((link) => (
-                      <div
-                        key={link.id}
-                        style={{
-                          display: 'flex',
-                          gap: 8,
-                          flexWrap: 'wrap',
-                          alignItems: 'center',
-                          marginTop: 6,
-                        }}
-                      >
-                        <span className="badge">
-                          {link.templateId ? 'テンプレ' : '手動'}
-                        </span>
-                        <span style={{ fontSize: 12, color: '#64748b' }}>
-                          {link.messageId}
-                        </span>
-                        <span style={{ fontSize: 12, color: '#64748b' }}>
-                          / {formatDateTime(link.createdAt)}
-                        </span>
-                        <span style={{ fontSize: 12, color: '#64748b' }}>
-                          / {link.flowType || '-'}:{link.actionKey || '-'}
-                        </span>
-                        <button
-                          className="button secondary"
-                          onClick={() =>
-                            navigateToOpen({
-                              kind: 'chat_message',
-                              id: link.messageId,
-                            })
-                          }
-                        >
-                          開く
-                        </button>
-                        <button
-                          className="button secondary"
-                          onClick={() => deleteAckLink(item.id, link.id)}
-                          disabled={ackBusy}
-                        >
-                          削除
-                        </button>
-                      </div>
-                    ))}
                   </div>
-                </div>
-              )}
-              <div
-                style={{
-                  marginTop: 8,
-                  padding: 8,
-                  borderRadius: 8,
-                  background: '#f8fafc',
-                }}
-              >
-                <div className="row" style={{ alignItems: 'center', gap: 8 }}>
-                  <strong>エビデンス（注釈）</strong>
-                  <button
-                    className="button secondary"
-                    onClick={() => toggleEvidence(item)}
-                  >
-                    {evidenceVisible ? '隠す' : '表示'}
-                  </button>
-                  {evidence?.updatedAt && (
-                    <span style={{ fontSize: 12, color: '#64748b' }}>
-                      最終更新: {formatDateTime(evidence.updatedAt)}
-                      {evidence.updatedBy ? ` / ${evidence.updatedBy}` : ''}
-                    </span>
-                  )}
-                </div>
-                {evidenceVisible && (
-                  <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
-                    <div
-                      style={{
-                        border: '1px solid #e2e8f0',
-                        borderRadius: 8,
-                        padding: 8,
-                        background: '#ffffff',
-                      }}
-                    >
+                  {evidenceVisible && (
+                    <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
                       <div
                         style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          flexWrap: 'wrap',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 8,
+                          padding: 8,
+                          background: '#ffffff',
                         }}
                       >
-                        <strong>Evidence Snapshot</strong>
-                        <button
-                          className="button secondary"
-                          onClick={() =>
-                            loadEvidenceSnapshot(item).catch(() => undefined)
-                          }
-                          disabled={snapshotBusy || snapshotBusySaving}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            flexWrap: 'wrap',
+                          }}
                         >
-                          {snapshotBusy ? '取得中' : '再取得'}
-                        </button>
-                        {canManageSnapshots && (
+                          <strong>Evidence Snapshot</strong>
                           <button
                             className="button secondary"
                             onClick={() =>
-                              createEvidenceSnapshot(item, Boolean(snapshot))
+                              loadEvidenceSnapshot(item).catch(() => undefined)
                             }
-                            disabled={snapshotBusySaving}
+                            disabled={snapshotBusy || snapshotBusySaving}
                           >
-                            {snapshotBusySaving
-                              ? '処理中'
-                              : snapshot
-                                ? '再生成'
-                                : '生成'}
+                            {snapshotBusy ? '取得中' : '再取得'}
                           </button>
-                        )}
-                      </div>
-                      {snapshotError && (
-                        <div
-                          style={{
-                            marginTop: 6,
-                            color: '#dc2626',
-                            fontSize: 12,
-                          }}
-                        >
-                          {snapshotError}
-                        </div>
-                      )}
-                      {!snapshotError && (
-                        <div
-                          style={{
-                            marginTop: 6,
-                            fontSize: 12,
-                            color: '#334155',
-                          }}
-                        >
-                          {snapshot ? (
-                            <>
-                              <div>
-                                状態: 生成済み / version:{' '}
-                                {snapshot.version ?? '-'} / 取得:{' '}
-                                {formatDateTime(snapshot.capturedAt)}
-                                {snapshot.capturedBy
-                                  ? ` / ${snapshot.capturedBy}`
-                                  : ''}
-                              </div>
-                              <div>
-                                items: 外部URL {snapshotExternalCount} 件 /
-                                内部参照 {snapshotRefCount} 件 / チャット抜粋{' '}
-                                {snapshotChatCount} 件
-                              </div>
-                            </>
-                          ) : (
-                            <div>状態: 未生成</div>
+                          {canManageSnapshots && (
+                            <button
+                              className="button secondary"
+                              onClick={() =>
+                                createEvidenceSnapshot(item, Boolean(snapshot))
+                              }
+                              disabled={snapshotBusySaving}
+                            >
+                              {snapshotBusySaving
+                                ? '処理中'
+                                : snapshot
+                                  ? '再生成'
+                                  : '生成'}
+                            </button>
                           )}
                         </div>
-                      )}
-                    </div>
-                    {evidenceBusy && (
-                      <div style={{ fontSize: 12, color: '#64748b' }}>
-                        エビデンスを読み込み中...
-                      </div>
-                    )}
-                    {evidenceError && (
-                      <div style={{ color: '#dc2626', fontSize: 12 }}>
-                        {evidenceError}
-                      </div>
-                    )}
-                    {!evidenceBusy && !evidenceError && (
-                      <>
-                        <div style={{ fontSize: 12, color: '#64748b' }}>
-                          外部URL: {externalEvidenceUrls.length} 件 /
-                          チャット参照: {chatEvidenceRefs.length} 件
-                        </div>
-                        {evidenceNotes && (
-                          <div style={{ fontSize: 12, color: '#0f172a' }}>
-                            メモ: {evidenceNotes}
+                        {snapshotError && (
+                          <div
+                            style={{
+                              marginTop: 6,
+                              color: '#dc2626',
+                              fontSize: 12,
+                            }}
+                          >
+                            {snapshotError}
                           </div>
                         )}
-                        {externalEvidenceUrls.length > 0 && (
-                          <div style={{ display: 'grid', gap: 4 }}>
-                            {externalEvidenceUrls.map((url, index) => {
-                              const safeHref = toSafeExternalHref(url);
-                              if (!safeHref) {
+                        {!snapshotError && (
+                          <div
+                            style={{
+                              marginTop: 6,
+                              fontSize: 12,
+                              color: '#334155',
+                            }}
+                          >
+                            {snapshot ? (
+                              <>
+                                <div>
+                                  状態: 生成済み / version:{' '}
+                                  {snapshot.version ?? '-'} / 取得:{' '}
+                                  {formatDateTime(snapshot.capturedAt)}
+                                  {snapshot.capturedBy
+                                    ? ` / ${snapshot.capturedBy}`
+                                    : ''}
+                                </div>
+                                <div>
+                                  items: 外部URL {snapshotExternalCount} 件 /
+                                  内部参照 {snapshotRefCount} 件 / チャット抜粋{' '}
+                                  {snapshotChatCount} 件
+                                </div>
+                              </>
+                            ) : (
+                              <div>状態: 未生成</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      {evidenceBusy && (
+                        <div style={{ fontSize: 12, color: '#64748b' }}>
+                          エビデンスを読み込み中...
+                        </div>
+                      )}
+                      {evidenceError && (
+                        <div style={{ color: '#dc2626', fontSize: 12 }}>
+                          {evidenceError}
+                        </div>
+                      )}
+                      {!evidenceBusy && !evidenceError && (
+                        <>
+                          <div style={{ fontSize: 12, color: '#64748b' }}>
+                            外部URL: {externalEvidenceUrls.length} 件 /
+                            チャット参照: {chatEvidenceRefs.length} 件
+                          </div>
+                          {evidenceNotes && (
+                            <div style={{ fontSize: 12, color: '#0f172a' }}>
+                              メモ: {evidenceNotes}
+                            </div>
+                          )}
+                          {externalEvidenceUrls.length > 0 && (
+                            <div style={{ display: 'grid', gap: 4 }}>
+                              {externalEvidenceUrls.map((url, index) => {
+                                const safeHref = toSafeExternalHref(url);
+                                if (!safeHref) {
+                                  return (
+                                    <span
+                                      key={`${url}:${index}`}
+                                      style={{ fontSize: 12, color: '#0f172a' }}
+                                    >
+                                      {url}
+                                    </span>
+                                  );
+                                }
                                 return (
-                                  <span
+                                  <a
                                     key={`${url}:${index}`}
-                                    style={{ fontSize: 12, color: '#0f172a' }}
+                                    href={safeHref}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{ fontSize: 12, color: '#2563eb' }}
                                   >
                                     {url}
-                                  </span>
+                                  </a>
                                 );
-                              }
-                              return (
-                                <a
-                                  key={`${url}:${index}`}
-                                  href={safeHref}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  style={{ fontSize: 12, color: '#2563eb' }}
-                                >
-                                  {url}
-                                </a>
-                              );
-                            })}
-                          </div>
-                        )}
-                        {chatEvidenceRefs.length === 0 &&
-                          externalEvidenceUrls.length === 0 &&
-                          !evidenceNotes && (
-                            <div style={{ fontSize: 12, color: '#64748b' }}>
-                              登録済みエビデンスはありません
+                              })}
                             </div>
                           )}
-                        {chatEvidenceRefs.map((ref, index) => {
-                          const messageId = ref.id;
-                          const preview = chatPreviews[messageId];
-                          const previewBusy = chatPreviewLoading[messageId];
-                          const previewError = chatPreviewErrors[messageId];
-                          return (
-                            <div
-                              key={`${messageId}:${index}`}
-                              style={{
-                                border: '1px solid #e2e8f0',
-                                borderRadius: 8,
-                                padding: 8,
-                              }}
-                            >
+                          {chatEvidenceRefs.length === 0 &&
+                            externalEvidenceUrls.length === 0 &&
+                            !evidenceNotes && (
+                              <div style={{ fontSize: 12, color: '#64748b' }}>
+                                登録済みエビデンスはありません
+                              </div>
+                            )}
+                          {chatEvidenceRefs.map((ref, index) => {
+                            const messageId = ref.id;
+                            const preview = chatPreviews[messageId];
+                            const previewBusy = chatPreviewLoading[messageId];
+                            const previewError = chatPreviewErrors[messageId];
+                            return (
                               <div
+                                key={`${messageId}:${index}`}
                                 style={{
-                                  display: 'flex',
-                                  gap: 8,
-                                  flexWrap: 'wrap',
-                                  alignItems: 'center',
+                                  border: '1px solid #e2e8f0',
+                                  borderRadius: 8,
+                                  padding: 8,
                                 }}
                               >
-                                <span className="badge">chat_message</span>
-                                <span
-                                  style={{ fontSize: 12, color: '#64748b' }}
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    gap: 8,
+                                    flexWrap: 'wrap',
+                                    alignItems: 'center',
+                                  }}
                                 >
-                                  {ref.label || messageId}
-                                </span>
-                                <button
-                                  className="button secondary"
-                                  onClick={() =>
-                                    navigateToOpen({
-                                      kind: 'chat_message',
-                                      id: messageId,
-                                    })
-                                  }
-                                >
-                                  開く
-                                </button>
-                                <button
-                                  className="button secondary"
-                                  onClick={() =>
-                                    loadChatPreview(messageId).catch(
-                                      () => undefined,
-                                    )
-                                  }
-                                  disabled={previewBusy}
-                                >
-                                  {previewBusy ? '取得中' : 'プレビュー'}
-                                </button>
+                                  <span className="badge">chat_message</span>
+                                  <span
+                                    style={{ fontSize: 12, color: '#64748b' }}
+                                  >
+                                    {ref.label || messageId}
+                                  </span>
+                                  <button
+                                    className="button secondary"
+                                    onClick={() =>
+                                      navigateToOpen({
+                                        kind: 'chat_message',
+                                        id: messageId,
+                                      })
+                                    }
+                                  >
+                                    開く
+                                  </button>
+                                  <button
+                                    className="button secondary"
+                                    onClick={() =>
+                                      loadChatPreview(messageId).catch(
+                                        () => undefined,
+                                      )
+                                    }
+                                    disabled={previewBusy}
+                                  >
+                                    {previewBusy ? '取得中' : 'プレビュー'}
+                                  </button>
+                                </div>
+                                {previewError && (
+                                  <div
+                                    style={{
+                                      marginTop: 6,
+                                      color: '#dc2626',
+                                      fontSize: 12,
+                                    }}
+                                  >
+                                    {previewError}
+                                  </div>
+                                )}
+                                {preview && (
+                                  <div
+                                    style={{
+                                      marginTop: 6,
+                                      fontSize: 12,
+                                      color: '#334155',
+                                    }}
+                                  >
+                                    <div>
+                                      room: {preview.roomId} / 作成:
+                                      {formatDateTime(preview.createdAt)}
+                                    </div>
+                                    <div style={{ marginTop: 4 }}>
+                                      {preview.excerpt || '(抜粋なし)'}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                              {previewError && (
-                                <div
-                                  style={{
-                                    marginTop: 6,
-                                    color: '#dc2626',
-                                    fontSize: 12,
-                                  }}
-                                >
-                                  {previewError}
-                                </div>
-                              )}
-                              {preview && (
-                                <div
-                                  style={{
-                                    marginTop: 6,
-                                    fontSize: 12,
-                                    color: '#334155',
-                                  }}
-                                >
-                                  <div>
-                                    room: {preview.roomId} / 作成:
-                                    {formatDateTime(preview.createdAt)}
-                                  </div>
-                                  <div style={{ marginTop: 4 }}>
-                                    {preview.excerpt || '(抜粋なし)'}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="row" style={{ gap: 8, marginTop: 8 }}>
-                <input
-                  type="text"
-                  value={reasons[item.id] || ''}
-                  onChange={(e) => updateReason(item.id, e.target.value)}
-                  placeholder="却下理由 (任意)"
-                  style={{ minWidth: 200 }}
-                  disabled={!canAct || busy}
-                />
-                <button
-                  className="button"
-                  onClick={() => actOnApproval(item.id, 'approve')}
-                  disabled={!canAct || busy}
-                >
-                  承認
-                </button>
-                <button
-                  className="button secondary"
-                  onClick={() => actOnApproval(item.id, 'reject')}
-                  disabled={!canAct || busy}
-                >
-                  却下
-                </button>
-                {isActionable && !canAct && (
-                  <span style={{ fontSize: 12, color: '#64748b' }}>
-                    承認対象外
-                  </span>
-                )}
-              </div>
-            </li>
-          );
-        })}
-        {items.length === 0 && <li>データなし</li>}
-      </ul>
+                            );
+                          })}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="row" style={{ gap: 8, marginTop: 8 }}>
+                  <input
+                    type="text"
+                    value={reasons[item.id] || ''}
+                    onChange={(e) => updateReason(item.id, e.target.value)}
+                    placeholder="却下理由 (任意)"
+                    style={{ minWidth: 200 }}
+                    disabled={!canAct || busy}
+                  />
+                  <button
+                    className="button"
+                    onClick={() => actOnApproval(item.id, 'approve')}
+                    disabled={!canAct || busy}
+                  >
+                    承認
+                  </button>
+                  <button
+                    className="button secondary"
+                    onClick={() => actOnApproval(item.id, 'reject')}
+                    disabled={!canAct || busy}
+                  >
+                    却下
+                  </button>
+                  {isActionable && !canAct && (
+                    <span style={{ fontSize: 12, color: '#64748b' }}>
+                      承認対象外
+                    </span>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+          {items.length === 0 && <li>データなし</li>}
+        </ul>
+      </WorkflowPanel>
     </div>
   );
 };
