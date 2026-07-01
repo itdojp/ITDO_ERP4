@@ -56,6 +56,29 @@ import type {
   VendorQuoteForm,
 } from './vendor-documents/vendorDocumentsShared';
 
+const formatTotalsByCurrency = (
+  invoices: VendorInvoice[],
+  fallbackCurrency = 'JPY',
+) => {
+  const totals = invoices.reduce((acc, invoice) => {
+    const amount = parseNumberValue(invoice.totalAmount);
+    if (amount === null) return acc;
+
+    const currency = invoice.currency?.trim() || fallbackCurrency;
+    acc.set(currency, (acc.get(currency) ?? 0) + amount);
+    return acc;
+  }, new Map<string, number>());
+
+  if (totals.size === 0) return `0 ${fallbackCurrency}`;
+
+  return [...totals.entries()]
+    .sort(([leftCurrency], [rightCurrency]) =>
+      leftCurrency.localeCompare(rightCurrency),
+    )
+    .map(([currency, amount]) => `${amount.toLocaleString()} ${currency}`)
+    .join(' / ');
+};
+
 export const VendorDocuments: React.FC = () => {
   const [annotationTarget, setAnnotationTarget] = useState<{
     kind: 'purchase_order' | 'vendor_quote' | 'vendor_invoice';
@@ -1026,12 +1049,8 @@ export const VendorDocuments: React.FC = () => {
     [vendorInvoices],
   );
 
-  const vendorInvoiceTotalAmount = useMemo(
-    () =>
-      vendorInvoices.reduce((sum, invoice) => {
-        const amount = parseNumberValue(invoice.totalAmount);
-        return amount === null ? sum : sum + amount;
-      }, 0),
+  const vendorInvoiceTotalLabel = useMemo(
+    () => formatTotalsByCurrency(vendorInvoices),
     [vendorInvoices],
   );
 
@@ -1085,7 +1104,7 @@ export const VendorDocuments: React.FC = () => {
             id: 'vendor-invoice-count',
             label: '仕入請求',
             value: `${vendorInvoices.length}件`,
-            helper: `期限あり未払 ${vendorInvoiceDueCount}件 / 合計 ${vendorInvoiceTotalAmount.toLocaleString()} JPY`,
+            helper: `期限あり未払 ${vendorInvoiceDueCount}件 / 合計 ${vendorInvoiceTotalLabel}`,
             tone: vendorInvoiceDueCount > 0 ? 'warning' : 'default',
           },
           {

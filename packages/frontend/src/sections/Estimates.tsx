@@ -38,6 +38,29 @@ const formatEstimateAmount = (value: unknown, currency: string) => {
   return `${formattedAmount} ${currency}`;
 };
 
+const formatEstimateTotalsByCurrency = (
+  estimates: Estimate[],
+  fallbackCurrency: string,
+) => {
+  const totals = estimates.reduce((acc, estimate) => {
+    const amount = Number(estimate.totalAmount);
+    if (!Number.isFinite(amount)) return acc;
+
+    const currency = estimate.currency?.trim() || fallbackCurrency;
+    acc.set(currency, (acc.get(currency) ?? 0) + amount);
+    return acc;
+  }, new Map<string, number>());
+
+  if (totals.size === 0) return `0 ${fallbackCurrency}`;
+
+  return [...totals.entries()]
+    .sort(([leftCurrency], [rightCurrency]) =>
+      leftCurrency.localeCompare(rightCurrency),
+    )
+    .map(([currency, amount]) => `${amount.toLocaleString()} ${currency}`)
+    .join(' / ');
+};
+
 const isSendableEstimate = (status: string) =>
   status === 'approved' || status === 'sent';
 
@@ -164,10 +187,10 @@ export const Estimates: React.FC = () => {
   const selectedProjectLabel = form.projectId
     ? renderProject(form.projectId)
     : '未選択';
-  const totalEstimateAmount = items.reduce((sum, item) => {
-    const amount = Number(item.totalAmount);
-    return Number.isFinite(amount) ? sum + amount : sum;
-  }, 0);
+  const estimateTotalLabel = formatEstimateTotalsByCurrency(
+    items,
+    form.currency,
+  );
   const draftCount = items.filter((item) => item.status === 'draft').length;
   const sendableCount = items.filter((item) =>
     isSendableEstimate(item.status),
@@ -208,8 +231,8 @@ export const Estimates: React.FC = () => {
           {
             id: 'estimate-total',
             label: '見積合計',
-            value: `${totalEstimateAmount.toLocaleString()} ${form.currency}`,
-            helper: '現在読み込み済みの合計',
+            value: estimateTotalLabel,
+            helper: '現在読み込み済みの通貨別合計',
           },
           {
             id: 'estimate-sendable',

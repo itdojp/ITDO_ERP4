@@ -180,6 +180,39 @@ describe('Estimates', () => {
     expect(api).not.toHaveBeenCalled();
   });
 
+  it('summarizes loaded estimate totals by each row currency', async () => {
+    api.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'estimate-jpy',
+          estimateNo: 'EST-JPY',
+          projectId: 'project-1',
+          totalAmount: 250000,
+          currency: 'JPY',
+          status: 'draft',
+        },
+        {
+          id: 'estimate-usd',
+          estimateNo: 'EST-USD',
+          projectId: 'project-1',
+          totalAmount: 100,
+          currency: 'USD',
+          status: 'approved',
+        },
+      ],
+    });
+
+    render(<Estimates />);
+
+    fireEvent.change(screen.getByLabelText('通貨'), {
+      target: { value: 'USD' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '読み込み' }));
+
+    expect(await screen.findByText(/EST-JPY/)).toBeInTheDocument();
+    expect(screen.getByText('250,000 JPY / 100 USD')).toBeInTheDocument();
+  });
+
   it('submits, sends, and opens annotation dialog from detail', async () => {
     api
       .mockResolvedValueOnce({

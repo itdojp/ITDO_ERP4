@@ -14,6 +14,7 @@
 - Added Phase 1 workflow UX primitives to billing and vendor document screens.
 - Added decision summaries for estimate, invoice, and vendor document workflows.
 - Clarified form/list hierarchy for creating, filtering, sending, paying, approving, and linking documents.
+- Addressed automated review feedback by grouping estimate and vendor-invoice summary totals by row currency.
 - Preserved existing E2E navigation and business-action selectors where possible.
 
 ## Local verification
@@ -24,6 +25,7 @@ npm run format:check --prefix packages/frontend
 npm run typecheck --prefix packages/frontend
 npm run lint --prefix packages/frontend
 npm run build --prefix packages/frontend
+npm audit --prefix packages/frontend --audit-level=high
 ```
 
 Result: PASS.
@@ -31,6 +33,7 @@ Result: PASS.
 Notes:
 
 - Frontend build completed with the existing Vite chunk-size warning only.
+- Review follow-up unit coverage includes mixed-currency estimate and vendor-invoice summary totals.
 
 ## E2E screenshot evidence
 
