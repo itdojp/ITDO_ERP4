@@ -153,7 +153,7 @@ test('expense settlement actions and filters on UI @core', async ({ page }) => {
 
   await expenseSection.getByRole('button', { name: '再読み込み' }).click();
   const expenseItem = expenseSection
-    .locator('li', { hasText: category })
+    .locator('tr', { hasText: category })
     .first();
   await expect(expenseItem).toContainText('未払い', { timeout: actionTimeout });
 

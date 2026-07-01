@@ -2,7 +2,23 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { AnnotationsCard } from '../components/AnnotationsCard';
 import { useProjects } from '../hooks/useProjects';
-import { Button, Dialog, Drawer } from '../ui';
+import {
+  Alert,
+  Button,
+  Card,
+  CrudList,
+  DataTable,
+  Dialog,
+  Drawer,
+  EmptyState,
+  FilterBar,
+  Input,
+  Select,
+  StatusBadge,
+  Toast,
+  erpStatusDictionary,
+} from '../ui';
+import type { DataTableColumn, DataTableRow } from '../ui';
 import { enqueueOfflineItem, isOfflineError } from '../utils/offlineQueue';
 
 type Expense = {
@@ -58,6 +74,37 @@ const defaultListFilter: ListFilterState = {
   paidFrom: '',
   paidTo: '',
 };
+
+const settlementLabels: Record<string, string> = {
+  paid: '支払済み',
+  unpaid: '未払い',
+};
+
+function formatCurrencyAmount(amount: number, currency: string) {
+  return `${amount.toLocaleString('ja-JP')} ${currency}`;
+}
+
+function formatSettlementStatus(value?: string | null) {
+  if (!value) return '未払い';
+  return settlementLabels[value] || value;
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return '-';
+  return value.slice(0, 10);
+}
+
+function getSafeReceiptUrl(value?: string | null) {
+  if (!value) return '';
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:'
+      ? url.toString()
+      : '';
+  } catch {
+    return '';
+  }
+}
 
 export const Expenses: React.FC = () => {
   const auth = getAuthState();
@@ -153,10 +200,13 @@ export const Expenses: React.FC = () => {
     return () => clearTimeout(timer);
   }, [message]);
 
-  const renderProject = (projectId: string) => {
-    const project = projectMap.get(projectId);
-    return project ? `${project.code} / ${project.name}` : projectId;
-  };
+  const renderProject = useCallback(
+    (projectId: string) => {
+      const project = projectMap.get(projectId);
+      return project ? `${project.code} / ${project.name}` : projectId;
+    },
+    [projectMap],
+  );
 
   const missingReceiptCount = useMemo(
     () => items.filter((item) => !item.receiptUrl).length,
@@ -204,6 +254,237 @@ export const Expenses: React.FC = () => {
       }),
     [items, listFilter, showMissingOnly],
   );
+  const paidCount = useMemo(
+    () => items.filter((item) => item.settlementStatus === 'paid').length,
+    [items],
+  );
+  const unpaidCount = Math.max(items.length - paidCount, 0);
+  const activeFilterCount = [
+    showMissingOnly,
+    listFilter.status !== 'all',
+    listFilter.settlementStatus !== 'all',
+    listFilter.receipt !== 'all',
+    Boolean(listFilter.paidFrom),
+    Boolean(listFilter.paidTo),
+  ].filter(Boolean).length;
+  const hasActiveFilters = activeFilterCount > 0;
+
+  const clearFilters = () => {
+    setShowMissingOnly(false);
+    setListFilter(defaultListFilter);
+  };
+
+  const tableRows = useMemo<DataTableRow[]>(
+    () =>
+      visibleItems.map((item) => ({
+        id: item.id,
+        incurredOn: formatDate(item.incurredOn),
+        project: renderProject(item.projectId),
+        category: item.category,
+        amount: formatCurrencyAmount(item.amount, item.currency),
+        status: item.status,
+        settlementStatus: item.settlementStatus || 'unpaid',
+        settlementLabel: formatSettlementStatus(item.settlementStatus),
+        sharing: item.isShared ? '共通' : '個別',
+        receipt: item.receiptUrl ? '登録あり' : '未登録',
+        paidAt: item.paidAt ? formatDate(item.paidAt) : '-',
+        isShared: Boolean(item.isShared),
+      })),
+    [visibleItems, renderProject],
+  );
+  const visibleItemMap = useMemo(
+    () => new Map(visibleItems.map((item) => [item.id, item])),
+    [visibleItems],
+  );
+
+  const tableColumns = useMemo<DataTableColumn[]>(
+    () => [
+      { key: 'incurredOn', header: '日付' },
+      { key: 'project', header: '案件' },
+      { key: 'category', header: '区分' },
+      {
+        key: 'sharing',
+        header: '共有',
+        cell: (row) => (
+          <span
+            className="badge"
+            style={
+              row.isShared
+                ? { background: '#dbeafe', color: '#1d4ed8' }
+                : { background: '#f3f4f6', color: '#374151' }
+            }
+          >
+            {String(row.sharing || '')}
+          </span>
+        ),
+      },
+      { key: 'amount', header: '金額', align: 'right' },
+      {
+        key: 'status',
+        header: '承認状態',
+        cell: (row) => (
+          <StatusBadge
+            status={String(row.status || '')}
+            dictionary={erpStatusDictionary}
+            size="sm"
+          />
+        ),
+      },
+      {
+        key: 'settlementLabel',
+        header: '精算',
+        cell: (row) => (
+          <span
+            className="badge"
+            style={
+              row.settlementStatus === 'paid'
+                ? { background: '#dcfce7', color: '#166534' }
+                : { background: '#fef3c7', color: '#92400e' }
+            }
+          >
+            {String(row.settlementLabel || '')}
+          </span>
+        ),
+      },
+      {
+        key: 'receipt',
+        header: '領収書',
+        cell: (row) => {
+          const target = visibleItemMap.get(row.id);
+          const safeReceiptUrl = getSafeReceiptUrl(target?.receiptUrl);
+          if (safeReceiptUrl) {
+            return (
+              <a
+                href={safeReceiptUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                領収書
+              </a>
+            );
+          }
+          if (target?.receiptUrl) {
+            return (
+              <span
+                className="badge"
+                style={{ background: '#ffedd5', color: '#9a3412' }}
+              >
+                URL無効
+              </span>
+            );
+          }
+          return (
+            <span
+              className="badge"
+              style={{ background: '#fee2e2', color: '#991b1b' }}
+            >
+              領収書未登録
+            </span>
+          );
+        },
+      },
+      { key: 'paidAt', header: '支払日' },
+      {
+        key: 'actions',
+        header: '操作',
+        width: '176px',
+        cell: (row) => {
+          const target = visibleItemMap.get(row.id);
+          if (!target) return null;
+          return (
+            <div
+              style={{
+                display: 'flex',
+                gap: 8,
+                flexWrap: 'wrap',
+                minWidth: 144,
+              }}
+            >
+              <Button
+                variant="secondary"
+                style={{ whiteSpace: 'nowrap' }}
+                aria-label={`注釈（経費）: ${formatDate(target.incurredOn)} ${target.category} ${target.amount} ${target.currency}`}
+                onClick={() =>
+                  setAnnotationTarget({
+                    kind: 'expense',
+                    id: target.id,
+                    projectId: target.projectId,
+                    title: `経費: ${formatDate(target.incurredOn)} / ${target.category}`,
+                  })
+                }
+              >
+                注釈
+              </Button>
+              {canManageSettlement &&
+                target.status === 'approved' &&
+                target.settlementStatus !== 'paid' && (
+                  <Button
+                    variant="secondary"
+                    style={{ whiteSpace: 'nowrap' }}
+                    onClick={() => {
+                      setMarkPaidTarget(target);
+                      setMarkPaidDate(new Date().toISOString().slice(0, 10));
+                      setMarkPaidReason('');
+                    }}
+                  >
+                    支払済みにする
+                  </Button>
+                )}
+              {canManageSettlement && target.settlementStatus === 'paid' && (
+                <Button
+                  variant="secondary"
+                  style={{ whiteSpace: 'nowrap' }}
+                  onClick={() => {
+                    setUnmarkPaidTarget(target);
+                    setUnmarkPaidReason('');
+                  }}
+                >
+                  支払取消
+                </Button>
+              )}
+            </div>
+          );
+        },
+      },
+    ],
+    [
+      canManageSettlement,
+      setAnnotationTarget,
+      setMarkPaidDate,
+      setMarkPaidReason,
+      setMarkPaidTarget,
+      setUnmarkPaidReason,
+      setUnmarkPaidTarget,
+      visibleItemMap,
+    ],
+  );
+
+  const listContent = (() => {
+    if (tableRows.length > 0) {
+      return <DataTable columns={tableColumns} rows={tableRows} />;
+    }
+    return (
+      <EmptyState
+        title={
+          items.length === 0
+            ? '経費データがありません'
+            : '条件に一致する経費がありません'
+        }
+        description={
+          items.length === 0
+            ? '上のフォームから経費を追加してください。'
+            : '条件をクリアするか、フィルタを変更してください。'
+        }
+        action={
+          hasActiveFilters ? (
+            <Button variant="ghost" onClick={clearFilters}>
+              条件をクリア
+            </Button>
+          ) : undefined
+        }
+      />
+    );
+  })();
 
   const add = async () => {
     if (!isValid) {
@@ -315,279 +596,267 @@ export const Expenses: React.FC = () => {
   };
 
   return (
-    <div>
-      <h2>経費入力</h2>
-      <div className="card" style={{ marginBottom: 12 }}>
-        <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-          <select
-            aria-label="案件選択"
-            value={form.projectId}
-            onChange={(e) => setForm({ ...form, projectId: e.target.value })}
-          >
-            <option value="">案件を選択</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.code} / {project.name}
-              </option>
-            ))}
-          </select>
-          <input
-            type="text"
-            value={form.category}
-            onChange={(e) => setForm({ ...form, category: e.target.value })}
-            placeholder="区分"
-          />
-          <input
-            type="number"
-            min={1}
-            max={10000000}
-            value={form.amount}
-            onChange={(e) =>
-              setForm({ ...form, amount: Number(e.target.value) })
-            }
-            style={{ width: 120 }}
-          />
-          <input
-            type="text"
-            value={form.currency}
-            onChange={(e) => {
-              const value = e.target.value.toUpperCase().slice(0, 3);
-              setForm({ ...form, currency: value });
+    <div style={{ display: 'grid', gap: 16 }}>
+      <h2 style={{ marginBottom: 4 }}>経費入力</h2>
+      <p style={{ marginTop: -12, color: '#475569' }}>
+        経費の登録、領収書未登録の確認、支払状況の更新をこの画面で行います。
+      </p>
+
+      <Card padding="small">
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div>
+            <h3 style={{ margin: 0 }}>経費を登録</h3>
+            <p style={{ margin: '4px 0 0', color: '#64748b' }}>
+              案件、区分、金額、日付を入力してください。領収書URLは後から追加できます。
+            </p>
+          </div>
+          <div
+            style={{
+              display: 'grid',
+              gap: 12,
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              alignItems: 'end',
             }}
-            placeholder="通貨"
-            style={{ width: 80 }}
-            maxLength={3}
-            pattern="[A-Z]{3}"
-          />
-          <input
-            type="date"
-            aria-label="経費日付"
-            value={form.incurredOn}
-            onChange={(e) => setForm({ ...form, incurredOn: e.target.value })}
-          />
-          <label className="badge" style={{ cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={form.isShared}
-              onChange={(e) => setForm({ ...form, isShared: e.target.checked })}
-              style={{ marginRight: 6 }}
+          >
+            <Select
+              label="案件"
+              aria-label="案件選択"
+              value={form.projectId}
+              onChange={(e) => setForm({ ...form, projectId: e.target.value })}
+            >
+              <option value="">案件を選択</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.code} / {project.name}
+                </option>
+              ))}
+            </Select>
+            <Input
+              label="区分"
+              aria-label="経費区分"
+              type="text"
+              value={form.category}
+              onChange={(e) => setForm({ ...form, category: e.target.value })}
+              placeholder="交通費 / 宿泊費 など"
             />
-            共通経費
-          </label>
+            <Input
+              label="金額"
+              aria-label="経費金額"
+              type="number"
+              min={1}
+              max={10000000}
+              value={form.amount}
+              onChange={(e) =>
+                setForm({ ...form, amount: Number(e.target.value) })
+              }
+            />
+            <Input
+              label="通貨"
+              aria-label="通貨"
+              type="text"
+              value={form.currency}
+              onChange={(e) => {
+                const value = e.target.value.toUpperCase().slice(0, 3);
+                setForm({ ...form, currency: value });
+              }}
+              placeholder="JPY"
+              maxLength={3}
+              pattern="[A-Z]{3}"
+            />
+            <Input
+              label="経費日付"
+              aria-label="経費日付"
+              type="date"
+              value={form.incurredOn}
+              onChange={(e) => setForm({ ...form, incurredOn: e.target.value })}
+            />
+            <label
+              className="badge"
+              style={{ cursor: 'pointer', width: 'fit-content' }}
+            >
+              <input
+                type="checkbox"
+                checked={form.isShared}
+                onChange={(e) =>
+                  setForm({ ...form, isShared: e.target.checked })
+                }
+                style={{ marginRight: 6 }}
+              />
+              共通経費
+            </label>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              gap: 12,
+              flexWrap: 'wrap',
+              alignItems: 'end',
+            }}
+          >
+            <div style={{ flex: '1 1 320px' }}>
+              <Input
+                label="領収書URL"
+                aria-label="領収書URL"
+                type="url"
+                value={form.receiptUrl}
+                onChange={(e) =>
+                  setForm({ ...form, receiptUrl: e.target.value })
+                }
+                placeholder="https://example.com/receipt.pdf"
+              />
+            </div>
+            <Button onClick={add} disabled={!isValid || isSaving}>
+              {isSaving ? '保存中...' : '追加'}
+            </Button>
+          </div>
+          {validationHint && <Alert variant="error">{validationHint}</Alert>}
+          {projectMessage && <Alert variant="error">{projectMessage}</Alert>}
         </div>
-        <div className="row" style={{ gap: 8, marginTop: 8 }}>
-          <input
-            type="url"
-            value={form.receiptUrl}
-            onChange={(e) => setForm({ ...form, receiptUrl: e.target.value })}
-            placeholder="領収書URL (任意)"
-            style={{ flex: 1 }}
-          />
-          <button
-            className="button"
-            onClick={add}
-            disabled={!isValid || isSaving}
-          >
-            追加
-          </button>
-        </div>
-        {validationHint && (
-          <p style={{ color: '#dc2626', margin: '8px 0 0' }}>
-            {validationHint}
-          </p>
-        )}
-        {projectMessage && (
-          <p style={{ color: '#dc2626', margin: '8px 0 0' }}>
-            {projectMessage}
-          </p>
-        )}
-      </div>
+      </Card>
+
       <div
-        className="row"
-        style={{ marginBottom: 8, gap: 8, flexWrap: 'wrap' }}
+        aria-live="polite"
+        style={{
+          display: 'grid',
+          gap: 8,
+          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+        }}
       >
-        <span className="badge">領収書未登録: {missingReceiptCount}件</span>
-        <button
-          className="button secondary"
-          onClick={() => setShowMissingOnly((prev) => !prev)}
-        >
-          {showMissingOnly ? '全件表示' : '未登録のみ表示'}
-        </button>
-        <button className="button secondary" onClick={() => void loadItems()}>
-          再読み込み
-        </button>
+        <Card padding="small">
+          <strong>表示中</strong>
+          <div style={{ fontSize: 24, fontWeight: 700 }}>
+            {visibleItems.length} / {items.length}件
+          </div>
+        </Card>
+        <Card padding="small">
+          <strong>領収書未登録</strong>
+          <div style={{ fontSize: 24, fontWeight: 700 }}>
+            {missingReceiptCount}件
+          </div>
+        </Card>
+        <Card padding="small">
+          <strong>未払い</strong>
+          <div style={{ fontSize: 24, fontWeight: 700 }}>{unpaidCount}件</div>
+        </Card>
+        <Card padding="small">
+          <strong>支払済み</strong>
+          <div style={{ fontSize: 24, fontWeight: 700 }}>{paidCount}件</div>
+        </Card>
       </div>
-      <div
-        className="row"
-        style={{ marginBottom: 8, gap: 8, flexWrap: 'wrap', alignItems: 'end' }}
-      >
-        <label>
-          状態
-          <select
-            aria-label="経費状態フィルタ"
-            value={listFilter.status}
-            onChange={(e) =>
-              setListFilter((prev) => ({ ...prev, status: e.target.value }))
-            }
-          >
-            <option value="all">すべて</option>
-            {statusOptions.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          精算
-          <select
-            aria-label="経費精算フィルタ"
-            value={listFilter.settlementStatus}
-            onChange={(e) =>
-              setListFilter((prev) => ({
-                ...prev,
-                settlementStatus: e.target
-                  .value as ListFilterState['settlementStatus'],
-              }))
-            }
-          >
-            <option value="all">すべて</option>
-            <option value="unpaid">未払い</option>
-            <option value="paid">支払済み</option>
-          </select>
-        </label>
-        <label>
-          領収書
-          <select
-            aria-label="経費領収書フィルタ"
-            value={listFilter.receipt}
-            onChange={(e) =>
-              setListFilter((prev) => ({
-                ...prev,
-                receipt: e.target.value as ListFilterState['receipt'],
-              }))
-            }
-          >
-            <option value="all">すべて</option>
-            <option value="with">登録あり</option>
-            <option value="without">未登録</option>
-          </select>
-        </label>
-        <label>
-          支払日(開始)
-          <input
-            aria-label="支払日開始"
-            type="date"
-            value={listFilter.paidFrom}
-            onChange={(e) =>
-              setListFilter((prev) => ({ ...prev, paidFrom: e.target.value }))
-            }
-          />
-        </label>
-        <label>
-          支払日(終了)
-          <input
-            aria-label="支払日終了"
-            type="date"
-            value={listFilter.paidTo}
-            onChange={(e) =>
-              setListFilter((prev) => ({ ...prev, paidTo: e.target.value }))
-            }
-          />
-        </label>
-        <button
-          className="button secondary"
-          onClick={() => setListFilter(defaultListFilter)}
-        >
-          条件クリア
-        </button>
-      </div>
-      <ul className="list">
-        {visibleItems.map((item) => (
-          <li key={item.id}>
-            <span className="badge">{item.status}</span>{' '}
-            <span className="badge">
-              {item.settlementStatus === 'paid' ? '支払済み' : '未払い'}
-            </span>{' '}
-            {item.incurredOn.slice(0, 10)} / {renderProject(item.projectId)} /{' '}
-            {item.category} / {item.amount} {item.currency}
-            {item.isShared && <> / 共通</>}
-            {item.paidAt ? <> / 支払日: {item.paidAt.slice(0, 10)}</> : null}
-            {item.receiptUrl ? (
-              <>
-                {' '}
-                /{' '}
-                <a
-                  href={item.receiptUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
+
+      <CrudList
+        title="経費一覧"
+        description="領収書未登録、精算状態、支払日で絞り込み、必要な経費をすぐ確認できます。"
+        filters={
+          <FilterBar
+            actions={
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Button
+                  variant="secondary"
+                  onClick={() => setShowMissingOnly((prev) => !prev)}
                 >
-                  領収書
-                </a>
-              </>
-            ) : (
-              <>
-                {' '}
-                /{' '}
-                <span
-                  className="badge"
-                  style={{ background: '#fee2e2', color: '#991b1b' }}
-                >
-                  領収書未登録
-                </span>
-              </>
-            )}
-            <div style={{ marginTop: 6 }}>
-              <button
-                className="button secondary"
-                aria-label={`注釈（経費）: ${item.incurredOn.slice(0, 10)} ${item.category} ${item.amount} ${item.currency}`}
-                onClick={() =>
-                  setAnnotationTarget({
-                    kind: 'expense',
-                    id: item.id,
-                    projectId: item.projectId,
-                    title: `経費: ${item.incurredOn.slice(0, 10)} / ${item.category}`,
-                  })
+                  {showMissingOnly ? '全件表示' : '未登録のみ表示'}
+                </Button>
+                <Button variant="secondary" onClick={() => void loadItems()}>
+                  再読み込み
+                </Button>
+                {hasActiveFilters && (
+                  <Button variant="ghost" onClick={clearFilters}>
+                    条件クリア
+                  </Button>
+                )}
+              </div>
+            }
+          >
+            <div
+              style={{
+                display: 'grid',
+                gap: 12,
+                gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                alignItems: 'end',
+              }}
+            >
+              <Select
+                label="状態"
+                aria-label="経費状態フィルタ"
+                value={listFilter.status}
+                onChange={(e) =>
+                  setListFilter((prev) => ({ ...prev, status: e.target.value }))
                 }
               >
-                注釈
-              </button>
-              {canManageSettlement &&
-                item.status === 'approved' &&
-                item.settlementStatus !== 'paid' && (
-                  <button
-                    className="button secondary"
-                    style={{ marginLeft: 8 }}
-                    onClick={() => {
-                      setMarkPaidTarget(item);
-                      setMarkPaidDate(new Date().toISOString().slice(0, 10));
-                      setMarkPaidReason('');
-                    }}
-                  >
-                    支払済みにする
-                  </button>
-                )}
-              {canManageSettlement && item.settlementStatus === 'paid' && (
-                <button
-                  className="button secondary"
-                  style={{ marginLeft: 8 }}
-                  onClick={() => {
-                    setUnmarkPaidTarget(item);
-                    setUnmarkPaidReason('');
-                  }}
-                >
-                  支払取消
-                </button>
-              )}
+                <option value="all">すべて</option>
+                {statusOptions.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </Select>
+              <Select
+                label="精算"
+                aria-label="経費精算フィルタ"
+                value={listFilter.settlementStatus}
+                onChange={(e) =>
+                  setListFilter((prev) => ({
+                    ...prev,
+                    settlementStatus: e.target
+                      .value as ListFilterState['settlementStatus'],
+                  }))
+                }
+              >
+                <option value="all">すべて</option>
+                <option value="unpaid">未払い</option>
+                <option value="paid">支払済み</option>
+              </Select>
+              <Select
+                label="領収書"
+                aria-label="経費領収書フィルタ"
+                value={listFilter.receipt}
+                onChange={(e) =>
+                  setListFilter((prev) => ({
+                    ...prev,
+                    receipt: e.target.value as ListFilterState['receipt'],
+                  }))
+                }
+              >
+                <option value="all">すべて</option>
+                <option value="with">登録あり</option>
+                <option value="without">未登録</option>
+              </Select>
+              <Input
+                label="支払日(開始)"
+                aria-label="支払日開始"
+                type="date"
+                value={listFilter.paidFrom}
+                onChange={(e) =>
+                  setListFilter((prev) => ({
+                    ...prev,
+                    paidFrom: e.target.value,
+                  }))
+                }
+              />
+              <Input
+                label="支払日(終了)"
+                aria-label="支払日終了"
+                type="date"
+                value={listFilter.paidTo}
+                onChange={(e) =>
+                  setListFilter((prev) => ({ ...prev, paidTo: e.target.value }))
+                }
+              />
             </div>
-          </li>
-        ))}
-        {visibleItems.length === 0 && <li>データなし</li>}
-      </ul>
+          </FilterBar>
+        }
+        table={listContent}
+      />
+
       {message && (
-        <p style={{ color: message.type === 'error' ? '#dc2626' : undefined }}>
-          {message.text}
-        </p>
+        <Toast
+          variant={message.type}
+          title={message.type === 'error' ? 'エラー' : '完了'}
+          description={message.text}
+          dismissible
+          onClose={() => setMessage(null)}
+        />
       )}
       <Drawer
         open={Boolean(annotationTarget)}

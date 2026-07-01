@@ -208,7 +208,7 @@ test('frontend smoke workflow evidence chat references @extended', async ({
   await expenseSection.getByRole('button', { name: '追加' }).click();
   await expect(expenseSection.getByText('経費を保存しました')).toBeVisible();
 
-  const createdExpenseItem = expenseSection.locator('li', {
+  const createdExpenseItem = expenseSection.locator('tr', {
     hasText: expenseAmountPattern,
   });
   await expect(createdExpenseItem).toHaveCount(1, { timeout: actionTimeout });
