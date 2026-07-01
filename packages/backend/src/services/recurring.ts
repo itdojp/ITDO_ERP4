@@ -84,6 +84,26 @@ async function claimGenerationLog(params: {
     return 'claimed';
   } catch (error) {
     if (isUniqueConstraintError(error)) {
+      const retryClaim = await prisma.recurringGenerationLog.updateMany({
+        where: {
+          templateId: params.templateId,
+          periodKey: params.periodKey,
+          status: 'error',
+        },
+        data: {
+          projectId: params.projectId,
+          runAt: params.runAt,
+          status: 'running',
+          message: 'generation_claimed',
+          estimateId: null,
+          invoiceId: null,
+          milestoneId: null,
+          createdBy: 'recurring-job',
+        },
+      });
+      if (retryClaim.count > 0) {
+        return 'claimed';
+      }
       return 'already_claimed';
     }
     throw error;

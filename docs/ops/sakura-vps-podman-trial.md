@@ -327,9 +327,9 @@ backup / prune を手動で 1 回実行する場合:
 
 既定では毎日 03:45 に `erp4-config-prune.service` が実行され、`prune-backups.sh --keep-count "${ERP4_BACKUP_KEEP_COUNT:-14}" --keep-days "${ERP4_BACKUP_KEEP_DAYS:-30}"` 相当の整理を行います。保持本数と保持日数は `erp4-maintenance.env` の `ERP4_BACKUP_KEEP_COUNT` / `ERP4_BACKUP_KEEP_DAYS` で上書きできます。backup archive が 1 件も無い場合は no-op 成功として扱い、timer を失敗状態にしません。
 
-`check-stack.sh` は backend health/readiness、frontend、PostgreSQL、および user systemd service を最大 60 秒・2 秒間隔で再試行しながら検証します。HTTP probe には残り時間ベースの timeout をかけているため、到達不能時でも無制限に待機しません。起動直後の偽陰性を避けたい場合は、個別 `curl` / `pg_isready` よりこちらを優先してください。
+`check-stack.sh` は backend health/readiness、frontend、PostgreSQL、および user systemd service を最大 60 秒・2 秒間隔で再試行しながら検証します。backend/frontend は既定で host port を公開せず Caddy ingress の背後に置くため、URL を明示しない場合は `podman exec` によるコンテナ内 probe を使います。`BACKEND_HEALTH_URL` / `BACKEND_READY_URL` / `FRONTEND_URL` または対応する CLI option を指定した場合だけ、Caddy/public endpoint などの明示 URL を `curl` で検証します。HTTP probe には残り時間ベースの timeout をかけているため、到達不能時でも無制限に待機しません。起動直後の偽陰性を避けたい場合は、個別 `curl` / `pg_isready` よりこちらを優先してください。
 
-`status-stack.sh` は定常監視や切り分け向けの即時確認コマンドです。`erp4-postgres.service` / `erp4-migrate.service` / `erp4-backend.service` / `erp4-frontend.service` の active 状態を一覧し、必要に応じて `erp4-caddy.service` も含められます。あわせて backend health/readiness、frontend の HTTP HEAD、PostgreSQL の `pg_isready` を 1 回ずつ実行して結果を表示します。`--skip-systemd` を付けると user systemd 依存を外して runtime probe のみ確認できます。
+`status-stack.sh` は定常監視や切り分け向けの即時確認コマンドです。`erp4-postgres.service` / `erp4-migrate.service` / `erp4-backend.service` / `erp4-frontend.service` の active 状態を一覧し、必要に応じて `erp4-caddy.service` も含められます。あわせて backend health/readiness、frontend、PostgreSQL の `pg_isready` を 1 回ずつ実行して結果を表示します。backend/frontend の既定 probe は `check-stack.sh` と同じくコンテナ内で実行されます。`--skip-systemd` を付けると user systemd 依存を外して runtime probe のみ確認できます。
 
 停止する場合:
 
@@ -410,18 +410,14 @@ stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の 
 
 ## 6. 疎通確認
 
-backend:
+backend/frontend は既定で host port を公開しません。通常は stack check を使って、backend/frontend はコンテナ内、PostgreSQL は `podman exec` で確認します。
 
 ```bash
-curl -fsS http://127.0.0.1:3001/healthz
-curl -fsS http://127.0.0.1:3001/readyz
+./scripts/quadlet/check-stack.sh
+./scripts/quadlet/status-stack.sh --skip-systemd
 ```
 
-frontend:
-
-```bash
-curl -I http://127.0.0.1:8080/
-```
+Caddy ingress まで含めて公開経路を確認する場合は、`check-https.sh` または `BACKEND_HEALTH_URL` / `BACKEND_READY_URL` / `FRONTEND_URL` に Caddy/public endpoint を指定した `check-stack.sh` を使います。
 
 PostgreSQL:
 
