@@ -3,6 +3,7 @@ import React from 'react';
 export type WorkflowMetricTone = 'default' | 'success' | 'warning' | 'danger';
 
 export type WorkflowMetric = {
+  id?: string;
   label: string;
   value: React.ReactNode;
   helper?: React.ReactNode;
@@ -130,12 +131,12 @@ export const WorkflowMetricGrid: React.FC<{
   items: WorkflowMetric[];
   ariaLabel: string;
 }> = ({ items, ariaLabel }) => (
-  <div aria-label={ariaLabel} style={metricGridStyle}>
-    {items.map((item) => {
+  <section aria-label={ariaLabel} style={metricGridStyle}>
+    {items.map((item, index) => {
       const tone = item.tone ?? 'default';
       return (
         <div
-          key={item.label}
+          key={`${item.id ?? item.label}-${index}`}
           style={{
             ...metricBaseStyle,
             borderColor: toneBorder[tone],
@@ -147,7 +148,7 @@ export const WorkflowMetricGrid: React.FC<{
         </div>
       );
     })}
-  </div>
+  </section>
 );
 
 export const WorkflowPanel: React.FC<{
@@ -165,7 +166,7 @@ export const WorkflowPanel: React.FC<{
             {title}
           </h3>
           {description ? (
-            <p style={panelDescriptionStyle}>{description}</p>
+            <div style={panelDescriptionStyle}>{description}</div>
           ) : null}
         </div>
         {actions ? <div style={actionsStyle}>{actions}</div> : null}
