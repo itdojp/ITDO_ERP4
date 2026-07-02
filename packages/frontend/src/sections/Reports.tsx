@@ -622,12 +622,14 @@ export const Reports: React.FC = () => {
         <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           <input
             type="text"
+            aria-label="開始日"
             value={from}
             onChange={(e) => setFrom(e.target.value)}
             placeholder="from (YYYY-MM-DD)"
           />
           <input
             type="text"
+            aria-label="終了日"
             value={to}
             onChange={(e) => setTo(e.target.value)}
             placeholder="to (YYYY-MM-DD)"
@@ -646,12 +648,14 @@ export const Reports: React.FC = () => {
           </select>
           <input
             type="text"
+            aria-label="対象ユーザーID一覧"
             value={userIdsInput}
             onChange={(e) => setUserIdsInput(e.target.value)}
             placeholder="userIds (a,b,c)"
           />
           <input
             type="text"
+            aria-label="残業レポート対象ユーザーID"
             value={overtimeUserId}
             onChange={(e) => setOvertimeUserId(e.target.value)}
             placeholder="userId"

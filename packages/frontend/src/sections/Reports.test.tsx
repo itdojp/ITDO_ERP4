@@ -76,6 +76,22 @@ describe('Reports', () => {
     expect(
       screen.getByRole('heading', { name: 'レポート結果' }),
     ).toBeInTheDocument();
+    expect(screen.getByLabelText('開始日')).toHaveAttribute(
+      'placeholder',
+      'from (YYYY-MM-DD)',
+    );
+    expect(screen.getByLabelText('終了日')).toHaveAttribute(
+      'placeholder',
+      'to (YYYY-MM-DD)',
+    );
+    expect(screen.getByLabelText('対象ユーザーID一覧')).toHaveAttribute(
+      'placeholder',
+      'userIds (a,b,c)',
+    );
+    expect(screen.getByLabelText('残業レポート対象ユーザーID')).toHaveAttribute(
+      'placeholder',
+      'userId',
+    );
 
     expect(
       await screen.findByRole('option', { name: 'Baseline 1' }),
