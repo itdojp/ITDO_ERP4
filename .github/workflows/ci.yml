@@ -15,7 +15,11 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 20.19.0
-      - run: npm install
+          cache: npm
+          cache-dependency-path: |
+            packages/backend/package-lock.json
+            packages/frontend/package-lock.json
+      - run: npm ci
         working-directory: packages/backend
       - run: npx prisma generate --config ./prisma.config.ts
         working-directory: packages/backend
@@ -44,7 +48,11 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 20.19.0
-      - run: npm install --prefix packages/frontend
+          cache: npm
+          cache-dependency-path: |
+            packages/backend/package-lock.json
+            packages/frontend/package-lock.json
+      - run: npm ci --prefix packages/frontend
       - run: npm run typecheck --prefix packages/frontend
       - run: npm run build --prefix packages/frontend
   lint:
@@ -54,12 +62,16 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 20.19.0
-      - run: npm install --prefix packages/backend
+          cache: npm
+          cache-dependency-path: |
+            packages/backend/package-lock.json
+            packages/frontend/package-lock.json
+      - run: npm ci --prefix packages/backend
       - run: npm run lint --prefix packages/backend
       - run: npm run format:check --prefix packages/backend
       - run: ./scripts/check-ops-docs.sh
       - run: ./scripts/check-ops-scripts.sh
-      - run: npm install --prefix packages/frontend
+      - run: npm ci --prefix packages/frontend
       - run: npm run lint --prefix packages/frontend
       - run: npm run format:check --prefix packages/frontend
       - run: node scripts/check-doc-image-links.mjs
@@ -74,6 +86,10 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 20.19.0
+          cache: npm
+          cache-dependency-path: |
+            packages/backend/package-lock.json
+            packages/frontend/package-lock.json
       - run: npm ci --prefix packages/backend
       - run: npm ci --prefix packages/frontend
       - name: Generate SBOM (CycloneDX)
@@ -105,8 +121,12 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 20.19.0
-      - run: npm install --prefix packages/backend
-      - run: npm install --prefix packages/frontend
+          cache: npm
+          cache-dependency-path: |
+            packages/backend/package-lock.json
+            packages/frontend/package-lock.json
+      - run: npm ci --prefix packages/backend
+      - run: npm ci --prefix packages/frontend
       - run: npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/data-quality-check.ts || true
   e2e-frontend:
     runs-on: ubuntu-latest
@@ -135,6 +155,10 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 20.19.0
+          cache: npm
+          cache-dependency-path: |
+            packages/backend/package-lock.json
+            packages/frontend/package-lock.json
       - run: npm ci --prefix packages/backend
       - run: npm ci --prefix packages/frontend
       - run: sudo apt-get update
@@ -173,6 +197,10 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 20.19.0
+          cache: npm
+          cache-dependency-path: |
+            packages/backend/package-lock.json
+            packages/frontend/package-lock.json
       - run: npm ci --prefix packages/backend
       - run: npx --prefix packages/backend prisma generate --config packages/backend/prisma.config.ts
         env:
