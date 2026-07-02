@@ -95,6 +95,7 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
   - `npm run lint`
   - `npm run format:check`
   - `npm run arch:bounded-context`
+  - `max-lines` gate: backend ESLint で route 肥大を error 1500 行として検知し、既存超過 route は `docs/quality/refactoring-hotspots.md` の allowlist cap で段階削減する
 - `packages/frontend`
   - `npm run lint`
   - `npm run format:check`
