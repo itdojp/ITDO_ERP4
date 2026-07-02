@@ -63,4 +63,19 @@ Result: PASS, 12 tests.
 
 - Visual regression is opt-in with `UIUX_VISUAL_REGRESSION=1`; default `E2E_SCOPE=core/full` does not make this a required PR gate.
 - Browser clock, locale, timezone, viewport, color scheme, animation, transition, and caret behavior are fixed to reduce false positives.
+- Phase 8 / PDF管理はファイルID・更新時刻を含む一覧行を `tbody` mask 対象とする。post-merge regression で当該行の実行時差分が確認されたため、サマリー・検索条件・一覧レイアウト枠を比較対象として維持する。
 - Manual GitHub Actions workflow: `.github/workflows/uiux-visual-regression.yml`.
+
+## Post-merge stabilization
+
+After PR #1854 was merged, #1846 post-merge regression detected Phase 8 / PDF管理 instability:
+
+- `phase-08-pdf-files.png`: 26,285 pixels differed, ratio 0.03.
+- Difference source: dynamic PDF file list rows containing seed/API-derived file identifiers and update timestamps.
+- Stabilization: mask the Phase 8 `tbody` while keeping the summary, search controls, table header, and layout frame under screenshot comparison.
+
+Verification after stabilization:
+
+- `./scripts/e2e-uiux-visual-regression.sh --update-snapshots` — PASS, 12 tests.
+- `./scripts/e2e-uiux-visual-regression.sh` — PASS, 12 tests.
+- `E2E_SCOPE=core E2E_CAPTURE=0 ./scripts/e2e-frontend.sh` — PASS, 105 tests.

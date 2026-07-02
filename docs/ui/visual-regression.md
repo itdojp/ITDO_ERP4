@@ -71,6 +71,7 @@ E2E_PODMAN_HOST_PORT=55463 make ui-visual-regression
 - Playwright context は `locale=ja-JP`、`timezoneId=Asia/Tokyo`、`viewport=1280x720`、`colorScheme=light` に固定する。
 - screenshot 取得時は animation / transition / caret を無効化する。
 - 初期比較許容値は `maxDiffPixelRatio=0.02`、`threshold=0.2` とし、pixel-level rendering 差分を吸収する。
+- Phase 8 / PDF管理はファイルID・更新時刻を含む一覧行が backend seed / 実行時刻に依存するため、`tbody` を mask し、サマリー・検索条件・一覧レイアウト枠を比較対象にする。
 - Phase 10 / 11 では visual regression 用にデータ作成を行わず、安定した summary / list 初期状態を対象にする。
 
 ## CI 運用
