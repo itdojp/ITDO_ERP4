@@ -44,10 +44,9 @@ type ApprovalRuleSeries = {
 
 type AsyncVoid = void | Promise<void>;
 
-export type AdminSettingsPolicyPanelProps = {
-  settingsPanelContentStyle: React.CSSProperties;
-  approvalRuleMonitoring: ApprovalRuleMonitoring;
-  approvalRuleSeries: ApprovalRuleSeries;
+type ApprovalRulesPanelState = {
+  monitoring: ApprovalRuleMonitoring;
+  series: ApprovalRuleSeries;
   editingRule: ApprovalRule | null;
   editingRuleId: string | null;
   ruleForm: RuleForm;
@@ -61,93 +60,110 @@ export type AdminSettingsPolicyPanelProps = {
     current: boolean | null | undefined,
   ) => AsyncVoid;
   startEditRule: (item: ApprovalRule) => void;
-  approvalRuleAuditOpen: Record<string, boolean>;
-  approvalRuleAuditLoading: Record<string, boolean>;
-  approvalRuleAuditLogs: Record<string, AuditLogItem[]>;
-  approvalRuleAuditSelected: Record<string, string>;
-  setApprovalRuleAuditOpen: React.Dispatch<
-    React.SetStateAction<Record<string, boolean>>
-  >;
-  setApprovalRuleAuditSelected: React.Dispatch<
+  auditOpen: Record<string, boolean>;
+  auditLoading: Record<string, boolean>;
+  auditLogs: Record<string, AuditLogItem[]>;
+  auditSelected: Record<string, string>;
+  setAuditOpen: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  setAuditSelected: React.Dispatch<
     React.SetStateAction<Record<string, string>>
   >;
-  loadApprovalRuleAuditLogs: (rule: ApprovalRule) => AsyncVoid;
-  actionPolicyForm: ActionPolicyForm;
-  setActionPolicyForm: React.Dispatch<React.SetStateAction<ActionPolicyForm>>;
-  submitActionPolicy: (formValue?: ActionPolicyForm) => AsyncVoid;
-  resetActionPolicyForm: () => void;
-  editingActionPolicyId: string | null;
-  loadActionPolicies: () => AsyncVoid;
-  actionPolicyItems: ActionPolicy[];
-  actionPolicyAuditOpen: Record<string, boolean>;
-  actionPolicyAuditLoading: Record<string, boolean>;
-  actionPolicyAuditLogs: Record<string, AuditLogItem[]>;
-  actionPolicyAuditSelected: Record<string, string>;
-  setActionPolicyAuditOpen: React.Dispatch<
-    React.SetStateAction<Record<string, boolean>>
-  >;
-  setActionPolicyAuditSelected: React.Dispatch<
+  loadAuditLogs: (rule: ApprovalRule) => AsyncVoid;
+};
+
+type ActionPoliciesPanelState = {
+  form: ActionPolicyForm;
+  setForm: React.Dispatch<React.SetStateAction<ActionPolicyForm>>;
+  submit: (formValue?: ActionPolicyForm) => AsyncVoid;
+  reset: () => void;
+  editingId: string | null;
+  reload: () => AsyncVoid;
+  items: ActionPolicy[];
+  auditOpen: Record<string, boolean>;
+  auditLoading: Record<string, boolean>;
+  auditLogs: Record<string, AuditLogItem[]>;
+  auditSelected: Record<string, string>;
+  setAuditOpen: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  setAuditSelected: React.Dispatch<
     React.SetStateAction<Record<string, string>>
   >;
-  loadActionPolicyAuditLogs: (policyId: string) => AsyncVoid;
-  startEditActionPolicy: (item: ActionPolicy) => void;
-  chatAckTemplateForm: ChatAckTemplateForm;
-  setChatAckTemplateForm: React.Dispatch<
-    React.SetStateAction<ChatAckTemplateForm>
-  >;
-  submitChatAckTemplate: () => AsyncVoid;
-  resetChatAckTemplateForm: () => void;
-  editingChatAckTemplateId: string | null;
-  chatAckTemplateItems: ChatAckTemplate[];
-  loadChatAckTemplates: () => AsyncVoid;
-  startEditChatAckTemplate: (item: ChatAckTemplate) => void;
+  loadAuditLogs: (policyId: string) => AsyncVoid;
+  startEdit: (item: ActionPolicy) => void;
+};
+
+type ChatAckTemplatesPanelState = {
+  form: ChatAckTemplateForm;
+  setForm: React.Dispatch<React.SetStateAction<ChatAckTemplateForm>>;
+  submit: () => AsyncVoid;
+  reset: () => void;
+  editingId: string | null;
+  items: ChatAckTemplate[];
+  reload: () => AsyncVoid;
+  startEdit: (item: ChatAckTemplate) => void;
+};
+
+export type AdminSettingsPolicyPanelProps = {
+  settingsPanelContentStyle: React.CSSProperties;
+  approvalRules: ApprovalRulesPanelState;
+  actionPolicies: ActionPoliciesPanelState;
+  chatAckTemplates: ChatAckTemplatesPanelState;
 };
 
 export function AdminSettingsPolicyPanel({
   settingsPanelContentStyle,
-  approvalRuleMonitoring,
-  approvalRuleSeries,
-  editingRule,
-  editingRuleId,
-  ruleForm,
-  setRuleForm,
-  submitApprovalRule,
-  resetRuleForm,
-  loadApprovalRules,
-  ruleItems,
-  toggleApprovalRuleActive,
-  startEditRule,
-  approvalRuleAuditOpen,
-  approvalRuleAuditLoading,
-  approvalRuleAuditLogs,
-  approvalRuleAuditSelected,
-  setApprovalRuleAuditOpen,
-  setApprovalRuleAuditSelected,
-  loadApprovalRuleAuditLogs,
-  actionPolicyForm,
-  setActionPolicyForm,
-  submitActionPolicy,
-  resetActionPolicyForm,
-  editingActionPolicyId,
-  loadActionPolicies,
-  actionPolicyItems,
-  actionPolicyAuditOpen,
-  actionPolicyAuditLoading,
-  actionPolicyAuditLogs,
-  actionPolicyAuditSelected,
-  setActionPolicyAuditOpen,
-  setActionPolicyAuditSelected,
-  loadActionPolicyAuditLogs,
-  startEditActionPolicy,
-  chatAckTemplateForm,
-  setChatAckTemplateForm,
-  submitChatAckTemplate,
-  resetChatAckTemplateForm,
-  editingChatAckTemplateId,
-  chatAckTemplateItems,
-  loadChatAckTemplates,
-  startEditChatAckTemplate,
+  approvalRules,
+  actionPolicies,
+  chatAckTemplates,
 }: AdminSettingsPolicyPanelProps) {
+  const {
+    monitoring: approvalRuleMonitoring,
+    series: approvalRuleSeries,
+    editingRule,
+    editingRuleId,
+    ruleForm,
+    setRuleForm,
+    submitApprovalRule,
+    resetRuleForm,
+    loadApprovalRules,
+    ruleItems,
+    toggleApprovalRuleActive,
+    startEditRule,
+    auditOpen: approvalRuleAuditOpen,
+    auditLoading: approvalRuleAuditLoading,
+    auditLogs: approvalRuleAuditLogs,
+    auditSelected: approvalRuleAuditSelected,
+    setAuditOpen: setApprovalRuleAuditOpen,
+    setAuditSelected: setApprovalRuleAuditSelected,
+    loadAuditLogs: loadApprovalRuleAuditLogs,
+  } = approvalRules;
+  const {
+    form: actionPolicyForm,
+    setForm: setActionPolicyForm,
+    submit: submitActionPolicy,
+    reset: resetActionPolicyForm,
+    editingId: editingActionPolicyId,
+    reload: loadActionPolicies,
+    items: actionPolicyItems,
+    auditOpen: actionPolicyAuditOpen,
+    auditLoading: actionPolicyAuditLoading,
+    auditLogs: actionPolicyAuditLogs,
+    auditSelected: actionPolicyAuditSelected,
+    setAuditOpen: setActionPolicyAuditOpen,
+    setAuditSelected: setActionPolicyAuditSelected,
+    loadAuditLogs: loadActionPolicyAuditLogs,
+    startEdit: startEditActionPolicy,
+  } = actionPolicies;
+  const {
+    form: chatAckTemplateForm,
+    setForm: setChatAckTemplateForm,
+    submit: submitChatAckTemplate,
+    reset: resetChatAckTemplateForm,
+    editingId: editingChatAckTemplateId,
+    items: chatAckTemplateItems,
+    reload: loadChatAckTemplates,
+    startEdit: startEditChatAckTemplate,
+  } = chatAckTemplates;
+
   return (
     <WorkflowPanel
       title="承認・権限ポリシー"

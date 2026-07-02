@@ -14,9 +14,9 @@ Branch: `codex/frontend-split-1857-20260702`
 
 | file                                                                         | lines |
 | ---------------------------------------------------------------------------- | ----: |
-| `packages/frontend/src/sections/AdminSettings.tsx`                           |  2433 |
+| `packages/frontend/src/sections/AdminSettings.tsx`                           |  2439 |
 | `packages/frontend/src/sections/RoomChat.tsx`                                |  2238 |
-| `packages/frontend/src/sections/admin-settings/AdminSettingsPolicyPanel.tsx` |   992 |
+| `packages/frontend/src/sections/admin-settings/AdminSettingsPolicyPanel.tsx` |  1008 |
 | `packages/frontend/src/sections/admin-settings/adminSettingsModel.ts`        |   492 |
 | `packages/frontend/src/sections/room-chat/RoomMessageList.tsx`               |   409 |
 | `packages/frontend/src/sections/room-chat/RoomGlobalSearch.tsx`              |   128 |

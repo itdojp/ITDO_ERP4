@@ -2205,48 +2205,54 @@ export const AdminSettings: React.FC = () => {
 
         <AdminSettingsPolicyPanel
           settingsPanelContentStyle={settingsPanelContentStyle}
-          approvalRuleMonitoring={approvalRuleMonitoring}
-          approvalRuleSeries={approvalRuleSeries}
-          editingRule={editingRule}
-          editingRuleId={editingRuleId}
-          ruleForm={ruleForm}
-          setRuleForm={setRuleForm}
-          submitApprovalRule={submitApprovalRule}
-          resetRuleForm={resetRuleForm}
-          loadApprovalRules={loadApprovalRules}
-          ruleItems={ruleItems}
-          toggleApprovalRuleActive={toggleApprovalRuleActive}
-          startEditRule={startEditRule}
-          approvalRuleAuditOpen={approvalRuleAuditOpen}
-          approvalRuleAuditLoading={approvalRuleAuditLoading}
-          approvalRuleAuditLogs={approvalRuleAuditLogs}
-          approvalRuleAuditSelected={approvalRuleAuditSelected}
-          setApprovalRuleAuditOpen={setApprovalRuleAuditOpen}
-          setApprovalRuleAuditSelected={setApprovalRuleAuditSelected}
-          loadApprovalRuleAuditLogs={loadApprovalRuleAuditLogs}
-          actionPolicyForm={actionPolicyForm}
-          setActionPolicyForm={setActionPolicyForm}
-          submitActionPolicy={submitActionPolicy}
-          resetActionPolicyForm={resetActionPolicyForm}
-          editingActionPolicyId={editingActionPolicyId}
-          loadActionPolicies={loadActionPolicies}
-          actionPolicyItems={actionPolicyItems}
-          actionPolicyAuditOpen={actionPolicyAuditOpen}
-          actionPolicyAuditLoading={actionPolicyAuditLoading}
-          actionPolicyAuditLogs={actionPolicyAuditLogs}
-          actionPolicyAuditSelected={actionPolicyAuditSelected}
-          setActionPolicyAuditOpen={setActionPolicyAuditOpen}
-          setActionPolicyAuditSelected={setActionPolicyAuditSelected}
-          loadActionPolicyAuditLogs={loadActionPolicyAuditLogs}
-          startEditActionPolicy={startEditActionPolicy}
-          chatAckTemplateForm={chatAckTemplateForm}
-          setChatAckTemplateForm={setChatAckTemplateForm}
-          submitChatAckTemplate={submitChatAckTemplate}
-          resetChatAckTemplateForm={resetChatAckTemplateForm}
-          editingChatAckTemplateId={editingChatAckTemplateId}
-          chatAckTemplateItems={chatAckTemplateItems}
-          loadChatAckTemplates={loadChatAckTemplates}
-          startEditChatAckTemplate={startEditChatAckTemplate}
+          approvalRules={{
+            monitoring: approvalRuleMonitoring,
+            series: approvalRuleSeries,
+            editingRule,
+            editingRuleId,
+            ruleForm,
+            setRuleForm,
+            submitApprovalRule,
+            resetRuleForm,
+            loadApprovalRules,
+            ruleItems,
+            toggleApprovalRuleActive,
+            startEditRule,
+            auditOpen: approvalRuleAuditOpen,
+            auditLoading: approvalRuleAuditLoading,
+            auditLogs: approvalRuleAuditLogs,
+            auditSelected: approvalRuleAuditSelected,
+            setAuditOpen: setApprovalRuleAuditOpen,
+            setAuditSelected: setApprovalRuleAuditSelected,
+            loadAuditLogs: loadApprovalRuleAuditLogs,
+          }}
+          actionPolicies={{
+            form: actionPolicyForm,
+            setForm: setActionPolicyForm,
+            submit: submitActionPolicy,
+            reset: resetActionPolicyForm,
+            editingId: editingActionPolicyId,
+            reload: loadActionPolicies,
+            items: actionPolicyItems,
+            auditOpen: actionPolicyAuditOpen,
+            auditLoading: actionPolicyAuditLoading,
+            auditLogs: actionPolicyAuditLogs,
+            auditSelected: actionPolicyAuditSelected,
+            setAuditOpen: setActionPolicyAuditOpen,
+            setAuditSelected: setActionPolicyAuditSelected,
+            loadAuditLogs: loadActionPolicyAuditLogs,
+            startEdit: startEditActionPolicy,
+          }}
+          chatAckTemplates={{
+            form: chatAckTemplateForm,
+            setForm: setChatAckTemplateForm,
+            submit: submitChatAckTemplate,
+            reset: resetChatAckTemplateForm,
+            editingId: editingChatAckTemplateId,
+            items: chatAckTemplateItems,
+            reload: loadChatAckTemplates,
+            startEdit: startEditChatAckTemplate,
+          }}
         />
 
         <WorkflowPanel
