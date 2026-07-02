@@ -254,6 +254,72 @@
   },
   {
     "type": "dependency",
+    "from": "src/routes/leave.ts",
+    "to": "src/services/actionPolicy.ts",
+    "unresolvedTo": "../services/actionPolicy.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/leave.ts",
+    "to": "src/services/actionPolicyAudit.ts",
+    "unresolvedTo": "../services/actionPolicyAudit.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/leave.ts",
+    "to": "src/services/actionPolicyErrors.ts",
+    "unresolvedTo": "../services/actionPolicyErrors.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/leave.ts",
+    "to": "src/services/annotationReferences.ts",
+    "unresolvedTo": "../services/annotationReferences.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/leave.ts",
+    "to": "src/services/appNotifications.ts",
+    "unresolvedTo": "../services/appNotifications.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/leave.ts",
+    "to": "src/services/approval.ts",
+    "unresolvedTo": "../services/approval.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
     "from": "src/routes/purchaseOrders.ts",
     "to": "src/services/actionPolicy.ts",
     "unresolvedTo": "../services/actionPolicy.js",
@@ -301,6 +367,193 @@
     "from": "src/routes/purchaseOrders.ts",
     "to": "src/services/approval.ts",
     "unresolvedTo": "../services/approval.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/send.ts",
+    "to": "src/services/actionPolicy.ts",
+    "unresolvedTo": "../services/actionPolicy.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/send.ts",
+    "to": "src/services/actionPolicyAudit.ts",
+    "unresolvedTo": "../services/actionPolicyAudit.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/send.ts",
+    "to": "src/services/actionPolicyErrors.ts",
+    "unresolvedTo": "../services/actionPolicyErrors.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/send.ts",
+    "to": "src/services/approvalEvidenceGate.ts",
+    "unresolvedTo": "../services/approvalEvidenceGate.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/timeEntries.ts",
+    "to": "src/services/actionPolicy.ts",
+    "unresolvedTo": "../services/actionPolicy.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/timeEntries.ts",
+    "to": "src/services/actionPolicyAudit.ts",
+    "unresolvedTo": "../services/actionPolicyAudit.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/timeEntries.ts",
+    "to": "src/services/actionPolicyErrors.ts",
+    "unresolvedTo": "../services/actionPolicyErrors.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/timeEntries.ts",
+    "to": "src/services/appNotifications.ts",
+    "unresolvedTo": "../services/appNotifications.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/timeEntries.ts",
+    "to": "src/services/approval.ts",
+    "unresolvedTo": "../services/approval.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/timeEntries.ts",
+    "to": "src/services/periodLock.ts",
+    "unresolvedTo": "../services/periodLock.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/timeEntries.ts",
+    "to": "src/services/reassignmentLog.ts",
+    "unresolvedTo": "../services/reassignmentLog.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/vendorDocs.ts",
+    "to": "src/services/actionPolicy.ts",
+    "unresolvedTo": "../services/actionPolicy.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/vendorDocs.ts",
+    "to": "src/services/actionPolicyAudit.ts",
+    "unresolvedTo": "../services/actionPolicyAudit.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/vendorDocs.ts",
+    "to": "src/services/actionPolicyErrors.ts",
+    "unresolvedTo": "../services/actionPolicyErrors.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/vendorDocs.ts",
+    "to": "src/services/appNotifications.ts",
+    "unresolvedTo": "../services/appNotifications.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/routes/vendorDocs.ts",
+    "to": "src/services/approval.ts",
+    "unresolvedTo": "../services/approval.js",
+    "dependencyTypes": ["local", "import"],
+    "rule": {
+      "severity": "error",
+      "name": "bounded-context-documents-direction"
+    }
+  },
+  {
+    "type": "dependency",
+    "from": "src/services/leaveUpcomingNotifications.ts",
+    "to": "src/services/appNotifications.ts",
+    "unresolvedTo": "./appNotifications.js",
     "dependencyTypes": ["local", "import"],
     "rule": {
       "severity": "error",

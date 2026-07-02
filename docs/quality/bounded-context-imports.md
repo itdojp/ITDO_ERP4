@@ -34,57 +34,80 @@ dependency-cruiser 設定では、順位が小さい文脈から順位が大き�
 
 ## 既存違反 baseline
 
-2026-07-02 時点の既存違反は 37 件。内訳は以下のとおり。
+2026-07-02 時点の既存違反は 60 件。内訳は以下のとおり。
 
 | rule                                      | count |
 | ----------------------------------------- | ----: |
 | bounded-context-chat-direction            |     5 |
-| bounded-context-documents-direction       |    23 |
+| bounded-context-documents-direction       |    46 |
 | bounded-context-identity-access-direction |     2 |
 | bounded-context-org-project-direction     |     3 |
 | bounded-context-workflow-direction        |     4 |
 
 ### 既存違反一覧
 
-|   # | rule                                      | from                                   | to                                   |
-| --: | ----------------------------------------- | -------------------------------------- | ------------------------------------ |
-|   1 | bounded-context-chat-direction            | `src/routes/chat.ts`                   | `src/services/appNotifications.ts`   |
-|   2 | bounded-context-chat-direction            | `src/routes/chatRooms.ts`              | `src/services/appNotifications.ts`   |
-|   3 | bounded-context-chat-direction            | `src/services/chatAckNotifications.ts` | `src/services/appNotifications.ts`   |
-|   4 | bounded-context-chat-direction            | `src/services/chatAckReminders.ts`     | `src/services/appNotifications.ts`   |
-|   5 | bounded-context-chat-direction            | `src/services/chatRoomAclAlerts.ts`    | `src/services/appNotifications.ts`   |
-|   6 | bounded-context-documents-direction       | `src/routes/dailyReports.ts`           | `src/services/appNotifications.ts`   |
-|   7 | bounded-context-documents-direction       | `src/routes/estimates.ts`              | `src/services/actionPolicy.ts`       |
-|   8 | bounded-context-documents-direction       | `src/routes/estimates.ts`              | `src/services/actionPolicyAudit.ts`  |
-|   9 | bounded-context-documents-direction       | `src/routes/estimates.ts`              | `src/services/actionPolicyErrors.ts` |
-|  10 | bounded-context-documents-direction       | `src/routes/estimates.ts`              | `src/services/appNotifications.ts`   |
-|  11 | bounded-context-documents-direction       | `src/routes/estimates.ts`              | `src/services/approval.ts`           |
-|  12 | bounded-context-documents-direction       | `src/routes/expenses.ts`               | `src/services/actionPolicy.ts`       |
-|  13 | bounded-context-documents-direction       | `src/routes/expenses.ts`               | `src/services/actionPolicyAudit.ts`  |
-|  14 | bounded-context-documents-direction       | `src/routes/expenses.ts`               | `src/services/actionPolicyErrors.ts` |
-|  15 | bounded-context-documents-direction       | `src/routes/expenses.ts`               | `src/services/appNotifications.ts`   |
-|  16 | bounded-context-documents-direction       | `src/routes/expenses.ts`               | `src/services/approval.ts`           |
-|  17 | bounded-context-documents-direction       | `src/routes/expenses.ts`               | `src/services/periodLock.ts`         |
-|  18 | bounded-context-documents-direction       | `src/routes/expenses.ts`               | `src/services/reassignmentLog.ts`    |
-|  19 | bounded-context-documents-direction       | `src/routes/invoices.ts`               | `src/services/actionPolicy.ts`       |
-|  20 | bounded-context-documents-direction       | `src/routes/invoices.ts`               | `src/services/actionPolicyAudit.ts`  |
-|  21 | bounded-context-documents-direction       | `src/routes/invoices.ts`               | `src/services/actionPolicyErrors.ts` |
-|  22 | bounded-context-documents-direction       | `src/routes/invoices.ts`               | `src/services/appNotifications.ts`   |
-|  23 | bounded-context-documents-direction       | `src/routes/invoices.ts`               | `src/services/approval.ts`           |
-|  24 | bounded-context-documents-direction       | `src/routes/purchaseOrders.ts`         | `src/services/actionPolicy.ts`       |
-|  25 | bounded-context-documents-direction       | `src/routes/purchaseOrders.ts`         | `src/services/actionPolicyAudit.ts`  |
-|  26 | bounded-context-documents-direction       | `src/routes/purchaseOrders.ts`         | `src/services/actionPolicyErrors.ts` |
-|  27 | bounded-context-documents-direction       | `src/routes/purchaseOrders.ts`         | `src/services/appNotifications.ts`   |
-|  28 | bounded-context-documents-direction       | `src/routes/purchaseOrders.ts`         | `src/services/approval.ts`           |
-|  29 | bounded-context-identity-access-direction | `src/plugins/auth.ts`                  | `src/services/agentRuns.ts`          |
-|  30 | bounded-context-identity-access-direction | `src/routes/scim.ts`                   | `src/services/personalGaChatRoom.ts` |
-|  31 | bounded-context-org-project-direction     | `src/routes/projects.ts`               | `src/services/appNotifications.ts`   |
-|  32 | bounded-context-org-project-direction     | `src/routes/projects.ts`               | `src/services/periodLock.ts`         |
-|  33 | bounded-context-org-project-direction     | `src/routes/projects.ts`               | `src/services/reassignmentLog.ts`    |
-|  34 | bounded-context-workflow-direction        | `src/routes/approvalRules.ts`          | `src/services/appNotifications.ts`   |
-|  35 | bounded-context-workflow-direction        | `src/routes/approvalRules.ts`          | `src/services/chatAckTemplates.ts`   |
-|  36 | bounded-context-workflow-direction        | `src/services/actionPolicy.ts`         | `src/services/chatAckLinkTargets.ts` |
-|  37 | bounded-context-workflow-direction        | `src/services/approval.ts`             | `src/services/evidenceSnapshot.ts`   |
+|   # | rule                                      | from                                         | to                                     |
+| --: | ----------------------------------------- | -------------------------------------------- | -------------------------------------- |
+|   1 | bounded-context-chat-direction            | `src/routes/chat.ts`                         | `src/services/appNotifications.ts`     |
+|   2 | bounded-context-chat-direction            | `src/routes/chatRooms.ts`                    | `src/services/appNotifications.ts`     |
+|   3 | bounded-context-chat-direction            | `src/services/chatAckNotifications.ts`       | `src/services/appNotifications.ts`     |
+|   4 | bounded-context-chat-direction            | `src/services/chatAckReminders.ts`           | `src/services/appNotifications.ts`     |
+|   5 | bounded-context-chat-direction            | `src/services/chatRoomAclAlerts.ts`          | `src/services/appNotifications.ts`     |
+|   6 | bounded-context-documents-direction       | `src/routes/dailyReports.ts`                 | `src/services/appNotifications.ts`     |
+|   7 | bounded-context-documents-direction       | `src/routes/estimates.ts`                    | `src/services/actionPolicy.ts`         |
+|   8 | bounded-context-documents-direction       | `src/routes/estimates.ts`                    | `src/services/actionPolicyAudit.ts`    |
+|   9 | bounded-context-documents-direction       | `src/routes/estimates.ts`                    | `src/services/actionPolicyErrors.ts`   |
+|  10 | bounded-context-documents-direction       | `src/routes/estimates.ts`                    | `src/services/appNotifications.ts`     |
+|  11 | bounded-context-documents-direction       | `src/routes/estimates.ts`                    | `src/services/approval.ts`             |
+|  12 | bounded-context-documents-direction       | `src/routes/expenses.ts`                     | `src/services/actionPolicy.ts`         |
+|  13 | bounded-context-documents-direction       | `src/routes/expenses.ts`                     | `src/services/actionPolicyAudit.ts`    |
+|  14 | bounded-context-documents-direction       | `src/routes/expenses.ts`                     | `src/services/actionPolicyErrors.ts`   |
+|  15 | bounded-context-documents-direction       | `src/routes/expenses.ts`                     | `src/services/appNotifications.ts`     |
+|  16 | bounded-context-documents-direction       | `src/routes/expenses.ts`                     | `src/services/approval.ts`             |
+|  17 | bounded-context-documents-direction       | `src/routes/expenses.ts`                     | `src/services/periodLock.ts`           |
+|  18 | bounded-context-documents-direction       | `src/routes/expenses.ts`                     | `src/services/reassignmentLog.ts`      |
+|  19 | bounded-context-documents-direction       | `src/routes/invoices.ts`                     | `src/services/actionPolicy.ts`         |
+|  20 | bounded-context-documents-direction       | `src/routes/invoices.ts`                     | `src/services/actionPolicyAudit.ts`    |
+|  21 | bounded-context-documents-direction       | `src/routes/invoices.ts`                     | `src/services/actionPolicyErrors.ts`   |
+|  22 | bounded-context-documents-direction       | `src/routes/invoices.ts`                     | `src/services/appNotifications.ts`     |
+|  23 | bounded-context-documents-direction       | `src/routes/invoices.ts`                     | `src/services/approval.ts`             |
+|  24 | bounded-context-documents-direction       | `src/routes/leave.ts`                        | `src/services/actionPolicy.ts`         |
+|  25 | bounded-context-documents-direction       | `src/routes/leave.ts`                        | `src/services/actionPolicyAudit.ts`    |
+|  26 | bounded-context-documents-direction       | `src/routes/leave.ts`                        | `src/services/actionPolicyErrors.ts`   |
+|  27 | bounded-context-documents-direction       | `src/routes/leave.ts`                        | `src/services/annotationReferences.ts` |
+|  28 | bounded-context-documents-direction       | `src/routes/leave.ts`                        | `src/services/appNotifications.ts`     |
+|  29 | bounded-context-documents-direction       | `src/routes/leave.ts`                        | `src/services/approval.ts`             |
+|  30 | bounded-context-documents-direction       | `src/routes/purchaseOrders.ts`               | `src/services/actionPolicy.ts`         |
+|  31 | bounded-context-documents-direction       | `src/routes/purchaseOrders.ts`               | `src/services/actionPolicyAudit.ts`    |
+|  32 | bounded-context-documents-direction       | `src/routes/purchaseOrders.ts`               | `src/services/actionPolicyErrors.ts`   |
+|  33 | bounded-context-documents-direction       | `src/routes/purchaseOrders.ts`               | `src/services/appNotifications.ts`     |
+|  34 | bounded-context-documents-direction       | `src/routes/purchaseOrders.ts`               | `src/services/approval.ts`             |
+|  35 | bounded-context-documents-direction       | `src/routes/send.ts`                         | `src/services/actionPolicy.ts`         |
+|  36 | bounded-context-documents-direction       | `src/routes/send.ts`                         | `src/services/actionPolicyAudit.ts`    |
+|  37 | bounded-context-documents-direction       | `src/routes/send.ts`                         | `src/services/actionPolicyErrors.ts`   |
+|  38 | bounded-context-documents-direction       | `src/routes/send.ts`                         | `src/services/approvalEvidenceGate.ts` |
+|  39 | bounded-context-documents-direction       | `src/routes/timeEntries.ts`                  | `src/services/actionPolicy.ts`         |
+|  40 | bounded-context-documents-direction       | `src/routes/timeEntries.ts`                  | `src/services/actionPolicyAudit.ts`    |
+|  41 | bounded-context-documents-direction       | `src/routes/timeEntries.ts`                  | `src/services/actionPolicyErrors.ts`   |
+|  42 | bounded-context-documents-direction       | `src/routes/timeEntries.ts`                  | `src/services/appNotifications.ts`     |
+|  43 | bounded-context-documents-direction       | `src/routes/timeEntries.ts`                  | `src/services/approval.ts`             |
+|  44 | bounded-context-documents-direction       | `src/routes/timeEntries.ts`                  | `src/services/periodLock.ts`           |
+|  45 | bounded-context-documents-direction       | `src/routes/timeEntries.ts`                  | `src/services/reassignmentLog.ts`      |
+|  46 | bounded-context-documents-direction       | `src/routes/vendorDocs.ts`                   | `src/services/actionPolicy.ts`         |
+|  47 | bounded-context-documents-direction       | `src/routes/vendorDocs.ts`                   | `src/services/actionPolicyAudit.ts`    |
+|  48 | bounded-context-documents-direction       | `src/routes/vendorDocs.ts`                   | `src/services/actionPolicyErrors.ts`   |
+|  49 | bounded-context-documents-direction       | `src/routes/vendorDocs.ts`                   | `src/services/appNotifications.ts`     |
+|  50 | bounded-context-documents-direction       | `src/routes/vendorDocs.ts`                   | `src/services/approval.ts`             |
+|  51 | bounded-context-documents-direction       | `src/services/leaveUpcomingNotifications.ts` | `src/services/appNotifications.ts`     |
+|  52 | bounded-context-identity-access-direction | `src/plugins/auth.ts`                        | `src/services/agentRuns.ts`            |
+|  53 | bounded-context-identity-access-direction | `src/routes/scim.ts`                         | `src/services/personalGaChatRoom.ts`   |
+|  54 | bounded-context-org-project-direction     | `src/routes/projects.ts`                     | `src/services/appNotifications.ts`     |
+|  55 | bounded-context-org-project-direction     | `src/routes/projects.ts`                     | `src/services/periodLock.ts`           |
+|  56 | bounded-context-org-project-direction     | `src/routes/projects.ts`                     | `src/services/reassignmentLog.ts`      |
+|  57 | bounded-context-workflow-direction        | `src/routes/approvalRules.ts`                | `src/services/appNotifications.ts`     |
+|  58 | bounded-context-workflow-direction        | `src/routes/approvalRules.ts`                | `src/services/chatAckTemplates.ts`     |
+|  59 | bounded-context-workflow-direction        | `src/services/actionPolicy.ts`               | `src/services/chatAckLinkTargets.ts`   |
+|  60 | bounded-context-workflow-direction        | `src/services/approval.ts`                   | `src/services/evidenceSnapshot.ts`     |
 
 ## 削減方針
 

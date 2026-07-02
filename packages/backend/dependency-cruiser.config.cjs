@@ -35,8 +35,8 @@ const contexts = [
     name: 'documents',
     displayName: 'Documents',
     patterns: [
-      '^src/routes/(dailyReports|documentSendLogs|drafts|estimates|expenses|invoices|leaveRequests|manualJournals|purchaseOrders|vendorDocuments|vendorInvoices|workLogs)\\.ts$',
-      '^src/services/(documentSend|estimate|invoice|leaveCompGrants|manualJournal|numbering|payrollActuals|vendorInvoice|worklogSetting)\\.ts$',
+      '^src/routes/(dailyReports|documentSendLogs|drafts|estimates|expenses|invoices|leave|leaveEntitlements|leaveSettings|manualJournals|purchaseOrders|send|timeEntries|vendorDocs|vendorDocuments|vendorInvoices|workLogs|worklogSettings)\\.ts$',
+      '^src/services/(documentSend|estimate|expenseBudget|expenseQaChecklist|expenseStateTransitionLog|invoice|leaveCompGrants|leaveEntitlements|leaveSettings|leaveTypes|leaveUpcomingNotifications|leaveWorkdayCalendar|manualJournal|numbering|payrollActuals|vendorInvoice|vendorInvoiceAllocations|vendorInvoiceLineReconciliation|vendorInvoiceLines|worklogSetting)\\.ts$',
     ],
   },
   {
@@ -44,7 +44,7 @@ const contexts = [
     displayName: 'Workflow',
     patterns: [
       '^src/routes/(actionPolicies|approvalRules|locks|periodLocks)\\.ts$',
-      '^src/services/(actionPolicy|actionPolicyAudit|actionPolicyErrors|approval|approvalEscalation|approvalLogic|approvalRuleSelection|periodLock|reassignmentLog)\\.ts$',
+      '^src/services/(actionPolicy|actionPolicyAudit|actionPolicyErrors|approval|approvalDefaultRules|approvalEscalation|approvalEvidenceGate|approvalLogic|approvalRuleSelection|periodLock|reassignmentLog)\\.ts$',
     ],
   },
   {
