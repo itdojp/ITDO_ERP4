@@ -142,6 +142,7 @@ E2E_API_BASE="${E2E_API_BASE:-http://127.0.0.1:${BACKEND_PORT}}"
 E2E_CAPTURE="${E2E_CAPTURE:-1}"
 E2E_SCOPE="${E2E_SCOPE:-full}"
 E2E_GREP="${E2E_GREP:-}"
+E2E_PLAYWRIGHT_EXTRA_ARGS="${E2E_PLAYWRIGHT_EXTRA_ARGS:-}"
 E2E_SERVICE_READY_TIMEOUT_SEC="${E2E_SERVICE_READY_TIMEOUT_SEC:-80}"
 E2E_SERVICE_READY_INTERVAL_SEC="${E2E_SERVICE_READY_INTERVAL_SEC:-1}"
 
@@ -406,6 +407,9 @@ if [[ -z "$E2E_GREP" ]]; then
     extended)
       E2E_GREP="@extended"
       ;;
+    visual)
+      E2E_GREP="@visual"
+      ;;
     full)
       ;;
     *)
@@ -413,6 +417,15 @@ if [[ -z "$E2E_GREP" ]]; then
       exit 1
       ;;
   esac
+fi
+
+PLAYWRIGHT_ARGS=("--config" "$ROOT_DIR/packages/frontend/playwright.config.ts")
+if [[ -n "$E2E_GREP" ]]; then
+  PLAYWRIGHT_ARGS+=("--grep" "$E2E_GREP")
+fi
+if [[ -n "$E2E_PLAYWRIGHT_EXTRA_ARGS" ]]; then
+  read -r -a PLAYWRIGHT_EXTRA_ARGS <<<"$E2E_PLAYWRIGHT_EXTRA_ARGS"
+  PLAYWRIGHT_ARGS+=("${PLAYWRIGHT_EXTRA_ARGS[@]}")
 fi
 
 E2E_ROOT_DIR="$ROOT_DIR" \
@@ -427,6 +440,6 @@ E2E_JWT_TOKEN_APPROVAL_REQUIRED="$E2E_JWT_TOKEN_APPROVAL_REQUIRED" \
 E2E_JWT_TOKEN_EVIDENCE_REQUIRED="$E2E_JWT_TOKEN_EVIDENCE_REQUIRED" \
 E2E_JWT_TOKEN_REASON_REQUIRED="$E2E_JWT_TOKEN_REASON_REQUIRED" \
 E2E_SCIM_BEARER_TOKEN="$E2E_SCIM_BEARER_TOKEN" \
-  npx --prefix "$ROOT_DIR/packages/frontend" playwright test --config "$ROOT_DIR/packages/frontend/playwright.config.ts" ${E2E_GREP:+--grep "$E2E_GREP"}
+  npx --prefix "$ROOT_DIR/packages/frontend" playwright test "${PLAYWRIGHT_ARGS[@]}"
 
 echo "e2e evidence saved: $E2E_EVIDENCE_DIR"

@@ -1,4 +1,4 @@
-.PHONY: lint format-check typecheck build test coverage coverage-auth coverage-frontend coverage-frontend-core e2e ui-evidence mobile-regression-log frontend-dev-api podman-smoke pr-comments audit docs-image-links-check ops-quality design-system-package-check eslint10-readiness-check eslint10-readiness-record dependabot-alerts-check dependabot-alerts-record dependabot-token-readiness-check dependency-watch-record backup-s3-readiness-check backup-s3-readiness-record po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness action-policy-callsites-report action-policy-callsites-report-json action-policy-required-action-gaps action-policy-required-action-gaps-json action-policy-fallback-report action-policy-fallback-report-json action-policy-phase3-readiness action-policy-phase3-readiness-json action-policy-phase3-readiness-record action-policy-phase3-cutover-record action-policy-phase3-trial-record
+.PHONY: lint format-check typecheck build test coverage coverage-auth coverage-frontend coverage-frontend-core e2e ui-evidence ui-visual-regression ui-visual-regression-update mobile-regression-log frontend-dev-api podman-smoke pr-comments audit docs-image-links-check ops-quality design-system-package-check eslint10-readiness-check eslint10-readiness-record dependabot-alerts-check dependabot-alerts-record dependabot-token-readiness-check dependency-watch-record backup-s3-readiness-check backup-s3-readiness-record po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness action-policy-callsites-report action-policy-callsites-report-json action-policy-required-action-gaps action-policy-required-action-gaps-json action-policy-fallback-report action-policy-fallback-report-json action-policy-phase3-readiness action-policy-phase3-readiness-json action-policy-phase3-readiness-record action-policy-phase3-cutover-record action-policy-phase3-trial-record
 
 lint:
 	npm run lint --prefix packages/backend
@@ -35,6 +35,12 @@ e2e:
 
 ui-evidence:
 	./scripts/e2e-ui-evidence.sh
+
+ui-visual-regression:
+	./scripts/e2e-uiux-visual-regression.sh
+
+ui-visual-regression-update:
+	./scripts/e2e-uiux-visual-regression.sh --update-snapshots
 
 frontend-dev-api:
 	VITE_API_BASE=http://localhost:3001 npm run dev --prefix packages/frontend

@@ -46,6 +46,10 @@
 - **E2E（Playwright）**: 主要導線の「操作可能性」と「エラー表示の存在」を検証する
   - PR: `E2E_SCOPE=core`
   - main: `E2E_SCOPE=full`
+- **Visual regression（任意・手動CI）**: Phase 1〜12 の代表画面について screenshot baseline と比較する
+  - local: `make ui-visual-regression`
+  - baseline update: `make ui-visual-regression-update`
+  - 運用手順: `docs/ui/visual-regression.md`
 - **レビュー時チェック**:
   - フォーム入力が `getByRole` / `getByLabel` で取得できる（ラベルが機能している）
   - 失敗時にユーザが次の行動を判断できる（再試行/修正/問い合わせ）
@@ -54,4 +58,5 @@
 
 - workflowUx primitive / token policy: `docs/ui/workflow-ux-primitives.md`
 - Frontend bundle split / size budget: `docs/ui/frontend-bundle-budget.md`
+- UI/UX visual regression: `docs/ui/visual-regression.md`
 - 品質ゲート: `docs/quality/quality-gates.md`
