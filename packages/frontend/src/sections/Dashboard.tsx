@@ -2,6 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, getAuthState } from '../api';
 import { Alert, Button, Card, EmptyState } from '../ui';
 import { navigateToOpen } from '../utils/deepLink';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  WorkflowPanel,
+  type WorkflowMetric,
+} from './workflowUx';
 
 type AlertItem = {
   id: string;
@@ -68,6 +74,13 @@ type AppNotification = {
   } | null;
 };
 
+type DashboardShortcut = {
+  label: string;
+  description: string;
+  kind: string;
+  id: string;
+};
+
 const INSIGHT_LABELS: Record<string, { title: string; hint: string }> = {
   budget_overrun: {
     title: '予算超過の兆候',
@@ -94,6 +107,39 @@ const INSIGHT_LABELS: Record<string, { title: string; hint: string }> = {
     hint: '連携ログと再実行の状況を確認してください。',
   },
 };
+
+const DASHBOARD_SHORTCUTS: DashboardShortcut[] = [
+  {
+    label: '日報入力',
+    description: '今日の日次入力とウェルビーイング確認へ移動します。',
+    kind: 'daily_report',
+    id: 'today',
+  },
+  {
+    label: '承認一覧',
+    description: '自分の承認待ちと差戻し状況を確認します。',
+    kind: 'approvals',
+    id: 'inbox',
+  },
+  {
+    label: '案件確認',
+    description: '案件一覧と進行中プロジェクトの状態を確認します。',
+    kind: 'project',
+    id: 'list',
+  },
+  {
+    label: '請求確認',
+    description: '見積・請求の作成状況と未対応を確認します。',
+    kind: 'invoice',
+    id: 'list',
+  },
+  {
+    label: '仕入確認',
+    description: '発注・仕入請求・支払関連の未対応を確認します。',
+    kind: 'vendor_invoice',
+    id: 'list',
+  },
+];
 
 const formatDateTime = (value: string | null) => {
   if (!value) return 'N/A';
@@ -725,307 +771,414 @@ export const Dashboard: React.FC = () => {
     loadApprovals();
   }, []);
 
+  const metrics = useMemo<WorkflowMetric[]>(
+    () => [
+      {
+        label: '承認',
+        value: `${myPendingApprovals}/${approvals.length}件`,
+        helper: '自分の承認待ち / 全承認待ち',
+        tone: myPendingApprovals > 0 ? 'warning' : 'default',
+      },
+      {
+        label: '通知',
+        value: `Unread ${notificationCount}`,
+        helper: notificationMuteUntil
+          ? `全体ミュート: ${formatDateTime(notificationMuteUntil)}`
+          : '未読通知とミュート状態',
+        tone: notificationCount > 0 ? 'warning' : 'default',
+      },
+      {
+        label: 'Alerts',
+        value: `${alerts.length}件`,
+        helper: showAll
+          ? '全件を表示中'
+          : hasMore
+            ? '最新5件を表示中'
+            : '業務アラート一覧',
+        tone: alerts.length > 0 ? 'warning' : 'default',
+      },
+      {
+        label: 'Insights',
+        value: canViewInsights ? `${insights.length}件` : '対象外',
+        helper: canViewInsights
+          ? '管理者向け業務兆候'
+          : '管理権限で表示されます',
+        tone: insights.length > 0 ? 'warning' : 'default',
+      },
+    ],
+    [
+      alerts.length,
+      approvals.length,
+      canViewInsights,
+      hasMore,
+      insights.length,
+      myPendingApprovals,
+      notificationCount,
+      notificationMuteUntil,
+      showAll,
+    ],
+  );
+
   return (
     <div>
-      <h2>Dashboard</h2>
-      <Card padding="small" style={{ marginBottom: 12 }}>
-        <div className="row" style={{ justifyContent: 'space-between' }}>
-          <strong>承認状況</strong>
-          <span className="badge">Pending</span>
-        </div>
-        <div style={{ marginTop: 8 }}>
-          承認待ち: {approvals.length}件 / 自分の承認待ち: {myPendingApprovals}
-          件
-        </div>
-        {approvalMessage && (
-          <div style={{ marginTop: 8 }}>
-            <Alert variant="error">{approvalMessage}</Alert>
-          </div>
-        )}
-      </Card>
-      <Card padding="small" style={{ marginBottom: 12 }}>
-        <div className="row" style={{ justifyContent: 'space-between' }}>
-          <strong>通知</strong>
-          <span className="badge">Unread {notificationCount}</span>
-        </div>
-        {notificationMessage && (
-          <div style={{ marginTop: 8 }}>
-            <Alert variant="error">{notificationMessage}</Alert>
-          </div>
-        )}
+      <WorkflowPageHeader
+        title="Dashboard"
+        description="今日の未対応通知、承認待ち、業務アラート、管理者向けインサイトを確認し、各業務画面へ移動するためのホーム画面です。"
+      />
+      <WorkflowMetricGrid items={metrics} ariaLabel="ホームサマリー" />
+      <WorkflowPanel
+        title="主要業務へのショートカット"
+        description="日次入力、承認、案件、請求・仕入の主要業務へ直接移動します。"
+      >
         <div
-          className="row"
           style={{
+            display: 'grid',
             gap: 8,
-            flexWrap: 'wrap',
-            marginTop: 8,
-            alignItems: 'center',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
           }}
         >
-          <span className="badge">ミュート</span>
-          <span style={{ fontSize: 12, color: '#475569' }}>
-            全体:{' '}
-            {notificationMuteUntil
-              ? formatDateTime(notificationMuteUntil)
-              : '未設定'}
-          </span>
-          <Button
-            variant="secondary"
-            onClick={() => updateNotificationMuteUntil(10)}
-            disabled={notificationMuteLoading}
-          >
-            10分
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => updateNotificationMuteUntil(60)}
-            disabled={notificationMuteLoading}
-          >
-            1時間
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => updateNotificationMuteUntil(1440)}
-            disabled={notificationMuteLoading}
-          >
-            1日
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => updateNotificationMuteUntil(null)}
-            disabled={notificationMuteLoading}
-          >
-            解除
-          </Button>
-        </div>
-        {notificationMuteMessage && (
-          <div style={{ marginTop: 6, color: '#16a34a' }}>
-            {notificationMuteMessage}
-          </div>
-        )}
-        {notificationMuteError && (
-          <div style={{ marginTop: 6 }}>
-            <Alert variant="error">{notificationMuteError}</Alert>
-          </div>
-        )}
-        <div className="list" style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-          {notifications.map((item) => {
-            const projectLabel = item.project
-              ? `${item.project.code} / ${item.project.name}`
-              : item.projectId || 'N/A';
-            const excerpt = resolveExcerpt(item.payload);
-            const dueAt = resolveDueAt(item.payload);
-            const escalation =
-              item.kind === 'chat_ack_escalation' ||
-              resolveEscalation(item.payload);
-            const roomId = resolveRoomId(item.payload);
-            const leaveRange = resolveLeaveRange(item.payload);
-            const leaveGrantReminder = resolveLeaveGrantReminder(item.payload);
-            const expenseAmount = resolveExpenseAmount(item.payload);
-            const canOpen =
-              ((item.kind === 'chat_mention' ||
-                item.kind === 'chat_message' ||
-                item.kind === 'chat_ack_required' ||
-                item.kind === 'chat_ack_escalation') &&
-                Boolean(item.messageId)) ||
-              ((item.kind === 'daily_report_missing' ||
-                item.kind === 'daily_report_submitted' ||
-                item.kind === 'daily_report_updated') &&
-                Boolean(resolveReportDate(item.payload))) ||
-              (item.kind === 'expense_mark_paid' &&
-                Boolean(resolveExpenseId(item.payload) || item.messageId)) ||
-              (item.kind === 'leave_upcoming' &&
-                Boolean(
-                  resolveLeaveRequestId(item.payload) || item.messageId,
-                )) ||
-              ((item.kind === 'project_created' ||
-                item.kind === 'project_status_changed') &&
-                Boolean(item.projectId)) ||
-              item.kind === 'approval_pending' ||
-              item.kind === 'approval_approved' ||
-              item.kind === 'approval_rejected';
-            const statusChange = resolveProjectStatusChange(item.payload);
-            return (
-              <Card key={item.id} padding="small">
-                <div
-                  className="row"
-                  style={{ justifyContent: 'space-between' }}
+          {DASHBOARD_SHORTCUTS.map((shortcut) => (
+            <Card key={shortcut.label} padding="small">
+              <div style={{ display: 'grid', gap: 8 }}>
+                <strong>{shortcut.label}</strong>
+                <span style={{ fontSize: 12, color: '#475569' }}>
+                  {shortcut.description}
+                </span>
+                <Button
+                  variant="secondary"
+                  onClick={() =>
+                    navigateToOpen({ kind: shortcut.kind, id: shortcut.id })
+                  }
                 >
-                  <div>
-                    <strong>{formatNotificationLabel(item)}</strong>
-                    <div style={{ fontSize: 12, color: '#475569' }}>
-                      {projectLabel} / {formatDateTime(item.createdAt)}
+                  {shortcut.label}
+                </Button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </WorkflowPanel>
+      <WorkflowPanel
+        title="承認と通知"
+        description="自分が対応すべき承認、未読通知、通知ミュート状態を確認します。"
+      >
+        <Card padding="small" style={{ marginBottom: 12 }}>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <strong>承認状況</strong>
+            <span className="badge">Pending</span>
+          </div>
+          <div style={{ marginTop: 8 }}>
+            承認待ち: {approvals.length}件 / 自分の承認待ち:{' '}
+            {myPendingApprovals}件
+          </div>
+          {approvalMessage && (
+            <div style={{ marginTop: 8 }}>
+              <Alert variant="error">{approvalMessage}</Alert>
+            </div>
+          )}
+        </Card>
+        <Card padding="small" style={{ marginBottom: 12 }}>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <strong>通知</strong>
+            <span className="badge">Unread {notificationCount}</span>
+          </div>
+          {notificationMessage && (
+            <div style={{ marginTop: 8 }}>
+              <Alert variant="error">{notificationMessage}</Alert>
+            </div>
+          )}
+          <div
+            className="row"
+            style={{
+              gap: 8,
+              flexWrap: 'wrap',
+              marginTop: 8,
+              alignItems: 'center',
+            }}
+          >
+            <span className="badge">ミュート</span>
+            <span style={{ fontSize: 12, color: '#475569' }}>
+              全体:{' '}
+              {notificationMuteUntil
+                ? formatDateTime(notificationMuteUntil)
+                : '未設定'}
+            </span>
+            <Button
+              variant="secondary"
+              onClick={() => updateNotificationMuteUntil(10)}
+              disabled={notificationMuteLoading}
+            >
+              10分
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => updateNotificationMuteUntil(60)}
+              disabled={notificationMuteLoading}
+            >
+              1時間
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => updateNotificationMuteUntil(1440)}
+              disabled={notificationMuteLoading}
+            >
+              1日
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => updateNotificationMuteUntil(null)}
+              disabled={notificationMuteLoading}
+            >
+              解除
+            </Button>
+          </div>
+          {notificationMuteMessage && (
+            <div style={{ marginTop: 6, color: '#16a34a' }}>
+              {notificationMuteMessage}
+            </div>
+          )}
+          {notificationMuteError && (
+            <div style={{ marginTop: 6 }}>
+              <Alert variant="error">{notificationMuteError}</Alert>
+            </div>
+          )}
+          <div
+            className="list"
+            style={{ display: 'grid', gap: 8, marginTop: 8 }}
+          >
+            {notifications.map((item) => {
+              const projectLabel = item.project
+                ? `${item.project.code} / ${item.project.name}`
+                : item.projectId || 'N/A';
+              const excerpt = resolveExcerpt(item.payload);
+              const dueAt = resolveDueAt(item.payload);
+              const escalation =
+                item.kind === 'chat_ack_escalation' ||
+                resolveEscalation(item.payload);
+              const roomId = resolveRoomId(item.payload);
+              const leaveRange = resolveLeaveRange(item.payload);
+              const leaveGrantReminder = resolveLeaveGrantReminder(
+                item.payload,
+              );
+              const expenseAmount = resolveExpenseAmount(item.payload);
+              const canOpen =
+                ((item.kind === 'chat_mention' ||
+                  item.kind === 'chat_message' ||
+                  item.kind === 'chat_ack_required' ||
+                  item.kind === 'chat_ack_escalation') &&
+                  Boolean(item.messageId)) ||
+                ((item.kind === 'daily_report_missing' ||
+                  item.kind === 'daily_report_submitted' ||
+                  item.kind === 'daily_report_updated') &&
+                  Boolean(resolveReportDate(item.payload))) ||
+                (item.kind === 'expense_mark_paid' &&
+                  Boolean(resolveExpenseId(item.payload) || item.messageId)) ||
+                (item.kind === 'leave_upcoming' &&
+                  Boolean(
+                    resolveLeaveRequestId(item.payload) || item.messageId,
+                  )) ||
+                ((item.kind === 'project_created' ||
+                  item.kind === 'project_status_changed') &&
+                  Boolean(item.projectId)) ||
+                item.kind === 'approval_pending' ||
+                item.kind === 'approval_approved' ||
+                item.kind === 'approval_rejected';
+              const statusChange = resolveProjectStatusChange(item.payload);
+              return (
+                <Card key={item.id} padding="small">
+                  <div
+                    className="row"
+                    style={{ justifyContent: 'space-between' }}
+                  >
+                    <div>
+                      <strong>{formatNotificationLabel(item)}</strong>
+                      <div style={{ fontSize: 12, color: '#475569' }}>
+                        {projectLabel} / {formatDateTime(item.createdAt)}
+                      </div>
+                      {(item.kind === 'chat_ack_required' ||
+                        item.kind === 'chat_ack_escalation') && (
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: '#475569',
+                            display: 'flex',
+                            gap: 8,
+                            flexWrap: 'wrap',
+                          }}
+                        >
+                          {dueAt && <span>期限: {formatDateTime(dueAt)}</span>}
+                          {escalation && (
+                            <span className="badge">エスカレーション</span>
+                          )}
+                        </div>
+                      )}
+                      {item.kind === 'expense_mark_paid' && expenseAmount && (
+                        <div style={{ fontSize: 12, color: '#475569' }}>
+                          金額: {expenseAmount}
+                        </div>
+                      )}
+                      {item.kind === 'project_status_changed' &&
+                        statusChange && (
+                          <div style={{ fontSize: 12, color: '#475569' }}>
+                            ステータス:{' '}
+                            {formatProjectStatusLabel(
+                              statusChange.beforeStatus,
+                            )}{' '}
+                            →
+                            {formatProjectStatusLabel(statusChange.afterStatus)}
+                          </div>
+                        )}
+                      {item.kind === 'leave_upcoming' && leaveRange && (
+                        <div style={{ fontSize: 12, color: '#475569' }}>
+                          期間: {formatLeaveRange(leaveRange)}
+                          {leaveRange.leaveType
+                            ? ` / 種別: ${leaveRange.leaveType}`
+                            : ''}
+                        </div>
+                      )}
+                      {item.kind === 'leave_grant_reminder' &&
+                        leaveGrantReminder && (
+                          <div style={{ fontSize: 12, color: '#475569' }}>
+                            対象: {leaveGrantReminder.userId || '-'} /
+                            次回付与予定:{' '}
+                            {leaveGrantReminder.nextGrantDueDate || '-'}
+                          </div>
+                        )}
+                      {excerpt && (
+                        <div style={{ fontSize: 12, color: '#475569' }}>
+                          {excerpt}
+                        </div>
+                      )}
                     </div>
-                    {(item.kind === 'chat_ack_required' ||
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {canOpen && (
+                        <Button
+                          variant="secondary"
+                          onClick={() => openNotificationTarget(item)}
+                        >
+                          開く
+                        </Button>
+                      )}
+                      <Button
+                        variant="secondary"
+                        onClick={() => markNotificationRead(item.id)}
+                      >
+                        既読
+                      </Button>
+                    </div>
+                  </div>
+                  {roomId &&
+                    (item.kind === 'chat_mention' ||
+                      item.kind === 'chat_message' ||
+                      item.kind === 'chat_ack_required' ||
                       item.kind === 'chat_ack_escalation') && (
                       <div
-                        style={{
-                          fontSize: 12,
-                          color: '#475569',
-                          display: 'flex',
-                          gap: 8,
-                          flexWrap: 'wrap',
-                        }}
+                        className="row"
+                        style={{ gap: 6, flexWrap: 'wrap', marginTop: 8 }}
                       >
-                        {dueAt && <span>期限: {formatDateTime(dueAt)}</span>}
-                        {escalation && (
-                          <span className="badge">エスカレーション</span>
+                        <span className="badge">ルームミュート</span>
+                        <Button
+                          size="small"
+                          variant="secondary"
+                          onClick={() => updateRoomMuteUntil(roomId, 10)}
+                          disabled={roomMuteLoadingId === roomId}
+                        >
+                          10分
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="secondary"
+                          onClick={() => updateRoomMuteUntil(roomId, 60)}
+                          disabled={roomMuteLoadingId === roomId}
+                        >
+                          1時間
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="secondary"
+                          onClick={() => updateRoomMuteUntil(roomId, 1440)}
+                          disabled={roomMuteLoadingId === roomId}
+                        >
+                          1日
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="secondary"
+                          onClick={() => updateRoomMuteUntil(roomId, null)}
+                          disabled={roomMuteLoadingId === roomId}
+                        >
+                          解除
+                        </Button>
+                      </div>
+                    )}
+                  {roomId &&
+                    roomMuteFeedback?.roomId === roomId &&
+                    (roomMuteFeedback.message || roomMuteFeedback.error) && (
+                      <div style={{ marginTop: 6 }}>
+                        {roomMuteFeedback.message && (
+                          <div style={{ color: '#16a34a' }}>
+                            {roomMuteFeedback.message}
+                          </div>
+                        )}
+                        {roomMuteFeedback.error && (
+                          <Alert variant="error">
+                            {roomMuteFeedback.error}
+                          </Alert>
                         )}
                       </div>
                     )}
-                    {item.kind === 'expense_mark_paid' && expenseAmount && (
-                      <div style={{ fontSize: 12, color: '#475569' }}>
-                        金額: {expenseAmount}
-                      </div>
-                    )}
-                    {item.kind === 'project_status_changed' && statusChange && (
-                      <div style={{ fontSize: 12, color: '#475569' }}>
-                        ステータス:{' '}
-                        {formatProjectStatusLabel(statusChange.beforeStatus)} →
-                        {formatProjectStatusLabel(statusChange.afterStatus)}
-                      </div>
-                    )}
-                    {item.kind === 'leave_upcoming' && leaveRange && (
-                      <div style={{ fontSize: 12, color: '#475569' }}>
-                        期間: {formatLeaveRange(leaveRange)}
-                        {leaveRange.leaveType
-                          ? ` / 種別: ${leaveRange.leaveType}`
-                          : ''}
-                      </div>
-                    )}
-                    {item.kind === 'leave_grant_reminder' &&
-                      leaveGrantReminder && (
-                        <div style={{ fontSize: 12, color: '#475569' }}>
-                          対象: {leaveGrantReminder.userId || '-'} /
-                          次回付与予定:{' '}
-                          {leaveGrantReminder.nextGrantDueDate || '-'}
-                        </div>
-                      )}
-                    {excerpt && (
-                      <div style={{ fontSize: 12, color: '#475569' }}>
-                        {excerpt}
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {canOpen && (
-                      <Button
-                        variant="secondary"
-                        onClick={() => openNotificationTarget(item)}
-                      >
-                        開く
-                      </Button>
-                    )}
-                    <Button
-                      variant="secondary"
-                      onClick={() => markNotificationRead(item.id)}
-                    >
-                      既読
-                    </Button>
-                  </div>
-                </div>
-                {roomId &&
-                  (item.kind === 'chat_mention' ||
-                    item.kind === 'chat_message' ||
-                    item.kind === 'chat_ack_required' ||
-                    item.kind === 'chat_ack_escalation') && (
-                    <div
-                      className="row"
-                      style={{ gap: 6, flexWrap: 'wrap', marginTop: 8 }}
-                    >
-                      <span className="badge">ルームミュート</span>
-                      <Button
-                        size="small"
-                        variant="secondary"
-                        onClick={() => updateRoomMuteUntil(roomId, 10)}
-                        disabled={roomMuteLoadingId === roomId}
-                      >
-                        10分
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="secondary"
-                        onClick={() => updateRoomMuteUntil(roomId, 60)}
-                        disabled={roomMuteLoadingId === roomId}
-                      >
-                        1時間
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="secondary"
-                        onClick={() => updateRoomMuteUntil(roomId, 1440)}
-                        disabled={roomMuteLoadingId === roomId}
-                      >
-                        1日
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="secondary"
-                        onClick={() => updateRoomMuteUntil(roomId, null)}
-                        disabled={roomMuteLoadingId === roomId}
-                      >
-                        解除
-                      </Button>
-                    </div>
-                  )}
-                {roomId &&
-                  roomMuteFeedback?.roomId === roomId &&
-                  (roomMuteFeedback.message || roomMuteFeedback.error) && (
-                    <div style={{ marginTop: 6 }}>
-                      {roomMuteFeedback.message && (
-                        <div style={{ color: '#16a34a' }}>
-                          {roomMuteFeedback.message}
-                        </div>
-                      )}
-                      {roomMuteFeedback.error && (
-                        <Alert variant="error">{roomMuteFeedback.error}</Alert>
-                      )}
-                    </div>
-                  )}
-              </Card>
-            );
-          })}
-          {notifications.length === 0 && <EmptyState title="通知なし" />}
-        </div>
-      </Card>
-      <div className="row" style={{ alignItems: 'center' }}>
-        <p className="badge" data-testid="dashboard-alerts-badge">
-          Alerts{' '}
-          {showAll
-            ? `(全${alerts.length}件)`
-            : `(最新${Math.min(alerts.length, 5)}件)`}
-        </p>
-        {hasMore && (
-          <div style={{ marginLeft: 'auto' }}>
-            <Button variant="secondary" onClick={() => setShowAll((v) => !v)}>
-              {showAll ? '最新のみ' : 'すべて表示'}
-            </Button>
+                </Card>
+              );
+            })}
+            {notifications.length === 0 && <EmptyState title="通知なし" />}
           </div>
-        )}
-      </div>
-      <div
-        className="list"
-        style={{ display: 'grid', gap: 8 }}
-        data-testid="dashboard-alerts-list"
+        </Card>
+      </WorkflowPanel>
+      <WorkflowPanel
+        title="アラート確認"
+        description="連携失敗や業務上の注意が必要なアラートを確認します。"
       >
-        {visibleAlerts.map((a) => (
-          <Card key={a.id} padding="small">
-            <div className="row" style={{ justifyContent: 'space-between' }}>
-              <div>
-                <strong>{a.type}</strong> / {a.targetRef || 'N/A'}
+        <div className="row" style={{ alignItems: 'center' }}>
+          <p className="badge" data-testid="dashboard-alerts-badge">
+            Alerts{' '}
+            {showAll
+              ? `(全${alerts.length}件)`
+              : `(最新${Math.min(alerts.length, 5)}件)`}
+          </p>
+          {hasMore && (
+            <div style={{ marginLeft: 'auto' }}>
+              <Button variant="secondary" onClick={() => setShowAll((v) => !v)}>
+                {showAll ? '最新のみ' : 'すべて表示'}
+              </Button>
+            </div>
+          )}
+        </div>
+        <div
+          className="list"
+          style={{ display: 'grid', gap: 8 }}
+          data-testid="dashboard-alerts-list"
+        >
+          {visibleAlerts.map((a) => (
+            <Card key={a.id} padding="small">
+              <div className="row" style={{ justifyContent: 'space-between' }}>
+                <div>
+                  <strong>{a.type}</strong> / {a.targetRef || 'N/A'}
+                </div>
+                <span className="badge">{a.status}</span>
               </div>
-              <span className="badge">{a.status}</span>
-            </div>
-            <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-              送信: {(a.sentChannels || []).join(', ') || '未送信'} /{' '}
-              {a.triggeredAt?.slice(0, 16) || ''}
-            </div>
-          </Card>
-        ))}
-        {alerts.length === 0 && <EmptyState title="アラートなし" />}
-      </div>
+              <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
+                送信: {(a.sentChannels || []).join(', ') || '未送信'} /{' '}
+                {a.triggeredAt?.slice(0, 16) || ''}
+              </div>
+            </Card>
+          ))}
+          {alerts.length === 0 && <EmptyState title="アラートなし" />}
+        </div>
+      </WorkflowPanel>
       {canViewInsights && (
-        <div style={{ marginTop: 16 }}>
+        <WorkflowPanel
+          title="インサイト確認"
+          description="管理者向けの業務兆候と根拠を確認します。"
+        >
           <div className="row" style={{ alignItems: 'center' }}>
             <p className="badge">Insights</p>
           </div>
@@ -1091,7 +1244,7 @@ export const Dashboard: React.FC = () => {
             })}
             {insights.length === 0 && <EmptyState title="インサイトなし" />}
           </div>
-        </div>
+        </WorkflowPanel>
       )}
     </div>
   );
