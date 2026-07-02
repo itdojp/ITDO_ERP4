@@ -549,8 +549,7 @@ describe('App', () => {
       expect(
         (
           roomListener.mock.calls[roomListener.mock.calls.length - 1]?.[0] as
-            | CustomEvent
-            | undefined
+            CustomEvent | undefined
         )?.detail,
       ).toEqual({
         roomId: 'room-10',

@@ -493,8 +493,7 @@ const TimesheetGrid: React.FC<{
                 >
                   {headerGroup.headers.map((header) => {
                     const meta = header.column.columnDef.meta as
-                      | ColumnMeta
-                      | undefined;
+                      ColumnMeta | undefined;
                     const canSort = header.column.getCanSort();
                     const sortState = header.column.getIsSorted();
                     return (
@@ -586,8 +585,7 @@ const TimesheetGrid: React.FC<{
                     >
                       {row.getVisibleCells().map((cell) => {
                         const meta = cell.column.columnDef.meta as
-                          | ColumnMeta
-                          | undefined;
+                          ColumnMeta | undefined;
                         return (
                           <div
                             key={cell.id}

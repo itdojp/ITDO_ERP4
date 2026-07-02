@@ -628,6 +628,7 @@ export const App: React.FC = () => {
         '.itdo-command-palette__input[role="combobox"]',
       );
       commandSearch?.setAttribute('aria-label', COMMAND_PALETTE_SEARCH_LABEL);
+      commandSearch?.focus({ preventScroll: true });
     }, 0);
 
     return () => window.clearTimeout(handle);
