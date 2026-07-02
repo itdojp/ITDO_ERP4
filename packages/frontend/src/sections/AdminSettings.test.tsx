@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -406,6 +407,47 @@ describe('AdminSettings', () => {
     expect(screen.getByTestId('report-items-count')).toHaveTextContent('1');
     expect(screen.getByTestId('chat-settings-card')).toBeInTheDocument();
     expect(screen.getByTestId('group-management-card')).toBeInTheDocument();
+  });
+
+  it('renders workflow summary and categorized settings panels', async () => {
+    render(<AdminSettings />);
+
+    const summary = screen.getByRole('region', {
+      name: '設定管理サマリー',
+    });
+    expect(within(summary).getByText('設定カテゴリ')).toBeInTheDocument();
+    expect(within(summary).getByText('6分類')).toBeInTheDocument();
+    expect(within(summary).getByText('承認・権限')).toBeInTheDocument();
+    expect(within(summary).getByText('通知・配信')).toBeInTheDocument();
+    expect(within(summary).getByText('連携・会計')).toBeInTheDocument();
+    expect(within(summary).getByText('認証移行権限')).toBeInTheDocument();
+
+    expect(
+      screen.getByRole('heading', { name: 'コミュニケーション・組織' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '労務・単価・通知' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '承認・権限ポリシー' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '帳票・配信' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '外部連携・会計連携' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '認証方式移行' }),
+    ).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('alert-items-count')).toHaveTextContent('1');
+      expect(screen.getByTestId('report-items-count')).toHaveTextContent('1');
+      expect(screen.getByTestId('integration-items-count')).toHaveTextContent(
+        '1',
+      );
+    });
   });
 
   it('selects the first template for the active kind and updates when the kind changes', async () => {

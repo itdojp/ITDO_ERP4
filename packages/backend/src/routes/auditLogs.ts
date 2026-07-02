@@ -171,8 +171,9 @@ function withAgentRunReference<
   T extends {
     metadata: Prisma.JsonValue | null;
   },
->(item: T, options?: { maskIdValue?: boolean }) {
-  const rawAgentRunId = extractAgentRunIdFromMetadata(item.metadata);
+>(item: T, options?: { maskIdValue?: boolean; rawAgentRunId?: string | null }) {
+  const rawAgentRunId =
+    options?.rawAgentRunId ?? extractAgentRunIdFromMetadata(item.metadata);
   const agentRunId =
     rawAgentRunId && options?.maskIdValue
       ? maskId(rawAgentRunId)
@@ -303,10 +304,17 @@ export async function registerAuditLogRoutes(app: FastifyInstance) {
         },
         ...auditContextFromRequest(req),
       });
-      const outputItems = (shouldMask ? items.map(maskAuditLog) : items).map(
+      const displayItems = shouldMask ? items.map(maskAuditLog) : items;
+      const outputItems = displayItems.map(
         // Keep AgentRun references usable for authorized drill-down even when
         // the surrounding audit row is masked.
-        (item) => withAgentRunReference(item, { maskIdValue: false }),
+        (item, index) =>
+          withAgentRunReference(item, {
+            maskIdValue: false,
+            rawAgentRunId: extractAgentRunIdFromMetadata(
+              items[index]?.metadata,
+            ),
+          }),
       );
       if (normalizedFormat === 'csv') {
         const headers = [
