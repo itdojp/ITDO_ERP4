@@ -777,8 +777,9 @@ export const App: React.FC = () => {
                 {sectionGroups.map((group, groupIndex) => {
                   const groupHeadingId = `erp4-menu-group-${groupIndex}`;
                   return (
-                    <section
+                    <div
                       key={group.title}
+                      role="group"
                       aria-labelledby={groupHeadingId}
                       style={{ display: 'grid', gap: 6 }}
                     >
@@ -809,7 +810,7 @@ export const App: React.FC = () => {
                           {item.label}
                         </Button>
                       ))}
-                    </section>
+                    </div>
                   );
                 })}
               </div>
