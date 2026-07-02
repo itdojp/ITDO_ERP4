@@ -68,6 +68,32 @@ afterEach(() => {
 });
 
 describe('ChatBreakGlass', () => {
+  it('renders workflow guidance, summary metrics, and audit panels', async () => {
+    api.mockResolvedValueOnce({ items: [] });
+
+    render(<ChatBreakGlass />);
+
+    expect(
+      screen.getByRole('heading', { name: 'Chat break-glass（監査閲覧）' }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('監査閲覧判断サマリー')).toBeInTheDocument();
+    expect(screen.getByText('利用可否')).toBeInTheDocument();
+    expect(screen.getByText('未処理申請')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '申請一覧操作' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '閲覧申請' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '申請一覧' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '閲覧結果（MVP: project対象のみ）' }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText('申請なし')).toBeInTheDocument();
+  });
+
   it('shows disabled reason for non-mgmt or admin users', () => {
     getAuthState.mockReturnValueOnce({
       userId: 'user-1',
@@ -75,7 +101,9 @@ describe('ChatBreakGlass', () => {
       projectIds: ['project-1'],
     });
     const { rerender } = render(<ChatBreakGlass />);
-    expect(screen.getByText('mgmt/exec ロールが必要です')).toBeInTheDocument();
+    expect(
+      screen.getAllByText('mgmt/exec ロールが必要です').length,
+    ).toBeGreaterThan(0);
     expect(api).not.toHaveBeenCalled();
 
     getAuthState.mockReturnValueOnce({
@@ -85,8 +113,8 @@ describe('ChatBreakGlass', () => {
     });
     rerender(<ChatBreakGlass />);
     expect(
-      screen.getByText('admin ロールは break-glass を利用できません'),
-    ).toBeInTheDocument();
+      screen.getAllByText('admin ロールは break-glass を利用できません').length,
+    ).toBeGreaterThan(0);
   });
 
   it('loads requests on mount and supports approve flow', async () => {

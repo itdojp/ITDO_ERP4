@@ -5,6 +5,11 @@ import remarkGfm from 'remark-gfm';
 import { api, apiResponse, getAuthState } from '../api';
 import { DateTimeRangePicker } from '../ui';
 import { toIsoFromLocalInput } from '../utils/datetime';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  WorkflowPanel,
+} from './workflowUx';
 
 type BreakGlassRequest = {
   id: string;
@@ -259,25 +264,75 @@ export const ChatBreakGlass: React.FC = () => {
     loadRequests().catch(() => undefined);
   }, [disabledReason, loadRequests]);
 
+  const requestedCount = requests.filter(
+    (request) => request.status === 'requested',
+  ).length;
+  const approvedCount = requests.filter(
+    (request) => request.status === 'approved',
+  ).length;
+  const breakGlassSummaryItems = [
+    {
+      label: '利用可否',
+      value: disabledReason ? '利用不可' : '利用可能',
+      helper: disabledReason || 'mgmt/exec 権限で監査閲覧申請を扱えます。',
+      tone: disabledReason ? ('warning' as const) : ('success' as const),
+    },
+    {
+      label: '未処理申請',
+      value: `${requestedCount}件`,
+      helper:
+        requestedCount > 0
+          ? '承認または却下判断が必要です。'
+          : '承認待ちはありません。',
+      tone: requestedCount > 0 ? ('warning' as const) : ('default' as const),
+    },
+    {
+      label: '承認済み',
+      value: `${approvedCount}件`,
+      helper: '承認済み申請は期限内に閲覧できます。',
+    },
+    {
+      label: '閲覧結果',
+      value: `${accessItems.length}件`,
+      helper: selectedRequestId
+        ? `requestId: ${selectedRequestId}`
+        : '申請一覧から承認済みリクエストを選択します。',
+    },
+  ];
+
   return (
     <div>
-      <h2>Chat break-glass（監査閲覧）</h2>
+      <WorkflowPageHeader
+        title="Chat break-glass（監査閲覧）"
+        description="監査・法令・セキュリティ対応などの限定目的で、申請、承認、閲覧結果を同じ画面で追跡します。"
+      />
+      <WorkflowMetricGrid
+        ariaLabel="監査閲覧判断サマリー"
+        items={breakGlassSummaryItems}
+      />
       {disabledReason ? (
         <p style={{ color: '#6b7280' }}>{disabledReason}</p>
       ) : (
         <>
-          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-            <button
-              className="button secondary"
-              onClick={loadRequests}
-              disabled={isLoading}
-            >
-              {isLoading ? '読み込み中...' : '再読込'}
-            </button>
-          </div>
+          <WorkflowPanel
+            title="申請一覧操作"
+            description="監査閲覧申請を再読み込みし、最新の承認待ち状態を確認します。"
+          >
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <button
+                className="button secondary"
+                onClick={loadRequests}
+                disabled={isLoading}
+              >
+                {isLoading ? '読み込み中...' : '再読込'}
+              </button>
+            </div>
+          </WorkflowPanel>
 
-          <div style={{ marginTop: 12 }}>
-            <div style={{ fontWeight: 600 }}>申請</div>
+          <WorkflowPanel
+            title="閲覧申請"
+            description="対象プロジェクトまたはルーム、閲覧者、理由、期限、閲覧対象期間を明示して申請します。"
+          >
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
               <input
                 aria-label="breakglass-projectId"
@@ -383,7 +438,7 @@ export const ChatBreakGlass: React.FC = () => {
                 {isCreating ? '申請中...' : '申請'}
               </button>
             </div>
-          </div>
+          </WorkflowPanel>
 
           {(message || error) && (
             <p style={{ color: error ? '#dc2626' : '#16a34a' }}>
@@ -391,8 +446,10 @@ export const ChatBreakGlass: React.FC = () => {
             </p>
           )}
 
-          <div style={{ marginTop: 12 }}>
-            <div style={{ fontWeight: 600 }}>一覧</div>
+          <WorkflowPanel
+            title="申請一覧"
+            description="申請の状態、理由、対象、期限を確認し、承認・却下・閲覧に進みます。"
+          >
             <ul className="list">
               {requests.map((req) => (
                 <li key={req.id}>
@@ -441,10 +498,12 @@ export const ChatBreakGlass: React.FC = () => {
               ))}
               {requests.length === 0 && <li>申請なし</li>}
             </ul>
-          </div>
+          </WorkflowPanel>
 
-          <div style={{ marginTop: 12 }}>
-            <div style={{ fontWeight: 600 }}>閲覧（MVP: project対象のみ）</div>
+          <WorkflowPanel
+            title="閲覧結果（MVP: project対象のみ）"
+            description="承認済みリクエストで取得したチャット本文を監査文脈付きで確認します。"
+          >
             {selectedRequestId && (
               <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
                 requestId: {selectedRequestId}
@@ -470,7 +529,7 @@ export const ChatBreakGlass: React.FC = () => {
                 ))}
               </ul>
             )}
-          </div>
+          </WorkflowPanel>
         </>
       )}
     </div>

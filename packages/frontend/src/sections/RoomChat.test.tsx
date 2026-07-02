@@ -309,6 +309,49 @@ afterEach(() => {
 });
 
 describe('RoomChat', () => {
+  it('renders workflow guidance, chat summary, and room operation panel', async () => {
+    installApiMock({
+      rooms: [
+        makeRoom({
+          id: 'room-1',
+          projectCode: 'PRJ-1',
+          projectName: 'Alpha',
+        }),
+      ],
+      messagesByRoom: {
+        'room-1': [
+          makeMessage({
+            id: 'message-1',
+            roomId: 'room-1',
+            body: 'workflow message',
+            userId: 'alice',
+          }),
+        ],
+      },
+      unreadByRoom: {
+        'room-1': { unreadCount: 1, lastReadAt: '2026-03-27T00:00:00.000Z' },
+      },
+    });
+
+    render(<RoomChat />);
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'チャット（全社/部門/private_group/DM）',
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('チャット運用サマリー')).toBeInTheDocument();
+    expect(screen.getByText('選択中ルーム')).toBeInTheDocument();
+    expect(screen.getByText('未読')).toBeInTheDocument();
+    expect(screen.getByText('確認対象')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'ルーム選択と要約' }),
+    ).toBeInTheDocument();
+
+    expect(await screen.findByText('workflow message')).toBeInTheDocument();
+    expect(screen.getByText('Unread 1')).toBeInTheDocument();
+  });
+
   it('loads the first room on mount and switches to another room', async () => {
     installApiMock({
       rooms: [

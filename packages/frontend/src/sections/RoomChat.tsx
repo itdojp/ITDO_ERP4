@@ -22,6 +22,11 @@ import { copyToClipboard } from '../utils/clipboard';
 import { buildOpenHash } from '../utils/deepLink';
 import { toIsoFromLocalInput, toLocalDateTimeValue } from '../utils/datetime';
 import { resolveAttachmentKind } from '../utils/attachments';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  WorkflowPanel,
+} from './workflowUx';
 
 type ChatRoom = {
   id: string;
@@ -1759,68 +1764,128 @@ export const RoomChat: React.FC = () => {
     setMessage(ok ? 'Markdownリンクをコピーしました' : 'コピーに失敗しました');
   };
 
+  const selectedRoomLabel = selectedRoom
+    ? formatRoomLabel(selectedRoom, currentUserId)
+    : roomId || '未選択';
+  const activeAckTargetCount =
+    ackTargetUserIds.length +
+    ackTargetGroupIdList.length +
+    ackTargetRoleList.length;
+  const chatSummaryItems = [
+    {
+      label: '選択中ルーム',
+      value: selectedRoomLabel,
+      helper: selectedRoom
+        ? `${selectedRoom.type}${selectedRoom.isMember === false ? ' / 非参加' : ''}`
+        : 'ルームを選択すると投稿・検索・通知設定を操作できます。',
+      tone: selectedRoom ? ('success' as const) : ('warning' as const),
+    },
+    {
+      label: '未読',
+      value: `${unreadCount}件`,
+      helper: highlightSince
+        ? `最終既読: ${highlightSince.toLocaleString()}`
+        : '未読状態を読み込み中または未設定です。',
+      tone: unreadCount > 0 ? ('warning' as const) : ('default' as const),
+    },
+    {
+      label: '表示メッセージ',
+      value: `${items.length}件`,
+      helper: hasMore
+        ? '追加読み込み可能です。'
+        : '現在の条件で読み込んだ件数です。',
+    },
+    {
+      label: '確認対象',
+      value: `${activeAckTargetCount}件`,
+      helper:
+        activeAckTargetCount > 0
+          ? '確認依頼の対象が設定されています。'
+          : '必要に応じてユーザ・グループ・ロールを指定します。',
+    },
+    {
+      label: '横断検索結果',
+      value: `${globalItems.length}件`,
+      helper: globalHasMore
+        ? '横断検索に続きがあります。'
+        : 'チャット全体の検索結果件数です。',
+    },
+  ];
+
   return (
     <div>
-      <h2>チャット（全社/部門/private_group/DM）</h2>
+      <WorkflowPageHeader
+        title="チャット（全社/部門/private_group/DM）"
+        description="ルーム選択、投稿、確認依頼、通知設定、横断検索を同じ文脈で扱い、会話とガバナンス操作を分離して確認できます。"
+      />
+      <WorkflowMetricGrid
+        ariaLabel="チャット運用サマリー"
+        items={chatSummaryItems}
+      />
       {roomMessage && <p>{roomMessage}</p>}
-      <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
-        {canUseGeneralAffairsInbox && (
+      <WorkflowPanel
+        title="ルーム選択と要約"
+        description="表示範囲、検索、選択中ルーム、未読、要約操作をまとめて確認します。"
+      >
+        <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
+          {canUseGeneralAffairsInbox && (
+            <label>
+              表示範囲
+              <select
+                value={roomListScope}
+                onChange={(e) =>
+                  setRoomListScope(
+                    e.target.value === 'ga_personal' ? 'ga_personal' : 'all',
+                  )
+                }
+              >
+                <option value="all">全ルーム</option>
+                <option value="ga_personal">総務相談のみ</option>
+              </select>
+            </label>
+          )}
           <label>
-            表示範囲
-            <select
-              value={roomListScope}
-              onChange={(e) =>
-                setRoomListScope(
-                  e.target.value === 'ga_personal' ? 'ga_personal' : 'all',
-                )
-              }
-            >
-              <option value="all">全ルーム</option>
-              <option value="ga_personal">総務相談のみ</option>
+            ルーム検索
+            <input
+              type="text"
+              value={roomListQuery}
+              onChange={(e) => setRoomListQuery(e.target.value)}
+              placeholder="ルーム名/種別"
+            />
+          </label>
+          <label>
+            ルーム
+            <select value={roomId} onChange={(e) => setRoomId(e.target.value)}>
+              <option value="">(未選択)</option>
+              {displayedRooms.map((room) => (
+                <option key={room.id} value={room.id}>
+                  {room.label}
+                </option>
+              ))}
             </select>
           </label>
-        )}
-        <label>
-          ルーム検索
-          <input
-            type="text"
-            value={roomListQuery}
-            onChange={(e) => setRoomListQuery(e.target.value)}
-            placeholder="ルーム名/種別"
-          />
-        </label>
-        <label>
-          ルーム
-          <select value={roomId} onChange={(e) => setRoomId(e.target.value)}>
-            <option value="">(未選択)</option>
-            {displayedRooms.map((room) => (
-              <option key={room.id} value={room.id}>
-                {room.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button className="button secondary" onClick={() => loadRooms()}>
-          再読込
-        </button>
-        <span className="badge">Unread {unreadCount}</span>
-        <button
-          className="button secondary"
-          onClick={summarize}
-          disabled={!roomId || isSummarizing}
-        >
-          {isSummarizing ? '要約中...' : '要約'}
-        </button>
-        {selectedRoom?.allowExternalIntegrations === true && (
+          <button className="button secondary" onClick={() => loadRooms()}>
+            再読込
+          </button>
+          <span className="badge">Unread {unreadCount}</span>
           <button
             className="button secondary"
-            onClick={summarizeExternal}
-            disabled={!roomId || isSummarizingExternal}
+            onClick={summarize}
+            disabled={!roomId || isSummarizing}
           >
-            {isSummarizingExternal ? '外部要約中...' : '外部要約'}
+            {isSummarizing ? '要約中...' : '要約'}
           </button>
-        )}
-      </div>
+          {selectedRoom?.allowExternalIntegrations === true && (
+            <button
+              className="button secondary"
+              onClick={summarizeExternal}
+              disabled={!roomId || isSummarizingExternal}
+            >
+              {isSummarizingExternal ? '外部要約中...' : '外部要約'}
+            </button>
+          )}
+        </div>
+      </WorkflowPanel>
 
       {roomId && notificationSetting && (
         <div className="card" style={{ padding: 12, marginTop: 12 }}>
