@@ -497,11 +497,43 @@ describe('Dashboard', () => {
 
     render(<Dashboard />);
 
-    expect(await screen.findByText('Unread 2')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Dashboard', level: 2 }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        '今日の未対応通知、承認待ち、業務アラート、管理者向けインサイトを確認し、各業務画面へ移動するためのホーム画面です。',
+      ),
+    ).toBeInTheDocument();
+    const summary = screen.getByRole('region', { name: 'ホームサマリー' });
+    expect(within(summary).getByText('承認')).toBeInTheDocument();
+    expect(within(summary).getByText('通知')).toBeInTheDocument();
+    expect(within(summary).getByText('Alerts')).toBeInTheDocument();
+    expect(within(summary).getByText('Insights')).toBeInTheDocument();
+    expect(await within(summary).findByText('Unread 2')).toBeInTheDocument();
+    expect(within(summary).getByText('1/2件')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '主要業務へのショートカット' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '承認と通知' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'アラート確認' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'インサイト確認' }),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(/承認待ち:\s*2\s*件\s*\/\s*自分の承認待ち:\s*1\s*件/),
     ).toBeInTheDocument();
     expect(screen.getByText('予算超過の兆候')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '日報入力' }));
+    expect(navigateToOpen).toHaveBeenCalledWith({
+      kind: 'daily_report',
+      id: 'today',
+    });
 
     fireEvent.click(screen.getByRole('button', { name: '開く' }));
     expect(navigateToOpen).toHaveBeenCalledWith({
@@ -515,7 +547,7 @@ describe('Dashboard', () => {
         method: 'POST',
       });
     });
-    expect(screen.getByText('Unread 1')).toBeInTheDocument();
+    expect(within(summary).getByText('Unread 1')).toBeInTheDocument();
     expect(screen.getByText('通知なし')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '10分' }));
