@@ -17,7 +17,8 @@
     "coverage:auth:check": "npm run coverage:auth && node scripts/check-coverage-thresholds.mjs --scope auth",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,json,md}\"",
-    "prisma:generate": "prisma generate"
+    "prisma:generate": "prisma generate",
+    "arch:bounded-context": "depcruise --config dependency-cruiser.config.cjs --ignore-known dependency-cruiser-known-violations.json --output-type err src"
   },
   "prisma": {
     "schema": "./prisma/schema.prisma"
@@ -55,6 +56,7 @@
     "@typescript-eslint/eslint-plugin": "^8.61.1",
     "@typescript-eslint/parser": "^8.58.2",
     "c8": "^11.0.0",
+    "dependency-cruiser": "^17.4.3",
     "dotenv": "^17.4.2",
     "eslint": "^9.39.4",
     "openapi-diff": "^0.24.1",

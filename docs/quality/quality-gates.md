@@ -94,9 +94,19 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 - `packages/backend`
   - `npm run lint`
   - `npm run format:check`
+  - `npm run arch:bounded-context`
 - `packages/frontend`
   - `npm run lint`
   - `npm run format:check`
+
+### CI / arch:bounded-context
+
+- backend の import 方向を `dependency-cruiser` で検査する。
+- 正本:
+  - ルール: `packages/backend/dependency-cruiser.config.cjs`
+  - 既存違反 baseline: `packages/backend/dependency-cruiser-known-violations.json`
+  - 既存違反一覧と削減方針: `docs/quality/bounded-context-imports.md`
+- `docs/architecture/greenfield-ideal-design.md` の「1.1 バウンデッドコンテキスト（モジュール分割）」に対応し、baseline 未登録の新規違反は CI で fail する。
 
 ### CI / security-audit
 
