@@ -1,30 +1,47 @@
 # 重点リファクタリング対象（Hotspots）
 
 ## 目的
+
 変更頻度/複雑度/不具合リスクが高い箇所（ホットスポット）を優先度付きで整理し、段階的にリファクタリングを進めるための基準とする。
 
 前提
+
 - 仕様変更・機能追加は原則しない（挙動互換を維持）
 - 変更は対象ごとに PR を分割し、テストとセットで進める
 
 ## 優先度定義
+
 - Priority A: PoC導線/運用/移行に直結し、失敗コストが高い
 - Priority B: 重要だが当面の影響は限定的
 - Priority C: 改善余地はあるが後回しでよい
 
 ## Priority A（今期スコープ: 2件）
-| 対象 | 痛み（現象） | リスク | 目的 | 変更方針 | 受け入れ条件 | 影響範囲 |
-| --- | --- | --- | --- | --- | --- | --- |
-| `packages/backend/src/routes/projects.ts` | 1ファイルが肥大（多責務）。タスク依存/階層のロジックが同居しテストが難しい | 回帰時の影響が大きい（工数/タスク/マイルストーン等の主要機能） | ドメインロジックを抽出し、単体テスト可能にする | 純粋関数（依存グラフ等）を `services/` へ抽出し、ルートは I/O と DTO に寄せる | 主要ロジックが unit test で固定される。E2E/スモークが通る | backend / e2e |
-| `scripts/migrate-po.ts` | 超巨大（約 2800 行）。CSV/UUID 等の汎用処理が混在 | 移行リハーサル時の事故・調査コスト増 | 変換/パースの純粋部分を抽出し、再利用/テスト可能にする | CSV/UUID 等の純粋関数を backend の `src/migration/` に移し、migration script はオーケストレーションに寄せる | 抽出した関数に unit test がある。既存 runbook の手順が破綻しない | migration / docs |
+
+| 対象                                      | 痛み（現象）                                                               | リスク                                                         | 目的                                                   | 変更方針                                                                                                    | 受け入れ条件                                                     | 影響範囲         |
+| ----------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ---------------- |
+| `packages/backend/src/routes/projects.ts` | 1ファイルが肥大（多責務）。タスク依存/階層のロジックが同居しテストが難しい | 回帰時の影響が大きい（工数/タスク/マイルストーン等の主要機能） | ドメインロジックを抽出し、単体テスト可能にする         | 純粋関数（依存グラフ等）を `services/` へ抽出し、ルートは I/O と DTO に寄せる                               | 主要ロジックが unit test で固定される。E2E/スモークが通る        | backend / e2e    |
+| `scripts/migrate-po.ts`                   | 超巨大（約 2800 行）。CSV/UUID 等の汎用処理が混在                          | 移行リハーサル時の事故・調査コスト増                           | 変換/パースの純粋部分を抽出し、再利用/テスト可能にする | CSV/UUID 等の純粋関数を backend の `src/migration/` に移し、migration script はオーケストレーションに寄せる | 抽出した関数に unit test がある。既存 runbook の手順が破綻しない | migration / docs |
 
 ## Priority B（候補）
-| 対象 | 理由 | 次の一手 |
-| --- | --- | --- |
-| `scripts/backup-prod.sh` | 大きく多分岐。環境変数/失敗時の扱いが複雑 | dry-run/最小テストの追加 → 段階的に関数分割 |
-| `packages/backend/src/services/reports.ts` | 集計ロジックが肥大しやすい | 主要集計の pure 部分を抽出し unit test |
+
+| 対象                                       | 理由                                      | 次の一手                                    |
+| ------------------------------------------ | ----------------------------------------- | ------------------------------------------- |
+| `scripts/backup-prod.sh`                   | 大きく多分岐。環境変数/失敗時の扱いが複雑 | dry-run/最小テストの追加 → 段階的に関数分割 |
+| `packages/backend/src/services/reports.ts` | 集計ロジックが肥大しやすい                | 主要集計の pure 部分を抽出し unit test      |
+
+## Bounded-context import violations
+
+`docs/architecture/greenfield-ideal-design.md` の「1.1 バウンデッドコンテキスト（モジュール分割）」に対応する import 方向 gate を `npm run arch:bounded-context --prefix packages/backend` として導入した。
+
+- 既存違反 baseline: `packages/backend/dependency-cruiser-known-violations.json`
+- 既存違反一覧と削減方針: `docs/quality/bounded-context-imports.md`
+- 新規違反: CI の `lint` job で fail
+
+削減は Priority A の route/service 抽出と同じ単位で進める。特に `documents -> workflow`、`documents/chat/org-project -> notifications`、`identity-access -> ops/chat` を優先し、直接 import を application service / domain event / adapter へ置き換える。
 
 ## 進捗ログ
+
 - 2026-01-17: Priority A の対象を確定（Issue #576 / PR #580）
 - 2026-01-17: `projects.ts` のタスク依存ロジックを分離し unit test を追加（PR #581）
 - 2026-01-17: `migrate-po.ts` の CSV/ID生成ユーティリティを抽出し unit test を追加（PR #582）
+- 2026-07-02: bounded-context import direction gate を導入し、既存違反 baseline と削減方針を記録（Issue #1859）

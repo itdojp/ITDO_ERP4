@@ -85,6 +85,7 @@ jobs:
       - run: npm ci --prefix packages/backend
       - run: npm run lint --prefix packages/backend
       - run: npm run format:check --prefix packages/backend
+      - run: npm run arch:bounded-context --prefix packages/backend
       - run: ./scripts/check-ops-docs.sh
       - run: ./scripts/check-ops-scripts.sh
       - run: npm ci --prefix packages/frontend
