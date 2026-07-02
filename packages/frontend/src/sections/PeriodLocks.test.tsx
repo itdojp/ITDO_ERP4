@@ -215,6 +215,41 @@ describe('PeriodLocks', () => {
   const getListSection = () =>
     screen.getByRole('heading', { name: '締め一覧' }).closest('section')!;
 
+  it('renders workflow summary and period lock panels', async () => {
+    vi.mocked(api).mockResolvedValue({ items: [] });
+
+    render(<PeriodLocks />);
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/projects');
+    });
+
+    expect(
+      screen.getByRole('heading', { name: '期間締め' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        '会計・勤怠などの対象期間を締め、対象scopeと理由を確認しながら登録・検索・解除するための管理画面です。',
+      ),
+    ).toBeInTheDocument();
+    const summary = screen.getByRole('region', { name: '期間締めサマリー' });
+    expect(within(summary).getByText('締め一覧状態')).toBeInTheDocument();
+    expect(within(summary).getByText('未取得')).toBeInTheDocument();
+    expect(within(summary).getByText('検索条件')).toBeInTheDocument();
+    expect(within(summary).getByText('未指定')).toBeInTheDocument();
+    expect(within(summary).getByText('登録対象')).toBeInTheDocument();
+    expect(within(summary).getByText(/案件未選択/)).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '締め登録' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '締め検索と解除' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '締め一覧' }),
+    ).toBeInTheDocument();
+  });
+
   it('validates project scope and creates a lock', async () => {
     vi.mocked(api).mockImplementation(async (path, options) => {
       if (path === '/projects') {
@@ -281,6 +316,11 @@ describe('PeriodLocks', () => {
     await waitFor(() => {
       expect(listSection.getByText('月次締め')).toBeInTheDocument();
     });
+
+    const summary = screen.getByRole('region', { name: '期間締めサマリー' });
+    expect(within(summary).getByText('取得済み')).toBeInTheDocument();
+    expect(within(summary).getByText('1件を取得')).toBeInTheDocument();
+    expect(within(summary).getByText('1件')).toBeInTheDocument();
   });
 
   it('loads filtered locks, clears filters, and removes a lock', async () => {
