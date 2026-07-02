@@ -1407,9 +1407,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
       const current =
         (message.reactions as Record<string, unknown> | null | undefined) || {};
       const existingEntry = current[trimmedEmoji] as
-        | number
-        | { count: number; userIds: string[] }
-        | undefined;
+        number | { count: number; userIds: string[] } | undefined;
       let normalized = { count: 0, userIds: [] as string[] };
       if (typeof existingEntry === 'number') {
         normalized = { count: existingEntry, userIds: [] };

@@ -104,8 +104,7 @@ function resolveS3Config(): EvidencePackArchiveS3Config {
     parseBoolean(process.env.EVIDENCE_ARCHIVE_S3_FORCE_PATH_STYLE) ?? false;
   const prefix = normalizeString(process.env.EVIDENCE_ARCHIVE_S3_PREFIX);
   const sse = normalizeString(process.env.EVIDENCE_ARCHIVE_S3_SSE) as
-    | EvidenceArchiveSse
-    | undefined;
+    EvidenceArchiveSse | undefined;
   const kmsKeyId = normalizeString(process.env.EVIDENCE_ARCHIVE_S3_KMS_KEY_ID);
   if (sse && sse !== 'AES256' && sse !== 'aws:kms') {
     throw new Error('evidence_archive_s3_config_invalid');

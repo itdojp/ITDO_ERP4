@@ -135,10 +135,7 @@ type ReconciliationSummary = {
       actualTotalsByCurrency: AmountByCurrency[];
       readyDebitTotalsByCurrency: AmountByCurrency[];
       comparisonStatus:
-        | 'not_imported'
-        | 'ok'
-        | 'amount_mismatch'
-        | 'currency_mixed';
+        'not_imported' | 'ok' | 'amount_mismatch' | 'currency_mixed';
     };
   };
   hasBlockingDifferences: boolean;

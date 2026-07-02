@@ -1057,8 +1057,7 @@ export async function registerLeaveEntitlementRoutes(app: FastifyInstance) {
           sourceId: grant.id,
           expiresAt: normalizeDateOnlyString(grant.expiresAt),
           note: 'Upper bound based on granted minutes; actual expired minutes may be lower.' as
-            | string
-            | null,
+            string | null,
         })),
       ].sort((left, right) => {
         if (left.eventDate !== right.eventDate) {

@@ -1,10 +1,7 @@
 import { connect, type Socket } from 'node:net';
 
 export type ChatAttachmentScanProvider =
-  | 'disabled'
-  | 'stub'
-  | 'eicar'
-  | 'clamav';
+  'disabled' | 'stub' | 'eicar' | 'clamav';
 
 export type ChatAttachmentScanResult = {
   provider: ChatAttachmentScanProvider;

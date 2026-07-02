@@ -3,9 +3,7 @@ import { prisma } from './db.js';
 import { toDateOnly } from '../utils/date.js';
 
 export type WorkdayMinutesSource =
-  | 'user_override'
-  | 'company_holiday'
-  | 'default_setting';
+  'user_override' | 'company_holiday' | 'default_setting';
 
 export function normalizeWorkMinutes(value: number, fallback: number) {
   if (!Number.isFinite(value)) return fallback;

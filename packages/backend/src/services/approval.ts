@@ -710,8 +710,7 @@ async function updateTargetStatus(
     });
     if (current) {
       const nextStatus = newStatus as
-        | typeof DocStatusValue.approved
-        | typeof DocStatusValue.rejected;
+        typeof DocStatusValue.approved | typeof DocStatusValue.rejected;
       await logExpenseStateTransition({
         client: tx,
         expenseId: targetId,
