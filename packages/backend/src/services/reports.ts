@@ -46,14 +46,10 @@ type ManagementAccountingCurrencyBreakdown = {
 };
 
 type ManagementAccountingDepartmentSource =
-  | 'department_master'
-  | 'legacy_org_unit'
-  | 'unassigned';
+  'department_master' | 'legacy_org_unit' | 'unassigned';
 
 type ManagementAccountingPayrollConfirmedStatus =
-  | 'confirmed'
-  | 'partial'
-  | 'missing';
+  'confirmed' | 'partial' | 'missing';
 
 type ManagementAccountingDepartmentBreakdown = {
   departmentKey: string | null;

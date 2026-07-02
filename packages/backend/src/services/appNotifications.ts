@@ -91,9 +91,7 @@ type ProjectStatusChangedNotificationOptions = {
 };
 
 type NotificationSuppressionScope =
-  | 'global'
-  | 'chat_mentions'
-  | 'chat_all_posts';
+  'global' | 'chat_mentions' | 'chat_all_posts';
 
 const DEFAULT_GLOBAL_MUTE_BYPASS_KINDS = [
   'approval_pending',

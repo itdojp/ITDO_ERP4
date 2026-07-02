@@ -55,10 +55,7 @@ type DispatchNotificationPushDeps = {
 export type NotificationPushDispatchResult = {
   attempted: boolean;
   reason?:
-    | 'no_recipients'
-    | 'kind_disabled'
-    | 'webpush_disabled'
-    | 'no_subscriptions';
+    'no_recipients' | 'kind_disabled' | 'webpush_disabled' | 'no_subscriptions';
   kind: string;
   recipientCount: number;
   subscriptionCount: number;

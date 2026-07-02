@@ -224,20 +224,18 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
             include: { project: { select: { code: true, name: true } } },
           });
           items.push(
-            ...invoices.map(
-              (invoice): RefCandidateItem => ({
-                kind: 'invoice',
-                id: invoice.id,
-                label: `${invoice.invoiceNo}（${buildProjectLabel(invoice.project)}）`,
-                url: buildOpenHash('invoice', invoice.id),
-                projectId: invoice.projectId,
-                projectLabel: buildProjectLabel(invoice.project),
-                meta: {
-                  invoiceNo: invoice.invoiceNo,
-                  status: invoice.status,
-                },
-              }),
-            ),
+            ...invoices.map((invoice): RefCandidateItem => ({
+              kind: 'invoice',
+              id: invoice.id,
+              label: `${invoice.invoiceNo}（${buildProjectLabel(invoice.project)}）`,
+              url: buildOpenHash('invoice', invoice.id),
+              projectId: invoice.projectId,
+              projectLabel: buildProjectLabel(invoice.project),
+              meta: {
+                invoiceNo: invoice.invoiceNo,
+                status: invoice.status,
+              },
+            })),
           );
           continue;
         }
@@ -264,20 +262,18 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
             include: { project: { select: { code: true, name: true } } },
           });
           items.push(
-            ...estimates.map(
-              (estimate): RefCandidateItem => ({
-                kind: 'estimate',
-                id: estimate.id,
-                label: `${estimate.estimateNo}（${buildProjectLabel(estimate.project)}）`,
-                url: buildOpenHash('estimate', estimate.id),
-                projectId: estimate.projectId,
-                projectLabel: buildProjectLabel(estimate.project),
-                meta: {
-                  estimateNo: estimate.estimateNo,
-                  status: estimate.status,
-                },
-              }),
-            ),
+            ...estimates.map((estimate): RefCandidateItem => ({
+              kind: 'estimate',
+              id: estimate.id,
+              label: `${estimate.estimateNo}（${buildProjectLabel(estimate.project)}）`,
+              url: buildOpenHash('estimate', estimate.id),
+              projectId: estimate.projectId,
+              projectLabel: buildProjectLabel(estimate.project),
+              meta: {
+                estimateNo: estimate.estimateNo,
+                status: estimate.status,
+              },
+            })),
           );
           continue;
         }
@@ -302,21 +298,19 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
             },
           });
           items.push(
-            ...purchaseOrders.map(
-              (po): RefCandidateItem => ({
-                kind: 'purchase_order',
-                id: po.id,
-                label: `${po.poNo} / ${po.vendor.name}（${buildProjectLabel(po.project)}）`,
-                url: buildOpenHash('purchase_order', po.id),
-                projectId: po.projectId,
-                projectLabel: buildProjectLabel(po.project),
-                meta: {
-                  poNo: po.poNo,
-                  vendorName: po.vendor.name,
-                  status: po.status,
-                },
-              }),
-            ),
+            ...purchaseOrders.map((po): RefCandidateItem => ({
+              kind: 'purchase_order',
+              id: po.id,
+              label: `${po.poNo} / ${po.vendor.name}（${buildProjectLabel(po.project)}）`,
+              url: buildOpenHash('purchase_order', po.id),
+              projectId: po.projectId,
+              projectLabel: buildProjectLabel(po.project),
+              meta: {
+                poNo: po.poNo,
+                vendorName: po.vendor.name,
+                status: po.status,
+              },
+            })),
           );
           continue;
         }
@@ -341,21 +335,19 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
             },
           });
           items.push(
-            ...vendorQuotes.map(
-              (vq): RefCandidateItem => ({
-                kind: 'vendor_quote',
-                id: vq.id,
-                label: `${vq.quoteNo || '（no quoteNo）'} / ${vq.vendor.name}（${buildProjectLabel(vq.project)}）`,
-                url: buildOpenHash('vendor_quote', vq.id),
-                projectId: vq.projectId,
-                projectLabel: buildProjectLabel(vq.project),
-                meta: {
-                  quoteNo: vq.quoteNo,
-                  vendorName: vq.vendor.name,
-                  status: vq.status,
-                },
-              }),
-            ),
+            ...vendorQuotes.map((vq): RefCandidateItem => ({
+              kind: 'vendor_quote',
+              id: vq.id,
+              label: `${vq.quoteNo || '（no quoteNo）'} / ${vq.vendor.name}（${buildProjectLabel(vq.project)}）`,
+              url: buildOpenHash('vendor_quote', vq.id),
+              projectId: vq.projectId,
+              projectLabel: buildProjectLabel(vq.project),
+              meta: {
+                quoteNo: vq.quoteNo,
+                vendorName: vq.vendor.name,
+                status: vq.status,
+              },
+            })),
           );
           continue;
         }
@@ -380,21 +372,19 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
             },
           });
           items.push(
-            ...vendorInvoices.map(
-              (vi): RefCandidateItem => ({
-                kind: 'vendor_invoice',
-                id: vi.id,
-                label: `${vi.vendorInvoiceNo || '（no invoiceNo）'} / ${vi.vendor.name}（${buildProjectLabel(vi.project)}）`,
-                url: buildOpenHash('vendor_invoice', vi.id),
-                projectId: vi.projectId,
-                projectLabel: buildProjectLabel(vi.project),
-                meta: {
-                  vendorInvoiceNo: vi.vendorInvoiceNo,
-                  vendorName: vi.vendor.name,
-                  status: vi.status,
-                },
-              }),
-            ),
+            ...vendorInvoices.map((vi): RefCandidateItem => ({
+              kind: 'vendor_invoice',
+              id: vi.id,
+              label: `${vi.vendorInvoiceNo || '（no invoiceNo）'} / ${vi.vendor.name}（${buildProjectLabel(vi.project)}）`,
+              url: buildOpenHash('vendor_invoice', vi.id),
+              projectId: vi.projectId,
+              projectLabel: buildProjectLabel(vi.project),
+              meta: {
+                vendorInvoiceNo: vi.vendorInvoiceNo,
+                vendorName: vi.vendor.name,
+                status: vi.status,
+              },
+            })),
           );
           continue;
         }
@@ -411,22 +401,20 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
             include: { project: { select: { code: true, name: true } } },
           });
           items.push(
-            ...expenses.map(
-              (expense): RefCandidateItem => ({
-                kind: 'expense',
-                id: expense.id,
-                label: `${expense.category} ${String(expense.amount)} ${expense.currency}（${buildProjectLabel(expense.project)}）`,
-                url: buildOpenHash('expense', expense.id),
-                projectId: expense.projectId,
-                projectLabel: buildProjectLabel(expense.project),
-                meta: {
-                  category: expense.category,
-                  amount: String(expense.amount),
-                  currency: expense.currency,
-                  status: expense.status,
-                },
-              }),
-            ),
+            ...expenses.map((expense): RefCandidateItem => ({
+              kind: 'expense',
+              id: expense.id,
+              label: `${expense.category} ${String(expense.amount)} ${expense.currency}（${buildProjectLabel(expense.project)}）`,
+              url: buildOpenHash('expense', expense.id),
+              projectId: expense.projectId,
+              projectLabel: buildProjectLabel(expense.project),
+              meta: {
+                category: expense.category,
+                amount: String(expense.amount),
+                currency: expense.currency,
+                status: expense.status,
+              },
+            })),
           );
           continue;
         }
@@ -446,20 +434,18 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
             select: { id: true, code: true, name: true },
           });
           items.push(
-            ...projects.map(
-              (project): RefCandidateItem => ({
-                kind: 'project',
-                id: project.id,
-                label: buildProjectLabel(project),
-                url: buildOpenHash('project', project.id),
-                projectId: project.id,
-                projectLabel: buildProjectLabel(project),
-                meta: {
-                  code: project.code,
-                  name: project.name,
-                },
-              }),
-            ),
+            ...projects.map((project): RefCandidateItem => ({
+              kind: 'project',
+              id: project.id,
+              label: buildProjectLabel(project),
+              url: buildOpenHash('project', project.id),
+              projectId: project.id,
+              projectLabel: buildProjectLabel(project),
+              meta: {
+                code: project.code,
+                name: project.name,
+              },
+            })),
           );
           continue;
         }
@@ -477,15 +463,13 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
             select: { id: true, code: true, name: true },
           });
           items.push(
-            ...customers.map(
-              (customer): RefCandidateItem => ({
-                kind: 'customer',
-                id: customer.id,
-                label: `${customer.code} / ${customer.name}`,
-                url: buildOpenHash('customer', customer.id),
-                meta: { code: customer.code, name: customer.name },
-              }),
-            ),
+            ...customers.map((customer): RefCandidateItem => ({
+              kind: 'customer',
+              id: customer.id,
+              label: `${customer.code} / ${customer.name}`,
+              url: buildOpenHash('customer', customer.id),
+              meta: { code: customer.code, name: customer.name },
+            })),
           );
           continue;
         }
@@ -503,15 +487,13 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
             select: { id: true, code: true, name: true },
           });
           items.push(
-            ...vendors.map(
-              (vendor): RefCandidateItem => ({
-                kind: 'vendor',
-                id: vendor.id,
-                label: `${vendor.code} / ${vendor.name}`,
-                url: buildOpenHash('vendor', vendor.id),
-                meta: { code: vendor.code, name: vendor.name },
-              }),
-            ),
+            ...vendors.map((vendor): RefCandidateItem => ({
+              kind: 'vendor',
+              id: vendor.id,
+              label: `${vendor.code} / ${vendor.name}`,
+              url: buildOpenHash('vendor', vendor.id),
+              meta: { code: vendor.code, name: vendor.name },
+            })),
           );
           continue;
         }

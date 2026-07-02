@@ -11,9 +11,7 @@ export type ApprovalRuleStep = ApprovalStep & {
 };
 
 export type ApprovalStageCompletion =
-  | { mode: 'all' }
-  | { mode: 'any' }
-  | { mode: 'quorum'; quorum: number };
+  { mode: 'all' } | { mode: 'any' } | { mode: 'quorum'; quorum: number };
 
 export type ApprovalStagePolicy = Record<
   number,
@@ -21,8 +19,7 @@ export type ApprovalStagePolicy = Record<
 >;
 
 type ApprovalStageApprover =
-  | { type: 'group'; id: string }
-  | { type: 'user'; id: string };
+  { type: 'group'; id: string } | { type: 'user'; id: string };
 
 type ApprovalStageDefinition = {
   order: number;

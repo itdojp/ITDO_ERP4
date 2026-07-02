@@ -700,8 +700,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
             active: normalized.active ?? true,
             emails: normalized.emails as Prisma.InputJsonValue | undefined,
             phoneNumbers: normalized.phones as
-              | Prisma.InputJsonValue
-              | undefined,
+              Prisma.InputJsonValue | undefined,
             department: normalized.department,
             organization: normalized.organization,
             managerUserId: normalized.managerUserId,
@@ -797,8 +796,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
             active: normalized.active ?? true,
             emails: normalized.emails as Prisma.InputJsonValue | undefined,
             phoneNumbers: normalized.phones as
-              | Prisma.InputJsonValue
-              | undefined,
+              Prisma.InputJsonValue | undefined,
             department: normalized.department,
             organization: normalized.organization,
             managerUserId: normalized.managerUserId,

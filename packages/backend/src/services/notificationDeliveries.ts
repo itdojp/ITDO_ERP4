@@ -810,8 +810,7 @@ export async function runNotificationEmailDeliveries(options: {
         .join('\n');
     } else if (notification.kind === 'daily_report_missing') {
       const payload = notification.payload as
-        | { reportDate?: string }
-        | undefined;
+        { reportDate?: string } | undefined;
       const reportDate = payload?.reportDate || '';
       subject = reportDate
         ? `ERP4: 日報未提出（${reportDate}）`
@@ -821,8 +820,7 @@ export async function runNotificationEmailDeliveries(options: {
         : '日報が未提出です。';
     } else if (notification.kind === 'expense_mark_paid') {
       const payload = notification.payload as
-        | { amount?: string; currency?: string; paidAt?: string }
-        | undefined;
+        { amount?: string; currency?: string; paidAt?: string } | undefined;
       const amount = payload?.amount ? payload.amount : '';
       const currency = payload?.currency ? payload.currency : '';
       const amountLabel = amount
