@@ -48,6 +48,8 @@ const statusTone: Record<ListStatus, WorkflowMetric['tone']> = {
   success: 'success',
 };
 
+const PDF_FILE_LIST_LIMIT = 100;
+
 const formatDateTime = (value: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -81,7 +83,7 @@ export const PdfFiles: React.FC = () => {
 
   const listUrl = useMemo(() => {
     const params = new URLSearchParams();
-    params.set('limit', '100');
+    params.set('limit', String(PDF_FILE_LIST_LIMIT));
     if (queryPrefix) params.set('prefix', queryPrefix);
     return `/pdf-files?${params.toString()}`;
   }, [queryPrefix]);
@@ -105,7 +107,7 @@ export const PdfFiles: React.FC = () => {
   }, [listUrl]);
 
   useEffect(() => {
-    loadFiles();
+    void loadFiles();
   }, [loadFiles]);
 
   const openPdf = useCallback(async (filename: string) => {
@@ -192,7 +194,7 @@ export const PdfFiles: React.FC = () => {
       },
       {
         label: '最大表示',
-        value: meta ? `${meta.limit}件` : '100件',
+        value: meta ? `${meta.limit}件` : `${PDF_FILE_LIST_LIMIT}件`,
         helper: meta ? `offset ${meta.offset}` : '既定の取得上限',
       },
     ],
@@ -260,7 +262,9 @@ export const PdfFiles: React.FC = () => {
                       条件クリア
                     </Button>
                     <Button
-                      onClick={loadFiles}
+                      onClick={() => {
+                        void loadFiles();
+                      }}
                       loading={listStatus === 'loading'}
                     >
                       再読込

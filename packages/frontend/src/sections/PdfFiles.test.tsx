@@ -173,10 +173,10 @@ describe('PdfFiles', () => {
 
     const summary = screen.getByRole('region', { name: 'PDF管理サマリー' });
     expect(within(summary).getByText('一覧ステータス')).toBeInTheDocument();
-    expect(within(summary).getByText('読込済み')).toBeInTheDocument();
+    expect(await within(summary).findByText('読込済み')).toBeInTheDocument();
     expect(within(summary).getByText('表示中')).toBeInTheDocument();
     expect(within(summary).getByText('1件')).toBeInTheDocument();
-    expect(within(summary).getByText('総件数 3件')).toBeInTheDocument();
+    expect(await within(summary).findByText('総件数 3件')).toBeInTheDocument();
     expect(
       screen.getByRole('heading', { name: 'PDF検索とファイル確認' }),
     ).toBeInTheDocument();
