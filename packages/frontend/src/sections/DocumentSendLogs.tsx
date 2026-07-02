@@ -19,6 +19,12 @@ import {
 import type { DataTableColumn, DataTableRow } from '../ui';
 import { formatDateForFilename, openResponseInNewTab } from '../utils/download';
 import { navigateToOpen } from '../utils/deepLink';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  WorkflowPanel,
+  type WorkflowMetric,
+} from './workflowUx';
 
 type DocumentSendLog = {
   id: string;
@@ -50,6 +56,20 @@ type DocumentSendEvent = {
 
 type ListStatus = 'idle' | 'loading' | 'error' | 'success';
 type SavedFilterPayload = { logId: string };
+
+const listStatusLabel: Record<ListStatus, string> = {
+  idle: '未取得',
+  loading: '取得中',
+  error: 'エラー',
+  success: '取得済み',
+};
+
+const listStatusTone: Record<ListStatus, WorkflowMetric['tone']> = {
+  idle: 'default',
+  loading: 'default',
+  error: 'danger',
+  success: 'success',
+};
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '-';
@@ -350,6 +370,49 @@ export const DocumentSendLogs: React.FC = () => {
     [],
   );
 
+  const metrics = useMemo<WorkflowMetric[]>(
+    () => [
+      {
+        label: '送信ログ状態',
+        value: listStatusLabel[logStatus],
+        helper:
+          logStatus === 'error'
+            ? '送信ログIDを確認して再試行してください'
+            : log
+              ? `${log.kind} / ${log.channel} / ${log.status}`
+              : '送信ログID指定後に取得',
+        tone: listStatusTone[logStatus],
+      },
+      {
+        label: '送信イベント状態',
+        value: listStatusLabel[eventsStatus],
+        helper:
+          eventsStatus === 'error'
+            ? 'イベント取得を再試行してください'
+            : eventsStatus === 'success'
+              ? `${events.length}件のイベント`
+              : '送信ログと併せて取得',
+        tone: listStatusTone[eventsStatus],
+      },
+      {
+        label: '対象送信ログ',
+        value: trimmedLogId || '-',
+        helper: log
+          ? `${log.targetTable} / ${log.targetId}`
+          : '監査ログ遷移にも利用',
+      },
+      {
+        label: '監査追跡',
+        value: trimmedLogId ? '利用可' : '未指定',
+        helper: trimmedLogId
+          ? '監査ログで開く導線が有効'
+          : '送信ログIDを入力してください',
+        tone: trimmedLogId ? 'success' : 'default',
+      },
+    ],
+    [events.length, eventsStatus, log, logStatus, trimmedLogId],
+  );
+
   const loadLog = useCallback(async () => {
     await loadLogById(trimmedLogId);
   }, [loadLogById, trimmedLogId]);
@@ -545,132 +608,164 @@ export const DocumentSendLogs: React.FC = () => {
 
   return (
     <div>
-      <h2>ドキュメント送信ログ</h2>
-      <Card padding="small">
-        <SavedViewBar
-          views={savedViews.views}
-          activeViewId={savedViews.activeViewId}
-          onSelectView={(viewId) => {
-            savedViews.selectView(viewId);
-            const selected = savedViews.views.find(
-              (view) => view.id === viewId,
-            );
-            if (!selected) return;
-            setLogId((selected.payload?.logId || '').trim());
-          }}
-          onSaveAs={(name) => {
-            savedViews.createView(name, { logId: trimmedLogId });
-          }}
-          onUpdateView={(viewId) => {
-            savedViews.updateView(viewId, { payload: { logId: trimmedLogId } });
-          }}
-          onDuplicateView={(viewId) => {
-            savedViews.duplicateView(viewId);
-          }}
-          onShareView={(viewId) => {
-            savedViews.toggleShared(viewId, true);
-          }}
-          onDeleteView={(viewId) => {
-            savedViews.deleteView(viewId);
-          }}
-          labels={{
-            title: '保存ビュー',
-            saveAsPlaceholder: 'ビュー名',
-            saveAsButton: '保存',
-            update: '更新',
-            duplicate: '複製',
-            share: '共有',
-            delete: '削除',
-            active: '現在のビュー',
-          }}
-        />
-        <FilterBar
-          actions={
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setLogId('');
-                  setLog(null);
-                  setEvents([]);
-                  setLogStatus('idle');
-                  setEventsStatus('idle');
-                  setLogError('');
-                  setEventsError('');
-                  setMessage(null);
-                  setRetryTargetLogId(null);
-                }}
-              >
-                クリア
-              </Button>
-              <Button onClick={loadLog} loading={logStatus === 'loading'}>
-                送信ログ取得
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={loadEvents}
-                loading={eventsStatus === 'loading'}
-              >
-                イベント取得
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={loadAll}
-                loading={logStatus === 'loading' || eventsStatus === 'loading'}
-              >
-                まとめて取得
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => openAuditLogs(trimmedLogId)}
-                disabled={!trimmedLogId}
-              >
-                監査ログで開く
-              </Button>
+      <WorkflowPageHeader
+        title="ドキュメント送信ログ"
+        description="ドキュメント送信結果、配信イベント、監査ログへの追跡導線を同じ画面で確認するための管理画面です。"
+      />
+      <WorkflowMetricGrid items={metrics} ariaLabel="送信ログ監査サマリー" />
+      <WorkflowPanel
+        title="送信ログ検索と監査追跡"
+        description="送信ログIDを指定してログ本体とイベントを取得し、必要に応じて監査ログへ遷移します。"
+      >
+        <Card padding="small">
+          <SavedViewBar
+            views={savedViews.views}
+            activeViewId={savedViews.activeViewId}
+            onSelectView={(viewId) => {
+              savedViews.selectView(viewId);
+              const selected = savedViews.views.find(
+                (view) => view.id === viewId,
+              );
+              if (!selected) return;
+              setLogId((selected.payload?.logId || '').trim());
+            }}
+            onSaveAs={(name) => {
+              savedViews.createView(name, { logId: trimmedLogId });
+            }}
+            onUpdateView={(viewId) => {
+              savedViews.updateView(viewId, {
+                payload: { logId: trimmedLogId },
+              });
+            }}
+            onDuplicateView={(viewId) => {
+              savedViews.duplicateView(viewId);
+            }}
+            onShareView={(viewId) => {
+              savedViews.toggleShared(viewId, true);
+            }}
+            onDeleteView={(viewId) => {
+              savedViews.deleteView(viewId);
+            }}
+            labels={{
+              title: '保存ビュー',
+              saveAsPlaceholder: 'ビュー名',
+              saveAsButton: '保存',
+              update: '更新',
+              duplicate: '複製',
+              share: '共有',
+              delete: '削除',
+              active: '現在のビュー',
+            }}
+          />
+          <FilterBar
+            actions={
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setLogId('');
+                    setLog(null);
+                    setEvents([]);
+                    setLogStatus('idle');
+                    setEventsStatus('idle');
+                    setLogError('');
+                    setEventsError('');
+                    setMessage(null);
+                    setRetryTargetLogId(null);
+                  }}
+                >
+                  クリア
+                </Button>
+                <Button
+                  onClick={() => {
+                    void loadLog();
+                  }}
+                  loading={logStatus === 'loading'}
+                >
+                  送信ログ取得
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    void loadEvents();
+                  }}
+                  loading={eventsStatus === 'loading'}
+                >
+                  イベント取得
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    void loadAll();
+                  }}
+                  loading={
+                    logStatus === 'loading' || eventsStatus === 'loading'
+                  }
+                >
+                  まとめて取得
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => openAuditLogs(trimmedLogId)}
+                  disabled={!trimmedLogId}
+                >
+                  監査ログで開く
+                </Button>
+              </div>
+            }
+          >
+            <div className="row" style={{ alignItems: 'flex-end', gap: 8 }}>
+              <Input
+                label="sendLogId"
+                value={logId}
+                onChange={(e) => setLogId(e.target.value)}
+                placeholder="送信ログID"
+              />
             </div>
-          }
-        >
-          <div className="row" style={{ alignItems: 'flex-end', gap: 8 }}>
-            <Input
-              label="sendLogId"
-              value={logId}
-              onChange={(e) => setLogId(e.target.value)}
-              placeholder="送信ログID"
-            />
-          </div>
-        </FilterBar>
-        {message && (
-          <div style={{ marginTop: 8 }}>
-            <Alert
-              variant={
-                message.type === 'error'
-                  ? 'error'
-                  : message.type === 'success'
-                    ? 'success'
-                    : 'info'
-              }
-            >
-              {message.text}
-            </Alert>
-          </div>
-        )}
-      </Card>
+          </FilterBar>
+          {message && (
+            <div style={{ marginTop: 8 }}>
+              <Alert
+                variant={
+                  message.type === 'error'
+                    ? 'error'
+                    : message.type === 'success'
+                      ? 'success'
+                      : 'info'
+                }
+              >
+                {message.text}
+              </Alert>
+            </div>
+          )}
+        </Card>
+      </WorkflowPanel>
 
       <div style={{ marginTop: 12, display: 'grid', gap: 8 }}>
-        <Card padding="small">
-          <CrudList
-            title="送信ログ"
-            description="送信ログの状態と宛先を確認し、必要に応じて再送できます。"
-            table={logTable}
-          />
-        </Card>
-        <Card padding="small">
-          <CrudList
-            title="送信イベント"
-            description="配信プロバイダから受信したイベント履歴を確認できます。"
-            table={eventTable}
-          />
-        </Card>
+        <WorkflowPanel
+          title="送信ログ詳細"
+          description="送信ログの状態、宛先、metadataを確認し、PDF確認・再送・監査ログ追跡へ進みます。"
+        >
+          <Card padding="small">
+            <CrudList
+              title="送信ログ"
+              description="送信ログの状態と宛先を確認し、必要に応じて再送できます。"
+              table={logTable}
+            />
+          </Card>
+        </WorkflowPanel>
+        <WorkflowPanel
+          title="配信イベント履歴"
+          description="配信プロバイダから受信したイベント履歴を確認します。"
+        >
+          <Card padding="small">
+            <CrudList
+              title="送信イベント"
+              description="配信プロバイダから受信したイベント履歴を確認できます。"
+              table={eventTable}
+            />
+          </Card>
+        </WorkflowPanel>
       </div>
       <ConfirmActionDialog
         open={Boolean(retryTargetLogId)}

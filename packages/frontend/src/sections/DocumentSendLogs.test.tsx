@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -240,11 +241,35 @@ describe('DocumentSendLogs', () => {
   it('shows validation message when load is requested without log id', async () => {
     render(<DocumentSendLogs />);
 
+    expect(
+      screen.getByRole('heading', { name: 'ドキュメント送信ログ' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'ドキュメント送信結果、配信イベント、監査ログへの追跡導線を同じ画面で確認するための管理画面です。',
+      ),
+    ).toBeInTheDocument();
+    const summary = screen.getByRole('region', {
+      name: '送信ログ監査サマリー',
+    });
+    expect(within(summary).getByText('送信ログ状態')).toBeInTheDocument();
+    expect(within(summary).getAllByText('未取得').length).toBeGreaterThan(0);
+    expect(within(summary).getByText('監査追跡')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '送信ログ検索と監査追跡' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '送信ログ詳細' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '配信イベント履歴' }),
+    ).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole('button', { name: '送信ログ取得' }));
 
     expect(
-      await screen.findByText('送信ログIDを入力してください'),
-    ).toBeInTheDocument();
+      (await screen.findAllByText('送信ログIDを入力してください')).length,
+    ).toBeGreaterThan(0);
     expect(api).not.toHaveBeenCalled();
   });
 
@@ -295,7 +320,17 @@ describe('DocumentSendLogs', () => {
       expect(api).toHaveBeenCalledWith('/document-send-logs/log-1/events');
     });
 
-    expect(screen.getByText('vendor_invoice / invoice-1')).toBeInTheDocument();
+    expect(
+      screen.getAllByText('vendor_invoice / invoice-1').length,
+    ).toBeGreaterThan(0);
+    const summary = screen.getByRole('region', {
+      name: '送信ログ監査サマリー',
+    });
+    expect(within(summary).getAllByText('取得済み').length).toBeGreaterThan(0);
+    expect(within(summary).getByText('1件のイベント')).toBeInTheDocument();
+    expect(
+      within(summary).getByText('vendor_invoice / invoice-1'),
+    ).toBeInTheDocument();
     expect(
       screen.getByText('a@example.com, b@example.com'),
     ).toBeInTheDocument();
@@ -334,7 +369,9 @@ describe('DocumentSendLogs', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '送信ログ取得' }));
 
-    await screen.findByText('vendor_invoice / invoice-2');
+    expect(
+      (await screen.findAllByText('vendor_invoice / invoice-2')).length,
+    ).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: '再送:log-2' }));
 
@@ -370,7 +407,9 @@ describe('DocumentSendLogs', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '送信ログ取得' }));
 
-    await screen.findByText('vendor_invoice / invoice-3');
+    expect(
+      (await screen.findAllByText('vendor_invoice / invoice-3')).length,
+    ).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: 'PDFを開く:log-3' }));
 
@@ -428,7 +467,9 @@ describe('DocumentSendLogs', () => {
       expect(api).toHaveBeenCalledWith('/document-send-logs/log-4/events');
     });
 
-    expect(screen.getByText('estimate / estimate-4')).toBeInTheDocument();
+    expect(screen.getAllByText('estimate / estimate-4').length).toBeGreaterThan(
+      0,
+    );
     expect(screen.getByDisplayValue('log-4')).toBeInTheDocument();
   });
 });

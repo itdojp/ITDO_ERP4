@@ -244,6 +244,31 @@ afterEach(() => {
 });
 
 describe('AuditLogs', () => {
+  it('renders workflow summary and audit search panel', () => {
+    render(<AuditLogs />);
+
+    expect(
+      screen.getByRole('heading', { name: '監査ログ' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        '送信ログや業務操作の監査証跡を検索し、必要に応じてAgentRun詳細まで追跡するための管理画面です。',
+      ),
+    ).toBeInTheDocument();
+    const summary = screen.getByRole('region', {
+      name: '監査ログサマリー',
+    });
+    expect(within(summary).getByText('検索状態')).toBeInTheDocument();
+    expect(within(summary).getByText('未検索')).toBeInTheDocument();
+    expect(within(summary).getByText('表示中')).toBeInTheDocument();
+    expect(within(summary).getByText('0件')).toBeInTheDocument();
+    expect(within(summary).getByText('検索条件')).toBeInTheDocument();
+    expect(within(summary).getByText('未指定')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '監査ログ検索と証跡確認' }),
+    ).toBeInTheDocument();
+  });
+
   it('loads filtered logs and downloads csv', async () => {
     vi.mocked(api).mockResolvedValue({
       items: [
@@ -285,6 +310,12 @@ describe('AuditLogs', () => {
       );
     });
     expect(screen.getByText('document_send')).toBeInTheDocument();
+    const summary = screen.getByRole('region', {
+      name: '監査ログサマリー',
+    });
+    expect(within(summary).getByText('取得済み')).toBeInTheDocument();
+    expect(within(summary).getByText('1件を取得')).toBeInTheDocument();
+    expect(within(summary).getByText('2項目')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'CSV出力' }));
 

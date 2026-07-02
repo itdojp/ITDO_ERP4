@@ -27,6 +27,12 @@ import {
   downloadResponseAsFile,
   formatDateForFilename,
 } from '../utils/download';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  WorkflowPanel,
+  type WorkflowMetric,
+} from './workflowUx';
 
 type AuditLogItem = {
   id: string;
@@ -80,6 +86,7 @@ type FilterState = {
 };
 
 type SavedFilterPayload = Omit<FilterState, 'format'>;
+type AuditListStatus = 'idle' | 'loading' | 'error' | 'success';
 
 const defaultFilters: FilterState = {
   from: '',
@@ -97,6 +104,20 @@ const defaultFilters: FilterState = {
   requestId: '',
   limit: '200',
   format: 'json',
+};
+
+const auditStatusLabel: Record<AuditListStatus, string> = {
+  idle: '未検索',
+  loading: '検索中',
+  error: 'エラー',
+  success: '取得済み',
+};
+
+const auditStatusTone: Record<AuditListStatus, WorkflowMetric['tone']> = {
+  idle: 'default',
+  loading: 'default',
+  error: 'danger',
+  success: 'success',
 };
 
 const toSavedFilterPayload = (filters: FilterState): SavedFilterPayload => ({
@@ -198,9 +219,7 @@ const sanitizeAgentRunDetail = (value: unknown): unknown => {
 export const AuditLogs: React.FC = () => {
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
   const [items, setItems] = useState<AuditLogItem[]>([]);
-  const [listStatus, setListStatus] = useState<
-    'idle' | 'loading' | 'error' | 'success'
-  >('idle');
+  const [listStatus, setListStatus] = useState<AuditListStatus>('idle');
   const [listError, setListError] = useState('');
   const [message, setMessage] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
@@ -227,6 +246,15 @@ export const AuditLogs: React.FC = () => {
       'erp4-audit-log-saved-views',
     ),
   });
+
+  const activeFilterCount = useMemo(
+    () =>
+      Object.entries(toSavedFilterPayload(filters)).filter(([key, value]) => {
+        if (key === 'limit') return false;
+        return String(value || '').trim().length > 0;
+      }).length,
+    [filters],
+  );
 
   const loadLogsWithFilters = useCallback(async (nextFilters: FilterState) => {
     try {
@@ -345,6 +373,60 @@ export const AuditLogs: React.FC = () => {
         metadata: formatMetadata(item.metadata),
       })),
     [items],
+  );
+
+  const metrics = useMemo<WorkflowMetric[]>(
+    () => [
+      {
+        label: '検索状態',
+        value: auditStatusLabel[listStatus],
+        helper:
+          listStatus === 'error'
+            ? '条件を確認して再試行してください'
+            : listStatus === 'loading'
+              ? '監査ログを検索中'
+              : listStatus === 'success'
+                ? `${items.length}件を取得`
+                : '検索実行前',
+        tone: auditStatusTone[listStatus],
+      },
+      {
+        label: '表示中',
+        value: `${rows.length}件`,
+        helper: `最大 ${filters.limit}件`,
+      },
+      {
+        label: '検索条件',
+        value: activeFilterCount ? `${activeFilterCount}項目` : '未指定',
+        helper: filters.sendLogId
+          ? `sendLogId: ${filters.sendLogId}`
+          : '期間・操作・対象などで絞り込み',
+      },
+      {
+        label: 'AgentRun詳細',
+        value: agentRunDetail
+          ? '表示中'
+          : activeAgentRunId
+            ? agentRunLoading
+              ? '取得中'
+              : '未表示'
+            : '未選択',
+        helper: activeAgentRunId || '詳細ボタンでドリルダウン',
+        tone: agentRunError ? 'danger' : agentRunDetail ? 'success' : 'default',
+      },
+    ],
+    [
+      activeAgentRunId,
+      activeFilterCount,
+      agentRunDetail,
+      agentRunError,
+      agentRunLoading,
+      filters.limit,
+      filters.sendLogId,
+      items.length,
+      listStatus,
+      rows.length,
+    ],
   );
 
   const columns = useMemo<DataTableColumn[]>(
@@ -473,13 +555,20 @@ export const AuditLogs: React.FC = () => {
 
   return (
     <div>
-      <h2>監査ログ</h2>
+      <WorkflowPageHeader
+        title="監査ログ"
+        description="送信ログや業務操作の監査証跡を検索し、必要に応じてAgentRun詳細まで追跡するための管理画面です。"
+      />
+      <WorkflowMetricGrid items={metrics} ariaLabel="監査ログサマリー" />
       {message && (
         <div style={{ marginTop: 8 }}>
           <Alert variant="error">{message}</Alert>
         </div>
       )}
-      <div style={{ marginTop: 12 }}>
+      <WorkflowPanel
+        title="監査ログ検索と証跡確認"
+        description="検索条件を指定して監査ログを取得し、CSV出力やAgentRun詳細確認へ進みます。"
+      >
         <SavedViewBar
           views={savedViews.views}
           activeViewId={savedViews.activeViewId}
@@ -538,12 +627,19 @@ export const AuditLogs: React.FC = () => {
                   >
                     条件クリア
                   </Button>
-                  <Button onClick={loadLogs} loading={listStatus === 'loading'}>
+                  <Button
+                    onClick={() => {
+                      void loadLogs();
+                    }}
+                    loading={listStatus === 'loading'}
+                  >
                     検索
                   </Button>
                   <Button
                     variant="secondary"
-                    onClick={downloadCsv}
+                    onClick={() => {
+                      void downloadCsv();
+                    }}
                     loading={isDownloading}
                   >
                     CSV出力
@@ -672,7 +768,7 @@ export const AuditLogs: React.FC = () => {
             </div>
           }
         />
-      </div>
+      </WorkflowPanel>
     </div>
   );
 };
