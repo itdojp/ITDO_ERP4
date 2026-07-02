@@ -64,6 +64,7 @@ const metricLabelStyle: React.CSSProperties = {
 
 const metricValueStyle: React.CSSProperties = {
   marginTop: 4,
+  marginLeft: 0,
   color: 'var(--color-text-primary, #0f172a)',
   fontSize: 20,
   fontWeight: 700,
@@ -72,6 +73,7 @@ const metricValueStyle: React.CSSProperties = {
 
 const metricHelperStyle: React.CSSProperties = {
   margin: '6px 0 0',
+  marginLeft: 0,
   color: 'var(--color-text-muted, #475569)',
   fontSize: 12,
   lineHeight: 1.5,
@@ -130,28 +132,31 @@ export const WorkflowPageHeader: React.FC<{
 export const WorkflowMetricGrid: React.FC<{
   items: WorkflowMetric[];
   ariaLabel: string;
-}> = ({ items, ariaLabel }) => (
-  <section aria-label={ariaLabel} style={metricGridStyle}>
-    {items.map((item, index) => {
-      const tone = item.tone ?? 'default';
-      return (
-        <div
-          key={`${item.id ?? item.label}-${index}`}
-          style={{
-            ...metricBaseStyle,
-            borderColor: toneBorder[tone],
-          }}
-        >
-          <p style={metricLabelStyle}>{item.label}</p>
-          <div style={metricValueStyle}>{item.value}</div>
-          {item.helper ? (
-            <div style={metricHelperStyle}>{item.helper}</div>
-          ) : null}
-        </div>
-      );
-    })}
-  </section>
-);
+}> = ({ items, ariaLabel }) => {
+  return (
+    <section aria-label={ariaLabel} style={metricGridStyle}>
+      {items.map((item, index) => {
+        const tone = item.tone ?? 'default';
+
+        return (
+          <dl
+            key={`${item.id ?? item.label}-${index}`}
+            style={{
+              ...metricBaseStyle,
+              borderColor: toneBorder[tone],
+            }}
+          >
+            <dt style={metricLabelStyle}>{item.label}</dt>
+            <dd style={metricValueStyle}>{item.value}</dd>
+            {item.helper ? (
+              <dd style={metricHelperStyle}>{item.helper}</dd>
+            ) : null}
+          </dl>
+        );
+      })}
+    </section>
+  );
+};
 
 export const WorkflowPanel: React.FC<{
   title: string;
@@ -160,15 +165,22 @@ export const WorkflowPanel: React.FC<{
   children: React.ReactNode;
 }> = ({ title, description, actions, children }) => {
   const titleId = React.useId();
+  const descriptionId = React.useId();
   return (
-    <section aria-labelledby={titleId} style={panelStyle}>
+    <section
+      aria-labelledby={titleId}
+      aria-describedby={description ? descriptionId : undefined}
+      style={panelStyle}
+    >
       <div style={panelHeaderStyle}>
         <div>
           <h3 id={titleId} style={panelTitleStyle}>
             {title}
           </h3>
           {description ? (
-            <div style={panelDescriptionStyle}>{description}</div>
+            <div id={descriptionId} style={panelDescriptionStyle}>
+              {description}
+            </div>
           ) : null}
         </div>
         {actions ? <div style={actionsStyle}>{actions}</div> : null}

@@ -1,4 +1,10 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -185,6 +191,37 @@ beforeEach(() => {
 });
 
 describe('App', () => {
+  it('exposes skip navigation, menu landmarks, active page state, and main focus handoff', async () => {
+    render(<App />);
+
+    expect(
+      screen.getByRole('link', { name: 'メインコンテンツへ移動' }),
+    ).toHaveAttribute('href', '#erp4-main-content');
+    expect(
+      screen.getByRole('navigation', { name: '主要メニュー' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('main', { name: 'ホーム / ホーム' }),
+    ).toHaveAttribute('id', 'erp4-main-content');
+    expect(screen.getByRole('button', { name: 'ホーム' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(
+      screen.getByRole('button', {
+        name: 'コマンドを開く (Ctrl/Cmd + K)',
+      }),
+    ).toHaveAttribute('aria-keyshortcuts', 'Control+K Meta+K');
+
+    const projectsButton = screen.getByRole('button', { name: '案件' });
+    fireEvent.click(projectsButton);
+
+    await waitFor(() => {
+      expect(screen.getByRole('main', { name: '案件 / 案件' })).toHaveFocus();
+    });
+    expect(projectsButton).toHaveAttribute('aria-current', 'page');
+  });
+
   it('normalizes legacy saved section aliases before restoring the active section', async () => {
     window.localStorage.setItem('erp4_active_section', 'project-chat');
 
