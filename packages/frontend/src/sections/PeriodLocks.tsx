@@ -15,6 +15,12 @@ import {
   erpStatusDictionary,
 } from '../ui';
 import type { DataTableColumn, DataTableRow } from '../ui';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  WorkflowPanel,
+  type WorkflowMetric,
+} from './workflowUx';
 
 type ProjectOption = {
   id: string;
@@ -44,9 +50,24 @@ type FormState = {
   projectId: string;
   reason: string;
 };
+type ListStatus = 'idle' | 'loading' | 'error' | 'success';
 
 const PERIOD_FORMAT_REGEX = /^\d{4}-\d{2}$/;
 const getCurrentPeriod = () => new Date().toISOString().slice(0, 7);
+
+const listStatusLabel: Record<ListStatus, string> = {
+  idle: '未取得',
+  loading: '取得中',
+  error: 'エラー',
+  success: '取得済み',
+};
+
+const listStatusTone: Record<ListStatus, WorkflowMetric['tone']> = {
+  idle: 'default',
+  loading: 'default',
+  error: 'danger',
+  success: 'success',
+};
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return '-';
@@ -69,9 +90,7 @@ export const PeriodLocks: React.FC = () => {
     projectId: '',
     reason: '',
   });
-  const [listStatus, setListStatus] = useState<
-    'idle' | 'loading' | 'error' | 'success'
-  >('idle');
+  const [listStatus, setListStatus] = useState<ListStatus>('idle');
   const [listError, setListError] = useState('');
   const [formMessage, setFormMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -184,6 +203,70 @@ export const PeriodLocks: React.FC = () => {
     [items, renderProject],
   );
 
+  const activeFilterCount = useMemo(
+    () =>
+      [filters.period, filters.scope, filters.projectId].filter(
+        (value) => value.trim().length > 0,
+      ).length,
+    [filters],
+  );
+
+  const createTargetLabel = useMemo(() => {
+    if (form.scope === 'global') return 'global';
+    if (form.projectId) return renderProject(form.projectId);
+    return '案件未選択';
+  }, [form.projectId, form.scope, renderProject]);
+
+  const metrics = useMemo<WorkflowMetric[]>(
+    () => [
+      {
+        label: '締め一覧状態',
+        value: listStatusLabel[listStatus],
+        helper:
+          listStatus === 'error'
+            ? '検索条件を確認して再試行してください'
+            : listStatus === 'loading'
+              ? '締め一覧を取得中'
+              : listStatus === 'success'
+                ? `${items.length}件を取得`
+                : '検索実行前',
+        tone: listStatusTone[listStatus],
+      },
+      {
+        label: '表示中',
+        value: `${rows.length}件`,
+        helper: rows.length
+          ? '解除対象を一覧から選択'
+          : '検索または登録後に表示',
+      },
+      {
+        label: '検索条件',
+        value: activeFilterCount ? `${activeFilterCount}項目` : '未指定',
+        helper: filters.period
+          ? `period: ${filters.period}`
+          : 'period / scope / project で絞り込み',
+      },
+      {
+        label: '登録対象',
+        value: form.period || '-',
+        helper: `${form.scope} / ${createTargetLabel}`,
+        tone:
+          form.scope === 'project' && !form.projectId ? 'warning' : 'default',
+      },
+    ],
+    [
+      activeFilterCount,
+      createTargetLabel,
+      filters.period,
+      form.period,
+      form.projectId,
+      form.scope,
+      items.length,
+      listStatus,
+      rows.length,
+    ],
+  );
+
   const columns = useMemo<DataTableColumn[]>(
     () => [
       { key: 'period', header: '期間' },
@@ -261,131 +344,152 @@ export const PeriodLocks: React.FC = () => {
 
   return (
     <div>
-      <h2>期間締め</h2>
-      <Card padding="small">
-        <div className="row" style={{ alignItems: 'flex-end' }}>
-          <Input
-            label="period (YYYY-MM)"
-            value={form.period}
-            onChange={(e) => setForm({ ...form, period: e.target.value })}
-          />
-          <Select
-            label="scope"
-            value={form.scope}
-            onChange={(e) =>
-              setForm({
-                ...form,
-                scope: e.target.value as FormState['scope'],
-              })
-            }
-          >
-            <option value="global">global</option>
-            <option value="project">project</option>
-          </Select>
-          <Select
-            label="project"
-            value={form.projectId}
-            onChange={(e) => setForm({ ...form, projectId: e.target.value })}
-            disabled={form.scope !== 'project'}
-            placeholder="案件を選択"
-          >
-            <option value="">案件を選択</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.code} / {project.name}
-              </option>
-            ))}
-          </Select>
-          <Input
-            label="reason"
-            value={form.reason}
-            onChange={(e) => setForm({ ...form, reason: e.target.value })}
-            placeholder="任意"
-          />
-          <Button onClick={createLock} loading={isSaving}>
-            締め登録
-          </Button>
-        </div>
-        {formMessage && (
-          <div style={{ marginTop: 8 }}>
-            <Alert variant="error">{formMessage}</Alert>
-          </div>
-        )}
-      </Card>
-
-      <Card padding="small">
-        {listError && (
-          <div style={{ marginBottom: 8 }}>
-            <Alert variant="error">{listError}</Alert>
-          </div>
-        )}
-        <CrudList
-          title="締め一覧"
-          description="条件で絞り込み、対象期間の締めを解除できます。"
-          filters={
-            <FilterBar
-              actions={
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <Button
-                    variant="ghost"
-                    onClick={() =>
-                      setFilters({ period: '', scope: '', projectId: '' })
-                    }
-                  >
-                    条件クリア
-                  </Button>
-                  <Button
-                    onClick={loadLocks}
-                    loading={listStatus === 'loading'}
-                  >
-                    検索
-                  </Button>
-                </div>
+      <WorkflowPageHeader
+        title="期間締め"
+        description="会計・勤怠などの対象期間を締め、対象scopeと理由を確認しながら登録・検索・解除するための管理画面です。"
+      />
+      <WorkflowMetricGrid items={metrics} ariaLabel="期間締めサマリー" />
+      <WorkflowPanel
+        title="締め登録"
+        description="対象期間とscopeを指定し、必要に応じて理由を残して締めを登録します。"
+      >
+        <Card padding="small">
+          <div className="row" style={{ alignItems: 'flex-end' }}>
+            <Input
+              label="period (YYYY-MM)"
+              value={form.period}
+              onChange={(e) => setForm({ ...form, period: e.target.value })}
+            />
+            <Select
+              label="scope"
+              value={form.scope}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  scope: e.target.value as FormState['scope'],
+                })
               }
             >
-              <div
-                className="row"
-                style={{ alignItems: 'flex-end', flexWrap: 'wrap' }}
+              <option value="global">global</option>
+              <option value="project">project</option>
+            </Select>
+            <Select
+              label="project"
+              value={form.projectId}
+              onChange={(e) => setForm({ ...form, projectId: e.target.value })}
+              disabled={form.scope !== 'project'}
+              placeholder="案件を選択"
+            >
+              <option value="">案件を選択</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.code} / {project.name}
+                </option>
+              ))}
+            </Select>
+            <Input
+              label="reason"
+              value={form.reason}
+              onChange={(e) => setForm({ ...form, reason: e.target.value })}
+              placeholder="任意"
+            />
+            <Button
+              onClick={() => {
+                void createLock();
+              }}
+              loading={isSaving}
+            >
+              締め登録
+            </Button>
+          </div>
+          {formMessage && (
+            <div style={{ marginTop: 8 }}>
+              <Alert variant="error">{formMessage}</Alert>
+            </div>
+          )}
+        </Card>
+      </WorkflowPanel>
+
+      <WorkflowPanel
+        title="締め検索と解除"
+        description="登録済みの締めを条件で検索し、必要に応じて解除確認へ進みます。"
+      >
+        <Card padding="small">
+          {listError && (
+            <div style={{ marginBottom: 8 }}>
+              <Alert variant="error">{listError}</Alert>
+            </div>
+          )}
+          <CrudList
+            title="締め一覧"
+            description="条件で絞り込み、対象期間の締めを解除できます。"
+            filters={
+              <FilterBar
+                actions={
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Button
+                      variant="ghost"
+                      onClick={() =>
+                        setFilters({ period: '', scope: '', projectId: '' })
+                      }
+                    >
+                      条件クリア
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        void loadLocks();
+                      }}
+                      loading={listStatus === 'loading'}
+                    >
+                      検索
+                    </Button>
+                  </div>
+                }
               >
-                <Input
-                  label="period"
-                  value={filters.period}
-                  onChange={(e) =>
-                    setFilters({ ...filters, period: e.target.value })
-                  }
-                  placeholder="YYYY-MM"
-                />
-                <Select
-                  label="scope"
-                  value={filters.scope}
-                  onChange={(e) =>
-                    setFilters({ ...filters, scope: e.target.value })
-                  }
+                <div
+                  className="row"
+                  style={{ alignItems: 'flex-end', flexWrap: 'wrap' }}
                 >
-                  <option value="">すべて</option>
-                  <option value="global">global</option>
-                  <option value="project">project</option>
-                </Select>
-                <Select
-                  label="project"
-                  value={filters.projectId}
-                  onChange={(e) =>
-                    setFilters({ ...filters, projectId: e.target.value })
-                  }
-                >
-                  <option value="">すべて</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.code} / {project.name}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            </FilterBar>
-          }
-          table={listContent}
-        />
-      </Card>
+                  <Input
+                    label="period"
+                    value={filters.period}
+                    onChange={(e) =>
+                      setFilters({ ...filters, period: e.target.value })
+                    }
+                    placeholder="YYYY-MM"
+                  />
+                  <Select
+                    label="scope"
+                    value={filters.scope}
+                    onChange={(e) =>
+                      setFilters({ ...filters, scope: e.target.value })
+                    }
+                  >
+                    <option value="">すべて</option>
+                    <option value="global">global</option>
+                    <option value="project">project</option>
+                  </Select>
+                  <Select
+                    label="project"
+                    value={filters.projectId}
+                    onChange={(e) =>
+                      setFilters({ ...filters, projectId: e.target.value })
+                    }
+                  >
+                    <option value="">すべて</option>
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.code} / {project.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              </FilterBar>
+            }
+            table={listContent}
+          />
+        </Card>
+      </WorkflowPanel>
       <ConfirmActionDialog
         open={Boolean(targetLock)}
         title="期間締めを解除しますか？"
