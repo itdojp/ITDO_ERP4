@@ -1,0 +1,239 @@
+{
+  "before": {
+    "js_assets": [
+      {
+        "file": "assets/index-9Z3gAjh2.js",
+        "bytes": 1300008,
+        "gzip_bytes": 346942
+      }
+    ],
+    "largest_js": {
+      "file": "assets/index-9Z3gAjh2.js",
+      "bytes": 1300008,
+      "gzip_bytes": 346942
+    }
+  },
+  "after": {
+    "js_assets": [
+      {
+        "file": "assets/AccessReviews-ByRf851G.js",
+        "bytes": 5089,
+        "gzip_bytes": 2112
+      },
+      {
+        "file": "assets/AdminJobs-BfNUTcWT.js",
+        "bytes": 14064,
+        "gzip_bytes": 4663
+      },
+      {
+        "file": "assets/AdminSettings-lm5ASX4Z.js",
+        "bytes": 139795,
+        "gzip_bytes": 29066
+      },
+      {
+        "file": "assets/AnnotationsCard-BshMr7be.js",
+        "bytes": 23306,
+        "gzip_bytes": 7389
+      },
+      {
+        "file": "assets/Approvals-OIy0tmDA.js",
+        "bytes": 21540,
+        "gzip_bytes": 6448
+      },
+      {
+        "file": "assets/AuditLogs-BX5BJYvk.js",
+        "bytes": 10314,
+        "gzip_bytes": 4036
+      },
+      {
+        "file": "assets/ChatBreakGlass-BHKFuK7U.js",
+        "bytes": 9668,
+        "gzip_bytes": 3458
+      },
+      {
+        "file": "assets/DailyReport-KODqJ9FL.js",
+        "bytes": 16416,
+        "gzip_bytes": 5728
+      },
+      {
+        "file": "assets/Dashboard-DptNlCja.js",
+        "bytes": 21809,
+        "gzip_bytes": 6065
+      },
+      {
+        "file": "assets/DocumentSendLogs-eznd5o4g.js",
+        "bytes": 11021,
+        "gzip_bytes": 3910
+      },
+      {
+        "file": "assets/Estimates-CUayg3Il.js",
+        "bytes": 8944,
+        "gzip_bytes": 3229
+      },
+      {
+        "file": "assets/Expenses-WWh0MG4-.js",
+        "bytes": 15232,
+        "gzip_bytes": 5016
+      },
+      {
+        "file": "assets/GlobalSearch-DKIre07G.js",
+        "bytes": 7941,
+        "gzip_bytes": 2128
+      },
+      {
+        "file": "assets/HRAnalytics-CavbtrRZ.js",
+        "bytes": 5627,
+        "gzip_bytes": 2357
+      },
+      {
+        "file": "assets/Invoices-C7d_3IJE.js",
+        "bytes": 13823,
+        "gzip_bytes": 4761
+      },
+      {
+        "file": "assets/LeaveRequests-CKwfy4d-.js",
+        "bytes": 21120,
+        "gzip_bytes": 6425
+      },
+      {
+        "file": "assets/MasterData-C6moga6d.js",
+        "bytes": 15048,
+        "gzip_bytes": 4078
+      },
+      {
+        "file": "assets/PdfFiles-ChDF2bym.js",
+        "bytes": 4566,
+        "gzip_bytes": 2189
+      },
+      {
+        "file": "assets/PeriodLocks-oSvyhYgD.js",
+        "bytes": 7411,
+        "gzip_bytes": 2915
+      },
+      {
+        "file": "assets/ProjectMilestones-D6RxYtv4.js",
+        "bytes": 7129,
+        "gzip_bytes": 2575
+      },
+      {
+        "file": "assets/ProjectTasks-Cr2GnKI5.js",
+        "bytes": 12513,
+        "gzip_bytes": 3975
+      },
+      {
+        "file": "assets/Projects-Dui5fcx-.js",
+        "bytes": 26052,
+        "gzip_bytes": 7511
+      },
+      {
+        "file": "assets/Reports-DhaCUwds.js",
+        "bytes": 18257,
+        "gzip_bytes": 4913
+      },
+      {
+        "file": "assets/RoomChat-CGRCfrn6.js",
+        "bytes": 41238,
+        "gzip_bytes": 11551
+      },
+      {
+        "file": "assets/TimeEntries-c_mVngMp.js",
+        "bytes": 14758,
+        "gzip_bytes": 5225
+      },
+      {
+        "file": "assets/VendorDocuments-B8RmI6kN.js",
+        "bytes": 63817,
+        "gzip_bytes": 14756
+      },
+      {
+        "file": "assets/clipboard-BNKdVk3n.js",
+        "bytes": 584,
+        "gzip_bytes": 336
+      },
+      {
+        "file": "assets/design-system-CFnPNwub.js",
+        "bytes": 296583,
+        "gzip_bytes": 88575
+      },
+      {
+        "file": "assets/download-C9HSg7f1.js",
+        "bytes": 941,
+        "gzip_bytes": 484
+      },
+      {
+        "file": "assets/drafts-5HfGdkSb.js",
+        "bytes": 1254,
+        "gzip_bytes": 606
+      },
+      {
+        "file": "assets/index-C6VSNjza.js",
+        "bytes": 53150,
+        "gzip_bytes": 15966
+      },
+      {
+        "file": "assets/markdown-vendor-CWil2yG5.js",
+        "bytes": 152336,
+        "gzip_bytes": 44578
+      },
+      {
+        "file": "assets/react-vendor-D2gUeuMQ.js",
+        "bytes": 178323,
+        "gzip_bytes": 55556
+      },
+      {
+        "file": "assets/rolldown-runtime-QTnfLwEv.js",
+        "bytes": 694,
+        "gzip_bytes": 423
+      },
+      {
+        "file": "assets/tanstack-vendor-BUQS1ZZv.js",
+        "bytes": 69853,
+        "gzip_bytes": 18634
+      },
+      {
+        "file": "assets/useProjects-9MtGUCFW.js",
+        "bytes": 791,
+        "gzip_bytes": 515
+      },
+      {
+        "file": "assets/workflowUx-BDM0v7go.js",
+        "bytes": 3603,
+        "gzip_bytes": 1317
+      }
+    ],
+    "largest_js": {
+      "file": "assets/design-system-CFnPNwub.js",
+      "bytes": 296583,
+      "gzip_bytes": 88575
+    },
+    "entry_js": {
+      "file": "assets/index-C6VSNjza.js",
+      "bytes": 53150,
+      "gzip_bytes": 15966
+    },
+    "initial_js": [
+      {
+        "file": "assets/index-C6VSNjza.js",
+        "bytes": 53150,
+        "gzip_bytes": 15966
+      },
+      {
+        "file": "assets/rolldown-runtime-QTnfLwEv.js",
+        "bytes": 694,
+        "gzip_bytes": 423
+      },
+      {
+        "file": "assets/design-system-CFnPNwub.js",
+        "bytes": 296583,
+        "gzip_bytes": 88575
+      },
+      {
+        "file": "assets/react-vendor-D2gUeuMQ.js",
+        "bytes": 178323,
+        "gzip_bytes": 55556
+      }
+    ],
+    "initial_total_bytes": 528750,
+    "initial_total_gzip_bytes": 160520
+  }
+}

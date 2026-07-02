@@ -14,32 +14,7 @@ import {
   PageHeader,
   SectionCard,
 } from '../ui';
-import { Dashboard } from '../sections/Dashboard';
-import { GlobalSearch } from '../sections/GlobalSearch';
-import { DailyReport } from '../sections/DailyReport';
-import { TimeEntries } from '../sections/TimeEntries';
-import { ProjectTasks } from '../sections/ProjectTasks';
-import { Estimates } from '../sections/Estimates';
-import { Invoices } from '../sections/Invoices';
-import { Expenses } from '../sections/Expenses';
-import { LeaveRequests } from '../sections/LeaveRequests';
-import { HRAnalytics } from '../sections/HRAnalytics';
 import { CurrentUser } from '../sections/CurrentUser';
-import { Reports } from '../sections/Reports';
-import { AdminSettings } from '../sections/AdminSettings';
-import { Approvals } from '../sections/Approvals';
-import { RoomChat } from '../sections/RoomChat';
-import { ChatBreakGlass } from '../sections/ChatBreakGlass';
-import { MasterData } from '../sections/MasterData';
-import { Projects } from '../sections/Projects';
-import { ProjectMilestones } from '../sections/ProjectMilestones';
-import { VendorDocuments } from '../sections/VendorDocuments';
-import { AccessReviews } from '../sections/AccessReviews';
-import { AuditLogs } from '../sections/AuditLogs';
-import { PeriodLocks } from '../sections/PeriodLocks';
-import { AdminJobs } from '../sections/AdminJobs';
-import { DocumentSendLogs } from '../sections/DocumentSendLogs';
-import { PdfFiles } from '../sections/PdfFiles';
 import { parseOpenHash, type DeepLinkOpenPayload } from '../utils/deepLink';
 
 type SectionItem = {
@@ -58,6 +33,191 @@ const LEGACY_SECTION_ALIASES: Record<string, string> = {
   'project-chat': 'room-chat',
 };
 const COMMAND_PALETTE_SEARCH_LABEL = 'コマンド検索';
+
+const Dashboard = React.lazy(() =>
+  import('../sections/Dashboard').then((module) => ({
+    default: module.Dashboard,
+  })),
+);
+const GlobalSearch = React.lazy(() =>
+  import('../sections/GlobalSearch').then((module) => ({
+    default: module.GlobalSearch,
+  })),
+);
+const DailyReport = React.lazy(() =>
+  import('../sections/DailyReport').then((module) => ({
+    default: module.DailyReport,
+  })),
+);
+const TimeEntries = React.lazy(() =>
+  import('../sections/TimeEntries').then((module) => ({
+    default: module.TimeEntries,
+  })),
+);
+const ProjectTasks = React.lazy(() =>
+  import('../sections/ProjectTasks').then((module) => ({
+    default: module.ProjectTasks,
+  })),
+);
+const Estimates = React.lazy(() =>
+  import('../sections/Estimates').then((module) => ({
+    default: module.Estimates,
+  })),
+);
+const Invoices = React.lazy(() =>
+  import('../sections/Invoices').then((module) => ({
+    default: module.Invoices,
+  })),
+);
+const Expenses = React.lazy(() =>
+  import('../sections/Expenses').then((module) => ({
+    default: module.Expenses,
+  })),
+);
+const LeaveRequests = React.lazy(() =>
+  import('../sections/LeaveRequests').then((module) => ({
+    default: module.LeaveRequests,
+  })),
+);
+const HRAnalytics = React.lazy(() =>
+  import('../sections/HRAnalytics').then((module) => ({
+    default: module.HRAnalytics,
+  })),
+);
+const Reports = React.lazy(() =>
+  import('../sections/Reports').then((module) => ({
+    default: module.Reports,
+  })),
+);
+const AdminSettings = React.lazy(() =>
+  import('../sections/AdminSettings').then((module) => ({
+    default: module.AdminSettings,
+  })),
+);
+const Approvals = React.lazy(() =>
+  import('../sections/Approvals').then((module) => ({
+    default: module.Approvals,
+  })),
+);
+const RoomChat = React.lazy(() =>
+  import('../sections/RoomChat').then((module) => ({
+    default: module.RoomChat,
+  })),
+);
+const ChatBreakGlass = React.lazy(() =>
+  import('../sections/ChatBreakGlass').then((module) => ({
+    default: module.ChatBreakGlass,
+  })),
+);
+const MasterData = React.lazy(() =>
+  import('../sections/MasterData').then((module) => ({
+    default: module.MasterData,
+  })),
+);
+const Projects = React.lazy(() =>
+  import('../sections/Projects').then((module) => ({
+    default: module.Projects,
+  })),
+);
+const ProjectMilestones = React.lazy(() =>
+  import('../sections/ProjectMilestones').then((module) => ({
+    default: module.ProjectMilestones,
+  })),
+);
+const VendorDocuments = React.lazy(() =>
+  import('../sections/VendorDocuments').then((module) => ({
+    default: module.VendorDocuments,
+  })),
+);
+const AccessReviews = React.lazy(() =>
+  import('../sections/AccessReviews').then((module) => ({
+    default: module.AccessReviews,
+  })),
+);
+const AuditLogs = React.lazy(() =>
+  import('../sections/AuditLogs').then((module) => ({
+    default: module.AuditLogs,
+  })),
+);
+const PeriodLocks = React.lazy(() =>
+  import('../sections/PeriodLocks').then((module) => ({
+    default: module.PeriodLocks,
+  })),
+);
+const AdminJobs = React.lazy(() =>
+  import('../sections/AdminJobs').then((module) => ({
+    default: module.AdminJobs,
+  })),
+);
+const DocumentSendLogs = React.lazy(() =>
+  import('../sections/DocumentSendLogs').then((module) => ({
+    default: module.DocumentSendLogs,
+  })),
+);
+const PdfFiles = React.lazy(() =>
+  import('../sections/PdfFiles').then((module) => ({
+    default: module.PdfFiles,
+  })),
+);
+
+function SectionLoadingFallback({ label }: { label: string }) {
+  return (
+    <Card>
+      <div role="status" aria-live="polite">
+        {`${label}を読み込んでいます…`}
+      </div>
+    </Card>
+  );
+}
+
+function SectionReadyMarker({
+  sectionLoadKey,
+  onReady,
+  children,
+}: {
+  sectionLoadKey: string;
+  onReady: (sectionLoadKey: string) => void;
+  children: React.ReactNode;
+}) {
+  useEffect(() => {
+    onReady(sectionLoadKey);
+  }, [onReady, sectionLoadKey]);
+
+  return <>{children}</>;
+}
+
+type SectionLoadErrorBoundaryProps = {
+  sectionId: string;
+  sectionLabel: string;
+  children: React.ReactNode;
+};
+
+type SectionLoadErrorBoundaryState = {
+  hasError: boolean;
+};
+
+class SectionLoadErrorBoundary extends React.Component<
+  SectionLoadErrorBoundaryProps,
+  SectionLoadErrorBoundaryState
+> {
+  state: SectionLoadErrorBoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(): SectionLoadErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Alert variant="warning">
+          {`${this.props.sectionLabel}の読み込みに失敗しました。ページを再読み込みしてから再度開いてください。`}
+        </Alert>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 function normalizeSectionId(sectionId: string) {
   return LEGACY_SECTION_ALIASES[sectionId] || sectionId;
@@ -420,21 +580,44 @@ export const App: React.FC = () => {
     [sectionGroups],
   );
   const fallbackSectionId = sections[0]?.id || 'home';
-  const [activeSectionId, setActiveSectionId] = useState(() => {
-    if (typeof window === 'undefined') return fallbackSectionId;
+  const [activeSectionState, setActiveSectionState] = useState(() => {
+    if (typeof window === 'undefined') {
+      return { id: fallbackSectionId, loadSeq: 0 };
+    }
     const storedId = window.localStorage.getItem(ACTIVE_SECTION_KEY);
-    if (!storedId) return fallbackSectionId;
+    if (!storedId) return { id: fallbackSectionId, loadSeq: 0 };
     const normalizedStoredId = normalizeSectionId(storedId);
     const isValid = sections.some(
       (section) => section.id === normalizedStoredId,
     );
-    return isValid ? normalizedStoredId : fallbackSectionId;
+    return {
+      id: isValid ? normalizedStoredId : fallbackSectionId,
+      loadSeq: 0,
+    };
   });
+  const activeSectionId = activeSectionState.id;
+  const activeSectionLoadKey = `${activeSectionState.id}:${activeSectionState.loadSeq}`;
   const [pendingDeepLink, setPendingDeepLink] =
     useState<DeepLinkResolvedTarget | null>(null);
   const [deepLinkError, setDeepLinkError] = useState<string>('');
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [mainFocusRequestCount, setMainFocusRequestCount] = useState(0);
+  const [pendingGlobalSearchFocus, setPendingGlobalSearchFocus] =
+    useState(false);
+  const [activeSectionReadyKey, setActiveSectionReadyKey] = useState<
+    string | null
+  >(null);
+
+  const prepareActiveSectionChange = useCallback((sectionId: string) => {
+    const normalizedSectionId = normalizeSectionId(sectionId);
+    setActiveSectionState((current) => {
+      if (current.id === normalizedSectionId) return current;
+      return {
+        id: normalizedSectionId,
+        loadSeq: current.loadSeq + 1,
+      };
+    });
+  }, []);
 
   useEffect(() => {
     if (!isCommandPaletteOpen) return;
@@ -524,7 +707,7 @@ export const App: React.FC = () => {
                 typeof payload.excerpt === 'string' ? payload.excerpt : '',
             },
           });
-          setActiveSectionId(sectionId);
+          prepareActiveSectionChange(sectionId);
         };
         run().catch((error) => {
           console.error('chat_message deeplink resolve failed', error);
@@ -542,16 +725,36 @@ export const App: React.FC = () => {
       }
       setDeepLinkError('');
       setPendingDeepLink(resolved);
-      setActiveSectionId(resolved.sectionId);
+      prepareActiveSectionChange(resolved.sectionId);
     };
     handle();
     window.addEventListener('hashchange', handle);
     return () => window.removeEventListener('hashchange', handle);
-  }, []);
+  }, [prepareActiveSectionChange]);
+
+  useEffect(() => {
+    if (!pendingGlobalSearchFocus) return;
+    if (activeSectionId !== 'home') return;
+    if (activeSectionReadyKey !== activeSectionLoadKey) return;
+    if (typeof window === 'undefined') return;
+
+    const handle = window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('erp4_global_search_focus'));
+      setPendingGlobalSearchFocus(false);
+    }, 0);
+
+    return () => window.clearTimeout(handle);
+  }, [
+    activeSectionId,
+    activeSectionLoadKey,
+    activeSectionReadyKey,
+    pendingGlobalSearchFocus,
+  ]);
 
   useEffect(() => {
     if (!pendingDeepLink) return;
     if (activeSectionId !== pendingDeepLink.sectionId) return;
+    if (activeSectionReadyKey !== activeSectionLoadKey) return;
 
     const { kind, id } = pendingDeepLink.payload;
     if (kind === 'project_chat') {
@@ -610,7 +813,12 @@ export const App: React.FC = () => {
         window.location.pathname + window.location.search,
       );
     }
-  }, [activeSectionId, pendingDeepLink]);
+  }, [
+    activeSectionId,
+    activeSectionLoadKey,
+    activeSectionReadyKey,
+    pendingDeepLink,
+  ]);
 
   const activeSection =
     sections.find((section) => section.id === activeSectionId) || sections[0];
@@ -647,7 +855,7 @@ export const App: React.FC = () => {
       const normalizedSectionId = normalizeSectionId(sectionId);
       setDeepLinkError('');
       setPendingDeepLink(null);
-      setActiveSectionId(normalizedSectionId);
+      prepareActiveSectionChange(normalizedSectionId);
       if (options.focusMain ?? true) {
         setMainFocusRequestCount((current) => current + 1);
       }
@@ -662,8 +870,12 @@ export const App: React.FC = () => {
         );
       }
     },
-    [],
+    [prepareActiveSectionChange],
   );
+
+  const handleSectionReady = useCallback((sectionLoadKey: string) => {
+    setActiveSectionReadyKey(sectionLoadKey);
+  }, []);
 
   const commandActions = useMemo(
     () => [
@@ -686,11 +898,8 @@ export const App: React.FC = () => {
           'ホームの検索（ERP横断）に移動して入力欄へフォーカスします',
         keywords: ['検索', 'search', 'global'],
         onSelect: () => {
+          setPendingGlobalSearchFocus(true);
           activateSection('home', { focusMain: false });
-          if (typeof window === 'undefined') return;
-          window.setTimeout(() => {
-            window.dispatchEvent(new CustomEvent('erp4_global_search_focus'));
-          }, 0);
         },
       },
       {
@@ -834,7 +1043,24 @@ export const App: React.FC = () => {
               title={activeSection.label}
               description={activeSectionGroup?.title}
             >
-              {activeSection.render()}
+              <SectionLoadErrorBoundary
+                key={activeSection.id}
+                sectionId={activeSection.id}
+                sectionLabel={activeSection.label}
+              >
+                <React.Suspense
+                  fallback={
+                    <SectionLoadingFallback label={activeSection.label} />
+                  }
+                >
+                  <SectionReadyMarker
+                    sectionLoadKey={activeSectionLoadKey}
+                    onReady={handleSectionReady}
+                  >
+                    {activeSection.render()}
+                  </SectionReadyMarker>
+                </React.Suspense>
+              </SectionLoadErrorBoundary>
             </SectionCard>
           ) : null}
         </main>

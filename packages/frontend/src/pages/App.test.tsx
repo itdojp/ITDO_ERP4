@@ -102,7 +102,22 @@ vi.mock('../ui', () => ({
     </button>
   ),
   Card: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  CommandPalette: () => null,
+  CommandPalette: ({
+    open,
+    actions,
+  }: {
+    open: boolean;
+    actions: Array<{ id: string; label: string; onSelect: () => void }>;
+  }) =>
+    open ? (
+      <div role="dialog" aria-label="ERP4 コマンドパレット">
+        {actions.map((action) => (
+          <button key={action.id} type="button" onClick={action.onSelect}>
+            {action.label}
+          </button>
+        ))}
+      </div>
+    ) : null,
   PageHeader: ({
     title,
     description,
@@ -220,6 +235,36 @@ describe('App', () => {
       expect(screen.getByRole('main', { name: '案件 / 案件' })).toHaveFocus();
     });
     expect(projectsButton).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('focuses global search after navigating home from a lazy-loaded section command', async () => {
+    window.localStorage.setItem('erp4_active_section', 'projects');
+    const listener = vi.fn();
+    window.addEventListener('erp4_global_search_focus', listener);
+
+    try {
+      render(<App />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('section-projects')).toBeInTheDocument();
+      });
+
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: 'コマンドを開く (Ctrl/Cmd + K)',
+        }),
+      );
+      fireEvent.click(
+        screen.getByRole('button', { name: '検索: グローバル検索を開く' }),
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('section-global-search')).toBeInTheDocument();
+        expect(listener).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      window.removeEventListener('erp4_global_search_focus', listener);
+    }
   });
 
   it('normalizes legacy saved section aliases before restoring the active section', async () => {
@@ -371,8 +416,8 @@ describe('App', () => {
 
       await waitFor(() => {
         expect(listener).toHaveBeenCalledTimes(1);
+        expect(screen.getByTestId(sectionTestId)).toBeInTheDocument();
       });
-      expect(screen.getByTestId(sectionTestId)).toBeInTheDocument();
       expect((listener.mock.calls[0]?.[0] as CustomEvent).detail).toEqual(
         expectedDetail,
       );
@@ -426,10 +471,10 @@ describe('App', () => {
 
       await waitFor(() => {
         expect(listener).toHaveBeenCalledTimes(1);
+        expect(
+          screen.getByTestId('section-document-send-logs'),
+        ).toBeInTheDocument();
       });
-      expect(
-        screen.getByTestId('section-document-send-logs'),
-      ).toBeInTheDocument();
       expect((listener.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
         sendLogId: 'LOG-100',
       });
@@ -451,8 +496,8 @@ describe('App', () => {
 
       await waitFor(() => {
         expect(listener).toHaveBeenCalledTimes(1);
+        expect(screen.getByTestId('section-audit-logs')).toBeInTheDocument();
       });
-      expect(screen.getByTestId('section-audit-logs')).toBeInTheDocument();
       expect((listener.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
         sendLogId: 'LOG-200',
       });
