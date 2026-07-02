@@ -818,6 +818,7 @@ export const App: React.FC = () => {
           </SectionCard>
         </div>
         <main
+          className="erp4-main"
           id="erp4-main-content"
           ref={mainContentRef}
           tabIndex={-1}

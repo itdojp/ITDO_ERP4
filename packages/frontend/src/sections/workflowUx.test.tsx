@@ -45,9 +45,11 @@ describe('workflowUx', () => {
     );
 
     expect(screen.getByLabelText('案件サマリー')).toBeInTheDocument();
+    expect(screen.getAllByRole('term')[0]).toHaveTextContent('案件数');
     expect(screen.getByText('案件数')).toBeInTheDocument();
     expect(screen.getByText('2件')).toBeInTheDocument();
     expect(screen.getByText('進行中 1件')).toBeInTheDocument();
+    expect(screen.getAllByRole('term')[1]).toHaveTextContent('顧客');
     expect(screen.getByText('顧客')).toBeInTheDocument();
     expect(screen.getByText('2社')).toBeInTheDocument();
     expect(

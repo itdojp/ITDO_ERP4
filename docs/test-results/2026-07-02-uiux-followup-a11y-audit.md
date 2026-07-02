@@ -35,7 +35,7 @@ Included checks and fixes:
 - This is not a full WCAG 2.2 AA certification or assistive-technology lab run.
 - This PR does not add `@axe-core/playwright`; the gate is implemented with Playwright role/label/landmark/focus assertions to avoid adding a new dependency before #1848 design-system hardening.
 - Full-screen visual regression automation remains scoped to #1850.
-- Broader design-token and primitive API hardening remains scoped to #1848.
+- Broader design-token and primitive API hardening remains scoped to #1848, including replacing the app-level command-palette input-label bridge with an upstream design-system prop when available.
 
 ## Screenshots
 

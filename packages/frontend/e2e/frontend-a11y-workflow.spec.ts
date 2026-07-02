@@ -4,6 +4,8 @@ import { expect, test, type Page } from '@playwright/test';
 
 const dateTag = new Date().toISOString().slice(0, 10);
 const rootDir = process.env.E2E_ROOT_DIR || process.cwd();
+// If E2E_EVIDENCE_DIR is omitted, screenshots are written to a runtime
+// date-stamped directory. PR evidence uses an explicit committed directory.
 const evidenceDir =
   process.env.E2E_EVIDENCE_DIR ||
   path.join(rootDir, 'docs', 'test-results', `${dateTag}-frontend-e2e`);
