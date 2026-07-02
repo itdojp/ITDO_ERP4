@@ -24,6 +24,8 @@ make e2e
 ## 補助コマンド
 
 - UI 証跡更新: `make ui-evidence`
+- UI visual regression: `make ui-visual-regression`
+- UI visual regression baseline 更新: `make ui-visual-regression-update`
 - フロントを API 接続で起動: `make frontend-dev-api`
 - Podman スモーク検証: `make podman-smoke`
 - PR レビューコメント一覧: `make pr-comments PR=123`
