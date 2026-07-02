@@ -99,6 +99,7 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 - `packages/frontend`
   - `npm run lint`
   - `npm run format:check`
+  - `max-lines` gate: frontend ESLint で UI component/module 肥大を error 2500 行として検知し、段階的に 2000/1500 行へ下げる
 
 ### CI / arch:bounded-context
 
