@@ -209,6 +209,76 @@ test('GET /audit-logs masks JSON output by default and redacts token metadata', 
   );
 });
 
+test('GET /audit-logs keeps AgentRun drill-down reference usable when masked', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+    },
+    async () => {
+      const runId = '3e433c46-193c-4a27-8029-268221761514';
+      await withPrismaStubs(
+        {
+          'auditLog.findMany': async () => [
+            {
+              id: 'audit-agent-run',
+              action: 'agent_run_seeded',
+              userId: 'operator@example.com',
+              actorRole: 'exec',
+              actorGroupId: null,
+              requestId: 'req-sensitive-12345',
+              ipAddress: '203.0.113.10',
+              userAgent: 'node-test',
+              source: 'agent',
+              reasonCode: null,
+              reasonText: null,
+              targetTable: 'invoices',
+              targetId: 'inv-001',
+              createdAt: new Date('2026-03-06T00:00:00Z'),
+              metadata: {
+                _agent: {
+                  runId,
+                  decisionRequestId: '71266c3d-d522-4fe8-af58-fb55a9725693',
+                },
+                _auth: {
+                  actorUserId: 'test-agent-bot',
+                  principalUserId: 'test-principal-user',
+                },
+              },
+            },
+          ],
+          'auditLog.create': async ({ data }) => ({ id: data.action }),
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'GET',
+              url: '/audit-logs?format=json',
+              headers: {
+                'x-user-id': 'exec-user',
+                'x-roles': 'exec',
+              },
+            });
+            assert.equal(res.statusCode, 200, res.body);
+            const payload = JSON.parse(res.body);
+            const item = payload.items?.[0];
+            assert.equal(item.agentRunId, runId);
+            assert.equal(item.agentRunPath, `/agent-runs/${runId}`);
+            assert.notEqual(item.metadata._agent.runId, runId);
+            assert.match(
+              item.metadata._agent.runId,
+              /^3e433c46-193c-4a27-8029-2682\*+$/,
+            );
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    },
+  );
+});
+
 test('GET /audit-logs denies unmasked export for exec role', async () => {
   await withEnv(
     {
