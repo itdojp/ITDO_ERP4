@@ -12,6 +12,12 @@ import {
 } from '../ui';
 import type { DataTableColumn, DataTableRow } from '../ui';
 import { openResponseInNewTab } from '../utils/download';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  WorkflowPanel,
+  type WorkflowMetric,
+} from './workflowUx';
 
 type PdfFileItem = {
   filename: string;
@@ -27,6 +33,20 @@ type PdfFileListResponse = {
 };
 
 type ListStatus = 'idle' | 'loading' | 'error' | 'success';
+
+const statusLabel: Record<ListStatus, string> = {
+  idle: '未読込',
+  loading: '読込中',
+  error: 'エラー',
+  success: '読込済み',
+};
+
+const statusTone: Record<ListStatus, WorkflowMetric['tone']> = {
+  idle: 'default',
+  loading: 'default',
+  error: 'danger',
+  success: 'success',
+};
 
 const formatDateTime = (value: string) => {
   const date = new Date(value);
@@ -147,6 +167,38 @@ export const PdfFiles: React.FC = () => {
     [openBusy, openPdf],
   );
 
+  const metrics = useMemo<WorkflowMetric[]>(
+    () => [
+      {
+        label: '一覧ステータス',
+        value: statusLabel[listStatus],
+        helper:
+          listStatus === 'error'
+            ? '再試行で一覧を取得してください'
+            : '最新のPDF一覧取得状態',
+        tone: statusTone[listStatus],
+      },
+      {
+        label: '表示中',
+        value: `${rows.length}件`,
+        helper: meta ? `総件数 ${meta.total}件` : '取得後に件数を表示',
+      },
+      {
+        label: '検索条件',
+        value: queryPrefix || '全件',
+        helper: queryPrefix
+          ? 'ファイル名プレフィックスで絞り込み中'
+          : 'プレフィックス未指定',
+      },
+      {
+        label: '最大表示',
+        value: meta ? `${meta.limit}件` : '100件',
+        helper: meta ? `offset ${meta.offset}` : '既定の取得上限',
+      },
+    ],
+    [listStatus, meta, queryPrefix, rows.length],
+  );
+
   const table = (() => {
     if (listStatus === 'idle' || listStatus === 'loading') {
       return <AsyncStatePanel state="loading" loadingText="PDF一覧を取得中" />;
@@ -182,61 +234,70 @@ export const PdfFiles: React.FC = () => {
 
   return (
     <div>
-      <h2>PDFファイル一覧</h2>
-      <Card padding="small">
-        <CrudList
-          title="ファイル検索"
-          description="ファイル名プレフィックスで絞り込んでPDFを開きます。"
-          filters={
-            <FilterBar
-              actions={
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      setPrefix('');
-                    }}
-                  >
-                    条件クリア
-                  </Button>
-                  <Button
-                    onClick={loadFiles}
-                    loading={listStatus === 'loading'}
-                  >
-                    再読込
-                  </Button>
+      <WorkflowPageHeader
+        title="PDFファイル一覧"
+        description="生成済みPDFを検索し、サイズ・更新日時を確認して必要なファイルを開くための管理画面です。"
+      />
+      <WorkflowMetricGrid items={metrics} ariaLabel="PDF管理サマリー" />
+      <WorkflowPanel
+        title="PDF検索とファイル確認"
+        description="ファイル名プレフィックスで対象を絞り込み、一覧からPDFを開きます。既存の取得・表示操作は維持しています。"
+      >
+        <Card padding="small">
+          <CrudList
+            title="ファイル検索"
+            description="ファイル名プレフィックスで絞り込んでPDFを開きます。"
+            filters={
+              <FilterBar
+                actions={
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setPrefix('');
+                      }}
+                    >
+                      条件クリア
+                    </Button>
+                    <Button
+                      onClick={loadFiles}
+                      loading={listStatus === 'loading'}
+                    >
+                      再読込
+                    </Button>
+                  </div>
+                }
+              >
+                <div className="row" style={{ alignItems: 'flex-end', gap: 8 }}>
+                  <Input
+                    label="filename prefix"
+                    value={prefix}
+                    onChange={(e) => setPrefix(e.target.value)}
+                    placeholder="例: invoice-"
+                  />
                 </div>
-              }
-            >
-              <div className="row" style={{ alignItems: 'flex-end', gap: 8 }}>
-                <Input
-                  label="filename prefix"
-                  value={prefix}
-                  onChange={(e) => setPrefix(e.target.value)}
-                  placeholder="例: invoice-"
-                />
+              </FilterBar>
+            }
+            table={
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div style={{ color: '#6b7280' }}>
+                  {meta
+                    ? `件数: ${meta.total}件（表示: ${meta.limit}件）`
+                    : '件数: -'}
+                </div>
+                {table}
               </div>
-            </FilterBar>
-          }
-          table={
-            <div style={{ display: 'grid', gap: 8 }}>
-              <div style={{ color: '#6b7280' }}>
-                {meta
-                  ? `件数: ${meta.total}件（表示: ${meta.limit}件）`
-                  : '件数: -'}
-              </div>
-              {table}
+            }
+          />
+          {message && (
+            <div style={{ marginTop: 8 }}>
+              <Alert variant={message.type === 'error' ? 'error' : 'info'}>
+                {message.text}
+              </Alert>
             </div>
-          }
-        />
-        {message && (
-          <div style={{ marginTop: 8 }}>
-            <Alert variant={message.type === 'error' ? 'error' : 'info'}>
-              {message.text}
-            </Alert>
-          </div>
-        )}
-      </Card>
+          )}
+        </Card>
+      </WorkflowPanel>
     </div>
   );
 };

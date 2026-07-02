@@ -146,6 +146,42 @@ beforeEach(() => {
 });
 
 describe('PdfFiles', () => {
+  it('renders workflow summary and PDF search panel', async () => {
+    vi.mocked(api).mockResolvedValue({
+      items: [
+        {
+          filename: 'invoice 1.pdf',
+          size: 1536,
+          modifiedAt: '2026-03-26T10:00:00.000Z',
+        },
+      ],
+      total: 3,
+      limit: 100,
+      offset: 0,
+    });
+
+    render(<PdfFiles />);
+
+    expect(
+      await screen.findByRole('heading', { name: 'PDFファイル一覧' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        '生成済みPDFを検索し、サイズ・更新日時を確認して必要なファイルを開くための管理画面です。',
+      ),
+    ).toBeInTheDocument();
+
+    const summary = screen.getByRole('region', { name: 'PDF管理サマリー' });
+    expect(within(summary).getByText('一覧ステータス')).toBeInTheDocument();
+    expect(within(summary).getByText('読込済み')).toBeInTheDocument();
+    expect(within(summary).getByText('表示中')).toBeInTheDocument();
+    expect(within(summary).getByText('1件')).toBeInTheDocument();
+    expect(within(summary).getByText('総件数 3件')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'PDF検索とファイル確認' }),
+    ).toBeInTheDocument();
+  });
+
   it('loads rows, trims prefix, and clears the filter', async () => {
     vi.mocked(api).mockResolvedValue({
       items: [
