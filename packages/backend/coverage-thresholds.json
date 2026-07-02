@@ -6,6 +6,15 @@
       "branches": 60,
       "functions": 18,
       "lines": 25
-    }
+    },
+    "files": [
+      "src/plugins/auth.ts",
+      "src/routes/auth.ts",
+      "src/services/authContext.ts",
+      "src/services/authGateway.ts",
+      "src/services/envValidation.ts",
+      "src/services/localCredentials.ts",
+      "src/utils/authGroupToRoleMap.ts"
+    ]
   }
 }

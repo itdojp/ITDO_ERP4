@@ -5,22 +5,30 @@ import { fileURLToPath } from 'node:url';
 
 const DEFAULT_CONFIG = 'coverage-thresholds.json';
 
+function readOptionValue(argv, index, optionName) {
+  const value = argv[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`missing value for ${optionName}`);
+  }
+  return value;
+}
+
 function parseArgs(argv) {
   const args = { config: DEFAULT_CONFIG };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--scope') {
-      args.scope = argv[index + 1];
+      args.scope = readOptionValue(argv, index, arg);
       index += 1;
       continue;
     }
     if (arg === '--config') {
-      args.config = argv[index + 1];
+      args.config = readOptionValue(argv, index, arg);
       index += 1;
       continue;
     }
     if (arg === '--summary') {
-      args.summary = argv[index + 1];
+      args.summary = readOptionValue(argv, index, arg);
       index += 1;
       continue;
     }
@@ -40,6 +48,63 @@ function resolveFromCwd(value) {
   return path.resolve(process.cwd(), value);
 }
 
+function emptyMetric() {
+  return { total: 0, covered: 0, skipped: 0, pct: 100 };
+}
+
+function addMetric(target, source) {
+  target.total += Number(source.total || 0);
+  target.covered += Number(source.covered || 0);
+  target.skipped += Number(source.skipped || 0);
+  target.pct = target.total === 0 ? 100 : (target.covered / target.total) * 100;
+}
+
+function findSummaryEntry(summary, configuredFile) {
+  const absolute = resolveFromCwd(configuredFile);
+  const normalized = configuredFile.replace(/\\/g, '/');
+  const entry = Object.entries(summary).find(([summaryPath]) => {
+    const summaryPathNormalized = summaryPath.replace(/\\/g, '/');
+    return (
+      summaryPath === absolute ||
+      summaryPathNormalized.endsWith(`/${normalized}`)
+    );
+  });
+  return entry?.[1];
+}
+
+export function summarizeConfiguredFiles(summary, files) {
+  if (!Array.isArray(files) || files.length === 0) {
+    return summary;
+  }
+
+  const total = {
+    statements: emptyMetric(),
+    branches: emptyMetric(),
+    functions: emptyMetric(),
+    lines: emptyMetric(),
+  };
+  const missing = [];
+
+  for (const file of files) {
+    const entry = findSummaryEntry(summary, file);
+    if (!entry) {
+      missing.push(file);
+      continue;
+    }
+    for (const metric of Object.keys(total)) {
+      addMetric(total[metric], entry[metric] || emptyMetric());
+    }
+  }
+
+  if (missing.length > 0) {
+    throw new Error(
+      `coverage summary is missing configured file(s): ${missing.join(', ')}`,
+    );
+  }
+
+  return { total };
+}
+
 export function evaluateCoverageThresholds(summary, thresholds) {
   const total = summary.total;
   if (!total || typeof total !== 'object') {
@@ -47,10 +112,17 @@ export function evaluateCoverageThresholds(summary, thresholds) {
   }
 
   return Object.entries(thresholds).map(([metric, minimum]) => {
-    const actual = total[metric]?.pct;
-    if (typeof actual !== 'number') {
-      throw new Error(`coverage summary is missing metric: ${metric}`);
+    if (typeof minimum !== 'number' || !Number.isFinite(minimum)) {
+      throw new Error(
+        `invalid threshold for metric ${metric}: expected number`,
+      );
     }
+
+    const actual = total[metric]?.pct;
+    if (typeof actual !== 'number' || !Number.isFinite(actual)) {
+      throw new Error(`coverage summary is missing numeric metric: ${metric}`);
+    }
+
     return {
       metric,
       actual,
@@ -77,7 +149,10 @@ export function runCoverageThresholdCheck(argv = process.argv.slice(2)) {
   }
 
   const summaryPath = resolveFromCwd(args.summary || scopeConfig.summary);
-  const summary = readJson(summaryPath);
+  const summary = summarizeConfiguredFiles(
+    readJson(summaryPath),
+    scopeConfig.files,
+  );
   const results = evaluateCoverageThresholds(summary, thresholds);
   const failures = results.filter((result) => !result.passed);
 
