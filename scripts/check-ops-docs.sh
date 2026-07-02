@@ -16,6 +16,7 @@ OPS_DOC_TARGETS=(
   docs/ops/sakura-vps-deployment.md
   docs/ops/ops-automation.md
   docs/ops/codex-ops-workflows.md
+  docs/ops/continuity-handoff.md
   docs/ops/index.md
   docs/ops/release-checklist.md
   docs/ops/examples/codex-risk-report.schema.json

@@ -6,6 +6,10 @@
 
 ## 目次
 
+### 継続性・引き継ぎ
+
+- 引き継ぎ入口: [continuity-handoff](continuity-handoff.md)
+
 ### 起動/デプロイ
 
 - ローカル/PoC 起動: [deploy-start](deploy-start.md)
