@@ -790,7 +790,11 @@ export const Dashboard: React.FC = () => {
       {
         label: 'Alerts',
         value: `${alerts.length}件`,
-        helper: hasMore && !showAll ? '最新5件を表示中' : hasMore && showAll ? '全件を表示中' : '業務アラート一覧',
+        helper: showAll
+          ? '全件を表示中'
+          : hasMore
+            ? '最新5件を表示中'
+            : '業務アラート一覧',
         tone: alerts.length > 0 ? 'warning' : 'default',
       },
       {

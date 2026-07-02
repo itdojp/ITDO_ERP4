@@ -630,13 +630,17 @@ describe('Dashboard', () => {
     render(<Dashboard />);
 
     expect(await screen.findByText('Alerts (最新5件)')).toBeInTheDocument();
+    const summary = screen.getByRole('region', { name: 'ホームサマリー' });
+    expect(within(summary).getByText('最新5件を表示中')).toBeInTheDocument();
     expect(screen.queryByText('alert-type-6')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'すべて表示' }));
     expect(screen.getByText('Alerts (全6件)')).toBeInTheDocument();
+    expect(within(summary).getByText('全件を表示中')).toBeInTheDocument();
     expect(screen.getByText('alert-type-6')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '最新のみ' }));
     expect(screen.getByText('Alerts (最新5件)')).toBeInTheDocument();
+    expect(within(summary).getByText('最新5件を表示中')).toBeInTheDocument();
   });
 });
