@@ -10,124 +10,169 @@ export type WorkflowMetric = {
   tone?: WorkflowMetricTone;
 };
 
+const cssVar = (name: string, fallback: string) => `var(${name}, ${fallback})`;
+
+/**
+ * workflowUx は @itdo/design-system の CSS custom properties を優先し、
+ * PoC 単体起動でも崩れない fallback を同じ場所に集約する。
+ */
+export const workflowUxTokens = {
+  color: {
+    textPrimary: cssVar('--color-text-primary', '#0f172a'),
+    textMuted: cssVar('--color-text-muted', '#475569'),
+    bgBase: cssVar('--color-bg-base', '#ffffff'),
+    bgSubtle: cssVar('--color-bg-subtle', '#f8fafc'),
+    borderDefault: cssVar('--color-border-default', '#e2e8f0'),
+    statusSuccess: cssVar('--color-status-success', '#16a34a'),
+    statusWarning: cssVar('--color-status-warning', '#f97316'),
+    statusDanger: cssVar('--color-status-danger', '#dc2626'),
+  },
+  space: {
+    xs: cssVar('--space-4', '4px'),
+    sm: cssVar('--space-8', '8px'),
+    md: cssVar('--space-12', '12px'),
+  },
+  radius: {
+    panel: cssVar('--radius-lg', '12px'),
+  },
+  shadow: {
+    metric: cssVar('--shadow-xs', '0 1px 2px rgba(15, 23, 42, 0.05)'),
+  },
+  typography: {
+    bodyLineHeight: cssVar('--line-height-relaxed', '1.6'),
+    detailLineHeight: cssVar('--line-height-normal', '1.5'),
+    metricLabelSize: cssVar('--font-size-xs', '12px'),
+    metricValueSize: cssVar('--font-size-xl', '20px'),
+  },
+} as const;
+
+const border = (color: string) => `1px solid ${color}`;
+
 const titleStyle: React.CSSProperties = {
   margin: 0,
-  color: 'var(--color-text-primary, #0f172a)',
+  color: workflowUxTokens.color.textPrimary,
 };
 
 const headerPanelStyle: React.CSSProperties = {
   display: 'grid',
-  gap: 8,
-  marginTop: 8,
-  marginBottom: 12,
-  padding: 12,
-  border: '1px solid var(--color-border-default, #e2e8f0)',
-  borderRadius: 12,
-  background:
-    'linear-gradient(135deg, var(--color-bg-base, #ffffff), var(--color-bg-subtle, #f8fafc))',
+  gap: workflowUxTokens.space.sm,
+  marginTop: workflowUxTokens.space.sm,
+  marginBottom: workflowUxTokens.space.md,
+  padding: workflowUxTokens.space.md,
+  border: border(workflowUxTokens.color.borderDefault),
+  borderRadius: workflowUxTokens.radius.panel,
+  background: `linear-gradient(135deg, ${workflowUxTokens.color.bgBase}, ${workflowUxTokens.color.bgSubtle})`,
 };
 
 const descriptionStyle: React.CSSProperties = {
   margin: 0,
-  color: 'var(--color-text-muted, #475569)',
-  lineHeight: 1.6,
+  color: workflowUxTokens.color.textMuted,
+  lineHeight: workflowUxTokens.typography.bodyLineHeight,
 };
 
 const actionsStyle: React.CSSProperties = {
   display: 'flex',
-  gap: 8,
+  gap: workflowUxTokens.space.sm,
   flexWrap: 'wrap',
   alignItems: 'center',
 };
 
 const metricGridStyle: React.CSSProperties = {
   display: 'grid',
-  gap: 12,
+  gap: workflowUxTokens.space.md,
   gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-  margin: '12px 0',
+  margin: `${workflowUxTokens.space.md} 0`,
 };
 
 const metricBaseStyle: React.CSSProperties = {
-  padding: 12,
-  border: '1px solid var(--color-border-default, #e2e8f0)',
-  borderRadius: 12,
-  background: 'var(--color-bg-base, #ffffff)',
-  boxShadow: 'var(--shadow-xs, 0 1px 2px rgba(15, 23, 42, 0.05))',
+  padding: workflowUxTokens.space.md,
+  border: border(workflowUxTokens.color.borderDefault),
+  borderRadius: workflowUxTokens.radius.panel,
+  background: workflowUxTokens.color.bgBase,
+  boxShadow: workflowUxTokens.shadow.metric,
 };
 
 const metricLabelStyle: React.CSSProperties = {
   margin: 0,
-  color: 'var(--color-text-muted, #475569)',
-  fontSize: 12,
+  color: workflowUxTokens.color.textMuted,
+  fontSize: workflowUxTokens.typography.metricLabelSize,
   fontWeight: 600,
 };
 
 const metricValueStyle: React.CSSProperties = {
-  marginTop: 4,
+  marginTop: workflowUxTokens.space.xs,
   marginLeft: 0,
-  color: 'var(--color-text-primary, #0f172a)',
-  fontSize: 20,
+  color: workflowUxTokens.color.textPrimary,
+  fontSize: workflowUxTokens.typography.metricValueSize,
   fontWeight: 700,
   lineHeight: 1.25,
 };
 
 const metricHelperStyle: React.CSSProperties = {
-  margin: '6px 0 0',
+  margin: `${workflowUxTokens.space.sm} 0 0`,
   marginLeft: 0,
-  color: 'var(--color-text-muted, #475569)',
-  fontSize: 12,
-  lineHeight: 1.5,
+  color: workflowUxTokens.color.textMuted,
+  fontSize: workflowUxTokens.typography.metricLabelSize,
+  lineHeight: workflowUxTokens.typography.detailLineHeight,
 };
 
 const toneBorder: Record<WorkflowMetricTone, string> = {
-  default: 'var(--color-border-default, #e2e8f0)',
-  success: 'var(--color-status-success, #16a34a)',
-  warning: 'var(--color-status-warning, #f97316)',
-  danger: 'var(--color-status-danger, #dc2626)',
+  default: workflowUxTokens.color.borderDefault,
+  success: workflowUxTokens.color.statusSuccess,
+  warning: workflowUxTokens.color.statusWarning,
+  danger: workflowUxTokens.color.statusDanger,
 };
 
 const panelStyle: React.CSSProperties = {
-  marginTop: 12,
-  padding: 12,
-  border: '1px solid var(--color-border-default, #e2e8f0)',
-  borderRadius: 12,
-  background: 'var(--color-bg-base, #ffffff)',
+  marginTop: workflowUxTokens.space.md,
+  padding: workflowUxTokens.space.md,
+  border: border(workflowUxTokens.color.borderDefault),
+  borderRadius: workflowUxTokens.radius.panel,
+  background: workflowUxTokens.color.bgBase,
 };
 
 const panelHeaderStyle: React.CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
-  gap: 12,
+  gap: workflowUxTokens.space.md,
   flexWrap: 'wrap',
   alignItems: 'flex-start',
-  marginBottom: 8,
+  marginBottom: workflowUxTokens.space.sm,
 };
 
 const panelTitleStyle: React.CSSProperties = {
   margin: 0,
-  color: 'var(--color-text-primary, #0f172a)',
+  color: workflowUxTokens.color.textPrimary,
 };
 
 const panelDescriptionStyle: React.CSSProperties = {
-  margin: '4px 0 0',
-  color: 'var(--color-text-muted, #475569)',
-  fontSize: 12,
-  lineHeight: 1.5,
+  margin: `${workflowUxTokens.space.xs} 0 0`,
+  color: workflowUxTokens.color.textMuted,
+  fontSize: workflowUxTokens.typography.metricLabelSize,
+  lineHeight: workflowUxTokens.typography.detailLineHeight,
 };
 
 export const WorkflowPageHeader: React.FC<{
   title: string;
   description: string;
   actions?: React.ReactNode;
-}> = ({ title, description, actions }) => (
-  <>
-    <h2 style={titleStyle}>{title}</h2>
-    <div style={headerPanelStyle}>
-      <p style={descriptionStyle}>{description}</p>
-      {actions ? <div style={actionsStyle}>{actions}</div> : null}
-    </div>
-  </>
-);
+}> = ({ title, description, actions }) => {
+  const descriptionId = React.useId();
+
+  return (
+    <>
+      <h2 aria-describedby={descriptionId} style={titleStyle}>
+        {title}
+      </h2>
+      <div style={headerPanelStyle}>
+        <p id={descriptionId} style={descriptionStyle}>
+          {description}
+        </p>
+        {actions ? <div style={actionsStyle}>{actions}</div> : null}
+      </div>
+    </>
+  );
+};
 
 export const WorkflowMetricGrid: React.FC<{
   items: WorkflowMetric[];

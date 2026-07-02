@@ -5,9 +5,24 @@ import {
   WorkflowMetricGrid,
   WorkflowPageHeader,
   WorkflowPanel,
+  workflowUxTokens,
 } from './workflowUx';
 
 describe('workflowUx', () => {
+  it('keeps design-system token fallbacks in one exported contract', () => {
+    expect(workflowUxTokens.color.textPrimary).toBe(
+      'var(--color-text-primary, #0f172a)',
+    );
+    expect(workflowUxTokens.color.borderDefault).toBe(
+      'var(--color-border-default, #e2e8f0)',
+    );
+    expect(workflowUxTokens.space.md).toBe('var(--space-12, 12px)');
+    expect(workflowUxTokens.radius.panel).toBe('var(--radius-lg, 12px)');
+    expect(workflowUxTokens.shadow.metric).toBe(
+      'var(--shadow-xs, 0 1px 2px rgba(15, 23, 42, 0.05))',
+    );
+  });
+
   it('renders a page header with the existing level-2 heading contract', () => {
     render(
       <section>
@@ -22,6 +37,11 @@ describe('workflowUx', () => {
     expect(
       screen.getByRole('heading', { name: '工数入力', level: 2 }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '工数入力', level: 2 }),
+    ).toHaveAccessibleDescription(
+      '案件・タスク・日付を確認しながら工数を登録します。',
+    );
     expect(
       screen.getByText('案件・タスク・日付を確認しながら工数を登録します。'),
     ).toBeInTheDocument();
