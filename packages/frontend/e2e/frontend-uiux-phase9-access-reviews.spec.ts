@@ -99,7 +99,10 @@ test('phase 9 access review UX/UI summary renders @core', async ({ page }) => {
   ).toBeVisible({ timeout: actionTimeout });
 
   await section.getByRole('button', { name: 'スナップショット取得' }).click();
-  await expect(section.getByText('users:')).toBeVisible({
+  await expect(section.getByText(/取得:/)).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expect(section.getByText('取得済み')).toBeVisible({
     timeout: actionTimeout,
   });
   await expect(section.getByRole('button', { name: 'CSV出力' })).toBeVisible();

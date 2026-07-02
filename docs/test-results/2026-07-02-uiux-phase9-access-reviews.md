@@ -40,6 +40,8 @@ npx --prefix packages/frontend prettier --check \
 
 Result: PASS.
 
+- `AccessReviews.test.tsx`: 1 file / 6 tests.
+
 Notes:
 
 - `npm run build --prefix packages/frontend` completed successfully with the existing non-fatal Vite chunk-size warning.
@@ -48,12 +50,12 @@ Notes:
 ## Targeted local E2E
 
 ```bash
-TMPDIR="$PWD/.codex-local/tmp/e2e-uiux-phase9" \
-XDG_RUNTIME_DIR="$PWD/.codex-local/tmp/xdg-runtime-uiux-phase9" \
-BACKEND_PORT=3114 \
-FRONTEND_PORT=5189 \
-E2E_PODMAN_CONTAINER_NAME=erp4-pg-e2e-uiux-phase9-access \
-E2E_PODMAN_HOST_PORT=55450 \
+TMPDIR="$PWD/.codex-local/tmp/e2e-uiux-phase9-r2" \
+XDG_RUNTIME_DIR="$PWD/.codex-local/tmp/xdg-runtime-uiux-phase9-r2" \
+BACKEND_PORT=3115 \
+FRONTEND_PORT=5190 \
+E2E_PODMAN_CONTAINER_NAME=erp4-pg-e2e-uiux-phase9-access-r2 \
+E2E_PODMAN_HOST_PORT=55451 \
 E2E_CAPTURE=1 \
 E2E_TRACE_ON_FAILURE=1 \
 E2E_GREP='phase 9 access review UX/UI summary renders' \
@@ -65,4 +67,4 @@ Result: PASS.
 
 - Playwright: 1 passed (`frontend-uiux-phase9-access-reviews.spec.ts`).
 - Screenshot evidence was saved under `docs/test-results/2026-07-02-uiux-phase9-access-reviews/`.
-- Post-E2E cleanup attempted `podman stop` and `podman rm` for `erp4-pg-e2e-uiux-phase9-access`, but local rootless Podman left the container in `Stopping`. This matches the local Podman cleanup issue observed in earlier UI/UX phases and did not affect the E2E result.
+- Post-E2E cleanup attempted `podman stop` and `podman rm` for `erp4-pg-e2e-uiux-phase9-access-r2`, but local rootless Podman left the container in `Stopping`. The first local E2E attempt before review-feedback changes also left `erp4-pg-e2e-uiux-phase9-access` in `Stopping`. This matches the local Podman cleanup issue observed in earlier UI/UX phases and did not affect the E2E result.

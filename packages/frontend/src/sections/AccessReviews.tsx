@@ -172,9 +172,11 @@ export const AccessReviews: React.FC = () => {
         helper:
           listStatus === 'error'
             ? '再試行でスナップショットを取得してください'
-            : fetchedAt
-              ? `取得 ${fetchedAt.replace('T', ' ').slice(0, 16)}`
-              : 'スナップショット取得前',
+            : listStatus === 'loading'
+              ? 'スナップショットを取得中'
+              : fetchedAt
+                ? `取得 ${fetchedAt.replace('T', ' ').slice(0, 16)}`
+                : 'スナップショット取得前',
         tone: listStatusTone[listStatus],
       },
       {

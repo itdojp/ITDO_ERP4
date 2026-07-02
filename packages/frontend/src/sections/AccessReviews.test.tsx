@@ -222,6 +222,32 @@ describe('AccessReviews', () => {
     expect(screen.getByText('users: -')).toBeInTheDocument();
   });
 
+  it('shows a loading helper while fetching a snapshot', async () => {
+    let resolveSnapshot: (value: {
+      users: never[];
+      groups: never[];
+      memberships: never[];
+    }) => void = () => {};
+    vi.mocked(api).mockReturnValue(
+      new Promise((resolve) => {
+        resolveSnapshot = resolve;
+      }),
+    );
+
+    render(<AccessReviews />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'スナップショット取得' }),
+    );
+
+    expect(
+      await screen.findByText('スナップショットを取得中'),
+    ).toBeInTheDocument();
+
+    resolveSnapshot({ users: [], groups: [], memberships: [] });
+    expect(await screen.findByText('ユーザがありません')).toBeInTheDocument();
+  });
+
   it('shows retry UI after a snapshot load failure and reloads successfully', async () => {
     vi.mocked(api)
       .mockRejectedValueOnce(new Error('boom'))
