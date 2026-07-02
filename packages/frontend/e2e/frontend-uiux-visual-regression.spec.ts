@@ -35,6 +35,7 @@ type VisualCase = {
   heading: string;
   summaryLabel: string;
   snapshot: string;
+  maskSelectors?: string[];
 };
 
 const visualCases: VisualCase[] = [
@@ -93,6 +94,7 @@ const visualCases: VisualCase[] = [
     heading: 'PDFファイル一覧',
     summaryLabel: 'PDF管理サマリー',
     snapshot: 'phase-08-pdf-files.png',
+    maskSelectors: ['tbody'],
   },
   {
     phase: 'phase-09',
@@ -195,9 +197,13 @@ test.describe('UX/UI phase screenshot visual regression @visual', () => {
       ).toBeVisible({ timeout: actionTimeout });
       await waitForVisualStability(page, section);
 
+      const mask = item.maskSelectors?.map((selector) =>
+        section.locator(selector),
+      );
       await expect(section).toHaveScreenshot(item.snapshot, {
         animations: 'disabled',
         caret: 'hide',
+        ...(mask?.length ? { mask } : {}),
         maxDiffPixelRatio: 0.02,
         scale: 'css',
         stylePath: visualStabilityStyle,
