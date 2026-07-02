@@ -2,6 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { api, apiResponse, getAuthState } from '../api';
 import { useProjects } from '../hooks/useProjects';
 import { downloadResponseAsFile } from '../utils/download';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  WorkflowPanel,
+} from './workflowUx';
 
 type ProjectEffort = {
   projectId: string;
@@ -554,485 +559,572 @@ export const Reports: React.FC = () => {
     return project ? `${project.code} / ${project.name}` : id;
   };
 
+  const visibleReportCount = [
+    projectReport,
+    projectProfitReport,
+    projectProfitByUserReport,
+    projectProfitByGroupReport,
+    groupReport.length > 0,
+    overtimeReport,
+    managementReport,
+    burndownReport,
+    evmReport,
+  ].filter(Boolean).length;
+  const periodLabel =
+    from || to
+      ? `${from || '開始日未指定'}〜${to || '終了日未指定'}`
+      : '未指定';
+  const reportSummaryItems = [
+    {
+      label: '対象案件',
+      value: projectId ? renderProject(projectId) : '未選択',
+      helper: projectMessage || '案件別の工数・採算・進捗を確認します。',
+      tone: projectId ? ('success' as const) : ('warning' as const),
+    },
+    {
+      label: '対象期間',
+      value: periodLabel,
+      helper: '管理会計・EVM・バーンダウンでは期間入力が必須です。',
+      tone: from && to ? ('success' as const) : ('warning' as const),
+    },
+    {
+      label: '取得済みレポート',
+      value: `${visibleReportCount}件`,
+      helper:
+        visibleReportCount > 0
+          ? '下段の結果パネルで詳細を確認できます。'
+          : '条件を指定して必要なレポートを取得してください。',
+    },
+    {
+      label: 'ベースライン',
+      value: baselineId ? '選択済み' : `${baselines.length}件`,
+      helper: baselineId
+        ? 'バーンダウン・EVM の比較基準に利用できます。'
+        : '案件選択後に利用可能なベースラインを読み込みます。',
+    },
+  ];
+
   return (
     <div>
-      <h2>Reports</h2>
-      <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-        <input
-          type="text"
-          value={from}
-          onChange={(e) => setFrom(e.target.value)}
-          placeholder="from (YYYY-MM-DD)"
-        />
-        <input
-          type="text"
-          value={to}
-          onChange={(e) => setTo(e.target.value)}
-          placeholder="to (YYYY-MM-DD)"
-        />
-      </div>
-      <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-        <select
-          aria-label="案件選択"
-          value={projectId}
-          onChange={(e) => setProjectId(e.target.value)}
-        >
-          <option value="">案件を選択</option>
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.code} / {project.name}
-            </option>
-          ))}
-        </select>
-        <button className="button" onClick={loadProject}>
-          PJ別工数
-        </button>
-        <button className="button" onClick={loadProjectProfit}>
-          PJ別採算
-        </button>
-        <button className="button" onClick={loadProjectProfitByUser}>
-          PJ採算（担当者別）
-        </button>
-        <button className="button" onClick={loadProjectProfitByGroup}>
-          PJ採算（グループ別）
-        </button>
-        <input
-          type="text"
-          value={userIdsInput}
-          onChange={(e) => setUserIdsInput(e.target.value)}
-          placeholder="userIds (a,b,c)"
-        />
-        <button className="button" onClick={loadGroup}>
-          グループ別工数
-        </button>
-        <input
-          type="text"
-          value={overtimeUserId}
-          onChange={(e) => setOvertimeUserId(e.target.value)}
-          placeholder="userId"
-        />
-        <button className="button" onClick={loadOvertime}>
-          個人別残業
-        </button>
-        <button className="button" onClick={loadManagementAccounting}>
-          管理会計サマリ
-        </button>
-        <button
-          className="button secondary"
-          onClick={downloadManagementAccountingCsv}
-          disabled={managementCsvDownloading}
-        >
-          {managementCsvDownloading
-            ? '管理会計CSV出力中...'
-            : '管理会計サマリCSV'}
-        </button>
-      </div>
-      <div className="row" style={{ gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-        <select
-          aria-label="ベースライン選択"
-          value={baselineId}
-          onChange={(e) => setBaselineId(e.target.value)}
-        >
-          <option value="">ベースラインを選択</option>
-          {baselines.map((baseline) => (
-            <option key={baseline.id} value={baseline.id}>
-              {baseline.name}
-            </option>
-          ))}
-        </select>
-        <button className="button" onClick={loadBurndown}>
-          バーンダウン
-        </button>
-        <button className="button" onClick={loadEvm}>
-          EVM
-        </button>
-      </div>
-      {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
-      {message && <p>{message}</p>}
-      <div className="list" style={{ display: 'grid', gap: 8 }}>
-        {projectReport && (
-          <div className="card" style={{ padding: 12 }}>
-            <strong>プロジェクト別工数</strong>
-            <div>Project: {renderProject(projectReport.projectId)}</div>
-            <div>Minutes: {projectReport.totalMinutes}</div>
-            {projectReport.planHours != null && (
-              <div>
-                {(() => {
-                  const planHours = Number(projectReport.planHours);
-                  const actualHours = projectReport.totalMinutes / 60;
-                  const varianceHours =
-                    projectReport.varianceMinutes != null
-                      ? projectReport.varianceMinutes / 60
-                      : actualHours - planHours;
-                  const sign = varianceHours > 0 ? '+' : '';
-                  const label =
-                    varianceHours > 0
-                      ? '超過'
-                      : varianceHours < 0
-                        ? '未達'
-                        : '予定通り';
-                  return (
-                    <>
-                      Plan: {planHours.toFixed(2)}h / Actual:{' '}
-                      {actualHours.toFixed(2)}h / Var: {sign}
-                      {varianceHours.toFixed(2)}h（{label}）
-                    </>
-                  );
-                })()}
-              </div>
-            )}
-            <div>
-              Expenses: ¥
-              {Number(projectReport.totalExpenses || 0).toLocaleString()}
-            </div>
-          </div>
-        )}
-        {projectProfitReport && (
-          <div className="card" style={{ padding: 12 }}>
-            <strong>PJ別採算</strong>
-            <div>Project: {renderProject(projectProfitReport.projectId)}</div>
-            <div>
-              Revenue ({projectProfitCurrency}):{' '}
-              {projectProfitReport.revenue.toLocaleString()} / Budget:{' '}
-              {projectProfitReport.budgetRevenue.toLocaleString()} / Variance:{' '}
-              {projectProfitReport.varianceRevenue.toLocaleString()}
-            </div>
-            <div>
-              Direct Cost ({projectProfitCurrency}):{' '}
-              {projectProfitReport.directCost.toLocaleString()} / Gross Profit:{' '}
-              {projectProfitReport.grossProfit.toLocaleString()}
-            </div>
-            <div>
-              Vendor:{' '}
-              {projectProfitReport.costBreakdown.vendorCost.toLocaleString()}
-              {' / '}
-              Expense:{' '}
-              {projectProfitReport.costBreakdown.expenseCost.toLocaleString()}
-              {' / '}
-              Labor:{' '}
-              {projectProfitReport.costBreakdown.laborCost.toLocaleString()}
-            </div>
-            <div>
-              Margin: {(projectProfitReport.grossMargin * 100).toFixed(2)}% /
-              Minutes: {projectProfitReport.totalMinutes}
-            </div>
-          </div>
-        )}
+      <WorkflowPageHeader
+        title="Reports"
+        description="案件別の工数・採算・進捗・管理会計を同じ条件で確認し、実行前に必要な入力と取得済みレポートを把握できるようにします。"
+      />
+      <WorkflowMetricGrid
+        ariaLabel="レポート判断サマリー"
+        items={reportSummaryItems}
+      />
 
-        {projectProfitByUserReport && (
-          <div className="card" style={{ padding: 12 }}>
-            <strong>PJ採算（担当者別）</strong>
-            <div>
-              Project: {renderProject(projectProfitByUserReport.projectId)}
-            </div>
-            <div>
-              Allocation: {projectProfitByUserReport.allocationMethod} /
-              Currency: {projectProfitByUserReport.currency || 'N/A'}
-            </div>
-            <div>
-              Revenue: {projectProfitByUserReport.revenue.toLocaleString()} /
-              Vendor: {projectProfitByUserReport.vendorCost.toLocaleString()} /
-              Labor: {projectProfitByUserReport.laborCost.toLocaleString()} /
-              Expense: {projectProfitByUserReport.expenseCost.toLocaleString()}
-            </div>
-            <div style={{ marginTop: 8 }}>
-              {projectProfitByUserReport.items.map((item) => (
-                <div key={item.userId}>
-                  {item.userId}: Revenue{' '}
-                  {item.allocatedRevenue.toLocaleString()} / Cost{' '}
-                  {item.totalCost.toLocaleString()} / Gross{' '}
-                  {item.grossProfit.toLocaleString()} / Margin{' '}
-                  {(item.grossMargin * 100).toFixed(2)}% / Minutes{' '}
-                  {item.minutes}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {projectProfitByGroupReport && (
-          <div className="card" style={{ padding: 12 }}>
-            <strong>PJ採算（グループ別）</strong>
-            <div>
-              Project: {renderProject(projectProfitByGroupReport.projectId)}
-            </div>
-            <div>
-              Allocation: {projectProfitByGroupReport.allocationMethod} /
-              Currency: {projectProfitByGroupReport.currency || 'N/A'}
-            </div>
-            <div>
-              Users: {projectProfitByGroupReport.userIds.join(', ') || '-'}
-            </div>
-            <div>
-              Revenue:{' '}
-              {projectProfitByGroupReport.group.allocatedRevenue.toLocaleString()}{' '}
-              / Cost{' '}
-              {projectProfitByGroupReport.group.totalCost.toLocaleString()} /
-              Gross{' '}
-              {projectProfitByGroupReport.group.grossProfit.toLocaleString()}
-            </div>
-            <div>
-              Margin:{' '}
-              {(projectProfitByGroupReport.group.grossMargin * 100).toFixed(2)}%
-              / Minutes: {projectProfitByGroupReport.group.minutes}
-            </div>
-          </div>
-        )}
-
-        {burndownReport && (
-          <div className="card" style={{ padding: 12 }}>
-            <strong>バーンダウン</strong>
-            <div>Project: {renderProject(burndownReport.projectId)}</div>
-            <div>Plan: {burndownReport.planMinutes} min</div>
-            <div>
-              Period: {burndownReport.from}〜{burndownReport.to}
-            </div>
-            <div style={{ marginTop: 8 }}>
-              {burndownReport.items.map((item) => (
-                <div key={item.date}>
-                  {item.date}: burned {item.burnedMinutes} / remaining{' '}
-                  {item.remainingMinutes}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {evmReport && (
-          <div className="card" style={{ padding: 12 }}>
-            <strong>EVM</strong>
-            <div>Project: {renderProject(evmReport.projectId)}</div>
-            <div>
-              Budget Cost: {Math.round(evmReport.budgetCost * 100) / 100}
-              {evmReport.currency ? ` ${evmReport.currency}` : ''}
-            </div>
-            <div>Plan: {evmReport.planMinutes} min</div>
-            <div>
-              Period: {evmReport.from}〜{evmReport.to}
-            </div>
-            <div style={{ marginTop: 8 }}>
-              {evmReport.items.map((item) => (
-                <div key={item.date}>
-                  {item.date}: PV {Math.round(item.pv * 100) / 100} / EV{' '}
-                  {Math.round(item.ev * 100) / 100} / AC{' '}
-                  {Math.round(item.ac * 100) / 100} / SPI{' '}
-                  {item.spi == null ? '-' : Math.round(item.spi * 1000) / 1000}{' '}
-                  / CPI{' '}
-                  {item.cpi == null ? '-' : Math.round(item.cpi * 1000) / 1000}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {groupReport.length > 0 && (
-          <div className="card" style={{ padding: 12 }}>
-            <strong>グループ別工数</strong>
-            {groupReport.map((item) => (
-              <div key={item.userId}>
-                {item.userId}: {item.totalMinutes} min
-              </div>
+      <WorkflowPanel
+        title="共通条件"
+        description="期間と対象案件を先に指定すると、各レポートの取得条件を揃えられます。"
+      >
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <input
+            type="text"
+            aria-label="開始日"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            placeholder="from (YYYY-MM-DD)"
+          />
+          <input
+            type="text"
+            aria-label="終了日"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+            placeholder="to (YYYY-MM-DD)"
+          />
+          <select
+            aria-label="案件選択"
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+          >
+            <option value="">案件を選択</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.code} / {project.name}
+              </option>
             ))}
-          </div>
-        )}
-        {overtimeReport && (
-          <div className="card" style={{ padding: 12 }}>
-            <strong>個人別残業</strong>
-            <div>User: {overtimeReport.userId}</div>
-            <div>Minutes: {overtimeReport.totalMinutes}</div>
-            <div>Hours (avg/day): {overtimeReport.dailyHours.toFixed(2)}</div>
-          </div>
-        )}
-        {managementReport && (
-          <div className="card" style={{ padding: 12 }}>
-            <strong>管理会計サマリ</strong>
-            <div>
-              Period: {managementReport.from}〜{managementReport.to}
-            </div>
-            <div>Projects: {managementReport.projectCount}</div>
-            {managementReport.mixedCurrency ? (
-              <div style={{ marginTop: 8 }}>
+          </select>
+          <input
+            type="text"
+            aria-label="対象ユーザーID一覧"
+            value={userIdsInput}
+            onChange={(e) => setUserIdsInput(e.target.value)}
+            placeholder="userIds (a,b,c)"
+          />
+          <input
+            type="text"
+            aria-label="残業レポート対象ユーザーID"
+            value={overtimeUserId}
+            onChange={(e) => setOvertimeUserId(e.target.value)}
+            placeholder="userId"
+          />
+        </div>
+        {projectMessage && <p style={{ color: '#dc2626' }}>{projectMessage}</p>}
+        {message && <p>{message}</p>}
+      </WorkflowPanel>
+
+      <WorkflowPanel
+        title="採算・工数レポート"
+        description="案件・担当者・グループの単位を切り替えて、投入量と採算の差分を確認します。"
+      >
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <button className="button" onClick={loadProject}>
+            PJ別工数
+          </button>
+          <button className="button" onClick={loadProjectProfit}>
+            PJ別採算
+          </button>
+          <button className="button" onClick={loadProjectProfitByUser}>
+            PJ採算（担当者別）
+          </button>
+          <button className="button" onClick={loadProjectProfitByGroup}>
+            PJ採算（グループ別）
+          </button>
+          <button className="button" onClick={loadGroup}>
+            グループ別工数
+          </button>
+          <button className="button" onClick={loadOvertime}>
+            個人別残業
+          </button>
+        </div>
+      </WorkflowPanel>
+
+      <WorkflowPanel
+        title="計画・管理会計"
+        description="ベースライン、進捗指標、管理会計サマリを同じ期間軸で確認します。"
+      >
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <select
+            aria-label="ベースライン選択"
+            value={baselineId}
+            onChange={(e) => setBaselineId(e.target.value)}
+          >
+            <option value="">ベースラインを選択</option>
+            {baselines.map((baseline) => (
+              <option key={baseline.id} value={baseline.id}>
+                {baseline.name}
+              </option>
+            ))}
+          </select>
+          <button className="button" onClick={loadBurndown}>
+            バーンダウン
+          </button>
+          <button className="button" onClick={loadEvm}>
+            EVM
+          </button>
+          <button className="button" onClick={loadManagementAccounting}>
+            管理会計サマリ
+          </button>
+          <button
+            className="button secondary"
+            onClick={downloadManagementAccountingCsv}
+            disabled={managementCsvDownloading}
+          >
+            {managementCsvDownloading
+              ? '管理会計CSV出力中...'
+              : '管理会計サマリCSV'}
+          </button>
+        </div>
+      </WorkflowPanel>
+
+      <WorkflowPanel
+        title="レポート結果"
+        description="取得済みのレポートをカード単位で表示し、未取得時は次の操作を明示します。"
+      >
+        <div className="list" style={{ display: 'grid', gap: 8 }}>
+          {projectReport && (
+            <div className="card" style={{ padding: 12 }}>
+              <strong>プロジェクト別工数</strong>
+              <div>Project: {renderProject(projectReport.projectId)}</div>
+              <div>Minutes: {projectReport.totalMinutes}</div>
+              {projectReport.planHours != null && (
                 <div>
-                  複数通貨を含むため、金額系 KPI は通貨別に表示しています。
+                  {(() => {
+                    const planHours = Number(projectReport.planHours);
+                    const actualHours = projectReport.totalMinutes / 60;
+                    const varianceHours =
+                      projectReport.varianceMinutes != null
+                        ? projectReport.varianceMinutes / 60
+                        : actualHours - planHours;
+                    const sign = varianceHours > 0 ? '+' : '';
+                    const label =
+                      varianceHours > 0
+                        ? '超過'
+                        : varianceHours < 0
+                          ? '未達'
+                          : '予定通り';
+                    return (
+                      <>
+                        Plan: {planHours.toFixed(2)}h / Actual:{' '}
+                        {actualHours.toFixed(2)}h / Var: {sign}
+                        {varianceHours.toFixed(2)}h（{label}）
+                      </>
+                    );
+                  })()}
                 </div>
+              )}
+              <div>
+                Expenses: ¥
+                {Number(projectReport.totalExpenses || 0).toLocaleString()}
+              </div>
+            </div>
+          )}
+          {projectProfitReport && (
+            <div className="card" style={{ padding: 12 }}>
+              <strong>PJ別採算</strong>
+              <div>Project: {renderProject(projectProfitReport.projectId)}</div>
+              <div>
+                Revenue ({projectProfitCurrency}):{' '}
+                {projectProfitReport.revenue.toLocaleString()} / Budget:{' '}
+                {projectProfitReport.budgetRevenue.toLocaleString()} / Variance:{' '}
+                {projectProfitReport.varianceRevenue.toLocaleString()}
+              </div>
+              <div>
+                Direct Cost ({projectProfitCurrency}):{' '}
+                {projectProfitReport.directCost.toLocaleString()} / Gross
+                Profit: {projectProfitReport.grossProfit.toLocaleString()}
+              </div>
+              <div>
+                Vendor:{' '}
+                {projectProfitReport.costBreakdown.vendorCost.toLocaleString()}
+                {' / '}
+                Expense:{' '}
+                {projectProfitReport.costBreakdown.expenseCost.toLocaleString()}
+                {' / '}
+                Labor:{' '}
+                {projectProfitReport.costBreakdown.laborCost.toLocaleString()}
+              </div>
+              <div>
+                Margin: {(projectProfitReport.grossMargin * 100).toFixed(2)}% /
+                Minutes: {projectProfitReport.totalMinutes}
+              </div>
+            </div>
+          )}
+
+          {projectProfitByUserReport && (
+            <div className="card" style={{ padding: 12 }}>
+              <strong>PJ採算（担当者別）</strong>
+              <div>
+                Project: {renderProject(projectProfitByUserReport.projectId)}
+              </div>
+              <div>
+                Allocation: {projectProfitByUserReport.allocationMethod} /
+                Currency: {projectProfitByUserReport.currency || 'N/A'}
+              </div>
+              <div>
+                Revenue: {projectProfitByUserReport.revenue.toLocaleString()} /
+                Vendor: {projectProfitByUserReport.vendorCost.toLocaleString()}{' '}
+                / Labor: {projectProfitByUserReport.laborCost.toLocaleString()}{' '}
+                / Expense:{' '}
+                {projectProfitByUserReport.expenseCost.toLocaleString()}
+              </div>
+              <div style={{ marginTop: 8 }}>
+                {projectProfitByUserReport.items.map((item) => (
+                  <div key={item.userId}>
+                    {item.userId}: Revenue{' '}
+                    {item.allocatedRevenue.toLocaleString()} / Cost{' '}
+                    {item.totalCost.toLocaleString()} / Gross{' '}
+                    {item.grossProfit.toLocaleString()} / Margin{' '}
+                    {(item.grossMargin * 100).toFixed(2)}% / Minutes{' '}
+                    {item.minutes}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {projectProfitByGroupReport && (
+            <div className="card" style={{ padding: 12 }}>
+              <strong>PJ採算（グループ別）</strong>
+              <div>
+                Project: {renderProject(projectProfitByGroupReport.projectId)}
+              </div>
+              <div>
+                Allocation: {projectProfitByGroupReport.allocationMethod} /
+                Currency: {projectProfitByGroupReport.currency || 'N/A'}
+              </div>
+              <div>
+                Users: {projectProfitByGroupReport.userIds.join(', ') || '-'}
+              </div>
+              <div>
+                Revenue:{' '}
+                {projectProfitByGroupReport.group.allocatedRevenue.toLocaleString()}{' '}
+                / Cost{' '}
+                {projectProfitByGroupReport.group.totalCost.toLocaleString()} /
+                Gross{' '}
+                {projectProfitByGroupReport.group.grossProfit.toLocaleString()}
+              </div>
+              <div>
+                Margin:{' '}
+                {(projectProfitByGroupReport.group.grossMargin * 100).toFixed(
+                  2,
+                )}
+                % / Minutes: {projectProfitByGroupReport.group.minutes}
+              </div>
+            </div>
+          )}
+
+          {burndownReport && (
+            <div className="card" style={{ padding: 12 }}>
+              <strong>バーンダウン</strong>
+              <div>Project: {renderProject(burndownReport.projectId)}</div>
+              <div>Plan: {burndownReport.planMinutes} min</div>
+              <div>
+                Period: {burndownReport.from}〜{burndownReport.to}
+              </div>
+              <div style={{ marginTop: 8 }}>
+                {burndownReport.items.map((item) => (
+                  <div key={item.date}>
+                    {item.date}: burned {item.burnedMinutes} / remaining{' '}
+                    {item.remainingMinutes}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {evmReport && (
+            <div className="card" style={{ padding: 12 }}>
+              <strong>EVM</strong>
+              <div>Project: {renderProject(evmReport.projectId)}</div>
+              <div>
+                Budget Cost: {Math.round(evmReport.budgetCost * 100) / 100}
+                {evmReport.currency ? ` ${evmReport.currency}` : ''}
+              </div>
+              <div>Plan: {evmReport.planMinutes} min</div>
+              <div>
+                Period: {evmReport.from}〜{evmReport.to}
+              </div>
+              <div style={{ marginTop: 8 }}>
+                {evmReport.items.map((item) => (
+                  <div key={item.date}>
+                    {item.date}: PV {Math.round(item.pv * 100) / 100} / EV{' '}
+                    {Math.round(item.ev * 100) / 100} / AC{' '}
+                    {Math.round(item.ac * 100) / 100} / SPI{' '}
+                    {item.spi == null
+                      ? '-'
+                      : Math.round(item.spi * 1000) / 1000}{' '}
+                    / CPI{' '}
+                    {item.cpi == null
+                      ? '-'
+                      : Math.round(item.cpi * 1000) / 1000}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {groupReport.length > 0 && (
+            <div className="card" style={{ padding: 12 }}>
+              <strong>グループ別工数</strong>
+              {groupReport.map((item) => (
+                <div key={item.userId}>
+                  {item.userId}: {item.totalMinutes} min
+                </div>
+              ))}
+            </div>
+          )}
+          {overtimeReport && (
+            <div className="card" style={{ padding: 12 }}>
+              <strong>個人別残業</strong>
+              <div>User: {overtimeReport.userId}</div>
+              <div>Minutes: {overtimeReport.totalMinutes}</div>
+              <div>Hours (avg/day): {overtimeReport.dailyHours.toFixed(2)}</div>
+            </div>
+          )}
+          {managementReport && (
+            <div className="card" style={{ padding: 12 }}>
+              <strong>管理会計サマリ</strong>
+              <div>
+                Period: {managementReport.from}〜{managementReport.to}
+              </div>
+              <div>Projects: {managementReport.projectCount}</div>
+              {managementReport.mixedCurrency ? (
                 <div style={{ marginTop: 8 }}>
-                  {managementReport.currencyBreakdown.map((item) => (
-                    <div
-                      key={item.currency || 'none'}
-                      style={{
-                        borderTop: '1px solid #e5e7eb',
-                        marginTop: 8,
-                        paddingTop: 8,
-                      }}
-                    >
-                      <div>
-                        Currency: {item.currency || '未設定'} / Projects:{' '}
-                        {item.projectCount}
+                  <div>
+                    複数通貨を含むため、金額系 KPI は通貨別に表示しています。
+                  </div>
+                  <div style={{ marginTop: 8 }}>
+                    {managementReport.currencyBreakdown.map((item) => (
+                      <div
+                        key={item.currency || 'none'}
+                        style={{
+                          borderTop: '1px solid #e5e7eb',
+                          marginTop: 8,
+                          paddingTop: 8,
+                        }}
+                      >
+                        <div>
+                          Currency: {item.currency || '未設定'} / Projects:{' '}
+                          {item.projectCount}
+                        </div>
+                        <div>
+                          Revenue: {item.revenue.toLocaleString()} / Direct
+                          Cost: {item.directCost.toLocaleString()}
+                        </div>
+                        <div>
+                          Gross Profit: {item.grossProfit.toLocaleString()} /
+                          Margin: {(item.grossMargin * 100).toFixed(2)}%
+                        </div>
+                        <div>
+                          Labor: {item.laborCost.toLocaleString()} / Vendor:{' '}
+                          {item.vendorCost.toLocaleString()} / Expense:{' '}
+                          {item.expenseCost.toLocaleString()}
+                        </div>
+                        <div>
+                          Payroll confirmed:{' '}
+                          {formatNullableNumber(item.payrollConfirmedLaborCost)}{' '}
+                          / Labor variance:{' '}
+                          {formatNullableNumber(item.laborCostVariance)}
+                        </div>
+                        <div>
+                          Delivery due: {item.deliveryDueCount}件 /{' '}
+                          {item.deliveryDueAmount.toLocaleString()}
+                        </div>
+                        <div>Red projects: {item.redProjectCount}</div>
+                        {item.topRedProjects.length > 0 && (
+                          <div style={{ marginTop: 8 }}>
+                            {item.topRedProjects.map((project) => (
+                              <div
+                                key={`${item.currency || 'none'}:${project.projectId}`}
+                              >
+                                {(project.projectCode || project.projectId) +
+                                  (project.projectName
+                                    ? ` / ${project.projectName}`
+                                    : '')}
+                                : {project.grossProfit.toLocaleString()} /
+                                Margin {(project.grossMargin * 100).toFixed(2)}%
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <div>
-                        Revenue: {item.revenue.toLocaleString()} / Direct Cost:{' '}
-                        {item.directCost.toLocaleString()}
-                      </div>
-                      <div>
-                        Gross Profit: {item.grossProfit.toLocaleString()} /
-                        Margin: {(item.grossMargin * 100).toFixed(2)}%
-                      </div>
-                      <div>
-                        Labor: {item.laborCost.toLocaleString()} / Vendor:{' '}
-                        {item.vendorCost.toLocaleString()} / Expense:{' '}
-                        {item.expenseCost.toLocaleString()}
-                      </div>
-                      <div>
-                        Payroll confirmed:{' '}
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    Revenue:{' '}
+                    {managementReport.revenue == null
+                      ? '-'
+                      : managementReport.revenue.toLocaleString()}
+                    {' / '}
+                    Direct Cost:{' '}
+                    {managementReport.directCost == null
+                      ? '-'
+                      : managementReport.directCost.toLocaleString()}
+                    {managementReport.currency
+                      ? ` ${managementReport.currency}`
+                      : ''}
+                  </div>
+                  <div>
+                    Gross Profit:{' '}
+                    {managementReport.grossProfit == null
+                      ? '-'
+                      : managementReport.grossProfit.toLocaleString()}
+                    {' / '}
+                    Margin:{' '}
+                    {managementReport.grossMargin == null
+                      ? '-'
+                      : `${(managementReport.grossMargin * 100).toFixed(2)}%`}
+                  </div>
+                  <div>
+                    Labor:{' '}
+                    {managementReport.laborCost == null
+                      ? '-'
+                      : managementReport.laborCost.toLocaleString()}
+                    {' / '}
+                    Vendor:{' '}
+                    {managementReport.vendorCost == null
+                      ? '-'
+                      : managementReport.vendorCost.toLocaleString()}
+                    {' / '}
+                    Expense:{' '}
+                    {managementReport.expenseCost == null
+                      ? '-'
+                      : managementReport.expenseCost.toLocaleString()}
+                  </div>
+                  <div>
+                    Payroll confirmed:{' '}
+                    {formatNullableNumber(
+                      managementReport.payrollConfirmedLaborCost,
+                    )}
+                    {' / '}
+                    Labor variance:{' '}
+                    {formatNullableNumber(managementReport.laborCostVariance)}
+                  </div>
+                </>
+              )}
+              <div>
+                Payroll confirmed status:{' '}
+                {managementReport.payrollConfirmedStatus || 'missing'} /
+                Confirmed periods:{' '}
+                {formatPeriodKeys(managementReport.payrollConfirmedPeriodKeys)}{' '}
+                / Missing periods:{' '}
+                {formatPeriodKeys(managementReport.payrollMissingPeriodKeys)}
+              </div>
+              {managementReport.departmentBreakdown &&
+                managementReport.departmentBreakdown.length > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    <strong>部門別損益</strong>
+                    {managementReport.departmentBreakdown.map((item) => (
+                      <div
+                        key={`${item.departmentKey || 'unassigned'}:${item.currency || 'none'}`}
+                      >
+                        Department: {formatDepartmentLabel(item)} / External:{' '}
+                        {item.departmentExternalCode || '-'} / Source:{' '}
+                        {item.departmentSource || 'unknown'} / Currency:{' '}
+                        {item.currency || '未設定'} / Projects:{' '}
+                        {item.projectCount} / Revenue:{' '}
+                        {item.revenue.toLocaleString()} / Direct Cost:{' '}
+                        {item.directCost.toLocaleString()} / Payroll confirmed:{' '}
                         {formatNullableNumber(item.payrollConfirmedLaborCost)} /
                         Labor variance:{' '}
-                        {formatNullableNumber(item.laborCostVariance)}
+                        {formatNullableNumber(item.laborCostVariance)} / Gross
+                        Profit: {item.grossProfit.toLocaleString()} / Margin:{' '}
+                        {(item.grossMargin * 100).toFixed(2)}% / Red projects:{' '}
+                        {item.redProjectCount}
                       </div>
-                      <div>
-                        Delivery due: {item.deliveryDueCount}件 /{' '}
-                        {item.deliveryDueAmount.toLocaleString()}
-                      </div>
-                      <div>Red projects: {item.redProjectCount}</div>
-                      {item.topRedProjects.length > 0 && (
-                        <div style={{ marginTop: 8 }}>
-                          {item.topRedProjects.map((project) => (
-                            <div
-                              key={`${item.currency || 'none'}:${project.projectId}`}
-                            >
-                              {(project.projectCode || project.projectId) +
-                                (project.projectName
-                                  ? ` / ${project.projectName}`
-                                  : '')}
-                              : {project.grossProfit.toLocaleString()} / Margin{' '}
-                              {(project.grossMargin * 100).toFixed(2)}%
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
+              <div>
+                Minutes: {managementReport.totalMinutes} / Overtime:{' '}
+                {managementReport.overtimeTotalMinutes}
               </div>
-            ) : (
-              <>
-                <div>
-                  Revenue:{' '}
-                  {managementReport.revenue == null
-                    ? '-'
-                    : managementReport.revenue.toLocaleString()}
-                  {' / '}
-                  Direct Cost:{' '}
-                  {managementReport.directCost == null
-                    ? '-'
-                    : managementReport.directCost.toLocaleString()}
-                  {managementReport.currency
-                    ? ` ${managementReport.currency}`
-                    : ''}
-                </div>
-                <div>
-                  Gross Profit:{' '}
-                  {managementReport.grossProfit == null
-                    ? '-'
-                    : managementReport.grossProfit.toLocaleString()}
-                  {' / '}
-                  Margin:{' '}
-                  {managementReport.grossMargin == null
-                    ? '-'
-                    : `${(managementReport.grossMargin * 100).toFixed(2)}%`}
-                </div>
-                <div>
-                  Labor:{' '}
-                  {managementReport.laborCost == null
-                    ? '-'
-                    : managementReport.laborCost.toLocaleString()}
-                  {' / '}
-                  Vendor:{' '}
-                  {managementReport.vendorCost == null
-                    ? '-'
-                    : managementReport.vendorCost.toLocaleString()}
-                  {' / '}
-                  Expense:{' '}
-                  {managementReport.expenseCost == null
-                    ? '-'
-                    : managementReport.expenseCost.toLocaleString()}
-                </div>
-                <div>
-                  Payroll confirmed:{' '}
-                  {formatNullableNumber(
-                    managementReport.payrollConfirmedLaborCost,
-                  )}
-                  {' / '}
-                  Labor variance:{' '}
-                  {formatNullableNumber(managementReport.laborCostVariance)}
-                </div>
-              </>
-            )}
-            <div>
-              Payroll confirmed status:{' '}
-              {managementReport.payrollConfirmedStatus || 'missing'} / Confirmed
-              periods:{' '}
-              {formatPeriodKeys(managementReport.payrollConfirmedPeriodKeys)} /
-              Missing periods:{' '}
-              {formatPeriodKeys(managementReport.payrollMissingPeriodKeys)}
-            </div>
-            {managementReport.departmentBreakdown &&
-              managementReport.departmentBreakdown.length > 0 && (
+              <div>
+                Delivery due: {managementReport.deliveryDueCount}件 /{' '}
+                {managementReport.deliveryDueAmount == null
+                  ? '通貨別表示を参照'
+                  : managementReport.deliveryDueAmount.toLocaleString()}
+              </div>
+              <div>Red projects: {managementReport.redProjectCount}</div>
+              {managementReport.topRedProjects.length > 0 && (
                 <div style={{ marginTop: 8 }}>
-                  <strong>部門別損益</strong>
-                  {managementReport.departmentBreakdown.map((item) => (
-                    <div
-                      key={`${item.departmentKey || 'unassigned'}:${item.currency || 'none'}`}
-                    >
-                      Department: {formatDepartmentLabel(item)} / External:{' '}
-                      {item.departmentExternalCode || '-'} / Source:{' '}
-                      {item.departmentSource || 'unknown'} / Currency:{' '}
-                      {item.currency || '未設定'} / Projects:{' '}
-                      {item.projectCount} / Revenue:{' '}
-                      {item.revenue.toLocaleString()} / Direct Cost:{' '}
-                      {item.directCost.toLocaleString()} / Payroll confirmed:{' '}
-                      {formatNullableNumber(item.payrollConfirmedLaborCost)} /
-                      Labor variance:{' '}
-                      {formatNullableNumber(item.laborCostVariance)} / Gross
-                      Profit: {item.grossProfit.toLocaleString()} / Margin:{' '}
-                      {(item.grossMargin * 100).toFixed(2)}% / Red projects:{' '}
-                      {item.redProjectCount}
+                  {managementReport.topRedProjects.map((item) => (
+                    <div key={item.projectId}>
+                      {(item.projectCode || item.projectId) +
+                        (item.projectName ? ` / ${item.projectName}` : '')}
+                      : ¥{item.grossProfit.toLocaleString()} / Department:{' '}
+                      {formatDepartmentLabel(item)} / Margin{' '}
+                      {(item.grossMargin * 100).toFixed(2)}%
                     </div>
                   ))}
                 </div>
               )}
-            <div>
-              Minutes: {managementReport.totalMinutes} / Overtime:{' '}
-              {managementReport.overtimeTotalMinutes}
             </div>
-            <div>
-              Delivery due: {managementReport.deliveryDueCount}件 /{' '}
-              {managementReport.deliveryDueAmount == null
-                ? '通貨別表示を参照'
-                : managementReport.deliveryDueAmount.toLocaleString()}
-            </div>
-            <div>Red projects: {managementReport.redProjectCount}</div>
-            {managementReport.topRedProjects.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                {managementReport.topRedProjects.map((item) => (
-                  <div key={item.projectId}>
-                    {(item.projectCode || item.projectId) +
-                      (item.projectName ? ` / ${item.projectName}` : '')}
-                    : ¥{item.grossProfit.toLocaleString()} / Department:{' '}
-                    {formatDepartmentLabel(item)} / Margin{' '}
-                    {(item.grossMargin * 100).toFixed(2)}%
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-        {!projectReport &&
-          !projectProfitReport &&
-          groupReport.length === 0 &&
-          !overtimeReport &&
-          !projectProfitByUserReport &&
-          !projectProfitByGroupReport &&
-          !managementReport &&
-          !burndownReport &&
-          !evmReport && <div className="card">レポート未取得</div>}
-      </div>
+          )}
+          {!projectReport &&
+            !projectProfitReport &&
+            groupReport.length === 0 &&
+            !overtimeReport &&
+            !projectProfitByUserReport &&
+            !projectProfitByGroupReport &&
+            !managementReport &&
+            !burndownReport &&
+            !evmReport && <div className="card">レポート未取得</div>}
+        </div>
+      </WorkflowPanel>
     </div>
   );
 };
