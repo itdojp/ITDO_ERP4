@@ -45,13 +45,19 @@ describe('workflowUx', () => {
     );
 
     expect(screen.getByLabelText('案件サマリー')).toBeInTheDocument();
+    expect(screen.getAllByRole('term')[0]).toHaveTextContent('案件数');
     expect(screen.getByText('案件数')).toBeInTheDocument();
     expect(screen.getByText('2件')).toBeInTheDocument();
     expect(screen.getByText('進行中 1件')).toBeInTheDocument();
+    expect(screen.getAllByRole('term')[1]).toHaveTextContent('顧客');
+    expect(screen.getByText('顧客')).toBeInTheDocument();
+    expect(screen.getByText('2社')).toBeInTheDocument();
     expect(
       screen.getByRole('heading', { name: '入力', level: 3 }),
     ).toBeInTheDocument();
-    expect(screen.getByText('必須項目から順に登録します。')).toBeVisible();
+    expect(
+      screen.getByRole('region', { name: '入力' }),
+    ).toHaveAccessibleDescription('必須項目から順に登録します。');
     expect(screen.getByRole('button', { name: '追加' })).toBeVisible();
   });
 });

@@ -3,6 +3,30 @@
   margin: 0 auto;
   padding: var(--space-24, 24px);
 }
+.skip-link {
+  position: absolute;
+  left: 16px;
+  top: 8px;
+  z-index: 1000;
+  transform: translateY(-160%);
+  border-radius: 8px;
+  background: var(--color-action-primary, #0ea5e9);
+  color: var(--color-text-inverse, #fff);
+  font-weight: 700;
+  padding: 8px 12px;
+  text-decoration: none;
+  transition: transform 120ms ease-out;
+}
+.skip-link:focus {
+  transform: translateY(0);
+  outline: 3px solid rgba(14, 165, 233, 0.35);
+  outline-offset: 2px;
+}
+.erp4-main:focus {
+  outline: 3px solid rgba(14, 165, 233, 0.25);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
 .card {
   background: var(--color-bg-base, #ffffff);
   border: 1px solid var(--color-border-default, #e2e8f0);

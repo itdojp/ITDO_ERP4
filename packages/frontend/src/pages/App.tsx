@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { apiResponse } from '../api';
 import {
   Alert,
@@ -51,6 +57,7 @@ const ACTIVE_SECTION_KEY = 'erp4_active_section';
 const LEGACY_SECTION_ALIASES: Record<string, string> = {
   'project-chat': 'room-chat',
 };
+const COMMAND_PALETTE_SEARCH_LABEL = 'コマンド検索';
 
 function normalizeSectionId(sectionId: string) {
   return LEGACY_SECTION_ALIASES[sectionId] || sectionId;
@@ -141,6 +148,7 @@ function buildChatMessageDeepLinkError(params: {
 }
 
 export const App: React.FC = () => {
+  const mainContentRef = useRef<HTMLElement>(null);
   const sectionGroups = useMemo<SectionGroup[]>(
     () => [
       {
@@ -426,6 +434,21 @@ export const App: React.FC = () => {
     useState<DeepLinkResolvedTarget | null>(null);
   const [deepLinkError, setDeepLinkError] = useState<string>('');
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [mainFocusRequestCount, setMainFocusRequestCount] = useState(0);
+
+  useEffect(() => {
+    if (!isCommandPaletteOpen) return;
+    if (typeof document === 'undefined') return;
+
+    const handle = window.setTimeout(() => {
+      const commandSearch = document.querySelector<HTMLInputElement>(
+        '.itdo-command-palette__input[role="combobox"]',
+      );
+      commandSearch?.setAttribute('aria-label', COMMAND_PALETTE_SEARCH_LABEL);
+    }, 0);
+
+    return () => window.clearTimeout(handle);
+  }, [isCommandPaletteOpen]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -605,22 +628,42 @@ export const App: React.FC = () => {
     [sectionGroups],
   );
 
-  const activateSection = useCallback((sectionId: string) => {
-    const normalizedSectionId = normalizeSectionId(sectionId);
-    setDeepLinkError('');
-    setPendingDeepLink(null);
-    setActiveSectionId(normalizedSectionId);
-    if (
-      typeof window !== 'undefined' &&
-      window.location.hash.startsWith('#/open')
-    ) {
-      window.history.replaceState(
-        null,
-        '',
-        window.location.pathname + window.location.search,
-      );
-    }
-  }, []);
+  useEffect(() => {
+    if (mainFocusRequestCount === 0) return;
+    if (typeof window === 'undefined') return;
+
+    const handle = window.setTimeout(() => {
+      mainContentRef.current?.focus();
+    }, 0);
+
+    return () => window.clearTimeout(handle);
+  }, [mainFocusRequestCount]);
+
+  const activateSection = useCallback(
+    (
+      sectionId: string,
+      options: { focusMain?: boolean } = { focusMain: true },
+    ) => {
+      const normalizedSectionId = normalizeSectionId(sectionId);
+      setDeepLinkError('');
+      setPendingDeepLink(null);
+      setActiveSectionId(normalizedSectionId);
+      if (options.focusMain ?? true) {
+        setMainFocusRequestCount((current) => current + 1);
+      }
+      if (
+        typeof window !== 'undefined' &&
+        window.location.hash.startsWith('#/open')
+      ) {
+        window.history.replaceState(
+          null,
+          '',
+          window.location.pathname + window.location.search,
+        );
+      }
+    },
+    [],
+  );
 
   const commandActions = useMemo(
     () => [
@@ -643,7 +686,7 @@ export const App: React.FC = () => {
           'ホームの検索（ERP横断）に移動して入力欄へフォーカスします',
         keywords: ['検索', 'search', 'global'],
         onSelect: () => {
-          activateSection('home');
+          activateSection('home', { focusMain: false });
           if (typeof window === 'undefined') return;
           window.setTimeout(() => {
             window.dispatchEvent(new CustomEvent('erp4_global_search_focus'));
@@ -696,6 +739,9 @@ export const App: React.FC = () => {
 
   return (
     <div className="container">
+      <a className="skip-link" href="#erp4-main-content">
+        メインコンテンツへ移動
+      </a>
       <PageHeader
         title="ERP4 MVP PoC"
         description={
@@ -717,39 +763,72 @@ export const App: React.FC = () => {
           style={{ minWidth: 220, flex: '0 0 220px', alignSelf: 'flex-start' }}
         >
           <SectionCard title="メニュー" density="compact">
-            <div style={{ display: 'grid', gap: 12 }}>
-              <Button
-                size="small"
-                fullWidth
-                variant="secondary"
-                onClick={() => setIsCommandPaletteOpen(true)}
-              >
-                コマンドを開く (Ctrl/Cmd + K)
-              </Button>
-              {sectionGroups.map((group) => (
-                <div key={group.title} style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ fontSize: 12, color: '#64748b' }}>
-                    {group.title}
-                  </div>
-                  {group.items.map((item) => (
-                    <Button
-                      key={item.id}
-                      size="small"
-                      fullWidth
-                      variant={
-                        item.id === activeSection?.id ? 'primary' : 'ghost'
-                      }
-                      onClick={() => activateSection(item.id)}
+            <nav aria-label="主要メニュー">
+              <div style={{ display: 'grid', gap: 12 }}>
+                <Button
+                  size="small"
+                  fullWidth
+                  variant="secondary"
+                  aria-keyshortcuts="Control+K Meta+K"
+                  onClick={() => setIsCommandPaletteOpen(true)}
+                >
+                  コマンドを開く (Ctrl/Cmd + K)
+                </Button>
+                {sectionGroups.map((group, groupIndex) => {
+                  const groupHeadingId = `erp4-menu-group-${groupIndex}`;
+                  return (
+                    <div
+                      key={group.title}
+                      role="group"
+                      aria-labelledby={groupHeadingId}
+                      style={{ display: 'grid', gap: 6 }}
                     >
-                      {item.label}
-                    </Button>
-                  ))}
-                </div>
-              ))}
-            </div>
+                      <div
+                        id={groupHeadingId}
+                        style={{
+                          fontSize: 12,
+                          color: '#64748b',
+                          margin: 0,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {group.title}
+                      </div>
+                      {group.items.map((item) => (
+                        <Button
+                          key={item.id}
+                          size="small"
+                          fullWidth
+                          aria-current={
+                            item.id === activeSection?.id ? 'page' : undefined
+                          }
+                          variant={
+                            item.id === activeSection?.id ? 'primary' : 'ghost'
+                          }
+                          onClick={() => activateSection(item.id)}
+                        >
+                          {item.label}
+                        </Button>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            </nav>
           </SectionCard>
         </div>
-        <main style={{ flex: '1 1 720px', minWidth: 280 }}>
+        <main
+          className="erp4-main"
+          id="erp4-main-content"
+          ref={mainContentRef}
+          tabIndex={-1}
+          aria-label={
+            activeSection
+              ? `${activeSectionGroup?.title ?? '未分類'} / ${activeSection.label}`
+              : '主要コンテンツ'
+          }
+          style={{ flex: '1 1 720px', minWidth: 280 }}
+        >
           {activeSection ? (
             <SectionCard
               title={activeSection.label}
@@ -766,6 +845,7 @@ export const App: React.FC = () => {
         actions={commandActions}
         title="ERP4 コマンドパレット"
         placeholder="コマンド・画面名・キーワードで検索"
+        ariaLabel="コマンド候補"
         emptyMessage="該当するコマンドがありません"
       />
     </div>
