@@ -95,7 +95,7 @@ const contexts = [
 function contextRule(fromContext, forbiddenContexts) {
   return {
     name: `bounded-context-${fromContext.name}-direction`,
-    comment: `${fromContext.displayName} is a foundational bounded context and must not import higher-level contexts directly; use an application service, event, or documented adapter instead. See docs/architecture/greenfield-ideal-design.md#11-バウンデッドコンテキストモジュール分割.`,
+    comment: `${fromContext.displayName} must not import contexts that are later in the documented dependency direction; use an application service, event, or documented adapter instead. See docs/architecture/greenfield-ideal-design.md#11-バウンデッドコンテキストモジュール分割`,
     severity: 'error',
     from: { path: fromContext.patterns },
     to: { path: forbiddenContexts.flatMap((context) => context.patterns) },
