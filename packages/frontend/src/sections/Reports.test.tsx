@@ -51,6 +51,54 @@ afterEach(() => {
 });
 
 describe('Reports', () => {
+  it('renders workflow guidance, summary metrics, and grouped report panels', async () => {
+    vi.mocked(api).mockResolvedValue({
+      items: [{ id: 'base-1', name: 'Baseline 1' }],
+    });
+
+    render(<Reports />);
+
+    expect(
+      screen.getByRole('heading', { name: 'Reports' }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('レポート判断サマリー')).toBeInTheDocument();
+    expect(screen.getByText('対象案件')).toBeInTheDocument();
+    expect(screen.getByText('取得済みレポート')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '共通条件' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '採算・工数レポート' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '計画・管理会計' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'レポート結果' }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('開始日')).toHaveAttribute(
+      'placeholder',
+      'from (YYYY-MM-DD)',
+    );
+    expect(screen.getByLabelText('終了日')).toHaveAttribute(
+      'placeholder',
+      'to (YYYY-MM-DD)',
+    );
+    expect(screen.getByLabelText('対象ユーザーID一覧')).toHaveAttribute(
+      'placeholder',
+      'userIds (a,b,c)',
+    );
+    expect(screen.getByLabelText('残業レポート対象ユーザーID')).toHaveAttribute(
+      'placeholder',
+      'userId',
+    );
+
+    expect(
+      await screen.findByRole('option', { name: 'Baseline 1' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('レポート未取得')).toBeInTheDocument();
+  });
+
   it('syncs default auth values and reloads baselines after auth update', async () => {
     vi.mocked(api)
       .mockResolvedValueOnce({

@@ -138,6 +138,32 @@ function getMonthlyUpdateButton() {
 }
 
 describe('HRAnalytics', () => {
+  it('renders privacy guidance, workflow summary, and grouped analytics panels', async () => {
+    mockAnalyticsApi();
+
+    render(<HRAnalytics />);
+
+    expect(
+      screen.getByRole('heading', { name: '匿名集計（人事向け）' }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('HR分析判断サマリー')).toBeInTheDocument();
+    expect(screen.getByText('公開閾値')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '集計条件' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '匿名グループ集計' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: '時系列ドリルダウン' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('5人未満は非表示')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(findGroupRow('sales')).toBeInTheDocument();
+    });
+  });
+
   it('loads group and monthly analytics on initial render', async () => {
     mockAnalyticsApi();
 

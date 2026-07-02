@@ -7,6 +7,11 @@ import React, {
 } from 'react';
 import { api } from '../api';
 import { DateRangePicker } from '../ui';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  WorkflowPanel,
+} from './workflowUx';
 
 type AnalyticsItem = {
   bucket: string;
@@ -147,64 +152,120 @@ export const HRAnalytics: React.FC = () => {
   );
 
   const formatRate = (value: number) => `${(value * 100).toFixed(1)}%`;
+  const selectedGroupLabel = selectedGroup || '未選択';
+  const hrSummaryItems = [
+    {
+      label: '公開閾値',
+      value: `${minUsers}人以上`,
+      helper: '個人特定を避けるため閾値未満の集計は非表示です。',
+      tone: minUsers >= 5 ? ('success' as const) : ('warning' as const),
+    },
+    {
+      label: '表示グループ',
+      value: `${groupItems.length}件`,
+      helper:
+        groupItems.length > 0
+          ? '匿名化されたグループ単位の傾向を確認できます。'
+          : '条件を変更して表示可能な集計を確認してください。',
+    },
+    {
+      label: '選択中グループ',
+      value: selectedGroupLabel,
+      helper: selectedGroup
+        ? '時系列ドリルダウンの対象です。'
+        : 'グループを選択すると時系列を確認できます。',
+      tone: selectedGroup ? ('success' as const) : ('warning' as const),
+    },
+    {
+      label: '時系列データ',
+      value: `${monthlyItems.length}件`,
+      helper:
+        monthlyItems.length > 0
+          ? '月次推移を確認できます。'
+          : '未取得または表示可能データなしです。',
+    },
+  ];
 
   return (
     <div>
-      <h2>匿名集計（人事向け）</h2>
-      <div
-        className="row"
-        style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}
+      <WorkflowPageHeader
+        title="匿名集計（人事向け）"
+        description="ウェルビーイング回答を匿名性の閾値で保護しながら、グループ別の傾向と時系列変化を確認します。"
+      />
+      <WorkflowMetricGrid
+        ariaLabel="HR分析判断サマリー"
+        items={hrSummaryItems}
+      />
+
+      <WorkflowPanel
+        title="集計条件"
+        description="期間と公開閾値を指定し、グループ別の匿名集計を更新します。"
       >
-        <DateRangePicker
-          label="集計期間"
-          fromLabel="開始日"
-          toLabel="終了日"
-          value={{ from, to }}
-          onChange={(next) => {
-            setFrom(next.from ?? '');
-            setTo(next.to ?? '');
-          }}
-        />
-        <label>
-          閾値
-          <input
-            type="number"
-            min={1}
-            value={minUsers}
-            onChange={(e) => {
-              const next = Number(e.target.value);
-              setMinUsers(Number.isFinite(next) && next > 0 ? next : 1);
-            }}
-            style={{ width: 72, marginLeft: 6 }}
-          />
-        </label>
-        <button
-          className="button secondary"
-          onClick={() => loadGroupAnalytics({ from, to, minUsers })}
-          disabled={isLoadingGroup}
+        <div
+          className="row"
+          style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}
         >
-          {isLoadingGroup ? '更新中...' : '更新'}
-        </button>
-      </div>
-      <p className="badge" style={{ marginTop: 8 }}>
-        {minUsers}人未満は非表示
-      </p>
-      {groupError && <p style={{ color: '#dc2626' }}>{groupError}</p>}
-      <ul className="list">
-        {groupItems.map((item) => (
-          <li key={item.bucket}>
-            <strong>{item.bucket}</strong> ({item.users}人)
-            <div>
-              Not Good: {formatRate(item.notGoodRate)} ({item.notGoodCount}/
-              {item.entries}) / ヘルプ要請: {item.helpRequestedCount}件
-            </div>
-          </li>
-        ))}
-        {groupItems.length === 0 && !groupError && (
-          <li>表示可能なデータなし</li>
-        )}
-      </ul>
-      <div style={{ marginTop: 16 }}>
+          <DateRangePicker
+            label="集計期間"
+            fromLabel="開始日"
+            toLabel="終了日"
+            value={{ from, to }}
+            onChange={(next) => {
+              setFrom(next.from ?? '');
+              setTo(next.to ?? '');
+            }}
+          />
+          <label>
+            閾値
+            <input
+              type="number"
+              min={1}
+              value={minUsers}
+              onChange={(e) => {
+                const next = Number(e.target.value);
+                setMinUsers(Number.isFinite(next) && next > 0 ? next : 1);
+              }}
+              style={{ width: 72, marginLeft: 6 }}
+            />
+          </label>
+          <button
+            className="button secondary"
+            onClick={() => loadGroupAnalytics({ from, to, minUsers })}
+            disabled={isLoadingGroup}
+          >
+            {isLoadingGroup ? '更新中...' : '更新'}
+          </button>
+        </div>
+        <p className="badge" style={{ marginTop: 8 }}>
+          {minUsers}人未満は非表示
+        </p>
+        {groupError && <p style={{ color: '#dc2626' }}>{groupError}</p>}
+      </WorkflowPanel>
+
+      <WorkflowPanel
+        title="匿名グループ集計"
+        description="閾値を満たしたグループのみ、Not Good 率とヘルプ要請数を表示します。"
+      >
+        <ul className="list">
+          {groupItems.map((item) => (
+            <li key={item.bucket}>
+              <strong>{item.bucket}</strong> ({item.users}人)
+              <div>
+                Not Good: {formatRate(item.notGoodRate)} ({item.notGoodCount}/
+                {item.entries}) / ヘルプ要請: {item.helpRequestedCount}件
+              </div>
+            </li>
+          ))}
+          {groupItems.length === 0 && !groupError && (
+            <li>表示可能なデータなし</li>
+          )}
+        </ul>
+      </WorkflowPanel>
+
+      <WorkflowPanel
+        title="時系列ドリルダウン"
+        description="選択したグループの月次推移を確認し、急な悪化やヘルプ要請増加を検知します。"
+      >
         <div className="row" style={{ gap: 8, alignItems: 'center' }}>
           <strong>時系列</strong>
           <select
@@ -241,7 +302,7 @@ export const HRAnalytics: React.FC = () => {
             <li>表示可能なデータなし</li>
           )}
         </ul>
-      </div>
+      </WorkflowPanel>
       <p style={{ fontSize: 12, color: '#475569' }}>
         個人特定を避けるため閾値未満は非表示。評価目的での利用は禁止。
       </p>
