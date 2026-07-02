@@ -42,6 +42,12 @@ import { GroupManagementCard } from './GroupManagementCard';
 import { RateCardSettingsCard } from './RateCardSettingsCard';
 import { ScimSettingsCard } from './ScimSettingsCard';
 import { WorklogSettingsCard } from './WorklogSettingsCard';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  WorkflowPanel,
+} from './workflowUx';
+import type { WorkflowMetric } from './workflowUx';
 
 type AlertSetting = {
   id: string;
@@ -529,6 +535,11 @@ const createClientIdempotencyKey = (prefix: string) => {
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `${prefix}-${token}`;
+};
+
+const settingsPanelContentStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: 12,
 };
 
 export const AdminSettings: React.FC = () => {
@@ -2493,1031 +2504,1206 @@ export const AdminSettings: React.FC = () => {
     }
   };
 
+  const settingsMetrics = useMemo<WorkflowMetric[]>(
+    () => [
+      {
+        id: 'categories',
+        label: '設定カテゴリ',
+        value: '6分類',
+        helper: '組織・労務・権限・帳票・連携・認証を分割表示',
+      },
+      {
+        id: 'policy',
+        label: '承認・権限',
+        value: `${
+          ruleItems.length +
+          actionPolicyItems.length +
+          chatAckTemplateItems.length
+        }件`,
+        helper: `承認ルール ${ruleItems.length} / ActionPolicy ${actionPolicyItems.length} / ack ${chatAckTemplateItems.length}`,
+        tone:
+          ruleItems.length +
+            actionPolicyItems.length +
+            chatAckTemplateItems.length >
+          0
+            ? 'success'
+            : 'default',
+      },
+      {
+        id: 'delivery',
+        label: '通知・配信',
+        value: `${alertItems.length + reportItems.length}件`,
+        helper: `アラート ${alertItems.length} / レポート購読 ${reportItems.length}`,
+        tone:
+          alertItems.length + reportItems.length > 0 ? 'success' : 'default',
+      },
+      {
+        id: 'integration',
+        label: '連携・会計',
+        value: `${
+          integrationItems.length +
+          integrationExportJobItems.length +
+          accountingMappingRuleItems.length
+        }件`,
+        helper: `連携 ${integrationItems.length} / ジョブ ${integrationExportJobItems.length} / 会計ルール ${accountingMappingRuleItems.length}`,
+        tone:
+          integrationItems.length +
+            integrationExportJobItems.length +
+            accountingMappingRuleItems.length >
+          0
+            ? 'success'
+            : 'default',
+      },
+      {
+        id: 'system-admin',
+        label: '認証移行権限',
+        value: hasSystemAdminRole ? '操作可' : '閲覧のみ',
+        helper: hasSystemAdminRole
+          ? 'system_admin として認証方式移行を操作可能'
+          : 'system_admin ロールがないため操作不可',
+        tone: hasSystemAdminRole ? 'success' : 'warning',
+      },
+    ],
+    [
+      accountingMappingRuleItems.length,
+      actionPolicyItems.length,
+      alertItems.length,
+      chatAckTemplateItems.length,
+      hasSystemAdminRole,
+      integrationExportJobItems.length,
+      integrationItems.length,
+      reportItems.length,
+      ruleItems.length,
+    ],
+  );
+
   return (
     <div>
-      <h2>Settings</h2>
+      <WorkflowPageHeader
+        title="Settings"
+        description="組織、権限、通知、帳票、外部連携、認証移行の設定をカテゴリ別に整理し、管理者が影響範囲と操作権限を確認してから設定変更できるようにします。"
+      />
+      <WorkflowMetricGrid
+        ariaLabel="設定管理サマリー"
+        items={settingsMetrics}
+      />
       {message && <p>{message}</p>}
       <div className="list" style={{ display: 'grid', gap: 12 }}>
-        <ChatSettingsCard />
-        <ChatRoomSettingsCard />
-        <GroupManagementCard />
-        <ScimSettingsCard />
-        <RateCardSettingsCard />
-        <WorklogSettingsCard />
-        <AlertSettingsCard
-          wizard={{
-            steps: alertWizardSteps,
-            value: alertWizardStep,
-            onValueChange: setAlertWizardStep,
-            canSubmit: canSubmitAlertForm,
-            isDirty: alertDraft.isDirty,
-            autosave: {
-              status: alertDraft.status,
-              lastSavedAt: alertDraft.lastSavedAt
-                ? new Date(alertDraft.lastSavedAt).toLocaleString()
-                : undefined,
-              message: alertDraft.errorMessage,
-              onRestoreDraft: alertDraft.hasRestorableDraft
-                ? alertDraft.restoreDraft
-                : undefined,
-              onRetrySave: () => {
-                void alertDraft.saveNow();
-              },
-            },
-            labels: {
-              back: '戻る',
-              next: '次へ',
-              submit: editingAlertId ? '更新' : '作成',
-              cancel: editingAlertId ? 'キャンセル' : 'クリア',
-              optional: '任意',
-              autosavePrefix: '下書き',
-            },
-            onSubmit: submitAlertSetting,
-            onCancel: () => {
-              resetAlertForm();
-              void alertDraft.clearDraft();
-            },
-          }}
-          onReload={loadAlertSettings}
-          items={alertItems}
-          onToggle={toggleAlert}
-          onEdit={startEditAlert}
-        />
-
-        <div className="card" style={{ padding: 12 }}>
-          <strong>承認ルール（簡易モック）</strong>
-          <div style={{ fontSize: 12, color: '#475569', marginTop: 6 }}>
-            <div>
-              注意: ルール変更は既存の進行中承認には適用されません（申請時に
-              steps/stagePolicy をスナップショット保持）。
-              適用が必要な場合は「取消→再申請」運用で反映します。
-            </div>
-            <div>
-              運用監視: isActive=true かつ effectiveFrom&lt;=現在時刻 が候補。
-              複数候補がある場合は effectiveFrom desc / createdAt desc
-              の順で評価し、条件一致がなければ先頭が fallback になります。
-            </div>
+        <WorkflowPanel
+          title="コミュニケーション・組織"
+          description="チャット、ルーム、グループ、SCIM の設定をまとめて確認します。"
+        >
+          <div style={settingsPanelContentStyle}>
+            <ChatSettingsCard />
+            <ChatRoomSettingsCard />
+            <GroupManagementCard />
+            <ScimSettingsCard />
           </div>
-          <details style={{ marginTop: 8 }}>
-            <summary style={{ cursor: 'pointer' }}>
-              運用監視（有効化状態/影響範囲）
-            </summary>
-            <div
-              className="list"
-              style={{ display: 'grid', gap: 8, marginTop: 8 }}
-            >
-              <div style={{ fontSize: 12, color: '#475569' }}>
-                現在時刻: {approvalRuleMonitoring.now.toLocaleString()}
+        </WorkflowPanel>
+
+        <WorkflowPanel
+          title="労務・単価・通知"
+          description="単価、勤怠/工数、アラート通知の運用設定を管理します。"
+        >
+          <div style={settingsPanelContentStyle}>
+            <RateCardSettingsCard />
+            <WorklogSettingsCard />
+            <AlertSettingsCard
+              wizard={{
+                steps: alertWizardSteps,
+                value: alertWizardStep,
+                onValueChange: setAlertWizardStep,
+                canSubmit: canSubmitAlertForm,
+                isDirty: alertDraft.isDirty,
+                autosave: {
+                  status: alertDraft.status,
+                  lastSavedAt: alertDraft.lastSavedAt
+                    ? new Date(alertDraft.lastSavedAt).toLocaleString()
+                    : undefined,
+                  message: alertDraft.errorMessage,
+                  onRestoreDraft: alertDraft.hasRestorableDraft
+                    ? alertDraft.restoreDraft
+                    : undefined,
+                  onRetrySave: () => {
+                    void alertDraft.saveNow();
+                  },
+                },
+                labels: {
+                  back: '戻る',
+                  next: '次へ',
+                  submit: editingAlertId ? '更新' : '作成',
+                  cancel: editingAlertId ? 'キャンセル' : 'クリア',
+                  optional: '任意',
+                  autosavePrefix: '下書き',
+                },
+                onSubmit: submitAlertSetting,
+                onCancel: () => {
+                  resetAlertForm();
+                  void alertDraft.clearDraft();
+                },
+              }}
+              onReload={loadAlertSettings}
+              items={alertItems}
+              onToggle={toggleAlert}
+              onEdit={startEditAlert}
+            />
+          </div>
+        </WorkflowPanel>
+
+        <WorkflowPanel
+          title="承認・権限ポリシー"
+          description="承認ルール、ActionPolicy、合意形成テンプレートを同じ文脈で確認します。"
+        >
+          <div style={settingsPanelContentStyle}>
+            <div className="card" style={{ padding: 12 }}>
+              <strong>承認ルール（簡易モック）</strong>
+              <div style={{ fontSize: 12, color: '#475569', marginTop: 6 }}>
+                <div>
+                  注意: ルール変更は既存の進行中承認には適用されません（申請時に
+                  steps/stagePolicy をスナップショット保持）。
+                  適用が必要な場合は「取消→再申請」運用で反映します。
+                </div>
+                <div>
+                  運用監視: isActive=true かつ effectiveFrom&lt;=現在時刻
+                  が候補。 複数候補がある場合は effectiveFrom desc / createdAt
+                  desc の順で評価し、条件一致がなければ先頭が fallback
+                  になります。
+                </div>
               </div>
-              {[
-                ...flowTypes,
-                ...Object.keys(approvalRuleMonitoring.groups)
-                  .filter((flowType) => !flowTypes.includes(flowType))
-                  .sort(),
-              ].map((flowType) => {
-                const group = approvalRuleMonitoring.groups[flowType];
-                const fallback = group?.fallback || null;
-                return (
-                  <div key={flowType} className="card" style={{ padding: 10 }}>
-                    <div
-                      className="row"
-                      style={{
-                        justifyContent: 'space-between',
-                        flexWrap: 'wrap',
-                      }}
-                    >
-                      <strong>{flowType}</strong>
-                      <span className="badge">
-                        series:
-                        {approvalRuleSeries.seriesCountByFlowType.get(
-                          flowType,
-                        ) ?? 0}{' '}
-                        effective:{group?.effective.length ?? 0} / future:
-                        {group?.future.length ?? 0} / inactive:
-                        {group?.inactive.length ?? 0}
-                      </span>
-                    </div>
-                    <div
-                      style={{ fontSize: 12, color: '#475569', marginTop: 4 }}
-                    >
-                      fallback:{' '}
-                      {fallback
-                        ? `series=${fallback.ruleKey ?? fallback.id} v${fallback.version ?? 1} id=${fallback.id} effectiveFrom=${formatDateTime(
-                            fallback.effectiveFrom,
-                          )}`
-                        : '-'}
-                    </div>
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ cursor: 'pointer' }}>
+                  運用監視（有効化状態/影響範囲）
+                </summary>
+                <div
+                  className="list"
+                  style={{ display: 'grid', gap: 8, marginTop: 8 }}
+                >
+                  <div style={{ fontSize: 12, color: '#475569' }}>
+                    現在時刻: {approvalRuleMonitoring.now.toLocaleString()}
                   </div>
-                );
-              })}
-            </div>
-          </details>
-          {editingRule && (
-            <div
-              className="card"
-              style={{ marginTop: 8, padding: 10, fontSize: 12 }}
-            >
-              系列 `{editingRule.ruleKey ?? editingRule.id}` の v
-              {editingRule.version ?? 1} から新版を作成します。`flowType`
-              は同一系列で固定され、旧版は履歴として残ります。
-            </div>
-          )}
-          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
-            <label>
-              flowType
-              <select
-                value={ruleForm.flowType}
-                disabled={Boolean(editingRuleId)}
-                onChange={(e) =>
-                  setRuleForm({ ...ruleForm, flowType: e.target.value })
-                }
-              >
-                {flowTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              effectiveFrom (任意, ISO date-time)
-              <input
-                type="text"
-                value={ruleForm.effectiveFrom}
-                onChange={(e) =>
-                  setRuleForm({ ...ruleForm, effectiveFrom: e.target.value })
-                }
-                placeholder="2026-01-29T00:00:00Z"
-              />
-            </label>
-            <label className="badge" style={{ cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={ruleForm.isActive}
-                onChange={(e) =>
-                  setRuleForm({ ...ruleForm, isActive: e.target.checked })
-                }
-                style={{ marginRight: 6 }}
-              />
-              isActive
-            </label>
-          </div>
-          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
-            <label style={{ flex: 1, minWidth: 240 }}>
-              conditions (JSON)
-              <textarea
-                value={ruleForm.conditionsJson}
-                onChange={(e) =>
-                  setRuleForm({ ...ruleForm, conditionsJson: e.target.value })
-                }
-                rows={3}
-                style={{ width: '100%' }}
-              />
-            </label>
-            <label style={{ flex: 1, minWidth: 240 }}>
-              steps (JSON)
-              <textarea
-                value={ruleForm.stepsJson}
-                onChange={(e) =>
-                  setRuleForm({ ...ruleForm, stepsJson: e.target.value })
-                }
-                rows={3}
-                style={{ width: '100%' }}
-              />
-            </label>
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <button
-              className="button"
-              data-testid="approval-rule-submit"
-              onClick={submitApprovalRule}
-            >
-              {editingRuleId ? '新版作成' : '作成'}
-            </button>
-            <button
-              className="button secondary"
-              data-testid="approval-rule-reset"
-              onClick={resetRuleForm}
-            >
-              {editingRuleId ? '新版作成をやめる' : 'クリア'}
-            </button>
-            <button className="button secondary" onClick={loadApprovalRules}>
-              再読込
-            </button>
-          </div>
-          <div
-            className="list"
-            style={{ display: 'grid', gap: 8, marginTop: 8 }}
-          >
-            {ruleItems.length === 0 && <div className="card">ルールなし</div>}
-            {approvalRuleSeries.sortedRuleItems.map((rule) => {
-              const isActive = rule.isActive ?? true;
-              const effectiveFrom = parseDateTime(rule.effectiveFrom ?? null);
-              const effectiveTo = parseDateTime(rule.effectiveTo ?? null);
-              const now = approvalRuleMonitoring.now;
-              const statusLabel =
-                effectiveTo && effectiveTo.getTime() <= now.getTime()
-                  ? 'superseded'
-                  : !isActive
-                    ? 'inactive'
-                    : effectiveFrom && effectiveFrom.getTime() > now.getTime()
-                      ? 'future'
-                      : 'effective';
-              const seriesKey = getApprovalRuleSeriesKey(rule);
-              const seriesRuleCount =
-                approvalRuleSeries.countsBySeries.get(seriesKey) ?? 1;
-              const isLatest = approvalRuleSeries.latestRuleIds.has(rule.id);
-              const isHistoryOpen = approvalRuleAuditOpen[seriesKey] ?? false;
-              const isHistoryLoading =
-                approvalRuleAuditLoading[seriesKey] ?? false;
-              const auditLogs = approvalRuleAuditLogs[seriesKey] || [];
-              return (
-                <div key={rule.id} className="card" style={{ padding: 12 }}>
-                  <div
-                    className="row"
-                    style={{
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                      gap: 6,
-                    }}
-                  >
-                    <div>
-                      <strong>{rule.flowType}</strong>
-                      {` / series:${rule.ruleKey ?? rule.id} / v${rule.version ?? 1} / id=${rule.id}`}
-                    </div>
-                    <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-                      <span className="badge">{statusLabel}</span>
-                      <span className="badge">
-                        latest: {isLatest ? 'true' : 'false'}
-                      </span>
-                      <span className="badge">
-                        series versions: {seriesRuleCount}
-                      </span>
-                      <span className="badge">
-                        isActive: {isActive ? 'true' : 'false'}
-                      </span>
-                      <span className="badge">
-                        effectiveFrom: {formatDateTime(rule.effectiveFrom)}
-                      </span>
-                      <span className="badge">
-                        effectiveTo: {formatDateTime(rule.effectiveTo)}
-                      </span>
-                      <span className="badge">
-                        supersedesRuleId: {rule.supersedesRuleId ?? '-'}
-                      </span>
-                      <span className="badge">
-                        updatedAt: {formatDateTime(rule.updatedAt)}
-                      </span>
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: '#475569',
-                      marginTop: 4,
-                      whiteSpace: 'pre-wrap',
-                    }}
-                  >
-                    conditions:{' '}
-                    {rule.conditions ? formatJson(rule.conditions) : '-'}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: '#475569',
-                      marginTop: 4,
-                      whiteSpace: 'pre-wrap',
-                    }}
-                  >
-                    steps: {rule.steps ? formatJson(rule.steps) : '-'}
-                  </div>
-                  <div
-                    className="row"
-                    style={{ marginTop: 6, flexWrap: 'wrap' }}
-                  >
-                    <button
-                      className="button secondary"
-                      disabled={!isLatest}
-                      title={
-                        isLatest
-                          ? '最新版の有効化状態を変更します'
-                          : '最新版のみ状態変更できます'
-                      }
-                      onClick={() =>
-                        toggleApprovalRuleActive(rule.id, rule.isActive)
-                      }
-                    >
-                      {isActive ? '無効化' : '有効化'}
-                    </button>
-                    <button
-                      className="button secondary"
-                      disabled={!isLatest}
-                      title={
-                        isLatest
-                          ? 'この版を元に新版を作成します'
-                          : '最新版のみ新版作成の起点にできます'
-                      }
-                      onClick={() => startEditRule(rule)}
-                    >
-                      新版作成
-                    </button>
-                    <button
-                      className="button secondary"
-                      onClick={() => {
-                        const nextOpen = !isHistoryOpen;
-                        setApprovalRuleAuditOpen((prev) => ({
-                          ...prev,
-                          [seriesKey]: nextOpen,
-                        }));
-                        if (
-                          nextOpen &&
-                          approvalRuleAuditLogs[seriesKey] === undefined
-                        ) {
-                          loadApprovalRuleAuditLogs(rule);
-                        }
-                      }}
-                    >
-                      {isHistoryOpen ? '系列履歴を閉じる' : '系列履歴を見る'}
-                    </button>
-                    {isHistoryOpen && (
-                      <button
-                        className="button secondary"
-                        onClick={() => loadApprovalRuleAuditLogs(rule)}
+                  {[
+                    ...flowTypes,
+                    ...Object.keys(approvalRuleMonitoring.groups)
+                      .filter((flowType) => !flowTypes.includes(flowType))
+                      .sort(),
+                  ].map((flowType) => {
+                    const group = approvalRuleMonitoring.groups[flowType];
+                    const fallback = group?.fallback || null;
+                    return (
+                      <div
+                        key={flowType}
+                        className="card"
+                        style={{ padding: 10 }}
                       >
-                        系列履歴を再読込
-                      </button>
-                    )}
-                    {!isLatest && (
-                      <span style={{ fontSize: 12, color: '#64748b' }}>
-                        この版は履歴です。操作は最新版から行ってください。
-                      </span>
-                    )}
-                  </div>
-                  {isHistoryOpen && (
-                    <div style={{ marginTop: 8 }}>
-                      {isHistoryLoading && (
-                        <div style={{ fontSize: 12, color: '#475569' }}>
-                          読み込み中...
-                        </div>
-                      )}
-                      {!isHistoryLoading && auditLogs.length === 0 && (
                         <div
-                          className="card"
-                          style={{ padding: 10, fontSize: 12 }}
-                        >
-                          履歴なし
-                        </div>
-                      )}
-                      {!isHistoryLoading && (
-                        <AuditHistoryPanel
-                          logs={auditLogs}
-                          selectedLogId={approvalRuleAuditSelected[seriesKey]}
-                          onSelectLog={(logId) => {
-                            setApprovalRuleAuditSelected((prev) => ({
-                              ...prev,
-                              [seriesKey]: logId,
-                            }));
+                          className="row"
+                          style={{
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
                           }}
-                        />
+                        >
+                          <strong>{flowType}</strong>
+                          <span className="badge">
+                            series:
+                            {approvalRuleSeries.seriesCountByFlowType.get(
+                              flowType,
+                            ) ?? 0}{' '}
+                            effective:{group?.effective.length ?? 0} / future:
+                            {group?.future.length ?? 0} / inactive:
+                            {group?.inactive.length ?? 0}
+                          </span>
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: '#475569',
+                            marginTop: 4,
+                          }}
+                        >
+                          fallback:{' '}
+                          {fallback
+                            ? `series=${fallback.ruleKey ?? fallback.id} v${fallback.version ?? 1} id=${fallback.id} effectiveFrom=${formatDateTime(
+                                fallback.effectiveFrom,
+                              )}`
+                            : '-'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </details>
+              {editingRule && (
+                <div
+                  className="card"
+                  style={{ marginTop: 8, padding: 10, fontSize: 12 }}
+                >
+                  系列 `{editingRule.ruleKey ?? editingRule.id}` の v
+                  {editingRule.version ?? 1} から新版を作成します。`flowType`
+                  は同一系列で固定され、旧版は履歴として残ります。
+                </div>
+              )}
+              <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+                <label>
+                  flowType
+                  <select
+                    value={ruleForm.flowType}
+                    disabled={Boolean(editingRuleId)}
+                    onChange={(e) =>
+                      setRuleForm({ ...ruleForm, flowType: e.target.value })
+                    }
+                  >
+                    {flowTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  effectiveFrom (任意, ISO date-time)
+                  <input
+                    type="text"
+                    value={ruleForm.effectiveFrom}
+                    onChange={(e) =>
+                      setRuleForm({
+                        ...ruleForm,
+                        effectiveFrom: e.target.value,
+                      })
+                    }
+                    placeholder="2026-01-29T00:00:00Z"
+                  />
+                </label>
+                <label className="badge" style={{ cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={ruleForm.isActive}
+                    onChange={(e) =>
+                      setRuleForm({ ...ruleForm, isActive: e.target.checked })
+                    }
+                    style={{ marginRight: 6 }}
+                  />
+                  isActive
+                </label>
+              </div>
+              <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+                <label style={{ flex: 1, minWidth: 240 }}>
+                  conditions (JSON)
+                  <textarea
+                    value={ruleForm.conditionsJson}
+                    onChange={(e) =>
+                      setRuleForm({
+                        ...ruleForm,
+                        conditionsJson: e.target.value,
+                      })
+                    }
+                    rows={3}
+                    style={{ width: '100%' }}
+                  />
+                </label>
+                <label style={{ flex: 1, minWidth: 240 }}>
+                  steps (JSON)
+                  <textarea
+                    value={ruleForm.stepsJson}
+                    onChange={(e) =>
+                      setRuleForm({ ...ruleForm, stepsJson: e.target.value })
+                    }
+                    rows={3}
+                    style={{ width: '100%' }}
+                  />
+                </label>
+              </div>
+              <div className="row" style={{ marginTop: 8 }}>
+                <button
+                  className="button"
+                  data-testid="approval-rule-submit"
+                  onClick={submitApprovalRule}
+                >
+                  {editingRuleId ? '新版作成' : '作成'}
+                </button>
+                <button
+                  className="button secondary"
+                  data-testid="approval-rule-reset"
+                  onClick={resetRuleForm}
+                >
+                  {editingRuleId ? '新版作成をやめる' : 'クリア'}
+                </button>
+                <button
+                  className="button secondary"
+                  onClick={loadApprovalRules}
+                >
+                  再読込
+                </button>
+              </div>
+              <div
+                className="list"
+                style={{ display: 'grid', gap: 8, marginTop: 8 }}
+              >
+                {ruleItems.length === 0 && (
+                  <div className="card">ルールなし</div>
+                )}
+                {approvalRuleSeries.sortedRuleItems.map((rule) => {
+                  const isActive = rule.isActive ?? true;
+                  const effectiveFrom = parseDateTime(
+                    rule.effectiveFrom ?? null,
+                  );
+                  const effectiveTo = parseDateTime(rule.effectiveTo ?? null);
+                  const now = approvalRuleMonitoring.now;
+                  const statusLabel =
+                    effectiveTo && effectiveTo.getTime() <= now.getTime()
+                      ? 'superseded'
+                      : !isActive
+                        ? 'inactive'
+                        : effectiveFrom &&
+                            effectiveFrom.getTime() > now.getTime()
+                          ? 'future'
+                          : 'effective';
+                  const seriesKey = getApprovalRuleSeriesKey(rule);
+                  const seriesRuleCount =
+                    approvalRuleSeries.countsBySeries.get(seriesKey) ?? 1;
+                  const isLatest = approvalRuleSeries.latestRuleIds.has(
+                    rule.id,
+                  );
+                  const isHistoryOpen =
+                    approvalRuleAuditOpen[seriesKey] ?? false;
+                  const isHistoryLoading =
+                    approvalRuleAuditLoading[seriesKey] ?? false;
+                  const auditLogs = approvalRuleAuditLogs[seriesKey] || [];
+                  return (
+                    <div key={rule.id} className="card" style={{ padding: 12 }}>
+                      <div
+                        className="row"
+                        style={{
+                          justifyContent: 'space-between',
+                          flexWrap: 'wrap',
+                          gap: 6,
+                        }}
+                      >
+                        <div>
+                          <strong>{rule.flowType}</strong>
+                          {` / series:${rule.ruleKey ?? rule.id} / v${rule.version ?? 1} / id=${rule.id}`}
+                        </div>
+                        <div
+                          className="row"
+                          style={{ gap: 6, flexWrap: 'wrap' }}
+                        >
+                          <span className="badge">{statusLabel}</span>
+                          <span className="badge">
+                            latest: {isLatest ? 'true' : 'false'}
+                          </span>
+                          <span className="badge">
+                            series versions: {seriesRuleCount}
+                          </span>
+                          <span className="badge">
+                            isActive: {isActive ? 'true' : 'false'}
+                          </span>
+                          <span className="badge">
+                            effectiveFrom: {formatDateTime(rule.effectiveFrom)}
+                          </span>
+                          <span className="badge">
+                            effectiveTo: {formatDateTime(rule.effectiveTo)}
+                          </span>
+                          <span className="badge">
+                            supersedesRuleId: {rule.supersedesRuleId ?? '-'}
+                          </span>
+                          <span className="badge">
+                            updatedAt: {formatDateTime(rule.updatedAt)}
+                          </span>
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: '#475569',
+                          marginTop: 4,
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        conditions:{' '}
+                        {rule.conditions ? formatJson(rule.conditions) : '-'}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: '#475569',
+                          marginTop: 4,
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        steps: {rule.steps ? formatJson(rule.steps) : '-'}
+                      </div>
+                      <div
+                        className="row"
+                        style={{ marginTop: 6, flexWrap: 'wrap' }}
+                      >
+                        <button
+                          className="button secondary"
+                          disabled={!isLatest}
+                          title={
+                            isLatest
+                              ? '最新版の有効化状態を変更します'
+                              : '最新版のみ状態変更できます'
+                          }
+                          onClick={() =>
+                            toggleApprovalRuleActive(rule.id, rule.isActive)
+                          }
+                        >
+                          {isActive ? '無効化' : '有効化'}
+                        </button>
+                        <button
+                          className="button secondary"
+                          disabled={!isLatest}
+                          title={
+                            isLatest
+                              ? 'この版を元に新版を作成します'
+                              : '最新版のみ新版作成の起点にできます'
+                          }
+                          onClick={() => startEditRule(rule)}
+                        >
+                          新版作成
+                        </button>
+                        <button
+                          className="button secondary"
+                          onClick={() => {
+                            const nextOpen = !isHistoryOpen;
+                            setApprovalRuleAuditOpen((prev) => ({
+                              ...prev,
+                              [seriesKey]: nextOpen,
+                            }));
+                            if (
+                              nextOpen &&
+                              approvalRuleAuditLogs[seriesKey] === undefined
+                            ) {
+                              loadApprovalRuleAuditLogs(rule);
+                            }
+                          }}
+                        >
+                          {isHistoryOpen
+                            ? '系列履歴を閉じる'
+                            : '系列履歴を見る'}
+                        </button>
+                        {isHistoryOpen && (
+                          <button
+                            className="button secondary"
+                            onClick={() => loadApprovalRuleAuditLogs(rule)}
+                          >
+                            系列履歴を再読込
+                          </button>
+                        )}
+                        {!isLatest && (
+                          <span style={{ fontSize: 12, color: '#64748b' }}>
+                            この版は履歴です。操作は最新版から行ってください。
+                          </span>
+                        )}
+                      </div>
+                      {isHistoryOpen && (
+                        <div style={{ marginTop: 8 }}>
+                          {isHistoryLoading && (
+                            <div style={{ fontSize: 12, color: '#475569' }}>
+                              読み込み中...
+                            </div>
+                          )}
+                          {!isHistoryLoading && auditLogs.length === 0 && (
+                            <div
+                              className="card"
+                              style={{ padding: 10, fontSize: 12 }}
+                            >
+                              履歴なし
+                            </div>
+                          )}
+                          {!isHistoryLoading && (
+                            <AuditHistoryPanel
+                              logs={auditLogs}
+                              selectedLogId={
+                                approvalRuleAuditSelected[seriesKey]
+                              }
+                              onSelectLog={(logId) => {
+                                setApprovalRuleAuditSelected((prev) => ({
+                                  ...prev,
+                                  [seriesKey]: logId,
+                                }));
+                              }}
+                            />
+                          )}
+                        </div>
                       )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                  );
+                })}
+              </div>
+            </div>
 
-        <div className="card" style={{ padding: 12 }}>
-          <strong>ActionPolicy（権限/ロック）</strong>
-          <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
-            <PolicyFormBuilder
-              schema={actionPolicyFormSchema}
-              value={actionPolicyForm}
-              onChange={(next) => {
-                setActionPolicyForm(normalizeActionPolicyForm(next));
-              }}
-              onSubmit={(next) => {
-                const normalized = normalizeActionPolicyForm(next);
-                setActionPolicyForm(normalized);
-                void submitActionPolicy(normalized);
-              }}
-              onReset={resetActionPolicyForm}
-              layout="sectioned"
-              submitLabel={editingActionPolicyId ? '更新' : '作成'}
-              resetLabel={editingActionPolicyId ? 'キャンセル' : 'クリア'}
+            <div className="card" style={{ padding: 12 }}>
+              <strong>ActionPolicy（権限/ロック）</strong>
+              <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+                <PolicyFormBuilder
+                  schema={actionPolicyFormSchema}
+                  value={actionPolicyForm}
+                  onChange={(next) => {
+                    setActionPolicyForm(normalizeActionPolicyForm(next));
+                  }}
+                  onSubmit={(next) => {
+                    const normalized = normalizeActionPolicyForm(next);
+                    setActionPolicyForm(normalized);
+                    void submitActionPolicy(normalized);
+                  }}
+                  onReset={resetActionPolicyForm}
+                  layout="sectioned"
+                  submitLabel={editingActionPolicyId ? '更新' : '作成'}
+                  resetLabel={editingActionPolicyId ? 'キャンセル' : 'クリア'}
+                />
+                <div className="row">
+                  <button
+                    className="button secondary"
+                    onClick={loadActionPolicies}
+                  >
+                    再読込
+                  </button>
+                </div>
+              </div>
+              <div
+                className="list"
+                style={{ display: 'grid', gap: 8, marginTop: 8 }}
+              >
+                {actionPolicyItems.length === 0 && (
+                  <div className="card">ポリシーなし</div>
+                )}
+                {actionPolicyItems.map((item) => {
+                  const isHistoryOpen = actionPolicyAuditOpen[item.id] ?? false;
+                  const isHistoryLoading =
+                    actionPolicyAuditLoading[item.id] ?? false;
+                  const auditLogs = actionPolicyAuditLogs[item.id] || [];
+                  return (
+                    <div key={item.id} className="card" style={{ padding: 12 }}>
+                      <div
+                        className="row"
+                        style={{
+                          justifyContent: 'space-between',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <div>
+                          <strong>
+                            {item.flowType} / {item.actionKey}
+                          </strong>{' '}
+                          (priority: {item.priority ?? 0}) / id={item.id}
+                        </div>
+                        <div className="row" style={{ gap: 6 }}>
+                          <span className="badge">
+                            {(item.isEnabled ?? true) ? 'enabled' : 'disabled'}
+                          </span>
+                          <span className="badge">
+                            {item.requireReason ? 'requireReason' : 'no-reason'}
+                          </span>
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: '#475569',
+                          marginTop: 4,
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        subjects:{' '}
+                        {item.subjects ? formatJson(item.subjects) : '-'}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: '#475569',
+                          marginTop: 4,
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        stateConstraints:{' '}
+                        {item.stateConstraints
+                          ? formatJson(item.stateConstraints)
+                          : '-'}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: '#475569',
+                          marginTop: 4,
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        guards: {item.guards ? formatJson(item.guards) : '-'}
+                      </div>
+                      <div
+                        className="row"
+                        style={{ marginTop: 6, flexWrap: 'wrap' }}
+                      >
+                        <button
+                          className="button secondary"
+                          onClick={() => startEditActionPolicy(item)}
+                        >
+                          編集
+                        </button>
+                        <button
+                          className="button secondary"
+                          onClick={() => {
+                            const nextOpen = !isHistoryOpen;
+                            setActionPolicyAuditOpen((prev) => ({
+                              ...prev,
+                              [item.id]: nextOpen,
+                            }));
+                            if (
+                              nextOpen &&
+                              actionPolicyAuditLogs[item.id] === undefined
+                            ) {
+                              loadActionPolicyAuditLogs(item.id);
+                            }
+                          }}
+                        >
+                          {isHistoryOpen ? '履歴を閉じる' : '履歴を見る'}
+                        </button>
+                        {isHistoryOpen && (
+                          <button
+                            className="button secondary"
+                            onClick={() => loadActionPolicyAuditLogs(item.id)}
+                          >
+                            履歴を再読込
+                          </button>
+                        )}
+                      </div>
+                      {isHistoryOpen && (
+                        <div style={{ marginTop: 8 }}>
+                          {isHistoryLoading && (
+                            <div style={{ fontSize: 12, color: '#475569' }}>
+                              読み込み中...
+                            </div>
+                          )}
+                          {!isHistoryLoading && auditLogs.length === 0 && (
+                            <div
+                              className="card"
+                              style={{ padding: 10, fontSize: 12 }}
+                            >
+                              履歴なし
+                            </div>
+                          )}
+                          {!isHistoryLoading && (
+                            <AuditHistoryPanel
+                              logs={auditLogs}
+                              selectedLogId={actionPolicyAuditSelected[item.id]}
+                              onSelectLog={(logId) => {
+                                setActionPolicyAuditSelected((prev) => ({
+                                  ...prev,
+                                  [item.id]: logId,
+                                }));
+                              }}
+                            />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="card" style={{ padding: 12 }}>
+              <strong>合意形成テンプレ（ack required）</strong>
+              <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+                <label>
+                  flowType
+                  <select
+                    value={chatAckTemplateForm.flowType}
+                    onChange={(e) =>
+                      setChatAckTemplateForm({
+                        ...chatAckTemplateForm,
+                        flowType: e.target.value,
+                      })
+                    }
+                  >
+                    {flowTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  actionKey
+                  <input
+                    type="text"
+                    value={chatAckTemplateForm.actionKey}
+                    onChange={(e) =>
+                      setChatAckTemplateForm({
+                        ...chatAckTemplateForm,
+                        actionKey: e.target.value,
+                      })
+                    }
+                    placeholder="approve/reject"
+                  />
+                </label>
+                <label className="badge" style={{ cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={chatAckTemplateForm.isEnabled}
+                    onChange={(e) =>
+                      setChatAckTemplateForm({
+                        ...chatAckTemplateForm,
+                        isEnabled: e.target.checked,
+                      })
+                    }
+                    style={{ marginRight: 6 }}
+                  />
+                  isEnabled
+                </label>
+              </div>
+              <label style={{ display: 'block', marginTop: 8 }}>
+                messageBody
+                <textarea
+                  value={chatAckTemplateForm.messageBody}
+                  onChange={(e) =>
+                    setChatAckTemplateForm({
+                      ...chatAckTemplateForm,
+                      messageBody: e.target.value,
+                    })
+                  }
+                  rows={3}
+                  style={{ width: '100%' }}
+                  placeholder="合意形成メッセージ本文"
+                />
+              </label>
+              <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+                <label style={{ flex: 1, minWidth: 240 }}>
+                  requiredUserIds (JSON)
+                  <textarea
+                    value={chatAckTemplateForm.requiredUserIdsJson}
+                    onChange={(e) =>
+                      setChatAckTemplateForm({
+                        ...chatAckTemplateForm,
+                        requiredUserIdsJson: e.target.value,
+                      })
+                    }
+                    rows={3}
+                    style={{ width: '100%' }}
+                    placeholder='["user@example.com"]'
+                  />
+                </label>
+                <label style={{ flex: 1, minWidth: 240 }}>
+                  requiredGroupIds (JSON)
+                  <textarea
+                    value={chatAckTemplateForm.requiredGroupIdsJson}
+                    onChange={(e) =>
+                      setChatAckTemplateForm({
+                        ...chatAckTemplateForm,
+                        requiredGroupIdsJson: e.target.value,
+                      })
+                    }
+                    rows={3}
+                    style={{ width: '100%' }}
+                    placeholder='["group-id"]'
+                  />
+                </label>
+                <label style={{ flex: 1, minWidth: 240 }}>
+                  requiredRoles (JSON)
+                  <textarea
+                    value={chatAckTemplateForm.requiredRolesJson}
+                    onChange={(e) =>
+                      setChatAckTemplateForm({
+                        ...chatAckTemplateForm,
+                        requiredRolesJson: e.target.value,
+                      })
+                    }
+                    rows={3}
+                    style={{ width: '100%' }}
+                    placeholder='["mgmt"]'
+                  />
+                </label>
+              </div>
+              <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+                <label>
+                  dueInHours
+                  <input
+                    type="number"
+                    value={chatAckTemplateForm.dueInHours}
+                    onChange={(e) =>
+                      setChatAckTemplateForm({
+                        ...chatAckTemplateForm,
+                        dueInHours: e.target.value,
+                      })
+                    }
+                    placeholder="(任意)"
+                    min={0}
+                  />
+                </label>
+                <label>
+                  remindIntervalHours
+                  <input
+                    type="number"
+                    value={chatAckTemplateForm.remindIntervalHours}
+                    onChange={(e) =>
+                      setChatAckTemplateForm({
+                        ...chatAckTemplateForm,
+                        remindIntervalHours: e.target.value,
+                      })
+                    }
+                    placeholder="(任意)"
+                    min={1}
+                  />
+                </label>
+                <label>
+                  escalationAfterHours
+                  <input
+                    type="number"
+                    value={chatAckTemplateForm.escalationAfterHours}
+                    onChange={(e) =>
+                      setChatAckTemplateForm({
+                        ...chatAckTemplateForm,
+                        escalationAfterHours: e.target.value,
+                      })
+                    }
+                    placeholder="(任意)"
+                    min={1}
+                  />
+                </label>
+              </div>
+              <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
+                <label style={{ flex: 1, minWidth: 240 }}>
+                  escalationUserIds (JSON)
+                  <textarea
+                    value={chatAckTemplateForm.escalationUserIdsJson}
+                    onChange={(e) =>
+                      setChatAckTemplateForm({
+                        ...chatAckTemplateForm,
+                        escalationUserIdsJson: e.target.value,
+                      })
+                    }
+                    rows={3}
+                    style={{ width: '100%' }}
+                    placeholder='["manager@example.com"]'
+                  />
+                </label>
+                <label style={{ flex: 1, minWidth: 240 }}>
+                  escalationGroupIds (JSON)
+                  <textarea
+                    value={chatAckTemplateForm.escalationGroupIdsJson}
+                    onChange={(e) =>
+                      setChatAckTemplateForm({
+                        ...chatAckTemplateForm,
+                        escalationGroupIdsJson: e.target.value,
+                      })
+                    }
+                    rows={3}
+                    style={{ width: '100%' }}
+                    placeholder='["group-id"]'
+                  />
+                </label>
+                <label style={{ flex: 1, minWidth: 240 }}>
+                  escalationRoles (JSON)
+                  <textarea
+                    value={chatAckTemplateForm.escalationRolesJson}
+                    onChange={(e) =>
+                      setChatAckTemplateForm({
+                        ...chatAckTemplateForm,
+                        escalationRolesJson: e.target.value,
+                      })
+                    }
+                    rows={3}
+                    style={{ width: '100%' }}
+                    placeholder='["mgmt"]'
+                  />
+                </label>
+              </div>
+              <div className="row" style={{ marginTop: 8 }}>
+                <button className="button" onClick={submitChatAckTemplate}>
+                  {editingChatAckTemplateId ? '更新' : '作成'}
+                </button>
+                <button
+                  className="button secondary"
+                  onClick={resetChatAckTemplateForm}
+                >
+                  {editingChatAckTemplateId ? 'キャンセル' : 'クリア'}
+                </button>
+                <button
+                  className="button secondary"
+                  onClick={loadChatAckTemplates}
+                >
+                  再読込
+                </button>
+              </div>
+              <div
+                className="list"
+                style={{ display: 'grid', gap: 8, marginTop: 8 }}
+              >
+                {chatAckTemplateItems.length === 0 && (
+                  <div className="card">テンプレなし</div>
+                )}
+                {chatAckTemplateItems.map((item) => {
+                  const requiredLabel =
+                    [
+                      item.requiredUserIds
+                        ? `users=${formatJson(item.requiredUserIds)}`
+                        : null,
+                      item.requiredGroupIds
+                        ? `groups=${formatJson(item.requiredGroupIds)}`
+                        : null,
+                      item.requiredRoles
+                        ? `roles=${formatJson(item.requiredRoles)}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' / ') || '-';
+                  const escalationLabel =
+                    [
+                      item.escalationUserIds
+                        ? `users=${formatJson(item.escalationUserIds)}`
+                        : null,
+                      item.escalationGroupIds
+                        ? `groups=${formatJson(item.escalationGroupIds)}`
+                        : null,
+                      item.escalationRoles
+                        ? `roles=${formatJson(item.escalationRoles)}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' / ') || '-';
+                  return (
+                    <div key={item.id} className="card" style={{ padding: 12 }}>
+                      <div
+                        className="row"
+                        style={{
+                          justifyContent: 'space-between',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <div>
+                          <strong>
+                            {item.flowType} / {item.actionKey}
+                          </strong>{' '}
+                          / id={item.id}
+                        </div>
+                        <span className="badge">
+                          {(item.isEnabled ?? true) ? 'enabled' : 'disabled'}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: '#475569',
+                          marginTop: 4,
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        messageBody: {item.messageBody}
+                      </div>
+                      <div
+                        style={{ fontSize: 12, color: '#475569', marginTop: 4 }}
+                      >
+                        required: {requiredLabel}
+                      </div>
+                      <div
+                        style={{ fontSize: 12, color: '#475569', marginTop: 4 }}
+                      >
+                        escalation: {escalationLabel}
+                      </div>
+                      <div
+                        style={{ fontSize: 12, color: '#475569', marginTop: 4 }}
+                      >
+                        dueInHours: {item.dueInHours ?? '-'} /
+                        remindIntervalHours: {item.remindIntervalHours ?? '-'} /
+                        escalationAfterHours: {item.escalationAfterHours ?? '-'}
+                      </div>
+                      <div
+                        className="row"
+                        style={{ marginTop: 6, flexWrap: 'wrap' }}
+                      >
+                        <button
+                          className="button secondary"
+                          onClick={() => startEditChatAckTemplate(item)}
+                        >
+                          編集
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </WorkflowPanel>
+
+        <WorkflowPanel
+          title="帳票・配信"
+          description="テンプレート設定とレポート購読をまとめて確認します。"
+        >
+          <div style={settingsPanelContentStyle}>
+            <TemplateSettingsCard
+              templateForm={templateForm}
+              setTemplateForm={setTemplateForm}
+              templateKinds={templateKinds}
+              templatesForKind={templatesForKind}
+              editingTemplateId={editingTemplateId}
+              onSubmit={submitTemplateSetting}
+              onReset={resetTemplateForm}
+              onReload={loadTemplateSettings}
+              items={templateItems}
+              templateNameMap={templateNameMap}
+              onEdit={startEditTemplate}
+              onSetDefault={setTemplateDefault}
             />
-            <div className="row">
-              <button className="button secondary" onClick={loadActionPolicies}>
-                再読込
-              </button>
-            </div>
-          </div>
-          <div
-            className="list"
-            style={{ display: 'grid', gap: 8, marginTop: 8 }}
-          >
-            {actionPolicyItems.length === 0 && (
-              <div className="card">ポリシーなし</div>
-            )}
-            {actionPolicyItems.map((item) => {
-              const isHistoryOpen = actionPolicyAuditOpen[item.id] ?? false;
-              const isHistoryLoading =
-                actionPolicyAuditLoading[item.id] ?? false;
-              const auditLogs = actionPolicyAuditLogs[item.id] || [];
-              return (
-                <div key={item.id} className="card" style={{ padding: 12 }}>
-                  <div
-                    className="row"
-                    style={{
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <div>
-                      <strong>
-                        {item.flowType} / {item.actionKey}
-                      </strong>{' '}
-                      (priority: {item.priority ?? 0}) / id={item.id}
-                    </div>
-                    <div className="row" style={{ gap: 6 }}>
-                      <span className="badge">
-                        {(item.isEnabled ?? true) ? 'enabled' : 'disabled'}
-                      </span>
-                      <span className="badge">
-                        {item.requireReason ? 'requireReason' : 'no-reason'}
-                      </span>
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: '#475569',
-                      marginTop: 4,
-                      whiteSpace: 'pre-wrap',
-                    }}
-                  >
-                    subjects: {item.subjects ? formatJson(item.subjects) : '-'}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: '#475569',
-                      marginTop: 4,
-                      whiteSpace: 'pre-wrap',
-                    }}
-                  >
-                    stateConstraints:{' '}
-                    {item.stateConstraints
-                      ? formatJson(item.stateConstraints)
-                      : '-'}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: '#475569',
-                      marginTop: 4,
-                      whiteSpace: 'pre-wrap',
-                    }}
-                  >
-                    guards: {item.guards ? formatJson(item.guards) : '-'}
-                  </div>
-                  <div
-                    className="row"
-                    style={{ marginTop: 6, flexWrap: 'wrap' }}
-                  >
-                    <button
-                      className="button secondary"
-                      onClick={() => startEditActionPolicy(item)}
-                    >
-                      編集
-                    </button>
-                    <button
-                      className="button secondary"
-                      onClick={() => {
-                        const nextOpen = !isHistoryOpen;
-                        setActionPolicyAuditOpen((prev) => ({
-                          ...prev,
-                          [item.id]: nextOpen,
-                        }));
-                        if (
-                          nextOpen &&
-                          actionPolicyAuditLogs[item.id] === undefined
-                        ) {
-                          loadActionPolicyAuditLogs(item.id);
-                        }
-                      }}
-                    >
-                      {isHistoryOpen ? '履歴を閉じる' : '履歴を見る'}
-                    </button>
-                    {isHistoryOpen && (
-                      <button
-                        className="button secondary"
-                        onClick={() => loadActionPolicyAuditLogs(item.id)}
-                      >
-                        履歴を再読込
-                      </button>
-                    )}
-                  </div>
-                  {isHistoryOpen && (
-                    <div style={{ marginTop: 8 }}>
-                      {isHistoryLoading && (
-                        <div style={{ fontSize: 12, color: '#475569' }}>
-                          読み込み中...
-                        </div>
-                      )}
-                      {!isHistoryLoading && auditLogs.length === 0 && (
-                        <div
-                          className="card"
-                          style={{ padding: 10, fontSize: 12 }}
-                        >
-                          履歴なし
-                        </div>
-                      )}
-                      {!isHistoryLoading && (
-                        <AuditHistoryPanel
-                          logs={auditLogs}
-                          selectedLogId={actionPolicyAuditSelected[item.id]}
-                          onSelectLog={(logId) => {
-                            setActionPolicyAuditSelected((prev) => ({
-                              ...prev,
-                              [item.id]: logId,
-                            }));
-                          }}
-                        />
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
 
-        <div className="card" style={{ padding: 12 }}>
-          <strong>合意形成テンプレ（ack required）</strong>
-          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
-            <label>
-              flowType
-              <select
-                value={chatAckTemplateForm.flowType}
-                onChange={(e) =>
-                  setChatAckTemplateForm({
-                    ...chatAckTemplateForm,
-                    flowType: e.target.value,
-                  })
-                }
-              >
-                {flowTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              actionKey
-              <input
-                type="text"
-                value={chatAckTemplateForm.actionKey}
-                onChange={(e) =>
-                  setChatAckTemplateForm({
-                    ...chatAckTemplateForm,
-                    actionKey: e.target.value,
-                  })
-                }
-                placeholder="approve/reject"
-              />
-            </label>
-            <label className="badge" style={{ cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={chatAckTemplateForm.isEnabled}
-                onChange={(e) =>
-                  setChatAckTemplateForm({
-                    ...chatAckTemplateForm,
-                    isEnabled: e.target.checked,
-                  })
-                }
-                style={{ marginRight: 6 }}
-              />
-              isEnabled
-            </label>
+            <ReportSubscriptionsCard
+              reportForm={reportForm}
+              setReportForm={setReportForm}
+              reportFormats={reportFormats}
+              reportDryRun={reportDryRun}
+              setReportDryRun={setReportDryRun}
+              editingReportId={editingReportId}
+              onSubmit={submitReportSubscription}
+              onReset={resetReportForm}
+              onReload={loadReportSubscriptions}
+              onRunAll={runAllReportSubscriptions}
+              onShowDeliveries={showReportDeliveries}
+              items={reportItems}
+              onEdit={startEditReportSubscription}
+              onToggle={toggleReportSubscription}
+              onRun={runReportSubscription}
+              reportDeliveryFilterId={reportDeliveryFilterId}
+              setReportDeliveryFilterId={setReportDeliveryFilterId}
+              deliveries={reportDeliveries}
+              formatDateTime={formatDateTime}
+            />
           </div>
-          <label style={{ display: 'block', marginTop: 8 }}>
-            messageBody
-            <textarea
-              value={chatAckTemplateForm.messageBody}
-              onChange={(e) =>
-                setChatAckTemplateForm({
-                  ...chatAckTemplateForm,
-                  messageBody: e.target.value,
-                })
+        </WorkflowPanel>
+
+        <WorkflowPanel
+          title="外部連携・会計連携"
+          description="HR/CRM連携、照合、会計マッピング、連携ジョブを確認します。"
+        >
+          <div style={settingsPanelContentStyle}>
+            <IntegrationSettingsCard
+              integrationForm={integrationForm}
+              setIntegrationForm={setIntegrationForm}
+              integrationTypes={integrationTypes}
+              integrationStatuses={integrationStatuses}
+              editingIntegrationId={editingIntegrationId}
+              onSubmit={submitIntegrationSetting}
+              onReset={resetIntegrationForm}
+              onReload={loadIntegrationSettings}
+              onShowRuns={loadIntegrationRuns}
+              integrationRunFilterId={integrationRunFilterId}
+              setIntegrationRunFilterId={setIntegrationRunFilterId}
+              items={integrationItems}
+              onEdit={startEditIntegration}
+              onRun={runIntegrationSetting}
+              runs={integrationRuns}
+              metrics={integrationRunMetrics}
+              formatDateTime={formatDateTime}
+            />
+
+            <IntegrationReconciliationCard
+              periodKey={integrationReconciliationPeriodKey}
+              setPeriodKey={updateIntegrationReconciliationPeriodKey}
+              summary={integrationReconciliationSummary}
+              details={integrationReconciliationDetails}
+              detailsLoading={integrationReconciliationDetailsLoading}
+              detailsError={integrationReconciliationDetailsError}
+              onLoad={loadIntegrationReconciliationSummary}
+              onLoadDetails={loadIntegrationReconciliationDetails}
+              formatDateTime={formatDateTime}
+            />
+
+            <AccountingMappingRulesCard
+              mappingKeyFilter={accountingMappingRuleFilterMappingKey}
+              setMappingKeyFilter={setAccountingMappingRuleFilterMappingKey}
+              isActiveFilter={accountingMappingRuleFilterIsActive}
+              setIsActiveFilter={setAccountingMappingRuleFilterIsActive}
+              limit={accountingMappingRuleLimit}
+              setLimit={setAccountingMappingRuleLimit}
+              offset={accountingMappingRuleOffset}
+              setOffset={setAccountingMappingRuleOffset}
+              loading={accountingMappingRuleLoading}
+              items={accountingMappingRuleItems}
+              form={accountingMappingRuleForm}
+              setForm={setAccountingMappingRuleForm}
+              editingId={editingAccountingMappingRuleId}
+              onSubmit={submitAccountingMappingRule}
+              onReset={resetAccountingMappingRuleForm}
+              onLoad={loadAccountingMappingRules}
+              onEdit={startEditAccountingMappingRule}
+              reapplyPeriodKey={accountingMappingRuleReapplyForm.periodKey}
+              setReapplyPeriodKey={(value) =>
+                setAccountingMappingRuleReapplyForm((current) => ({
+                  ...current,
+                  periodKey:
+                    typeof value === 'function'
+                      ? value(current.periodKey)
+                      : value,
+                }))
               }
-              rows={3}
-              style={{ width: '100%' }}
-              placeholder="合意形成メッセージ本文"
+              reapplyMappingKey={accountingMappingRuleReapplyForm.mappingKey}
+              setReapplyMappingKey={(value) =>
+                setAccountingMappingRuleReapplyForm((current) => ({
+                  ...current,
+                  mappingKey:
+                    typeof value === 'function'
+                      ? value(current.mappingKey)
+                      : value,
+                }))
+              }
+              reapplyLimit={accountingMappingRuleReapplyForm.limit}
+              setReapplyLimit={(value) =>
+                setAccountingMappingRuleReapplyForm((current) => ({
+                  ...current,
+                  limit:
+                    typeof value === 'function' ? value(current.limit) : value,
+                }))
+              }
+              reapplyOffset={accountingMappingRuleReapplyForm.offset}
+              setReapplyOffset={(value) =>
+                setAccountingMappingRuleReapplyForm((current) => ({
+                  ...current,
+                  offset:
+                    typeof value === 'function' ? value(current.offset) : value,
+                }))
+              }
+              reapplying={accountingMappingRuleReapplying}
+              onReapply={reapplyAccountingMappingRules}
+              reapplyResult={accountingMappingRuleReapplyResult}
+              formatDateTime={formatDateTime}
             />
-          </label>
-          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
-            <label style={{ flex: 1, minWidth: 240 }}>
-              requiredUserIds (JSON)
-              <textarea
-                value={chatAckTemplateForm.requiredUserIdsJson}
-                onChange={(e) =>
-                  setChatAckTemplateForm({
-                    ...chatAckTemplateForm,
-                    requiredUserIdsJson: e.target.value,
-                  })
-                }
-                rows={3}
-                style={{ width: '100%' }}
-                placeholder='["user@example.com"]'
-              />
-            </label>
-            <label style={{ flex: 1, minWidth: 240 }}>
-              requiredGroupIds (JSON)
-              <textarea
-                value={chatAckTemplateForm.requiredGroupIdsJson}
-                onChange={(e) =>
-                  setChatAckTemplateForm({
-                    ...chatAckTemplateForm,
-                    requiredGroupIdsJson: e.target.value,
-                  })
-                }
-                rows={3}
-                style={{ width: '100%' }}
-                placeholder='["group-id"]'
-              />
-            </label>
-            <label style={{ flex: 1, minWidth: 240 }}>
-              requiredRoles (JSON)
-              <textarea
-                value={chatAckTemplateForm.requiredRolesJson}
-                onChange={(e) =>
-                  setChatAckTemplateForm({
-                    ...chatAckTemplateForm,
-                    requiredRolesJson: e.target.value,
-                  })
-                }
-                rows={3}
-                style={{ width: '100%' }}
-                placeholder='["mgmt"]'
-              />
-            </label>
+
+            <IntegrationExportJobsCard
+              kindFilter={integrationExportJobKindFilter}
+              setKindFilter={setIntegrationExportJobKindFilter}
+              statusFilter={integrationExportJobStatusFilter}
+              setStatusFilter={setIntegrationExportJobStatusFilter}
+              limit={integrationExportJobLimit}
+              setLimit={setIntegrationExportJobLimit}
+              offset={integrationExportJobOffset}
+              setOffset={setIntegrationExportJobOffset}
+              items={integrationExportJobItems}
+              loading={integrationExportJobLoading}
+              redispatchingId={integrationExportJobRedispatchingId}
+              onLoad={loadIntegrationExportJobs}
+              onRedispatch={redispatchIntegrationExportJob}
+              formatDateTime={formatDateTime}
+            />
           </div>
-          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
-            <label>
-              dueInHours
-              <input
-                type="number"
-                value={chatAckTemplateForm.dueInHours}
-                onChange={(e) =>
-                  setChatAckTemplateForm({
-                    ...chatAckTemplateForm,
-                    dueInHours: e.target.value,
-                  })
-                }
-                placeholder="(任意)"
-                min={0}
-              />
-            </label>
-            <label>
-              remindIntervalHours
-              <input
-                type="number"
-                value={chatAckTemplateForm.remindIntervalHours}
-                onChange={(e) =>
-                  setChatAckTemplateForm({
-                    ...chatAckTemplateForm,
-                    remindIntervalHours: e.target.value,
-                  })
-                }
-                placeholder="(任意)"
-                min={1}
-              />
-            </label>
-            <label>
-              escalationAfterHours
-              <input
-                type="number"
-                value={chatAckTemplateForm.escalationAfterHours}
-                onChange={(e) =>
-                  setChatAckTemplateForm({
-                    ...chatAckTemplateForm,
-                    escalationAfterHours: e.target.value,
-                  })
-                }
-                placeholder="(任意)"
-                min={1}
-              />
-            </label>
-          </div>
-          <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
-            <label style={{ flex: 1, minWidth: 240 }}>
-              escalationUserIds (JSON)
-              <textarea
-                value={chatAckTemplateForm.escalationUserIdsJson}
-                onChange={(e) =>
-                  setChatAckTemplateForm({
-                    ...chatAckTemplateForm,
-                    escalationUserIdsJson: e.target.value,
-                  })
-                }
-                rows={3}
-                style={{ width: '100%' }}
-                placeholder='["manager@example.com"]'
-              />
-            </label>
-            <label style={{ flex: 1, minWidth: 240 }}>
-              escalationGroupIds (JSON)
-              <textarea
-                value={chatAckTemplateForm.escalationGroupIdsJson}
-                onChange={(e) =>
-                  setChatAckTemplateForm({
-                    ...chatAckTemplateForm,
-                    escalationGroupIdsJson: e.target.value,
-                  })
-                }
-                rows={3}
-                style={{ width: '100%' }}
-                placeholder='["group-id"]'
-              />
-            </label>
-            <label style={{ flex: 1, minWidth: 240 }}>
-              escalationRoles (JSON)
-              <textarea
-                value={chatAckTemplateForm.escalationRolesJson}
-                onChange={(e) =>
-                  setChatAckTemplateForm({
-                    ...chatAckTemplateForm,
-                    escalationRolesJson: e.target.value,
-                  })
-                }
-                rows={3}
-                style={{ width: '100%' }}
-                placeholder='["mgmt"]'
-              />
-            </label>
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <button className="button" onClick={submitChatAckTemplate}>
-              {editingChatAckTemplateId ? '更新' : '作成'}
-            </button>
-            <button
-              className="button secondary"
-              onClick={resetChatAckTemplateForm}
-            >
-              {editingChatAckTemplateId ? 'キャンセル' : 'クリア'}
-            </button>
-            <button className="button secondary" onClick={loadChatAckTemplates}>
-              再読込
-            </button>
-          </div>
-          <div
-            className="list"
-            style={{ display: 'grid', gap: 8, marginTop: 8 }}
-          >
-            {chatAckTemplateItems.length === 0 && (
-              <div className="card">テンプレなし</div>
+        </WorkflowPanel>
+
+        <WorkflowPanel
+          title="認証方式移行"
+          description="system_admin のみが実行できる認証方式移行の操作状態を確認します。"
+        >
+          <div style={settingsPanelContentStyle}>
+            {hasSystemAdminRole ? (
+              <AuthIdentityMigrationCard formatDateTime={formatDateTime} />
+            ) : (
+              <div className="card" style={{ padding: 12 }}>
+                <strong>認証方式移行</strong>
+                <p style={{ marginTop: 8 }}>
+                  この設定は system_admin
+                  ロールを持つユーザーのみが操作できます。
+                </p>
+              </div>
             )}
-            {chatAckTemplateItems.map((item) => {
-              const requiredLabel =
-                [
-                  item.requiredUserIds
-                    ? `users=${formatJson(item.requiredUserIds)}`
-                    : null,
-                  item.requiredGroupIds
-                    ? `groups=${formatJson(item.requiredGroupIds)}`
-                    : null,
-                  item.requiredRoles
-                    ? `roles=${formatJson(item.requiredRoles)}`
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(' / ') || '-';
-              const escalationLabel =
-                [
-                  item.escalationUserIds
-                    ? `users=${formatJson(item.escalationUserIds)}`
-                    : null,
-                  item.escalationGroupIds
-                    ? `groups=${formatJson(item.escalationGroupIds)}`
-                    : null,
-                  item.escalationRoles
-                    ? `roles=${formatJson(item.escalationRoles)}`
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(' / ') || '-';
-              return (
-                <div key={item.id} className="card" style={{ padding: 12 }}>
-                  <div
-                    className="row"
-                    style={{
-                      justifyContent: 'space-between',
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <div>
-                      <strong>
-                        {item.flowType} / {item.actionKey}
-                      </strong>{' '}
-                      / id={item.id}
-                    </div>
-                    <span className="badge">
-                      {(item.isEnabled ?? true) ? 'enabled' : 'disabled'}
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: '#475569',
-                      marginTop: 4,
-                      whiteSpace: 'pre-wrap',
-                    }}
-                  >
-                    messageBody: {item.messageBody}
-                  </div>
-                  <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                    required: {requiredLabel}
-                  </div>
-                  <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                    escalation: {escalationLabel}
-                  </div>
-                  <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                    dueInHours: {item.dueInHours ?? '-'} / remindIntervalHours:{' '}
-                    {item.remindIntervalHours ?? '-'} / escalationAfterHours:{' '}
-                    {item.escalationAfterHours ?? '-'}
-                  </div>
-                  <div
-                    className="row"
-                    style={{ marginTop: 6, flexWrap: 'wrap' }}
-                  >
-                    <button
-                      className="button secondary"
-                      onClick={() => startEditChatAckTemplate(item)}
-                    >
-                      編集
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
           </div>
-        </div>
-
-        <TemplateSettingsCard
-          templateForm={templateForm}
-          setTemplateForm={setTemplateForm}
-          templateKinds={templateKinds}
-          templatesForKind={templatesForKind}
-          editingTemplateId={editingTemplateId}
-          onSubmit={submitTemplateSetting}
-          onReset={resetTemplateForm}
-          onReload={loadTemplateSettings}
-          items={templateItems}
-          templateNameMap={templateNameMap}
-          onEdit={startEditTemplate}
-          onSetDefault={setTemplateDefault}
-        />
-
-        <ReportSubscriptionsCard
-          reportForm={reportForm}
-          setReportForm={setReportForm}
-          reportFormats={reportFormats}
-          reportDryRun={reportDryRun}
-          setReportDryRun={setReportDryRun}
-          editingReportId={editingReportId}
-          onSubmit={submitReportSubscription}
-          onReset={resetReportForm}
-          onReload={loadReportSubscriptions}
-          onRunAll={runAllReportSubscriptions}
-          onShowDeliveries={showReportDeliveries}
-          items={reportItems}
-          onEdit={startEditReportSubscription}
-          onToggle={toggleReportSubscription}
-          onRun={runReportSubscription}
-          reportDeliveryFilterId={reportDeliveryFilterId}
-          setReportDeliveryFilterId={setReportDeliveryFilterId}
-          deliveries={reportDeliveries}
-          formatDateTime={formatDateTime}
-        />
-
-        <IntegrationSettingsCard
-          integrationForm={integrationForm}
-          setIntegrationForm={setIntegrationForm}
-          integrationTypes={integrationTypes}
-          integrationStatuses={integrationStatuses}
-          editingIntegrationId={editingIntegrationId}
-          onSubmit={submitIntegrationSetting}
-          onReset={resetIntegrationForm}
-          onReload={loadIntegrationSettings}
-          onShowRuns={loadIntegrationRuns}
-          integrationRunFilterId={integrationRunFilterId}
-          setIntegrationRunFilterId={setIntegrationRunFilterId}
-          items={integrationItems}
-          onEdit={startEditIntegration}
-          onRun={runIntegrationSetting}
-          runs={integrationRuns}
-          metrics={integrationRunMetrics}
-          formatDateTime={formatDateTime}
-        />
-
-        <IntegrationReconciliationCard
-          periodKey={integrationReconciliationPeriodKey}
-          setPeriodKey={updateIntegrationReconciliationPeriodKey}
-          summary={integrationReconciliationSummary}
-          details={integrationReconciliationDetails}
-          detailsLoading={integrationReconciliationDetailsLoading}
-          detailsError={integrationReconciliationDetailsError}
-          onLoad={loadIntegrationReconciliationSummary}
-          onLoadDetails={loadIntegrationReconciliationDetails}
-          formatDateTime={formatDateTime}
-        />
-
-        <AccountingMappingRulesCard
-          mappingKeyFilter={accountingMappingRuleFilterMappingKey}
-          setMappingKeyFilter={setAccountingMappingRuleFilterMappingKey}
-          isActiveFilter={accountingMappingRuleFilterIsActive}
-          setIsActiveFilter={setAccountingMappingRuleFilterIsActive}
-          limit={accountingMappingRuleLimit}
-          setLimit={setAccountingMappingRuleLimit}
-          offset={accountingMappingRuleOffset}
-          setOffset={setAccountingMappingRuleOffset}
-          loading={accountingMappingRuleLoading}
-          items={accountingMappingRuleItems}
-          form={accountingMappingRuleForm}
-          setForm={setAccountingMappingRuleForm}
-          editingId={editingAccountingMappingRuleId}
-          onSubmit={submitAccountingMappingRule}
-          onReset={resetAccountingMappingRuleForm}
-          onLoad={loadAccountingMappingRules}
-          onEdit={startEditAccountingMappingRule}
-          reapplyPeriodKey={accountingMappingRuleReapplyForm.periodKey}
-          setReapplyPeriodKey={(value) =>
-            setAccountingMappingRuleReapplyForm((current) => ({
-              ...current,
-              periodKey:
-                typeof value === 'function' ? value(current.periodKey) : value,
-            }))
-          }
-          reapplyMappingKey={accountingMappingRuleReapplyForm.mappingKey}
-          setReapplyMappingKey={(value) =>
-            setAccountingMappingRuleReapplyForm((current) => ({
-              ...current,
-              mappingKey:
-                typeof value === 'function' ? value(current.mappingKey) : value,
-            }))
-          }
-          reapplyLimit={accountingMappingRuleReapplyForm.limit}
-          setReapplyLimit={(value) =>
-            setAccountingMappingRuleReapplyForm((current) => ({
-              ...current,
-              limit: typeof value === 'function' ? value(current.limit) : value,
-            }))
-          }
-          reapplyOffset={accountingMappingRuleReapplyForm.offset}
-          setReapplyOffset={(value) =>
-            setAccountingMappingRuleReapplyForm((current) => ({
-              ...current,
-              offset:
-                typeof value === 'function' ? value(current.offset) : value,
-            }))
-          }
-          reapplying={accountingMappingRuleReapplying}
-          onReapply={reapplyAccountingMappingRules}
-          reapplyResult={accountingMappingRuleReapplyResult}
-          formatDateTime={formatDateTime}
-        />
-
-        <IntegrationExportJobsCard
-          kindFilter={integrationExportJobKindFilter}
-          setKindFilter={setIntegrationExportJobKindFilter}
-          statusFilter={integrationExportJobStatusFilter}
-          setStatusFilter={setIntegrationExportJobStatusFilter}
-          limit={integrationExportJobLimit}
-          setLimit={setIntegrationExportJobLimit}
-          offset={integrationExportJobOffset}
-          setOffset={setIntegrationExportJobOffset}
-          items={integrationExportJobItems}
-          loading={integrationExportJobLoading}
-          redispatchingId={integrationExportJobRedispatchingId}
-          onLoad={loadIntegrationExportJobs}
-          onRedispatch={redispatchIntegrationExportJob}
-          formatDateTime={formatDateTime}
-        />
-
-        {hasSystemAdminRole ? (
-          <AuthIdentityMigrationCard formatDateTime={formatDateTime} />
-        ) : (
-          <div className="card" style={{ padding: 12 }}>
-            <strong>認証方式移行</strong>
-            <p style={{ marginTop: 8 }}>
-              この設定は system_admin ロールを持つユーザーのみが操作できます。
-            </p>
-          </div>
-        )}
+        </WorkflowPanel>
       </div>
     </div>
   );
