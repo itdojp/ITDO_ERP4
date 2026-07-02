@@ -53,4 +53,5 @@
 ## 参考
 
 - workflowUx primitive / token policy: `docs/ui/workflow-ux-primitives.md`
+- Frontend bundle split / size budget: `docs/ui/frontend-bundle-budget.md`
 - 品質ゲート: `docs/quality/quality-gates.md`

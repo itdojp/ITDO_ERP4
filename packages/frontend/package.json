@@ -18,7 +18,8 @@
     "e2e": "playwright test",
     "e2e:install": "playwright install chromium",
     "lint": "eslint \"src/**/*.{ts,tsx,jsx,js}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,jsx,js,css,json,md}\""
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,jsx,js,css,json,md}\"",
+    "build:budget": "node ./scripts/check-build-budget.cjs"
   },
   "dependencies": {
     "@itdo/design-system": "^1.1.0",
