@@ -1,0 +1,11 @@
+{
+  "auth": {
+    "summary": "coverage/auth/coverage-summary.json",
+    "thresholds": {
+      "statements": 25,
+      "branches": 60,
+      "functions": 18,
+      "lines": 25
+    }
+  }
+}

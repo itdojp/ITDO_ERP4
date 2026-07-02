@@ -41,6 +41,22 @@ jobs:
         working-directory: packages/backend
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/postgres?schema=public
+  coverage-auth:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 20.19.0
+          cache: npm
+          cache-dependency-path: |
+            packages/backend/package-lock.json
+            packages/frontend/package-lock.json
+      - run: npm ci --prefix packages/backend
+      - run: npm run coverage:auth:check --prefix packages/backend
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/postgres?schema=public
+
   frontend:
     runs-on: ubuntu-latest
     steps:

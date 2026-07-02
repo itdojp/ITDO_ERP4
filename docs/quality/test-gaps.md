@@ -45,6 +45,15 @@
 | バックアップ/リストア   | dump→退避→復元                                                               | なし（手順のみ）                                                                                                                                                                                                                                                                                                                                                                                                            | B      | Podman で最小の restore 検証を自動化し `docs/test-results/` に記録 |
 | 添付（AV/ストレージ）   | 422/503 などの挙動                                                           | スモーク（`scripts/smoke-chat-attachments-av.sh`）                                                                                                                                                                                                                                                                                                                                                                          | B      | 本番有効化方針確定後にゲート化を検討（Issue #560）                 |
 
+## カバレッジ閾値ゲート（段階導入）
+
+`docs/quality/quality-gates.md` を正として、初期対象は auth subset のみを PR gate 化する。全体 coverage は実装規模に対して初期値が低くなりやすいため、hotspot module の抽出・責務分割と合わせて scope を増やす。
+
+| scope                              | 現状                                                  | 次の一手                                                                                |
+| ---------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| auth                               | `coverage:auth` + `coverage:auth:check` を CI gate 化 | 認証/認可変更時は閾値低下を許容しない。未カバー分岐を追加する場合はテストを先に追加する |
+| projects / integrations / workflow | 未導入                                                | service 抽出や route 分割の PR と合わせて subset coverage script と閾値を追加する       |
+
 ## 備考
 
 - CI の実行条件/範囲は `docs/quality/quality-gates.md` を正とする。
@@ -98,8 +107,9 @@
 
 ### 環境・その他
 
-| 手動確認項目                           | 自動検査/手順（現状）                                |
-| -------------------------------------- | ---------------------------------------------------- |
-| CI (backend/frontend/lint/lychee) が緑 | GitHub Actions（`CI` / `Link Check`）                |
-| prisma format/validate が通る          | `CI / backend`（`.github/workflows/ci.yml`）         |
-| Podman 検証（reset→smoke完走）         | `scripts/podman-poc.sh` + `scripts/smoke-backend.sh` |
+| 手動確認項目                           | 自動検査/手順（現状）                                 |
+| -------------------------------------- | ----------------------------------------------------- |
+| CI (backend/frontend/lint/lychee) が緑 | GitHub Actions（`CI` / `Link Check`）                 |
+| auth subset の coverage 低下を検知     | `CI / coverage-auth`（`npm run coverage:auth:check`） |
+| prisma format/validate が通る          | `CI / backend`（`.github/workflows/ci.yml`）          |
+| Podman 検証（reset→smoke完走）         | `scripts/podman-poc.sh` + `scripts/smoke-backend.sh`  |
