@@ -31,5 +31,5 @@ Date: 2026-07-02
 
 ## Notes
 
-- The targeted E2E opens the period-lock screen, verifies the new summary and workflow panels, creates a project-scoped period lock using a future period to avoid collisions with other smoke tests, searches by period, and captures screenshot evidence.
+- The targeted E2E opens the period-lock screen, verifies the new summary and workflow panels, cleans up any existing lock for the selected future period, creates a project-scoped period lock, searches by period, captures screenshot evidence, and cleans up the created lock for rerun safety.
 - Evidence images are committed under `docs/test-results/2026-07-02-uiux-phase11-period-locks/` so that the PR can link to GitHub-hosted files.

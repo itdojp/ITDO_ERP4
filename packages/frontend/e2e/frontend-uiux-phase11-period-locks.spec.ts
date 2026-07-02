@@ -10,6 +10,7 @@ const evidenceDir =
   path.join(rootDir, 'docs', 'test-results', `${dateTag}-frontend-e2e`);
 const captureEnabled = process.env.E2E_CAPTURE !== '0';
 const baseUrl = process.env.E2E_BASE_URL || 'http://localhost:5173';
+const apiBase = process.env.E2E_API_BASE || 'http://localhost:3002';
 const actionTimeout = (() => {
   const raw = process.env.E2E_ACTION_TIMEOUT_MS;
   if (raw) {
@@ -80,13 +81,25 @@ async function navigateToSection(page: Page, label: string, heading: string) {
 
 const pad2 = (value: number) => String(value).padStart(2, '0');
 
-const toPeriodValue = (date: Date) =>
-  `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
+function toShiftedPeriodValue(date: Date, deltaMonths: number) {
+  const baseMonth = date.getFullYear() * 12 + date.getMonth();
+  const shiftedMonth = baseMonth + deltaMonths;
+  const year = Math.floor(shiftedMonth / 12);
+  const month = (shiftedMonth % 12) + 1;
+  return `${year}-${pad2(month)}`;
+}
 
-function shiftMonth(date: Date, deltaMonths: number) {
-  const shifted = new Date(date);
-  shifted.setMonth(shifted.getMonth() + deltaMonths);
-  return shifted;
+const buildAuthHeaders = () => ({
+  'x-user-id': authState.userId,
+  'x-roles': authState.roles.join(','),
+  'x-project-ids': authState.projectIds.join(','),
+  'x-group-ids': authState.groupIds.join(','),
+});
+
+async function ensureOk(res: { ok(): boolean; status(): number; text(): any }) {
+  if (res.ok()) return;
+  const body = await res.text();
+  throw new Error(`[e2e] api failed: ${res.status()} ${body}`);
 }
 
 async function selectByValue(select: Locator, value: string) {
@@ -103,16 +116,39 @@ async function selectByValue(select: Locator, value: string) {
   await select.selectOption({ value });
 }
 
+async function deleteExistingProjectPeriodLocks(page: Page, period: string) {
+  const params = new URLSearchParams({
+    period,
+    scope: 'project',
+    projectId: defaultProjectId,
+  });
+  const res = await page.request.get(`${apiBase}/period-locks?${params}`, {
+    headers: buildAuthHeaders(),
+  });
+  await ensureOk(res);
+  const payload = await res.json();
+  const items = (payload?.items ?? []) as Array<{ id?: string }>;
+  for (const item of items) {
+    if (!item.id) continue;
+    const deleteRes = await page.request.delete(
+      `${apiBase}/period-locks/${encodeURIComponent(item.id)}`,
+      { headers: buildAuthHeaders() },
+    );
+    await ensureOk(deleteRes);
+  }
+}
+
 test('phase 11 period lock UX/UI summary renders @core', async ({ page }) => {
   test.setTimeout(90_000);
   const run =
     process.env.E2E_RUN_ID ||
     `${Date.now().toString().slice(-6)}-${randomUUID()}`;
   const offset = 30 + ((Number(run.replace(/\D/g, '').slice(0, 2)) || 0) % 18);
-  const lockPeriod = toPeriodValue(shiftMonth(new Date(), offset));
+  const lockPeriod = toShiftedPeriodValue(new Date(), offset);
   const reason = `e2e-uiux-phase11-${run}`;
 
   await prepare(page);
+  await deleteExistingProjectPeriodLocks(page, lockPeriod);
   await navigateToSection(page, '期間締め', '期間締め');
 
   const section = page
@@ -155,4 +191,5 @@ test('phase 11 period lock UX/UI summary renders @core', async ({ page }) => {
     timeout: actionTimeout,
   });
   await captureSection(section, '01-uiux-period-locks.png');
+  await deleteExistingProjectPeriodLocks(page, lockPeriod);
 });
