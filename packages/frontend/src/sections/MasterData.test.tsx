@@ -84,18 +84,21 @@ const vendor = {
 };
 
 function getCustomerSection() {
-  return screen.getByRole('heading', { name: '顧客' })
-    .parentElement as HTMLElement;
+  return screen
+    .getByRole('heading', { name: '顧客' })
+    .closest('section') as HTMLElement;
 }
 
 function getVendorSection() {
-  return screen.getByRole('heading', { name: '業者' })
-    .parentElement as HTMLElement;
+  return screen
+    .getByRole('heading', { name: '業者' })
+    .closest('section') as HTMLElement;
 }
 
 function getContactSection() {
-  return screen.getByRole('heading', { name: '連絡先' })
-    .parentElement as HTMLElement;
+  return screen
+    .getByRole('heading', { name: '連絡先' })
+    .closest('section') as HTMLElement;
 }
 
 beforeEach(() => {
@@ -117,6 +120,30 @@ afterEach(() => {
 });
 
 describe('MasterData', () => {
+  it('renders workflow summary and master data panels', async () => {
+    vi.mocked(api).mockImplementation(async (path: string) => {
+      if (path === '/customers') return { items: [customer] } as never;
+      if (path === '/vendors') return { items: [vendor] } as never;
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+
+    render(<MasterData />);
+
+    const summary = screen.getByRole('region', {
+      name: 'マスタ管理サマリー',
+    });
+    expect(screen.getByRole('heading', { name: '顧客' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '業者' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '連絡先' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(summary).getAllByText('1件').length).toBeGreaterThanOrEqual(
+        2,
+      );
+    });
+    expect(within(summary).getByText('表示中の連絡先')).toBeInTheDocument();
+    expect(within(summary).getByText('編集中フォーム')).toBeInTheDocument();
+  });
+
   it('validates required customer fields before save', async () => {
     vi.mocked(api).mockImplementation(async (path: string) => {
       if (path === '/customers') return { items: [] } as never;

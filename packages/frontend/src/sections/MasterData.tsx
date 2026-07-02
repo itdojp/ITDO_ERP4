@@ -3,6 +3,12 @@ import { api, getAuthState } from '../api';
 import { AnnotationsCard } from '../components/AnnotationsCard';
 import { useProjects } from '../hooks/useProjects';
 import { Alert, Button, Dialog, Select } from '../ui';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  WorkflowPanel,
+} from './workflowUx';
+import type { WorkflowMetric } from './workflowUx';
 
 type Customer = {
   id: string;
@@ -386,422 +392,508 @@ export const MasterData: React.FC = () => {
     loadContacts();
   }, [loadContacts]);
 
+  const selectedContactOwner = useMemo(() => {
+    if (!contactOwnerId) return { label: '未選択', resolved: false };
+    const owner = (contactOwnerType === 'customer' ? customers : vendors).find(
+      (item) => item.id === contactOwnerId,
+    );
+    return owner
+      ? { label: `${owner.code} / ${owner.name}`, resolved: true }
+      : { label: '未選択', resolved: false };
+  }, [contactOwnerId, contactOwnerType, customers, vendors]);
+
+  const editingCount = [
+    editingCustomerId,
+    editingVendorId,
+    editingContactId,
+  ].filter(Boolean).length;
+
+  const masterMetrics = useMemo<WorkflowMetric[]>(
+    () => [
+      {
+        id: 'customers',
+        label: '顧客',
+        value: `${customers.length}件`,
+        helper: '請求先・外部ID・注釈対象を一元確認',
+        tone: customers.length > 0 ? 'success' : 'default',
+      },
+      {
+        id: 'vendors',
+        label: '業者',
+        value: `${vendors.length}件`,
+        helper: '振込情報・税区分・外部IDを登録',
+        tone: vendors.length > 0 ? 'success' : 'default',
+      },
+      {
+        id: 'contacts',
+        label: '表示中の連絡先',
+        value: `${contacts.length}件`,
+        helper: `${contactOwnerType === 'customer' ? '顧客' : '業者'}: ${selectedContactOwner.label}`,
+        tone: selectedContactOwner.resolved ? 'success' : 'warning',
+      },
+      {
+        id: 'editing',
+        label: '編集中フォーム',
+        value: `${editingCount}件`,
+        helper:
+          editingCount > 0
+            ? '編集対象の保存またはクリアが必要'
+            : '新規追加モード',
+        tone: editingCount > 0 ? 'warning' : 'default',
+      },
+    ],
+    [
+      contactOwnerType,
+      contacts.length,
+      customers.length,
+      editingCount,
+      selectedContactOwner.label,
+      selectedContactOwner.resolved,
+      vendors.length,
+    ],
+  );
+
   return (
     <div>
-      <h2>顧客/業者マスタ</h2>
+      <WorkflowPageHeader
+        title="顧客/業者マスタ"
+        description="顧客、業者、連絡先、注釈を同じ判断面で確認し、請求・仕入・外部連携に必要なマスタ整備を短時間で完了できるようにします。"
+      />
+      <WorkflowMetricGrid
+        ariaLabel="マスタ管理サマリー"
+        items={masterMetrics}
+      />
       <div className="row" style={{ alignItems: 'flex-start' }}>
         <div style={{ minWidth: 320, flex: 1 }}>
-          <h3>顧客</h3>
-          <div className="row">
-            <input
-              type="text"
-              placeholder="コード"
-              aria-label="顧客コード"
-              value={customerForm.code}
-              onChange={(e) =>
-                setCustomerForm({ ...customerForm, code: e.target.value })
-              }
-            />
-            <input
-              type="text"
-              placeholder="名称"
-              aria-label="顧客名称"
-              value={customerForm.name}
-              onChange={(e) =>
-                setCustomerForm({ ...customerForm, name: e.target.value })
-              }
-            />
-            <select
-              aria-label="顧客ステータス"
-              value={customerForm.status}
-              onChange={(e) =>
-                setCustomerForm({ ...customerForm, status: e.target.value })
-              }
-            >
-              {statusOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <input
-              type="text"
-              placeholder="適格請求書番号"
-              aria-label="顧客適格請求書番号"
-              value={customerForm.invoiceRegistrationId}
-              onChange={(e) =>
-                setCustomerForm({
-                  ...customerForm,
-                  invoiceRegistrationId: e.target.value,
-                })
-              }
-            />
-            <input
-              type="text"
-              placeholder="税区分"
-              aria-label="顧客税区分"
-              value={customerForm.taxRegion}
-              onChange={(e) =>
-                setCustomerForm({ ...customerForm, taxRegion: e.target.value })
-              }
-            />
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <input
-              type="text"
-              placeholder="請求先住所"
-              aria-label="顧客請求先住所"
-              value={customerForm.billingAddress}
-              onChange={(e) =>
-                setCustomerForm({
-                  ...customerForm,
-                  billingAddress: e.target.value,
-                })
-              }
-            />
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <input
-              type="text"
-              placeholder="外部ソース"
-              aria-label="顧客外部ソース"
-              value={customerForm.externalSource}
-              onChange={(e) =>
-                setCustomerForm({
-                  ...customerForm,
-                  externalSource: e.target.value,
-                })
-              }
-            />
-            <input
-              type="text"
-              placeholder="外部ID"
-              aria-label="顧客外部ID"
-              value={customerForm.externalId}
-              onChange={(e) =>
-                setCustomerForm({
-                  ...customerForm,
-                  externalId: e.target.value,
-                })
-              }
-            />
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <button className="button" onClick={saveCustomer}>
-              {editingCustomerId ? '更新' : '追加'}
-            </button>
-            <button className="button secondary" onClick={resetCustomer}>
-              クリア
-            </button>
-            <button className="button secondary" onClick={loadCustomers}>
-              再読込
-            </button>
-          </div>
-          {customerMessage && <p>{customerMessage}</p>}
-          <ul className="list">
-            {customers.map((item) => (
-              <li key={item.id}>
-                <span className="badge">{item.status}</span> {item.code} /{' '}
-                {item.name}
-                <button
-                  className="button secondary"
-                  style={{ marginLeft: 8 }}
-                  onClick={() => editCustomer(item)}
-                >
-                  編集
-                </button>
-                <button
-                  className="button secondary"
-                  style={{ marginLeft: 8 }}
-                  aria-label={`注釈（顧客）: ${item.code} / ${item.name}`}
-                  onClick={() =>
-                    setAnnotationTarget({
-                      kind: 'customer',
-                      id: item.id,
-                      title: `顧客: ${item.code} / ${item.name}`,
-                    })
-                  }
-                >
-                  注釈
-                </button>
-              </li>
-            ))}
-            {customers.length === 0 && <li>データなし</li>}
-          </ul>
-        </div>
-        <div style={{ minWidth: 320, flex: 1 }}>
-          <h3>業者</h3>
-          <div className="row">
-            <input
-              type="text"
-              placeholder="コード"
-              aria-label="業者コード"
-              value={vendorForm.code}
-              onChange={(e) =>
-                setVendorForm({ ...vendorForm, code: e.target.value })
-              }
-            />
-            <input
-              type="text"
-              placeholder="名称"
-              aria-label="業者名称"
-              value={vendorForm.name}
-              onChange={(e) =>
-                setVendorForm({ ...vendorForm, name: e.target.value })
-              }
-            />
-            <select
-              aria-label="業者ステータス"
-              value={vendorForm.status}
-              onChange={(e) =>
-                setVendorForm({ ...vendorForm, status: e.target.value })
-              }
-            >
-              {statusOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <input
-              type="text"
-              placeholder="振込情報"
-              aria-label="業者振込情報"
-              value={vendorForm.bankInfo}
-              onChange={(e) =>
-                setVendorForm({ ...vendorForm, bankInfo: e.target.value })
-              }
-            />
-            <input
-              type="text"
-              placeholder="税区分"
-              aria-label="業者税区分"
-              value={vendorForm.taxRegion}
-              onChange={(e) =>
-                setVendorForm({ ...vendorForm, taxRegion: e.target.value })
-              }
-            />
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <input
-              type="text"
-              placeholder="外部ソース"
-              aria-label="業者外部ソース"
-              value={vendorForm.externalSource}
-              onChange={(e) =>
-                setVendorForm({ ...vendorForm, externalSource: e.target.value })
-              }
-            />
-            <input
-              type="text"
-              placeholder="外部ID"
-              aria-label="業者外部ID"
-              value={vendorForm.externalId}
-              onChange={(e) =>
-                setVendorForm({ ...vendorForm, externalId: e.target.value })
-              }
-            />
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <button className="button" onClick={saveVendor}>
-              {editingVendorId ? '更新' : '追加'}
-            </button>
-            <button className="button secondary" onClick={resetVendor}>
-              クリア
-            </button>
-            <button className="button secondary" onClick={loadVendors}>
-              再読込
-            </button>
-          </div>
-          {vendorMessage && <p>{vendorMessage}</p>}
-          <ul className="list">
-            {vendors.map((item) => (
-              <li key={item.id}>
-                <span className="badge">{item.status}</span> {item.code} /{' '}
-                {item.name}
-                <button
-                  className="button secondary"
-                  style={{ marginLeft: 8 }}
-                  onClick={() => editVendor(item)}
-                >
-                  編集
-                </button>
-                <button
-                  className="button secondary"
-                  style={{ marginLeft: 8 }}
-                  aria-label={`注釈（業者）: ${item.code} / ${item.name}`}
-                  onClick={() =>
-                    setAnnotationTarget({
-                      kind: 'vendor',
-                      id: item.id,
-                      title: `業者: ${item.code} / ${item.name}`,
-                    })
-                  }
-                >
-                  注釈
-                </button>
-              </li>
-            ))}
-            {vendors.length === 0 && <li>データなし</li>}
-          </ul>
-        </div>
-        <div style={{ minWidth: 320, flex: 1 }}>
-          <h3>連絡先</h3>
-          <div className="row">
-            <select
-              aria-label="連絡先の紐付け種別"
-              value={contactOwnerType}
-              disabled={Boolean(editingContactId)}
-              onChange={(e) => {
-                const nextType =
-                  e.target.value === 'vendor' ? 'vendor' : 'customer';
-                if (nextType === contactOwnerType) {
-                  return;
-                }
-                if (
-                  hasContactDraft(contactForm) &&
-                  !window.confirm(
-                    '入力中の連絡先情報が破棄されます。よろしいですか？',
-                  )
-                ) {
-                  return;
-                }
-                setContactOwnerType(nextType);
-                setContactOwnerId('');
-                setContacts([]);
-                resetContact();
-              }}
-            >
-              <option value="customer">顧客</option>
-              <option value="vendor">業者</option>
-            </select>
-            <select
-              aria-label="連絡先の紐付け先"
-              value={contactOwnerId}
-              disabled={Boolean(editingContactId)}
-              onChange={(e) => {
-                const nextOwnerId = e.target.value;
-                if (nextOwnerId === contactOwnerId) {
-                  return;
-                }
-                if (
-                  hasContactDraft(contactForm) &&
-                  !window.confirm(
-                    '入力中の連絡先情報が破棄されます。よろしいですか？',
-                  )
-                ) {
-                  return;
-                }
-                setContactOwnerId(nextOwnerId);
-                resetContact();
-              }}
-            >
-              <option value="">選択してください</option>
-              {(contactOwnerType === 'customer' ? customers : vendors).map(
-                (item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.code} / {item.name}
-                  </option>
-                ),
-              )}
-            </select>
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <input
-              type="text"
-              placeholder="氏名"
-              aria-label="連絡先氏名"
-              value={contactForm.name}
-              onChange={(e) =>
-                setContactForm({ ...contactForm, name: e.target.value })
-              }
-            />
-            <input
-              type="text"
-              placeholder="メール"
-              aria-label="連絡先メール"
-              value={contactForm.email}
-              onChange={(e) =>
-                setContactForm({ ...contactForm, email: e.target.value })
-              }
-            />
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <input
-              type="text"
-              placeholder="電話"
-              aria-label="連絡先電話"
-              value={contactForm.phone}
-              onChange={(e) =>
-                setContactForm({ ...contactForm, phone: e.target.value })
-              }
-            />
-            <input
-              type="text"
-              placeholder="役割"
-              aria-label="連絡先役割"
-              value={contactForm.role}
-              onChange={(e) =>
-                setContactForm({ ...contactForm, role: e.target.value })
-              }
-            />
-            <label
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-                fontSize: 12,
-              }}
-            >
+          <WorkflowPanel
+            title="顧客"
+            description="請求先、適格請求書番号、外部連携IDを登録し、注釈で補足判断を残します。"
+          >
+            <div className="row">
               <input
-                type="checkbox"
-                aria-label="主担当"
-                checked={contactForm.isPrimary}
+                type="text"
+                placeholder="コード"
+                aria-label="顧客コード"
+                value={customerForm.code}
                 onChange={(e) =>
-                  setContactForm({
-                    ...contactForm,
-                    isPrimary: e.target.checked,
+                  setCustomerForm({ ...customerForm, code: e.target.value })
+                }
+              />
+              <input
+                type="text"
+                placeholder="名称"
+                aria-label="顧客名称"
+                value={customerForm.name}
+                onChange={(e) =>
+                  setCustomerForm({ ...customerForm, name: e.target.value })
+                }
+              />
+              <select
+                aria-label="顧客ステータス"
+                value={customerForm.status}
+                onChange={(e) =>
+                  setCustomerForm({ ...customerForm, status: e.target.value })
+                }
+              >
+                {statusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <input
+                type="text"
+                placeholder="適格請求書番号"
+                aria-label="顧客適格請求書番号"
+                value={customerForm.invoiceRegistrationId}
+                onChange={(e) =>
+                  setCustomerForm({
+                    ...customerForm,
+                    invoiceRegistrationId: e.target.value,
                   })
                 }
               />
-              主担当
-            </label>
-          </div>
-          <div className="row" style={{ marginTop: 8 }}>
-            <button className="button" onClick={saveContact}>
-              {editingContactId ? '更新' : '追加'}
-            </button>
-            <button className="button secondary" onClick={resetContact}>
-              クリア
-            </button>
-            <button className="button secondary" onClick={loadContacts}>
-              再読込
-            </button>
-          </div>
-          {contactMessage && <p>{contactMessage}</p>}
-          <ul className="list">
-            {contacts.map((item) => (
-              <li key={item.id}>
-                {item.isPrimary && <span className="badge">主担当</span>}{' '}
-                {item.name}
-                {item.role && ` / ${item.role}`}
-                {item.email && ` / ${item.email}`}
-                {item.phone && ` / ${item.phone}`}
-                <button
-                  className="button secondary"
-                  style={{ marginLeft: 8 }}
-                  onClick={() => editContact(item)}
-                >
-                  編集
-                </button>
-              </li>
-            ))}
-            {contacts.length === 0 && <li>データなし</li>}
-          </ul>
+              <input
+                type="text"
+                placeholder="税区分"
+                aria-label="顧客税区分"
+                value={customerForm.taxRegion}
+                onChange={(e) =>
+                  setCustomerForm({
+                    ...customerForm,
+                    taxRegion: e.target.value,
+                  })
+                }
+              />
+            </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <input
+                type="text"
+                placeholder="請求先住所"
+                aria-label="顧客請求先住所"
+                value={customerForm.billingAddress}
+                onChange={(e) =>
+                  setCustomerForm({
+                    ...customerForm,
+                    billingAddress: e.target.value,
+                  })
+                }
+              />
+            </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <input
+                type="text"
+                placeholder="外部ソース"
+                aria-label="顧客外部ソース"
+                value={customerForm.externalSource}
+                onChange={(e) =>
+                  setCustomerForm({
+                    ...customerForm,
+                    externalSource: e.target.value,
+                  })
+                }
+              />
+              <input
+                type="text"
+                placeholder="外部ID"
+                aria-label="顧客外部ID"
+                value={customerForm.externalId}
+                onChange={(e) =>
+                  setCustomerForm({
+                    ...customerForm,
+                    externalId: e.target.value,
+                  })
+                }
+              />
+            </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <button className="button" onClick={saveCustomer}>
+                {editingCustomerId ? '更新' : '追加'}
+              </button>
+              <button className="button secondary" onClick={resetCustomer}>
+                クリア
+              </button>
+              <button className="button secondary" onClick={loadCustomers}>
+                再読込
+              </button>
+            </div>
+            {customerMessage && <p>{customerMessage}</p>}
+            <ul className="list">
+              {customers.map((item) => (
+                <li key={item.id}>
+                  <span className="badge">{item.status}</span> {item.code} /{' '}
+                  {item.name}
+                  <button
+                    className="button secondary"
+                    style={{ marginLeft: 8 }}
+                    onClick={() => editCustomer(item)}
+                  >
+                    編集
+                  </button>
+                  <button
+                    className="button secondary"
+                    style={{ marginLeft: 8 }}
+                    aria-label={`注釈（顧客）: ${item.code} / ${item.name}`}
+                    onClick={() =>
+                      setAnnotationTarget({
+                        kind: 'customer',
+                        id: item.id,
+                        title: `顧客: ${item.code} / ${item.name}`,
+                      })
+                    }
+                  >
+                    注釈
+                  </button>
+                </li>
+              ))}
+              {customers.length === 0 && <li>データなし</li>}
+            </ul>
+          </WorkflowPanel>
+        </div>
+        <div style={{ minWidth: 320, flex: 1 }}>
+          <WorkflowPanel
+            title="業者"
+            description="仕入・支払で利用する業者コード、振込情報、税区分、外部IDを保守します。"
+          >
+            <div className="row">
+              <input
+                type="text"
+                placeholder="コード"
+                aria-label="業者コード"
+                value={vendorForm.code}
+                onChange={(e) =>
+                  setVendorForm({ ...vendorForm, code: e.target.value })
+                }
+              />
+              <input
+                type="text"
+                placeholder="名称"
+                aria-label="業者名称"
+                value={vendorForm.name}
+                onChange={(e) =>
+                  setVendorForm({ ...vendorForm, name: e.target.value })
+                }
+              />
+              <select
+                aria-label="業者ステータス"
+                value={vendorForm.status}
+                onChange={(e) =>
+                  setVendorForm({ ...vendorForm, status: e.target.value })
+                }
+              >
+                {statusOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <input
+                type="text"
+                placeholder="振込情報"
+                aria-label="業者振込情報"
+                value={vendorForm.bankInfo}
+                onChange={(e) =>
+                  setVendorForm({ ...vendorForm, bankInfo: e.target.value })
+                }
+              />
+              <input
+                type="text"
+                placeholder="税区分"
+                aria-label="業者税区分"
+                value={vendorForm.taxRegion}
+                onChange={(e) =>
+                  setVendorForm({ ...vendorForm, taxRegion: e.target.value })
+                }
+              />
+            </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <input
+                type="text"
+                placeholder="外部ソース"
+                aria-label="業者外部ソース"
+                value={vendorForm.externalSource}
+                onChange={(e) =>
+                  setVendorForm({
+                    ...vendorForm,
+                    externalSource: e.target.value,
+                  })
+                }
+              />
+              <input
+                type="text"
+                placeholder="外部ID"
+                aria-label="業者外部ID"
+                value={vendorForm.externalId}
+                onChange={(e) =>
+                  setVendorForm({ ...vendorForm, externalId: e.target.value })
+                }
+              />
+            </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <button className="button" onClick={saveVendor}>
+                {editingVendorId ? '更新' : '追加'}
+              </button>
+              <button className="button secondary" onClick={resetVendor}>
+                クリア
+              </button>
+              <button className="button secondary" onClick={loadVendors}>
+                再読込
+              </button>
+            </div>
+            {vendorMessage && <p>{vendorMessage}</p>}
+            <ul className="list">
+              {vendors.map((item) => (
+                <li key={item.id}>
+                  <span className="badge">{item.status}</span> {item.code} /{' '}
+                  {item.name}
+                  <button
+                    className="button secondary"
+                    style={{ marginLeft: 8 }}
+                    onClick={() => editVendor(item)}
+                  >
+                    編集
+                  </button>
+                  <button
+                    className="button secondary"
+                    style={{ marginLeft: 8 }}
+                    aria-label={`注釈（業者）: ${item.code} / ${item.name}`}
+                    onClick={() =>
+                      setAnnotationTarget({
+                        kind: 'vendor',
+                        id: item.id,
+                        title: `業者: ${item.code} / ${item.name}`,
+                      })
+                    }
+                  >
+                    注釈
+                  </button>
+                </li>
+              ))}
+              {vendors.length === 0 && <li>データなし</li>}
+            </ul>
+          </WorkflowPanel>
+        </div>
+        <div style={{ minWidth: 320, flex: 1 }}>
+          <WorkflowPanel
+            title="連絡先"
+            description="選択した顧客または業者の主担当・連絡経路を整備します。"
+          >
+            <div className="row">
+              <select
+                aria-label="連絡先の紐付け種別"
+                value={contactOwnerType}
+                disabled={Boolean(editingContactId)}
+                onChange={(e) => {
+                  const nextType =
+                    e.target.value === 'vendor' ? 'vendor' : 'customer';
+                  if (nextType === contactOwnerType) {
+                    return;
+                  }
+                  if (
+                    hasContactDraft(contactForm) &&
+                    !window.confirm(
+                      '入力中の連絡先情報が破棄されます。よろしいですか？',
+                    )
+                  ) {
+                    return;
+                  }
+                  setContactOwnerType(nextType);
+                  setContactOwnerId('');
+                  setContacts([]);
+                  resetContact();
+                }}
+              >
+                <option value="customer">顧客</option>
+                <option value="vendor">業者</option>
+              </select>
+              <select
+                aria-label="連絡先の紐付け先"
+                value={contactOwnerId}
+                disabled={Boolean(editingContactId)}
+                onChange={(e) => {
+                  const nextOwnerId = e.target.value;
+                  if (nextOwnerId === contactOwnerId) {
+                    return;
+                  }
+                  if (
+                    hasContactDraft(contactForm) &&
+                    !window.confirm(
+                      '入力中の連絡先情報が破棄されます。よろしいですか？',
+                    )
+                  ) {
+                    return;
+                  }
+                  setContactOwnerId(nextOwnerId);
+                  resetContact();
+                }}
+              >
+                <option value="">選択してください</option>
+                {(contactOwnerType === 'customer' ? customers : vendors).map(
+                  (item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.code} / {item.name}
+                    </option>
+                  ),
+                )}
+              </select>
+            </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <input
+                type="text"
+                placeholder="氏名"
+                aria-label="連絡先氏名"
+                value={contactForm.name}
+                onChange={(e) =>
+                  setContactForm({ ...contactForm, name: e.target.value })
+                }
+              />
+              <input
+                type="text"
+                placeholder="メール"
+                aria-label="連絡先メール"
+                value={contactForm.email}
+                onChange={(e) =>
+                  setContactForm({ ...contactForm, email: e.target.value })
+                }
+              />
+            </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <input
+                type="text"
+                placeholder="電話"
+                aria-label="連絡先電話"
+                value={contactForm.phone}
+                onChange={(e) =>
+                  setContactForm({ ...contactForm, phone: e.target.value })
+                }
+              />
+              <input
+                type="text"
+                placeholder="役割"
+                aria-label="連絡先役割"
+                value={contactForm.role}
+                onChange={(e) =>
+                  setContactForm({ ...contactForm, role: e.target.value })
+                }
+              />
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 12,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  aria-label="主担当"
+                  checked={contactForm.isPrimary}
+                  onChange={(e) =>
+                    setContactForm({
+                      ...contactForm,
+                      isPrimary: e.target.checked,
+                    })
+                  }
+                />
+                主担当
+              </label>
+            </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <button className="button" onClick={saveContact}>
+                {editingContactId ? '更新' : '追加'}
+              </button>
+              <button className="button secondary" onClick={resetContact}>
+                クリア
+              </button>
+              <button className="button secondary" onClick={loadContacts}>
+                再読込
+              </button>
+            </div>
+            {contactMessage && <p>{contactMessage}</p>}
+            <ul className="list">
+              {contacts.map((item) => (
+                <li key={item.id}>
+                  {item.isPrimary && <span className="badge">主担当</span>}{' '}
+                  {item.name}
+                  {item.role && ` / ${item.role}`}
+                  {item.email && ` / ${item.email}`}
+                  {item.phone && ` / ${item.phone}`}
+                  <button
+                    className="button secondary"
+                    style={{ marginLeft: 8 }}
+                    onClick={() => editContact(item)}
+                  >
+                    編集
+                  </button>
+                </li>
+              ))}
+              {contacts.length === 0 && <li>データなし</li>}
+            </ul>
+          </WorkflowPanel>
         </div>
       </div>
       <Dialog
