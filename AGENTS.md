@@ -41,6 +41,25 @@ make e2e
 - 特定 review URL / review ID が与えられた場合は、その review 単位で確認する
 - review 本文、review comments、review threads、未解決 thread 数の整合が取れるまで「対応不要」と判断しない
 
+### 重要パスの独立レビュー
+
+重要パスに該当する PR は、作成エージェント/実装担当と異なるエージェント、モデル、または人間によるレビューを merge 前に受ける。レビュー結果は PR コメント、review thread、または PR 本文の検証欄に残す。
+
+重要パスの定義:
+
+- 認証/認可: auth、OIDC、session、権限、ActionPolicy、アクセスレビュー
+- 請求/会計: estimates、invoices、vendor documents、expenses、period lock、制度会計/労務原価
+- データ移行/スキーマ: Prisma schema、migration、import/export、Project-Open 移行
+- Workflow/証跡: approvals、ack、evidence、audit log、document send log、PDF/添付ファイル
+- 本番運用: deploy、Quadlet/Podman、backup/restore、secrets、Google Cloud、さくらVPS
+
+重要パス PR の追加ルール:
+
+- Copilot review または同等の自動レビューを確認し、未解決 thread を 0 にする
+- `pr-review-completeness` で review 本文、inline comments、thread の対応漏れを確認する
+- schema/auth/請求/本番運用の変更は、緊急修正を除き CI pass 後すぐに merge せず、最低 1 時間の冷却期間を置く
+- 冷却期間を短縮する場合は、理由、リスク、rollback、追加確認者を PR に明記する
+
 ## Review guidelines（PRレビュー重点観点）
 
 - docs / scripts / examples / PR本文に、production secret、private key、OAuth client secret、service account key、GitHub token、Slack webhook、Google API key の実値を含めない
