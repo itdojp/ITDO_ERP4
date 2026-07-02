@@ -16,6 +16,12 @@ import {
   downloadResponseAsFile,
   formatDateForFilename,
 } from '../utils/download';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  WorkflowPanel,
+  type WorkflowMetric,
+} from './workflowUx';
 
 type AccessReviewUser = {
   id: string;
@@ -42,6 +48,22 @@ type AccessReviewSnapshot = {
   memberships: AccessReviewMembership[];
 };
 
+const ACCESS_REVIEW_VISIBLE_LIMIT = 20;
+
+const listStatusLabel: Record<ListLoadStatus, string> = {
+  idle: '未取得',
+  loading: '取得中',
+  error: 'エラー',
+  success: '取得済み',
+};
+
+const listStatusTone: Record<ListLoadStatus, WorkflowMetric['tone']> = {
+  idle: 'default',
+  loading: 'default',
+  error: 'danger',
+  success: 'success',
+};
+
 export const AccessReviews: React.FC = () => {
   const [snapshot, setSnapshot] = useState<AccessReviewSnapshot | null>(null);
   const [message, setMessage] = useState<{
@@ -62,7 +84,7 @@ export const AccessReviews: React.FC = () => {
   }, [snapshot]);
 
   const visibleUsers = useMemo(
-    () => snapshot?.users.slice(0, 20) || [],
+    () => snapshot?.users.slice(0, ACCESS_REVIEW_VISIBLE_LIMIT) || [],
     [snapshot],
   );
   const hasMoreUsers = (snapshot?.users.length || 0) > visibleUsers.length;
@@ -142,6 +164,42 @@ export const AccessReviews: React.FC = () => {
     }
   };
 
+  const metrics = useMemo<WorkflowMetric[]>(
+    () => [
+      {
+        label: '棚卸し状態',
+        value: listStatusLabel[listStatus],
+        helper:
+          listStatus === 'error'
+            ? '再試行でスナップショットを取得してください'
+            : fetchedAt
+              ? `取得 ${fetchedAt.replace('T', ' ').slice(0, 16)}`
+              : 'スナップショット取得前',
+        tone: listStatusTone[listStatus],
+      },
+      {
+        label: '対象ユーザ',
+        value: snapshot ? `${snapshot.users.length}名` : '-',
+        helper: snapshot
+          ? hasMoreUsers
+            ? `一覧は上位${ACCESS_REVIEW_VISIBLE_LIMIT}件を表示`
+            : '全ユーザを一覧表示'
+          : '取得後に件数を表示',
+      },
+      {
+        label: 'グループ',
+        value: snapshot ? `${snapshot.groups.length}件` : '-',
+        helper: '権限付与先の母数',
+      },
+      {
+        label: 'メンバーシップ',
+        value: snapshot ? `${snapshot.memberships.length}件` : '-',
+        helper: 'CSV出力で監査証跡化',
+      },
+    ],
+    [fetchedAt, hasMoreUsers, listStatus, snapshot],
+  );
+
   const table = (() => {
     if (listStatus === 'idle') {
       return (
@@ -192,83 +250,100 @@ export const AccessReviews: React.FC = () => {
 
   return (
     <div>
-      <h2>アクセス棚卸し</h2>
-      <Card padding="small">
-        <CrudList
-          title="アクセス棚卸しスナップショット"
-          description="ユーザ・グループ・メンバーシップのスナップショットを取得し、CSV出力できます。"
-          filters={
-            <FilterBar
-              actions={
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      setSnapshot(null);
-                      setFetchedAt(null);
-                      setListStatus('idle');
-                      setListError('');
-                      setMessage(null);
-                    }}
-                  >
-                    クリア
-                  </Button>
-                  <Button
-                    onClick={loadSnapshot}
-                    loading={listStatus === 'loading'}
-                  >
-                    スナップショット取得
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={downloadCsv}
-                    loading={isDownloading}
-                  >
-                    CSV出力
-                  </Button>
-                </div>
-              }
-            >
-              <div
-                className="row"
-                style={{ gap: 12, alignItems: 'center', flexWrap: 'wrap' }}
+      <WorkflowPageHeader
+        title="アクセス棚卸し"
+        description="ユーザ・グループ・メンバーシップの棚卸し状態を確認し、CSVで監査証跡を出力するための管理画面です。"
+      />
+      <WorkflowMetricGrid items={metrics} ariaLabel="アクセス棚卸しサマリー" />
+      <WorkflowPanel
+        title="アクセス棚卸しスナップショット確認"
+        description="最新の棚卸しスナップショットを取得し、上位ユーザの所属数とCSV出力の準備状態を確認します。"
+      >
+        <Card padding="small">
+          <CrudList
+            title="アクセス棚卸しスナップショット"
+            description="ユーザ・グループ・メンバーシップのスナップショットを取得し、CSV出力できます。"
+            filters={
+              <FilterBar
+                actions={
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setSnapshot(null);
+                        setFetchedAt(null);
+                        setListStatus('idle');
+                        setListError('');
+                        setMessage(null);
+                      }}
+                    >
+                      クリア
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        void loadSnapshot();
+                      }}
+                      loading={listStatus === 'loading'}
+                    >
+                      スナップショット取得
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        void downloadCsv();
+                      }}
+                      loading={isDownloading}
+                    >
+                      CSV出力
+                    </Button>
+                  </div>
+                }
               >
-                <span className="badge">
-                  users: {snapshot?.users.length ?? '-'}
-                </span>
-                <span className="badge">
-                  groups: {snapshot?.groups.length ?? '-'}
-                </span>
-                <span className="badge">
-                  memberships: {snapshot?.memberships.length ?? '-'}
-                </span>
-                {hasMoreUsers && <span className="badge">上位20件を表示</span>}
-                {fetchedAt && (
+                <div
+                  className="row"
+                  style={{ gap: 12, alignItems: 'center', flexWrap: 'wrap' }}
+                >
                   <span className="badge">
-                    取得: {fetchedAt.replace('T', ' ').slice(0, 16)}
+                    users: {snapshot?.users.length ?? '-'}
                   </span>
-                )}
-              </div>
-            </FilterBar>
-          }
-          table={table}
-        />
-        {message && (
-          <div style={{ marginTop: 8 }}>
-            <Alert
-              variant={
-                message.type === 'error'
-                  ? 'error'
-                  : message.type === 'success'
-                    ? 'success'
-                    : 'info'
-              }
-            >
-              {message.text}
-            </Alert>
-          </div>
-        )}
-      </Card>
+                  <span className="badge">
+                    groups: {snapshot?.groups.length ?? '-'}
+                  </span>
+                  <span className="badge">
+                    memberships: {snapshot?.memberships.length ?? '-'}
+                  </span>
+                  {hasMoreUsers && (
+                    <span className="badge">
+                      上位{ACCESS_REVIEW_VISIBLE_LIMIT}件を表示
+                    </span>
+                  )}
+                  {fetchedAt && (
+                    <span className="badge">
+                      取得: {fetchedAt.replace('T', ' ').slice(0, 16)}
+                    </span>
+                  )}
+                </div>
+              </FilterBar>
+            }
+            table={table}
+          />
+          {message && (
+            <div style={{ marginTop: 8 }}>
+              <Alert
+                variant={
+                  message.type === 'error'
+                    ? 'error'
+                    : message.type === 'success'
+                      ? 'success'
+                      : 'info'
+                }
+              >
+                {message.text}
+              </Alert>
+            </div>
+          )}
+        </Card>
+      </WorkflowPanel>
     </div>
   );
 };
