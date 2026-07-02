@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -209,6 +210,29 @@ afterEach(() => {
 });
 
 describe('AdminJobs', () => {
+  it('renders workflow summary and job operation panels', () => {
+    render(<AdminJobs />);
+
+    const summary = screen.getByRole('region', {
+      name: '運用ジョブサマリー',
+    });
+    const metricValueFor = (label: string) => {
+      const metricLabel = within(summary).getByText(label);
+      return metricLabel.nextElementSibling?.textContent;
+    };
+
+    expect(within(summary).getByText('登録ジョブ')).toBeInTheDocument();
+    expect(within(summary).getByText('表示中')).toBeInTheDocument();
+    expect(metricValueFor('登録ジョブ')).toMatch(/^\d+件$/);
+    expect(metricValueFor('表示中')).toBe(metricValueFor('登録ジョブ'));
+    expect(
+      screen.getByRole('heading', { name: '実行パラメータ' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'ジョブ実行一覧' }),
+    ).toBeInTheDocument();
+  });
+
   it('filters rows and clears conditions', () => {
     render(<AdminJobs />);
 
@@ -266,6 +290,35 @@ describe('AdminJobs', () => {
       screen.getByText('ジョブ結果: 予約レポート実行'),
     ).toBeInTheDocument();
     expect(screen.getByText(/"delivered": 3/)).toBeInTheDocument();
+  });
+
+  it('counts rerun failures in one status bucket even when an old result exists', async () => {
+    vi.mocked(api)
+      .mockResolvedValueOnce({ delivered: 3 })
+      .mockRejectedValueOnce(new Error('boom'));
+
+    render(<AdminJobs />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: '実行:reportSubscriptions' }),
+    );
+    await screen.findByText('{"delivered":3}');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: '実行:reportSubscriptions' }),
+    );
+    await screen.findByText('ジョブ実行に失敗しました');
+
+    const summary = screen.getByRole('region', {
+      name: '運用ジョブサマリー',
+    });
+    const metricValueFor = (label: string) => {
+      const metricLabel = within(summary).getByText(label);
+      return metricLabel.nextElementSibling?.textContent;
+    };
+
+    expect(metricValueFor('失敗')).toBe('1件');
+    expect(metricValueFor('完了')).toBe('0件');
   });
 
   it('blocks notification delivery when limit is invalid', () => {

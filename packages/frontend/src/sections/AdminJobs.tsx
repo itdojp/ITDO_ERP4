@@ -18,6 +18,12 @@ import {
   useSavedViews,
 } from '../ui';
 import type { DataTableColumn, DataTableRow } from '../ui';
+import {
+  WorkflowMetricGrid,
+  WorkflowPageHeader,
+  WorkflowPanel,
+} from './workflowUx';
+import type { WorkflowMetric } from './workflowUx';
 
 type JobResult = Record<string, unknown> | null;
 
@@ -451,6 +457,74 @@ export const AdminJobs: React.FC = () => {
     [],
   );
 
+  const jobStatusSummary = useMemo(() => {
+    return Object.values(jobs).reduce(
+      (summary, state) => {
+        const status = resolveJobStatus(state);
+        if (status === 'running') summary.running += 1;
+        if (status === 'failed') summary.failed += 1;
+        if (status === 'done') summary.done += 1;
+        return summary;
+      },
+      { running: 0, failed: 0, done: 0 },
+    );
+  }, [jobs]);
+
+  const jobMetrics = useMemo<WorkflowMetric[]>(
+    () => [
+      {
+        id: 'definitions',
+        label: '登録ジョブ',
+        value: `${JOB_DEFINITIONS.length}件`,
+        helper: '運用・レポート・通知・定期連携を集約',
+      },
+      {
+        id: 'visible',
+        label: '表示中',
+        value: `${filteredDefinitions.length}件`,
+        helper:
+          groupFilter === 'all'
+            ? '全分類を表示'
+            : `分類: ${groupFilter} に絞り込み`,
+        tone:
+          filteredDefinitions.length === JOB_DEFINITIONS.length
+            ? 'default'
+            : 'warning',
+      },
+      {
+        id: 'running',
+        label: '実行中',
+        value: `${jobStatusSummary.running}件`,
+        helper: '処理中のジョブ数',
+        tone: jobStatusSummary.running > 0 ? 'warning' : 'default',
+      },
+      {
+        id: 'failed',
+        label: '失敗',
+        value: `${jobStatusSummary.failed}件`,
+        helper:
+          jobStatusSummary.failed > 0
+            ? '詳細からエラー内容を確認'
+            : '失敗ジョブなし',
+        tone: jobStatusSummary.failed > 0 ? 'danger' : 'success',
+      },
+      {
+        id: 'done',
+        label: '完了',
+        value: `${jobStatusSummary.done}件`,
+        helper: '直近で完了結果を保持しているジョブ',
+        tone: jobStatusSummary.done > 0 ? 'success' : 'default',
+      },
+    ],
+    [
+      filteredDefinitions.length,
+      groupFilter,
+      jobStatusSummary.done,
+      jobStatusSummary.failed,
+      jobStatusSummary.running,
+    ],
+  );
+
   const listContent = (() => {
     if (rows.length === 0) {
       return (
@@ -499,145 +573,156 @@ export const AdminJobs: React.FC = () => {
 
   return (
     <div>
-      <h2>運用ジョブ</h2>
-      <Card padding="small">
-        <h3 style={{ marginTop: 0 }}>実行パラメータ</h3>
-        <div style={{ display: 'grid', gap: 12 }}>
-          <div
-            className="row"
-            style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
-          >
-            <label style={checkboxLabelStyle}>
-              <input
-                type="checkbox"
-                checked={dailyReportDryRun}
-                onChange={(e) => setDailyReportDryRun(e.target.checked)}
+      <WorkflowPageHeader
+        title="運用ジョブ"
+        description="日次運用、レポート、通知、定期連携ジョブを同じ判断面で確認し、dryRun・対象日・limit を明示して安全に実行します。"
+      />
+      <WorkflowMetricGrid ariaLabel="運用ジョブサマリー" items={jobMetrics} />
+      <WorkflowPanel
+        title="実行パラメータ"
+        description="ジョブ実行前に dryRun、対象日、limit を確認し、誤実行を防止します。"
+      >
+        <Card padding="small">
+          <div style={{ display: 'grid', gap: 12 }}>
+            <div
+              className="row"
+              style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
+            >
+              <label style={checkboxLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={dailyReportDryRun}
+                  onChange={(e) => setDailyReportDryRun(e.target.checked)}
+                />
+                日報未提出通知 dryRun
+              </label>
+              <Input
+                value={dailyReportTargetDate}
+                onChange={(e) => setDailyReportTargetDate(e.target.value)}
+                placeholder="日報対象日 YYYY-MM-DD"
+                style={{ width: 180 }}
               />
-              日報未提出通知 dryRun
-            </label>
-            <Input
-              value={dailyReportTargetDate}
-              onChange={(e) => setDailyReportTargetDate(e.target.value)}
-              placeholder="日報対象日 YYYY-MM-DD"
-              style={{ width: 180 }}
-            />
+            </div>
+            <div
+              className="row"
+              style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
+            >
+              <label style={checkboxLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={reportDryRun}
+                  onChange={(e) => setReportDryRun(e.target.checked)}
+                />
+                予約レポート dryRun
+              </label>
+              <label style={checkboxLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={reportRetryDryRun}
+                  onChange={(e) => setReportRetryDryRun(e.target.checked)}
+                />
+                配信リトライ dryRun
+              </label>
+            </div>
+            <div
+              className="row"
+              style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
+            >
+              <label style={checkboxLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={notificationDryRun}
+                  onChange={(e) => setNotificationDryRun(e.target.checked)}
+                />
+                通知配信 dryRun
+              </label>
+              <Input
+                label="通知 limit"
+                type="number"
+                min={1}
+                max={200}
+                value={notificationLimit}
+                onChange={(e) => setNotificationLimit(e.target.value)}
+                error={notificationLimitError || undefined}
+                style={{ width: 120 }}
+              />
+              <label style={checkboxLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={leaveUpcomingDryRun}
+                  onChange={(e) => setLeaveUpcomingDryRun(e.target.checked)}
+                />
+                休暇予定通知 dryRun
+              </label>
+              <Input
+                value={leaveUpcomingTargetDate}
+                onChange={(e) => setLeaveUpcomingTargetDate(e.target.value)}
+                placeholder="休暇対象日 YYYY-MM-DD"
+                style={{ width: 180 }}
+              />
+              <label style={checkboxLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={leaveEntitlementDryRun}
+                  onChange={(e) => setLeaveEntitlementDryRun(e.target.checked)}
+                />
+                有給付与リマインド dryRun
+              </label>
+              <Input
+                value={leaveEntitlementTargetDate}
+                onChange={(e) => setLeaveEntitlementTargetDate(e.target.value)}
+                placeholder="付与対象日 YYYY-MM-DD"
+                style={{ width: 180 }}
+              />
+            </div>
+            <div
+              className="row"
+              style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
+            >
+              <label style={checkboxLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={chatAckReminderDryRun}
+                  onChange={(e) => setChatAckReminderDryRun(e.target.checked)}
+                />
+                確認依頼リマインド dryRun
+              </label>
+              <Input
+                label="ack limit"
+                type="number"
+                min={1}
+                max={500}
+                value={chatAckReminderLimit}
+                onChange={(e) => setChatAckReminderLimit(e.target.value)}
+                error={chatAckReminderLimitError || undefined}
+                style={{ width: 120 }}
+              />
+              <label style={checkboxLabelStyle}>
+                <input
+                  type="checkbox"
+                  checked={chatRoomAclDryRun}
+                  onChange={(e) => setChatRoomAclDryRun(e.target.checked)}
+                />
+                ACL不整合通知 dryRun
+              </label>
+              <Input
+                label="acl limit"
+                type="number"
+                min={1}
+                max={500}
+                value={chatRoomAclLimit}
+                onChange={(e) => setChatRoomAclLimit(e.target.value)}
+                style={{ width: 120 }}
+              />
+            </div>
           </div>
-          <div
-            className="row"
-            style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
-          >
-            <label style={checkboxLabelStyle}>
-              <input
-                type="checkbox"
-                checked={reportDryRun}
-                onChange={(e) => setReportDryRun(e.target.checked)}
-              />
-              予約レポート dryRun
-            </label>
-            <label style={checkboxLabelStyle}>
-              <input
-                type="checkbox"
-                checked={reportRetryDryRun}
-                onChange={(e) => setReportRetryDryRun(e.target.checked)}
-              />
-              配信リトライ dryRun
-            </label>
-          </div>
-          <div
-            className="row"
-            style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
-          >
-            <label style={checkboxLabelStyle}>
-              <input
-                type="checkbox"
-                checked={notificationDryRun}
-                onChange={(e) => setNotificationDryRun(e.target.checked)}
-              />
-              通知配信 dryRun
-            </label>
-            <Input
-              label="通知 limit"
-              type="number"
-              min={1}
-              max={200}
-              value={notificationLimit}
-              onChange={(e) => setNotificationLimit(e.target.value)}
-              error={notificationLimitError || undefined}
-              style={{ width: 120 }}
-            />
-            <label style={checkboxLabelStyle}>
-              <input
-                type="checkbox"
-                checked={leaveUpcomingDryRun}
-                onChange={(e) => setLeaveUpcomingDryRun(e.target.checked)}
-              />
-              休暇予定通知 dryRun
-            </label>
-            <Input
-              value={leaveUpcomingTargetDate}
-              onChange={(e) => setLeaveUpcomingTargetDate(e.target.value)}
-              placeholder="休暇対象日 YYYY-MM-DD"
-              style={{ width: 180 }}
-            />
-            <label style={checkboxLabelStyle}>
-              <input
-                type="checkbox"
-                checked={leaveEntitlementDryRun}
-                onChange={(e) => setLeaveEntitlementDryRun(e.target.checked)}
-              />
-              有給付与リマインド dryRun
-            </label>
-            <Input
-              value={leaveEntitlementTargetDate}
-              onChange={(e) => setLeaveEntitlementTargetDate(e.target.value)}
-              placeholder="付与対象日 YYYY-MM-DD"
-              style={{ width: 180 }}
-            />
-          </div>
-          <div
-            className="row"
-            style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
-          >
-            <label style={checkboxLabelStyle}>
-              <input
-                type="checkbox"
-                checked={chatAckReminderDryRun}
-                onChange={(e) => setChatAckReminderDryRun(e.target.checked)}
-              />
-              確認依頼リマインド dryRun
-            </label>
-            <Input
-              label="ack limit"
-              type="number"
-              min={1}
-              max={500}
-              value={chatAckReminderLimit}
-              onChange={(e) => setChatAckReminderLimit(e.target.value)}
-              error={chatAckReminderLimitError || undefined}
-              style={{ width: 120 }}
-            />
-            <label style={checkboxLabelStyle}>
-              <input
-                type="checkbox"
-                checked={chatRoomAclDryRun}
-                onChange={(e) => setChatRoomAclDryRun(e.target.checked)}
-              />
-              ACL不整合通知 dryRun
-            </label>
-            <Input
-              label="acl limit"
-              type="number"
-              min={1}
-              max={500}
-              value={chatRoomAclLimit}
-              onChange={(e) => setChatRoomAclLimit(e.target.value)}
-              style={{ width: 120 }}
-            />
-          </div>
-        </div>
-      </Card>
+        </Card>
+      </WorkflowPanel>
 
-      <div style={{ marginTop: 12 }}>
+      <WorkflowPanel
+        title="ジョブ実行一覧"
+        description="保存ビュー、分類・キーワード絞り込み、実行結果の詳細確認をまとめて扱います。"
+      >
         <SavedViewBar
           views={savedViews.views}
           activeViewId={savedViews.activeViewId}
@@ -725,7 +810,7 @@ export const AdminJobs: React.FC = () => {
           }
           table={listContent}
         />
-      </div>
+      </WorkflowPanel>
 
       <Dialog
         open={Boolean(detailJobKey)}
