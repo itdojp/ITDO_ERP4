@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -146,6 +147,25 @@ describe('AccessReviews', () => {
   it('shows the initial empty state before loading', () => {
     render(<AccessReviews />);
 
+    expect(
+      screen.getByRole('heading', { name: 'アクセス棚卸し' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'ユーザ・グループ・メンバーシップの棚卸し状態を確認し、CSVで監査証跡を出力するための管理画面です。',
+      ),
+    ).toBeInTheDocument();
+    const summary = screen.getByRole('region', {
+      name: 'アクセス棚卸しサマリー',
+    });
+    expect(within(summary).getByText('棚卸し状態')).toBeInTheDocument();
+    expect(within(summary).getByText('未取得')).toBeInTheDocument();
+    expect(within(summary).getByText('対象ユーザ')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', {
+        name: 'アクセス棚卸しスナップショット確認',
+      }),
+    ).toBeInTheDocument();
     expect(screen.getByText('スナップショット未取得')).toBeInTheDocument();
     expect(
       screen.getByText('「スナップショット取得」を実行してください'),
@@ -181,6 +201,14 @@ describe('AccessReviews', () => {
     expect(screen.getByText('groups: 1')).toBeInTheDocument();
     expect(screen.getByText('memberships: 2')).toBeInTheDocument();
     expect(screen.getByText('上位20件を表示')).toBeInTheDocument();
+    const summary = screen.getByRole('region', {
+      name: 'アクセス棚卸しサマリー',
+    });
+    expect(within(summary).getByText('取得済み')).toBeInTheDocument();
+    expect(within(summary).getByText('21名')).toBeInTheDocument();
+    expect(
+      within(summary).getByText('一覧は上位20件を表示'),
+    ).toBeInTheDocument();
     expect(screen.getByText('user1@example.com')).toBeInTheDocument();
     expect(screen.getByText('-')).toBeInTheDocument();
     expect(screen.getByText('部門未設定')).toBeInTheDocument();
@@ -192,6 +220,32 @@ describe('AccessReviews', () => {
 
     expect(screen.getByText('スナップショット未取得')).toBeInTheDocument();
     expect(screen.getByText('users: -')).toBeInTheDocument();
+  });
+
+  it('shows a loading helper while fetching a snapshot', async () => {
+    let resolveSnapshot: (value: {
+      users: never[];
+      groups: never[];
+      memberships: never[];
+    }) => void = () => {};
+    vi.mocked(api).mockReturnValue(
+      new Promise((resolve) => {
+        resolveSnapshot = resolve;
+      }),
+    );
+
+    render(<AccessReviews />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'スナップショット取得' }),
+    );
+
+    expect(
+      await screen.findByText('スナップショットを取得中'),
+    ).toBeInTheDocument();
+
+    resolveSnapshot({ users: [], groups: [], memberships: [] });
+    expect(await screen.findByText('ユーザがありません')).toBeInTheDocument();
   });
 
   it('shows retry UI after a snapshot load failure and reloads successfully', async () => {
