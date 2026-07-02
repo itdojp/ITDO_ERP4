@@ -348,6 +348,11 @@ describe('ChatRoomSettingsCard', () => {
     fireEvent.change(screen.getByLabelText('userId（comma separated）'), {
       target: { value: ' external-1@example.com , external-2@example.com ' },
     });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'メンバー追加' }),
+      ).not.toBeDisabled(),
+    );
     fireEvent.click(screen.getByRole('button', { name: 'メンバー追加' }));
 
     await waitFor(() => {

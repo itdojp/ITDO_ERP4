@@ -10,7 +10,6 @@ import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { api, apiResponse, getAuthState } from '../api';
 import {
-  AttachmentField,
   Combobox,
   MentionComposer,
   type AttachmentRecord,
@@ -27,243 +26,28 @@ import {
   WorkflowPageHeader,
   WorkflowPanel,
 } from './workflowUx';
-
-type ChatRoom = {
-  id: string;
-  type: string;
-  name: string;
-  isOfficial?: boolean | null;
-  projectId?: string | null;
-  projectCode?: string | null;
-  projectName?: string | null;
-  groupId?: string | null;
-  allowExternalUsers?: boolean | null;
-  allowExternalIntegrations?: boolean | null;
-  isMember?: boolean | null;
-};
-
-type ChatMessage = {
-  id: string;
-  roomId: string;
-  userId: string;
-  body: string;
-  tags?: string[];
-  reactions?: Record<string, number | { count: number; userIds: string[] }>;
-  mentions?: { userIds?: unknown; groupIds?: unknown } | null;
-  mentionsAll?: boolean;
-  ackRequest?: {
-    id: string;
-    requiredUserIds: unknown;
-    dueAt?: string | null;
-    canceledAt?: string | null;
-    canceledBy?: string | null;
-    acks?: { userId: string; ackedAt: string }[];
-  } | null;
-  attachments?: {
-    id: string;
-    originalName: string;
-    mimeType?: string | null;
-    sizeBytes?: number | null;
-    createdAt: string;
-  }[];
-  createdAt: string;
-};
-
-type ChatSearchItem = {
-  id: string;
-  roomId: string;
-  userId: string;
-  body: string;
-  tags?: string[];
-  createdAt: string;
-  room: ChatRoom;
-};
-
-type MentionCandidates = {
-  users?: { userId: string; displayName?: string | null }[];
-  groups?: { groupId: string; displayName?: string | null }[];
-  allowAll?: boolean;
-};
-
-const reactionOptions = ['👍', '🎉', '❤️', '😂', '🙏', '👀'];
-const pageSize = 50;
-
-function parseTags(value: string) {
-  return value
-    .split(',')
-    .map((tag) => tag.trim())
-    .filter(Boolean);
-}
-
-function parseUserIds(value: string) {
-  return value
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
-
-function normalizeStringArray(value: unknown) {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
-    .filter(Boolean);
-}
-
-function isAckRequest(
-  value: ChatMessage['ackRequest'],
-): value is NonNullable<ChatMessage['ackRequest']> {
-  if (!value || typeof value !== 'object') return false;
-  if (!('id' in value)) return false;
-  const id = (value as { id?: unknown }).id;
-  return typeof id === 'string' && id.length > 0;
-}
-
-function getReactionCount(value: unknown) {
-  if (typeof value === 'number') return value;
-  if (
-    value &&
-    typeof value === 'object' &&
-    'count' in value &&
-    typeof (value as { count?: unknown }).count === 'number'
-  ) {
-    return (value as { count: number }).count;
-  }
-  return 0;
-}
-
-const markdownAllowedElements = [
-  'p',
-  'br',
-  'strong',
-  'em',
-  'del',
-  'blockquote',
-  'ul',
-  'ol',
-  'li',
-  'code',
-  'pre',
-  'a',
-  'h1',
-  'h2',
-  'h3',
-  'hr',
-];
-
-function transformLinkUri(uri?: string) {
-  if (!uri) return '';
-  const trimmed = uri.trim();
-  if (!trimmed) return '';
-  if (trimmed.startsWith('/') || trimmed.startsWith('#')) return trimmed;
-  try {
-    const parsed = new URL(trimmed);
-    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-      return trimmed;
-    }
-    if (parsed.protocol === 'mailto:') return trimmed;
-  } catch {
-    // ignore
-  }
-  return '';
-}
-
-function sanitizeFilename(value: string) {
-  return value.replace(/["\\\r\n]/g, '_').replace(/[/\\]/g, '_');
-}
-
-function toAttachmentRecord(attachment: {
-  id: string;
-  originalName: string;
-  mimeType?: string | null;
-  sizeBytes?: number | null;
-}): AttachmentRecord {
-  return {
-    id: attachment.id,
-    name: attachment.originalName,
-    size: typeof attachment.sizeBytes === 'number' ? attachment.sizeBytes : 0,
-    mimeType: attachment.mimeType || 'application/octet-stream',
-    kind: resolveAttachmentKind(attachment.mimeType),
-    status: 'uploaded',
-  };
-}
-
-function buildExcerpt(value: string, maxLength = 200) {
-  const normalized = value.replace(/\s+/g, ' ').trim();
-  if (!normalized) return '';
-  if (normalized.length <= maxLength) return normalized;
-  return `${normalized.slice(0, maxLength)}…`;
-}
-
-function escapeMarkdownLinkLabel(value: string) {
-  return value.replace(/\\/g, '\\\\').replace(/[[\]]/g, '\\$&');
-}
-
-function buildBeforeForCreatedAt(createdAt: string) {
-  const date = new Date(createdAt);
-  if (Number.isNaN(date.getTime())) return '';
-  return new Date(date.getTime() + 1).toISOString();
-}
-
-function formatRoomLabel(room: ChatRoom, currentUserId: string) {
-  if (room.type === 'project') {
-    if (room.projectCode && room.projectName) {
-      return `${room.projectCode} / ${room.projectName}`;
-    }
-    if (room.projectCode) return room.projectCode;
-    return room.name;
-  }
-  if (room.type !== 'dm') return room.name;
-  const parts = room.name.startsWith('dm:')
-    ? room.name.slice(3).split(':')
-    : [];
-  if (parts.length >= 2) {
-    const [a, b] = parts;
-    if (a === currentUserId) return b;
-    if (b === currentUserId) return a;
-    return `${a} / ${b}`;
-  }
-  return room.name;
-}
-
-function filterVisibleRoomsForUser(
-  sourceRooms: ChatRoom[],
-  canSeeAllMeta: boolean,
-) {
-  return canSeeAllMeta
-    ? sourceRooms.filter((room) => room.isMember !== false)
-    : sourceRooms;
-}
-
-function buildDisplayedRooms(
-  rooms: ChatRoom[],
-  currentUserId: string,
-  roomListScope: 'all' | 'ga_personal',
-  roomListQuery: string,
-) {
-  const keyword = roomListQuery.trim().toLowerCase();
-  return rooms
-    .filter((room) => {
-      if (roomListScope !== 'ga_personal') return true;
-      return (
-        room.type === 'private_group' &&
-        room.isOfficial === true &&
-        room.id.startsWith('pga_')
-      );
-    })
-    .filter((room) => {
-      if (!keyword) return true;
-      const label = formatRoomLabel(room, currentUserId).toLowerCase();
-      return (
-        label.includes(keyword) ||
-        room.name.toLowerCase().includes(keyword) ||
-        room.type.toLowerCase().includes(keyword)
-      );
-    })
-    .map((room) => ({
-      ...room,
-      label: `${room.type}: ${formatRoomLabel(room, currentUserId)}`,
-    }));
-}
+import {
+  buildBeforeForCreatedAt,
+  buildDisplayedRooms,
+  buildExcerpt,
+  escapeMarkdownLinkLabel,
+  filterVisibleRoomsForUser,
+  formatRoomLabel,
+  isAckRequest,
+  markdownAllowedElements,
+  normalizeStringArray,
+  pageSize,
+  parseTags,
+  parseUserIds,
+  sanitizeFilename,
+  transformLinkUri,
+  type ChatMessage,
+  type ChatRoom,
+  type ChatSearchItem,
+  type MentionCandidates,
+} from './room-chat/roomChatModel';
+import { RoomGlobalSearch } from './room-chat/RoomGlobalSearch';
+import { RoomMessageList } from './room-chat/RoomMessageList';
 
 export const RoomChat: React.FC = () => {
   const auth = getAuthState();
@@ -752,31 +536,39 @@ export const RoomChat: React.FC = () => {
     };
   }, [canSeeAllMeta, rooms]);
 
-  const loadNotificationSetting = useCallback(async (targetRoomId: string) => {
-    setIsNotificationSettingLoading(true);
-    setNotificationSettingMessage('');
-    try {
-      const res = await api<{
-        notifyAllPosts?: boolean;
-        notifyMentions?: boolean;
-        muteUntil?: string | null;
-      }>(`/chat-rooms/${targetRoomId}/notification-setting`);
-      const nextSetting = {
-        notifyAllPosts: res.notifyAllPosts !== false,
-        notifyMentions: res.notifyMentions !== false,
-        muteUntil: res.muteUntil ?? null,
-      };
-      setNotificationSetting(nextSetting);
-      setMuteUntilInput(toLocalDateTimeValue(nextSetting.muteUntil));
-    } catch (err) {
-      console.error('Failed to load notification settings.', err);
-      setNotificationSettingMessage('通知設定の取得に失敗しました');
-      setNotificationSetting(null);
-      setMuteUntilInput('');
-    } finally {
-      setIsNotificationSettingLoading(false);
-    }
-  }, []);
+  const loadNotificationSetting = useCallback(
+    async (targetRoomId: string) => {
+      setIsNotificationSettingLoading(true);
+      setNotificationSettingMessage('');
+      try {
+        const res = await api<{
+          notifyAllPosts?: boolean;
+          notifyMentions?: boolean;
+          muteUntil?: string | null;
+        }>(`/chat-rooms/${targetRoomId}/notification-setting`);
+        const nextSetting = {
+          notifyAllPosts: res.notifyAllPosts !== false,
+          notifyMentions: res.notifyMentions !== false,
+          muteUntil: res.muteUntil ?? null,
+        };
+        setNotificationSetting(nextSetting);
+        setMuteUntilInput(toLocalDateTimeValue(nextSetting.muteUntil));
+      } catch (err) {
+        console.error('Failed to load notification settings.', err);
+        setNotificationSettingMessage('通知設定の取得に失敗しました');
+        setNotificationSetting(null);
+        setMuteUntilInput('');
+      } finally {
+        setIsNotificationSettingLoading(false);
+      }
+    },
+    [
+      setIsNotificationSettingLoading,
+      setMuteUntilInput,
+      setNotificationSetting,
+      setNotificationSettingMessage,
+    ],
+  );
 
   const saveNotificationSetting = async () => {
     if (!roomId || !notificationSetting) return;
@@ -1101,34 +893,37 @@ export const RoomChat: React.FC = () => {
     });
   }, []);
 
-  const handleAckGroupTargetsChange = useCallback((next: MentionTarget[]) => {
-    const groupTargets = next
-      .filter((target) => target.kind === 'group')
-      .map((target) => ({
-        id: target.id.trim(),
-        label: target.label.trim(),
-      }))
-      .filter((target) => target.id.length > 0);
-    const groups = Array.from(
-      new Set(groupTargets.map((target) => target.id)),
-    ).slice(0, 20);
-    const groupSet = new Set(groups);
-    setAckTargetGroupIds(groups.join(','));
-    setAckGroupLabelOverrides((prev) => {
-      const overrides: Record<string, string> = {};
-      groupTargets.forEach((target) => {
-        if (!groupSet.has(target.id)) return;
-        if (!target.label) return;
-        overrides[target.id] = target.label;
+  const handleAckGroupTargetsChange = useCallback(
+    (next: MentionTarget[]) => {
+      const groupTargets = next
+        .filter((target) => target.kind === 'group')
+        .map((target) => ({
+          id: target.id.trim(),
+          label: target.label.trim(),
+        }))
+        .filter((target) => target.id.length > 0);
+      const groups = Array.from(
+        new Set(groupTargets.map((target) => target.id)),
+      ).slice(0, 20);
+      const groupSet = new Set(groups);
+      setAckTargetGroupIds(groups.join(','));
+      setAckGroupLabelOverrides((prev) => {
+        const overrides: Record<string, string> = {};
+        groupTargets.forEach((target) => {
+          if (!groupSet.has(target.id)) return;
+          if (!target.label) return;
+          overrides[target.id] = target.label;
+        });
+        groups.forEach((groupId) => {
+          if (!overrides[groupId] && prev[groupId]) {
+            overrides[groupId] = prev[groupId];
+          }
+        });
+        return overrides;
       });
-      groups.forEach((groupId) => {
-        if (!overrides[groupId] && prev[groupId]) {
-          overrides[groupId] = prev[groupId];
-        }
-      });
-      return overrides;
-    });
-  }, []);
+    },
+    [setAckGroupLabelOverrides, setAckTargetGroupIds],
+  );
 
   const fetchMentionComposerCandidates = useCallback(
     async (query: string, kind: 'user' | 'group' | 'role') => {
@@ -2397,444 +2192,47 @@ export const RoomChat: React.FC = () => {
         />
       )}
 
-      <div className="card" style={{ padding: 12, marginTop: 12 }}>
-        <strong>一覧</strong>
-        <div
-          className="row"
-          style={{ gap: 12, flexWrap: 'wrap', marginTop: 8 }}
-        >
-          <label>
-            検索（本文）
-            <input
-              type="text"
-              value={filterQuery}
-              onChange={(e) => setFilterQuery(e.target.value)}
-              placeholder="keyword"
-            />
-          </label>
-          <label>
-            タグ絞り込み
-            <input
-              type="text"
-              value={filterTag}
-              onChange={(e) => setFilterTag(e.target.value)}
-              placeholder="tag"
-            />
-          </label>
-          <button
-            className="button secondary"
-            onClick={() => loadMessages()}
-            disabled={!roomId || isLoading}
-          >
-            適用
-          </button>
-          <button
-            className="button secondary"
-            onClick={() => {
-              setFilterQuery('');
-              setFilterTag('');
-              loadMessages({ query: '', tag: '' }).catch(() => undefined);
-            }}
-            disabled={!roomId || isLoading}
-          >
-            クリア
-          </button>
-        </div>
+      <RoomMessageList
+        filterQuery={filterQuery}
+        setFilterQuery={setFilterQuery}
+        filterTag={filterTag}
+        setFilterTag={setFilterTag}
+        loadMessages={loadMessages}
+        roomId={roomId}
+        isLoading={isLoading}
+        items={items}
+        highlightSince={highlightSince}
+        highlightMessageId={highlightMessageId}
+        nowMs={nowMs}
+        currentUserId={currentUserId}
+        roles={roles}
+        renderMessageBody={renderMessageBody}
+        copyMessageLink={copyMessageLink}
+        addReaction={addReaction}
+        ack={ack}
+        pendingUndoRevokeAck={pendingUndoRevokeAck}
+        setPendingUndoRevokeAck={setPendingUndoRevokeAck}
+        cancelAckRequest={cancelAckRequest}
+        downloadAttachment={downloadAttachment}
+        setMessage={setMessage}
+        hasMore={hasMore}
+        isLoadingMore={isLoadingMore}
+      />
 
-        {isLoading && <div style={{ marginTop: 8 }}>読み込み中...</div>}
-        {!isLoading && items.length === 0 && (
-          <div style={{ marginTop: 8 }}>メッセージなし</div>
-        )}
-        <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
-          {items.map((item) => {
-            const tags = Array.isArray(item.tags) ? item.tags : [];
-            const mentionedUserIds = normalizeStringArray(
-              item.mentions?.userIds,
-            );
-            const mentionedGroupIds = normalizeStringArray(
-              item.mentions?.groupIds,
-            );
-            const mentionAllFlag = item.mentionsAll === true;
-            const createdAt = new Date(item.createdAt).toLocaleString();
-            const isUnread =
-              highlightSince && new Date(item.createdAt) > highlightSince;
-            const isTarget = highlightMessageId === item.id;
-            const ackRequest = item.ackRequest;
-            const requiredUserIds = ackRequest
-              ? normalizeStringArray(ackRequest.requiredUserIds)
-              : [];
-            const ackedUserIds = new Set(
-              (ackRequest?.acks || []).map((ack) => ack.userId),
-            );
-            const isCanceled = Boolean(ackRequest?.canceledAt);
-            const canceledAtLabel = ackRequest?.canceledAt
-              ? new Date(ackRequest.canceledAt).toLocaleString()
-              : '';
-            const dueAt = ackRequest?.dueAt ? new Date(ackRequest.dueAt) : null;
-            const dueAtLabel =
-              dueAt && !Number.isNaN(dueAt.getTime())
-                ? dueAt.toLocaleString()
-                : '';
-            const ackedCount = requiredUserIds.filter((userId) =>
-              ackedUserIds.has(userId),
-            ).length;
-            const requiredCount = requiredUserIds.length;
-            const isOverdue =
-              Boolean(dueAtLabel) &&
-              !isCanceled &&
-              requiredCount > 0 &&
-              ackedCount < requiredCount &&
-              dueAt &&
-              nowMs > 0 &&
-              dueAt.getTime() < nowMs;
-            const canAck =
-              ackRequest &&
-              !isCanceled &&
-              requiredUserIds.includes(currentUserId) &&
-              !ackedUserIds.has(currentUserId);
-            const canRevoke =
-              ackRequest &&
-              !isCanceled &&
-              requiredUserIds.includes(currentUserId) &&
-              ackedUserIds.has(currentUserId);
-            const canCancel =
-              ackRequest &&
-              !isCanceled &&
-              (item.userId === currentUserId ||
-                roles.includes('admin') ||
-                roles.includes('mgmt'));
-
-            return (
-              <div
-                key={item.id}
-                id={`chat-message-${item.id}`}
-                className="card"
-                style={{
-                  padding: 12,
-                  borderColor: isUnread ? '#f59e0b' : undefined,
-                  outline: isTarget ? '2px solid #f59e0b' : undefined,
-                  outlineOffset: isTarget ? 2 : undefined,
-                }}
-              >
-                <div
-                  className="row"
-                  style={{ justifyContent: 'space-between' }}
-                >
-                  <div>
-                    <strong>{item.userId}</strong>
-                    <span
-                      style={{ marginLeft: 8, fontSize: 12, color: '#475569' }}
-                    >
-                      {createdAt}
-                    </span>
-                  </div>
-                  <div className="row" style={{ gap: 6 }}>
-                    <button
-                      type="button"
-                      className="button secondary"
-                      aria-label="発言リンクURLをコピー"
-                      onClick={() => copyMessageLink('url', item)}
-                      style={{ padding: '2px 8px' }}
-                    >
-                      URL
-                    </button>
-                    <button
-                      type="button"
-                      className="button secondary"
-                      aria-label="発言リンクMarkdownをコピー"
-                      onClick={() => copyMessageLink('markdown', item)}
-                      style={{ padding: '2px 8px' }}
-                    >
-                      MD
-                    </button>
-                    {reactionOptions.map((emoji) => (
-                      <button
-                        key={emoji}
-                        className="button secondary"
-                        onClick={() => addReaction(item.id, emoji)}
-                        style={{ padding: '2px 8px' }}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div style={{ marginTop: 8 }}>
-                  {renderMessageBody(item.body)}
-                </div>
-                {(mentionAllFlag ||
-                  mentionedUserIds.length > 0 ||
-                  mentionedGroupIds.length > 0) && (
-                  <div
-                    className="row"
-                    style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}
-                  >
-                    {mentionAllFlag && (
-                      <span className="badge" aria-label="全員へのメンション">
-                        @all
-                      </span>
-                    )}
-                    {mentionedUserIds.map((userId) => (
-                      <span
-                        key={userId}
-                        className="badge"
-                        aria-label={`メンション対象ユーザ: ${userId}`}
-                      >
-                        @{userId}
-                      </span>
-                    ))}
-                    {mentionedGroupIds.map((groupId) => (
-                      <span
-                        key={groupId}
-                        className="badge"
-                        aria-label={`メンション対象グループ: ${groupId}`}
-                      >
-                        @{groupId}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {tags.length > 0 && (
-                  <div style={{ marginTop: 8, fontSize: 12, color: '#475569' }}>
-                    tags: {tags.map((tag) => `#${tag}`).join(' ')}
-                  </div>
-                )}
-                {item.reactions && (
-                  <div style={{ marginTop: 8, fontSize: 12, color: '#475569' }}>
-                    {Object.entries(item.reactions).map(([emoji, val]) => (
-                      <span key={emoji} style={{ marginRight: 8 }}>
-                        {emoji} {getReactionCount(val)}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {ackRequest && (
-                  <div style={{ marginTop: 10 }}>
-                    <div className="badge">確認依頼</div>
-                    <div
-                      style={{ fontSize: 12, color: '#475569', marginTop: 4 }}
-                    >
-                      required: {requiredUserIds.join(', ') || '-'}
-                    </div>
-                    <div
-                      style={{ fontSize: 12, color: '#475569', marginTop: 4 }}
-                    >
-                      acked: {Array.from(ackedUserIds).join(', ') || '-'}
-                    </div>
-                    {dueAtLabel && (
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: isOverdue ? '#dc2626' : '#475569',
-                          marginTop: 4,
-                        }}
-                      >
-                        期限: {dueAtLabel}
-                        {isOverdue ? ' (期限超過)' : ''}
-                      </div>
-                    )}
-                    {isCanceled && (
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: '#475569',
-                          marginTop: 4,
-                        }}
-                      >
-                        撤回: {canceledAtLabel}
-                        {ackRequest.canceledBy
-                          ? ` / ${ackRequest.canceledBy}`
-                          : ''}
-                      </div>
-                    )}
-                    {(canAck || canRevoke || canCancel) && (
-                      <div
-                        className="row"
-                        style={{ gap: 8, flexWrap: 'wrap', marginTop: 6 }}
-                      >
-                        {canAck && (
-                          <button
-                            className="button"
-                            onClick={() => ack(ackRequest.id)}
-                          >
-                            OK
-                          </button>
-                        )}
-                        {canRevoke && (
-                          <button
-                            className="button secondary"
-                            disabled={!!pendingUndoRevokeAck}
-                            onClick={() => {
-                              if (pendingUndoRevokeAck) {
-                                return;
-                              }
-                              setPendingUndoRevokeAck({
-                                requestId: ackRequest.id,
-                              });
-                            }}
-                          >
-                            OK取消
-                          </button>
-                        )}
-                        {canCancel && (
-                          <button
-                            className="button secondary"
-                            onClick={() => {
-                              const reason =
-                                window.prompt('撤回理由（任意）') ?? null;
-                              if (reason === null) return;
-                              cancelAckRequest(
-                                ackRequest.id,
-                                reason.trim() || undefined,
-                              ).catch(() => undefined);
-                            }}
-                          >
-                            撤回
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {Array.isArray(item.attachments) &&
-                  item.attachments.length > 0 && (
-                    <div style={{ marginTop: 10 }}>
-                      <AttachmentField
-                        attachments={item.attachments.map((attachment) =>
-                          toAttachmentRecord(attachment),
-                        )}
-                        labels={{
-                          title: '添付',
-                          selectPreview: 'ダウンロード',
-                        }}
-                        onSelectPreview={(attachmentId) => {
-                          const target = item.attachments?.find(
-                            (attachment) => attachment.id === attachmentId,
-                          );
-                          if (!target) return;
-                          downloadAttachment(
-                            target.id,
-                            target.originalName,
-                          ).catch((error) => {
-                            console.error(error);
-                            setMessage('添付のダウンロードに失敗しました');
-                          });
-                        }}
-                      />
-                    </div>
-                  )}
-              </div>
-            );
-          })}
-        </div>
-        {hasMore && roomId && (
-          <button
-            className="button secondary"
-            style={{ marginTop: 12 }}
-            onClick={() => loadMessages({ append: true })}
-            disabled={isLoadingMore}
-          >
-            {isLoadingMore ? '読み込み中...' : 'さらに読み込む'}
-          </button>
-        )}
-      </div>
-
-      <div className="card" style={{ padding: 12, marginTop: 12 }}>
-        <strong>横断検索（チャット全体）</strong>
-        <div
-          className="row"
-          style={{ gap: 12, flexWrap: 'wrap', marginTop: 8 }}
-        >
-          <label>
-            横断検索（本文）
-            <input
-              type="text"
-              value={globalQuery}
-              onChange={(e) => setGlobalQuery(e.target.value)}
-              placeholder="keyword"
-            />
-          </label>
-          <button
-            className="button secondary"
-            onClick={() => loadGlobalSearch()}
-            disabled={globalLoading}
-          >
-            検索
-          </button>
-          <button
-            className="button secondary"
-            onClick={() => {
-              setGlobalQuery('');
-              setGlobalItems([]);
-              setGlobalHasMore(false);
-              setGlobalMessage('');
-            }}
-            disabled={globalLoading}
-          >
-            クリア
-          </button>
-        </div>
-
-        {globalMessage && (
-          <div style={{ color: '#dc2626', marginTop: 6 }}>{globalMessage}</div>
-        )}
-        {globalLoading && <div style={{ marginTop: 8 }}>検索中...</div>}
-
-        <div
-          className="list"
-          style={{ display: 'grid', gap: 8, marginTop: 12 }}
-        >
-          {globalItems.map((item) => {
-            const createdAt = new Date(item.createdAt).toLocaleString();
-            const roomLabel = formatRoomLabel(item.room, currentUserId);
-            const excerpt = buildExcerpt(item.body);
-            return (
-              <div key={item.id} className="card" style={{ padding: 12 }}>
-                <div
-                  className="row"
-                  style={{ justifyContent: 'space-between' }}
-                >
-                  <div>
-                    <strong>{roomLabel}</strong>
-                    <div style={{ fontSize: 12, color: '#475569' }}>
-                      {createdAt} / {item.userId}
-                    </div>
-                    {excerpt && (
-                      <div
-                        style={{ fontSize: 12, color: '#475569', marginTop: 4 }}
-                      >
-                        {excerpt}
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    className="button secondary"
-                    onClick={() => openSearchResult(item)}
-                  >
-                    開く
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-          {globalItems.length === 0 && !globalLoading && (
-            <div className="card" style={{ padding: 12 }}>
-              検索結果なし
-            </div>
-          )}
-        </div>
-
-        {globalHasMore && (
-          <button
-            className="button secondary"
-            style={{ marginTop: 12 }}
-            onClick={() => loadGlobalSearch({ append: true })}
-            disabled={globalLoading}
-          >
-            さらに読み込む
-          </button>
-        )}
-      </div>
+      <RoomGlobalSearch
+        globalQuery={globalQuery}
+        setGlobalQuery={setGlobalQuery}
+        loadGlobalSearch={loadGlobalSearch}
+        globalLoading={globalLoading}
+        setGlobalItems={setGlobalItems}
+        setGlobalHasMore={setGlobalHasMore}
+        setGlobalMessage={setGlobalMessage}
+        globalMessage={globalMessage}
+        globalItems={globalItems}
+        globalHasMore={globalHasMore}
+        openSearchResult={openSearchResult}
+        currentUserId={currentUserId}
+      />
     </div>
   );
 };

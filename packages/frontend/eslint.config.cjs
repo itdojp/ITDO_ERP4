@@ -13,23 +13,23 @@ module.exports = [
       parserOptions: {
         ecmaVersion: 'latest',
         sourceType: 'module',
-        ecmaFeatures: { jsx: true }
+        ecmaFeatures: { jsx: true },
       },
       globals: {
         window: 'readonly',
         document: 'readonly',
         fetch: 'readonly',
         RequestInit: 'readonly',
-        HTMLElement: 'readonly'
-      }
+        HTMLElement: 'readonly',
+      },
     },
     plugins: {
       '@typescript-eslint': tsPlugin,
       react,
-      'react-hooks': reactHooks
+      'react-hooks': reactHooks,
     },
     settings: {
-      react: { version: 'detect' }
+      react: { version: 'detect' },
     },
     rules: {
       ...js.configs.recommended.rules,
@@ -38,7 +38,11 @@ module.exports = [
       ...reactHooks.configs.recommended.rules,
       'react-hooks/set-state-in-effect': 'off',
       'no-undef': 'off',
-      '@typescript-eslint/no-unused-vars': 'off'
-    }
-  }
+      '@typescript-eslint/no-unused-vars': 'off',
+      'max-lines': [
+        'error',
+        { max: 2500, skipBlankLines: true, skipComments: false },
+      ],
+    },
+  },
 ];
