@@ -24,7 +24,7 @@
     "schema": "./prisma/schema.prisma"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1078.0",
+    "@aws-sdk/client-s3": "^3.1079.0",
     "@fastify/cors": "^11.2.0",
     "@fastify/helmet": "^13.0.2",
     "@fastify/multipart": "^10.0.0",
@@ -34,10 +34,10 @@
     "@sinclair/typebox": "^0.34.49",
     "@types/web-push": "^3.6.4",
     "argon2": "^0.44.0",
-    "fastify": "^5.9.0",
+    "fastify": "^5.10.0",
     "fastify-plugin": "^6.0.0",
     "googleapis": "^173.0.0",
-    "iconv-lite": "^0.7.2",
+    "iconv-lite": "^0.7.3",
     "ioredis": "^5.11.1",
     "jose": "^6.2.3",
     "nodemailer": "^9.0.3",
