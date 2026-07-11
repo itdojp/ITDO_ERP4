@@ -601,8 +601,9 @@ async function runCommand(item, rootDir, logPath) {
       );
       // Kill the entire process group so that subprocesses spawned by the
       // shell (e.g. npm → node) are also terminated. Negative PID targets
-      // the process group on POSIX; on Windows the catch falls back to
-      // killing the direct child only.
+      // the process group on POSIX. On Windows, negative PIDs are not
+      // supported and process.kill(-pid) always throws; the catch falls back
+      // to killing the direct child only.
       try {
         process.kill(-child.pid, "SIGTERM");
       } catch {

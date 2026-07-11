@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -216,7 +217,7 @@ test("runReleaseReadiness times out a hanging command and reports exit code 124"
 });
 
 test("runReleaseReadiness blocks --record when git commit SHA is unknown", async () => {
-  const base = path.join("/tmp", "release-readiness-test-no-git");
+  const base = path.join(os.tmpdir(), "release-readiness-test-no-git");
   fs.mkdirSync(base, { recursive: true });
   const root = fs.mkdtempSync(path.join(base, "case-"));
   let summary;
