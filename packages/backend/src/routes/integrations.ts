@@ -5,7 +5,9 @@ import { requireRole } from '../services/rbac.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import {
   AttendanceClosingError,
-  closeAttendancePeriod,
+  createAttendanceClosing,
+  getAttendanceClosingSummaries,
+  listAttendanceClosings,
   parseAttendancePeriodKey,
 } from '../services/attendanceClosings.js';
 import {
@@ -194,6 +196,7 @@ function parseBoundedNonNegativeInteger(
 
 function attendanceClosingStatusCode(code: string) {
   if (code === 'invalid_period_key') return 400;
+  if (code === 'attendance_closing_not_found') return 404;
   return 409;
 }
 
@@ -1120,28 +1123,12 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         reclose?: boolean;
       };
       try {
-        const result = await closeAttendancePeriod({
+        return await createAttendanceClosing({
           periodKey: body.periodKey,
           reclose: body.reclose ?? false,
           actorId: req.user?.userId ?? null,
+          auditContext: auditContextFromRequest(req),
         });
-        await logAudit({
-          ...auditContextFromRequest(req),
-          action: body.reclose
-            ? 'attendance_closing_reclosed'
-            : 'attendance_closing_created',
-          targetTable: 'AttendanceClosingPeriod',
-          targetId: result.closing.id,
-          metadata: {
-            periodKey: result.closing.periodKey,
-            version: result.closing.version,
-            summaryCount: result.closing.summaryCount,
-          },
-        });
-        return {
-          closing: result.closing,
-          summaries: result.summaries,
-        };
       } catch (error) {
         if (error instanceof AttendanceClosingError) {
           return reply.code(attendanceClosingStatusCode(error.code)).send({
@@ -1162,43 +1149,13 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
       schema: integrationHrAttendanceClosingListQuerySchema,
     },
     async (req) => {
-      const { periodKey, limit, offset } = req.query as {
-        periodKey?: string;
-        limit?: number;
-        offset?: number;
-      };
-      const take = parseBoundedInteger(limit, 50, 200);
-      const skip = parseBoundedNonNegativeInteger(offset, 0, 100000);
-      const items = await prisma.attendanceClosingPeriod.findMany({
-        where: periodKey ? { periodKey } : undefined,
-        orderBy: [{ periodKey: 'desc' }, { version: 'desc' }],
-        take,
-        skip,
-        select: {
-          id: true,
-          periodKey: true,
-          version: true,
-          status: true,
-          closedAt: true,
-          closedBy: true,
-          supersededAt: true,
-          supersededBy: true,
-          summaryCount: true,
-          workedDayCountTotal: true,
-          scheduledWorkMinutesTotal: true,
-          approvedWorkMinutesTotal: true,
-          overtimeTotalMinutesTotal: true,
-          overtimeWithinStatutoryMinutesTotal: true,
-          overtimeOverStatutoryMinutesTotal: true,
-          holidayWorkMinutesTotal: true,
-          paidLeaveMinutesTotal: true,
-          unpaidLeaveMinutesTotal: true,
-          totalLeaveMinutesTotal: true,
-          sourceTimeEntryCount: true,
-          sourceLeaveRequestCount: true,
+      return listAttendanceClosings(
+        req.query as {
+          periodKey?: string;
+          limit?: number | string;
+          offset?: number | string;
         },
-      });
-      return { items, limit: take, offset: skip };
+      );
     },
   );
 
@@ -1210,50 +1167,27 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const { limit, offset } = req.query as {
-        limit?: number;
-        offset?: number;
-      };
-      const take = parseBoundedInteger(limit, 200, 1000);
-      const skip = parseBoundedNonNegativeInteger(offset, 0, 100000);
-      const closing = await prisma.attendanceClosingPeriod.findUnique({
-        where: { id },
-        select: {
-          id: true,
-          periodKey: true,
-          version: true,
-          status: true,
-          closedAt: true,
-          summaryCount: true,
-        },
-      });
-      if (!closing) {
-        return reply.code(404).send({ error: 'attendance_closing_not_found' });
+      try {
+        return await getAttendanceClosingSummaries({
+          id,
+          ...(req.query as {
+            limit?: number | string;
+            offset?: number | string;
+          }),
+        });
+      } catch (error) {
+        if (error instanceof AttendanceClosingError) {
+          if (error.code === 'attendance_closing_not_found') {
+            return reply.code(404).send({ error: error.code });
+          }
+          return reply.code(attendanceClosingStatusCode(error.code)).send({
+            error: error.code,
+            message: error.message,
+            details: error.details,
+          });
+        }
+        throw error;
       }
-      const items = await prisma.attendanceMonthlySummary.findMany({
-        where: { closingPeriodId: id },
-        orderBy: [{ employeeCode: 'asc' }, { userId: 'asc' }],
-        take,
-        skip,
-        select: {
-          id: true,
-          userId: true,
-          employeeCode: true,
-          workedDayCount: true,
-          scheduledWorkMinutes: true,
-          approvedWorkMinutes: true,
-          overtimeTotalMinutes: true,
-          overtimeWithinStatutoryMinutes: true,
-          overtimeOverStatutoryMinutes: true,
-          holidayWorkMinutes: true,
-          paidLeaveMinutes: true,
-          unpaidLeaveMinutes: true,
-          totalLeaveMinutes: true,
-          sourceTimeEntryCount: true,
-          sourceLeaveRequestCount: true,
-        },
-      });
-      return { closing, items, limit: take, offset: skip };
     },
   );
 

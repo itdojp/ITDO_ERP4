@@ -67,6 +67,7 @@ async function withServer(fn) {
 test('POST /integrations/hr/attendance/closings closes a period and stores summaries', async () => {
   let capturedCreate = null;
   let capturedCreateMany = null;
+  let capturedAudit = null;
   await withPrismaStubs(
     {
       'attendanceClosingPeriod.findFirst': async () => null,
@@ -122,7 +123,10 @@ test('POST /integrations/hr/attendance/closings closes a period and stores summa
       }),
       'leaveCompanyHoliday.findMany': async () => [],
       'leaveWorkdayOverride.findMany': async () => [],
-      'auditLog.create': async () => ({ id: 'audit-001' }),
+      'auditLog.create': async (args) => {
+        capturedAudit = args;
+        return { id: 'audit-001' };
+      },
       $transaction: async (callback) => callback(prisma),
       'attendanceClosingPeriod.create': async (args) => {
         capturedCreate = args;
@@ -141,7 +145,11 @@ test('POST /integrations/hr/attendance/closings closes a period and stores summa
         const res = await server.inject({
           method: 'POST',
           url: '/integrations/hr/attendance/closings',
-          headers: adminHeaders(),
+          headers: {
+            ...adminHeaders(),
+            'user-agent': 'attendance-closing-route-test',
+            'x-request-id': 'req-attendance-closing-001',
+          },
           payload: { periodKey: '2026-03' },
         });
         assert.equal(res.statusCode, 200, res.body);
@@ -175,6 +183,19 @@ test('POST /integrations/hr/attendance/closings closes a period and stores summa
   );
   assert.equal(capturedCreateMany?.data?.[0]?.overtimeOverStatutoryMinutes, 60);
   assert.equal(capturedCreateMany?.data?.[0]?.holidayWorkMinutes, 0);
+  assert.equal(capturedAudit?.data?.action, 'attendance_closing_created');
+  assert.equal(capturedAudit?.data?.userId, 'admin-user');
+  assert.equal(capturedAudit?.data?.actorRole, 'admin');
+  assert.equal(capturedAudit?.data?.requestId, 'req-attendance-closing-001');
+  assert.equal(capturedAudit?.data?.source, 'api');
+  assert.equal(capturedAudit?.data?.targetTable, 'AttendanceClosingPeriod');
+  assert.equal(capturedAudit?.data?.targetId, 'close-001');
+  assert.equal(capturedAudit?.data?.metadata?.periodKey, '2026-03');
+  assert.equal(capturedAudit?.data?.metadata?._auth?.actorUserId, 'admin-user');
+  assert.equal(
+    capturedAudit?.data?.metadata?._request?.id,
+    'req-attendance-closing-001',
+  );
 });
 
 test('POST /integrations/hr/attendance/closings classifies within-statutory and holiday overtime', async () => {
@@ -638,6 +659,8 @@ test('GET /integrations/hr/attendance/closings and summaries return stored recor
         assert.equal(list.statusCode, 200, list.body);
         const listBody = JSON.parse(list.body);
         assert.equal(listBody.items.length, 1);
+        assert.equal(listBody.limit, 10);
+        assert.equal(listBody.offset, 0);
         assert.equal(listBody.items[0].version, 2);
         assert.equal(listBody.items[0].overtimeWithinStatutoryMinutesTotal, 60);
         assert.equal(listBody.items[0].overtimeOverStatutoryMinutesTotal, 120);
@@ -652,10 +675,36 @@ test('GET /integrations/hr/attendance/closings and summaries return stored recor
         const summaryBody = JSON.parse(summary.body);
         assert.equal(summaryBody.closing.id, 'close-001');
         assert.equal(summaryBody.items.length, 1);
+        assert.equal(summaryBody.limit, 10);
+        assert.equal(summaryBody.offset, 0);
         assert.equal(summaryBody.items[0].employeeCode, 'E-001');
         assert.equal(summaryBody.items[0].overtimeWithinStatutoryMinutes, 60);
         assert.equal(summaryBody.items[0].overtimeOverStatutoryMinutes, 120);
         assert.equal(summaryBody.items[0].holidayWorkMinutes, 0);
+      });
+    },
+  );
+});
+
+test('GET /integrations/hr/attendance/closings/:id/summaries preserves not-found error code', async () => {
+  await withPrismaStubs(
+    {
+      'attendanceClosingPeriod.findUnique': async () => null,
+    },
+    async () => {
+      await withServer(async (server) => {
+        const response = await server.inject({
+          method: 'GET',
+          url: '/integrations/hr/attendance/closings/missing/summaries?limit=10&offset=0',
+          headers: adminHeaders(),
+        });
+        assert.equal(response.statusCode, 404, response.body);
+        assert.deepEqual(JSON.parse(response.body), {
+          error: {
+            code: 'attendance_closing_not_found',
+            message: 'attendance_closing_not_found',
+          },
+        });
       });
     },
   );
