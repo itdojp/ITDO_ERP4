@@ -135,6 +135,74 @@ test("treats pass status with unchecked completion gates as incomplete", () => {
   });
 });
 
+test("treats explicit failed status as incomplete even when gate is absent", () => {
+  withFixture("failed-status", (root) => {
+    writeEvidence(
+      root,
+      "2026-07-12-action-policy-phase3-target-trial-r1.md",
+      actionPolicyEvidence({ status: "failed", checked: false }),
+    );
+    writeEvidence(root, "2026-07-12-backup-s3-restore-r1.md", backupEvidence());
+    writeEvidence(
+      root,
+      "2026-07-12-external-csv-artifact-intake-r1.md",
+      csvEvidence(),
+    );
+
+    const summary = evaluateExternalEvidence({ rootDir: root });
+    assert.equal(summary.overallStatus, "NO-GO");
+    assert.equal(summary.dependencies[0].overallStatus, "INCOMPLETE");
+    assert.equal(summary.dependencies[0].statusValue, "failed");
+  });
+});
+
+test("treats evidence with missing gate section as incomplete", () => {
+  withFixture("no-gate", (root) => {
+    writeEvidence(
+      root,
+      "2026-07-12-action-policy-phase3-target-trial-r1.md",
+      `# Trial record\n- trialStatus: \`pass\`\n\n## Notes\n\nNo gate section.\n`,
+    );
+    writeEvidence(root, "2026-07-12-backup-s3-restore-r1.md", backupEvidence());
+    writeEvidence(
+      root,
+      "2026-07-12-external-csv-artifact-intake-r1.md",
+      csvEvidence(),
+    );
+
+    const summary = evaluateExternalEvidence({ rootDir: root });
+    assert.equal(summary.overallStatus, "NO-GO");
+    assert.equal(summary.dependencies[0].overallStatus, "INCOMPLETE");
+    assert.equal(summary.dependencies[0].candidates[0].gatePresent, false);
+  });
+});
+
+test("reports PASS when an older evidence record passes even if a newer one is incomplete", () => {
+  withFixture("older-pass", (root) => {
+    writeEvidence(
+      root,
+      "2026-07-14-action-policy-phase3-target-trial-r2.md",
+      actionPolicyEvidence({ status: "failed", checked: false }),
+    );
+    writeEvidence(
+      root,
+      "2026-07-12-action-policy-phase3-target-trial-r1.md",
+      actionPolicyEvidence(),
+    );
+    writeEvidence(root, "2026-07-12-backup-s3-restore-r1.md", backupEvidence());
+    writeEvidence(
+      root,
+      "2026-07-12-external-csv-artifact-intake-r1.md",
+      csvEvidence(),
+    );
+
+    const summary = evaluateExternalEvidence({ rootDir: root });
+    assert.equal(summary.overallStatus, "PASS");
+    assert.equal(summary.dependencies[0].overallStatus, "PASS");
+    assert.equal(summary.dependencies[0].candidates.length, 2);
+  });
+});
+
 test("CLI exits non-zero for missing evidence and prints JSON details", () => {
   withFixture("cli", (root) => {
     const res = spawnSync(
