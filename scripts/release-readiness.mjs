@@ -835,6 +835,9 @@ export function renderMarkdownReport(summary) {
     "> この証跡は repo-side quality gate の再現結果です。対象環境での ActionPolicy 切替、実 S3 restore、外部製品現物CSV確認は別証跡が揃うまで完了扱いにしません。",
   );
   lines.push(
+    "> #1426 / #544 / #1432 の外部Go依存は `docs/ops/production-readiness-external-evidence.md` に従い、`make production-readiness-external-evidence-check` で `PASS` を確認してください。",
+  );
+  lines.push(
     "> `CI job` 欄は GitHub Actions required checks との対応先を示す参照であり、workflow の完全再実行ではありません。GitHub Actions / Link Check / CodeQL の実結果はPRまたは対象コミット上で別途確認してください。",
   );
   lines.push(
@@ -897,6 +900,7 @@ export function renderMarkdownReport(summary) {
   if (summary.e2eScope === "full") {
     lines.push(`RELEASE_E2E_SCOPE=full make release-readiness-record`);
   }
+  lines.push("make production-readiness-external-evidence-check");
   lines.push("```");
   lines.push("");
   return `${lines.join("\n")}\n`;
