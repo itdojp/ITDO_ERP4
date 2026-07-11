@@ -188,6 +188,54 @@ test("runReleaseReadiness records reasoned skips as blocked", async () => {
   assert.match(summary.checks[0].reason, /<redacted-path>/);
 });
 
+test("runReleaseReadiness times out a hanging command and reports exit code 124", async () => {
+  const root = makeCleanGitFixture();
+  const summary = await runReleaseReadiness({
+    rootDir: root,
+    allowDirty: true,
+    logDir: path.join(root, "tmp", "logs"),
+    e2eScope: "core",
+    plan: [
+      {
+        id: "hang-check",
+        name: "Hanging command",
+        ciJob: "local",
+        command: 'node -e "setTimeout(()=>{},5000)"',
+        required: true,
+        env: {},
+        cwd: ".",
+        timeoutMs: 200,
+      },
+    ],
+    externalDependencies: [],
+  });
+
+  assert.equal(summary.repoSideStatus, "FAIL");
+  assert.equal(summary.checks[0].exitCode, 124);
+  assert.equal(summary.checks[0].status, "FAIL");
+});
+
+test("runReleaseReadiness blocks --record when git commit SHA is unknown", async () => {
+  const base = path.join("/tmp", "release-readiness-test-no-git");
+  fs.mkdirSync(base, { recursive: true });
+  const root = fs.mkdtempSync(path.join(base, "case-"));
+  const summary = await runReleaseReadiness({
+    rootDir: root,
+    allowDirty: true,
+    record: true,
+    logDir: path.join(root, "tmp", "logs"),
+    e2eScope: "full",
+    plan: [],
+    externalDependencies: [],
+  });
+
+  assert.equal(summary.repoSideStatus, "FAIL");
+  assert.equal(summary.checks.length, 1);
+  assert.equal(summary.checks[0].id, "preflight-git-commit");
+  assert.equal(summary.checks[0].status, "FAIL");
+  assert.match(summary.checks[0].reason, /git commit SHA/);
+});
+
 test("renderMarkdownReport is deterministic and separates repo-side from external Go dependencies", () => {
   const now = new Date("2026-07-12T00:00:00.000Z");
   const summary = buildSummary({

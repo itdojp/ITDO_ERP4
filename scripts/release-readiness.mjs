@@ -577,6 +577,7 @@ async function runCommand(item, rootDir, logPath) {
   const child = spawn(item.command, {
     cwd: path.resolve(rootDir, item.cwd || "."),
     shell: true,
+    detached: true,
     env: { ...process.env, ...item.env },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -590,15 +591,33 @@ async function runCommand(item, rootDir, logPath) {
     output.write(chunk);
   });
 
+  let timedOut = false;
+  let timeoutHandle = null;
+  if (item.timeoutMs) {
+    timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      output.write(
+        `\n[release-readiness] timed out after ${item.timeoutMs}ms\n`,
+      );
+      try {
+        process.kill(-child.pid, "SIGTERM");
+      } catch {
+        child.kill("SIGTERM");
+      }
+    }, item.timeoutMs);
+  }
+
   const exitCode = await new Promise((resolve) => {
     child.on("error", (error) => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       output.write(`\n[release-readiness] spawn error: ${error.message}\n`);
-      resolve(127);
+      resolve(timedOut ? 124 : 127);
     });
     child.on("close", (code, signal) => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
       if (signal)
         output.write(`\n[release-readiness] terminated by signal: ${signal}\n`);
-      resolve(typeof code === "number" ? code : 1);
+      resolve(timedOut ? 124 : typeof code === "number" ? code : 1);
     });
   });
 
@@ -660,6 +679,35 @@ export async function runReleaseReadiness(options = {}) {
       rawLog: null,
       reason:
         "Working tree is dirty. Commit/stash changes or rerun with --allow-dirty for exploratory evidence.",
+    });
+    return buildSummary({
+      rootDir,
+      startedAt,
+      endedAt,
+      metadata,
+      e2eScope: options.e2eScope || "core",
+      results,
+      dateStamp: options.dateStamp,
+      externalDependencies: options.externalDependencies,
+    });
+  }
+
+  if (options.record && metadata.commit === "unknown") {
+    const endedAt = new Date();
+    results.push({
+      id: "preflight-git-commit",
+      name: "Git commit SHA preflight",
+      ciJob: "local preflight",
+      required: true,
+      command: "git rev-parse HEAD",
+      startedAt: startedAt.toISOString(),
+      endedAt: endedAt.toISOString(),
+      durationMs: endedAt.getTime() - startedAt.getTime(),
+      exitCode: 1,
+      status: "FAIL",
+      rawLog: null,
+      reason:
+        "Could not resolve git commit SHA. Ensure git is installed and the working directory is a git checkout.",
     });
     return buildSummary({
       rootDir,
