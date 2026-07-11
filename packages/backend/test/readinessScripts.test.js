@@ -1369,6 +1369,71 @@ test('record-external-csv-artifact-intake: reports invalid manifest JSON without
   });
 });
 
+test('record-external-csv-artifact-intake: rejects pass report when manifest contains extra canonical_sample artifact', () => {
+  withRepoTempDir('external-csv-intake-test-', (dir) => {
+    const files = writeExternalCsvArtifactIntakeFiles(dir);
+    const manifestFile = path.join(dir, 'manifest.json');
+    const manifest = writeCompleteExternalCsvArtifactManifest(
+      manifestFile,
+      files,
+    );
+    // Inject an extra non-required artifact with sourceType canonical_sample
+    manifest.artifacts.push({
+      id: 'extra_canonical_reference',
+      product: '給与らくだプロ',
+      description: 'repo canonical sample used as reference',
+      status: 'received',
+      sourceType: 'canonical_sample',
+      repoPath: files.rakudaReport,
+    });
+    writeFileSync(manifestFile, JSON.stringify(manifest, null, 2));
+
+    const res = runNodeScript('record-external-csv-artifact-intake.mjs', [], {
+      OUT_DIR: path.join(dir, 'out'),
+      DATE_STAMP: '2026-03-22',
+      RUN_LABEL: 'r1',
+      INTAKE_STATUS: 'pass',
+      OPERATOR: 'alice',
+      MANIFEST_FILE: manifestFile,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(String(res.stderr), /canonical_sample artifacts not allowed/);
+    assert.match(String(res.stderr), /extra_canonical_reference/);
+  });
+});
+
+test('record-external-csv-artifact-intake: rejects pass report when artifact has one sensitive flag unset and other false', () => {
+  withRepoTempDir('external-csv-intake-test-', (dir) => {
+    const files = writeExternalCsvArtifactIntakeFiles(dir);
+    const manifestFile = path.join(dir, 'manifest.json');
+    // containsPersonalData: false but containsSensitiveData is not false (unset)
+    // maskingStatus is also not set — relies entirely on containsPersonalData: false
+    writeCompleteExternalCsvArtifactManifest(manifestFile, files, {
+      artifacts: {
+        rakuda_employee_master_template: {
+          maskingStatus: undefined,
+          containsPersonalData: false,
+          // containsSensitiveData intentionally omitted (not false)
+        },
+      },
+    });
+
+    const res = runNodeScript('record-external-csv-artifact-intake.mjs', [], {
+      OUT_DIR: path.join(dir, 'out'),
+      DATE_STAMP: '2026-03-22',
+      RUN_LABEL: 'r1',
+      INTAKE_STATUS: 'pass',
+      OPERATOR: 'alice',
+      MANIFEST_FILE: manifestFile,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(
+      String(res.stderr),
+      /masked, not_required, or explicitly non-sensitive/,
+    );
+  });
+});
+
 test('record-po-migration-rehearsal: writes report from provided rehearsal report', () => {
   withTempDir((dir) => {
     const logDir = path.join(dir, 'logs');

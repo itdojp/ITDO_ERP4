@@ -72,7 +72,9 @@ Optional env:
 
 Validation:
 - pass requires all required #1432 artifacts to be received actual artifacts, not canonical samples.
+- pass rejects any canonical_sample in the manifest, including non-required artifact IDs.
 - pass requires masking approval and per-artifact masking/sensitivity status.
+- artifact is non-sensitive only if BOTH containsSensitiveData === false AND containsPersonalData === false.
 - CSV/sample artifacts require encoding/newline/delimiter/date/number metadata and columns.
 - data/report samples require sampleRows > 0.
 - operation rule materials require fieldLengths, codeSets, and reimportRules topics.
@@ -209,7 +211,7 @@ function artifactMaskingIsValid(manifest, artifact) {
     return { ok: true };
   }
   if (
-    artifact.containsSensitiveData === false ||
+    artifact.containsSensitiveData === false &&
     artifact.containsPersonalData === false
   ) {
     return { ok: true };
@@ -480,12 +482,25 @@ function main() {
 
   const manifest = readManifest(manifestFile);
   const validation = validateManifest(manifest);
-  if (intakeStatus === "pass" && validation.invalid.length > 0) {
-    const summary = validation.invalid
-      .map((item) => `${item.id}: ${item.errors.join("; ")}`)
-      .join(" | ");
+  if (
+    intakeStatus === "pass" &&
+    (validation.invalid.length > 0 || validation.extraCanonical.length > 0)
+  ) {
+    const parts = [];
+    if (validation.invalid.length > 0) {
+      parts.push(
+        validation.invalid
+          .map((item) => `${item.id}: ${item.errors.join("; ")}`)
+          .join(" | "),
+      );
+    }
+    if (validation.extraCanonical.length > 0) {
+      parts.push(
+        `canonical_sample artifacts not allowed in pass manifest: ${validation.extraCanonical.join(", ")}`,
+      );
+    }
     die(
-      `INTAKE_STATUS=pass requires complete actual CSV artifacts (${summary})`,
+      `INTAKE_STATUS=pass requires complete actual CSV artifacts (${parts.join(" | ")})`,
     );
   }
 
