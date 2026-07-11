@@ -192,18 +192,10 @@ type LeaveRequestForExport = {
 };
 
 function isLeaveMinutesExplicitForExport(leave: LeaveRequestForExport) {
-  if (
-    leave.startTimeMinutes !== null &&
-    leave.startTimeMinutes !== undefined &&
-    leave.endTimeMinutes !== null &&
-    leave.endTimeMinutes !== undefined
-  ) {
+  if (leave.startTimeMinutes !== null && leave.endTimeMinutes !== null) {
     return true;
   }
-  return (
-    (leave.minutes !== null && leave.minutes !== undefined) ||
-    (leave.hours !== null && leave.hours !== undefined)
-  );
+  return leave.minutes !== null || leave.hours !== null;
 }
 
 function collectLeaveDateKeys(leave: LeaveRequestForExport) {
@@ -471,6 +463,8 @@ export async function dispatchHrLeaveExport(
       throw serviceError('idempotency_conflict', 409);
     }
     if (existing.status === IntegrationRunStatus.running) {
+      // A duplicate request for the same running export does not mutate state,
+      // so it intentionally returns the in-flight log without writing audit.
       throw serviceError('dispatch_in_progress', 409, {
         error: 'dispatch_in_progress',
         logId: existing.id,

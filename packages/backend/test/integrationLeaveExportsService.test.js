@@ -365,6 +365,63 @@ test('dispatchHrLeaveExport replays existing success and audits replay metadata'
   assert.equal(auditCalls[0].metadata.exportedCount, 1);
 });
 
+test('dispatchHrLeaveExport rejects duplicate running dispatch without audit mutation', async () => {
+  const auditCalls = [];
+  const requestHash = buildLeaveExportRequestHash({
+    target: 'attendance',
+    updatedSince: null,
+    limit: 5,
+    offset: 0,
+  });
+  const client = {
+    leaveIntegrationExportLog: {
+      findUnique: async () => ({
+        id: 'export-log-running',
+        target: 'attendance',
+        idempotencyKey: 'export-key-running',
+        requestHash,
+        updatedSince: null,
+        exportedUntil: new Date('2026-02-22T10:00:00.000Z'),
+        status: 'running',
+        exportedCount: 0,
+        payload: null,
+        reexportOfId: null,
+        startedAt: new Date('2026-02-22T10:00:00.000Z'),
+        finishedAt: null,
+        message: null,
+      }),
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      dispatchHrLeaveExport(
+        {
+          query: { target: 'attendance', limit: 5, offset: 0 },
+          idempotencyKey: 'export-key-running',
+          auditContext: buildAuditContext(),
+        },
+        {
+          client,
+          logAudit: async (entry) => {
+            auditCalls.push(entry);
+          },
+        },
+      ),
+    (error) => {
+      assert.equal(error.code, 'dispatch_in_progress');
+      assert.equal(error.statusCode, 409);
+      assert.deepEqual(error.responseBody, {
+        error: 'dispatch_in_progress',
+        logId: 'export-log-running',
+      });
+      return true;
+    },
+  );
+
+  assert.equal(auditCalls.length, 0);
+});
+
 test('dispatchHrLeaveExport marks failed logs and truncates failure audit message', async () => {
   const auditCalls = [];
   const startedAt = new Date('2026-02-22T10:00:00.000Z');
