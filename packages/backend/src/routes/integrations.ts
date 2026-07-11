@@ -34,7 +34,14 @@ import {
   buildAccountingIcsExportPayload,
   buildAccountingIcsTemplateCsv,
 } from '../services/accountingIcsExport.js';
-import { reapplyAccountingMappingRules } from '../services/accountingMappingRules.js';
+import {
+  AccountingMappingRuleServiceError,
+  createAccountingMappingRule,
+  listAccountingMappingRules,
+  reapplyAccountingMappingRulesWithAudit,
+  updateAccountingMappingRule,
+  type AccountingMappingRuleInput,
+} from '../services/accountingMappingRules.js';
 import {
   AccountingIcsExportFormat,
   DEFAULT_ACCOUNTING_ICS_EXPORT_LOG_LIMIT,
@@ -114,92 +121,10 @@ type IntegrationSettingBody = {
   config?: unknown;
 };
 
-type AccountingMappingRuleInput = {
-  mappingKey: string;
-  debitAccountCode: string;
-  debitAccountName?: string | null;
-  debitSubaccountCode?: string | null;
-  requireDebitSubaccountCode?: boolean;
-  creditAccountCode: string;
-  creditAccountName?: string | null;
-  creditSubaccountCode?: string | null;
-  requireCreditSubaccountCode?: boolean;
-  departmentCode?: string | null;
-  requireDepartmentCode?: boolean;
-  taxCode: string;
-  isActive?: boolean;
-};
-
 function normalizeConfig(value: unknown) {
   if (value === undefined) return undefined;
   if (value === null) return Prisma.JsonNull;
   return value as Prisma.InputJsonValue;
-}
-
-function normalizeNullableText(value: unknown) {
-  const normalized = typeof value === 'string' ? value.trim() : '';
-  return normalized || null;
-}
-
-function normalizeAccountingMappingRuleInput(
-  input: Partial<AccountingMappingRuleInput>,
-  options: { partial: boolean },
-) {
-  const data: Partial<AccountingMappingRuleInput> = {};
-  const invalidFields: string[] = [];
-
-  const requiredFields = [
-    'mappingKey',
-    'debitAccountCode',
-    'creditAccountCode',
-    'taxCode',
-  ] as const;
-
-  for (const field of requiredFields) {
-    if (input[field] === undefined) {
-      if (!options.partial) invalidFields.push(field);
-      continue;
-    }
-    const normalized =
-      typeof input[field] === 'string' ? input[field].trim() : '';
-    if (!normalized) {
-      invalidFields.push(field);
-      continue;
-    }
-    data[field] = normalized;
-  }
-
-  if (input.debitSubaccountCode !== undefined) {
-    data.debitSubaccountCode = normalizeNullableText(input.debitSubaccountCode);
-  }
-  if (input.debitAccountName !== undefined) {
-    data.debitAccountName = normalizeNullableText(input.debitAccountName);
-  }
-  if (typeof input.requireDebitSubaccountCode === 'boolean') {
-    data.requireDebitSubaccountCode = input.requireDebitSubaccountCode;
-  }
-  if (input.creditAccountName !== undefined) {
-    data.creditAccountName = normalizeNullableText(input.creditAccountName);
-  }
-  if (input.creditSubaccountCode !== undefined) {
-    data.creditSubaccountCode = normalizeNullableText(
-      input.creditSubaccountCode,
-    );
-  }
-  if (typeof input.requireCreditSubaccountCode === 'boolean') {
-    data.requireCreditSubaccountCode = input.requireCreditSubaccountCode;
-  }
-  if (input.departmentCode !== undefined) {
-    data.departmentCode = normalizeNullableText(input.departmentCode);
-  }
-  if (typeof input.requireDepartmentCode === 'boolean') {
-    data.requireDepartmentCode = input.requireDepartmentCode;
-  }
-  if (typeof input.isActive === 'boolean') {
-    data.isActive = input.isActive;
-  }
-
-  return { data, invalidFields };
 }
 
 function parseLimit(
@@ -418,44 +343,6 @@ function buildIntegrationReconciliationDetailsCsv(
     ]),
   ];
   return toCsv(headers, rows);
-}
-
-function buildAccountingMappingRuleResponse(item: {
-  id: string;
-  mappingKey: string;
-  debitAccountCode: string;
-  debitAccountName: string | null;
-  debitSubaccountCode: string | null;
-  requireDebitSubaccountCode: boolean;
-  creditAccountCode: string;
-  creditAccountName: string | null;
-  creditSubaccountCode: string | null;
-  requireCreditSubaccountCode: boolean;
-  departmentCode: string | null;
-  requireDepartmentCode: boolean;
-  taxCode: string;
-  isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-}) {
-  return {
-    id: item.id,
-    mappingKey: item.mappingKey,
-    debitAccountCode: item.debitAccountCode,
-    debitAccountName: item.debitAccountName,
-    debitSubaccountCode: item.debitSubaccountCode,
-    requireDebitSubaccountCode: item.requireDebitSubaccountCode,
-    creditAccountCode: item.creditAccountCode,
-    creditAccountName: item.creditAccountName,
-    creditSubaccountCode: item.creditSubaccountCode,
-    requireCreditSubaccountCode: item.requireCreditSubaccountCode,
-    departmentCode: item.departmentCode,
-    requireDepartmentCode: item.requireDepartmentCode,
-    taxCode: item.taxCode,
-    isActive: item.isActive,
-    createdAt: item.createdAt,
-    updatedAt: item.updatedAt,
-  };
 }
 
 function buildIntegrationExportJobResponse(
@@ -1855,40 +1742,14 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
       schema: integrationAccountingMappingRuleListQuerySchema,
     },
     async (req) => {
-      const query = req.query as {
-        mappingKey?: string;
-        isActive?: boolean | string;
-        limit?: number | string;
-        offset?: number | string;
-      };
-      const limit = parseBoundedInteger(query.limit, 100, 500);
-      const offset = parseBoundedNonNegativeInteger(query.offset, 0, 100000);
-      const mappingKey =
-        typeof query.mappingKey === 'string' ? query.mappingKey.trim() : '';
-      const isActive =
-        query.isActive === true ||
-        query.isActive === 'true' ||
-        query.isActive === '1'
-          ? true
-          : query.isActive === false ||
-              query.isActive === 'false' ||
-              query.isActive === '0'
-            ? false
-            : undefined;
-      const items = await prisma.accountingMappingRule.findMany({
-        where: {
-          ...(mappingKey ? { mappingKey: { contains: mappingKey } } : {}),
-          ...(isActive === undefined ? {} : { isActive }),
+      return listAccountingMappingRules({
+        query: req.query as {
+          mappingKey?: string;
+          isActive?: boolean | string;
+          limit?: number | string;
+          offset?: number | string;
         },
-        orderBy: [{ mappingKey: 'asc' }, { id: 'asc' }],
-        take: limit,
-        skip: offset,
       });
-      return {
-        items: items.map(buildAccountingMappingRuleResponse),
-        limit,
-        offset,
-      };
     },
   );
 
@@ -1899,62 +1760,19 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
       schema: integrationAccountingMappingRuleCreateSchema,
     },
     async (req, reply) => {
-      const body = req.body as AccountingMappingRuleInput;
-      const normalized = normalizeAccountingMappingRuleInput(body, {
-        partial: false,
-      });
-      if (normalized.invalidFields.length > 0) {
-        return reply.code(400).send({
-          error: 'invalid_accounting_mapping_rule_payload',
-          invalidFields: normalized.invalidFields,
-        });
-      }
-      let created;
       try {
-        created = await prisma.accountingMappingRule.create({
-          data: {
-            mappingKey: normalized.data.mappingKey!,
-            debitAccountCode: normalized.data.debitAccountCode!,
-            debitAccountName: normalized.data.debitAccountName ?? null,
-            debitSubaccountCode: normalized.data.debitSubaccountCode ?? null,
-            requireDebitSubaccountCode:
-              normalized.data.requireDebitSubaccountCode ?? false,
-            creditAccountCode: normalized.data.creditAccountCode!,
-            creditAccountName: normalized.data.creditAccountName ?? null,
-            creditSubaccountCode: normalized.data.creditSubaccountCode ?? null,
-            requireCreditSubaccountCode:
-              normalized.data.requireCreditSubaccountCode ?? false,
-            departmentCode: normalized.data.departmentCode ?? null,
-            requireDepartmentCode:
-              normalized.data.requireDepartmentCode ?? false,
-            taxCode: normalized.data.taxCode!,
-            isActive: normalized.data.isActive ?? true,
-            createdBy: req.user?.userId ?? null,
-            updatedBy: req.user?.userId ?? null,
-          },
+        const created = await createAccountingMappingRule({
+          body: req.body as AccountingMappingRuleInput,
+          actorUserId: req.user?.userId ?? null,
+          auditContext: auditContextFromRequest(req),
         });
+        return reply.code(201).send(created);
       } catch (error) {
-        if (
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === 'P2002'
-        ) {
-          return reply
-            .code(409)
-            .send({ error: 'accounting_mapping_rule_exists' });
+        if (error instanceof AccountingMappingRuleServiceError) {
+          return reply.code(error.statusCode).send(error.responseBody);
         }
         throw error;
       }
-      await logAudit({
-        ...auditContextFromRequest(req),
-        action: 'integration_accounting_mapping_rule_created',
-        targetTable: 'AccountingMappingRule',
-        targetId: created.id,
-        metadata: {
-          mappingKey: created.mappingKey,
-          isActive: created.isActive,
-        } as Prisma.InputJsonValue,
-      });
-      return reply.code(201).send(buildAccountingMappingRuleResponse(created));
     },
   );
 
@@ -1966,62 +1784,19 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const params = req.params as { id: string };
-      const body = (req.body ?? {}) as Partial<AccountingMappingRuleInput>;
-      const id = params.id.trim();
-      const current = await prisma.accountingMappingRule.findUnique({
-        where: { id },
-      });
-      if (!current) {
-        return reply
-          .code(404)
-          .send({ error: 'accounting_mapping_rule_not_found' });
-      }
-      const normalized = normalizeAccountingMappingRuleInput(body, {
-        partial: true,
-      });
-      if (normalized.invalidFields.length > 0) {
-        return reply.code(400).send({
-          error: 'invalid_accounting_mapping_rule_payload',
-          invalidFields: normalized.invalidFields,
-        });
-      }
-      let updated;
       try {
-        updated = await prisma.accountingMappingRule.update({
-          where: { id },
-          data: {
-            ...normalized.data,
-            updatedBy: req.user?.userId ?? null,
-          },
+        return await updateAccountingMappingRule({
+          id: params.id,
+          body: (req.body ?? {}) as Partial<AccountingMappingRuleInput>,
+          actorUserId: req.user?.userId ?? null,
+          auditContext: auditContextFromRequest(req),
         });
       } catch (error) {
-        if (
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === 'P2002'
-        ) {
-          return reply
-            .code(409)
-            .send({ error: 'accounting_mapping_rule_exists' });
+        if (error instanceof AccountingMappingRuleServiceError) {
+          return reply.code(error.statusCode).send(error.responseBody);
         }
         throw error;
       }
-      await logAudit({
-        ...auditContextFromRequest(req),
-        action: 'integration_accounting_mapping_rule_updated',
-        targetTable: 'AccountingMappingRule',
-        targetId: updated.id,
-        metadata: {
-          before: {
-            mappingKey: current.mappingKey,
-            isActive: current.isActive,
-          },
-          after: {
-            mappingKey: updated.mappingKey,
-            isActive: updated.isActive,
-          },
-        } as Prisma.InputJsonValue,
-      });
-      return buildAccountingMappingRuleResponse(updated);
     },
   );
 
@@ -2032,46 +1807,23 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
       schema: integrationAccountingMappingRuleReapplySchema,
     },
     async (req, reply) => {
-      const body = (req.body ?? {}) as {
-        periodKey?: string;
-        mappingKey?: string;
-        limit?: number | string;
-        offset?: number | string;
-      };
-      const periodKey =
-        typeof body.periodKey === 'string' ? body.periodKey.trim() : '';
-      if (periodKey && !/^\d{4}-(0[1-9]|1[0-2])$/.test(periodKey)) {
-        return reply.code(400).send({ error: 'invalid_period_key' });
+      try {
+        return await reapplyAccountingMappingRulesWithAudit({
+          body: (req.body ?? {}) as {
+            periodKey?: string;
+            mappingKey?: string;
+            limit?: number | string;
+            offset?: number | string;
+          },
+          actorUserId: req.user?.userId ?? null,
+          auditContext: auditContextFromRequest(req),
+        });
+      } catch (error) {
+        if (error instanceof AccountingMappingRuleServiceError) {
+          return reply.code(error.statusCode).send(error.responseBody);
+        }
+        throw error;
       }
-      const result = await reapplyAccountingMappingRules({
-        periodKey: periodKey || null,
-        mappingKey:
-          typeof body.mappingKey === 'string'
-            ? body.mappingKey.trim() || null
-            : null,
-        limit: parseBoundedInteger(body.limit, 500, 2000),
-        offset: parseBoundedNonNegativeInteger(body.offset, 0, 100000),
-        actorUserId: req.user?.userId ?? null,
-      });
-      await logAudit({
-        ...auditContextFromRequest(req),
-        action: 'integration_accounting_mapping_rule_reapplied',
-        targetTable: 'AccountingJournalStaging',
-        targetId: periodKey || 'all',
-        metadata: {
-          periodKey: periodKey || null,
-          mappingKey:
-            typeof body.mappingKey === 'string'
-              ? body.mappingKey.trim() || null
-              : null,
-          processedCount: result.processedCount,
-          updatedCount: result.updatedCount,
-          readyCount: result.readyCount,
-          pendingMappingCount: result.pendingMappingCount,
-          blockedCount: result.blockedCount,
-        } as Prisma.InputJsonValue,
-      });
-      return result;
     },
   );
 
