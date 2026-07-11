@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   IntegrationRunServiceError,
+  buildIntegrationRunAuditMetadata,
   buildIntegrationRunMetricsResponse,
   computeNextRetryAt,
   executeIntegration,
@@ -156,6 +157,26 @@ test('buildIntegrationRunMetricsResponse aggregates statuses, durations, failure
       successRate: 0,
     },
   ]);
+});
+
+test('buildIntegrationRunAuditMetadata keeps truncated message within audit cap', () => {
+  const metadata = buildIntegrationRunAuditMetadata({
+    trigger: 'manual',
+    settingId: 'setting-long-message',
+    settingType: 'crm',
+    run: {
+      id: 'run-long-message',
+      status: 'failed',
+      retryCount: 1,
+      nextRetryAt: null,
+      startedAt: new Date('2026-03-01T00:00:00.000Z'),
+      finishedAt: new Date('2026-03-01T00:01:00.000Z'),
+      message: 'x'.repeat(600),
+    },
+  });
+
+  assert.equal(metadata.message.length, 500);
+  assert.equal(metadata.message.endsWith('...'), true);
 });
 
 test('executeManualIntegrationRun maps missing and disabled settings to service errors', async () => {

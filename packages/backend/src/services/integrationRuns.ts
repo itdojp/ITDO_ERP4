@@ -14,6 +14,7 @@ export const MAX_RETRY_MAX = 10;
 export const MAX_RETRY_BASE_MINUTES = 1440;
 
 const MAX_INTEGRATION_RUN_AUDIT_TEXT_LENGTH = 500;
+const AUDIT_TEXT_ELLIPSIS = '...';
 
 type IntegrationRunClient = Prisma.TransactionClient | typeof prisma;
 
@@ -138,7 +139,10 @@ function parseUpdatedSince(raw?: string) {
 function truncateForAudit(value: unknown) {
   if (typeof value !== 'string') return value;
   if (value.length <= MAX_INTEGRATION_RUN_AUDIT_TEXT_LENGTH) return value;
-  return `${value.slice(0, MAX_INTEGRATION_RUN_AUDIT_TEXT_LENGTH)}...`;
+  return `${value.slice(
+    0,
+    MAX_INTEGRATION_RUN_AUDIT_TEXT_LENGTH - AUDIT_TEXT_ELLIPSIS.length,
+  )}${AUDIT_TEXT_ELLIPSIS}`;
 }
 
 export function calculateDurationMetrics(durations: number[]) {
