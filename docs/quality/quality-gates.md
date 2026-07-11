@@ -72,6 +72,7 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 
 - `packages/frontend` の依存解決（`npm ci`）
 - TypeScript typecheck: `npm run typecheck`
+- Vitest unit tests: `npm run test`
 - Vite build: `npm run build`
 
 ### CI / coverage-auth
@@ -189,6 +190,7 @@ auth scope の初期対象ファイルは `packages/backend/coverage-thresholds.
 ### Test
 
 - backend: `npm run test --prefix packages/backend`
+- frontend: `npm run test --prefix packages/frontend`
 
 ### E2E（検証環境はPodman前提）
 

@@ -68,9 +68,14 @@ jobs:
           cache-dependency-path: |
             packages/backend/package-lock.json
             packages/frontend/package-lock.json
-      - run: npm ci --prefix packages/frontend
-      - run: npm run typecheck --prefix packages/frontend
-      - run: npm run build --prefix packages/frontend
+      - name: Install frontend dependencies
+        run: npm ci --prefix packages/frontend
+      - name: Typecheck frontend
+        run: npm run typecheck --prefix packages/frontend
+      - name: Test frontend
+        run: npm run test --prefix packages/frontend
+      - name: Build frontend
+        run: npm run build --prefix packages/frontend
   lint:
     runs-on: ubuntu-latest
     steps:

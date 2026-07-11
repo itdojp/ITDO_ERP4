@@ -146,7 +146,7 @@ describe('ProjectMilestones', () => {
       });
     });
 
-    expect(screen.getByText('作成しました')).toBeInTheDocument();
+    expect(await screen.findByText('作成しました')).toBeInTheDocument();
     expect(screen.getByLabelText('名称')).toHaveValue('');
     expect(screen.getByText(/着手金/)).toBeInTheDocument();
   });
@@ -216,7 +216,7 @@ describe('ProjectMilestones', () => {
           },
         );
       });
-      expect(screen.getByText('更新しました')).toBeInTheDocument();
+      expect(await screen.findByText('更新しました')).toBeInTheDocument();
 
       promptSpy.mockReturnValueOnce('   ');
       fireEvent.click(screen.getByRole('button', { name: '削除' }));
@@ -234,8 +234,8 @@ describe('ProjectMilestones', () => {
           },
         );
       });
-      expect(screen.getByText('削除しました')).toBeInTheDocument();
-      expect(screen.getByText('データなし')).toBeInTheDocument();
+      expect(await screen.findByText('削除しました')).toBeInTheDocument();
+      expect(await screen.findByText('データなし')).toBeInTheDocument();
     } finally {
       promptSpy.mockRestore();
     }
@@ -278,7 +278,7 @@ describe('ProjectMilestones', () => {
         '/reports/delivery-due?from=2026-05-01&to=2026-05-31&projectId=project-1',
       );
     });
-    expect(screen.getByText('取得しました')).toBeInTheDocument();
+    expect(await screen.findByText('取得しました')).toBeInTheDocument();
     expect(screen.getByText(/P001 \/ 検収金/)).toBeInTheDocument();
 
     fireEvent.click(
