@@ -1,6 +1,11 @@
 import { IntegrationRunStatus, Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 import { parseAttendancePeriodKey } from './attendanceClosings.js';
+import { toCsv } from '../utils/csv.js';
+import {
+  buildAccountingIcsExportLogResponse,
+  buildHrEmployeeMasterExportLogResponse,
+} from './integrationExports.js';
 
 type ReconciliationClient = Prisma.TransactionClient | typeof prisma;
 
@@ -779,6 +784,116 @@ export async function buildIntegrationReconciliationSummary(options: {
     client,
   });
   return buildIntegrationReconciliationSummaryFromBaseData(base);
+}
+
+export function buildIntegrationReconciliationSummaryResponse(
+  summary: ReconciliationSummary,
+) {
+  return {
+    periodKey: summary.periodKey,
+    attendance: {
+      latestClosing: summary.attendance.latestClosing,
+    },
+    payroll: {
+      latestEmployeeMasterExport: summary.payroll.latestEmployeeMasterExport
+        ? buildHrEmployeeMasterExportLogResponse(
+            summary.payroll.latestEmployeeMasterExport,
+          )
+        : null,
+      latestEmployeeMasterFullExport: summary.payroll
+        .latestEmployeeMasterFullExport
+        ? buildHrEmployeeMasterExportLogResponse(
+            summary.payroll.latestEmployeeMasterFullExport,
+          )
+        : null,
+      comparisonStatus: summary.payroll.comparisonStatus,
+      attendanceEmployeeCount: summary.payroll.attendanceEmployeeCount,
+      employeeMasterExportCount: summary.payroll.employeeMasterExportCount,
+      matchedEmployeeCount: summary.payroll.matchedEmployeeCount,
+      countsAligned: summary.payroll.countsAligned,
+      attendanceOnlyCount: summary.payroll.attendanceOnlyCount,
+      attendanceOnlyEmployeeCodes: summary.payroll.attendanceOnlyEmployeeCodes,
+      employeeMasterOnlyCount: summary.payroll.employeeMasterOnlyCount,
+      employeeMasterOnlyEmployeeCodes:
+        summary.payroll.employeeMasterOnlyEmployeeCodes,
+    },
+    accounting: {
+      latestIcsExport: summary.accounting.latestIcsExport
+        ? buildAccountingIcsExportLogResponse(
+            summary.accounting.latestIcsExport,
+          )
+        : null,
+      comparisonStatus: summary.accounting.comparisonStatus,
+      latestExportedCount: summary.accounting.latestExportedCount,
+      countsAligned: summary.accounting.countsAligned,
+      mappingComplete: summary.accounting.mappingComplete,
+      staging: summary.accounting.staging,
+      statutoryActuals: summary.accounting.statutoryActuals,
+    },
+    hasBlockingDifferences: summary.hasBlockingDifferences,
+  };
+}
+
+export async function getIntegrationReconciliationSummary(options: {
+  periodKey: string;
+  client?: ReconciliationClient;
+}) {
+  return buildIntegrationReconciliationSummaryResponse(
+    await buildIntegrationReconciliationSummary(options),
+  );
+}
+
+export function buildIntegrationReconciliationDetailsCsv(
+  details: ReconciliationDetails,
+) {
+  const headers = [
+    'section',
+    'key',
+    'currency',
+    'totalCount',
+    'readyCount',
+    'pendingMappingCount',
+    'blockedCount',
+    'invalidReadyCount',
+    'readyAmountTotal',
+    'statutoryActualAmountTotal',
+    'varianceAmount',
+  ];
+  const rows = [
+    ...details.accounting.byProject.map((row) => [
+      'project',
+      row.key,
+      row.currency,
+      row.totalCount,
+      row.readyCount,
+      row.pendingMappingCount,
+      row.blockedCount,
+      row.invalidReadyCount,
+      row.readyAmountTotal,
+      row.statutoryActualAmountTotal,
+      row.varianceAmount,
+    ]),
+    ...details.accounting.byDepartment.map((row) => [
+      'department',
+      row.key,
+      row.currency,
+      row.totalCount,
+      row.readyCount,
+      row.pendingMappingCount,
+      row.blockedCount,
+      row.invalidReadyCount,
+      row.readyAmountTotal,
+      row.statutoryActualAmountTotal,
+      row.varianceAmount,
+    ]),
+  ];
+  return toCsv(headers, rows);
+}
+
+export function buildIntegrationReconciliationDetailsCsvFilename(
+  periodKey: string,
+) {
+  return `integration-reconciliation-details-${periodKey}.csv`;
 }
 
 export async function buildIntegrationReconciliationDetails(options: {
