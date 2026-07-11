@@ -7,6 +7,10 @@ import {
   buildHrAttendanceExportLogResponse,
   buildHrEmployeeMasterExportLogResponse,
 } from './integrationExports.js';
+import {
+  buildLeaveExportLogResponse,
+  type LeaveExportTarget,
+} from './integrationLeaveExports.js';
 
 export type IntegrationExportJobKind =
   | 'hr_leave_export_attendance'
@@ -14,8 +18,6 @@ export type IntegrationExportJobKind =
   | 'hr_employee_master_export'
   | 'hr_attendance_export'
   | 'accounting_ics_export';
-
-export type LeaveExportTarget = 'attendance' | 'payroll';
 
 export const DEFAULT_INTEGRATION_EXPORT_JOB_LIMIT = 100;
 export const MAX_INTEGRATION_EXPORT_JOB_LIMIT = 500;
@@ -136,34 +138,6 @@ function compareStartedAtDesc(
   const startedAtDiff = right.startedAt.getTime() - left.startedAt.getTime();
   if (startedAtDiff !== 0) return startedAtDiff;
   return right.id.localeCompare(left.id);
-}
-
-export function buildLeaveExportLogResponse(item: {
-  id: string;
-  target: string;
-  idempotencyKey: string;
-  reexportOfId: string | null;
-  status: IntegrationRunStatus | string;
-  updatedSince: Date | null;
-  exportedUntil: Date;
-  exportedCount: number;
-  startedAt: Date;
-  finishedAt: Date | null;
-  message: string | null;
-}) {
-  return {
-    id: item.id,
-    target: item.target,
-    idempotencyKey: item.idempotencyKey,
-    reexportOfId: item.reexportOfId,
-    status: item.status,
-    updatedSince: item.updatedSince,
-    exportedUntil: item.exportedUntil,
-    exportedCount: item.exportedCount,
-    startedAt: item.startedAt,
-    finishedAt: item.finishedAt,
-    message: item.message,
-  };
 }
 
 export function buildIntegrationExportJobResponse(
