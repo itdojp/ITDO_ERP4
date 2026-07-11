@@ -15,7 +15,9 @@ import {
 } from '../services/attendanceClosings.js';
 import {
   buildIntegrationReconciliationDetails,
-  buildIntegrationReconciliationSummary,
+  buildIntegrationReconciliationDetailsCsv,
+  buildIntegrationReconciliationDetailsCsvFilename,
+  getIntegrationReconciliationSummary,
 } from '../services/integrationReconciliation.js';
 import {
   StatutoryAccountingActualImportError,
@@ -62,14 +64,12 @@ import {
   HrEmployeeMasterExportError,
   HrEmployeeMasterExportFormat,
   accountingIcsExportStatusCode,
-  buildAccountingIcsExportLogResponse,
   buildHrAttendanceCsv,
   buildHrAttendanceCsvFilename,
   buildHrAttendanceExportLogResponse,
   buildHrAttendanceExportPayload,
   buildHrEmployeeMasterCsv,
   buildHrEmployeeMasterCsvFilename,
-  buildHrEmployeeMasterExportLogResponse,
   buildHrEmployeeMasterExportPayload,
   dispatchAccountingIcsExport,
   dispatchHrAttendanceExport,
@@ -92,7 +92,7 @@ import {
   type IntegrationExportJobKind,
   type LeaveExportTarget,
 } from '../services/integrationExportJobs.js';
-import { sendCsv, toCsv } from '../utils/csv.js';
+import { sendCsv } from '../utils/csv.js';
 import { toDateOnly } from '../utils/date.js';
 import {
   integrationAccountingIcsExportDispatchSchema,
@@ -212,63 +212,6 @@ function statutoryAccountingActualImportStatusCode(code: string) {
     default:
       return 400;
   }
-}
-
-function sanitizeSpreadsheetCsvCell(value: unknown) {
-  if (value === null || value === undefined) return '';
-  const text = String(value);
-  return /^[=+\-@]/.test(text) ? `'${text}` : text;
-}
-
-type IntegrationReconciliationDetailsResponse = Awaited<
-  ReturnType<typeof buildIntegrationReconciliationDetails>
->;
-
-function buildIntegrationReconciliationDetailsCsv(
-  details: IntegrationReconciliationDetailsResponse,
-) {
-  const headers = [
-    'section',
-    'key',
-    'currency',
-    'totalCount',
-    'readyCount',
-    'pendingMappingCount',
-    'blockedCount',
-    'invalidReadyCount',
-    'readyAmountTotal',
-    'statutoryActualAmountTotal',
-    'varianceAmount',
-  ];
-  const rows = [
-    ...details.accounting.byProject.map((row) => [
-      'project',
-      sanitizeSpreadsheetCsvCell(row.key),
-      sanitizeSpreadsheetCsvCell(row.currency),
-      row.totalCount,
-      row.readyCount,
-      row.pendingMappingCount,
-      row.blockedCount,
-      row.invalidReadyCount,
-      row.readyAmountTotal,
-      row.statutoryActualAmountTotal,
-      row.varianceAmount,
-    ]),
-    ...details.accounting.byDepartment.map((row) => [
-      'department',
-      sanitizeSpreadsheetCsvCell(row.key),
-      sanitizeSpreadsheetCsvCell(row.currency),
-      row.totalCount,
-      row.readyCount,
-      row.pendingMappingCount,
-      row.blockedCount,
-      row.invalidReadyCount,
-      row.readyAmountTotal,
-      row.statutoryActualAmountTotal,
-      row.varianceAmount,
-    ]),
-  ];
-  return toCsv(headers, rows);
 }
 
 const DEFAULT_LEAVE_EXPORT_LIMIT = 500;
@@ -1749,55 +1692,9 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         periodKey: string;
       };
       try {
-        const summary = await buildIntegrationReconciliationSummary({
+        return await getIntegrationReconciliationSummary({
           periodKey,
         });
-        return {
-          periodKey: summary.periodKey,
-          attendance: {
-            latestClosing: summary.attendance.latestClosing,
-          },
-          payroll: {
-            latestEmployeeMasterExport: summary.payroll
-              .latestEmployeeMasterExport
-              ? buildHrEmployeeMasterExportLogResponse(
-                  summary.payroll.latestEmployeeMasterExport,
-                )
-              : null,
-            latestEmployeeMasterFullExport: summary.payroll
-              .latestEmployeeMasterFullExport
-              ? buildHrEmployeeMasterExportLogResponse(
-                  summary.payroll.latestEmployeeMasterFullExport,
-                )
-              : null,
-            comparisonStatus: summary.payroll.comparisonStatus,
-            attendanceEmployeeCount: summary.payroll.attendanceEmployeeCount,
-            employeeMasterExportCount:
-              summary.payroll.employeeMasterExportCount,
-            matchedEmployeeCount: summary.payroll.matchedEmployeeCount,
-            countsAligned: summary.payroll.countsAligned,
-            attendanceOnlyCount: summary.payroll.attendanceOnlyCount,
-            attendanceOnlyEmployeeCodes:
-              summary.payroll.attendanceOnlyEmployeeCodes,
-            employeeMasterOnlyCount: summary.payroll.employeeMasterOnlyCount,
-            employeeMasterOnlyEmployeeCodes:
-              summary.payroll.employeeMasterOnlyEmployeeCodes,
-          },
-          accounting: {
-            latestIcsExport: summary.accounting.latestIcsExport
-              ? buildAccountingIcsExportLogResponse(
-                  summary.accounting.latestIcsExport,
-                )
-              : null,
-            comparisonStatus: summary.accounting.comparisonStatus,
-            latestExportedCount: summary.accounting.latestExportedCount,
-            countsAligned: summary.accounting.countsAligned,
-            mappingComplete: summary.accounting.mappingComplete,
-            staging: summary.accounting.staging,
-            statutoryActuals: summary.accounting.statutoryActuals,
-          },
-          hasBlockingDifferences: summary.hasBlockingDifferences,
-        };
       } catch (error) {
         if (error instanceof AttendanceClosingError) {
           return reply.code(attendanceClosingStatusCode(error.code)).send({
@@ -1829,7 +1726,7 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
         if (format === 'csv') {
           return sendCsv(
             reply,
-            `integration-reconciliation-details-${details.periodKey}.csv`,
+            buildIntegrationReconciliationDetailsCsvFilename(details.periodKey),
             buildIntegrationReconciliationDetailsCsv(details),
           );
         }
