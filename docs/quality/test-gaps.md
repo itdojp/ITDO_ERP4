@@ -47,12 +47,13 @@
 
 ## カバレッジ閾値ゲート（段階導入）
 
-`docs/quality/quality-gates.md` を正として、初期対象は auth subset のみを PR gate 化する。全体 coverage は実装規模に対して初期値が低くなりやすいため、hotspot module の抽出・責務分割と合わせて scope を増やす。
+`docs/quality/quality-gates.md` を正として、auth subset と integrations subset を PR gate 化する。全体 coverage は実装規模に対して初期値が低くなりやすいため、hotspot module の抽出・責務分割と合わせて scope を増やす。
 
-| scope                              | 現状                                                  | 次の一手                                                                                |
-| ---------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| auth                               | `coverage:auth` + `coverage:auth:check` を CI gate 化 | 認証/認可変更時は閾値低下を許容しない。未カバー分岐を追加する場合はテストを先に追加する |
-| projects / integrations / workflow | 未導入                                                | service 抽出や route 分割の PR と合わせて subset coverage script と閾値を追加する       |
+| scope               | 現状                                                                              | 次の一手                                                                                               |
+| ------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| auth                | `coverage:auth` + `coverage:auth:check` を CI gate 化                             | 認証/認可変更時は閾値低下を許容しない。未カバー分岐を追加する場合はテストを先に追加する                |
+| integrations        | `coverage:integrations` + `coverage:integrations:check` を `CI / backend` gate 化 | `integrations.files` に対象 route/service を明示し、対象漏れを `coverageThresholds.test.js` で検知する |
+| projects / workflow | 未導入                                                                            | service 抽出や route 分割の PR と合わせて subset coverage script と閾値を追加する                      |
 
 ## 備考
 
@@ -108,12 +109,13 @@
 
 ### 環境・その他
 
-| 手動確認項目                             | 自動検査/手順（現状）                                                                                     |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| CI (backend/frontend/lint/lychee) が緑   | GitHub Actions（`CI` / `Link Check`）                                                                     |
-| フロントエンド単体テスト（Vitest）が通る | `CI / frontend`（`npm run test --prefix packages/frontend`）                                              |
-| auth subset の coverage 低下を検知       | `CI / coverage-auth`（`npm run coverage:auth:check`）                                                     |
-| data-quality blocking が通る             | `CI / data-quality`（`npm run data-quality:blocking --prefix packages/backend`）                          |
-| data-quality advisory を記録する         | `CI / data-quality`（`npm run data-quality:advisory --prefix packages/backend`、Step Summary / artifact） |
-| prisma format/validate が通る            | `CI / backend`（`.github/workflows/ci.yml`）                                                              |
-| Podman 検証（reset→smoke完走）           | `scripts/podman-poc.sh` + `scripts/smoke-backend.sh`                                                      |
+| 手動確認項目                               | 自動検査/手順（現状）                                                                                     |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| CI (backend/frontend/lint/lychee) が緑     | GitHub Actions（`CI` / `Link Check`）                                                                     |
+| フロントエンド単体テスト（Vitest）が通る   | `CI / frontend`（`npm run test --prefix packages/frontend`）                                              |
+| auth subset の coverage 低下を検知         | `CI / coverage-auth`（`npm run coverage:auth:check`）                                                     |
+| integrations subset の coverage 低下を検知 | `CI / backend`（`npm run coverage:integrations:check`）                                                   |
+| data-quality blocking が通る               | `CI / data-quality`（`npm run data-quality:blocking --prefix packages/backend`）                          |
+| data-quality advisory を記録する           | `CI / data-quality`（`npm run data-quality:advisory --prefix packages/backend`、Step Summary / artifact） |
+| prisma format/validate が通る              | `CI / backend`（`.github/workflows/ci.yml`）                                                              |
+| Podman 検証（reset→smoke完走）             | `scripts/podman-poc.sh` + `scripts/smoke-backend.sh`                                                      |

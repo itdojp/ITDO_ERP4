@@ -67,6 +67,9 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
   - `prisma validate`
 - TypeScript build: `npm run build`
 - unit test: `npm run test:ci`
+- integrations subset coverage 計測と json-summary 閾値チェック: `npm run coverage:integrations:check`
+  - branch protection の job 名を増やさず、既存必須 `CI / backend` の中で失敗させる
+  - 閾値判定は `packages/backend/coverage-thresholds.json` の `integrations.files` に列挙した integrations route / service を `coverage-summary.json` から再集計する
 
 ### CI / frontend
 
@@ -88,7 +91,21 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
   - branches: 60%
   - functions: 18%
 - 目的: 全体一律閾値ではなく、重要モジュール単位で coverage 低下を PR で検知する
-- 拡大方針: hotspots の Priority A 対象（projects、integrations、workflow 等）の service 抽出に合わせて scope と閾値を追加する
+- 拡大方針: hotspots の Priority A 対象（projects、workflow 等）の service 抽出に合わせて scope と閾値を追加する
+
+### CI / backend integrations coverage
+
+- integrations 関連 subset の coverage 計測と json-summary 閾値チェック: `npm run coverage:integrations:check --prefix packages/backend`
+  - `coverage:integrations:check` は内部で `coverage:integrations` を呼び出す
+  - 対象は `packages/backend/coverage-thresholds.json` の `integrations.files` を正本とする
+  - `packages/backend/test/coverageThresholds.test.js` は、現在の integrations route と関連 service ファイルが `integrations.files` から漏れていないことを検査する
+  - integrations 以外の backend ファイル追加は `integrations` scope の分母に含めない
+- 初期閾値（2026-07-12、#1882 baseline）:
+  - statements: 91.1%
+  - lines: 91.1%
+  - branches: 72.7%
+  - functions: 97.0%
+- 目的: #1880/#1881 で service 化した外部連携 route / service の coverage 低下を、既存必須 `CI / backend` job で検知する
 
 ### CI / lint
 
@@ -182,13 +199,16 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 
 ## カバレッジ閾値ゲートの段階導入
 
-coverage gate は `coverage-summary.json` を入力にする段階導入方式とする。初期対象は auth subset のみで、全体 coverage を一律 gate 化しない。
+coverage gate は `coverage-summary.json` を入力にする段階導入方式とする。全体 coverage を一律 gate 化せず、重要 subset ごとに対象ファイルを明示する。
 
-| scope | CI job               | summary                                                | threshold source                            | 初期閾値                                          |
-| ----- | -------------------- | ------------------------------------------------------ | ------------------------------------------- | ------------------------------------------------- |
-| auth  | `CI / coverage-auth` | `packages/backend/coverage/auth/coverage-summary.json` | `packages/backend/coverage-thresholds.json` | statements/lines 25%、branches 60%、functions 18% |
+| scope        | CI job               | summary                                                        | threshold source                            | 初期閾値                                                |
+| ------------ | -------------------- | -------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------- |
+| auth         | `CI / coverage-auth` | `packages/backend/coverage/auth/coverage-summary.json`         | `packages/backend/coverage-thresholds.json` | statements/lines 25%、branches 60%、functions 18%       |
+| integrations | `CI / backend`       | `packages/backend/coverage/integrations/coverage-summary.json` | `packages/backend/coverage-thresholds.json` | statements/lines 91.1%、branches 72.7%、functions 97.0% |
 
 auth scope の初期対象ファイルは `packages/backend/coverage-thresholds.json` の `auth.files` を正とし、`src/plugins/auth.ts`、`src/routes/auth.ts`、`src/services/authContext.ts`、`src/services/authGateway.ts`、`src/services/envValidation.ts`、`src/services/localCredentials.ts`、`src/utils/authGroupToRoleMap.ts` を対象にする。
+
+integrations scope の初期対象ファイルは `packages/backend/coverage-thresholds.json` の `integrations.files` を正とし、`src/routes/integrations.ts` と #1880/#1881 で抽出済みの integrations 関連 service を対象にする。新しい `integration*.ts` service または既存命名規約の関連 service を追加した場合、`coverageThresholds.test.js` が `integrations.files` の更新漏れを検知する。
 
 拡大時は以下を同一 PR で更新する。
 

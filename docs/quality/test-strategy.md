@@ -102,6 +102,7 @@
 - unit: `npm run test --prefix packages/backend`
 - coverage（backend 全体）: `npm run coverage --prefix packages/backend`
 - coverage（auth 関連 subset）: `npm run coverage:auth --prefix packages/backend`
+- coverage（integrations 関連 subset）: `npm run coverage:integrations --prefix packages/backend`
 - coverage（frontend 全体）: `npm run coverage --prefix packages/frontend`
 - coverage（frontend 非auth core）: `npm run coverage:ui-core --prefix packages/frontend`
 - e2e: `scripts/e2e-frontend.sh`
@@ -115,6 +116,7 @@
 - 出力先
   - backend 全体: `packages/backend/coverage/full`
   - auth 関連 subset: `packages/backend/coverage/auth`
+  - integrations 関連 subset: `packages/backend/coverage/integrations`
 - summary はそれぞれ `coverage/**/coverage-summary.json` と text-summary に出力される
 - frontend の定量 coverage は `vitest` + `@vitest/coverage-v8` で計測する
 - 出力先
