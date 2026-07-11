@@ -58,6 +58,7 @@
 
 - CI の実行条件/範囲は `docs/quality/quality-gates.md` を正とする。
 - 追加したテストは、手動チェックリストのどの項目を代替するかを本ドキュメントで追跡する。
+- `docs/test-results/README.md` は `make docs-test-results-index-check` で陳腐化を検出する。日付付き証跡Markdownまたは関連証跡ディレクトリを追加したPRは、索引更新または明示的な除外理由を同梱する。
 
 ## 手動確認チェックリストとの対応（PoC）
 

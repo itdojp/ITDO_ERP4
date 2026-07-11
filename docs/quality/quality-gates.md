@@ -100,6 +100,10 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
   - `npm run lint`
   - `npm run format:check`
   - `max-lines` gate: frontend ESLint で UI component/module 肥大を error 2500 行として検知し、段階的に 2000/1500 行へ下げる
+- ドキュメント証跡
+  - `node scripts/check-doc-image-links.mjs`
+  - `make docs-test-results-index-check`
+  - `docs/test-results/README.md` が日付付き証跡Markdown、関連証跡ディレクトリ、template、performance証跡を漏れなく・重複なく・決定的な順序で索引化していることを検査する
 
 ### CI / arch:bounded-context
 
@@ -161,6 +165,7 @@ auth scope の初期対象ファイルは `packages/backend/coverage-thresholds.
 
 - `make lint`
 - `make format-check`
+- `make docs-test-results-index-check`
 - `make typecheck`
 - `make test`
 - `make e2e`
