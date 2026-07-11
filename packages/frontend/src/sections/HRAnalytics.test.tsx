@@ -192,6 +192,9 @@ describe('HRAnalytics', () => {
     await waitFor(() => {
       expect(findGroupRow('sales')).toBeInTheDocument();
     });
+    await waitFor(() => {
+      expect(findMonthlyRow('2026-03')).toBeInTheDocument();
+    });
     vi.mocked(api).mockClear();
 
     fireEvent.change(screen.getByLabelText('開始日'), {

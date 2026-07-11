@@ -32,6 +32,7 @@
 - [モバイル回帰証跡テンプレート（design-system適用後）](mobile-regression-template.md)
 - [PO移行リハーサル結果テンプレート](po-migration-rehearsal-template.md)
 - [Release Backup Evidence Template](release-backup-evidence-template.md)
+- [Release Candidate Readiness Evidence Template](release-readiness-template.md)
 - [さくらVPS 試験稼働記録テンプレート](sakura-vps-trial-template.md)
 
 ### 2026-07-02

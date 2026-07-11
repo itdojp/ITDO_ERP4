@@ -2,7 +2,8 @@
 
 ## 事前（必須）
 
-- [ ] CI が green（`CI` / リンクチェック）
+- [ ] Repo-side readiness runner が対象コミットの clean checkout で成功（release Go の正式 repo-side 証跡は `RELEASE_E2E_SCOPE=full make release-readiness-record` が生成する `docs/test-results/YYYY-MM-DD-release-readiness-rN.md`）
+- [ ] GitHub Actions の required checks / Link Check / CodeQL が対象コミットまたはPRで成功している
 - [ ] 導入Runbook / ops scripts に変更がある場合、`make ops-quality` または CI `lint` job 内の ops quality gate が成功している
 - [ ] `security-audit` が許容範囲（High/Critical なし、または例外が Issue 化済み）
 - [ ] DB migration 有無を確認（`packages/backend/prisma/migrations/`）
@@ -18,6 +19,7 @@
 ## Go/No-Go 判定（記録必須）
 
 - [ ] `main` の required CI が release 対象コミットで成功している
+- [ ] `docs/test-results/YYYY-MM-DD-release-readiness-rN.md` で release Go の正式 repo-side runner 結果を確認している（`tmp/release-readiness/*/summary.md` は限定・調査用証跡であり、正式Go証跡の代替にしない）
 - [ ] リンクチェック（現行 job: `lychee`）が成功している
 - [ ] 導入Runbook / ops scripts の変更が release 対象に含まれる場合、ops quality gate の成功ログを確認している
 - [ ] `security-audit` が最新実行で成功、または例外が Issue / 運用記録に明記されている

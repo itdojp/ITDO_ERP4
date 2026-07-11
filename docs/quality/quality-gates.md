@@ -174,6 +174,20 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 
 現行モデルでは `AccountingJournalStaging` が借方金額・貸方金額を別フィールドでは持たず、`amount` と借方/貸方科目コードの有無で片側明細を表現する。借方・貸方の両コードを持つ行は行内で自己均衡しているものとして扱い、複合仕訳の単側 `ready` 行について、通貨別に借方科目を持つ行の `amount` 合計と貸方科目を持つ行の `amount` 合計を比較する。`status=ready` 行は ICS export の `validateReadyRow()` と同様に `taxCode` と正の `amount` も必須とする。
 
+### Release Candidate readiness runner
+
+- 標準入口: `RELEASE_E2E_SCOPE=core make release-readiness` / `RELEASE_E2E_SCOPE=full make release-readiness`
+- 正式repo-side証跡: `RELEASE_E2E_SCOPE=full make release-readiness-record`
+  - `full` E2E以外では `docs/test-results/` の正式release readiness証跡を作成しない
+  - clean checkout 以外では正式証跡を作成しない。`--allow-dirty` / `RELEASE_ALLOW_DIRTY=1` は調査用であり、`--record` と併用しない
+  - `tmp/release-readiness/*/summary.md` は限定・調査用証跡であり、release Go の正式 repo-side 証跡は `docs/test-results/YYYY-MM-DD-release-readiness-rN.md` のみとする
+  - 既定の日付は `RELEASE_TIMEZONE=Asia/Tokyo` のJST基準。必要な場合だけ `DATE_STAMP=YYYY-MM-DD` で明示する
+  - raw log は `tmp/release-readiness/` に置き、コミット対象のMarkdownにはsecret値・private pathを含めない
+- runner は required check の `PASS` / `FAIL` / `SKIP`、command、exit code、duration、raw log参照を記録する
+- release readiness runner は CI / backend の prisma generate / format / validate も明示的に実行する
+- runner の `CI job` 欄は GitHub Actions required checks との対応先を示す参照情報であり、workflow を完全再実行するものではない。GitHub Actions の CI / Link Check / CodeQL は引き続きPR上の正本として扱う
+- repo-side readiness と target-environment readiness は分離する。#1426 / #544 / #1432 が未完了の場合、runner成功だけでは総合Goにしない
+
 ### CI / e2e-frontend
 
 - Playwright の E2E を `scripts/e2e-frontend.sh` で実行

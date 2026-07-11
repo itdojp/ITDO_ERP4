@@ -10,14 +10,14 @@
 
 直近の優先作業:
 
-- [ ] #1879 Roadmap／TODO／テスト証跡索引／Draft PR #1818を現状同期する
-- [ ] #1877 フロントエンド単体テストを既存必須CIへ統合する
-- [ ] #1878 決定的なデータ整合性検査をblocking/advisoryへ分離する
-- [ ] #1876 `integrations.ts`のservice境界確立を段階実施する
-  - [ ] #1880 export系application serviceの抽出
-  - [ ] #1881 mapping／reconciliation／IntegrationRun制御の抽出
-  - [ ] #1882 route薄型化、max-lines cap引下げ、integrations coverage gate追加
-- [ ] #1883 Release Candidate readiness runnerと証跡生成を整備する
+- [x] #1879 Roadmap／TODO／テスト証跡索引／Draft PR #1818を現状同期する
+- [x] #1877 フロントエンド単体テストを既存必須CIへ統合する
+- [x] #1878 決定的なデータ整合性検査をblocking/advisoryへ分離する
+- [x] #1876 `integrations.ts`のservice境界確立を段階実施する
+  - [x] #1880 export系application serviceの抽出
+  - [x] #1881 mapping／reconciliation／IntegrationRun制御の抽出
+  - [x] #1882 route薄型化、max-lines cap引下げ、integrations coverage gate追加
+- [x] #1883 Release Candidate readiness runnerと証跡生成を整備する
 
 Go/No-Goに残る対象環境・外部依存:
 
