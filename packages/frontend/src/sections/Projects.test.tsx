@@ -223,6 +223,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+async function findProjectMemberRow(
+  memberPanel: HTMLDivElement,
+  userId: string,
+) {
+  const memberText = await within(memberPanel).findByText(userId);
+  const memberRow = memberText.closest('li');
+  expect(memberRow).not.toBeNull();
+  return memberRow as HTMLLIElement;
+}
+
 describe('Projects', () => {
   it('validates required fields before creating a project', async () => {
     createProjectsApiMock();
@@ -496,10 +506,10 @@ describe('Projects', () => {
       .closest('div');
     expect(memberPanel).not.toBeNull();
 
-    const memberRow = within(memberPanel as HTMLDivElement)
-      .getByText('leader@example.com')
-      .closest('li');
-    expect(memberRow).not.toBeNull();
+    const memberRow = await findProjectMemberRow(
+      memberPanel as HTMLDivElement,
+      'leader@example.com',
+    );
 
     fireEvent.click(
       within(memberRow as HTMLLIElement).getByRole('button', {
@@ -540,10 +550,10 @@ describe('Projects', () => {
       .closest('div');
     expect(memberPanel).not.toBeNull();
 
-    const memberRow = within(memberPanel as HTMLDivElement)
-      .getByText('leader@example.com')
-      .closest('li');
-    expect(memberRow).not.toBeNull();
+    const memberRow = await findProjectMemberRow(
+      memberPanel as HTMLDivElement,
+      'leader@example.com',
+    );
 
     fireEvent.change(
       within(memberRow as HTMLLIElement).getByLabelText('案件メンバーの権限'),
@@ -599,10 +609,10 @@ describe('Projects', () => {
       .closest('div');
     expect(memberPanel).not.toBeNull();
 
-    const memberRow = within(memberPanel as HTMLDivElement)
-      .getByText('leader@example.com')
-      .closest('li');
-    expect(memberRow).not.toBeNull();
+    const memberRow = await findProjectMemberRow(
+      memberPanel as HTMLDivElement,
+      'leader@example.com',
+    );
 
     fireEvent.click(
       within(memberRow as HTMLLIElement).getByRole('button', {
