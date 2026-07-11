@@ -31,6 +31,7 @@
 - [Dependabot alerts 監視記録テンプレート](dependabot-alerts-template.md)
 - [DR復元演習 結果テンプレート](dr-restore-template.md)
 - [ESLint10 readiness 記録テンプレート](eslint10-readiness-template.md)
+- [External CSV artifact intake 記録テンプレート](external-csv-artifact-intake-template.md)
 - [モバイル回帰証跡テンプレート（design-system適用後）](mobile-regression-template.md)
 - [PO移行リハーサル結果テンプレート](po-migration-rehearsal-template.md)
 - [Release Backup Evidence Template](release-backup-evidence-template.md)

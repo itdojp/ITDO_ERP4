@@ -1,0 +1,111 @@
+{
+  "issue": 1432,
+  "collectionDate": "YYYY-MM-DD",
+  "collector": "<collector-name>",
+  "maskingPolicy": {
+    "approved": false,
+    "approvedBy": "<approver>",
+    "approvedAt": "YYYY-MM-DD",
+    "rules": [
+      "個人名・口座・住所・電話・メール・取引先固有メモはマスキングする",
+      "コード体系と桁数は設計に必要なため、可能な限り構造を維持する"
+    ]
+  },
+  "artifacts": [
+    {
+      "id": "rakuda_employee_master_template",
+      "product": "給与らくだプロ",
+      "description": "社員台帳 CSV テンプレート原本",
+      "status": "blocked",
+      "sourceType": "actual_template",
+      "repoPath": "",
+      "externalStorageRef": "<secure-storage-reference>",
+      "checksumSha256": "<64-hex-sha256>",
+      "encoding": "CP932",
+      "newline": "CRLF",
+      "delimiter": ",",
+      "dateFormat": "YYYY/MM/DD",
+      "numberFormat": "half-width digits",
+      "maskingStatus": "not_required",
+      "containsPersonalData": false,
+      "columns": [{ "name": "<column-name>", "required": true }]
+    },
+    {
+      "id": "rakuda_attendance_import_template",
+      "product": "給与らくだプロ",
+      "description": "勤怠集計 CSV テンプレート原本",
+      "status": "blocked",
+      "sourceType": "actual_template",
+      "repoPath": "",
+      "externalStorageRef": "<secure-storage-reference>",
+      "checksumSha256": "<64-hex-sha256>",
+      "encoding": "CP932",
+      "newline": "CRLF",
+      "delimiter": ",",
+      "dateFormat": "YYYY/MM/DD",
+      "numberFormat": "minutes or decimal hours",
+      "maskingStatus": "not_required",
+      "containsPersonalData": false,
+      "columns": [{ "name": "<column-name>", "required": true }]
+    },
+    {
+      "id": "rakuda_report_output_sample",
+      "product": "給与らくだプロ",
+      "description": "出力帳票 CSV/Excel マスキング済みサンプル",
+      "status": "blocked",
+      "sourceType": "actual_report_sample",
+      "repoPath": "docs/requirements/samples/external/<masked-file>",
+      "encoding": "CP932 or n/a for Excel",
+      "newline": "CRLF or n/a for Excel",
+      "delimiter": ", or n/a for Excel",
+      "dateFormat": "YYYY/MM/DD",
+      "numberFormat": "half-width digits",
+      "maskingStatus": "masked",
+      "sampleRows": 1,
+      "columns": [{ "name": "<column-name>", "required": false }]
+    },
+    {
+      "id": "ics_journal_import_template",
+      "product": "経理上手くんα Pro II",
+      "description": "仕訳取込 CSV テンプレート原本",
+      "status": "blocked",
+      "sourceType": "actual_template",
+      "externalStorageRef": "<secure-storage-reference>",
+      "checksumSha256": "<64-hex-sha256>",
+      "encoding": "CP932",
+      "newline": "CRLF",
+      "delimiter": ",",
+      "dateFormat": "YYYY/MM/DD",
+      "numberFormat": "half-width digits",
+      "maskingStatus": "not_required",
+      "containsPersonalData": false,
+      "columns": [{ "name": "決算更新区分", "required": true }]
+    },
+    {
+      "id": "ics_journal_imported_masked_sample",
+      "product": "経理上手くんα Pro II",
+      "description": "実際の取込済み仕訳 CSV マスキング済みサンプル",
+      "status": "blocked",
+      "sourceType": "masked_imported_sample",
+      "repoPath": "docs/requirements/samples/external/<masked-file>",
+      "encoding": "CP932",
+      "newline": "CRLF",
+      "delimiter": ",",
+      "dateFormat": "YYYY/MM/DD",
+      "numberFormat": "half-width digits",
+      "maskingStatus": "masked",
+      "sampleRows": 1,
+      "columns": [{ "name": "決算更新区分", "required": true }]
+    },
+    {
+      "id": "import_rules_material",
+      "product": "共通",
+      "description": "文字数制限・コード体系・再取込条件の運用資料",
+      "status": "blocked",
+      "sourceType": "operation_rule_material",
+      "repoPath": "docs/requirements/samples/external/<rules-summary>.md",
+      "maskingStatus": "masked",
+      "ruleTopics": ["fieldLengths", "codeSets", "reimportRules"]
+    }
+  ]
+}
