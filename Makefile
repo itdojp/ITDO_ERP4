@@ -1,4 +1,4 @@
-.PHONY: lint format-check typecheck build test test-backend test-frontend coverage coverage-auth coverage-frontend coverage-frontend-core e2e ui-evidence ui-visual-regression ui-visual-regression-update mobile-regression-log frontend-dev-api podman-smoke pr-comments audit docs-image-links-check docs-test-results-index-check ops-quality design-system-package-check eslint10-readiness-check eslint10-readiness-record dependabot-alerts-check dependabot-alerts-record dependabot-token-readiness-check dependency-watch-record backup-s3-readiness-check backup-s3-readiness-record po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness action-policy-callsites-report action-policy-callsites-report-json action-policy-required-action-gaps action-policy-required-action-gaps-json action-policy-fallback-report action-policy-fallback-report-json action-policy-phase3-readiness action-policy-phase3-readiness-json action-policy-phase3-readiness-record action-policy-phase3-cutover-record action-policy-phase3-trial-record
+.PHONY: lint format-check typecheck build test test-backend test-frontend data-quality-test data-quality-blocking data-quality-advisory coverage coverage-auth coverage-frontend coverage-frontend-core e2e ui-evidence ui-visual-regression ui-visual-regression-update mobile-regression-log frontend-dev-api podman-smoke pr-comments audit docs-image-links-check docs-test-results-index-check ops-quality design-system-package-check eslint10-readiness-check eslint10-readiness-record dependabot-alerts-check dependabot-alerts-record dependabot-token-readiness-check dependency-watch-record backup-s3-readiness-check backup-s3-readiness-record po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness action-policy-callsites-report action-policy-callsites-report-json action-policy-required-action-gaps action-policy-required-action-gaps-json action-policy-fallback-report action-policy-fallback-report-json action-policy-phase3-readiness action-policy-phase3-readiness-json action-policy-phase3-readiness-record action-policy-phase3-cutover-record action-policy-phase3-trial-record
 
 lint:
 	npm run lint --prefix packages/backend
@@ -23,6 +23,15 @@ test-backend:
 
 test-frontend:
 	npm run test --prefix packages/frontend
+
+data-quality-test:
+	npm run data-quality:test --prefix packages/backend
+
+data-quality-blocking:
+	npm run data-quality:blocking --prefix packages/backend
+
+data-quality-advisory:
+	npm run data-quality:advisory --prefix packages/backend
 
 coverage:
 	npm run coverage --prefix packages/backend

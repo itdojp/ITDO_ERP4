@@ -1,41 +1,72 @@
-# データ品質チェック スクリプト雛形（Node/SQL）
+# データ品質チェック スクリプト
 
-目的: 1日1回、主要なデータ不整合を検知しレポートする。PoCでは手動実行でも可。
+目的: 主要なデータ不整合を、PRでブロックする決定的検査と、業務判断を含む警告へ分離して検出する。
 
-## サンプルSQL
-```sql
--- project_code 重複
-SELECT code, COUNT(*) c FROM projects GROUP BY code HAVING COUNT(*) > 1;
+## 実体
 
--- time_entries の参照切れ
-SELECT id FROM time_entries te WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = te.project_id);
+- runner: `scripts/data-quality-check.mjs`
+- 正常 fixture: `scripts/fixtures/data-quality-valid.json`
+- blocking 負例 fixture: `scripts/fixtures/data-quality-invalid.json`
+- advisory 警告 fixture: `scripts/fixtures/data-quality-advisory-warning.json`
 
--- 通貨未設定
-SELECT id FROM invoices WHERE currency IS NULL;
+## 通常実行
 
--- 税率NULL
-SELECT id FROM billing_lines WHERE tax_rate IS NULL;
+```bash
+npm run data-quality:test --prefix packages/backend
+npm run data-quality:blocking --prefix packages/backend
+npm run data-quality:advisory --prefix packages/backend
 ```
 
-## Nodeから実行する例（擬似）
-```ts
-import { PrismaClient } from '@prisma/client';
-import fs from 'fs';
-const prisma = new PrismaClient();
+出力先:
 
-async function main() {
-  const dupProjects = await prisma.$queryRawUnsafe('SELECT code, COUNT(*) c FROM projects GROUP BY code HAVING COUNT(*) > 1');
-  const orphans = await prisma.$queryRawUnsafe('SELECT id FROM time_entries te WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = te.project_id)');
-  const lines: string[] = [];
-  dupProjects.forEach((row: any) => lines.push(`DUP_PROJECT_CODE,${row.code},${row.c}`));
-  orphans.forEach((row: any) => lines.push(`ORPHAN_TIME_ENTRY,${row.id}`));
-  fs.writeFileSync('/tmp/data-quality-report.csv', lines.join('\n'));
-}
+- `tmp/data-quality-blocking.json`
+- `tmp/data-quality-blocking.md`
+- `tmp/data-quality-advisory.json`
+- `tmp/data-quality-advisory.md`
 
-main().finally(() => prisma.$disconnect());
+## 負例実行
+
+```bash
+node scripts/data-quality-check.mjs \
+  --mode=blocking \
+  --fixture scripts/fixtures/data-quality-invalid.json \
+  --output tmp/data-quality-invalid.json \
+  --summary tmp/data-quality-invalid.md
 ```
 
-## 運用
-- 初期は手動 or cron（1日1回）
-- レポートをメールStubまたはアラートに載せる
-- 検出された不整合は移行データ修正 or 手動修正
+期待値: blocking finding を検出し、終了コード 1。
+
+```bash
+node scripts/data-quality-check.mjs \
+  --mode=advisory \
+  --fixture scripts/fixtures/data-quality-advisory-warning.json \
+  --output tmp/data-quality-advisory-warning.json \
+  --summary tmp/data-quality-advisory-warning.md
+```
+
+期待値: advisory warning を記録し、終了コード 0。
+
+## 旧SQL雛形からの変更点
+
+旧雛形は PoC 初期の手動実行想定で、旧テーブル名SQLと `/tmp/data-quality-report.csv` 出力を前提としていた。現行CIでは以下へ変更する。
+
+- CI は production DB へ接続しない。
+- 合成 fixture を使い、決定的に再現できる正常系・不正系を自動検証する。
+- `/tmp` ではなくリポジトリ配下の `tmp/` へ report/summary を出力する。
+- blocking runner は finding 検出時に非0終了し、`CI / data-quality` を失敗させる。
+- advisory runner は warning を JSON / Markdown に残すが、warning のみでは非0終了しない。
+
+## 出力項目
+
+JSON report と Markdown summary には、少なくとも以下を含める。
+
+- check名
+- severity（blocking/advisory）
+- status（pass/fail/warning）
+- 件数
+- 主要識別子サンプル
+- 再現方法
+
+## 今後の拡張
+
+DB接続型の定期監視を追加する場合も、本runnerの分類表と出力形式を維持する。production data をCI fixtureとしてコミットしない。

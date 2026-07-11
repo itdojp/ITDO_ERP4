@@ -20,7 +20,7 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 - `CI / lint`
 - `CI / e2e-frontend`
 - `CI / security-audit`
-- `CI / data-quality`（非ブロッキング）
+- `CI / data-quality`
 - `Link Check / lychee`
 - `CodeQL / analyze`
 - `CI / secret-scan`
@@ -35,6 +35,7 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 - `CI / lint`
 - `CI / e2e-frontend`（PRでは `E2E_SCOPE=core`）
 - `CI / security-audit`
+- `CI / data-quality`
 - `CI / secret-scan`
 - `Link Check / lychee`
 
@@ -46,13 +47,12 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 - `CI / lint`
 - `CI / e2e-frontend`（main では `E2E_SCOPE=full`）
 - `CI / security-audit`
+- `CI / data-quality`
 - `CI / secret-scan`
 - `Link Check / lychee`
 
 ### 任意（非ブロッキング）
 
-- `CI / data-quality`（`continue-on-error: true` かつ `|| true` で常に成功扱い）
-  - 目的: リグレッション検知の「参考情報」（ゲート化は別Issueで検討）
 - `CodeQL / analyze`（段階導入）
   - 目的: 静的解析による脆弱性の早期検出
 
@@ -120,6 +120,42 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 - backend/frontend の依存関係監査（`npm audit --audit-level=high`）
 - SBOM 生成（CycloneDX）
 
+### CI / data-quality
+
+- `packages/backend` の依存解決（`npm ci`）
+- runner self-test: `npm run data-quality:test --prefix packages/backend`
+  - 正常 fixture、blocking 負例 fixture、advisory 警告 fixture を node:test で検査する
+  - blocking 負例 fixture は終了コード 1 を期待値として確認する
+- blocking runner: `npm run data-quality:blocking --prefix packages/backend`
+  - 正常 fixture `scripts/fixtures/data-quality-valid.json` に対し、決定的な不整合がないことを検査する
+  - blocking finding がある場合、runner は非0終了し、CI job は失敗する
+  - job-level `continue-on-error` と blocking step の `|| true` は使用しない
+- advisory runner: `npm run data-quality:advisory --prefix packages/backend`
+  - 同じ正常 fixture で業務判断・閾値依存の警告がないことを記録する
+  - advisory finding は report/summary に残すが、runner の終了コードは 0 とする
+- 証跡:
+  - GitHub Step Summary: `tmp/data-quality-*.md` の内容を追記
+  - Artifact: `tmp/data-quality-*.json` と `tmp/data-quality-*.md` を14日保持
+
+#### blocking/advisory分類
+
+| check                                                                                           | 区分     | ゲート理由                                                                           |
+| ----------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------ |
+| `required_id_missing`                                                                           | blocking | import・連携・差分照合の主キーが欠落すると修復不能な不整合になる                     |
+| `required_code_missing`                                                                         | blocking | project/customer/vendor code は業務キー・外部連携キーとして必須                      |
+| `duplicate_project_code` / `duplicate_customer_code` / `duplicate_vendor_code`                  | blocking | 一意であるべき業務コードの重複は参照先を一意に決定できない                           |
+| `orphan_time_entry_project` / `orphan_billing_line_invoice` / `orphan_accounting_journal_event` | blocking | 参照切れは画面・集計・会計出力で一意に異常と判定できる                               |
+| `invoice_currency_missing` / `billing_tax_rate_missing`                                         | blocking | 請求・税務/会計出力に必要なコード欠落であり、下流処理の前提を満たさない              |
+| `invoice_header_line_total_mismatch`                                                            | blocking | header合計とline合計の差分は請求金額の決定的な不整合                                 |
+| `accounting_event_source_key_duplicate`                                                         | blocking | `AccountingEvent` の `sourceTable/sourceId/eventKind` 一意制約に対応する重複連携キー |
+| `accounting_journal_ready_missing_side`                                                         | blocking | `ready` 仕訳行が借方/貸方のいずれも持たない状態はCSV出力不能                         |
+| `accounting_journal_debit_credit_mismatch`                                                      | blocking | `ready` 仕訳行の借方合計と貸方合計が一致しない状態は会計出力不能                     |
+| `statutory_accounting_import_count_mismatch`                                                    | blocking | import batch の期待件数と実件数が一致しない migration/import integrity 異常          |
+| `time_entries_daily_over_1440`                                                                  | advisory | 閾値超過は業務確認対象だが、例外勤務や入力補正の判断を含む                           |
+| `invoice_number_format_invalid` / `purchase_order_number_format_invalid`                        | advisory | 番号規約の逸脱は改善候補だが、既存データ・運用移行期の許容判断を含む                 |
+
+現行モデルでは `AccountingJournalStaging` が借方金額・貸方金額を別フィールドでは持たず、`amount` と借方/貸方科目コードの有無で片側明細を表現する。そのため借貸検査は `status=ready` 行について、借方科目を持つ行の `amount` 合計と貸方科目を持つ行の `amount` 合計を比較する。
+
 ### CI / e2e-frontend
 
 - Playwright の E2E を `scripts/e2e-frontend.sh` で実行
@@ -167,6 +203,9 @@ auth scope の初期対象ファイルは `packages/backend/coverage-thresholds.
 - `make lint`
 - `make format-check`
 - `make docs-test-results-index-check`
+- `make data-quality-test`
+- `make data-quality-blocking`
+- `make data-quality-advisory`
 - `make typecheck`
 - `make test`
 - `make e2e`
@@ -191,6 +230,15 @@ auth scope の初期対象ファイルは `packages/backend/coverage-thresholds.
 
 - backend: `npm run test --prefix packages/backend`
 - frontend: `npm run test --prefix packages/frontend`
+
+### Data Quality
+
+- test: `npm run data-quality:test --prefix packages/backend`
+- blocking: `npm run data-quality:blocking --prefix packages/backend`
+- advisory: `npm run data-quality:advisory --prefix packages/backend`
+- 意図的な失敗確認（PR本文に必要な場合）:
+  - `node scripts/data-quality-check.mjs --mode=blocking --fixture scripts/fixtures/data-quality-invalid.json --output tmp/data-quality-invalid.json --summary tmp/data-quality-invalid.md`
+  - 上記は blocking finding を検出して終了コード 1 になることが期待値
 
 ### E2E（検証環境はPodman前提）
 

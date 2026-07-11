@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "description": "Synthetic fixture with advisory-only data-quality warnings.",
+  "projects": [
+    {
+      "id": "proj-advisory",
+      "code": "PRJ-ADV-001"
+    }
+  ],
+  "customers": [
+    {
+      "id": "cust-advisory",
+      "code": "CUST-ADV-001"
+    }
+  ],
+  "vendors": [
+    {
+      "id": "vend-advisory",
+      "code": "VEND-ADV-001"
+    }
+  ],
+  "timeEntries": [
+    {
+      "id": "time-advisory-1",
+      "projectId": "proj-advisory",
+      "userId": "user-advisory",
+      "workDate": "2026-07-10",
+      "minutes": 900
+    },
+    {
+      "id": "time-advisory-2",
+      "projectId": "proj-advisory",
+      "userId": "user-advisory",
+      "workDate": "2026-07-10",
+      "minutes": 600
+    }
+  ],
+  "invoices": [
+    {
+      "id": "inv-advisory",
+      "invoiceNo": "INV-ADVISORY-1",
+      "projectId": "proj-advisory",
+      "currency": "JPY",
+      "totalAmount": 10000
+    }
+  ],
+  "billingLines": [
+    {
+      "id": "bill-advisory",
+      "invoiceId": "inv-advisory",
+      "quantity": 2,
+      "unitPrice": 5000,
+      "taxRate": 0.1
+    }
+  ],
+  "purchaseOrders": [
+    {
+      "id": "po-advisory",
+      "poNo": "PO-ADVISORY-1"
+    }
+  ],
+  "accountingEvents": [
+    {
+      "id": "ae-advisory",
+      "sourceTable": "Invoice",
+      "sourceId": "inv-advisory",
+      "eventKind": "invoice_approved"
+    }
+  ],
+  "accountingJournalStaging": [
+    {
+      "id": "ajs-advisory",
+      "eventId": "ae-advisory",
+      "lineNo": 1,
+      "status": "ready",
+      "currency": "JPY",
+      "amount": 10000,
+      "debitAccountCode": "1100",
+      "creditAccountCode": "4000"
+    }
+  ],
+  "statutoryAccountingActualImportBatches": [
+    {
+      "importBatchKey": "statutory-advisory",
+      "importedCount": 1
+    }
+  ],
+  "statutoryAccountingActuals": [
+    {
+      "id": "actual-advisory-1",
+      "importBatchKey": "statutory-advisory",
+      "rowNo": 1,
+      "periodKey": "2026-07",
+      "accountCode": "4000",
+      "amountType": "revenue",
+      "currency": "JPY",
+      "amount": 10000
+    }
+  ]
+}

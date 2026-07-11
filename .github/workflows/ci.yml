@@ -138,7 +138,6 @@ jobs:
         run: npm audit --prefix packages/frontend --audit-level=high
   data-quality:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
@@ -149,8 +148,31 @@ jobs:
             packages/backend/package-lock.json
             packages/frontend/package-lock.json
       - run: npm ci --prefix packages/backend
-      - run: npm ci --prefix packages/frontend
-      - run: npx --prefix packages/backend ts-node --project packages/backend/tsconfig.json scripts/data-quality-check.ts || true
+      - name: Test data quality runner
+        run: npm run data-quality:test --prefix packages/backend
+      - name: Run blocking data quality checks
+        run: npm run data-quality:blocking --prefix packages/backend
+      - name: Run advisory data quality checks
+        run: npm run data-quality:advisory --prefix packages/backend
+      - name: Publish data quality summary
+        if: always()
+        run: |
+          for file in tmp/data-quality-*.md; do
+            if [ -f "$file" ]; then
+              cat "$file" >> "$GITHUB_STEP_SUMMARY"
+              printf '\n\n' >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+      - name: Upload data quality reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: data-quality-${{ github.run_id }}-${{ github.sha }}
+          path: |
+            tmp/data-quality-*.json
+            tmp/data-quality-*.md
+          if-no-files-found: error
+          retention-days: 14
   e2e-frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 45
