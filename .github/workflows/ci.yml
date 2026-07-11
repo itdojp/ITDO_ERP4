@@ -33,6 +33,10 @@ jobs:
         working-directory: packages/backend
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/postgres?schema=public
+      - run: npm run coverage:integrations:check
+        working-directory: packages/backend
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/postgres?schema=public
       - run: npx prisma format --config ./prisma.config.ts
         working-directory: packages/backend
         env:

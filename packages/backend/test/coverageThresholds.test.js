@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -180,3 +186,19 @@ test('coverage threshold script aggregates configured files instead of repositor
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /auth statements: 90\.00% >= 80\.00% PASS/);
   }));
+
+test('integrations coverage scope includes current integration route and service files', () => {
+  const configPath = path.join(BACKEND_DIR, 'coverage-thresholds.json');
+  const config = JSON.parse(readFileSync(configPath, 'utf8'));
+  const configuredFiles = [...config.integrations.files].sort();
+  const integrationServicePattern =
+    /^(accountingIcsExport|accountingMappingRules|attendanceClosings|integration[A-Z].*|statutoryAccountingActuals)\.ts$/;
+  const expectedFiles = [
+    'src/routes/integrations.ts',
+    ...readdirSync(path.join(BACKEND_DIR, 'src/services'))
+      .filter((name) => integrationServicePattern.test(name))
+      .map((name) => `src/services/${name}`),
+  ].sort();
+
+  assert.deepEqual(configuredFiles, expectedFiles);
+});

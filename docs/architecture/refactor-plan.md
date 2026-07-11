@@ -37,7 +37,7 @@
 
 - `routes/projects.ts` のドメインロジックを `services/` へ抽出
 - `scripts/migrate-po.ts` の変換/パース処理を `src/migration/` へ分割
-- `routes/integrations.ts` / `routes/auth.ts` / `routes/chatRooms.ts` は `docs/quality/refactoring-hotspots.md` の `Route max-lines gate` allowlist cap を下げながら、機能単位の service / adapter へ抽出する
+- `routes/integrations.ts` は service 抽出後に default 1500行 gate へ統合済みのため、今後は `docs/quality/refactoring-hotspots.md` の残責務を service / adapter 単位で継続分割する。`routes/auth.ts` / `routes/chatRooms.ts` は同ドキュメントの `Route max-lines gate` allowlist cap を下げながら、機能単位の service / adapter へ抽出する
 - `routes/validators.ts` は barrel に留め、TypeBox schema は `routes/validators/*.ts` のドメイン別ファイルへ追加する
 - frontend は `AdminSettings.tsx` / `RoomChat.tsx` を責務単位へ分割し、`docs/architecture/frontend-server-state.md` の server-state 導入判断に沿って hook/query 境界を段階抽出する
 

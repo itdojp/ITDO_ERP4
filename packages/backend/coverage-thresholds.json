@@ -16,5 +16,26 @@
       "src/services/localCredentials.ts",
       "src/utils/authGroupToRoleMap.ts"
     ]
+  },
+  "integrations": {
+    "summary": "coverage/integrations/coverage-summary.json",
+    "thresholds": {
+      "statements": 91.1,
+      "branches": 72.7,
+      "functions": 97,
+      "lines": 91.1
+    },
+    "files": [
+      "src/routes/integrations.ts",
+      "src/services/accountingIcsExport.ts",
+      "src/services/accountingMappingRules.ts",
+      "src/services/attendanceClosings.ts",
+      "src/services/integrationExportJobs.ts",
+      "src/services/integrationExports.ts",
+      "src/services/integrationLeaveExports.ts",
+      "src/services/integrationReconciliation.ts",
+      "src/services/integrationRuns.ts",
+      "src/services/statutoryAccountingActuals.ts"
+    ]
   }
 }
