@@ -43,6 +43,10 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
+function writeJson(filePath, value) {
+  fs.writeFileSync(filePath, JSON.stringify(value, null, 2));
+}
+
 function failingCheckNames(report) {
   return new Set(
     report.checks
@@ -167,6 +171,40 @@ test("help prints usage without requiring a fixture", () => {
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /Usage: node scripts\/data-quality-check\.mjs/);
+});
+
+test("blocking mode fails when a ready journal row is missing one account side", () => {
+  const tempDir = makeTempDir();
+  try {
+    const fixturePath = path.join(tempDir, "missing-one-side.json");
+    const output = path.join(tempDir, "missing-one-side-report.json");
+    const summary = path.join(tempDir, "missing-one-side-report.md");
+    const fixture = readJson(validFixture);
+    fixture.accountingJournalStaging = [
+      {
+        ...fixture.accountingJournalStaging[0],
+        creditAccountCode: "",
+      },
+    ];
+    writeJson(fixturePath, fixture);
+
+    const result = runDataQuality([
+      "--mode",
+      "blocking",
+      "--fixture",
+      fixturePath,
+      "--output",
+      output,
+      "--summary",
+      summary,
+    ]);
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    const report = readJson(output);
+    const names = failingCheckNames(report);
+    assert.ok(names.has("accounting_journal_ready_missing_side"));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("missing fixture path is treated as a runner/configuration error", () => {

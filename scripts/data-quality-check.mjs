@@ -105,9 +105,9 @@ const CHECK_DEFINITIONS = {
     severity: "blocking",
     category: "debit-credit-integrity",
     description:
-      "Ready accounting journal staging rows have at least one debit or credit account code.",
+      "Ready accounting journal staging rows have both debit and credit account codes.",
     reproduction:
-      "Create a ready accountingJournalStaging row without debitAccountCode and creditAccountCode and run the blocking data-quality command.",
+      "Create a ready accountingJournalStaging row missing debitAccountCode or creditAccountCode and run the blocking data-quality command.",
   },
   accounting_journal_ready_export_field_missing: {
     severity: "blocking",
@@ -512,14 +512,17 @@ function accountingJournalReadyMissingSide(data) {
   const details = [];
   data.accountingJournalStaging.filter(isActive).forEach((row) => {
     if (row.status !== "ready") return;
-    if (!isPresent(row.debitAccountCode) && !isPresent(row.creditAccountCode)) {
+    const hasDebit = isPresent(row.debitAccountCode);
+    const hasCredit = isPresent(row.creditAccountCode);
+    if (!hasDebit || !hasCredit) {
       const id = isPresent(row.id)
         ? row.id
         : "AccountingJournalStaging:unknown-id";
       samples.push(id);
-      details.push(
-        `${id} ready row missing both debitAccountCode and creditAccountCode`,
-      );
+      const missingFields = [];
+      if (!hasDebit) missingFields.push("debitAccountCode");
+      if (!hasCredit) missingFields.push("creditAccountCode");
+      details.push(`${id} ready row missing ${missingFields.join(",")}`);
     }
   });
   return makeResult("accounting_journal_ready_missing_side", samples, details);
