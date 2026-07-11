@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "description": "Synthetic fixture with intentional deterministic blocking data-quality violations.",
+  "projects": [
+    {
+      "id": "proj-dupe-a",
+      "code": "PRJ-DUP"
+    },
+    {
+      "id": "proj-dupe-b",
+      "code": "PRJ-DUP"
+    },
+    {
+      "id": "proj-missing-code",
+      "code": ""
+    },
+    {
+      "code": "PRJ-MISSING-ID"
+    }
+  ],
+  "customers": [
+    {
+      "id": "cust-dupe-a",
+      "code": "CUST-DUP"
+    },
+    {
+      "id": "cust-dupe-b",
+      "code": "CUST-DUP"
+    },
+    {
+      "id": "cust-missing-code",
+      "code": " "
+    }
+  ],
+  "vendors": [
+    {
+      "id": "vend-dupe-a",
+      "code": "VEND-DUP"
+    },
+    {
+      "id": "vend-dupe-b",
+      "code": "VEND-DUP"
+    },
+    {
+      "id": "vend-missing-code",
+      "code": null
+    }
+  ],
+  "timeEntries": [
+    {
+      "id": "time-orphan-project",
+      "projectId": "proj-missing",
+      "userId": "user-alpha",
+      "workDate": "2026-07-10",
+      "minutes": 60
+    }
+  ],
+  "invoices": [
+    {
+      "id": "inv-missing-currency",
+      "invoiceNo": "I2026-07-9998",
+      "projectId": "proj-dupe-a",
+      "currency": "",
+      "totalAmount": 100
+    },
+    {
+      "id": "inv-mismatch",
+      "invoiceNo": "I2026-07-9999",
+      "projectId": "proj-dupe-a",
+      "currency": "JPY",
+      "totalAmount": 100
+    }
+  ],
+  "billingLines": [
+    {
+      "id": "bill-missing-tax",
+      "invoiceId": "inv-missing-currency",
+      "quantity": 1,
+      "unitPrice": 100,
+      "taxRate": null
+    },
+    {
+      "id": "bill-mismatch",
+      "invoiceId": "inv-mismatch",
+      "quantity": 1,
+      "unitPrice": 80,
+      "taxRate": 0.1
+    },
+    {
+      "id": "bill-orphan-invoice",
+      "invoiceId": "inv-missing",
+      "quantity": 1,
+      "unitPrice": 10,
+      "taxRate": 0.1
+    }
+  ],
+  "purchaseOrders": [
+    {
+      "id": "po-valid-format",
+      "poNo": "PO2026-07-0001"
+    }
+  ],
+  "accountingEvents": [
+    {
+      "id": "ae-dupe-a",
+      "sourceTable": "Invoice",
+      "sourceId": "inv-mismatch",
+      "eventKind": "invoice_approved"
+    },
+    {
+      "id": "ae-dupe-b",
+      "sourceTable": "Invoice",
+      "sourceId": "inv-mismatch",
+      "eventKind": "invoice_approved"
+    }
+  ],
+  "accountingJournalStaging": [
+    {
+      "id": "ajs-missing-side",
+      "eventId": "ae-dupe-a",
+      "lineNo": 1,
+      "status": "ready",
+      "currency": "JPY",
+      "amount": 50
+    },
+    {
+      "id": "ajs-debit-only",
+      "eventId": "ae-dupe-a",
+      "lineNo": 2,
+      "status": "ready",
+      "currency": "JPY",
+      "amount": 80,
+      "debitAccountCode": "1100",
+      "taxCode": "TAX10"
+    },
+    {
+      "id": "ajs-credit-only",
+      "eventId": "ae-dupe-a",
+      "lineNo": 3,
+      "status": "ready",
+      "currency": "JPY",
+      "amount": 40,
+      "creditAccountCode": "4000",
+      "taxCode": "TAX10"
+    },
+    {
+      "id": "ajs-orphan-event",
+      "eventId": "ae-missing",
+      "lineNo": 4,
+      "status": "pending_mapping",
+      "currency": "JPY",
+      "amount": 10
+    },
+    {
+      "id": "ajs-missing-tax-code",
+      "eventId": "ae-dupe-a",
+      "lineNo": 5,
+      "status": "ready",
+      "currency": "JPY",
+      "amount": 25,
+      "debitAccountCode": "1100",
+      "creditAccountCode": "4000"
+    },
+    {
+      "id": "ajs-missing-positive-amount",
+      "eventId": "ae-dupe-a",
+      "lineNo": 6,
+      "status": "ready",
+      "currency": "JPY",
+      "amount": 0,
+      "debitAccountCode": "1100",
+      "creditAccountCode": "4000",
+      "taxCode": "TAX10"
+    }
+  ],
+  "statutoryAccountingActualImportBatches": [
+    {
+      "importBatchKey": "statutory-bad-count",
+      "importedCount": 2
+    }
+  ],
+  "statutoryAccountingActuals": [
+    {
+      "id": "actual-bad-count-1",
+      "importBatchKey": "statutory-bad-count",
+      "rowNo": 1,
+      "periodKey": "2026-07",
+      "accountCode": "4000",
+      "amountType": "revenue",
+      "currency": "JPY",
+      "amount": 100
+    }
+  ]
+}

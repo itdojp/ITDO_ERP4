@@ -623,15 +623,30 @@ export const App: React.FC = () => {
     if (!isCommandPaletteOpen) return;
     if (typeof document === 'undefined') return;
 
-    const handle = window.setTimeout(() => {
+    let animationFrameId: number | null = null;
+    let attempts = 0;
+    const focusCommandSearch = () => {
       const commandSearch = document.querySelector<HTMLInputElement>(
         '.itdo-command-palette__input[role="combobox"]',
       );
-      commandSearch?.setAttribute('aria-label', COMMAND_PALETTE_SEARCH_LABEL);
-      commandSearch?.focus({ preventScroll: true });
-    }, 0);
+      if (commandSearch) {
+        commandSearch.setAttribute('aria-label', COMMAND_PALETTE_SEARCH_LABEL);
+        commandSearch.focus({ preventScroll: true });
+        commandSearch.select();
+      }
+      if (document.activeElement === commandSearch || attempts >= 8) return;
+      attempts += 1;
+      animationFrameId = window.requestAnimationFrame(focusCommandSearch);
+    };
 
-    return () => window.clearTimeout(handle);
+    const handle = window.setTimeout(focusCommandSearch, 0);
+
+    return () => {
+      window.clearTimeout(handle);
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+    };
   }, [isCommandPaletteOpen]);
 
   useEffect(() => {

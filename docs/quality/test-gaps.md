@@ -108,10 +108,12 @@
 
 ### 環境・その他
 
-| 手動確認項目                             | 自動検査/手順（現状）                                        |
-| ---------------------------------------- | ------------------------------------------------------------ |
-| CI (backend/frontend/lint/lychee) が緑   | GitHub Actions（`CI` / `Link Check`）                        |
-| フロントエンド単体テスト（Vitest）が通る | `CI / frontend`（`npm run test --prefix packages/frontend`） |
-| auth subset の coverage 低下を検知       | `CI / coverage-auth`（`npm run coverage:auth:check`）        |
-| prisma format/validate が通る            | `CI / backend`（`.github/workflows/ci.yml`）                 |
-| Podman 検証（reset→smoke完走）           | `scripts/podman-poc.sh` + `scripts/smoke-backend.sh`         |
+| 手動確認項目                             | 自動検査/手順（現状）                                                                                     |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| CI (backend/frontend/lint/lychee) が緑   | GitHub Actions（`CI` / `Link Check`）                                                                     |
+| フロントエンド単体テスト（Vitest）が通る | `CI / frontend`（`npm run test --prefix packages/frontend`）                                              |
+| auth subset の coverage 低下を検知       | `CI / coverage-auth`（`npm run coverage:auth:check`）                                                     |
+| data-quality blocking が通る             | `CI / data-quality`（`npm run data-quality:blocking --prefix packages/backend`）                          |
+| data-quality advisory を記録する         | `CI / data-quality`（`npm run data-quality:advisory --prefix packages/backend`、Step Summary / artifact） |
+| prisma format/validate が通る            | `CI / backend`（`.github/workflows/ci.yml`）                                                              |
+| Podman 検証（reset→smoke完走）           | `scripts/podman-poc.sh` + `scripts/smoke-backend.sh`                                                      |

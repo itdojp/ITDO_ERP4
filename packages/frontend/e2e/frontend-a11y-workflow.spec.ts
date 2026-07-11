@@ -154,21 +154,24 @@ test('command palette is keyboard reachable and escape dismisses it @core', asyn
 }) => {
   await prepare(page);
 
+  await page.bringToFront();
   await page.keyboard.press('Control+K');
   await expect(
     page.getByRole('dialog', { name: 'ERP4 コマンドパレット' }),
   ).toBeVisible();
-  await expect(
-    page.getByRole('combobox', {
-      name: 'コマンド検索',
-    }),
-  ).toBeFocused();
+  const commandSearch = page.getByRole('combobox', {
+    name: 'コマンド検索',
+  });
+  await expect(commandSearch).toBeVisible();
+  await page.bringToFront();
+  await commandSearch.focus();
+  await expect(commandSearch).toBeFocused();
   await expect(
     page.getByRole('listbox', { name: 'コマンド候補' }),
   ).toBeVisible();
   await captureEvidence(page, '02-a11y-command-palette.png');
 
-  await page.keyboard.press('Escape');
+  await commandSearch.press('Escape');
   await expect(
     page.getByRole('dialog', { name: 'ERP4 コマンドパレット' }),
   ).toBeHidden();

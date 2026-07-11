@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "description": "Synthetic clean fixture for CI blocking and advisory data-quality checks.",
+  "projects": [
+    {
+      "id": "proj-alpha",
+      "code": "PRJ-2026-001"
+    },
+    {
+      "id": "proj-beta",
+      "code": "PRJ-2026-002"
+    }
+  ],
+  "customers": [
+    {
+      "id": "cust-alpha",
+      "code": "CUST-2026-001"
+    }
+  ],
+  "vendors": [
+    {
+      "id": "vend-alpha",
+      "code": "VEND-2026-001"
+    }
+  ],
+  "timeEntries": [
+    {
+      "id": "time-alpha-1",
+      "projectId": "proj-alpha",
+      "userId": "user-alpha",
+      "workDate": "2026-07-10",
+      "minutes": 480
+    },
+    {
+      "id": "time-alpha-2",
+      "projectId": "proj-alpha",
+      "userId": "user-alpha",
+      "workDate": "2026-07-10",
+      "minutes": 420
+    }
+  ],
+  "invoices": [
+    {
+      "id": "inv-alpha",
+      "invoiceNo": "I2026-07-0001",
+      "projectId": "proj-alpha",
+      "currency": "JPY",
+      "totalAmount": 10000
+    }
+  ],
+  "billingLines": [
+    {
+      "id": "bill-alpha-1",
+      "invoiceId": "inv-alpha",
+      "quantity": 2,
+      "unitPrice": 5000,
+      "taxRate": 0.1
+    }
+  ],
+  "purchaseOrders": [
+    {
+      "id": "po-alpha",
+      "poNo": "PO2026-07-0001"
+    }
+  ],
+  "accountingEvents": [
+    {
+      "id": "ae-alpha",
+      "sourceTable": "Invoice",
+      "sourceId": "inv-alpha",
+      "eventKind": "invoice_approved"
+    }
+  ],
+  "accountingJournalStaging": [
+    {
+      "id": "ajs-alpha",
+      "eventId": "ae-alpha",
+      "lineNo": 1,
+      "status": "ready",
+      "currency": "JPY",
+      "amount": 10000,
+      "debitAccountCode": "1100",
+      "creditAccountCode": "4000",
+      "taxCode": "TAX10"
+    }
+  ],
+  "statutoryAccountingActualImportBatches": [
+    {
+      "importBatchKey": "statutory-2026-07",
+      "importedCount": 2
+    }
+  ],
+  "statutoryAccountingActuals": [
+    {
+      "id": "actual-alpha-1",
+      "importBatchKey": "statutory-2026-07",
+      "rowNo": 1,
+      "periodKey": "2026-07",
+      "accountCode": "4000",
+      "amountType": "revenue",
+      "currency": "JPY",
+      "amount": 6000
+    },
+    {
+      "id": "actual-alpha-2",
+      "importBatchKey": "statutory-2026-07",
+      "rowNo": 2,
+      "periodKey": "2026-07",
+      "accountCode": "4000",
+      "amountType": "revenue",
+      "currency": "JPY",
+      "amount": 4000
+    }
+  ]
+}

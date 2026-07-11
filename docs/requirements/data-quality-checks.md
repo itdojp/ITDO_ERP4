@@ -1,65 +1,86 @@
-# データ品質チェック案（ドラフト）
+# データ品質チェック分類
 
-## チェック項目（初期）
-- コード重複: project_code / customer_code / vendor_code の重複検出
-- 参照切れ: project_id/task_id の参照欠損（time_entries, expenses 等）
-- 税率不整合: billing_lines.tax_rate が null か 0 かを検知し報告
-- 通貨未設定: invoices/estimates の currency 欠損
-- 日付不正: work_date/incurred_on の未来日/過去許容範囲外
-- 番号整合: invoice_no/po_no がフォーマット `PYYYY-MM-NNNN` になっているか
-- 重複ID: mapping_* に同一 legacy_id が複数 new_id に紐づいていないか
-- 金額整合: project 単位で invoices.totalAmount と billing_lines の合計が一致するか
-- 欠損: time_entries/expenses で user_id/project_id/currency が null のもの
-- 工数/休暇の整合: 同一日で minutes が 1440 を超えていないか、休暇と重複していないか
+## 目的
 
-### HR/CRM 連携向けチェック
-- CRM: externalId が null/空、externalSource + externalId の重複
-- CRM: contacts が customerId/vendorId のどちらにも紐付いていない
-- CRM: contacts.email の形式エラー（存在する場合）
-- HR: userAccount.externalId の欠損、wellbeingEntry.userId/entryDate の欠損
-- HR: 匿名化IDの形式（hash prefix 等）を運用ルールに合わせて検知
+ERP4 PoC の data-quality check を、PR マージを止める **blocking** と、業務判断を含むため記録に留める **advisory** に分離する。
 
-## 出力形式
-- CSV or Markdown レポート: 「種別, 対象ID, 詳細」
-- 件数サマリ: チェックごとの件数を集計
+- blocking: 結果が決定的で、検出時にマージを止める検査
+- advisory: 閾値・運用移行期・業務例外の判断を含み、GitHub Step Summary / artifact に記録する検査
 
-## 運用
-- バッチ: 1日1回（cron）でチェックし、レポートを保存 & アラート通知候補
-- PoCではローカルスクリプトでの手動実行でも可
-- API: `POST /jobs/data-quality/run` でチェックを実行し、件数とサンプルを返す
+CI では production DB へ接続せず、合成 fixture を入力として deterministic に検査する。fixture に production data や個人情報を含めない。
 
-## 擬似コード（例: SQLベース）
-```sql
--- project_code 重複
-select code, count(*) c from projects group by code having count(*) > 1;
+## 実行コマンド
 
--- time_entries の参照切れ
-select id from time_entries te where not exists (select 1 from projects p where p.id = te.project_id);
-
--- invoice_no フォーマット確認
-select id, invoice_no from invoices where invoice_no !~ '^P[DIQ]?[0-9]{4}-[0-9]{2}-[0-9]{4}$';
-
--- mapping_projects 重複
-select legacy_id, count(*) c from mapping_projects group by legacy_id having count(*) > 1;
-
--- 請求ヘッダと明細の金額差分
-select i.id, i.total_amount, sum(bl.quantity * bl.unit_price) as calc_total
-from invoices i
-join billing_lines bl on bl.invoice_id = i.id
-group by i.id, i.total_amount
-having abs(i.total_amount - sum(bl.quantity * bl.unit_price)) > 0.01;
-
--- 欠損（通貨なし）
-select id from invoices where currency is null or currency = '';
-
--- 工数の1日合計超過
-select user_id, work_date::date, sum(minutes) as total_min
-from time_entries
-group by user_id, work_date::date
-having sum(minutes) > 1440;
+```bash
+npm run data-quality:test --prefix packages/backend
+npm run data-quality:blocking --prefix packages/backend
+npm run data-quality:advisory --prefix packages/backend
 ```
 
-## 将来拡張
-- 期間別の集計差分チェック（予実/売上の突き合わせ）
-- 工数の重複/矛盾チェック（休暇との重複、1日合計時間の上限）
-- PDF/メール送信失敗の再送キュー監視
+負例確認:
+
+```bash
+node scripts/data-quality-check.mjs \
+  --mode=blocking \
+  --fixture scripts/fixtures/data-quality-invalid.json \
+  --output tmp/data-quality-invalid.json \
+  --summary tmp/data-quality-invalid.md
+```
+
+上記負例は blocking finding を検出し、終了コード 1 になることが期待値。
+
+## fixture
+
+| fixture                                               | 用途                                                                          |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `scripts/fixtures/data-quality-valid.json`            | CI の blocking/advisory 正常系。finding 0 を期待する。                        |
+| `scripts/fixtures/data-quality-invalid.json`          | blocking 分類の意図的な不整合を含む負例。runner が非0終了することを確認する。 |
+| `scripts/fixtures/data-quality-advisory-warning.json` | advisory 警告のみの負例。warning を記録しつつ終了コード 0 を確認する。        |
+
+## blocking 分類
+
+| check                                           | 対応する最低ライン         | 判定内容                                                                                   |
+| ----------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------ |
+| `required_id_missing`                           | 必須ID欠落                 | fixture record の `id` または import batch の `importBatchKey` が空でないこと              |
+| `required_code_missing`                         | 必須コード欠落             | `Project` / `Customer` / `Vendor` の `code` が空でないこと                                 |
+| `duplicate_project_code`                        | 一意コード重複             | active project code が重複しないこと                                                       |
+| `duplicate_customer_code`                       | 一意コード重複             | customer code が重複しないこと                                                             |
+| `duplicate_vendor_code`                         | 一意コード重複             | vendor code が重複しないこと                                                               |
+| `orphan_time_entry_project`                     | 参照切れ/orphan            | `TimeEntry.projectId` が空でなく、既存 `Project.id` を参照すること                         |
+| `orphan_billing_line_invoice`                   | 参照切れ/orphan            | `BillingLine.invoiceId` が空でなく、既存 `Invoice.id` を参照すること                       |
+| `orphan_accounting_journal_event`               | 参照切れ/orphan            | `AccountingJournalStaging.eventId` が空でなく、既存 `AccountingEvent.id` を参照すること    |
+| `invoice_currency_missing`                      | 必須コード欠落             | `Invoice.currency` が空でないこと                                                          |
+| `billing_tax_rate_missing`                      | 必須コード欠落             | `BillingLine.taxRate` が明示されていること                                                 |
+| `invoice_header_line_total_mismatch`            | header/line合計不一致      | `Invoice.totalAmount` と `BillingLine.quantity * unitPrice` 合計の差が 0.01 以下であること |
+| `accounting_event_source_key_duplicate`         | 重複連携キー               | `AccountingEvent.sourceTable/sourceId/eventKind` が重複しないこと                          |
+| `accounting_journal_ready_missing_side`         | 借貸不整合                 | `status=ready` の `AccountingJournalStaging` が借方/貸方の少なくとも一方を持つこと         |
+| `accounting_journal_ready_export_field_missing` | ICS export必須項目欠落     | `status=ready` 行が `taxCode` と正の `amount` を持つこと                                   |
+| `accounting_journal_debit_credit_mismatch`      | 借貸不整合                 | 通貨別に単側 `status=ready` 行の借方科目あり金額合計と貸方科目あり金額合計が一致すること   |
+| `statutory_accounting_import_count_mismatch`    | migration/import件数不一致 | `StatutoryAccountingActualImportBatch.importedCount` と actual row 件数が一致すること      |
+
+### 現行モデル上の注記
+
+`AccountingJournalStaging` は借方金額・貸方金額を別フィールドでは持たず、`amount` と `debitAccountCode` / `creditAccountCode` の有無で片側明細を表現する。借方・貸方の両コードを持つ行は行内で自己均衡しているものとして扱う。借貸チェックは、複合仕訳の単側 `status=ready` 行について、通貨別に debit code を持つ行の `amount` 合計と credit code を持つ行の `amount` 合計を比較する。ICS export の `validateReadyRow()` に合わせ、`status=ready` 行は `taxCode` と正の `amount` も必須とする。
+
+## advisory 分類
+
+| check                                  | 理由                                                                             |
+| -------------------------------------- | -------------------------------------------------------------------------------- |
+| `time_entries_daily_over_1440`         | 1日 1,440 分超は強い警告だが、例外勤務・移行補正・入力訂正などの業務判断を含む。 |
+| `invoice_number_format_invalid`        | `IYYYY-MM-NNNN` 規約からの逸脱は移行期データで許容判断が必要な場合がある。       |
+| `purchase_order_number_format_invalid` | `POYYYY-MM-NNNN` 規約からの逸脱は移行期データで許容判断が必要な場合がある。      |
+
+## 出力形式
+
+runner は JSON report と Markdown summary を出力する。
+
+- JSON: check名、severity、status、count、sampleIds、description、reproduction を含む。
+- Markdown: GitHub Step Summary へ追記できる表形式。
+
+CI artifact には `tmp/data-quality-*.json` と `tmp/data-quality-*.md` を保存する。
+
+## 運用
+
+- PR では blocking finding があれば `CI / data-quality` が fail する。
+- advisory finding は report/summary に残すが、advisory runner の終了コードは 0 とする。
+- production DB に直接接続する CI は非対象。実データ調査は別途、環境・権限・個人情報保護を定義した運用手順で扱う。

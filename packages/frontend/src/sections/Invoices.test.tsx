@@ -416,7 +416,7 @@ describe('Invoices', () => {
         method: 'POST',
       });
     });
-    expect(screen.getByText('送信しました')).toBeInTheDocument();
+    expect(await screen.findByText('送信しました')).toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole('button', { name: '工数リンク解除:inv-2' }),
@@ -441,7 +441,7 @@ describe('Invoices', () => {
         body: JSON.stringify({}),
       });
     });
-    expect(screen.getByText('入金を確認しました')).toBeInTheDocument();
+    expect(await screen.findByText('入金を確認しました')).toBeInTheDocument();
     expect(
       within(screen.getByTestId('row-inv-2')).getByText('paid'),
     ).toBeInTheDocument();

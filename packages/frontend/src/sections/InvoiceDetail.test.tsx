@@ -111,8 +111,10 @@ describe('InvoiceDetail', () => {
       expect(api).toHaveBeenLastCalledWith('/invoices/invoice-2/send-logs');
     });
 
-    expect(screen.getByText('slack')).toBeInTheDocument();
-    expect(screen.getByText('Error: delivery failed')).toBeInTheDocument();
+    expect(await screen.findByText('slack')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Error: delivery failed'),
+    ).toBeInTheDocument();
     expect(screen.getAllByText(/2026/).length).toBeGreaterThanOrEqual(2);
   });
 

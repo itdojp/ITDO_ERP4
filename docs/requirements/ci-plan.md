@@ -25,10 +25,10 @@
 
 - PR で実行される主なジョブ
   - `backend`: backend build/test/prisma validate
-  - `frontend`: frontend typecheck/build
+  - `frontend`: frontend typecheck/test/build
   - `lint`: backend/frontend lint + format + doc image link check
   - `security-audit`: npm audit（high/critical）+ SBOM
-  - `data-quality`: 非ブロッキング（`continue-on-error: true`）
+  - `data-quality`: data-quality runner self-test + blocking runner + advisory report/artifact
   - `e2e-frontend`: PRでは `E2E_SCOPE=core`
   - `api-schema`: OpenAPI スナップショット差分と breaking change 検証
   - `secret-scan`: PR と schedule で実行
@@ -99,11 +99,12 @@
 - `secret-scan`: TSV レポート
 - `DAST`: ZAP レポート
 - `Performance`: ベンチ結果
+- `data-quality`: `tmp/data-quality-*.json` / `tmp/data-quality-*.md`
 - `Design System Package Watch`: チェックログ
 
 ## 既知の運用ルール
 
-- `data-quality` は非ブロッキング（品質傾向監視用）
+- `data-quality` は blocking/advisory に分離済み。blocking finding はPRをブロックし、advisory finding はStep Summary / artifactへ記録する。
 - Dependabot の `eslint` / `@eslint/js` major は readiness 条件未達の間は抑止
 - 監視系ワークフローは、失敗時でも Issue 状態を不用意に更新しない設計を優先
 
