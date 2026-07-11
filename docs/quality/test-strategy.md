@@ -106,6 +106,7 @@
 - coverage（frontend 全体）: `npm run coverage --prefix packages/frontend`
 - coverage（frontend 非auth core）: `npm run coverage:ui-core --prefix packages/frontend`
 - e2e: `scripts/e2e-frontend.sh`
+- release readiness: `RELEASE_E2E_SCOPE=core make release-readiness` / `RELEASE_E2E_SCOPE=full make release-readiness`
 - smoke（任意）: `scripts/smoke-backend.sh` / `scripts/smoke-chat-attachments-av.sh`
 
 ## カバレッジ計測
