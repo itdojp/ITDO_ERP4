@@ -261,6 +261,111 @@ test("blocking mode reports malformed single-sided journal amounts without abort
   }
 });
 
+test("blocking mode treats empty foreign keys as orphan reference failures", () => {
+  const tempDir = makeTempDir();
+  try {
+    const fixturePath = path.join(tempDir, "missing-foreign-keys.json");
+    const output = path.join(tempDir, "missing-foreign-keys-report.json");
+    const summary = path.join(tempDir, "missing-foreign-keys-report.md");
+    const fixture = readJson(validFixture);
+    fixture.timeEntries = [
+      {
+        ...fixture.timeEntries[0],
+        id: "te-missing-project",
+        projectId: "",
+      },
+    ];
+    fixture.billingLines = [
+      {
+        ...fixture.billingLines[0],
+        id: "bl-missing-invoice",
+        invoiceId: null,
+      },
+    ];
+    fixture.accountingJournalStaging = [
+      {
+        ...fixture.accountingJournalStaging[0],
+        id: "ajs-missing-event",
+        eventId: " ",
+      },
+    ];
+    writeJson(fixturePath, fixture);
+
+    const result = runDataQuality([
+      "--mode",
+      "blocking",
+      "--fixture",
+      fixturePath,
+      "--output",
+      output,
+      "--summary",
+      summary,
+    ]);
+
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    const report = readJson(output);
+    const names = failingCheckNames(report);
+    assert.ok(names.has("orphan_time_entry_project"));
+    assert.ok(names.has("orphan_billing_line_invoice"));
+    assert.ok(names.has("orphan_accounting_journal_event"));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("blocking mode balances single-sided ready journal rows per currency", () => {
+  const tempDir = makeTempDir();
+  try {
+    const fixturePath = path.join(tempDir, "cross-currency-imbalance.json");
+    const output = path.join(tempDir, "cross-currency-imbalance-report.json");
+    const summary = path.join(tempDir, "cross-currency-imbalance-report.md");
+    const fixture = readJson(validFixture);
+    const baseRow = fixture.accountingJournalStaging[0];
+    fixture.accountingJournalStaging = [
+      {
+        ...baseRow,
+        id: "ajs-jpy-debit-only",
+        currency: "JPY",
+        debitAccountCode: "1100",
+        creditAccountCode: "",
+        amount: 100,
+      },
+      {
+        ...baseRow,
+        id: "ajs-usd-credit-only",
+        currency: "USD",
+        debitAccountCode: "",
+        creditAccountCode: "4000",
+        amount: 100,
+      },
+    ];
+    writeJson(fixturePath, fixture);
+
+    const result = runDataQuality([
+      "--mode",
+      "blocking",
+      "--fixture",
+      fixturePath,
+      "--output",
+      output,
+      "--summary",
+      summary,
+    ]);
+
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    const report = readJson(output);
+    const names = failingCheckNames(report);
+    assert.ok(names.has("accounting_journal_debit_credit_mismatch"));
+    const check = report.checks.find(
+      (item) => item.name === "accounting_journal_debit_credit_mismatch",
+    );
+    assert.ok(check.sampleIds.some((sample) => sample.startsWith("JPY:")));
+    assert.ok(check.sampleIds.some((sample) => sample.startsWith("USD:")));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("missing fixture path is treated as a runner/configuration error", () => {
   const result = runDataQuality([
     "--mode",

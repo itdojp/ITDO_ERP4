@@ -408,11 +408,13 @@ function orphanResult(name, records, referenceIds, recordEntity, referenceKey) {
   const details = [];
   records.filter(isActive).forEach((record) => {
     const referenceId = record[referenceKey];
-    if (!isPresent(referenceId)) return;
+    const id = isPresent(record.id) ? record.id : `${recordEntity}:unknown-id`;
+    if (!isPresent(referenceId)) {
+      samples.push(id);
+      details.push(`${recordEntity}:${id} missing required ${referenceKey}`);
+      return;
+    }
     if (!referenceIds.has(String(referenceId))) {
-      const id = isPresent(record.id)
-        ? record.id
-        : `${recordEntity}:unknown-id`;
       samples.push(id);
       details.push(
         `${recordEntity}:${id} references missing ${referenceKey}=${referenceId}`,
@@ -551,9 +553,18 @@ function accountingJournalReadyExportFieldMissing(data) {
 }
 
 function accountingJournalDebitCreditMismatch(data) {
-  let debitTotal = 0;
-  let creditTotal = 0;
-  const contributingRows = [];
+  const totalsByCurrency = new Map();
+
+  const getTotals = (currency) => {
+    if (!totalsByCurrency.has(currency)) {
+      totalsByCurrency.set(currency, {
+        debitTotal: 0,
+        creditTotal: 0,
+        contributingRows: [],
+      });
+    }
+    return totalsByCurrency.get(currency);
+  };
 
   data.accountingJournalStaging.filter(isActive).forEach((row) => {
     if (row.status !== "ready") return;
@@ -566,30 +577,48 @@ function accountingJournalDebitCreditMismatch(data) {
     const rowId = isPresent(row.id)
       ? row.id
       : "AccountingJournalStaging:unknown-id";
+    const currency = isPresent(row.currency)
+      ? String(row.currency).trim()
+      : "UNKNOWN_CURRENCY";
     const amount = Number(row.amount);
+    const totals = getTotals(currency);
     if (!Number.isFinite(amount) || amount <= 0) {
-      contributingRows.push(
-        `${rowId}: skipped invalid amount for aggregate debit/credit balance`,
+      totals.contributingRows.push(
+        `${currency}:${rowId}: skipped invalid amount for aggregate debit/credit balance`,
       );
       return;
     }
     if (hasDebit) {
-      debitTotal += amount;
-      contributingRows.push(`${rowId}:debit=${amount.toFixed(2)}`);
+      totals.debitTotal += amount;
+      totals.contributingRows.push(
+        `${currency}:${rowId}:debit=${amount.toFixed(2)}`,
+      );
     } else {
-      creditTotal += amount;
-      contributingRows.push(`${rowId}:credit=${amount.toFixed(2)}`);
+      totals.creditTotal += amount;
+      totals.contributingRows.push(
+        `${currency}:${rowId}:credit=${amount.toFixed(2)}`,
+      );
     }
   });
 
-  const diff = Math.abs(debitTotal - creditTotal);
-  if (diff <= MONEY_EPSILON) {
+  const samples = [];
+  const details = [];
+  for (const [currency, totals] of totalsByCurrency.entries()) {
+    const diff = Math.abs(totals.debitTotal - totals.creditTotal);
+    if (diff <= MONEY_EPSILON) continue;
+    samples.push(
+      `${currency}:debit=${totals.debitTotal.toFixed(2)};credit=${totals.creditTotal.toFixed(2)}`,
+    );
+    details.push(...totals.contributingRows);
+  }
+
+  if (samples.length === 0) {
     return makeResult("accounting_journal_debit_credit_mismatch");
   }
   return makeResult(
     "accounting_journal_debit_credit_mismatch",
-    [`debit=${debitTotal.toFixed(2)};credit=${creditTotal.toFixed(2)}`],
-    contributingRows,
+    samples,
+    details,
   );
 }
 
