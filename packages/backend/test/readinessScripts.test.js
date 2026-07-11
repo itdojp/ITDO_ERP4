@@ -574,6 +574,371 @@ test('record-backup-s3-readiness: runs CHECK_SCRIPT and respects FAIL_ON_CHECK',
   });
 });
 
+function writeCompleteBackupS3DecisionRecord(filePath) {
+  writeFileSync(
+    filePath,
+    [
+      '# Backup S3 設定決定シート',
+      '',
+      '- decisionDate: 2026-03-09',
+      '- environment: prod',
+      '- owner: infra-owner',
+      '- reviewers: admin, management',
+      '- relatedIssue: `#544`',
+      '- bucketName: erp4-backups',
+      '- region: ap-northeast-1',
+      '- s3Prefix: erp4/prod',
+      '- encryptionMode: SSE-KMS',
+      '- kmsKeyIdOrAlias: alias/erp4-backup',
+      '- kmsKeyAdmin: arn:aws:iam::123456789012:role/erp4-kms-admin',
+      '- kmsKeyUsagePrincipals: arn:aws:iam::123456789012:role/erp4-backup-writer',
+      '- versioning: Enabled',
+      '- lifecycleDailyDays: 14',
+      '- lifecycleWeeklyWeeks: 8',
+      '- lifecycleMonthlyMonths: 12',
+      '- replication / secondary copy: same-account replica',
+      '- publicAccessBlock: enabled',
+      '- writeRoleArn: arn:aws:iam::123456789012:role/erp4-backup-writer',
+      '- readRoleArn: arn:aws:iam::123456789012:role/erp4-backup-reader',
+      '- restoreRoleArn: arn:aws:iam::123456789012:role/erp4-restore-operator',
+      '- CI / automation principal: arn:aws:iam::123456789012:role/erp4-ci',
+      '- allowedNetworkBoundary: VPC endpoint',
+      '- bucketPolicyNotes: deny insecure transport',
+      '- restoreApprover: management',
+      '- restoreExecutor: infra-operator',
+      '- auditLogLocation: CloudTrail Lake query erp4-backup',
+      '- evidenceRecordPath: docs/test-results/2026-03-09-backup-s3-restore-r1.md',
+      '- incidentEscalation: ops-channel',
+      '',
+    ].join('\n'),
+  );
+}
+
+function writeBackupS3RestoreEvidenceFiles(dir, overrides = {}) {
+  const decisionRecord = path.join(dir, 'backup-s3-decision.md');
+  const readinessRecord = path.join(dir, 'backup-s3-readiness.md');
+  const backupLog = path.join(dir, 'backup.log');
+  const uploadLog = path.join(dir, 'upload.log');
+  const downloadLog = path.join(dir, 'download.log');
+  const restoreLog = path.join(dir, 'restore.log');
+  const integrityJson = path.join(dir, 'integrity.json');
+
+  writeCompleteBackupS3DecisionRecord(decisionRecord);
+  writeFileSync(
+    readinessRecord,
+    [
+      '# S3バックアップ Readiness 記録',
+      '- summaryStatus: pass',
+      '```text',
+      '[backup-s3-preflight] SUMMARY status=pass warning_count=0 error_count=0 strict=1 check_write=1',
+      '```',
+      '',
+    ].join('\n'),
+  );
+  writeFileSync(backupLog, 'backup completed\n');
+  writeFileSync(uploadLog, 'upload completed\n');
+  writeFileSync(downloadLog, 'download completed\n');
+  writeFileSync(restoreLog, 'restore completed\n');
+  writeFileSync(
+    integrityJson,
+    JSON.stringify(
+      {
+        countsMatch: true,
+        amountsMatch: true,
+        referencesMatch: true,
+        filesMatch: true,
+        ...overrides.integrity,
+      },
+      null,
+      2,
+    ),
+  );
+
+  return {
+    decisionRecord,
+    readinessRecord,
+    backupLog,
+    uploadLog,
+    downloadLog,
+    restoreLog,
+    integrityJson,
+  };
+}
+
+test('record-backup-s3-restore: writes pass report with full S3 restore evidence', () => {
+  withRepoTempDir('backup-s3-restore-test-', (dir) => {
+    const outDir = path.join(dir, 'out');
+    mkdirSync(outDir, { recursive: true });
+    const evidence = writeBackupS3RestoreEvidenceFiles(dir);
+
+    const res = runScript('record-backup-s3-restore.sh', {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-09',
+      RUN_LABEL: 'r1',
+      TARGET_ENVIRONMENT: 'prod',
+      OPERATOR: 'alice',
+      RESTORE_STATUS: 'pass',
+      S3_BUCKET: 'erp4-backups',
+      S3_REGION: 'ap-northeast-1',
+      S3_PREFIX: 'erp4/prod',
+      ENCRYPTION_MODE: 'SSE-KMS',
+      KMS_KEY_ID: 'alias/erp4-backup',
+      DECISION_RECORD_FILE: evidence.decisionRecord,
+      READINESS_RECORD_FILE: evidence.readinessRecord,
+      BACKUP_LOG_FILE: evidence.backupLog,
+      UPLOAD_LOG_FILE: evidence.uploadLog,
+      DOWNLOAD_LOG_FILE: evidence.downloadLog,
+      RESTORE_LOG_FILE: evidence.restoreLog,
+      INTEGRITY_REPORT_JSON: evidence.integrityJson,
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+
+    const reportPath = path.join(outDir, '2026-03-09-backup-s3-restore-r1.md');
+    assert.equal(existsSync(reportPath), true);
+    const report = readFileSync(reportPath, 'utf8');
+    assert.match(report, /# S3 backup\/restore 実証跡/);
+    assert.match(report, /- targetEnvironment: `prod`/);
+    assert.match(report, /- restoreStatus: `pass`/);
+    assert.match(report, /- decisionMissingFields: none/);
+    assert.match(report, /- decisionMismatchFields: none/);
+    assert.match(report, /- countsMatch: true/);
+    assert.match(
+      report,
+      /\[x\] S3 readiness passed with a write\/delete probe/,
+    );
+    assert.match(
+      report,
+      /\[x\] post-restore counts, amounts, references, and required files match/,
+    );
+    assert.match(report, /\[x\] backup: `scripts\/backup-prod\.sh backup`/);
+    assert.match(report, /\[x\] upload: `scripts\/backup-prod\.sh upload`/);
+  });
+});
+
+test('record-backup-s3-restore: rejects pass report with incomplete decision record', () => {
+  withRepoTempDir('backup-s3-restore-test-', (dir) => {
+    const outDir = path.join(dir, 'out');
+    mkdirSync(outDir, { recursive: true });
+    const evidence = writeBackupS3RestoreEvidenceFiles(dir);
+    writeFileSync(
+      evidence.decisionRecord,
+      '# Backup S3 設定決定シート\n\n- decisionDate: YYYY-MM-DD\n- bucketName:\n',
+    );
+
+    const res = runScript('record-backup-s3-restore.sh', {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-09',
+      RUN_LABEL: 'r1',
+      TARGET_ENVIRONMENT: 'prod',
+      OPERATOR: 'alice',
+      RESTORE_STATUS: 'pass',
+      S3_BUCKET: 'erp4-backups',
+      S3_REGION: 'ap-northeast-1',
+      S3_PREFIX: 'erp4/prod',
+      ENCRYPTION_MODE: 'SSE-KMS',
+      KMS_KEY_ID: 'alias/erp4-backup',
+      DECISION_RECORD_FILE: evidence.decisionRecord,
+      READINESS_RECORD_FILE: evidence.readinessRecord,
+      BACKUP_LOG_FILE: evidence.backupLog,
+      UPLOAD_LOG_FILE: evidence.uploadLog,
+      DOWNLOAD_LOG_FILE: evidence.downloadLog,
+      RESTORE_LOG_FILE: evidence.restoreLog,
+      INTEGRITY_REPORT_JSON: evidence.integrityJson,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(
+      String(res.stderr),
+      /RESTORE_STATUS=pass requires finalized and matching decision record fields/,
+    );
+    assert.match(String(res.stderr), /bucketName/);
+    assert.equal(
+      existsSync(path.join(outDir, '2026-03-09-backup-s3-restore-r1.md')),
+      false,
+    );
+  });
+});
+
+test('record-backup-s3-restore: rejects pass report with placeholder decision options', () => {
+  withRepoTempDir('backup-s3-restore-test-', (dir) => {
+    const outDir = path.join(dir, 'out');
+    mkdirSync(outDir, { recursive: true });
+    const evidence = writeBackupS3RestoreEvidenceFiles(dir);
+    writeFileSync(
+      evidence.decisionRecord,
+      [
+        '# Backup S3 設定決定シート',
+        '',
+        '- decisionDate: 2026-03-09',
+        '- environment: prod|staging',
+        '- owner: infra-owner',
+        '- reviewers: admin, management',
+        '- bucketName: erp4-backups',
+        '- region: ap-northeast-1',
+        '- s3Prefix: erp4/prod',
+        '- encryptionMode: SSE-KMS|SSE-S3',
+        '- kmsKeyIdOrAlias: alias/erp4-backup',
+        '- versioning: Enabled|Suspended',
+        '- lifecycleDailyDays: 14',
+        '- lifecycleWeeklyWeeks: 8',
+        '- lifecycleMonthlyMonths: 12',
+        '- writeRoleArn: arn:aws:iam::123456789012:role/erp4-backup-writer',
+        '- readRoleArn: arn:aws:iam::123456789012:role/erp4-backup-reader',
+        '- restoreRoleArn: arn:aws:iam::123456789012:role/erp4-restore-operator',
+        '- restoreApprover: management',
+        '- restoreExecutor: infra-operator',
+        '- auditLogLocation: CloudTrail Lake query erp4-backup',
+        '- evidenceRecordPath: docs/test-results/YYYY-MM-DD-backup-s3-restore-r1.md',
+        '',
+      ].join('\n'),
+    );
+
+    const res = runScript('record-backup-s3-restore.sh', {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-09',
+      RUN_LABEL: 'r1',
+      TARGET_ENVIRONMENT: 'prod',
+      OPERATOR: 'alice',
+      RESTORE_STATUS: 'pass',
+      S3_BUCKET: 'erp4-backups',
+      S3_REGION: 'ap-northeast-1',
+      S3_PREFIX: 'erp4/prod',
+      ENCRYPTION_MODE: 'SSE-KMS',
+      KMS_KEY_ID: 'alias/erp4-backup',
+      DECISION_RECORD_FILE: evidence.decisionRecord,
+      READINESS_RECORD_FILE: evidence.readinessRecord,
+      BACKUP_LOG_FILE: evidence.backupLog,
+      UPLOAD_LOG_FILE: evidence.uploadLog,
+      DOWNLOAD_LOG_FILE: evidence.downloadLog,
+      RESTORE_LOG_FILE: evidence.restoreLog,
+      INTEGRITY_REPORT_JSON: evidence.integrityJson,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(String(res.stderr), /environment/);
+    assert.match(String(res.stderr), /encryptionMode/);
+    assert.match(String(res.stderr), /versioning/);
+    assert.match(String(res.stderr), /evidenceRecordPath/);
+  });
+});
+
+test('record-backup-s3-restore: rejects pass report with mismatched decision record values', () => {
+  withRepoTempDir('backup-s3-restore-test-', (dir) => {
+    const outDir = path.join(dir, 'out');
+    mkdirSync(outDir, { recursive: true });
+    const evidence = writeBackupS3RestoreEvidenceFiles(dir);
+    const original = readFileSync(evidence.decisionRecord, 'utf8');
+    writeFileSync(
+      evidence.decisionRecord,
+      original.replace(
+        '- bucketName: erp4-backups',
+        '- bucketName: other-bucket',
+      ),
+    );
+
+    const res = runScript('record-backup-s3-restore.sh', {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-09',
+      RUN_LABEL: 'r1',
+      TARGET_ENVIRONMENT: 'prod',
+      OPERATOR: 'alice',
+      RESTORE_STATUS: 'pass',
+      S3_BUCKET: 'erp4-backups',
+      S3_REGION: 'ap-northeast-1',
+      S3_PREFIX: 'erp4/prod',
+      ENCRYPTION_MODE: 'SSE-KMS',
+      KMS_KEY_ID: 'alias/erp4-backup',
+      DECISION_RECORD_FILE: evidence.decisionRecord,
+      READINESS_RECORD_FILE: evidence.readinessRecord,
+      BACKUP_LOG_FILE: evidence.backupLog,
+      UPLOAD_LOG_FILE: evidence.uploadLog,
+      DOWNLOAD_LOG_FILE: evidence.downloadLog,
+      RESTORE_LOG_FILE: evidence.restoreLog,
+      INTEGRITY_REPORT_JSON: evidence.integrityJson,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(String(res.stderr), /mismatches: bucketName/);
+  });
+});
+
+test('record-backup-s3-restore: rejects pass report with failing integrity checks', () => {
+  withRepoTempDir('backup-s3-restore-test-', (dir) => {
+    const outDir = path.join(dir, 'out');
+    mkdirSync(outDir, { recursive: true });
+    const evidence = writeBackupS3RestoreEvidenceFiles(dir, {
+      integrity: { amountsMatch: false },
+    });
+
+    const res = runScript('record-backup-s3-restore.sh', {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-09',
+      RUN_LABEL: 'r1',
+      TARGET_ENVIRONMENT: 'prod',
+      OPERATOR: 'alice',
+      RESTORE_STATUS: 'pass',
+      S3_BUCKET: 'erp4-backups',
+      S3_REGION: 'ap-northeast-1',
+      S3_PREFIX: 'erp4/prod',
+      ENCRYPTION_MODE: 'SSE-KMS',
+      KMS_KEY_ID: 'alias/erp4-backup',
+      DECISION_RECORD_FILE: evidence.decisionRecord,
+      READINESS_RECORD_FILE: evidence.readinessRecord,
+      BACKUP_LOG_FILE: evidence.backupLog,
+      UPLOAD_LOG_FILE: evidence.uploadLog,
+      DOWNLOAD_LOG_FILE: evidence.downloadLog,
+      RESTORE_LOG_FILE: evidence.restoreLog,
+      INTEGRITY_REPORT_JSON: evidence.integrityJson,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(
+      String(res.stderr),
+      /RESTORE_STATUS=pass requires integrity checks to be true/,
+    );
+    assert.match(String(res.stderr), /amounts=false/);
+  });
+});
+
+test('record-backup-s3-restore: rejects pass report when readiness has no write probe', () => {
+  withRepoTempDir('backup-s3-restore-test-', (dir) => {
+    const outDir = path.join(dir, 'out');
+    mkdirSync(outDir, { recursive: true });
+    const evidence = writeBackupS3RestoreEvidenceFiles(dir);
+    writeFileSync(
+      evidence.readinessRecord,
+      [
+        '# S3バックアップ Readiness 記録',
+        '- summaryStatus: pass',
+        '[backup-s3-preflight] SUMMARY status=pass warning_count=0 error_count=0 strict=1 check_write=0',
+        '',
+      ].join('\n'),
+    );
+
+    const res = runScript('record-backup-s3-restore.sh', {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-09',
+      RUN_LABEL: 'r1',
+      TARGET_ENVIRONMENT: 'prod',
+      OPERATOR: 'alice',
+      RESTORE_STATUS: 'pass',
+      S3_BUCKET: 'erp4-backups',
+      S3_REGION: 'ap-northeast-1',
+      S3_PREFIX: 'erp4/prod',
+      ENCRYPTION_MODE: 'SSE-KMS',
+      KMS_KEY_ID: 'alias/erp4-backup',
+      DECISION_RECORD_FILE: evidence.decisionRecord,
+      READINESS_RECORD_FILE: evidence.readinessRecord,
+      BACKUP_LOG_FILE: evidence.backupLog,
+      UPLOAD_LOG_FILE: evidence.uploadLog,
+      DOWNLOAD_LOG_FILE: evidence.downloadLog,
+      RESTORE_LOG_FILE: evidence.restoreLog,
+      INTEGRITY_REPORT_JSON: evidence.integrityJson,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(
+      String(res.stderr),
+      /RESTORE_STATUS=pass requires S3 readiness record with summaryStatus=pass and CHECK_WRITE=1/,
+    );
+  });
+});
+
 test('record-po-migration-rehearsal: writes report from provided rehearsal report', () => {
   withTempDir((dir) => {
     const logDir = path.join(dir, 'logs');

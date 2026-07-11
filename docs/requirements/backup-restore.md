@@ -164,6 +164,37 @@
     - `legacy-log-scan`: 旧形式ログの文言解析結果
   - 日付検証は GNU/BSD 両方の `date` 実装に対応（Linux/macOS の混在環境で実行可能）。
 
+#### S3 実 backup/restore 証跡コマンド
+
+#544 / #1875 の Go 判定では、S3 readiness だけでは不足する。以下をすべて実施し、`scripts/record-backup-s3-restore.sh` で `docs/test-results/` に記録する。
+
+- `backup`: DB / globals / assets（該当時）を取得する
+- `upload`: S3へアップロードする
+- `download`: S3から検証環境へ取得する
+- `restore`: 検証DB/検証環境へ復元する
+- `integrity`: 主要件数、金額、参照整合性、必要ファイルの一致を確認する
+
+```bash
+TARGET_ENVIRONMENT=prod \
+OPERATOR=alice \
+RESTORE_STATUS=pass \
+S3_BUCKET=erp4-backups \
+S3_REGION=ap-northeast-1 \
+S3_PREFIX=erp4/prod \
+ENCRYPTION_MODE=SSE-KMS \
+KMS_KEY_ID=alias/erp4-backup \
+DECISION_RECORD_FILE=docs/ops/backup-s3-decision-checklist.md \
+READINESS_RECORD_FILE=docs/test-results/YYYY-MM-DD-backup-s3-readiness-rN.md \
+BACKUP_LOG_FILE=tmp/backup-prod/backup.log \
+UPLOAD_LOG_FILE=tmp/backup-prod/upload.log \
+DOWNLOAD_LOG_FILE=tmp/backup-prod/download.log \
+RESTORE_LOG_FILE=tmp/backup-prod/restore.log \
+INTEGRITY_REPORT_JSON=tmp/backup-prod/post-restore-integrity.json \
+make backup-s3-restore-record
+```
+
+`RESTORE_STATUS=pass` では、未確定の decision field、指定値と decision record の不一致、`CHECK_WRITE=1` を含まない readiness 記録、backup/upload/download/restore ログ不足、復元後整合性 JSON の不一致を script が拒否する。
+
 ## S3/OSS 移行の開始条件（叩き台）
 
 - バケット/KMS/権限分離の準備が完了している
