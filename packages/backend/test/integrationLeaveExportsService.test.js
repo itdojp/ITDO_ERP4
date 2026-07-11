@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { Prisma } from '@prisma/client';
 
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
 
@@ -420,6 +421,72 @@ test('dispatchHrLeaveExport rejects duplicate running dispatch without audit mut
   );
 
   assert.equal(auditCalls.length, 0);
+});
+
+test('dispatchHrLeaveExport replays concurrent create via P2002 re-fetch', async () => {
+  const auditCalls = [];
+  const requestHash = buildLeaveExportRequestHash({
+    target: 'attendance',
+    updatedSince: null,
+    limit: 5,
+    offset: 0,
+  });
+  const existingPayload = { target: 'attendance', exportedCount: 2, items: [] };
+  const concurrentRecord = {
+    id: 'export-log-concurrent',
+    target: 'attendance',
+    idempotencyKey: 'export-key-concurrent',
+    requestHash,
+    updatedSince: null,
+    exportedUntil: new Date('2026-02-22T10:00:00.000Z'),
+    status: 'success',
+    exportedCount: 2,
+    payload: existingPayload,
+    reexportOfId: null,
+    startedAt: new Date('2026-02-22T10:00:00.000Z'),
+    finishedAt: new Date('2026-02-22T10:00:05.000Z'),
+    message: 'exported',
+  };
+  let findUniqueCalls = 0;
+  const client = {
+    leaveIntegrationExportLog: {
+      findUnique: async () => {
+        findUniqueCalls += 1;
+        // first call: no existing record; second call (after P2002): return the concurrent record
+        return findUniqueCalls === 1 ? null : concurrentRecord;
+      },
+      create: async () => {
+        throw new Prisma.PrismaClientKnownRequestError(
+          'Unique constraint failed',
+          { code: 'P2002', clientVersion: '5.0.0' },
+        );
+      },
+    },
+  };
+
+  const result = await dispatchHrLeaveExport(
+    {
+      query: { target: 'attendance', limit: 5, offset: 0 },
+      idempotencyKey: 'export-key-concurrent',
+      auditContext: buildAuditContext(),
+    },
+    {
+      client,
+      logAudit: async (entry) => {
+        auditCalls.push(entry);
+      },
+    },
+  );
+
+  assert.equal(result.replayed, true);
+  assert.equal(result.payload, existingPayload);
+  assert.equal(result.log.id, 'export-log-concurrent');
+  assert.equal(findUniqueCalls, 2);
+  assert.equal(auditCalls.length, 1);
+  assert.equal(
+    auditCalls[0].action,
+    'integration_hr_leave_export_dispatch_replayed',
+  );
 });
 
 test('dispatchHrLeaveExport marks failed logs and truncates failure audit message', async () => {

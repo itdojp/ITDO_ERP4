@@ -76,6 +76,13 @@ function serviceError(
   return new IntegrationLeaveExportServiceError(code, statusCode, responseBody);
 }
 
+function isUniqueConstraintError(error: unknown) {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2002'
+  );
+}
+
 function parseUpdatedSince(raw?: string) {
   if (!raw) return undefined;
   const parsed = new Date(raw);
@@ -446,62 +453,81 @@ export async function dispatchHrLeaveExport(
       },
     },
   });
-  if (existing) {
-    if (existing.requestHash !== requestHash) {
+
+  const handleExisting = async (rec: NonNullable<typeof existing>) => {
+    if (rec.requestHash !== requestHash) {
       await logAudit({
         ...input.auditContext,
         action: 'integration_hr_leave_export_dispatch_conflict',
         targetTable: 'leave_integration_export_logs',
-        targetId: existing.id,
+        targetId: rec.id,
         metadata: {
           target: parsed.target,
           idempotencyKey,
           requestHash,
-          existingRequestHash: existing.requestHash,
+          existingRequestHash: rec.requestHash,
         } as Prisma.InputJsonValue,
       });
       throw serviceError('idempotency_conflict', 409);
     }
-    if (existing.status === IntegrationRunStatus.running) {
+    if (rec.status === IntegrationRunStatus.running) {
       // A duplicate request for the same running export does not mutate state,
       // so it intentionally returns the in-flight log without writing audit.
       throw serviceError('dispatch_in_progress', 409, {
         error: 'dispatch_in_progress',
-        logId: existing.id,
+        logId: rec.id,
       });
     }
     await logAudit({
       ...input.auditContext,
       action: 'integration_hr_leave_export_dispatch_replayed',
       targetTable: 'leave_integration_export_logs',
-      targetId: existing.id,
+      targetId: rec.id,
       metadata: {
         target: parsed.target,
         idempotencyKey,
-        status: existing.status,
-        exportedCount: existing.exportedCount,
+        status: rec.status,
+        exportedCount: rec.exportedCount,
       } as Prisma.InputJsonValue,
     });
     return {
       replayed: true,
-      payload: existing.payload,
-      log: buildLeaveExportLogResponse(existing),
+      payload: rec.payload,
+      log: buildLeaveExportLogResponse(rec),
     };
-  }
+  };
+
+  if (existing) return handleExisting(existing);
 
   const startedAt = now();
-  const log = await client.leaveIntegrationExportLog.create({
-    data: {
-      target: parsed.target,
-      idempotencyKey,
-      requestHash,
-      updatedSince: parsed.updatedSince ?? null,
-      exportedUntil: startedAt,
-      status: IntegrationRunStatus.running,
-      startedAt,
-      createdBy: input.actorUserId ?? null,
-    },
-  });
+  let log: Awaited<ReturnType<typeof client.leaveIntegrationExportLog.create>>;
+  try {
+    log = await client.leaveIntegrationExportLog.create({
+      data: {
+        target: parsed.target,
+        idempotencyKey,
+        requestHash,
+        updatedSince: parsed.updatedSince ?? null,
+        exportedUntil: startedAt,
+        status: IntegrationRunStatus.running,
+        startedAt,
+        createdBy: input.actorUserId ?? null,
+      },
+    });
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      const concurrent = await client.leaveIntegrationExportLog.findUnique({
+        where: {
+          target_idempotencyKey: {
+            target: parsed.target,
+            idempotencyKey,
+          },
+        },
+      });
+      if (concurrent) return handleExisting(concurrent);
+    }
+    throw error;
+  }
 
   try {
     const payload = await buildPayload(
