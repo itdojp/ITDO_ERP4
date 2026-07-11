@@ -547,8 +547,10 @@ describe('Dashboard', () => {
         method: 'POST',
       });
     });
-    expect(within(summary).getByText('Unread 1')).toBeInTheDocument();
-    expect(screen.getByText('通知なし')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(summary).getByText('Unread 1')).toBeInTheDocument();
+    });
+    expect(await screen.findByText('通知なし')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '10分' }));
     expect(
