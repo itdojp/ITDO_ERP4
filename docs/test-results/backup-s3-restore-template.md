@@ -48,6 +48,7 @@ make backup-s3-restore-record
 - `TARGET_ENVIRONMENT` と `OPERATOR` が空ではない
 - `S3_BUCKET` / `S3_REGION` / `S3_PREFIX` / `ENCRYPTION_MODE` が設定されている
 - `ENCRYPTION_MODE=SSE-KMS` の場合は `KMS_KEY_ID` が設定されている
+- `ENCRYPTION_MODE=SSE-S3` の場合は decision record の `kmsKeyIdOrAlias` が明示的に `n/a` である
 - `DECISION_RECORD_FILE` に bucket / region / prefix / encryption / lifecycle / IAM / restore責任者 / 証跡パスの必須フィールドが確定値で記録されている
 - `DECISION_RECORD_FILE` の environment / bucket / region / prefix / encryption / KMS key（SSE-KMS時）が、実行時に指定した値と一致している
 - `READINESS_RECORD_FILE` が `summaryStatus: pass` で、`CHECK_WRITE=1` の write/delete probe を含む

@@ -215,6 +215,7 @@ is_placeholder_value() {
   [[ "$value" == *"|"* ]] && return 0
   [[ "$value" == *"<"* ]] && return 0
   [[ "$value" == *"..."* ]] && return 0
+  [[ "$value" == *"場合"* ]] && return 0
   [[ "$value" == *"未定"* ]] && return 0
   [[ "$value" == *"未確定"* ]] && return 0
   [[ "$value" == *"TBD"* ]] && return 0
@@ -260,6 +261,8 @@ decision_mismatch_fields() {
   decision_value_matches "$file_path" "encryptionMode" "$ENCRYPTION_MODE" || mismatches+=("encryptionMode")
   if [[ "$ENCRYPTION_MODE" == "SSE-KMS" ]]; then
     decision_value_matches "$file_path" "kmsKeyIdOrAlias" "$KMS_KEY_ID" || mismatches+=("kmsKeyIdOrAlias")
+  elif [[ "$ENCRYPTION_MODE" == "SSE-S3" ]]; then
+    decision_value_matches "$file_path" "kmsKeyIdOrAlias" "n/a" || mismatches+=("kmsKeyIdOrAlias")
   fi
   if ((${#mismatches[@]} > 0)); then
     local IFS=", "
@@ -276,7 +279,21 @@ readiness_is_pass() {
 
 readiness_has_write_probe() {
   local file_path="$1"
-  grep -Eq "check_write=1|CHECK_WRITE:[[:space:]]*\`?1\`?" "$file_path"
+  grep -Eq "check_write=1|CHECK_WRITE=1|CHECK_WRITE:[[:space:]]*\`?1\`?" "$file_path"
+}
+
+validate_integrity_json() {
+  local file_path="$1"
+  node - "$file_path" <<'NODE'
+const fs = require('node:fs');
+const filePath = process.argv[2];
+try {
+  JSON.parse(fs.readFileSync(filePath, 'utf8'));
+} catch (error) {
+  process.stderr.write(`invalid JSON in ${filePath}: ${error.message}\n`);
+  process.exit(1);
+}
+NODE
 }
 
 integrity_value() {
@@ -454,6 +471,9 @@ main() {
   fi
 
   if [[ -n "$INTEGRITY_REPORT_JSON" ]]; then
+    if ! validate_integrity_json "$INTEGRITY_REPORT_JSON"; then
+      die "integrity report json is not valid JSON: $(format_source_path "$INTEGRITY_REPORT_JSON")"
+    fi
     counts_match="$(integrity_value "$INTEGRITY_REPORT_JSON" counts)"
     amounts_match="$(integrity_value "$INTEGRITY_REPORT_JSON" amounts)"
     references_match="$(integrity_value "$INTEGRITY_REPORT_JSON" references)"

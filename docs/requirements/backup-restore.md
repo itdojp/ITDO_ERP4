@@ -194,6 +194,7 @@ make backup-s3-restore-record
 ```
 
 `RESTORE_STATUS=pass` では、未確定の decision field、指定値と decision record の不一致、`CHECK_WRITE=1` を含まない readiness 記録、backup/upload/download/restore ログ不足、復元後整合性 JSON の不一致を script が拒否する。
+`ENCRYPTION_MODE=SSE-S3` の場合も、decision record の `kmsKeyIdOrAlias` は `n/a` と明示する。
 
 ## S3/OSS 移行の開始条件（叩き台）
 

@@ -20,7 +20,7 @@
 - region:
 - s3Prefix:
 - encryptionMode: SSE-KMS|SSE-S3
-- kmsKeyIdOrAlias:（SSE-S3 の場合は `n/a`）
+- kmsKeyIdOrAlias: （SSE-S3 の場合は `n/a` と記録）
 - kmsKeyAdmin:
 - kmsKeyUsagePrincipals:
 - versioning: Enabled|Suspended

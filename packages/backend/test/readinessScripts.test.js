@@ -715,6 +715,47 @@ test('record-backup-s3-restore: writes pass report with full S3 restore evidence
   });
 });
 
+test('record-backup-s3-restore: accepts uppercase CHECK_WRITE=1 readiness evidence', () => {
+  withRepoTempDir('backup-s3-restore-test-', (dir) => {
+    const outDir = path.join(dir, 'out');
+    mkdirSync(outDir, { recursive: true });
+    const evidence = writeBackupS3RestoreEvidenceFiles(dir);
+    writeFileSync(
+      evidence.readinessRecord,
+      [
+        '# S3バックアップ Readiness 記録',
+        '- summaryStatus: pass',
+        '```text',
+        '[backup-s3-preflight] SUMMARY status=pass warning_count=0 error_count=0 strict=1 CHECK_WRITE=1',
+        '```',
+        '',
+      ].join('\n'),
+    );
+
+    const res = runScript('record-backup-s3-restore.sh', {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-09',
+      RUN_LABEL: 'r1',
+      TARGET_ENVIRONMENT: 'prod',
+      OPERATOR: 'alice',
+      RESTORE_STATUS: 'pass',
+      S3_BUCKET: 'erp4-backups',
+      S3_REGION: 'ap-northeast-1',
+      S3_PREFIX: 'erp4/prod',
+      ENCRYPTION_MODE: 'SSE-KMS',
+      KMS_KEY_ID: 'alias/erp4-backup',
+      DECISION_RECORD_FILE: evidence.decisionRecord,
+      READINESS_RECORD_FILE: evidence.readinessRecord,
+      BACKUP_LOG_FILE: evidence.backupLog,
+      UPLOAD_LOG_FILE: evidence.uploadLog,
+      DOWNLOAD_LOG_FILE: evidence.downloadLog,
+      RESTORE_LOG_FILE: evidence.restoreLog,
+      INTEGRITY_REPORT_JSON: evidence.integrityJson,
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+  });
+});
+
 test('record-backup-s3-restore: rejects pass report with incomplete decision record', () => {
   withRepoTempDir('backup-s3-restore-test-', (dir) => {
     const outDir = path.join(dir, 'out');
@@ -859,6 +900,85 @@ test('record-backup-s3-restore: rejects pass report with mismatched decision rec
   });
 });
 
+test('record-backup-s3-restore: accepts SSE-S3 when KMS decision is explicitly n/a', () => {
+  withRepoTempDir('backup-s3-restore-test-', (dir) => {
+    const outDir = path.join(dir, 'out');
+    mkdirSync(outDir, { recursive: true });
+    const evidence = writeBackupS3RestoreEvidenceFiles(dir);
+    const original = readFileSync(evidence.decisionRecord, 'utf8');
+    writeFileSync(
+      evidence.decisionRecord,
+      original
+        .replace('- encryptionMode: SSE-KMS', '- encryptionMode: SSE-S3')
+        .replace(
+          '- kmsKeyIdOrAlias: alias/erp4-backup',
+          '- kmsKeyIdOrAlias: n/a',
+        ),
+    );
+
+    const res = runScript('record-backup-s3-restore.sh', {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-09',
+      RUN_LABEL: 'r1',
+      TARGET_ENVIRONMENT: 'prod',
+      OPERATOR: 'alice',
+      RESTORE_STATUS: 'pass',
+      S3_BUCKET: 'erp4-backups',
+      S3_REGION: 'ap-northeast-1',
+      S3_PREFIX: 'erp4/prod',
+      ENCRYPTION_MODE: 'SSE-S3',
+      DECISION_RECORD_FILE: evidence.decisionRecord,
+      READINESS_RECORD_FILE: evidence.readinessRecord,
+      BACKUP_LOG_FILE: evidence.backupLog,
+      UPLOAD_LOG_FILE: evidence.uploadLog,
+      DOWNLOAD_LOG_FILE: evidence.downloadLog,
+      RESTORE_LOG_FILE: evidence.restoreLog,
+      INTEGRITY_REPORT_JSON: evidence.integrityJson,
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+  });
+});
+
+test('record-backup-s3-restore: rejects SSE-S3 when KMS decision keeps template guidance', () => {
+  withRepoTempDir('backup-s3-restore-test-', (dir) => {
+    const outDir = path.join(dir, 'out');
+    mkdirSync(outDir, { recursive: true });
+    const evidence = writeBackupS3RestoreEvidenceFiles(dir);
+    const original = readFileSync(evidence.decisionRecord, 'utf8');
+    writeFileSync(
+      evidence.decisionRecord,
+      original
+        .replace('- encryptionMode: SSE-KMS', '- encryptionMode: SSE-S3')
+        .replace(
+          '- kmsKeyIdOrAlias: alias/erp4-backup',
+          '- kmsKeyIdOrAlias:（SSE-S3 の場合は `n/a`）',
+        ),
+    );
+
+    const res = runScript('record-backup-s3-restore.sh', {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-09',
+      RUN_LABEL: 'r1',
+      TARGET_ENVIRONMENT: 'prod',
+      OPERATOR: 'alice',
+      RESTORE_STATUS: 'pass',
+      S3_BUCKET: 'erp4-backups',
+      S3_REGION: 'ap-northeast-1',
+      S3_PREFIX: 'erp4/prod',
+      ENCRYPTION_MODE: 'SSE-S3',
+      DECISION_RECORD_FILE: evidence.decisionRecord,
+      READINESS_RECORD_FILE: evidence.readinessRecord,
+      BACKUP_LOG_FILE: evidence.backupLog,
+      UPLOAD_LOG_FILE: evidence.uploadLog,
+      DOWNLOAD_LOG_FILE: evidence.downloadLog,
+      RESTORE_LOG_FILE: evidence.restoreLog,
+      INTEGRITY_REPORT_JSON: evidence.integrityJson,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(String(res.stderr), /kmsKeyIdOrAlias/);
+  });
+});
+
 test('record-backup-s3-restore: rejects pass report with failing integrity checks', () => {
   withRepoTempDir('backup-s3-restore-test-', (dir) => {
     const outDir = path.join(dir, 'out');
@@ -893,6 +1013,39 @@ test('record-backup-s3-restore: rejects pass report with failing integrity check
       /RESTORE_STATUS=pass requires integrity checks to be true/,
     );
     assert.match(String(res.stderr), /amounts=false/);
+  });
+});
+
+test('record-backup-s3-restore: reports invalid integrity JSON without stack trace', () => {
+  withRepoTempDir('backup-s3-restore-test-', (dir) => {
+    const outDir = path.join(dir, 'out');
+    mkdirSync(outDir, { recursive: true });
+    const evidence = writeBackupS3RestoreEvidenceFiles(dir);
+    writeFileSync(evidence.integrityJson, '{not-json');
+
+    const res = runScript('record-backup-s3-restore.sh', {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-09',
+      RUN_LABEL: 'r1',
+      TARGET_ENVIRONMENT: 'prod',
+      OPERATOR: 'alice',
+      RESTORE_STATUS: 'pass',
+      S3_BUCKET: 'erp4-backups',
+      S3_REGION: 'ap-northeast-1',
+      S3_PREFIX: 'erp4/prod',
+      ENCRYPTION_MODE: 'SSE-KMS',
+      KMS_KEY_ID: 'alias/erp4-backup',
+      DECISION_RECORD_FILE: evidence.decisionRecord,
+      READINESS_RECORD_FILE: evidence.readinessRecord,
+      BACKUP_LOG_FILE: evidence.backupLog,
+      UPLOAD_LOG_FILE: evidence.uploadLog,
+      DOWNLOAD_LOG_FILE: evidence.downloadLog,
+      RESTORE_LOG_FILE: evidence.restoreLog,
+      INTEGRITY_REPORT_JSON: evidence.integrityJson,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(String(res.stderr), /integrity report json is not valid JSON/);
+    assert.doesNotMatch(String(res.stderr), /SyntaxError/);
   });
 });
 

@@ -85,7 +85,7 @@ RESTORE_CONFIRM=1 ./scripts/quadlet/restore-db-latest.sh --clean-public-schema
 
 前提:
 
-- `docs/ops/backup-s3-decision-checklist.md` に bucket / region / prefix / encryption / lifecycle / IAM / restore 承認者・実行者 / 証跡パスが確定値で記録されている
+- `docs/ops/backup-s3-decision-checklist.md` に bucket / region / prefix / encryption / lifecycle / IAM / restore 承認者・実行者 / 証跡パスが確定値で記録されている。`ENCRYPTION_MODE=SSE-S3` の場合も `kmsKeyIdOrAlias: n/a` を明示する
 - `make backup-s3-readiness-record` の結果が `summaryStatus: pass` で、`CHECK_WRITE=1` の write/delete probe を含む
 - backup / upload / download / restore の実行ログが保存されている
 - 復元後の件数、金額、参照整合性、必要ファイルの一致を JSON で記録している
