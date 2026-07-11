@@ -1092,6 +1092,415 @@ test('record-backup-s3-restore: rejects pass report when readiness has no write 
   });
 });
 
+function writeExternalCsvArtifactIntakeFiles(dir) {
+  const maskedDir = path.join(dir, 'masked');
+  mkdirSync(maskedDir, { recursive: true });
+  const files = {
+    rakudaReport: path.join(maskedDir, 'rakuda-report.csv'),
+    icsSample: path.join(maskedDir, 'ics-sample.csv'),
+    rules: path.join(maskedDir, 'rules.md'),
+  };
+  writeFileSync(files.rakudaReport, '社員コード,支給額\nE001,1000\n');
+  writeFileSync(files.icsSample, '決算更新区分,伝票番号,金額\n0,1,1000\n');
+  writeFileSync(
+    files.rules,
+    '# import rules\n\n- fieldLengths\n- codeSets\n- reimportRules\n',
+  );
+  return files;
+}
+
+function externalCsvColumns() {
+  return [
+    { name: '社員コード', required: true },
+    { name: '氏名', required: false },
+  ];
+}
+
+function writeCompleteExternalCsvArtifactManifest(
+  filePath,
+  files,
+  overrides = {},
+) {
+  const sha = 'a'.repeat(64);
+  const baseCsv = {
+    encoding: 'CP932',
+    newline: 'CRLF',
+    delimiter: ',',
+    dateFormat: 'YYYY/MM/DD',
+    numberFormat: 'half-width digits',
+    maskingStatus: 'not_required',
+    containsPersonalData: false,
+    columns: externalCsvColumns(),
+  };
+  const manifest = {
+    issue: 1432,
+    collectionDate: '2026-03-22',
+    collector: 'ops-owner',
+    maskingPolicy: {
+      approved: true,
+      approvedBy: 'security-owner',
+      approvedAt: '2026-03-22',
+      rules: ['mask personal data', 'preserve code shapes'],
+    },
+    artifacts: [
+      {
+        id: 'rakuda_employee_master_template',
+        product: '給与らくだプロ',
+        description: '社員台帳 CSV テンプレート原本',
+        status: 'received',
+        sourceType: 'actual_template',
+        externalStorageRef: 'secure://csv/rakuda-employee-template.csv',
+        checksumSha256: sha,
+        ...baseCsv,
+      },
+      {
+        id: 'rakuda_attendance_import_template',
+        product: '給与らくだプロ',
+        description: '勤怠集計 CSV テンプレート原本',
+        status: 'received',
+        sourceType: 'actual_template',
+        externalStorageRef: 'secure://csv/rakuda-attendance-template.csv',
+        checksumSha256: sha,
+        ...baseCsv,
+      },
+      {
+        id: 'rakuda_report_output_sample',
+        product: '給与らくだプロ',
+        description: '出力帳票 CSV マスキング済みサンプル',
+        status: 'received',
+        sourceType: 'actual_report_sample',
+        repoPath: files.rakudaReport,
+        sampleRows: 1,
+        ...baseCsv,
+        maskingStatus: 'masked',
+      },
+      {
+        id: 'ics_journal_import_template',
+        product: '経理上手くんα Pro II',
+        description: '仕訳取込 CSV テンプレート原本',
+        status: 'received',
+        sourceType: 'actual_template',
+        externalStorageRef: 'secure://csv/ics-template.csv',
+        checksumSha256: sha,
+        ...baseCsv,
+        columns: [{ name: '決算更新区分', required: true }],
+      },
+      {
+        id: 'ics_journal_imported_masked_sample',
+        product: '経理上手くんα Pro II',
+        description: '実際の取込済み仕訳 CSV マスキング済みサンプル',
+        status: 'received',
+        sourceType: 'masked_imported_sample',
+        repoPath: files.icsSample,
+        sampleRows: 1,
+        ...baseCsv,
+        maskingStatus: 'masked',
+        columns: [{ name: '決算更新区分', required: true }],
+      },
+      {
+        id: 'import_rules_material',
+        product: '共通',
+        description: '文字数制限・コード体系・再取込条件の運用資料',
+        status: 'received',
+        sourceType: 'operation_rule_material',
+        repoPath: files.rules,
+        maskingStatus: 'masked',
+        ruleTopics: ['fieldLengths', 'codeSets', 'reimportRules'],
+      },
+    ],
+  };
+  if (overrides.manifest) {
+    Object.assign(manifest, overrides.manifest);
+  }
+  if (overrides.artifacts) {
+    for (const [id, patch] of Object.entries(overrides.artifacts)) {
+      const artifact = manifest.artifacts.find((item) => item.id === id);
+      if (artifact) Object.assign(artifact, patch);
+    }
+  }
+  if (overrides.removeArtifactId) {
+    manifest.artifacts = manifest.artifacts.filter(
+      (item) => item.id !== overrides.removeArtifactId,
+    );
+  }
+  writeFileSync(filePath, JSON.stringify(manifest, null, 2));
+  return manifest;
+}
+
+test('record-external-csv-artifact-intake: writes pass report with complete actual artifacts', () => {
+  withRepoTempDir('external-csv-intake-test-', (dir) => {
+    const outDir = path.join(dir, 'out');
+    mkdirSync(outDir, { recursive: true });
+    const files = writeExternalCsvArtifactIntakeFiles(dir);
+    const manifestFile = path.join(dir, 'manifest.json');
+    writeCompleteExternalCsvArtifactManifest(manifestFile, files);
+
+    const res = runNodeScript('record-external-csv-artifact-intake.mjs', [], {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-22',
+      RUN_LABEL: 'r1',
+      INTAKE_STATUS: 'pass',
+      OPERATOR: 'alice',
+      MANIFEST_FILE: manifestFile,
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+
+    const reportPath = path.join(
+      outDir,
+      '2026-03-22-external-csv-artifact-intake-r1.md',
+    );
+    assert.equal(existsSync(reportPath), true);
+    const report = readFileSync(reportPath, 'utf8');
+    assert.match(report, /# External CSV artifact intake 記録/);
+    assert.match(report, /- intakeStatus: `pass`/);
+    assert.match(report, /- invalidCount: 0/);
+    assert.match(
+      report,
+      /\[x\] required actual templates\/samples\/rule materials/,
+    );
+    assert.match(
+      report,
+      /`rakuda_employee_master_template` \| received \| actual_template/,
+    );
+    assert.match(
+      report,
+      /`import_rules_material` \| received \| operation_rule_material/,
+    );
+  });
+});
+
+test('record-external-csv-artifact-intake: rejects pass report when a required artifact is missing', () => {
+  withRepoTempDir('external-csv-intake-test-', (dir) => {
+    const outDir = path.join(dir, 'out');
+    mkdirSync(outDir, { recursive: true });
+    const files = writeExternalCsvArtifactIntakeFiles(dir);
+    const manifestFile = path.join(dir, 'manifest.json');
+    writeCompleteExternalCsvArtifactManifest(manifestFile, files, {
+      removeArtifactId: 'rakuda_attendance_import_template',
+    });
+
+    const res = runNodeScript('record-external-csv-artifact-intake.mjs', [], {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-22',
+      RUN_LABEL: 'r1',
+      INTAKE_STATUS: 'pass',
+      OPERATOR: 'alice',
+      MANIFEST_FILE: manifestFile,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(String(res.stderr), /rakuda_attendance_import_template/);
+    assert.equal(
+      existsSync(
+        path.join(outDir, '2026-03-22-external-csv-artifact-intake-r1.md'),
+      ),
+      false,
+    );
+  });
+});
+
+test('record-external-csv-artifact-intake: rejects canonical or header-only substitutes', () => {
+  withRepoTempDir('external-csv-intake-test-', (dir) => {
+    const files = writeExternalCsvArtifactIntakeFiles(dir);
+    const manifestFile = path.join(dir, 'manifest.json');
+    writeCompleteExternalCsvArtifactManifest(manifestFile, files, {
+      artifacts: {
+        rakuda_employee_master_template: {
+          sourceType: 'canonical_sample',
+          headerOnly: true,
+        },
+      },
+    });
+
+    const res = runNodeScript('record-external-csv-artifact-intake.mjs', [], {
+      OUT_DIR: path.join(dir, 'out'),
+      DATE_STAMP: '2026-03-22',
+      RUN_LABEL: 'r1',
+      INTAKE_STATUS: 'pass',
+      OPERATOR: 'alice',
+      MANIFEST_FILE: manifestFile,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(String(res.stderr), /canonical_sample\/headerOnly/);
+  });
+});
+
+test('record-external-csv-artifact-intake: rejects pass report without masking approval and rule topics', () => {
+  withRepoTempDir('external-csv-intake-test-', (dir) => {
+    const files = writeExternalCsvArtifactIntakeFiles(dir);
+    const manifestFile = path.join(dir, 'manifest.json');
+    writeCompleteExternalCsvArtifactManifest(manifestFile, files, {
+      manifest: { maskingPolicy: { approved: false } },
+      artifacts: {
+        import_rules_material: { ruleTopics: ['fieldLengths'] },
+      },
+    });
+
+    const res = runNodeScript('record-external-csv-artifact-intake.mjs', [], {
+      OUT_DIR: path.join(dir, 'out'),
+      DATE_STAMP: '2026-03-22',
+      RUN_LABEL: 'r1',
+      INTAKE_STATUS: 'pass',
+      OPERATOR: 'alice',
+      MANIFEST_FILE: manifestFile,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(String(res.stderr), /maskingPolicy\.approved/);
+    assert.match(String(res.stderr), /ruleTopics must include codeSets/);
+    assert.match(String(res.stderr), /ruleTopics must include reimportRules/);
+  });
+});
+
+test('record-external-csv-artifact-intake: records masking approval as a manifest-level gate', () => {
+  withRepoTempDir('external-csv-intake-test-', (dir) => {
+    const outDir = path.join(dir, 'out');
+    mkdirSync(outDir, { recursive: true });
+    const files = writeExternalCsvArtifactIntakeFiles(dir);
+    const manifestFile = path.join(dir, 'manifest.json');
+    writeCompleteExternalCsvArtifactManifest(manifestFile, files, {
+      manifest: {
+        maskingPolicy: {
+          approved: false,
+          approvedBy: 'security-owner',
+          approvedAt: '2026-03-22',
+        },
+      },
+    });
+
+    const res = runNodeScript('record-external-csv-artifact-intake.mjs', [], {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-22',
+      RUN_LABEL: 'r1',
+      INTAKE_STATUS: 'blocked',
+      OPERATOR: 'alice',
+      MANIFEST_FILE: manifestFile,
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+
+    const report = readFileSync(
+      path.join(outDir, '2026-03-22-external-csv-artifact-intake-r1.md'),
+      'utf8',
+    );
+    assert.match(
+      report,
+      /\[ \] manifest metadata and masking approval are complete/,
+    );
+    assert.match(report, /- manifest: maskingPolicy\.approved must be true/);
+    assert.equal(
+      (report.match(/maskingPolicy\.approved must be true/g) ?? []).length,
+      1,
+    );
+  });
+});
+
+test('record-external-csv-artifact-intake: reports invalid manifest JSON without stack trace', () => {
+  withRepoTempDir('external-csv-intake-test-', (dir) => {
+    const manifestFile = path.join(dir, 'manifest.json');
+    writeFileSync(manifestFile, '{not-json');
+
+    const res = runNodeScript('record-external-csv-artifact-intake.mjs', [], {
+      OUT_DIR: path.join(dir, 'out'),
+      DATE_STAMP: '2026-03-22',
+      RUN_LABEL: 'r1',
+      INTAKE_STATUS: 'pass',
+      OPERATOR: 'alice',
+      MANIFEST_FILE: manifestFile,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(String(res.stderr), /MANIFEST_FILE is not valid JSON/);
+    assert.doesNotMatch(String(res.stderr), /SyntaxError/);
+  });
+});
+
+test('record-external-csv-artifact-intake: rejects repoPath outside the repository', () => {
+  withRepoTempDir('external-csv-intake-test-', (dir) => {
+    const files = writeExternalCsvArtifactIntakeFiles(dir);
+    const manifestFile = path.join(dir, 'manifest.json');
+    writeCompleteExternalCsvArtifactManifest(manifestFile, files, {
+      artifacts: {
+        rakuda_report_output_sample: {
+          repoPath: '/dev/null',
+        },
+      },
+    });
+
+    const res = runNodeScript('record-external-csv-artifact-intake.mjs', [], {
+      OUT_DIR: path.join(dir, 'out'),
+      DATE_STAMP: '2026-03-22',
+      RUN_LABEL: 'r1',
+      INTAKE_STATUS: 'pass',
+      OPERATOR: 'alice',
+      MANIFEST_FILE: manifestFile,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(String(res.stderr), /repoPath must be inside repository/);
+  });
+});
+
+test('record-external-csv-artifact-intake: rejects pass report when manifest contains extra canonical_sample artifact', () => {
+  withRepoTempDir('external-csv-intake-test-', (dir) => {
+    const files = writeExternalCsvArtifactIntakeFiles(dir);
+    const manifestFile = path.join(dir, 'manifest.json');
+    const manifest = writeCompleteExternalCsvArtifactManifest(
+      manifestFile,
+      files,
+    );
+    // Inject an extra non-required artifact with sourceType canonical_sample
+    manifest.artifacts.push({
+      id: 'extra_canonical_reference',
+      product: '給与らくだプロ',
+      description: 'repo canonical sample used as reference',
+      status: 'received',
+      sourceType: 'canonical_sample',
+      repoPath: files.rakudaReport,
+    });
+    writeFileSync(manifestFile, JSON.stringify(manifest, null, 2));
+
+    const res = runNodeScript('record-external-csv-artifact-intake.mjs', [], {
+      OUT_DIR: path.join(dir, 'out'),
+      DATE_STAMP: '2026-03-22',
+      RUN_LABEL: 'r1',
+      INTAKE_STATUS: 'pass',
+      OPERATOR: 'alice',
+      MANIFEST_FILE: manifestFile,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(String(res.stderr), /canonical_sample artifacts not allowed/);
+    assert.match(String(res.stderr), /extra_canonical_reference/);
+  });
+});
+
+test('record-external-csv-artifact-intake: rejects pass report when artifact has one sensitive flag unset and other false', () => {
+  withRepoTempDir('external-csv-intake-test-', (dir) => {
+    const files = writeExternalCsvArtifactIntakeFiles(dir);
+    const manifestFile = path.join(dir, 'manifest.json');
+    // containsPersonalData: false but containsSensitiveData is not false (unset)
+    // maskingStatus is also not set — relies entirely on containsPersonalData: false
+    writeCompleteExternalCsvArtifactManifest(manifestFile, files, {
+      artifacts: {
+        rakuda_employee_master_template: {
+          maskingStatus: undefined,
+          containsPersonalData: false,
+          // containsSensitiveData intentionally omitted (not false)
+        },
+      },
+    });
+
+    const res = runNodeScript('record-external-csv-artifact-intake.mjs', [], {
+      OUT_DIR: path.join(dir, 'out'),
+      DATE_STAMP: '2026-03-22',
+      RUN_LABEL: 'r1',
+      INTAKE_STATUS: 'pass',
+      OPERATOR: 'alice',
+      MANIFEST_FILE: manifestFile,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(
+      String(res.stderr),
+      /masked, not_required, or explicitly non-sensitive/,
+    );
+  });
+});
+
 test('record-po-migration-rehearsal: writes report from provided rehearsal report', () => {
   withTempDir((dir) => {
     const logDir = path.join(dir, 'logs');

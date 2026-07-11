@@ -44,6 +44,24 @@
 | 経理上手くんα Pro II | 実データ入り仕訳 CSV      | `決修`、`伝票番号`、`部門コード`、`税区分` 等の実運用確認 |
 | 共通                 | 取込エラー資料            | 行単位/ファイル単位のエラー判定、再取込条件の確認         |
 
+## 受領後の証跡化
+
+#1432 / #1875 の Go 判定では、repo 内 canonical sample ではなく、現物由来 artifact の受領状況を manifest と test-results 記録で残す。
+
+1. `docs/requirements/external-csv-artifact-intake-manifest.template.json` を複製し、受領した artifact の実値へ更新する。
+2. raw 原本を repo に置かない場合は、`externalStorageRef` と sha256 を記録する。
+3. マスキング済み sample / rule summary を repo に置く場合は、`repoPath` に配置し、個人情報・機密情報が含まれないことを確認する。
+4. `make external-csv-artifact-intake-record` で `docs/test-results/YYYY-MM-DD-external-csv-artifact-intake-rN.md` を生成する。
+
+```bash
+INTAKE_STATUS=pass \
+OPERATOR=alice \
+MANIFEST_FILE=docs/requirements/external-csv-artifact-intake-manifest.json \
+make external-csv-artifact-intake-record
+```
+
+`INTAKE_STATUS=pass` は、給与らくだ社員台帳テンプレート、給与らくだ勤怠テンプレート、給与らくだ出力帳票 sample、経理上手くんα仕訳テンプレート、経理上手くんαマスキング済み取込済み sample、文字数制限・コード体系・再取込条件資料が揃うまで失敗する。
+
 ## 現時点の判断
 
 - 会計連携は、ICS テンプレート原本が 1 本回収済みで、baseline 実装と仕様書を前進できる状態にある。
