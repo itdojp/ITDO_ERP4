@@ -472,10 +472,15 @@ describe('ChatRoomSettingsCard', () => {
       (screen.getByLabelText('投稿グループ') as HTMLInputElement).value,
     ).toBe('');
 
-    fireEvent.click(screen.getByRole('button', { name: 'メンバー追加' }));
+    const addMemberButton = screen.getByRole('button', {
+      name: 'メンバー追加',
+    });
+    await waitFor(() => expect(addMemberButton).not.toBeDisabled());
+
+    fireEvent.click(addMemberButton);
 
     expect(
-      screen.getByText('追加するユーザIDを入力してください'),
+      await screen.findByText('追加するユーザIDを入力してください'),
     ).not.toBeNull();
   });
 });
