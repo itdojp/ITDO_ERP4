@@ -173,17 +173,28 @@ test("help prints usage without requiring a fixture", () => {
   assert.match(result.stdout, /Usage: node scripts\/data-quality-check\.mjs/);
 });
 
-test("blocking mode fails when a ready journal row is missing one account side", () => {
+test("blocking mode allows balanced single-sided ready journal rows", () => {
   const tempDir = makeTempDir();
   try {
-    const fixturePath = path.join(tempDir, "missing-one-side.json");
-    const output = path.join(tempDir, "missing-one-side-report.json");
-    const summary = path.join(tempDir, "missing-one-side-report.md");
+    const fixturePath = path.join(tempDir, "balanced-single-sided.json");
+    const output = path.join(tempDir, "balanced-single-sided-report.json");
+    const summary = path.join(tempDir, "balanced-single-sided-report.md");
     const fixture = readJson(validFixture);
+    const baseRow = fixture.accountingJournalStaging[0];
     fixture.accountingJournalStaging = [
       {
-        ...fixture.accountingJournalStaging[0],
+        ...baseRow,
+        id: "ajs-single-debit",
+        debitAccountCode: "1100",
         creditAccountCode: "",
+        amount: 100,
+      },
+      {
+        ...baseRow,
+        id: "ajs-single-credit",
+        debitAccountCode: "",
+        creditAccountCode: "4000",
+        amount: 100,
       },
     ];
     writeJson(fixturePath, fixture);
@@ -198,10 +209,53 @@ test("blocking mode fails when a ready journal row is missing one account side",
       "--summary",
       summary,
     ]);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const report = readJson(output);
+    const names = failingCheckNames(report);
+    assert.equal(report.status, "pass");
+    assert.equal(names.has("accounting_journal_ready_missing_side"), false);
+    assert.equal(names.has("accounting_journal_debit_credit_mismatch"), false);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("blocking mode reports malformed single-sided journal amounts without aborting", () => {
+  const tempDir = makeTempDir();
+  try {
+    const fixturePath = path.join(tempDir, "malformed-single-sided.json");
+    const output = path.join(tempDir, "malformed-single-sided-report.json");
+    const summary = path.join(tempDir, "malformed-single-sided-report.md");
+    const fixture = readJson(validFixture);
+    fixture.accountingJournalStaging = [
+      {
+        ...fixture.accountingJournalStaging[0],
+        id: "ajs-single-invalid-amount",
+        debitAccountCode: "1100",
+        creditAccountCode: "",
+        amount: "not-a-number",
+      },
+    ];
+    writeJson(fixturePath, fixture);
+
+    const result = runDataQuality([
+      "--mode",
+      "blocking",
+      "--fixture",
+      fixturePath,
+      "--output",
+      output,
+      "--summary",
+      summary,
+    ]);
+
     assert.equal(result.status, 1, result.stderr || result.stdout);
     const report = readJson(output);
     const names = failingCheckNames(report);
-    assert.ok(names.has("accounting_journal_ready_missing_side"));
+    assert.equal(report.status, "fail");
+    assert.ok(names.has("accounting_journal_ready_export_field_missing"));
+    assert.equal(names.has("accounting_journal_ready_missing_side"), false);
+    assert.ok(fs.existsSync(summary));
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

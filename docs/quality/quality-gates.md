@@ -148,7 +148,7 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 | `invoice_currency_missing` / `billing_tax_rate_missing`                                         | blocking | 請求・税務/会計出力に必要なコード欠落であり、下流処理の前提を満たさない              |
 | `invoice_header_line_total_mismatch`                                                            | blocking | header合計とline合計の差分は請求金額の決定的な不整合                                 |
 | `accounting_event_source_key_duplicate`                                                         | blocking | `AccountingEvent` の `sourceTable/sourceId/eventKind` 一意制約に対応する重複連携キー |
-| `accounting_journal_ready_missing_side`                                                         | blocking | `ready` 仕訳行が借方/貸方のいずれかを欠く状態はCSV出力不能                           |
+| `accounting_journal_ready_missing_side`                                                         | blocking | `ready` 仕訳行が借方/貸方のいずれも持たない状態はCSV出力不能                         |
 | `accounting_journal_ready_export_field_missing`                                                 | blocking | ICS export が必須とする `taxCode` と正の `amount` を欠く `ready` 行は出力不能        |
 | `accounting_journal_debit_credit_mismatch`                                                      | blocking | 単側 `ready` 仕訳行の借方合計と貸方合計が一致しない状態は会計出力不能                |
 | `statutory_accounting_import_count_mismatch`                                                    | blocking | import batch の期待件数と実件数が一致しない migration/import integrity 異常          |

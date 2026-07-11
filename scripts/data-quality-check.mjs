@@ -105,9 +105,9 @@ const CHECK_DEFINITIONS = {
     severity: "blocking",
     category: "debit-credit-integrity",
     description:
-      "Ready accounting journal staging rows have both debit and credit account codes.",
+      "Ready accounting journal staging rows have at least one debit or credit account code.",
     reproduction:
-      "Create a ready accountingJournalStaging row missing debitAccountCode or creditAccountCode and run the blocking data-quality command.",
+      "Create a ready accountingJournalStaging row without debitAccountCode and creditAccountCode and run the blocking data-quality command.",
   },
   accounting_journal_ready_export_field_missing: {
     severity: "blocking",
@@ -514,15 +514,14 @@ function accountingJournalReadyMissingSide(data) {
     if (row.status !== "ready") return;
     const hasDebit = isPresent(row.debitAccountCode);
     const hasCredit = isPresent(row.creditAccountCode);
-    if (!hasDebit || !hasCredit) {
+    if (!hasDebit && !hasCredit) {
       const id = isPresent(row.id)
         ? row.id
         : "AccountingJournalStaging:unknown-id";
       samples.push(id);
-      const missingFields = [];
-      if (!hasDebit) missingFields.push("debitAccountCode");
-      if (!hasCredit) missingFields.push("creditAccountCode");
-      details.push(`${id} ready row missing ${missingFields.join(",")}`);
+      details.push(
+        `${id} ready row missing both debitAccountCode and creditAccountCode`,
+      );
     }
   });
   return makeResult("accounting_journal_ready_missing_side", samples, details);
@@ -564,10 +563,16 @@ function accountingJournalDebitCreditMismatch(data) {
     // Rows with both account codes are self-balanced; compound vouchers use
     // single-sided rows, so only those rows contribute to aggregate balance.
     if (hasDebit === hasCredit) return;
-    const amount = toNumber(row.amount);
     const rowId = isPresent(row.id)
       ? row.id
       : "AccountingJournalStaging:unknown-id";
+    const amount = Number(row.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      contributingRows.push(
+        `${rowId}: skipped invalid amount for aggregate debit/credit balance`,
+      );
+      return;
+    }
     if (hasDebit) {
       debitTotal += amount;
       contributingRows.push(`${rowId}:debit=${amount.toFixed(2)}`);

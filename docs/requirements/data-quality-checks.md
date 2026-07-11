@@ -53,7 +53,7 @@ node scripts/data-quality-check.mjs \
 | `billing_tax_rate_missing`                      | 必須コード欠落             | `BillingLine.taxRate` が明示されていること                                                 |
 | `invoice_header_line_total_mismatch`            | header/line合計不一致      | `Invoice.totalAmount` と `BillingLine.quantity * unitPrice` 合計の差が 0.01 以下であること |
 | `accounting_event_source_key_duplicate`         | 重複連携キー               | `AccountingEvent.sourceTable/sourceId/eventKind` が重複しないこと                          |
-| `accounting_journal_ready_missing_side`         | 借貸不整合                 | `status=ready` の `AccountingJournalStaging` が借方/貸方の両方を持つこと                   |
+| `accounting_journal_ready_missing_side`         | 借貸不整合                 | `status=ready` の `AccountingJournalStaging` が借方/貸方の少なくとも一方を持つこと         |
 | `accounting_journal_ready_export_field_missing` | ICS export必須項目欠落     | `status=ready` 行が `taxCode` と正の `amount` を持つこと                                   |
 | `accounting_journal_debit_credit_mismatch`      | 借貸不整合                 | 単側 `status=ready` 行の借方科目あり金額合計と貸方科目あり金額合計が一致すること           |
 | `statutory_accounting_import_count_mismatch`    | migration/import件数不一致 | `StatutoryAccountingActualImportBatch.importedCount` と actual row 件数が一致すること      |
