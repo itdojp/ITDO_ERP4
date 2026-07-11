@@ -193,9 +193,38 @@ trial 完了後は以下を `docs/test-results/` に追加する。
 
 - readiness record
 - cutover / rollback 結果を含む cutover record
+- 対象環境名、実施者、主要操作結果、cutover 後 fallback、rollback 確認を束ねた target trial record
 - 必要なら対象環境での操作ログ / 監査ログ抜粋
 
 最低限、`#1426` のチェックリストに対応する evidence へリンクを残す。
+
+### Target trial record
+
+`#1426` を完了扱いにする前に、対象環境での実施証跡を以下で生成する。
+
+```bash
+TARGET_ENVIRONMENT=staging \
+OPERATOR=alice \
+TRIAL_STATUS=pass \
+CUTOVER_AT="$CUTOVER_AT" \
+READINESS_RECORD_FILE=docs/test-results/YYYY-MM-DD-action-policy-phase3-readiness-rN.md \
+CUTOVER_RECORD_FILE=docs/test-results/YYYY-MM-DD-action-policy-phase3-cutover-rN.md \
+OPERATION_RESULTS_FILE=docs/test-results/YYYY-MM-DD-action-policy-phase3-target-ops-rN.md \
+POST_FALLBACK_REPORT_JSON=tmp/action-policy-phase3-target/post-fallback.json \
+ROLLBACK_STATUS=verified \
+ROLLBACK_AT="$ROLLBACK_AT" \
+ROLLBACK_FALLBACK_REPORT_JSON=tmp/action-policy-phase3-target/rollback-fallback.json \
+make action-policy-phase3-target-trial-record
+```
+
+`TRIAL_STATUS=pass` では script が以下を検査する。
+
+- `READINESS_RECORD_FILE` と `CUTOVER_RECORD_FILE` が明示指定されている
+- `OPERATION_RESULTS_FILE` に必須主要操作の checked entry がすべて存在する
+- `POST_FALLBACK_REPORT_JSON` の `uniqueKeys=0`
+- `ROLLBACK_STATUS=verified`
+
+対象環境や rollback 証跡が不足する場合は `blocked` として記録し、`#1426` は close しない。
 
 ## 失敗時の切り分け
 

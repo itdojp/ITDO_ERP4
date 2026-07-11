@@ -23,6 +23,7 @@
 
 - [ActionPolicy phase3 cutover 記録テンプレート](action-policy-phase3-cutover-template.md)
 - [ActionPolicy phase3 readiness 記録テンプレート](action-policy-phase3-readiness-template.md)
+- [ActionPolicy phase3 target-environment trial 記録テンプレート](action-policy-phase3-target-trial-template.md)
 - [S3バックアップ Readiness 記録テンプレート](backup-s3-readiness-template.md)
 - [チャット添付AV（Staging）検証テンプレート](chat-attachments-av-staging-template.md)
 - [DBバックアップ健全性確認 記録テンプレート](db-backup-health-template.md)
