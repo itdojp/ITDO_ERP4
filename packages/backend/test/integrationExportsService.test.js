@@ -7,6 +7,7 @@ import {
   buildHrEmployeeMasterCsv,
   buildHrEmployeeMasterCsvFilename,
   buildHrEmployeeMasterExportRequestHash,
+  dispatchAccountingIcsExport,
   dispatchHrEmployeeMasterExport,
   parseAccountingIcsExportQuery,
   resolveAccountingIcsTemplateOptions,
@@ -208,4 +209,84 @@ test('integration export service validates accounting ICS template DTOs outside 
     companyName: '@株式会社　アイティードゥ',
     fiscalYearStartMonth: 10,
   });
+});
+
+test('integration export service uses injected Prisma for accounting ICS dispatch', async () => {
+  const auditEntries = [];
+  const createdAt = new Date('2026-03-01T00:00:00.000Z');
+  const createdLog = {
+    id: 'acct-log-001',
+    idempotencyKey: 'acct-export-key-001',
+    requestHash: 'request-hash-placeholder',
+    reexportOfId: null,
+    periodKey: null,
+    status: IntegrationRunStatus.running,
+    exportedUntil: createdAt,
+    exportedCount: 0,
+    startedAt: createdAt,
+    finishedAt: null,
+    message: null,
+    payload: null,
+  };
+  const calls = [];
+  const result = await dispatchAccountingIcsExport(
+    {
+      idempotencyKey: createdLog.idempotencyKey,
+      query: parseAccountingIcsExportQuery({ format: 'csv' }),
+      actorUserId: 'admin-user',
+      auditContext: { userId: 'admin-user' },
+    },
+    {
+      prisma: {
+        accountingIcsExportLog: {
+          findUnique: async () => null,
+          create: async ({ data }) => {
+            calls.push(['create-log', data.status]);
+            return {
+              ...createdLog,
+              requestHash: data.requestHash,
+              periodKey: data.periodKey,
+              exportedUntil: data.exportedUntil,
+              startedAt: data.startedAt,
+            };
+          },
+          update: async ({ data }) => {
+            calls.push(['update-log', data.status]);
+            return {
+              ...createdLog,
+              status: data.status,
+              exportedCount: data.exportedCount,
+              payload: data.payload,
+              message: data.message,
+              finishedAt: data.finishedAt,
+            };
+          },
+        },
+        accountingJournalStaging: {
+          count: async () => {
+            calls.push(['count-staging']);
+            return 0;
+          },
+          findMany: async () => {
+            calls.push(['find-staging']);
+            return [];
+          },
+        },
+      },
+      logAudit: async (entry) => {
+        auditEntries.push(entry);
+      },
+    },
+  );
+
+  assert.equal(result.replayed, false);
+  assert.equal(result.payload.exportedCount, 0);
+  assert.deepEqual(
+    calls.map((call) => call[0]),
+    ['count-staging', 'find-staging', 'create-log', 'update-log'],
+  );
+  assert.equal(
+    auditEntries[0].action,
+    'integration_accounting_ics_export_dispatched',
+  );
 });

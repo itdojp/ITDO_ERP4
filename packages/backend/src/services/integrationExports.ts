@@ -21,14 +21,12 @@ type IntegrationExportAuditLogger = typeof defaultLogAudit;
 type IntegrationExportDependencies = {
   prisma?: IntegrationExportPrisma;
   logAudit?: IntegrationExportAuditLogger;
-  now?: () => Date;
 };
 
 function resolveDependencies(deps: IntegrationExportDependencies = {}) {
   return {
     prisma: deps.prisma ?? defaultPrisma,
     logAudit: deps.logAudit ?? defaultLogAudit,
-    now: deps.now ?? (() => new Date()),
   };
 }
 
@@ -1295,6 +1293,7 @@ export async function dispatchAccountingIcsExport(
   let payload: AccountingIcsExportPayload;
   resolveAccountingIcsTemplateOptions(input.query);
   payload = await buildAccountingIcsExportPayload({
+    client: prisma,
     periodKey: input.query.periodKey,
     exportedUntil: startedAt,
     limit: input.query.limit,
