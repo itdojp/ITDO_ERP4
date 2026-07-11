@@ -241,7 +241,7 @@ test("runReleaseReadiness blocks --record when git commit SHA is unknown", async
     } else {
       process.env.GIT_CEILING_DIRECTORIES = previousCeiling;
     }
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(base, { recursive: true, force: true });
   }
 
   assert.equal(summary.repoSideStatus, "FAIL");
