@@ -1350,6 +1350,48 @@ test('record-external-csv-artifact-intake: rejects pass report without masking a
   });
 });
 
+test('record-external-csv-artifact-intake: records masking approval as a manifest-level gate', () => {
+  withRepoTempDir('external-csv-intake-test-', (dir) => {
+    const outDir = path.join(dir, 'out');
+    mkdirSync(outDir, { recursive: true });
+    const files = writeExternalCsvArtifactIntakeFiles(dir);
+    const manifestFile = path.join(dir, 'manifest.json');
+    writeCompleteExternalCsvArtifactManifest(manifestFile, files, {
+      manifest: {
+        maskingPolicy: {
+          approved: false,
+          approvedBy: 'security-owner',
+          approvedAt: '2026-03-22',
+        },
+      },
+    });
+
+    const res = runNodeScript('record-external-csv-artifact-intake.mjs', [], {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-22',
+      RUN_LABEL: 'r1',
+      INTAKE_STATUS: 'blocked',
+      OPERATOR: 'alice',
+      MANIFEST_FILE: manifestFile,
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+
+    const report = readFileSync(
+      path.join(outDir, '2026-03-22-external-csv-artifact-intake-r1.md'),
+      'utf8',
+    );
+    assert.match(
+      report,
+      /\[ \] manifest metadata and masking approval are complete/,
+    );
+    assert.match(report, /- manifest: maskingPolicy\.approved must be true/);
+    assert.equal(
+      (report.match(/maskingPolicy\.approved must be true/g) ?? []).length,
+      1,
+    );
+  });
+});
+
 test('record-external-csv-artifact-intake: reports invalid manifest JSON without stack trace', () => {
   withRepoTempDir('external-csv-intake-test-', (dir) => {
     const manifestFile = path.join(dir, 'manifest.json');
@@ -1366,6 +1408,31 @@ test('record-external-csv-artifact-intake: reports invalid manifest JSON without
     assert.notEqual(res.status, 0);
     assert.match(String(res.stderr), /MANIFEST_FILE is not valid JSON/);
     assert.doesNotMatch(String(res.stderr), /SyntaxError/);
+  });
+});
+
+test('record-external-csv-artifact-intake: rejects repoPath outside the repository', () => {
+  withRepoTempDir('external-csv-intake-test-', (dir) => {
+    const files = writeExternalCsvArtifactIntakeFiles(dir);
+    const manifestFile = path.join(dir, 'manifest.json');
+    writeCompleteExternalCsvArtifactManifest(manifestFile, files, {
+      artifacts: {
+        rakuda_report_output_sample: {
+          repoPath: '/dev/null',
+        },
+      },
+    });
+
+    const res = runNodeScript('record-external-csv-artifact-intake.mjs', [], {
+      OUT_DIR: path.join(dir, 'out'),
+      DATE_STAMP: '2026-03-22',
+      RUN_LABEL: 'r1',
+      INTAKE_STATUS: 'pass',
+      OPERATOR: 'alice',
+      MANIFEST_FILE: manifestFile,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(String(res.stderr), /repoPath must be inside repository/);
   });
 });
 

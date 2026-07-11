@@ -100,6 +100,13 @@ function normalizeToAbsolute(input) {
   return path.isAbsolute(input) ? input : path.join(ROOT_DIR, input);
 }
 
+function isPathInsideRoot(absolute) {
+  const relative = path.relative(ROOT_DIR, absolute);
+  return (
+    relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative)
+  );
+}
+
 function formatSourcePath(input) {
   if (!input) return "not_provided";
   const absolute = normalizeToAbsolute(input);
@@ -170,6 +177,12 @@ function readManifest(filePath) {
 function artifactLocationIsValid(artifact) {
   if (requiredString(artifact.repoPath)) {
     const absolute = normalizeToAbsolute(artifact.repoPath);
+    if (!isPathInsideRoot(absolute)) {
+      return {
+        ok: false,
+        reason: `repoPath must be inside repository: ${artifact.repoPath}`,
+      };
+    }
     if (!existsSync(absolute))
       return { ok: false, reason: `repoPath not found: ${artifact.repoPath}` };
     if (!statSync(absolute).isFile())
@@ -193,19 +206,21 @@ function artifactLocationIsValid(artifact) {
   };
 }
 
-function artifactMaskingIsValid(manifest, artifact) {
+function validateMaskingPolicy(manifest) {
+  const errors = [];
   if (manifest.maskingPolicy?.approved !== true) {
-    return { ok: false, reason: "maskingPolicy.approved must be true" };
+    errors.push("maskingPolicy.approved must be true");
   }
   if (
     !requiredString(manifest.maskingPolicy?.approvedBy) ||
     !requiredString(manifest.maskingPolicy?.approvedAt)
   ) {
-    return {
-      ok: false,
-      reason: "maskingPolicy approvedBy/approvedAt are required",
-    };
+    errors.push("maskingPolicy approvedBy/approvedAt are required");
   }
+  return errors;
+}
+
+function artifactMaskingIsValid(artifact) {
   const maskingStatus = String(artifact.maskingStatus ?? "").toLowerCase();
   if (maskingStatus === "masked" || maskingStatus === "not_required") {
     return { ok: true };
@@ -256,7 +271,7 @@ function validateRuleTopics(artifact, requiredTopics) {
     .map((topic) => `ruleTopics must include ${topic}`);
 }
 
-function validateArtifact(manifest, required, artifact) {
+function validateArtifact(required, artifact) {
   const errors = [];
   if (!artifact) {
     return [`missing required artifact: ${required.id}`];
@@ -275,7 +290,7 @@ function validateArtifact(manifest, required, artifact) {
   }
   const location = artifactLocationIsValid(artifact);
   if (!location.ok) errors.push(location.reason);
-  const masking = artifactMaskingIsValid(manifest, artifact);
+  const masking = artifactMaskingIsValid(artifact);
   if (!masking.ok) errors.push(masking.reason);
   if (!requiredString(artifact.product)) errors.push("product is required");
   if (!requiredString(artifact.description))
@@ -303,18 +318,20 @@ function validateManifest(manifest) {
   }
 
   const invalid = [];
+  const manifestErrors = [];
   if (duplicateIds.length > 0)
-    invalid.push({
-      id: "manifest",
-      errors: [`duplicate artifact ids: ${duplicateIds.join(", ")}`],
-    });
+    manifestErrors.push(`duplicate artifact ids: ${duplicateIds.join(", ")}`);
   if (!requiredString(manifest.collectionDate))
-    invalid.push({ id: "manifest", errors: ["collectionDate is required"] });
+    manifestErrors.push("collectionDate is required");
   if (!requiredString(manifest.collector))
-    invalid.push({ id: "manifest", errors: ["collector is required"] });
+    manifestErrors.push("collector is required");
+  manifestErrors.push(...validateMaskingPolicy(manifest));
+  if (manifestErrors.length > 0) {
+    invalid.push({ id: "manifest", errors: manifestErrors });
+  }
 
   for (const required of REQUIRED_ARTIFACTS) {
-    const errors = validateArtifact(manifest, required, byId.get(required.id));
+    const errors = validateArtifact(required, byId.get(required.id));
     if (errors.length > 0) invalid.push({ id: required.id, errors });
   }
 
