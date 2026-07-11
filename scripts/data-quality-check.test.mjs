@@ -117,6 +117,7 @@ test("blocking mode fails with deterministic invalid fixture violations", () => 
       "invoice_header_line_total_mismatch",
       "accounting_event_source_key_duplicate",
       "accounting_journal_ready_missing_side",
+      "accounting_journal_ready_export_field_missing",
       "accounting_journal_debit_credit_mismatch",
       "statutory_accounting_import_count_mismatch",
     ]) {
@@ -159,6 +160,13 @@ test("advisory mode records warnings but exits successfully", () => {
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+test("help prints usage without requiring a fixture", () => {
+  const result = runDataQuality(["--help"]);
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Usage: node scripts\/data-quality-check\.mjs/);
 });
 
 test("missing fixture path is treated as a runner/configuration error", () => {

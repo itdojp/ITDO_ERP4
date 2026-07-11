@@ -39,27 +39,28 @@ node scripts/data-quality-check.mjs \
 
 ## blocking 分類
 
-| check                                        | 対応する最低ライン         | 判定内容                                                                                   |
-| -------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------ |
-| `required_id_missing`                        | 必須ID欠落                 | fixture record の `id` または import batch の `importBatchKey` が空でないこと              |
-| `required_code_missing`                      | 必須コード欠落             | `Project` / `Customer` / `Vendor` の `code` が空でないこと                                 |
-| `duplicate_project_code`                     | 一意コード重複             | active project code が重複しないこと                                                       |
-| `duplicate_customer_code`                    | 一意コード重複             | customer code が重複しないこと                                                             |
-| `duplicate_vendor_code`                      | 一意コード重複             | vendor code が重複しないこと                                                               |
-| `orphan_time_entry_project`                  | 参照切れ/orphan            | `TimeEntry.projectId` が既存 `Project.id` を参照すること                                   |
-| `orphan_billing_line_invoice`                | 参照切れ/orphan            | `BillingLine.invoiceId` が既存 `Invoice.id` を参照すること                                 |
-| `orphan_accounting_journal_event`            | 参照切れ/orphan            | `AccountingJournalStaging.eventId` が既存 `AccountingEvent.id` を参照すること              |
-| `invoice_currency_missing`                   | 必須コード欠落             | `Invoice.currency` が空でないこと                                                          |
-| `billing_tax_rate_missing`                   | 必須コード欠落             | `BillingLine.taxRate` が明示されていること                                                 |
-| `invoice_header_line_total_mismatch`         | header/line合計不一致      | `Invoice.totalAmount` と `BillingLine.quantity * unitPrice` 合計の差が 0.01 以下であること |
-| `accounting_event_source_key_duplicate`      | 重複連携キー               | `AccountingEvent.sourceTable/sourceId/eventKind` が重複しないこと                          |
-| `accounting_journal_ready_missing_side`      | 借貸不整合                 | `status=ready` の `AccountingJournalStaging` が借方/貸方の少なくとも一方を持つこと         |
-| `accounting_journal_debit_credit_mismatch`   | 借貸不整合                 | `status=ready` 行の借方科目あり金額合計と貸方科目あり金額合計が一致すること                |
-| `statutory_accounting_import_count_mismatch` | migration/import件数不一致 | `StatutoryAccountingActualImportBatch.importedCount` と actual row 件数が一致すること      |
+| check                                           | 対応する最低ライン         | 判定内容                                                                                   |
+| ----------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------ |
+| `required_id_missing`                           | 必須ID欠落                 | fixture record の `id` または import batch の `importBatchKey` が空でないこと              |
+| `required_code_missing`                         | 必須コード欠落             | `Project` / `Customer` / `Vendor` の `code` が空でないこと                                 |
+| `duplicate_project_code`                        | 一意コード重複             | active project code が重複しないこと                                                       |
+| `duplicate_customer_code`                       | 一意コード重複             | customer code が重複しないこと                                                             |
+| `duplicate_vendor_code`                         | 一意コード重複             | vendor code が重複しないこと                                                               |
+| `orphan_time_entry_project`                     | 参照切れ/orphan            | `TimeEntry.projectId` が既存 `Project.id` を参照すること                                   |
+| `orphan_billing_line_invoice`                   | 参照切れ/orphan            | `BillingLine.invoiceId` が既存 `Invoice.id` を参照すること                                 |
+| `orphan_accounting_journal_event`               | 参照切れ/orphan            | `AccountingJournalStaging.eventId` が既存 `AccountingEvent.id` を参照すること              |
+| `invoice_currency_missing`                      | 必須コード欠落             | `Invoice.currency` が空でないこと                                                          |
+| `billing_tax_rate_missing`                      | 必須コード欠落             | `BillingLine.taxRate` が明示されていること                                                 |
+| `invoice_header_line_total_mismatch`            | header/line合計不一致      | `Invoice.totalAmount` と `BillingLine.quantity * unitPrice` 合計の差が 0.01 以下であること |
+| `accounting_event_source_key_duplicate`         | 重複連携キー               | `AccountingEvent.sourceTable/sourceId/eventKind` が重複しないこと                          |
+| `accounting_journal_ready_missing_side`         | 借貸不整合                 | `status=ready` の `AccountingJournalStaging` が借方/貸方の少なくとも一方を持つこと         |
+| `accounting_journal_ready_export_field_missing` | ICS export必須項目欠落     | `status=ready` 行が `taxCode` と正の `amount` を持つこと                                   |
+| `accounting_journal_debit_credit_mismatch`      | 借貸不整合                 | 単側 `status=ready` 行の借方科目あり金額合計と貸方科目あり金額合計が一致すること           |
+| `statutory_accounting_import_count_mismatch`    | migration/import件数不一致 | `StatutoryAccountingActualImportBatch.importedCount` と actual row 件数が一致すること      |
 
 ### 現行モデル上の注記
 
-`AccountingJournalStaging` は借方金額・貸方金額を別フィールドでは持たず、`amount` と `debitAccountCode` / `creditAccountCode` の有無で片側明細を表現する。そのため借貸チェックは、`status=ready` 行のうち debit code を持つ行の `amount` 合計と credit code を持つ行の `amount` 合計を比較する。
+`AccountingJournalStaging` は借方金額・貸方金額を別フィールドでは持たず、`amount` と `debitAccountCode` / `creditAccountCode` の有無で片側明細を表現する。借方・貸方の両コードを持つ行は行内で自己均衡しているものとして扱う。借貸チェックは、複合仕訳の単側 `status=ready` 行について debit code を持つ行の `amount` 合計と credit code を持つ行の `amount` 合計を比較する。ICS export の `validateReadyRow()` に合わせ、`status=ready` 行は `taxCode` と正の `amount` も必須とする。
 
 ## advisory 分類
 

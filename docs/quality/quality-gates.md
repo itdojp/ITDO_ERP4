@@ -149,12 +149,13 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 | `invoice_header_line_total_mismatch`                                                            | blocking | header合計とline合計の差分は請求金額の決定的な不整合                                 |
 | `accounting_event_source_key_duplicate`                                                         | blocking | `AccountingEvent` の `sourceTable/sourceId/eventKind` 一意制約に対応する重複連携キー |
 | `accounting_journal_ready_missing_side`                                                         | blocking | `ready` 仕訳行が借方/貸方のいずれも持たない状態はCSV出力不能                         |
-| `accounting_journal_debit_credit_mismatch`                                                      | blocking | `ready` 仕訳行の借方合計と貸方合計が一致しない状態は会計出力不能                     |
+| `accounting_journal_ready_export_field_missing`                                                 | blocking | ICS export が必須とする `taxCode` と正の `amount` を欠く `ready` 行は出力不能        |
+| `accounting_journal_debit_credit_mismatch`                                                      | blocking | 単側 `ready` 仕訳行の借方合計と貸方合計が一致しない状態は会計出力不能                |
 | `statutory_accounting_import_count_mismatch`                                                    | blocking | import batch の期待件数と実件数が一致しない migration/import integrity 異常          |
 | `time_entries_daily_over_1440`                                                                  | advisory | 閾値超過は業務確認対象だが、例外勤務や入力補正の判断を含む                           |
 | `invoice_number_format_invalid` / `purchase_order_number_format_invalid`                        | advisory | 番号規約の逸脱は改善候補だが、既存データ・運用移行期の許容判断を含む                 |
 
-現行モデルでは `AccountingJournalStaging` が借方金額・貸方金額を別フィールドでは持たず、`amount` と借方/貸方科目コードの有無で片側明細を表現する。そのため借貸検査は `status=ready` 行について、借方科目を持つ行の `amount` 合計と貸方科目を持つ行の `amount` 合計を比較する。
+現行モデルでは `AccountingJournalStaging` が借方金額・貸方金額を別フィールドでは持たず、`amount` と借方/貸方科目コードの有無で片側明細を表現する。借方・貸方の両コードを持つ行は行内で自己均衡しているものとして扱い、複合仕訳の単側 `ready` 行について、借方科目を持つ行の `amount` 合計と貸方科目を持つ行の `amount` 合計を比較する。`status=ready` 行は ICS export の `validateReadyRow()` と同様に `taxCode` と正の `amount` も必須とする。
 
 ### CI / e2e-frontend
 

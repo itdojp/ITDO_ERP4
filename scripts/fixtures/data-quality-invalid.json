@@ -130,7 +130,8 @@
       "status": "ready",
       "currency": "JPY",
       "amount": 80,
-      "debitAccountCode": "1100"
+      "debitAccountCode": "1100",
+      "taxCode": "TAX10"
     },
     {
       "id": "ajs-credit-only",
@@ -139,7 +140,8 @@
       "status": "ready",
       "currency": "JPY",
       "amount": 40,
-      "creditAccountCode": "4000"
+      "creditAccountCode": "4000",
+      "taxCode": "TAX10"
     },
     {
       "id": "ajs-orphan-event",
@@ -148,6 +150,27 @@
       "status": "pending_mapping",
       "currency": "JPY",
       "amount": 10
+    },
+    {
+      "id": "ajs-missing-tax-code",
+      "eventId": "ae-dupe-a",
+      "lineNo": 5,
+      "status": "ready",
+      "currency": "JPY",
+      "amount": 25,
+      "debitAccountCode": "1100",
+      "creditAccountCode": "4000"
+    },
+    {
+      "id": "ajs-missing-positive-amount",
+      "eventId": "ae-dupe-a",
+      "lineNo": 6,
+      "status": "ready",
+      "currency": "JPY",
+      "amount": 0,
+      "debitAccountCode": "1100",
+      "creditAccountCode": "4000",
+      "taxCode": "TAX10"
     }
   ],
   "statutoryAccountingActualImportBatches": [

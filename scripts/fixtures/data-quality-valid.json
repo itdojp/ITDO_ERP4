@@ -80,7 +80,8 @@
       "currency": "JPY",
       "amount": 10000,
       "debitAccountCode": "1100",
-      "creditAccountCode": "4000"
+      "creditAccountCode": "4000",
+      "taxCode": "TAX10"
     }
   ],
   "statutoryAccountingActualImportBatches": [

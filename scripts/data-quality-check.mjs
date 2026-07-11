@@ -109,13 +109,21 @@ const CHECK_DEFINITIONS = {
     reproduction:
       "Create a ready accountingJournalStaging row without debitAccountCode and creditAccountCode and run the blocking data-quality command.",
   },
+  accounting_journal_ready_export_field_missing: {
+    severity: "blocking",
+    category: "debit-credit-integrity",
+    description:
+      "Ready accounting journal staging rows have required ICS export fields: taxCode and positive amount.",
+    reproduction:
+      "Create a ready accountingJournalStaging row without taxCode or with non-positive amount and run the blocking data-quality command.",
+  },
   accounting_journal_debit_credit_mismatch: {
     severity: "blocking",
     category: "debit-credit-integrity",
     description:
-      "Ready accounting journal staging debit and credit totals are balanced.",
+      "Single-sided ready accounting journal staging debit and credit totals are balanced.",
     reproduction:
-      "Create ready accountingJournalStaging rows whose debit-side amount total differs from credit-side amount total and run the blocking data-quality command.",
+      "Create single-sided ready accountingJournalStaging rows whose debit-side amount total differs from credit-side amount total and run the blocking data-quality command.",
   },
   statutory_accounting_import_count_mismatch: {
     severity: "blocking",
@@ -207,6 +215,9 @@ function parseArgs(argv) {
     throw new Error(`Unknown argument: ${arg}`);
   }
 
+  if (options.help) {
+    return options;
+  }
   if (!MODE_VALUES.has(options.mode)) {
     throw new Error(
       `Invalid --mode: ${options.mode}. Expected one of ${Array.from(MODE_VALUES).join(", ")}`,
@@ -514,6 +525,29 @@ function accountingJournalReadyMissingSide(data) {
   return makeResult("accounting_journal_ready_missing_side", samples, details);
 }
 
+function accountingJournalReadyExportFieldMissing(data) {
+  const samples = [];
+  const details = [];
+  data.accountingJournalStaging.filter(isActive).forEach((row) => {
+    if (row.status !== "ready") return;
+    const missingFields = [];
+    if (!isPresent(row.taxCode)) missingFields.push("taxCode");
+    const amount = Number(row.amount);
+    if (!Number.isFinite(amount) || amount <= 0) missingFields.push("amount");
+    if (missingFields.length === 0) return;
+    const id = isPresent(row.id)
+      ? row.id
+      : "AccountingJournalStaging:unknown-id";
+    samples.push(id);
+    details.push(`${id} missing ${missingFields.join(",")}`);
+  });
+  return makeResult(
+    "accounting_journal_ready_export_field_missing",
+    samples,
+    details,
+  );
+}
+
 function accountingJournalDebitCreditMismatch(data) {
   let debitTotal = 0;
   let creditTotal = 0;
@@ -521,15 +555,20 @@ function accountingJournalDebitCreditMismatch(data) {
 
   data.accountingJournalStaging.filter(isActive).forEach((row) => {
     if (row.status !== "ready") return;
+    const hasDebit = isPresent(row.debitAccountCode);
+    const hasCredit = isPresent(row.creditAccountCode);
+    // Current AccountingJournalStaging stores a single positive amount per row.
+    // Rows with both account codes are self-balanced; compound vouchers use
+    // single-sided rows, so only those rows contribute to aggregate balance.
+    if (hasDebit === hasCredit) return;
     const amount = toNumber(row.amount);
     const rowId = isPresent(row.id)
       ? row.id
       : "AccountingJournalStaging:unknown-id";
-    if (isPresent(row.debitAccountCode)) {
+    if (hasDebit) {
       debitTotal += amount;
       contributingRows.push(`${rowId}:debit=${amount.toFixed(2)}`);
-    }
-    if (isPresent(row.creditAccountCode)) {
+    } else {
       creditTotal += amount;
       contributingRows.push(`${rowId}:credit=${amount.toFixed(2)}`);
     }
@@ -691,6 +730,8 @@ function runChecks(data, mode) {
       accountingEventSourceKeyDuplicate(data),
     accounting_journal_ready_missing_side: () =>
       accountingJournalReadyMissingSide(data),
+    accounting_journal_ready_export_field_missing: () =>
+      accountingJournalReadyExportFieldMissing(data),
     accounting_journal_debit_credit_mismatch: () =>
       accountingJournalDebitCreditMismatch(data),
     statutory_accounting_import_count_mismatch: () =>
