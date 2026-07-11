@@ -11,6 +11,7 @@ import {
   redactText,
   renderMarkdownReport,
   runReleaseReadiness,
+  writeSummaryFiles,
 } from "./release-readiness.mjs";
 
 function makeCleanGitFixture() {
@@ -255,6 +256,61 @@ test("runReleaseReadiness blocks --record when git commit SHA is unknown", async
   assert.equal(summary.checks[0].id, "preflight-git-commit");
   assert.equal(summary.checks[0].status, "FAIL");
   assert.match(summary.checks[0].reason, /git commit SHA/);
+});
+
+test("writeSummaryFiles updates the test-results index for official records", async () => {
+  const base = path.join(process.cwd(), "tmp", "release-readiness-test-record");
+  fs.mkdirSync(base, { recursive: true });
+  const root = fs.mkdtempSync(path.join(base, "case-"));
+  fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "scripts", "check-test-results-index.mjs"),
+    [
+      'import fs from "node:fs";',
+      'fs.mkdirSync("docs/test-results", { recursive: true });',
+      'fs.writeFileSync("docs/test-results/README.md", "updated index\\n");',
+      "",
+    ].join("\n"),
+  );
+
+  const now = new Date("2026-07-12T00:00:00.000Z");
+  const summary = buildSummary({
+    startedAt: now,
+    endedAt: now,
+    e2eScope: "full",
+    metadata: {
+      commit: "abc123",
+      branch: "main",
+      dirty: false,
+      dirtySummary: [],
+      toolVersions: { node: "v20.19.0", npm: "10.8.2" },
+    },
+    results: [],
+    externalDependencies: [],
+  });
+
+  try {
+    const written = await writeSummaryFiles(summary, {
+      rootDir: root,
+      logDir: path.join(root, "tmp", "logs"),
+      outDir: path.join(root, "docs", "test-results"),
+      record: true,
+      dateStamp: "2026-07-12",
+      runLabel: "r1",
+    });
+
+    assert.equal(
+      written.testResultsIndexPath,
+      path.join(root, "docs", "test-results", "README.md"),
+    );
+    assert.ok(fs.existsSync(written.recordPath));
+    assert.equal(
+      fs.readFileSync(written.testResultsIndexPath, "utf8"),
+      "updated index\n",
+    );
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
 });
 
 test("renderMarkdownReport is deterministic and separates repo-side from external Go dependencies", () => {

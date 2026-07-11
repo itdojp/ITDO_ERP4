@@ -921,7 +921,7 @@ function escapeTable(value) {
     .replace(/\r?\n/g, "<br>");
 }
 
-async function writeSummaryFiles(summary, options) {
+export async function writeSummaryFiles(summary, options) {
   const logDir = options.logDir;
   await fs.promises.mkdir(logDir, { recursive: true });
   const jsonPath = path.join(logDir, "summary.json");
@@ -953,6 +953,22 @@ async function writeSummaryFiles(summary, options) {
     }
     await fs.promises.writeFile(recordPath, renderMarkdownReport(summary));
     written.recordPath = recordPath;
+    if (repoRelative(options.rootDir, options.outDir) === "docs/test-results") {
+      execFileSync(
+        "node",
+        ["scripts/check-test-results-index.mjs", "--write"],
+        {
+          cwd: options.rootDir,
+          stdio: "inherit",
+        },
+      );
+      written.testResultsIndexPath = path.join(
+        options.rootDir,
+        "docs",
+        "test-results",
+        "README.md",
+      );
+    }
   }
   return written;
 }
@@ -1003,6 +1019,11 @@ async function main() {
   if (written.recordPath) {
     console.log(
       `[release-readiness] record: ${repoRelative(options.rootDir, written.recordPath)}`,
+    );
+  }
+  if (written.testResultsIndexPath) {
+    console.log(
+      `[release-readiness] test-results index: ${repoRelative(options.rootDir, written.testResultsIndexPath)}`,
     );
   }
   if (options.printJson) {
