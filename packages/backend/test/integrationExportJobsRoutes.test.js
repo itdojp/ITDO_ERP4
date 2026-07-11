@@ -351,6 +351,7 @@ test('POST /integrations/jobs/exports/:kind/:id/redispatch creates a linked empl
         }
         return null;
       },
+      'auditLog.create': async () => ({ id: 'audit-employee-created' }),
       'hrEmployeeMasterExportLog.create': async (args) => {
         createArgs = args;
         return {
@@ -442,6 +443,7 @@ test('POST /integrations/jobs/exports/:kind/:id/redispatch creates a linked HR a
         }
         return null;
       },
+      'auditLog.create': async () => ({ id: 'audit-attendance-created' }),
       'hrAttendanceExportLog.create': async (args) => {
         createArgs = args;
         return {
@@ -630,6 +632,7 @@ test('POST /integrations/jobs/exports/:kind/:id/redispatch replays existing leav
         }
         return null;
       },
+      'auditLog.create': async () => ({ id: 'audit-leave-replay' }),
     },
     async () => {
       const server = await buildServer({ logger: false });
