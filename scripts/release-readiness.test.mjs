@@ -213,8 +213,14 @@ test("runReleaseReadiness times out a hanging command and reports exit code 124"
   assert.equal(summary.repoSideStatus, "FAIL");
   assert.equal(summary.checks[0].exitCode, 124);
   assert.equal(summary.checks[0].status, "FAIL");
-  assert.ok(summary.checks[0].rawLog, "rawLog should be set (log file written before timeout)");
-  const logContent = fs.readFileSync(path.join(root, summary.checks[0].rawLog), "utf8");
+  assert.ok(
+    summary.checks[0].rawLog,
+    "rawLog should be set (log file written before timeout)",
+  );
+  const logContent = fs.readFileSync(
+    path.join(root, summary.checks[0].rawLog),
+    "utf8",
+  );
   assert.match(logContent, /timed out after 200ms/);
 });
 
