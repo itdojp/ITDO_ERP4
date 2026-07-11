@@ -24,6 +24,7 @@ usage() {
   cat <<USAGE
 Usage:
   TARGET_ENVIRONMENT=staging OPERATOR=alice TRIAL_STATUS=pass \\
+  CUTOVER_AT=YYYY-MM-DDTHH:MM:SSZ ROLLBACK_AT=YYYY-MM-DDTHH:MM:SSZ \\
   READINESS_RECORD_FILE=docs/test-results/YYYY-MM-DD-action-policy-phase3-readiness-rN.md \\
   CUTOVER_RECORD_FILE=docs/test-results/YYYY-MM-DD-action-policy-phase3-cutover-rN.md \\
   OPERATION_RESULTS_FILE=docs/test-results/.../manual-ops.md \\
@@ -149,16 +150,13 @@ require_file() {
 find_latest_record() {
   local pattern="$1"
   local label="$2"
-  local matches=()
   local latest=""
-  # Intentionally expands the caller-provided glob pattern.
-  # shellcheck disable=SC2206
-  matches=( $pattern )
-  if [[ "${#matches[@]}" -eq 0 ]]; then
+  # SC2086: intentional word-splitting for glob expansion; SC2012: ls used for mtime sort.
+  # shellcheck disable=SC2086,SC2012
+  latest="$(ls -1t $pattern 2>/dev/null | head -n 1 || true)"
+  if [[ -z "$latest" ]]; then
     die "no $label found under docs/test-results/"
   fi
-  # shellcheck disable=SC2012
-  latest="$(ls -1t "${matches[@]}" | head -n 1 || true)"
   printf '%s\n' "$latest"
 }
 
