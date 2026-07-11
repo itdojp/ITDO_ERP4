@@ -40,9 +40,9 @@ Optional env:
   OPERATOR=...                        # required
   TRIAL_STATUS=pass|failed|blocked     # required
   ROLLBACK_STATUS=verified|failed|not_required|not_tested
-  READINESS_RECORD_FILE=...           # default: latest action-policy phase3 readiness record
-  CUTOVER_RECORD_FILE=...             # default: latest action-policy phase3 cutover record
-  OPERATION_RESULTS_FILE=...          # required when TRIAL_STATUS=pass
+  READINESS_RECORD_FILE=...           # required when TRIAL_STATUS=pass; default latest for non-pass records
+  CUTOVER_RECORD_FILE=...             # required when TRIAL_STATUS=pass; default latest for non-pass records
+  OPERATION_RESULTS_FILE=...          # required when TRIAL_STATUS=pass; must contain checked required operations
   POST_FALLBACK_REPORT_JSON=...       # required when TRIAL_STATUS=pass; uniqueKeys must be 0
   POST_READINESS_REPORT_JSON=...
   ROLLBACK_FALLBACK_REPORT_JSON=...   # required when TRIAL_STATUS=pass and ROLLBACK_STATUS=verified
@@ -54,8 +54,10 @@ Optional env:
 Validation:
 - DATE_STAMP must be a valid calendar date.
 - RUN_LABEL must match ^[A-Za-z0-9][A-Za-z0-9._-]*$.
-- A pass record cannot be written unless target environment, operator, operation results,
-  post-cutover fallback JSON, and verified rollback evidence are present.
+- A pass record cannot be written unless target environment, operator, explicit
+  readiness/cutover records, operation results, post-cutover fallback JSON, and
+  verified rollback evidence are present.
+- A pass record requires checked entries for every required operation in OPERATION_RESULTS_FILE.
 - A pass record requires post-cutover fallback uniqueKeys to be 0.
 - Existing output files are never overwritten.
 USAGE
@@ -147,6 +149,39 @@ require_file() {
   fi
 }
 
+readonly -a REQUIRED_OPERATIONS=(
+  "invoice:send"
+  "invoice:mark_paid"
+  "purchase_order:send"
+  "expense:submit"
+  "expense:mark_paid"
+  "vendor_invoice:submit"
+  "vendor_invoice:update_lines"
+  "vendor_invoice:update_allocations"
+  "*:approve"
+  "*:reject"
+)
+
+operation_results_missing_operations() {
+  local file_path="$1"
+  local operation=""
+  local -a missing=()
+
+  for operation in "${REQUIRED_OPERATIONS[@]}"; do
+    if ! grep -E '^[[:space:]]*[-*][[:space:]]*\[[xX]\]' "$file_path" | grep -F -- "$operation" >/dev/null; then
+      missing+=("$operation")
+    fi
+  done
+
+  if ((${#missing[@]} > 0)); then
+    local IFS=", "
+    printf '%s\n' "${missing[*]}"
+    return 1
+  fi
+
+  return 0
+}
+
 find_latest_record() {
   local pattern="$1"
   local label="$2"
@@ -231,6 +266,11 @@ main() {
   require_non_empty "$TARGET_ENVIRONMENT" "TARGET_ENVIRONMENT"
   require_non_empty "$OPERATOR" "OPERATOR"
 
+  if [[ "$TRIAL_STATUS" == "pass" ]]; then
+    require_non_empty "$READINESS_RECORD_FILE" "READINESS_RECORD_FILE"
+    require_non_empty "$CUTOVER_RECORD_FILE" "CUTOVER_RECORD_FILE"
+  fi
+
   OUT_DIR="$(resolve_absolute_path "$OUT_DIR")"
   mkdir -p "$OUT_DIR"
 
@@ -272,6 +312,16 @@ main() {
   local post_fallback_unique_keys="not_checked"
   if [[ -n "$POST_FALLBACK_REPORT_JSON" ]]; then
     post_fallback_unique_keys="$(json_unique_keys "$POST_FALLBACK_REPORT_JSON")"
+  fi
+
+  local operation_results_complete=false
+  if [[ -n "$OPERATION_RESULTS_FILE" ]]; then
+    local missing_operations=""
+    if missing_operations="$(operation_results_missing_operations "$OPERATION_RESULTS_FILE")"; then
+      operation_results_complete=true
+    elif [[ "$TRIAL_STATUS" == "pass" ]]; then
+      die "OPERATION_RESULTS_FILE must include checked entries for all required operations (missing: $missing_operations)"
+    fi
   fi
 
   if [[ "$TRIAL_STATUS" == "pass" ]]; then
@@ -323,7 +373,7 @@ main() {
       echo "## #1426 completion gate"
       echo
       printf -- '- %s 対象環境で %s%s%s trial / cutover を実施した\n' "$(checkbox "$trial_pass")" "$code_tick" "phase3_strict" "$code_tick"
-      printf -- '- %s 主要操作確認結果を operation results file に保存した\n' "$(checkbox "$trial_pass")"
+      printf -- '- %s 主要操作確認結果を operation results file に保存した\n' "$(checkbox "$operation_results_complete")"
       printf -- '- %s cutover 後 fallback unique keys が 0 件であることを確認した\n' "$(checkbox "$post_fallback_zero")"
       printf -- '- %s %s%s%s rollback 手順を実施または演習し、復旧確認を保存した\n' "$(checkbox "$rollback_verified")" "$code_tick" "phase2_core" "$code_tick"
       echo

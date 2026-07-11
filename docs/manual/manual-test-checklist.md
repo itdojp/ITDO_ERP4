@@ -49,6 +49,7 @@
   - ロールバック後は `make action-policy-phase3-readiness-json` と `make action-policy-fallback-report-json` で復旧対象キーのみが再出現していることを確認する
   - 記録: `make action-policy-phase3-cutover-record`
   - 対象環境 trial の最終証跡: `make action-policy-phase3-target-trial-record`
+  - `TRIAL_STATUS=pass` では、対象環境の readiness/cutover record を明示指定し、主要操作確認結果ファイルの必須操作がすべて checked であることを確認する
 
 ### チャット（確認依頼 ack required）
 

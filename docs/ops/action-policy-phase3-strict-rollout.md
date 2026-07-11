@@ -217,7 +217,14 @@ ROLLBACK_FALLBACK_REPORT_JSON=tmp/action-policy-phase3-target/rollback-fallback.
 make action-policy-phase3-target-trial-record
 ```
 
-`TRIAL_STATUS=pass` では script が `POST_FALLBACK_REPORT_JSON` の `uniqueKeys=0` と `ROLLBACK_STATUS=verified` を検査する。対象環境や rollback 証跡が不足する場合は `blocked` として記録し、`#1426` は close しない。
+`TRIAL_STATUS=pass` では script が以下を検査する。
+
+- `READINESS_RECORD_FILE` と `CUTOVER_RECORD_FILE` が明示指定されている
+- `OPERATION_RESULTS_FILE` に必須主要操作の checked entry がすべて存在する
+- `POST_FALLBACK_REPORT_JSON` の `uniqueKeys=0`
+- `ROLLBACK_STATUS=verified`
+
+対象環境や rollback 証跡が不足する場合は `blocked` として記録し、`#1426` は close しない。
 
 ## 失敗時の切り分け
 

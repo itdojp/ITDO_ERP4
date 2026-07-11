@@ -5,7 +5,7 @@
 - 対象Issue: #1426, #1875
 - 対象環境:
 - trialStatus: `blocked|failed|pass`
-- rollbackStatus: `not_tested|failed|verified`
+- rollbackStatus: `not_tested|not_required|failed|verified`
 - sourceReadinessRecord:
 - sourceCutoverRecord:
 - operationResultsFile:
@@ -36,8 +36,9 @@ make action-policy-phase3-target-trial-record
 `TRIAL_STATUS=pass` の record は、script 側で以下を強制する。
 
 - `TARGET_ENVIRONMENT` と `OPERATOR` が空ではない
+- `READINESS_RECORD_FILE` と `CUTOVER_RECORD_FILE` が明示指定されている
 - `CUTOVER_AT` が設定されている
-- `OPERATION_RESULTS_FILE` が存在する
+- `OPERATION_RESULTS_FILE` が存在し、主要操作確認の必須行がすべて checked である
 - `POST_FALLBACK_REPORT_JSON` が存在し、`uniqueKeys` が `0`
 - `ROLLBACK_STATUS=verified`
 - `ROLLBACK_AT` が設定されている

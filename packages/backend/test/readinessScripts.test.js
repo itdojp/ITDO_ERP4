@@ -980,6 +980,29 @@ test('record-action-policy-phase3-cutover: auto increments run suffix when RUN_L
   });
 });
 
+const ACTION_POLICY_PHASE3_TARGET_OPERATIONS = [
+  'invoice:send',
+  'invoice:mark_paid',
+  'purchase_order:send',
+  'expense:submit',
+  'expense:mark_paid',
+  'vendor_invoice:submit',
+  'vendor_invoice:update_lines',
+  'vendor_invoice:update_allocations',
+  '*:approve',
+  '*:reject',
+];
+
+function writeCompleteActionPolicyPhase3TargetOperations(filePath) {
+  writeFileSync(
+    filePath,
+    ACTION_POLICY_PHASE3_TARGET_OPERATIONS.map(
+      (operation) =>
+        `- [x] \`${operation}\` operator=alice target=test-data expected=allowed actual=allowed evidence=tmp/evidence/${operation.replaceAll(/[^\w.-]+/g, '_')}.json`,
+    ).join('\n'),
+  );
+}
+
 test('record-action-policy-phase3-target-trial: writes pass report with required target evidence', () => {
   withRepoTempDir('action-policy-target-trial-test-', (dir) => {
     const outDir = path.join(dir, 'out');
@@ -997,7 +1020,7 @@ test('record-action-policy-phase3-target-trial: writes pass report with required
     mkdirSync(outDir, { recursive: true });
     writeFileSync(readinessRecord, '# ActionPolicy phase3 readiness 記録\n');
     writeFileSync(cutoverRecord, '# ActionPolicy phase3 cutover 記録\n');
-    writeFileSync(operationResults, '- [x] invoice:send\n- [x] *:approve\n');
+    writeCompleteActionPolicyPhase3TargetOperations(operationResults);
     writeFileSync(
       postFallbackJson,
       JSON.stringify({ totals: { events: 0, uniqueKeys: 0 } }),
@@ -1041,7 +1064,94 @@ test('record-action-policy-phase3-target-trial: writes pass report with required
       report,
       /\[x\] cutover 後 fallback unique keys が 0 件であることを確認した/,
     );
+    assert.match(
+      report,
+      /\[x\] 主要操作確認結果を operation results file に保存した/,
+    );
     assert.match(report, /\[x\] `phase2_core` rollback 手順/);
+  });
+});
+
+test('record-action-policy-phase3-target-trial: rejects pass report without explicit source records', () => {
+  withRepoTempDir('action-policy-target-trial-test-', (dir) => {
+    const outDir = path.join(dir, 'out');
+    const operationResults = path.join(dir, 'manual-ops.md');
+    const postFallbackJson = path.join(dir, 'post-fallback.json');
+    const rollbackFallbackJson = path.join(dir, 'rollback-fallback.json');
+    mkdirSync(outDir, { recursive: true });
+    writeCompleteActionPolicyPhase3TargetOperations(operationResults);
+    writeFileSync(
+      postFallbackJson,
+      JSON.stringify({ totals: { events: 0, uniqueKeys: 0 } }),
+    );
+    writeFileSync(
+      rollbackFallbackJson,
+      JSON.stringify({ totals: { events: 0, uniqueKeys: 0 } }),
+    );
+
+    const res = runScript('record-action-policy-phase3-target-trial.sh', {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-08',
+      RUN_LABEL: 'target-r1',
+      TARGET_ENVIRONMENT: 'staging',
+      OPERATOR: 'alice',
+      TRIAL_STATUS: 'pass',
+      ROLLBACK_STATUS: 'verified',
+      CUTOVER_AT: '2026-03-08T01:00:00Z',
+      ROLLBACK_AT: '2026-03-08T02:00:00Z',
+      OPERATION_RESULTS_FILE: operationResults,
+      POST_FALLBACK_REPORT_JSON: postFallbackJson,
+      ROLLBACK_FALLBACK_REPORT_JSON: rollbackFallbackJson,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(String(res.stderr), /READINESS_RECORD_FILE is required/);
+  });
+});
+
+test('record-action-policy-phase3-target-trial: rejects pass report with incomplete operation results', () => {
+  withRepoTempDir('action-policy-target-trial-test-', (dir) => {
+    const outDir = path.join(dir, 'out');
+    const readinessRecord = path.join(dir, 'readiness.md');
+    const cutoverRecord = path.join(dir, 'cutover.md');
+    const operationResults = path.join(dir, 'manual-ops.md');
+    const postFallbackJson = path.join(dir, 'post-fallback.json');
+    const rollbackFallbackJson = path.join(dir, 'rollback-fallback.json');
+    mkdirSync(outDir, { recursive: true });
+    writeFileSync(readinessRecord, '# readiness\n');
+    writeFileSync(cutoverRecord, '# cutover\n');
+    writeFileSync(operationResults, '- [x] `invoice:send`\n- [ ] `*:reject`\n');
+    writeFileSync(
+      postFallbackJson,
+      JSON.stringify({ totals: { events: 0, uniqueKeys: 0 } }),
+    );
+    writeFileSync(
+      rollbackFallbackJson,
+      JSON.stringify({ totals: { events: 0, uniqueKeys: 0 } }),
+    );
+
+    const res = runScript('record-action-policy-phase3-target-trial.sh', {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-08',
+      RUN_LABEL: 'target-r1',
+      TARGET_ENVIRONMENT: 'staging',
+      OPERATOR: 'alice',
+      TRIAL_STATUS: 'pass',
+      ROLLBACK_STATUS: 'verified',
+      CUTOVER_AT: '2026-03-08T01:00:00Z',
+      ROLLBACK_AT: '2026-03-08T02:00:00Z',
+      READINESS_RECORD_FILE: readinessRecord,
+      CUTOVER_RECORD_FILE: cutoverRecord,
+      OPERATION_RESULTS_FILE: operationResults,
+      POST_FALLBACK_REPORT_JSON: postFallbackJson,
+      ROLLBACK_FALLBACK_REPORT_JSON: rollbackFallbackJson,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(
+      String(res.stderr),
+      /OPERATION_RESULTS_FILE must include checked entries for all required operations/,
+    );
+    assert.match(String(res.stderr), /invoice:mark_paid/);
+    assert.match(String(res.stderr), /\*:reject/);
   });
 });
 
@@ -1056,7 +1166,7 @@ test('record-action-policy-phase3-target-trial: rejects pass report when fallbac
     mkdirSync(outDir, { recursive: true });
     writeFileSync(readinessRecord, '# readiness\n');
     writeFileSync(cutoverRecord, '# cutover\n');
-    writeFileSync(operationResults, '- [x] operations\n');
+    writeCompleteActionPolicyPhase3TargetOperations(operationResults);
     writeFileSync(
       postFallbackJson,
       JSON.stringify({ totals: { events: 1, uniqueKeys: 1 } }),
