@@ -219,15 +219,20 @@ test("runReleaseReadiness blocks --record when git commit SHA is unknown", async
   const base = path.join("/tmp", "release-readiness-test-no-git");
   fs.mkdirSync(base, { recursive: true });
   const root = fs.mkdtempSync(path.join(base, "case-"));
-  const summary = await runReleaseReadiness({
-    rootDir: root,
-    allowDirty: true,
-    record: true,
-    logDir: path.join(root, "tmp", "logs"),
-    e2eScope: "full",
-    plan: [],
-    externalDependencies: [],
-  });
+  let summary;
+  try {
+    summary = await runReleaseReadiness({
+      rootDir: root,
+      allowDirty: true,
+      record: true,
+      logDir: path.join(root, "tmp", "logs"),
+      e2eScope: "full",
+      plan: [],
+      externalDependencies: [],
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 
   assert.equal(summary.repoSideStatus, "FAIL");
   assert.equal(summary.checks.length, 1);

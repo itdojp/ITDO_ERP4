@@ -599,6 +599,10 @@ async function runCommand(item, rootDir, logPath) {
       output.write(
         `\n[release-readiness] timed out after ${item.timeoutMs}ms\n`,
       );
+      // Kill the entire process group so that subprocesses spawned by the
+      // shell (e.g. npm → node) are also terminated. Negative PID targets
+      // the process group on POSIX; on Windows the catch falls back to
+      // killing the direct child only.
       try {
         process.kill(-child.pid, "SIGTERM");
       } catch {
@@ -611,6 +615,7 @@ async function runCommand(item, rootDir, logPath) {
     child.on("error", (error) => {
       if (timeoutHandle) clearTimeout(timeoutHandle);
       output.write(`\n[release-readiness] spawn error: ${error.message}\n`);
+      // 124 = timeout (standard); 127 = command not found / spawn failure
       resolve(timedOut ? 124 : 127);
     });
     child.on("close", (code, signal) => {
