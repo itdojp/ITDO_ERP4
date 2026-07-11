@@ -1,13 +1,8 @@
 import { FastifyInstance } from 'fastify';
 import { createHash } from 'node:crypto';
-import {
-  IntegrationRunStatus,
-  IntegrationStatus,
-  Prisma,
-} from '@prisma/client';
+import { IntegrationRunStatus, Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
-import { triggerAlert } from '../services/alert.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { ensureLeaveSetting } from '../services/leaveSettings.js';
 import { resolveLeaveRequestMinutesWithCalendar } from '../services/leaveEntitlements.js';
@@ -42,6 +37,15 @@ import {
   updateAccountingMappingRule,
   type AccountingMappingRuleInput,
 } from '../services/accountingMappingRules.js';
+import {
+  IntegrationRunServiceError,
+  MAX_RETRY_BASE_MINUTES,
+  MAX_RETRY_MAX,
+  executeManualIntegrationRun,
+  getIntegrationRunMetrics,
+  listIntegrationRuns,
+  runDueIntegrationJobs,
+} from '../services/integrationRuns.js';
 import {
   AccountingIcsExportFormat,
   DEFAULT_ACCOUNTING_ICS_EXPORT_LOG_LIMIT,
@@ -182,55 +186,6 @@ function parseBoundedNonNegativeInteger(
 function attendanceClosingStatusCode(code: string) {
   if (code === 'invalid_period_key') return 400;
   return 409;
-}
-
-function calculateDurationMetrics(durations: number[]) {
-  if (!durations.length) {
-    return { avgDurationMs: null, p95DurationMs: null };
-  }
-  const sorted = [...durations].sort((left, right) => left - right);
-  const avgDurationMs = Math.round(
-    sorted.reduce((sum, value) => sum + value, 0) / sorted.length,
-  );
-  const p95Index = Math.min(
-    sorted.length - 1,
-    Math.max(0, Math.ceil(sorted.length * 0.95) - 1),
-  );
-  const p95DurationMs = Math.round(sorted[p95Index]);
-  return { avgDurationMs, p95DurationMs };
-}
-
-const DEFAULT_RETRY_MAX = 3;
-const DEFAULT_RETRY_BASE_MINUTES = 60;
-const MAX_RETRY_MAX = 10;
-const MAX_RETRY_BASE_MINUTES = 1440;
-
-function getRetryPolicy(config: unknown) {
-  const record =
-    config && typeof config === 'object'
-      ? (config as Record<string, unknown>)
-      : {};
-  const retryMaxRaw = record.retryMax;
-  const retryBaseRaw = record.retryBaseMinutes;
-  const retryMax =
-    typeof retryMaxRaw === 'number' && Number.isFinite(retryMaxRaw)
-      ? Math.min(MAX_RETRY_MAX, Math.max(0, Math.floor(retryMaxRaw)))
-      : DEFAULT_RETRY_MAX;
-  const retryBaseMinutes =
-    typeof retryBaseRaw === 'number' && Number.isFinite(retryBaseRaw)
-      ? Math.min(MAX_RETRY_BASE_MINUTES, Math.max(1, Math.floor(retryBaseRaw)))
-      : DEFAULT_RETRY_BASE_MINUTES;
-  return { retryMax, retryBaseMinutes };
-}
-
-function computeNextRetryAt(
-  now: Date,
-  retryCount: number,
-  retryBaseMinutes: number,
-) {
-  if (retryCount <= 0) return null;
-  const multiplier = Math.pow(2, retryCount - 1);
-  return new Date(now.getTime() + retryBaseMinutes * 60 * 1000 * multiplier);
 }
 
 function parseUpdatedSince(raw?: string) {
@@ -853,218 +808,6 @@ function validateIntegrationConfig(
   return { ok: true };
 }
 
-async function closeIntegrationFailureAlerts(settingId: string) {
-  const settings = await prisma.alertSetting.findMany({
-    where: { type: 'integration_failure' },
-    select: { id: true },
-  });
-  if (!settings.length) return;
-  const targetRef = `integration:${settingId}`;
-  await prisma.alert.updateMany({
-    where: {
-      status: 'open',
-      targetRef,
-      settingId: { in: settings.map((s) => s.id) },
-    },
-    data: { status: 'closed' },
-  });
-}
-
-async function triggerIntegrationFailureAlerts(settingId: string) {
-  const settings = await prisma.alertSetting.findMany({
-    where: { type: 'integration_failure', isEnabled: true },
-  });
-  if (!settings.length) return;
-  const targetRef = `integration:${settingId}`;
-  for (const setting of settings) {
-    await triggerAlert(
-      {
-        id: setting.id,
-        recipients: setting.recipients,
-        channels: setting.channels,
-        remindAfterHours: setting.remindAfterHours,
-        remindMaxCount: setting.remindMaxCount,
-      },
-      1,
-      0,
-      targetRef,
-    );
-  }
-}
-
-async function executeIntegration(setting: {
-  id: string;
-  type: string;
-  config: unknown;
-}) {
-  const config =
-    setting.config && typeof setting.config === 'object'
-      ? (setting.config as Record<string, unknown>)
-      : null;
-  if (config?.simulateFailure === true) {
-    throw new Error('simulate_failure');
-  }
-  const updatedSinceRaw =
-    typeof config?.updatedSince === 'string' ? config.updatedSince : undefined;
-  const updatedSince = parseUpdatedSince(updatedSinceRaw);
-  if (updatedSince === null) {
-    throw new Error('invalid_updatedSince');
-  }
-  if (setting.type === 'crm') {
-    const where = updatedSince
-      ? { updatedAt: { gt: updatedSince } }
-      : undefined;
-    const [customers, vendors, contacts] = await Promise.all([
-      prisma.customer.count({ where }),
-      prisma.vendor.count({ where }),
-      prisma.contact.count({ where }),
-    ]);
-    const metrics: Record<string, unknown> = {
-      customers,
-      vendors,
-      contacts,
-    };
-    if (updatedSince) {
-      metrics.updatedSince = updatedSince.toISOString();
-    }
-    return {
-      message: updatedSince ? 'exported_delta' : 'exported',
-      metrics,
-    };
-  }
-  if (setting.type === 'hr') {
-    const where = updatedSince
-      ? { updatedAt: { gt: updatedSince } }
-      : undefined;
-    const [users, wellbeing] = await Promise.all([
-      prisma.userAccount.count({ where }),
-      prisma.wellbeingEntry.count({ where }),
-    ]);
-    const metrics: Record<string, unknown> = { users, wellbeing };
-    if (updatedSince) {
-      metrics.updatedSince = updatedSince.toISOString();
-    }
-    return {
-      message: updatedSince ? 'exported_delta' : 'exported',
-      metrics,
-    };
-  }
-  return { message: 'noop', metrics: {} };
-}
-
-async function runIntegrationSetting(
-  setting: {
-    id: string;
-    type: string;
-    config: unknown;
-  },
-  userId?: string,
-  existingRun?: { id: string; retryCount?: number | null },
-) {
-  const now = new Date();
-  const run = existingRun
-    ? await prisma.integrationRun.update({
-        where: { id: existingRun.id },
-        data: {
-          status: IntegrationRunStatus.running,
-          startedAt: now,
-          finishedAt: null,
-          message: null,
-          metrics: Prisma.DbNull,
-          nextRetryAt: null,
-        },
-      })
-    : await prisma.integrationRun.create({
-        data: {
-          settingId: setting.id,
-          status: IntegrationRunStatus.running,
-          startedAt: now,
-          createdBy: userId,
-        },
-      });
-  try {
-    const result = await executeIntegration(setting);
-    const finishedAt = new Date();
-    const updated = await prisma.integrationRun.update({
-      where: { id: run.id },
-      data: {
-        status: IntegrationRunStatus.success,
-        finishedAt,
-        message: result.message,
-        metrics: result.metrics as Prisma.InputJsonValue,
-        nextRetryAt: null,
-      },
-    });
-    await prisma.integrationSetting.update({
-      where: { id: setting.id },
-      data: {
-        lastRunAt: finishedAt,
-        lastRunStatus: IntegrationRunStatus.success,
-        updatedBy: userId,
-      },
-    });
-    await closeIntegrationFailureAlerts(setting.id);
-    return updated;
-  } catch (err) {
-    const finishedAt = new Date();
-    const { retryMax, retryBaseMinutes } = getRetryPolicy(setting.config);
-    const currentRetry = existingRun?.retryCount ?? run.retryCount ?? 0;
-    const retryCount = currentRetry + 1;
-    const shouldRetry = retryCount <= retryMax;
-    const nextRetryAt = shouldRetry
-      ? computeNextRetryAt(finishedAt, retryCount, retryBaseMinutes)
-      : null;
-    const message = err instanceof Error ? err.message : String(err);
-    const updated = await prisma.integrationRun.update({
-      where: { id: run.id },
-      data: {
-        status: IntegrationRunStatus.failed,
-        finishedAt,
-        message,
-        retryCount,
-        nextRetryAt,
-      },
-    });
-    await prisma.integrationSetting.update({
-      where: { id: setting.id },
-      data: {
-        lastRunAt: finishedAt,
-        lastRunStatus: IntegrationRunStatus.failed,
-        updatedBy: userId,
-      },
-    });
-    await triggerIntegrationFailureAlerts(setting.id);
-    return updated;
-  }
-}
-
-function buildIntegrationRunAuditMetadata(input: {
-  trigger: 'manual' | 'retry' | 'scheduled';
-  settingId: string;
-  settingType: string;
-  run: {
-    id: string;
-    status: string;
-    retryCount: number | null;
-    nextRetryAt: Date | null;
-    message: string | null;
-    startedAt?: Date | null;
-    finishedAt?: Date | null;
-  };
-}) {
-  return {
-    trigger: input.trigger,
-    settingId: input.settingId,
-    settingType: input.settingType,
-    status: input.run.status,
-    retryCount: input.run.retryCount ?? 0,
-    nextRetryAt: input.run.nextRetryAt?.toISOString() ?? null,
-    startedAt: input.run.startedAt?.toISOString() ?? null,
-    finishedAt: input.run.finishedAt?.toISOString() ?? null,
-    message: truncateForAudit(input.run.message ?? null),
-  };
-}
-
 export async function registerIntegrationRoutes(app: FastifyInstance) {
   app.get(
     '/integration-settings',
@@ -1208,30 +951,18 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const setting = await prisma.integrationSetting.findUnique({
-        where: { id },
-      });
-      if (!setting) {
-        return reply.code(404).send({ error: 'not_found' });
+      try {
+        return await executeManualIntegrationRun({
+          settingId: id,
+          actorUserId: req.user?.userId ?? null,
+          auditContext: auditContextFromRequest(req),
+        });
+      } catch (error) {
+        if (error instanceof IntegrationRunServiceError) {
+          return reply.code(error.statusCode).send(error.responseBody);
+        }
+        throw error;
       }
-      if (setting.status === IntegrationStatus.disabled) {
-        return reply.code(409).send({ error: 'disabled' });
-      }
-      const userId = req.user?.userId;
-      const run = await runIntegrationSetting(setting, userId);
-      await logAudit({
-        ...auditContextFromRequest(req),
-        action: 'integration_run_executed',
-        targetTable: 'integration_runs',
-        targetId: run.id,
-        metadata: buildIntegrationRunAuditMetadata({
-          trigger: 'manual',
-          settingId: setting.id,
-          settingType: setting.type,
-          run,
-        }) as Prisma.InputJsonValue,
-      });
-      return run;
     },
   );
 
@@ -1239,20 +970,13 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
     '/integration-runs',
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req) => {
-      const { settingId, limit, offset } = req.query as {
-        settingId?: string;
-        limit?: string;
-        offset?: string;
-      };
-      const take = parseLimit(limit, 200, 1000);
-      const skip = parseOffset(offset);
-      const items = await prisma.integrationRun.findMany({
-        where: settingId ? { settingId } : undefined,
-        orderBy: { startedAt: 'desc' },
-        take,
-        skip,
+      return listIntegrationRuns({
+        query: req.query as {
+          settingId?: string;
+          limit?: string;
+          offset?: string;
+        },
       });
-      return { items, limit: take, offset: skip };
     },
   );
 
@@ -1263,135 +987,13 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
       schema: integrationRunMetricsQuerySchema,
     },
     async (req) => {
-      const query = req.query as {
-        settingId?: string;
-        days?: number | string;
-        limit?: number | string;
-      };
-      const days = parseBoundedInteger(query.days, 14, 90);
-      const limit = parseBoundedInteger(query.limit, 2000, 5000);
-      const now = new Date();
-      const from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-      const where = {
-        startedAt: { gte: from, lte: now },
-        ...(query.settingId ? { settingId: query.settingId } : {}),
-      };
-      const runs = await prisma.integrationRun.findMany({
-        where,
-        include: {
-          setting: {
-            select: { id: true, type: true, name: true },
-          },
+      return getIntegrationRunMetrics({
+        query: req.query as {
+          settingId?: string;
+          days?: number | string;
+          limit?: number | string;
         },
-        orderBy: { startedAt: 'desc' },
-        take: limit,
       });
-
-      let successRuns = 0;
-      let failedRuns = 0;
-      let runningRuns = 0;
-      let retryScheduledRuns = 0;
-      const durations: number[] = [];
-      const failureReasonCounts = new Map<string, number>();
-      const byType = new Map<
-        string,
-        {
-          type: string;
-          totalRuns: number;
-          successRuns: number;
-          failedRuns: number;
-          runningRuns: number;
-        }
-      >();
-
-      for (const run of runs) {
-        const typeKey = run.setting?.type ?? 'unknown';
-        const typeSummary = byType.get(typeKey) ?? {
-          type: typeKey,
-          totalRuns: 0,
-          successRuns: 0,
-          failedRuns: 0,
-          runningRuns: 0,
-        };
-        typeSummary.totalRuns += 1;
-
-        if (run.status === IntegrationRunStatus.success) {
-          successRuns += 1;
-          typeSummary.successRuns += 1;
-        } else if (run.status === IntegrationRunStatus.failed) {
-          failedRuns += 1;
-          typeSummary.failedRuns += 1;
-          if (run.nextRetryAt) {
-            retryScheduledRuns += 1;
-          }
-          const reason = String(run.message || 'unknown_error').trim();
-          failureReasonCounts.set(
-            reason,
-            (failureReasonCounts.get(reason) ?? 0) + 1,
-          );
-        } else {
-          runningRuns += 1;
-          typeSummary.runningRuns += 1;
-        }
-
-        if (run.finishedAt instanceof Date && run.startedAt instanceof Date) {
-          const durationMs = run.finishedAt.getTime() - run.startedAt.getTime();
-          if (Number.isFinite(durationMs) && durationMs >= 0) {
-            durations.push(durationMs);
-          }
-        }
-        byType.set(typeKey, typeSummary);
-      }
-
-      const totalRuns = runs.length;
-      const successRate = totalRuns
-        ? Number(((successRuns / totalRuns) * 100).toFixed(2))
-        : null;
-      const durationMetrics = calculateDurationMetrics(durations);
-
-      const failureReasons = Array.from(failureReasonCounts.entries())
-        .map(([reason, count]) => ({ reason, count }))
-        .sort((left, right) =>
-          left.count === right.count
-            ? left.reason.localeCompare(right.reason)
-            : right.count - left.count,
-        )
-        .slice(0, 10);
-
-      const byTypeItems = Array.from(byType.values())
-        .map((item) => ({
-          ...item,
-          successRate:
-            item.totalRuns > 0
-              ? Number(((item.successRuns / item.totalRuns) * 100).toFixed(2))
-              : null,
-        }))
-        .sort((left, right) =>
-          left.totalRuns === right.totalRuns
-            ? left.type.localeCompare(right.type)
-            : right.totalRuns - left.totalRuns,
-        );
-
-      return {
-        window: {
-          from: from.toISOString(),
-          to: now.toISOString(),
-          days,
-          limit,
-        },
-        summary: {
-          totalRuns,
-          successRuns,
-          failedRuns,
-          runningRuns,
-          retryScheduledRuns,
-          successRate,
-          avgDurationMs: durationMetrics.avgDurationMs,
-          p95DurationMs: durationMetrics.p95DurationMs,
-        },
-        failureReasons,
-        byType: byTypeItems,
-      };
     },
   );
 
@@ -1399,92 +1001,10 @@ export async function registerIntegrationRoutes(app: FastifyInstance) {
     '/jobs/integrations/run',
     { preHandler: requireRole(['admin', 'mgmt']) },
     async (req) => {
-      const userId = req.user?.userId;
-      const auditContext = auditContextFromRequest(req);
-      const auditTasks: Array<Promise<unknown>> = [];
-      const now = new Date();
-      const retryRuns = await prisma.integrationRun.findMany({
-        where: {
-          status: IntegrationRunStatus.failed,
-          nextRetryAt: { lte: now },
-        },
-        include: { setting: true },
-        orderBy: { nextRetryAt: 'asc' },
-        take: 100,
+      return runDueIntegrationJobs({
+        actorUserId: req.user?.userId ?? null,
+        auditContext: auditContextFromRequest(req),
       });
-      const retryResults = [];
-      for (const run of retryRuns) {
-        const { retryMax } = getRetryPolicy(run.setting.config);
-        if (run.retryCount >= retryMax) {
-          continue;
-        }
-        const updated = await runIntegrationSetting(run.setting, userId, {
-          id: run.id,
-          retryCount: run.retryCount,
-        });
-        retryResults.push({ id: updated.id, status: updated.status });
-        auditTasks.push(
-          logAudit({
-            ...auditContext,
-            action: 'integration_run_executed',
-            targetTable: 'integration_runs',
-            targetId: updated.id,
-            metadata: buildIntegrationRunAuditMetadata({
-              trigger: 'retry',
-              settingId: run.setting.id,
-              settingType: run.setting.type,
-              run: updated,
-            }) as Prisma.InputJsonValue,
-          }),
-        );
-      }
-
-      const scheduledSettings = await prisma.integrationSetting.findMany({
-        where: { status: IntegrationStatus.active, schedule: { not: null } },
-        orderBy: { createdAt: 'asc' },
-        take: 200,
-      });
-      const scheduledResults = [];
-      for (const setting of scheduledSettings) {
-        if (!setting.schedule || setting.schedule.trim().length === 0) {
-          continue;
-        }
-        const run = await runIntegrationSetting(setting, userId);
-        scheduledResults.push({ id: run.id, status: run.status });
-        auditTasks.push(
-          logAudit({
-            ...auditContext,
-            action: 'integration_run_executed',
-            targetTable: 'integration_runs',
-            targetId: run.id,
-            metadata: buildIntegrationRunAuditMetadata({
-              trigger: 'scheduled',
-              settingId: setting.id,
-              settingType: setting.type,
-              run,
-            }) as Prisma.InputJsonValue,
-          }),
-        );
-      }
-      auditTasks.push(
-        logAudit({
-          ...auditContext,
-          action: 'integration_jobs_run_executed',
-          targetTable: 'integration_runs',
-          metadata: {
-            retryCount: retryResults.length,
-            scheduledCount: scheduledResults.length,
-          } as Prisma.InputJsonValue,
-        }),
-      );
-      await Promise.allSettled(auditTasks);
-      return {
-        ok: true,
-        retryCount: retryResults.length,
-        scheduledCount: scheduledResults.length,
-        retries: retryResults,
-        scheduled: scheduledResults,
-      };
     },
   );
 
