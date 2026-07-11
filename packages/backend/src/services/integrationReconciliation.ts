@@ -843,12 +843,6 @@ export async function getIntegrationReconciliationSummary(options: {
   );
 }
 
-function sanitizeSpreadsheetCsvCell(value: unknown) {
-  if (value === null || value === undefined) return '';
-  const text = String(value);
-  return /^[=+\-@]/.test(text) ? `'${text}` : text;
-}
-
 export function buildIntegrationReconciliationDetailsCsv(
   details: ReconciliationDetails,
 ) {
@@ -868,8 +862,8 @@ export function buildIntegrationReconciliationDetailsCsv(
   const rows = [
     ...details.accounting.byProject.map((row) => [
       'project',
-      sanitizeSpreadsheetCsvCell(row.key),
-      sanitizeSpreadsheetCsvCell(row.currency),
+      row.key,
+      row.currency,
       row.totalCount,
       row.readyCount,
       row.pendingMappingCount,
@@ -881,8 +875,8 @@ export function buildIntegrationReconciliationDetailsCsv(
     ]),
     ...details.accounting.byDepartment.map((row) => [
       'department',
-      sanitizeSpreadsheetCsvCell(row.key),
-      sanitizeSpreadsheetCsvCell(row.currency),
+      row.key,
+      row.currency,
       row.totalCount,
       row.readyCount,
       row.pendingMappingCount,
