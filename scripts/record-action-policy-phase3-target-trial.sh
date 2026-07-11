@@ -151,9 +151,16 @@ find_latest_record() {
   local pattern="$1"
   local label="$2"
   local latest=""
-  # SC2086: intentional word-splitting for glob expansion; SC2012: ls used for mtime sort.
-  # shellcheck disable=SC2086,SC2012
-  latest="$(ls -1t $pattern 2>/dev/null | head -n 1 || true)"
+  latest="$(
+    shopt -s nullglob
+    # SC2086, SC2206: intentional word-splitting for caller-provided glob pattern.
+    # shellcheck disable=SC2086,SC2206
+    files=( $pattern )
+    if [[ "${#files[@]}" -gt 0 ]]; then
+      # shellcheck disable=SC2012
+      ls -1t "${files[@]}" | head -n 1
+    fi
+  )"
   if [[ -z "$latest" ]]; then
     die "no $label found under docs/test-results/"
   fi
