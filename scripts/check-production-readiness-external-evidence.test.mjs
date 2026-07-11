@@ -161,7 +161,13 @@ test("treats evidence with missing gate section as incomplete", () => {
     writeEvidence(
       root,
       "2026-07-12-action-policy-phase3-target-trial-r1.md",
-      `# Trial record\n- trialStatus: \`pass\`\n\n## Notes\n\nNo gate section.\n`,
+      `# Trial record
+- trialStatus: \`pass\`
+
+## Notes
+
+No gate section.
+`,
     );
     writeEvidence(root, "2026-07-12-backup-s3-restore-r1.md", backupEvidence());
     writeEvidence(
@@ -177,7 +183,7 @@ test("treats evidence with missing gate section as incomplete", () => {
   });
 });
 
-test("reports PASS when an older evidence record passes even if a newer one is incomplete", () => {
+test("requires the latest dated evidence record to pass", () => {
   withFixture("older-pass", (root) => {
     writeEvidence(
       root,
@@ -197,9 +203,43 @@ test("reports PASS when an older evidence record passes even if a newer one is i
     );
 
     const summary = evaluateExternalEvidence({ rootDir: root });
-    assert.equal(summary.overallStatus, "PASS");
-    assert.equal(summary.dependencies[0].overallStatus, "PASS");
-    assert.equal(summary.dependencies[0].candidates.length, 2);
+    assert.equal(summary.overallStatus, "NO-GO");
+    assert.equal(summary.dependencies[0].overallStatus, "INCOMPLETE");
+    assert.match(
+      summary.dependencies[0].evidenceFile ?? "",
+      /2026-07-14-action-policy-phase3-target-trial-r2\.md$/,
+    );
+    assert.equal(summary.dependencies[0].statusValue, "failed");
+  });
+});
+
+test("uses numeric rN ordering for same-day evidence", () => {
+  withFixture("latest-rn", (root) => {
+    writeEvidence(
+      root,
+      "2026-07-12-action-policy-phase3-target-trial-r9.md",
+      actionPolicyEvidence(),
+    );
+    writeEvidence(
+      root,
+      "2026-07-12-action-policy-phase3-target-trial-r10.md",
+      actionPolicyEvidence({ status: "blocked" }),
+    );
+    writeEvidence(root, "2026-07-12-backup-s3-restore-r1.md", backupEvidence());
+    writeEvidence(
+      root,
+      "2026-07-12-external-csv-artifact-intake-r1.md",
+      csvEvidence(),
+    );
+
+    const summary = evaluateExternalEvidence({ rootDir: root });
+    assert.equal(summary.overallStatus, "NO-GO");
+    assert.equal(summary.dependencies[0].overallStatus, "INCOMPLETE");
+    assert.match(
+      summary.dependencies[0].evidenceFile ?? "",
+      /action-policy-phase3-target-trial-r10\.md$/,
+    );
+    assert.equal(summary.dependencies[0].statusValue, "blocked");
   });
 });
 
@@ -224,5 +264,35 @@ test("CLI exits non-zero for missing evidence and prints JSON details", () => {
     assert.equal(parsed.overallStatus, "NO-GO");
     assert.match(res.stdout, /#1426/);
     assert.equal("fileRe" in parsed.dependencies[0], false);
+  });
+});
+
+test("CLI rejects missing option values and module import is safe without argv[1]", () => {
+  withFixture("cli-args", (root) => {
+    const missingValue = spawnSync(
+      process.execPath,
+      [
+        path.join(
+          ROOT_DIR,
+          "scripts",
+          "check-production-readiness-external-evidence.mjs",
+        ),
+        "--root-dir",
+      ],
+      { cwd: ROOT_DIR, encoding: "utf8" },
+    );
+    assert.equal(missingValue.status, 1);
+    assert.match(missingValue.stderr, /--root-dir requires a value/);
+
+    const importOnly = spawnSync(
+      process.execPath,
+      [
+        "-e",
+        "import('./scripts/check-production-readiness-external-evidence.mjs').then(() => console.log('ok'))",
+      ],
+      { cwd: ROOT_DIR, encoding: "utf8" },
+    );
+    assert.equal(importOnly.status, 0, importOnly.stderr);
+    assert.match(importOnly.stdout, /ok/);
   });
 });

@@ -66,9 +66,9 @@ function parseArgs(argv) {
     } else if (arg === "--json") {
       options.json = true;
     } else if (arg === "--root-dir") {
-      options.rootDir = path.resolve(argv[++i] || "");
+      options.rootDir = path.resolve(readOptionValue(argv, ++i, arg));
     } else if (arg === "--evidence-dir") {
-      options.evidenceDir = path.resolve(argv[++i] || "");
+      options.evidenceDir = path.resolve(readOptionValue(argv, ++i, arg));
     } else {
       throw new Error(`unknown argument: ${arg}`);
     }
@@ -77,6 +77,14 @@ function parseArgs(argv) {
     options.evidenceDir = path.join(options.rootDir, "docs", "test-results");
   }
   return options;
+}
+
+function readOptionValue(argv, index, optionName) {
+  const value = argv[index];
+  if (!value || value.startsWith("--")) {
+    throw new Error(`${optionName} requires a value`);
+  }
+  return value;
 }
 
 function readMarkdownFiles(evidenceDir) {
@@ -123,6 +131,31 @@ function checkedGateLines(section) {
   return section.split(/\r?\n/).filter((line) => /^- \[x\]/i.test(line.trim()));
 }
 
+function evidenceSortKey(fileName) {
+  const match = fileName.match(
+    /^(\d{4}-\d{2}-\d{2})-.+-([A-Za-z0-9._-]+)\.md$/,
+  );
+  const label = match?.[2] ?? "";
+  const run = label.match(/^r(\d+)$/);
+  return {
+    date: match?.[1] ?? "",
+    runNumber: run ? Number(run[1]) : -1,
+    label,
+    fileName,
+  };
+}
+
+function compareEvidenceFilesNewestFirst(a, b) {
+  const left = evidenceSortKey(a.name);
+  const right = evidenceSortKey(b.name);
+  if (left.date !== right.date) return right.date.localeCompare(left.date);
+  if (left.runNumber !== right.runNumber) {
+    return right.runNumber - left.runNumber;
+  }
+  if (left.label !== right.label) return right.label.localeCompare(left.label);
+  return right.fileName.localeCompare(left.fileName);
+}
+
 function evaluateCandidate(definition, file, rootDir) {
   const content = fs.readFileSync(file.absolutePath, "utf8");
   const status = extractStatus(content, definition.statusField);
@@ -148,19 +181,18 @@ function evaluateDefinition(definition, files, rootDir) {
   const { fileRe, ...publicDefinition } = definition;
   const candidates = files
     .filter((file) => fileRe.test(file.name))
-    .sort((a, b) => b.name.localeCompare(a.name))
+    .sort(compareEvidenceFilesNewestFirst)
     .map((file) => evaluateCandidate(definition, file, rootDir));
-  const pass = candidates.find((candidate) => candidate.result === "PASS");
-  if (pass) {
+  const latest = candidates[0];
+  if (latest?.result === "PASS") {
     return {
       ...publicDefinition,
       overallStatus: "PASS",
-      evidenceFile: pass.file,
-      statusValue: pass.status,
+      evidenceFile: latest.file,
+      statusValue: latest.status,
       candidates,
     };
   }
-  const latest = candidates[0];
   return {
     ...publicDefinition,
     overallStatus: latest ? "INCOMPLETE" : "MISSING",
@@ -247,7 +279,8 @@ export async function main(argv = process.argv.slice(2)) {
   return summary.overallStatus === "PASS" ? 0 : 1;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : "";
+if (import.meta.url === invokedPath) {
   main().then(
     (code) => process.exit(code),
     (error) => {
