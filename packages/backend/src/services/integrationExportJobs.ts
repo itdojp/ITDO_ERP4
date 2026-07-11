@@ -346,8 +346,6 @@ export async function listIntegrationExportJobs(
             ? 'hr_leave_export_payroll'
             : 'hr_leave_export_attendance',
         ...buildLeaveExportLogResponse(item),
-        target: item.target,
-        updatedSince: item.updatedSince,
       }),
     ),
     ...employeeMasterLogs.map((item) =>
