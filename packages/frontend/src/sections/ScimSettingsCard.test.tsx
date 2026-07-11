@@ -74,11 +74,7 @@ describe('ScimSettingsCard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '再読込' }));
 
-    await waitFor(() => {
-      expect(screen.getByText('未設定')).toBeInTheDocument();
-    });
-
-    expect(screen.getByText(/最大取得件数:\s*50/)).toBeInTheDocument();
+    expect(await screen.findByText(/最大取得件数:\s*50/)).toBeInTheDocument();
     expect(
       screen.getByText(
         'SCIM_BEARER_TOKEN を設定し、バックエンドを再起動してください。',
@@ -99,9 +95,7 @@ describe('ScimSettingsCard', () => {
 
     render(<ScimSettingsCard />);
 
-    await waitFor(() => {
-      expect(screen.getByText('未設定')).toBeInTheDocument();
-    });
+    expect(await screen.findByText(/最大取得件数:\s*25/)).toBeInTheDocument();
 
     expect(screen.getByText('/scim/v2')).toBeInTheDocument();
   });

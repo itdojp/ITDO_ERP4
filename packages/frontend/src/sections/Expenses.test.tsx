@@ -541,7 +541,9 @@ describe('Expenses', () => {
         expect.objectContaining({ method: 'POST' }),
       );
     });
-    expect(screen.getByText('支払済みに更新しました')).toBeInTheDocument();
+    expect(
+      await screen.findByText('支払済みに更新しました'),
+    ).toBeInTheDocument();
     expect(screen.getByText('2026-03-28')).toBeInTheDocument();
   });
 
@@ -610,7 +612,9 @@ describe('Expenses', () => {
         expect.objectContaining({ method: 'POST' }),
       );
     });
-    expect(screen.getByText('支払済みを取り消しました')).toBeInTheDocument();
+    expect(
+      await screen.findByText('支払済みを取り消しました'),
+    ).toBeInTheDocument();
     const itemRow = screen.getByText(/備品/).closest('tr');
     expect(itemRow).not.toBeNull();
     expect(
