@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { Prisma } from '@prisma/client';
 
 import { buildServer } from '../dist/server.js';
 import { prisma } from '../dist/services/db.js';
@@ -25,6 +26,21 @@ function withPrismaStubs(stubs, fn) {
     .finally(() => {
       for (const restore of restores.reverse()) restore();
     });
+}
+
+function uniqueMappingRuleError() {
+  return new Prisma.PrismaClientKnownRequestError('unique', {
+    code: 'P2002',
+    clientVersion: 'test',
+    meta: { target: ['mappingKey'] },
+  });
+}
+
+function assertNormalizedErrorResponse(res, statusCode, code) {
+  assert.equal(res.statusCode, statusCode, res.body);
+  const body = JSON.parse(res.body);
+  assert.equal(body.error?.code, code);
+  assert.equal(body.error?.message, code);
 }
 
 test('GET /integrations/accounting/mapping-rules supports filters and pagination', async () => {
@@ -176,6 +192,45 @@ test('POST /integrations/accounting/mapping-rules rejects whitespace-only requir
   });
 });
 
+test('POST /integrations/accounting/mapping-rules returns conflict for duplicate mapping key', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'accountingMappingRule.create': async () => {
+        throw uniqueMappingRuleError();
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/integrations/accounting/mapping-rules',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            mappingKey: 'invoice_approved:default',
+            debitAccountCode: '1110',
+            creditAccountCode: '4110',
+            taxCode: 'TAX-001',
+          },
+        });
+        assertNormalizedErrorResponse(
+          res,
+          409,
+          'accounting_mapping_rule_exists',
+        );
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
 test('PATCH /integrations/accounting/mapping-rules/:id updates rule', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
@@ -261,6 +316,81 @@ test('PATCH /integrations/accounting/mapping-rules/:id updates rule', async () =
   assert.equal(capturedUpdate?.data?.updatedBy, 'admin-user');
 });
 
+test('PATCH /integrations/accounting/mapping-rules/:id returns not found when rule is missing', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'accountingMappingRule.findUnique': async () => null,
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'PATCH',
+          url: '/integrations/accounting/mapping-rules/missing-rule',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            isActive: false,
+          },
+        });
+        assertNormalizedErrorResponse(
+          res,
+          404,
+          'accounting_mapping_rule_not_found',
+        );
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('PATCH /integrations/accounting/mapping-rules/:id returns conflict for duplicate mapping key', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs(
+    {
+      'accountingMappingRule.findUnique': async () => ({
+        id: 'rule-001',
+        mappingKey: 'invoice_approved:default',
+        isActive: true,
+      }),
+      'accountingMappingRule.update': async () => {
+        throw uniqueMappingRuleError();
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'PATCH',
+          url: '/integrations/accounting/mapping-rules/rule-001',
+          headers: {
+            'x-user-id': 'admin-user',
+            'x-roles': 'admin',
+          },
+          payload: {
+            mappingKey: 'invoice_approved:default',
+          },
+        });
+        assertNormalizedErrorResponse(
+          res,
+          409,
+          'accounting_mapping_rule_exists',
+        );
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
 test('POST /integrations/accounting/mapping-rules/reapply reapplies pending rows', async () => {
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
@@ -339,6 +469,31 @@ test('POST /integrations/accounting/mapping-rules/reapply reapplies pending rows
       requiredFields: ['debitSubaccountCode'],
     },
   ]);
+});
+
+test('POST /integrations/accounting/mapping-rules/reapply returns invalid_period_key for malformed period', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+
+  await withPrismaStubs({}, async () => {
+    const server = await buildServer({ logger: false });
+    try {
+      const res = await server.inject({
+        method: 'POST',
+        url: '/integrations/accounting/mapping-rules/reapply',
+        headers: {
+          'x-user-id': 'admin-user',
+          'x-roles': 'admin',
+        },
+        payload: {
+          periodKey: '2026-13',
+        },
+      });
+      assertNormalizedErrorResponse(res, 400, 'invalid_period_key');
+    } finally {
+      await server.close();
+    }
+  });
 });
 
 test('POST /integrations/accounting/mapping-rules/reapply revalidates ready rows against new required fields', async () => {
