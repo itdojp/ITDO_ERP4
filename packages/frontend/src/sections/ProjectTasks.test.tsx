@@ -370,6 +370,16 @@ describe('ProjectTasks', () => {
         '/projects/project-1/tasks/task-2/dependencies',
       );
     });
+    const predecessorSelect = screen.getByLabelText(
+      '先行タスク選択',
+    ) as HTMLSelectElement;
+    await waitFor(() => {
+      expect(
+        Array.from(predecessorSelect.selectedOptions).map(
+          (option) => option.value,
+        ),
+      ).toEqual(['task-1']);
+    });
 
     fireEvent.change(screen.getByLabelText('親タスク選択'), {
       target: { value: 'task-1' },
