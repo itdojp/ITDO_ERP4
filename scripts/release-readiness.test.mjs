@@ -351,6 +351,8 @@ test("renderMarkdownReport is deterministic and separates repo-side from externa
   assert.match(markdown, /Overall Go\/No-Go: \*\*NO-GO\*\*/);
   assert.match(markdown, /#1426/);
   assert.match(markdown, /GitHub Actions \/ Link Check \/ CodeQL/);
+  assert.match(markdown, /production-readiness-external-evidence/);
+  assert.match(markdown, /make production-readiness-external-evidence-check/);
   assert.match(markdown, /workflow の完全再実行ではありません/);
   assert.match(markdown, /限定・調査用証跡/);
   assert.match(markdown, /正式 repo-side 証跡/);

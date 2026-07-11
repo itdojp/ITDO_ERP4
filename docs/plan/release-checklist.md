@@ -17,6 +17,7 @@ RELEASE_E2E_SCOPE=full make release-readiness-record
 - `--allow-dirty` / `RELEASE_ALLOW_DIRTY=1` は調査用の暫定実行だけに使い、正式証跡作成では使用しない。
 - runner の `CI job` 欄は GitHub Actions との対応先を示す参照情報であり、GitHub Actions workflow をバイト単位で再実行するものではない。PR/merge判断では GitHub Actions の required checks と Link Check / lychee の実行結果も別途正本として確認する。
 - runner が `PASS` でも、対象環境依存の #1426 / #544 / #1432 が未完了なら総合Go判定は `NO-GO` とする。
+- #1426 / #544 / #1432 の外部証跡が揃ったことは `make production-readiness-external-evidence-check` で確認し、手順は `docs/ops/production-readiness-external-evidence.md` を正本にする。
 
 ## 1. 事前準備
 
@@ -63,6 +64,7 @@ Repo-side runner だけでは本番準備完了としない。少なくとも以
 - #1426 ActionPolicy `phase3_strict` 対象環境 trial / cutover / rollback
 - #544 S3 バックアップ確定値と実 backup → upload → download → restore 検証
 - #1432 給料らくだ・経理上手くんαの現物CSVテンプレート／サンプル回収
+- 上記3件が `docs/test-results/` に `pass` 証跡として揃った後、`make production-readiness-external-evidence-check` が exit code 0 であることを確認する
 
 ## 6. 監査/運用
 

@@ -8,6 +8,7 @@
 ## 事前（必須）
 
 - Repo-side readiness runner が対象コミットの clean checkout で成功（release Go の正式 repo-side 証跡は `RELEASE_E2E_SCOPE=full make release-readiness-record`。限定確認の場合は `RELEASE_E2E_SCOPE=core make release-readiness`）。GitHub Actions の required checks / Link Check / CodeQL はPRまたは対象コミット上の結果を別途確認する
+- #1875 の外部Go依存（#1426 / #544 / #1432）は `docs/ops/production-readiness-external-evidence.md` に従って証跡化し、`make production-readiness-external-evidence-check` が成功している
 - DB マイグレーション有無の確認（`packages/backend/prisma/migrations/`）
 - 過去30日以内の backup/restore 証跡を確認（`docs/test-results/YYYY-MM-DD-backup-restore.md` または `docs/test-results/YYYY-MM-DD-dr-restore-rN.md` または `docs/test-results/YYYY-MM-DD-dr-restore-<RUN_LABEL>.md` を推奨。実施日時・実施者・対象環境・使用した archive/log を含むこと、`docs/ops/backup-restore.md`）
 - DB 変更を含む場合は、対象環境に応じて backup 健全性コマンドを実行し、実行コマンドと結果を証跡へ記録する（例: `./scripts/quadlet/check-db-backup.sh --max-age-hours 24 --print-prefix` / `make backup-s3-readiness-check`）

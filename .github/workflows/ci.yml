@@ -102,6 +102,7 @@ jobs:
       - run: npm run format:check --prefix packages/frontend
       - run: node scripts/check-doc-image-links.mjs
       - run: make docs-test-results-index-check
+      - run: make production-readiness-external-evidence-test
   security-audit:
     runs-on: ubuntu-latest
     permissions:
