@@ -524,6 +524,9 @@ export async function dispatchHrLeaveExport(
           },
         },
       });
+      // A concurrent insert won the race; replay or handle its result.
+      // If concurrent is null the record vanished between the create and
+      // re-fetch (extremely unlikely); re-throw so the caller can retry.
       if (concurrent) return handleExisting(concurrent);
     }
     throw error;

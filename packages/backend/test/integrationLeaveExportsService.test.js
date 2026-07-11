@@ -452,7 +452,8 @@ test('dispatchHrLeaveExport replays concurrent create via P2002 re-fetch', async
     leaveIntegrationExportLog: {
       findUnique: async () => {
         findUniqueCalls += 1;
-        // first call: no existing record; second call (after P2002): return the concurrent record
+        // Simulates a race: no record on first lookup, then a concurrent
+        // insert completes before the second lookup after the P2002 error.
         return findUniqueCalls === 1 ? null : concurrentRecord;
       },
       create: async () => {
