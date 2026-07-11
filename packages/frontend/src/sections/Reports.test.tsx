@@ -400,7 +400,7 @@ describe('Reports', () => {
       'management-accounting-summary-2026-03-01-to-2026-03-31.csv',
     );
     expect(
-      screen.getByText('管理会計サマリCSVを出力しました'),
+      await screen.findByText('管理会計サマリCSVを出力しました'),
     ).toBeInTheDocument();
   });
 });

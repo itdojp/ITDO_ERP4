@@ -214,7 +214,7 @@ describe('MasterData', () => {
       });
     });
 
-    expect(screen.getByText('顧客を追加しました')).toBeInTheDocument();
+    expect(await screen.findByText('顧客を追加しました')).toBeInTheDocument();
     expect(
       await within(getCustomerSection()).findByText(
         (content, element) =>
@@ -339,7 +339,7 @@ describe('MasterData', () => {
       });
     });
 
-    expect(screen.getByText('業者を追加しました')).toBeInTheDocument();
+    expect(await screen.findByText('業者を追加しました')).toBeInTheDocument();
     expect(
       await within(getVendorSection()).findByText(
         (content, element) =>
@@ -420,7 +420,7 @@ describe('MasterData', () => {
       });
     });
 
-    expect(screen.getByText('連絡先を追加しました')).toBeInTheDocument();
+    expect(await screen.findByText('連絡先を追加しました')).toBeInTheDocument();
     expect(
       await within(getContactSection()).findByText(
         (content, element) =>
