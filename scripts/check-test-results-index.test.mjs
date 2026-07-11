@@ -25,6 +25,10 @@ function makeFixture() {
   );
   fs.mkdirSync(path.join(resultsDir, "2026-07-02-alpha"));
   fs.writeFileSync(
+    path.join(resultsDir, "2026-07-02-alpha", "2026-07-03-nested.md"),
+    "# Nested Evidence Should Not Be Indexed\n",
+  );
+  fs.writeFileSync(
     path.join(resultsDir, "2026-07-01-beta.md"),
     "# Beta Evidence\n",
   );

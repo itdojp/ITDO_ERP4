@@ -24,23 +24,26 @@ function readTitle(filePath) {
   return path.basename(filePath, ".md");
 }
 
-function walk(dir) {
-  const result = [];
-  if (!fs.existsSync(dir)) return result;
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const abs = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      result.push(...walk(abs));
-    } else if (entry.isFile()) {
-      result.push(abs);
-    }
-  }
-  return result;
-}
-
 export function collectTestResultsIndex(rootDir = process.cwd()) {
   const testResultsDir = path.join(rootDir, "docs", "test-results");
-  const files = walk(testResultsDir);
+  const topLevelEntries = fs.existsSync(testResultsDir)
+    ? fs.readdirSync(testResultsDir, { withFileTypes: true })
+    : [];
+  const files = [];
+
+  for (const entry of topLevelEntries) {
+    const abs = path.join(testResultsDir, entry.name);
+    if (entry.isFile() && entry.name.endsWith(".md")) {
+      files.push(abs);
+    } else if (entry.isDirectory() && entry.name === "perf") {
+      for (const perfEntry of fs.readdirSync(abs, { withFileTypes: true })) {
+        if (perfEntry.isFile() && perfEntry.name.endsWith(".md")) {
+          files.push(path.join(abs, perfEntry.name));
+        }
+      }
+    }
+  }
+
   const markdownFiles = files
     .filter((file) => file.endsWith(".md"))
     .map((file) => ({
@@ -88,9 +91,6 @@ export function collectTestResultsIndex(rootDir = process.cwd()) {
     }
   }
 
-  const topLevelEntries = fs.existsSync(testResultsDir)
-    ? fs.readdirSync(testResultsDir, { withFileTypes: true })
-    : [];
   for (const entry of topLevelEntries) {
     if (!entry.isDirectory()) continue;
     if (!DATE_ENTRY_RE.test(entry.name)) continue;
