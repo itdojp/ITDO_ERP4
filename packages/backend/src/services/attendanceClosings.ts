@@ -1,4 +1,6 @@
 import type { Prisma } from '@prisma/client';
+import type { AuditContext } from './audit.js';
+import { logAudit as defaultLogAudit } from './audit.js';
 import { prisma } from './db.js';
 import { ensureLeaveSetting } from './leaveSettings.js';
 import { resolveLeaveRequestMinutesWithCalendar } from './leaveEntitlements.js';
@@ -762,4 +764,192 @@ export async function closeAttendancePeriod(options: {
       summaries: rows,
     };
   });
+}
+
+type AttendanceClosingServiceDependencies = {
+  client?: AttendanceClosingClient;
+  logAudit?: typeof defaultLogAudit;
+  closePeriod?: typeof closeAttendancePeriod;
+};
+
+function resolveAttendanceClosingServiceDependencies(
+  dependencies: AttendanceClosingServiceDependencies = {},
+) {
+  return {
+    client: dependencies.client ?? prisma,
+    logAudit: dependencies.logAudit ?? defaultLogAudit,
+    closePeriod: dependencies.closePeriod ?? closeAttendancePeriod,
+  };
+}
+
+function parseBoundedInteger(
+  input: unknown,
+  defaultValue: number,
+  maxValue: number,
+) {
+  if (typeof input === 'number' && Number.isFinite(input)) {
+    return Math.min(maxValue, Math.max(1, Math.floor(input)));
+  }
+  if (typeof input === 'string' && input.trim().length > 0) {
+    const parsed = Number(input);
+    if (Number.isFinite(parsed)) {
+      return Math.min(maxValue, Math.max(1, Math.floor(parsed)));
+    }
+  }
+  return defaultValue;
+}
+
+function parseBoundedNonNegativeInteger(
+  input: unknown,
+  defaultValue: number,
+  maxValue: number,
+) {
+  if (typeof input === 'number' && Number.isFinite(input)) {
+    return Math.min(maxValue, Math.max(0, Math.floor(input)));
+  }
+  if (typeof input === 'string' && input.trim().length > 0) {
+    const parsed = Number(input);
+    if (Number.isFinite(parsed)) {
+      return Math.min(maxValue, Math.max(0, Math.floor(parsed)));
+    }
+  }
+  return defaultValue;
+}
+
+export async function createAttendanceClosing(
+  input: {
+    periodKey: string;
+    reclose?: boolean;
+    actorId?: string | null;
+    auditContext: AuditContext;
+  },
+  dependencies: AttendanceClosingServiceDependencies = {},
+) {
+  const { client, logAudit, closePeriod } =
+    resolveAttendanceClosingServiceDependencies(dependencies);
+  const result = await closePeriod({
+    periodKey: input.periodKey,
+    reclose: input.reclose ?? false,
+    actorId: input.actorId ?? null,
+    client,
+  });
+  await logAudit({
+    ...input.auditContext,
+    action: input.reclose
+      ? 'attendance_closing_reclosed'
+      : 'attendance_closing_created',
+    targetTable: 'AttendanceClosingPeriod',
+    targetId: result.closing.id,
+    metadata: {
+      periodKey: result.closing.periodKey,
+      version: result.closing.version,
+      summaryCount: result.closing.summaryCount,
+    } as Prisma.InputJsonValue,
+  });
+  return {
+    closing: result.closing,
+    summaries: result.summaries,
+  };
+}
+
+export async function listAttendanceClosings(
+  query: {
+    periodKey?: string;
+    limit?: number | string;
+    offset?: number | string;
+  },
+  dependencies: Pick<AttendanceClosingServiceDependencies, 'client'> = {},
+) {
+  const { client } = resolveAttendanceClosingServiceDependencies(dependencies);
+  const limit = parseBoundedInteger(query.limit, 50, 200);
+  const offset = parseBoundedNonNegativeInteger(query.offset, 0, 100000);
+  const periodKey =
+    typeof query.periodKey === 'string' && query.periodKey.trim()
+      ? query.periodKey.trim()
+      : undefined;
+  const items = await client.attendanceClosingPeriod.findMany({
+    where: periodKey ? { periodKey } : undefined,
+    orderBy: [{ periodKey: 'desc' }, { version: 'desc' }],
+    take: limit,
+    skip: offset,
+    select: {
+      id: true,
+      periodKey: true,
+      version: true,
+      status: true,
+      closedAt: true,
+      closedBy: true,
+      supersededAt: true,
+      supersededBy: true,
+      summaryCount: true,
+      workedDayCountTotal: true,
+      scheduledWorkMinutesTotal: true,
+      approvedWorkMinutesTotal: true,
+      overtimeTotalMinutesTotal: true,
+      overtimeWithinStatutoryMinutesTotal: true,
+      overtimeOverStatutoryMinutesTotal: true,
+      holidayWorkMinutesTotal: true,
+      paidLeaveMinutesTotal: true,
+      unpaidLeaveMinutesTotal: true,
+      totalLeaveMinutesTotal: true,
+      sourceTimeEntryCount: true,
+      sourceLeaveRequestCount: true,
+    },
+  });
+  return { items, limit, offset };
+}
+
+export async function getAttendanceClosingSummaries(
+  query: {
+    id: string;
+    limit?: number | string;
+    offset?: number | string;
+  },
+  dependencies: Pick<AttendanceClosingServiceDependencies, 'client'> = {},
+) {
+  const { client } = resolveAttendanceClosingServiceDependencies(dependencies);
+  const limit = parseBoundedInteger(query.limit, 200, 1000);
+  const offset = parseBoundedNonNegativeInteger(query.offset, 0, 100000);
+  const closing = await client.attendanceClosingPeriod.findUnique({
+    where: { id: query.id },
+    select: {
+      id: true,
+      periodKey: true,
+      version: true,
+      status: true,
+      closedAt: true,
+      summaryCount: true,
+    },
+  });
+  if (!closing) {
+    throw new AttendanceClosingError(
+      'attendance_closing_not_found',
+      'attendance closing not found',
+      { id: query.id },
+    );
+  }
+  const items = await client.attendanceMonthlySummary.findMany({
+    where: { closingPeriodId: query.id },
+    orderBy: [{ employeeCode: 'asc' }, { userId: 'asc' }],
+    take: limit,
+    skip: offset,
+    select: {
+      id: true,
+      userId: true,
+      employeeCode: true,
+      workedDayCount: true,
+      scheduledWorkMinutes: true,
+      approvedWorkMinutes: true,
+      overtimeTotalMinutes: true,
+      overtimeWithinStatutoryMinutes: true,
+      overtimeOverStatutoryMinutes: true,
+      holidayWorkMinutes: true,
+      paidLeaveMinutes: true,
+      unpaidLeaveMinutes: true,
+      totalLeaveMinutes: true,
+      sourceTimeEntryCount: true,
+      sourceLeaveRequestCount: true,
+    },
+  });
+  return { closing, items, limit, offset };
 }
