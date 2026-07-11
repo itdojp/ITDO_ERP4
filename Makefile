@@ -1,4 +1,4 @@
-.PHONY: lint format-check typecheck build test test-backend test-frontend data-quality-test data-quality-blocking data-quality-advisory coverage coverage-auth coverage-integrations coverage-integrations-check coverage-frontend coverage-frontend-core e2e ui-evidence ui-visual-regression ui-visual-regression-update mobile-regression-log frontend-dev-api podman-smoke pr-comments audit docs-image-links-check docs-test-results-index-check ops-quality design-system-package-check eslint10-readiness-check eslint10-readiness-record dependabot-alerts-check dependabot-alerts-record dependabot-token-readiness-check dependency-watch-record backup-s3-readiness-check backup-s3-readiness-record po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness action-policy-callsites-report action-policy-callsites-report-json action-policy-required-action-gaps action-policy-required-action-gaps-json action-policy-fallback-report action-policy-fallback-report-json release-readiness release-readiness-record action-policy-phase3-readiness action-policy-phase3-readiness-json action-policy-phase3-readiness-record action-policy-phase3-cutover-record action-policy-phase3-trial-record action-policy-phase3-target-trial-record
+.PHONY: lint format-check typecheck build test test-backend test-frontend data-quality-test data-quality-blocking data-quality-advisory coverage coverage-auth coverage-integrations coverage-integrations-check coverage-frontend coverage-frontend-core e2e ui-evidence ui-visual-regression ui-visual-regression-update mobile-regression-log frontend-dev-api podman-smoke pr-comments audit docs-image-links-check docs-test-results-index-check ops-quality design-system-package-check eslint10-readiness-check eslint10-readiness-record dependabot-alerts-check dependabot-alerts-record dependabot-token-readiness-check dependency-watch-record backup-s3-readiness-check backup-s3-readiness-record backup-s3-restore-record po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness action-policy-callsites-report action-policy-callsites-report-json action-policy-required-action-gaps action-policy-required-action-gaps-json action-policy-fallback-report action-policy-fallback-report-json release-readiness release-readiness-record action-policy-phase3-readiness action-policy-phase3-readiness-json action-policy-phase3-readiness-record action-policy-phase3-cutover-record action-policy-phase3-trial-record action-policy-phase3-target-trial-record
 
 lint:
 	npm run lint --prefix packages/backend
@@ -116,6 +116,9 @@ backup-s3-readiness-check:
 
 backup-s3-readiness-record:
 	./scripts/record-backup-s3-readiness.sh
+
+backup-s3-restore-record:
+	./scripts/record-backup-s3-restore.sh
 
 po-migration-input-readiness-check:
 	./scripts/check-po-migration-input-readiness.sh

@@ -20,7 +20,7 @@
 - region:
 - s3Prefix:
 - encryptionMode: SSE-KMS|SSE-S3
-- kmsKeyIdOrAlias:
+- kmsKeyIdOrAlias: （SSE-S3 の場合は `n/a` と記録）
 - kmsKeyAdmin:
 - kmsKeyUsagePrincipals:
 - versioning: Enabled|Suspended
@@ -44,7 +44,7 @@
 - restoreApprover:
 - restoreExecutor:
 - auditLogLocation:
-- evidenceRecordPath: `docs/test-results/YYYY-MM-DD-backup-s3-readiness-rN.md`
+- evidenceRecordPath: `docs/test-results/YYYY-MM-DD-backup-s3-readiness-rN.md` / `docs/test-results/YYYY-MM-DD-backup-s3-restore-rN.md`
 - incidentEscalation:
 
 ## 検証コマンド
