@@ -65,7 +65,7 @@ const contexts = [
     patterns: [
       '^src/routes/chat[^/]*\\.ts$',
       '^src/routes/chat/.+\\.ts$',
-      '^src/services/(chatAckCandidates|chatAckLimits|chatAckLinkTargets|chatAckNotifications|chatAckRecipients|chatAckReminders|chatAckTemplates|chatAttachmentScan|chatAttachments|chatExternalLlm|chatMentionCandidates|chatMentionRecipients|chatReadState|chatRoomAccess|chatRoomAclAlerts|personalGaChatRoom)\\.ts$',
+      '^src/services/(chatAckCandidates|chatAckLimits|chatAckLinkTargets|chatAckNotifications|chatAckRecipients|chatAckReminders|chatAckTemplates|chatAttachmentScan|chatAttachments|chatExternalLlm|chatMentionCandidates|chatMentionRecipients|chatReadState|chatRoomAccess|chatRoomAclAlerts|chatRoomLifecycle|chatRoomMembership|chatRoomProvisioning|personalGaChatRoom)\\.ts$',
     ],
   },
   {

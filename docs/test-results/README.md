@@ -41,6 +41,7 @@
 ### 2026-07-13
 
 - [Issue #1908 Auth Quality Gates Verification](2026-07-13-issue1908-auth-quality-gates.md)
+- [Issue #1909 Chat room provisioning / lifecycle / membership extraction verification](2026-07-13-issue1909-chat-room-services.md)
 
 ### 2026-07-12
 

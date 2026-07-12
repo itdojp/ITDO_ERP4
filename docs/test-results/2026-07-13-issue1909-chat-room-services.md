@@ -1,0 +1,69 @@
+# Issue #1909 Chat room provisioning / lifecycle / membership extraction verification
+
+Date: 2026-07-13 JST
+
+## Scope
+
+Issue #1909 の第1実装として、`packages/backend/src/routes/chatRooms.ts` から room provisioning、room list/lifecycle patch、membership追加/ACL guard の主要 Prisma 処理を service へ抽出した。
+
+## Service boundary
+
+| boundary               | file                                                    | responsibility                                                                                                                                  | Fastify dependency |
+| ---------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| Room provisioning      | `packages/backend/src/services/chatRoomProvisioning.ts` | company/department/project/private_group/DM room の生成・正規化、deterministic room ID、P2002 race idempotency、member初期化                    | なし               |
+| Room lifecycle         | `packages/backend/src/services/chatRoomLifecycle.ts`    | room list/bootstrap orchestration、room settings patch、official/private/project/DM guard、viewer/poster group selector解決、audit用changes生成 | なし               |
+| Membership / ACL guard | `packages/backend/src/services/chatRoomMembership.ts`   | member追加、private_group owner/admin guard、official room admin/mgmt guard、duplicate/self除外                                                 | なし               |
+| Route                  | `packages/backend/src/routes/chatRooms.ts`              | HTTP認可、request/response、audit呼び出し、message/ack/read-state/AI summary/notification route                                                 | Fastifyあり        |
+
+## Room generation and compatibility table
+
+| room type       | ID rule                                                            | name rule                                                                                  | official/private/external flags                                                  | compatibility note                                                                                   |
+| --------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `company`       | fixed `company`                                                    | `全社`                                                                                     | `isOfficial=true`, `allowExternalUsers=false`, `allowExternalIntegrations=false` | existing room is no-op; `P2002` race is idempotent                                                   |
+| `department`    | `dept_` + SHA-256(`groupId.trim()`) first 32 hex chars             | current `GroupAccount.displayName`; legacy fallback uses JWT displayName as `groupId/name` | `isOfficial=true`, external flags false                                          | legacy `groupId=displayName` rooms keep room ID and normalize `groupId/name`                         |
+| `project`       | `project.id`                                                       | `project.code`                                                                             | `isOfficial=true`                                                                | existing project room by `projectId` is no-op; `createMany(skipDuplicates=true)` preserved           |
+| `private_group` | Prisma generated room ID                                           | request `name.trim()`                                                                      | `isOfficial=false`, external flags false                                         | owner is always inserted; requested members are deduped and self is excluded                         |
+| `dm`            | `dm_` + SHA-256(sorted user IDs joined by `\n`) first 32 hex chars | `dm:<sorted-left>:<sorted-right>`                                                          | `isOfficial=false`, external flags false                                         | existing DM updates `updatedBy`; both users are upserted as owner and deleted membership is restored |
+
+## Before / after line counts
+
+| file                                                    | before | after |
+| ------------------------------------------------------- | -----: | ----: |
+| `packages/backend/src/routes/chatRooms.ts`              |   3066 |  2186 |
+| `packages/backend/src/services/chatRoomProvisioning.ts` |      0 |   477 |
+| `packages/backend/src/services/chatRoomLifecycle.ts`    |      0 |   650 |
+| `packages/backend/src/services/chatRoomMembership.ts`   |      0 |   131 |
+
+`packages/backend/eslint.config.cjs` の `src/routes/chatRooms.ts` temporary cap は 3150 から 2250 へ縮小した。
+
+## Tests added
+
+| test file                                                   | coverage focus                                                                                                                                                                                                  |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/backend/test/chatRoomProvisioningService.test.js` | deterministic department/DM room ID、GroupAccount解決、legacy displayName fallback、company no-op/race、department normalize/create、project missing create、private_group owner/member、DM owner upsert        |
+| `packages/backend/test/chatRoomLifecycleService.test.js`    | missing/deleted/DM error、official/private/project guard、ACL selector validation、viewer/poster group update、no-op update、chat room list/bootstrap orchestration、persisted viewer ACL full-array evaluation |
+| `packages/backend/test/chatRoomMembershipService.test.js`   | missing/DM error、private_group owner/admin guard、official admin/mgmt guard、duplicate/self除外、no-op                                                                                                         |
+
+## Local verification
+
+| command                                                                                                                                                                                                                                                                                                                                                                                                                                          | result                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------- |
+| `npm ci --prefix packages/backend`                                                                                                                                                                                                                                                                                                                                                                                                               | PASS                               |
+| `DATABASE_URL=postgresql://user:pass@localhost:5432/postgres?schema=public npm run prisma:generate --prefix packages/backend`                                                                                                                                                                                                                                                                                                                    | PASS                               |
+| `DATABASE_URL=postgresql://user:pass@localhost:5432/postgres?schema=public npm run build --prefix packages/backend`                                                                                                                                                                                                                                                                                                                              | PASS                               |
+| `DATABASE_URL=postgresql://user:pass@localhost:5432/postgres?schema=public node --test packages/backend/test/chatRoomProvisioningService.test.js packages/backend/test/chatRoomLifecycleService.test.js packages/backend/test/chatRoomMembershipService.test.js`                                                                                                                                                                                 | PASS, 19 tests                     |
+| `cd packages/backend && DATABASE_URL=postgresql://user:pass@localhost:5432/postgres?schema=public node scripts/run-tests.js test/chatRoomProvisioningService.test.js test/chatRoomLifecycleService.test.js test/chatRoomMembershipService.test.js test/chatRoomsPersonalGaRoute.test.js test/chatRoomsPostAccessControl.test.js test/chatRoomsMentionCandidatesProjectRoom.test.js test/chatRoomAccess.test.js test/chatRoomAccessError.test.js` | PASS, 35 tests                     |
+| `npm run lint --prefix packages/backend`                                                                                                                                                                                                                                                                                                                                                                                                         | PASS                               |
+| `npm run format:check --prefix packages/backend`                                                                                                                                                                                                                                                                                                                                                                                                 | PASS                               |
+| `npm run arch:bounded-context --prefix packages/backend`                                                                                                                                                                                                                                                                                                                                                                                         | PASS, no new dependency violations |
+| `npm run arch:bounded-context:coverage --prefix packages/backend`                                                                                                                                                                                                                                                                                                                                                                                | PASS, unclassified files 0         |
+| `git diff --check`                                                                                                                                                                                                                                                                                                                                                                                                                               | PASS                               |
+| `DATABASE_URL=postgresql://user:pass@localhost:5432/postgres?schema=public npm run test:ci --prefix packages/backend`                                                                                                                                                                                                                                                                                                                            | PASS, 1130 tests                   |
+| `npm audit --prefix packages/backend --audit-level=high`                                                                                                                                                                                                                                                                                                                                                                                         | PASS, 0 vulnerabilities            |
+| `E2E_SCOPE=core E2E_CAPTURE=0 ./scripts/e2e-frontend.sh`                                                                                                                                                                                                                                                                                                                                                                                         | PASS, 105 tests                    |
+
+## Notes / out of scope
+
+- `message` / `ack` / `read-state` / `AI summary` / `notification` の全面抽出は #1909 の非対象に従い、今回の差分では変更していない。
+- `chatRooms.ts` には delete / restore route が現時点で存在しないため、room delete / restore のサービス抽出は現行挙動として対象外。該当APIを追加する場合は別Issueで仕様化する。
+- Remote GitHub Actions / Copilot review の結果は PR 作成後に PR 上の正本証跡として扱う。
