@@ -726,6 +726,7 @@ export async function reassignExpenseProject(input: {
     data: { projectId: input.toProjectId },
   });
   await p.logAudit({
+    ...input.auditContext,
     action: 'reassignment',
     targetTable: 'expenses',
     targetId: input.id,
@@ -735,7 +736,6 @@ export async function reassignExpenseProject(input: {
       fromProjectId: expense.projectId,
       toProjectId: input.toProjectId,
     },
-    ...input.auditContext,
   });
   await p.logReassignment({
     targetTable: 'expenses',

@@ -198,3 +198,75 @@ test('reassignExpenseProject maps period lock guard failure before update or aud
     [[{ type: 'approval_open' }], [{ type: 'period_lock' }]],
   );
 });
+
+test('reassignExpenseProject keeps explicit audit reason fields authoritative over auditContext', async () => {
+  const original = expenseDraft();
+  const calls = [];
+  const db = {
+    expense: {
+      findUnique: async (args) => {
+        calls.push(['findUnique', args]);
+        return original;
+      },
+      update: async (args) => {
+        calls.push(['update', args]);
+        return {
+          ...original,
+          projectId: args.data.projectId,
+        };
+      },
+    },
+    project: {
+      findUnique: async (args) => {
+        calls.push(['projectFindUnique', args]);
+        return { id: 'proj-002', deletedAt: null };
+      },
+    },
+  };
+
+  const result = await reassignExpenseProject({
+    id: 'exp-001',
+    toProjectId: 'proj-002',
+    reasonCode: 'project_misassignment',
+    reasonText: 'move to correct project',
+    actor: actor(),
+    auditContext: auditContext({
+      reasonCode: 'context_reason',
+      reasonText: 'context should not override explicit reason',
+    }),
+    ports: {
+      db,
+      evaluateActionPolicyGuards: async (input) => {
+        calls.push(['guard', input]);
+        return [];
+      },
+      logAudit: async (entry) => {
+        calls.push(['audit', entry]);
+      },
+      logReassignment: async (entry) => {
+        calls.push(['reassignmentLog', entry]);
+      },
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.value.projectId, 'proj-002');
+
+  const audit = calls.find(([name]) => name === 'audit')?.[1];
+  assert.equal(audit.action, 'reassignment');
+  assert.equal(audit.targetTable, 'expenses');
+  assert.equal(audit.targetId, 'exp-001');
+  assert.equal(audit.reasonCode, 'project_misassignment');
+  assert.equal(audit.reasonText, 'move to correct project');
+  assert.equal(audit.requestId, 'req-expense-app');
+  assert.deepEqual(audit.metadata, {
+    fromProjectId: 'proj-001',
+    toProjectId: 'proj-002',
+  });
+
+  const reassignmentLog = calls.find(
+    ([name]) => name === 'reassignmentLog',
+  )?.[1];
+  assert.equal(reassignmentLog.reasonCode, 'project_misassignment');
+  assert.equal(reassignmentLog.reasonText, 'move to correct project');
+});
