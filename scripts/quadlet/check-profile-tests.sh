@@ -250,6 +250,17 @@ PY
 run_failure 'https-trial detects missing OIDC secret' 'GOOGLE_OIDC_CLIENT_SECRET' \
   "$CHECK_ENV" --profile https-trial --target-dir "$missing_oidc_dir" --frontend-build-env "$https_frontend"
 
+mixed_origins_dir="$WORK_DIR/https-mixed-origins"
+cp -a "$https_dir" "$mixed_origins_dir"
+python3 - "$mixed_origins_dir/erp4-backend.env" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+s = p.read_text().replace('ALLOWED_ORIGINS=https://trial-app.example.com', 'ALLOWED_ORIGINS=https://trial-app.example.com,http://bad.example.com')
+p.write_text(s)
+PY
+run_failure 'https-trial rejects mixed ALLOWED_ORIGINS with HTTP entry' 'must not use HTTP in ALLOWED_ORIGINS' \
+  "$CHECK_ENV" --profile https-trial --target-dir "$mixed_origins_dir" --frontend-build-env "$https_frontend"
+
 run_success 'trial readiness private-smoke can skip live stack probes' \
   "$CHECK_TRIAL" --profile private-smoke --target-dir "$private_dir" --frontend-build-env "$private_frontend" --skip-host-check --skip-stack-check
 run_failure 'trial readiness rejects private-smoke proxy checks' 'private-smoke must not include proxy' \

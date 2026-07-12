@@ -101,6 +101,23 @@ forbid_http_url() {
   [[ "$value" != http://* ]] || fail "$file must not use HTTP $key for profile $PROFILE"
 }
 
+# forbid_http_url_any: same as forbid_http_url but splits on commas so that
+# multi-value keys like ALLOWED_ORIGINS are each checked individually.
+forbid_http_url_any() {
+  local file="$1"
+  local key="$2"
+  local value origin
+  value="$(read_env_value "$file" "$key")"
+  local IFS=,
+  read -ra origins <<< "$value"
+  for origin in "${origins[@]}"; do
+    origin="${origin#"${origin%%[![:space:]]*}"}"
+    origin="${origin%"${origin##*[![:space:]]}"}"
+    [[ -z "$origin" ]] && continue
+    [[ "$origin" != http://* ]] || fail "$file must not use HTTP in $key for profile $PROFILE"
+  done
+}
+
 container_file() {
   local name="$1"
   printf '%s/%s.container\n' "$TARGET_DIR" "$name"
@@ -244,7 +261,7 @@ check_https_trial_profile() {
   fi
   require_https_url "$BACKEND_ENV" AUTH_FRONTEND_ORIGIN
   require_https_url "$BACKEND_ENV" GOOGLE_OIDC_REDIRECT_URI
-  forbid_http_url "$BACKEND_ENV" ALLOWED_ORIGINS
+  forbid_http_url_any "$BACKEND_ENV" ALLOWED_ORIGINS
 
   require_file "$TARGET_DIR/erp4-caddy.env"
   for key in APP_DOMAIN API_DOMAIN ACME_EMAIL; do
