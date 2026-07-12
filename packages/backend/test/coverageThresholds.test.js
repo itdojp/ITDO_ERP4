@@ -1,16 +1,17 @@
 import assert from 'node:assert/strict';
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const BACKEND_DIR = path.resolve(
@@ -21,13 +22,25 @@ const SCRIPT_PATH = path.join(
   BACKEND_DIR,
   'scripts/check-coverage-thresholds.mjs',
 );
+const REPO_ROOT = path.resolve(BACKEND_DIR, '..', '..');
+const TEST_TEMP_DIR = path.join(REPO_ROOT, 'tmp', 'coverage-thresholds-test');
+
+after(() => {
+  rmSync(TEST_TEMP_DIR, { recursive: true, force: true });
+});
 
 function withTempDir(fn) {
-  const dir = mkdtempSync(path.join(tmpdir(), 'erp4-coverage-thresholds-'));
+  mkdirSync(TEST_TEMP_DIR, { recursive: true });
+  const dir = mkdtempSync(path.join(TEST_TEMP_DIR, 'coverage-thresholds-'));
   try {
     return fn(dir);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+    try {
+      rmSync(TEST_TEMP_DIR);
+    } catch {
+      // Another concurrently running fixture may still own files in the base directory.
+    }
   }
 }
 
@@ -66,6 +79,26 @@ function listSourceFiles(relativeDir) {
   return readdirSync(path.join(BACKEND_DIR, relativeDir))
     .filter((name) => name.endsWith('.ts'))
     .map((name) => `${relativeDir}/${name}`);
+}
+
+function listSourceFilesMatching(relativeDir, pattern) {
+  return readdirSync(path.join(BACKEND_DIR, relativeDir))
+    .filter((name) => name.endsWith('.ts') && pattern.test(name))
+    .map((name) => `${relativeDir}/${name}`);
+}
+
+function listSourceFilesRecursive(relativeDir) {
+  const dir = path.join(BACKEND_DIR, relativeDir);
+  return readdirSync(dir)
+    .flatMap((name) => {
+      const absolutePath = path.join(dir, name);
+      const relativePath = `${relativeDir}/${name}`;
+      if (statSync(absolutePath).isDirectory()) {
+        return listSourceFilesRecursive(relativePath);
+      }
+      return name.endsWith('.ts') ? [relativePath] : [];
+    })
+    .sort();
 }
 
 test('coverage threshold script passes when all metrics meet the scope threshold', () =>
@@ -285,6 +318,41 @@ test('auth coverage thresholds stay above the post-split baseline gate', () => {
     assert.ok(
       config.auth.thresholds[metric] >= minimum,
       `auth ${metric} threshold should stay >= ${minimum}`,
+    );
+  }
+});
+
+test('chat coverage scope includes current route modules, lifecycle services, notification effects, and default adapter', () => {
+  const config = readCoverageThresholdConfig();
+  const configuredFiles = [...config.chat.files].sort();
+  const chatServicePattern = /^(chat[A-Z].*|personalGaChatRoom)\.ts$/;
+  const expectedFiles = [
+    ...listSourceFilesMatching('src/routes', /^chat[^/]*\.ts$/),
+    ...listSourceFilesRecursive('src/routes/chat'),
+    ...listSourceFilesRecursive('src/routes/chatRooms'),
+    ...readdirSync(path.join(BACKEND_DIR, 'src/services'))
+      .filter((name) => chatServicePattern.test(name))
+      .map((name) => `src/services/${name}`),
+    ...listSourceFilesRecursive('src/application/chat'),
+    'src/adapters/notifications/chatNotificationAdapter.ts',
+  ].sort();
+
+  assert.deepEqual(configuredFiles, expectedFiles);
+});
+
+test('chat coverage thresholds stay above the route-split baseline gate', () => {
+  const config = readCoverageThresholdConfig();
+  const minimums = {
+    statements: 53.4,
+    branches: 59.4,
+    functions: 70.1,
+    lines: 53.4,
+  };
+
+  for (const [metric, minimum] of Object.entries(minimums)) {
+    assert.ok(
+      config.chat.thresholds[metric] >= minimum,
+      `chat ${metric} threshold should stay >= ${minimum}`,
     );
   }
 });

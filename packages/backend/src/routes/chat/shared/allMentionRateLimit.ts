@@ -82,12 +82,10 @@ export async function enforceAllMentionRateLimit(options: {
   return { allowed: true };
 }
 
-export function buildAllMentionBlockedMetadata(
-  projectId: string,
+export function buildAllMentionRateLimitMetadata(
   rateLimit: Exclude<AllMentionRateLimit, { allowed: true }>,
 ) {
   const metadata: Record<string, unknown> = {
-    projectId,
     reason: rateLimit.reason,
   };
   if (rateLimit.reason === 'min_interval') {
@@ -99,4 +97,14 @@ export function buildAllMentionBlockedMetadata(
     metadata.windowStart = rateLimit.windowStart.toISOString();
   }
   return metadata;
+}
+
+export function buildAllMentionBlockedMetadata(
+  projectId: string,
+  rateLimit: Exclude<AllMentionRateLimit, { allowed: true }>,
+) {
+  return {
+    projectId,
+    ...buildAllMentionRateLimitMetadata(rateLimit),
+  };
 }

@@ -43,6 +43,7 @@
 - [Issue #1908 Auth Quality Gates Verification](2026-07-13-issue1908-auth-quality-gates.md)
 - [Issue #1909 Chat room provisioning / lifecycle / membership extraction verification](2026-07-13-issue1909-chat-room-services.md)
 - [Issue #1910 Chat notification port / application effects verification](2026-07-13-issue1910-chat-notification-boundary.md)
+- [Issue #1911 Chat route split and quality gate verification](2026-07-13-issue1911-chat-quality-gate.md)
 
 ### 2026-07-12
 
