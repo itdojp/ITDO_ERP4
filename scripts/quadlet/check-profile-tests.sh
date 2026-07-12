@@ -1,0 +1,260 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+if [[ -z "${TMPDIR:-}" || "$TMPDIR" == /tmp || "$TMPDIR" == /tmp/* ]]; then
+  TMPDIR="$ROOT_DIR/.codex-local/tmp"
+fi
+mkdir -p "$TMPDIR"
+WORK_DIR="$(mktemp -d "$TMPDIR/quadlet-profile-tests.XXXXXX")"
+cleanup() {
+  rm -rf "$WORK_DIR"
+}
+trap cleanup EXIT
+
+CHECK_ENV="$ROOT_DIR/scripts/quadlet/check-env.sh"
+CHECK_TRIAL="$ROOT_DIR/scripts/quadlet/check-trial-readiness.sh"
+
+fail() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+run_success() {
+  local label="$1"
+  shift
+  printf 'success: %s\n' "$label"
+  local stdout_file="$WORK_DIR/${label//[^A-Za-z0-9_.-]/_}.out"
+  local stderr_file="$WORK_DIR/${label//[^A-Za-z0-9_.-]/_}.err"
+  "$@" >"$stdout_file" 2>"$stderr_file" || {
+    cat "$stdout_file"
+    cat "$stderr_file" >&2
+    fail "expected success: $label"
+  }
+}
+
+run_failure() {
+  local label="$1"
+  local pattern="$2"
+  shift 2
+  local out status
+  printf 'failure: %s\n' "$label"
+  set +e
+  out="$({ "$@"; } 2>&1)"
+  status=$?
+  set -e
+  if [[ "$status" -eq 0 ]]; then
+    printf '%s\n' "$out"
+    fail "expected failure: $label"
+  fi
+  if ! grep -Eq "$pattern" <<<"$out"; then
+    printf '%s\n' "$out"
+    fail "expected diagnostic not found for $label: $pattern"
+  fi
+  printf '%s\n' "$out"
+}
+
+write_postgres_env() {
+  local dir="$1"
+  cat >"$dir/erp4-postgres.env" <<'ENV'
+POSTGRES_USER=erp4
+POSTGRES_PASSWORD=REPLACE_WITH_STRONG_PASSWORD
+POSTGRES_DB=postgres
+ENV
+}
+
+write_private_backend_env() {
+  local dir="$1"
+  cat >"$dir/erp4-backend.env" <<'ENV'
+SAKURA_VPS_PROFILE=private-smoke
+DATABASE_URL=postgresql://erp4:REPLACE_WITH_STRONG_PASSWORD@erp4-postgres:5432/postgres?schema=public
+PORT=3001
+NODE_ENV=development
+AUTH_MODE=header
+AUTH_ALLOW_HEADER_FALLBACK_IN_PROD=false
+ALLOWED_ORIGINS=http://erp4-frontend:8080
+MAIL_TRANSPORT=stub
+PDF_PROVIDER=local
+PDF_STORAGE_DIR=/var/lib/erp4/pdfs
+PDF_BASE_URL=http://erp4-backend:3001/pdf-files
+EVIDENCE_ARCHIVE_PROVIDER=local
+EVIDENCE_ARCHIVE_LOCAL_DIR=/var/lib/erp4/evidence-archives
+CHAT_ATTACHMENT_PROVIDER=local
+CHAT_ATTACHMENT_LOCAL_DIR=/var/lib/erp4/chat-attachments
+REPORT_STORAGE_DIR=/var/lib/erp4/reports
+ENV
+}
+
+write_https_backend_env() {
+  local dir="$1"
+  cat >"$dir/erp4-backend.env" <<'ENV'
+SAKURA_VPS_PROFILE=https-trial
+DATABASE_URL=postgresql://erp4:REPLACE_WITH_STRONG_PASSWORD@erp4-postgres:5432/postgres?schema=public
+PORT=3001
+NODE_ENV=production
+AUTH_MODE=jwt_bff
+AUTH_ALLOW_HEADER_FALLBACK_IN_PROD=false
+ALLOWED_ORIGINS=https://trial-app.example.com
+JWT_JWKS_URL=https://accounts.google.com/.well-known/openid-configuration
+JWT_ISSUER=https://accounts.google.com
+JWT_AUDIENCE=trial-client-id.example.apps.googleusercontent.com
+GOOGLE_OIDC_CLIENT_SECRET=REPLACE_WITH_TRIAL_GOOGLE_CLIENT_SECRET
+GOOGLE_OIDC_REDIRECT_URI=https://trial-api.example.com/auth/google/callback
+AUTH_FRONTEND_ORIGIN=https://trial-app.example.com
+AUTH_SESSION_COOKIE_SECURE=true
+MAIL_TRANSPORT=stub
+PDF_PROVIDER=local
+PDF_STORAGE_DIR=/var/lib/erp4/pdfs
+PDF_BASE_URL=https://trial-api.example.com/pdf-files
+EVIDENCE_ARCHIVE_PROVIDER=local
+EVIDENCE_ARCHIVE_LOCAL_DIR=/var/lib/erp4/evidence-archives
+CHAT_ATTACHMENT_PROVIDER=local
+CHAT_ATTACHMENT_LOCAL_DIR=/var/lib/erp4/chat-attachments
+REPORT_STORAGE_DIR=/var/lib/erp4/reports
+ENV
+}
+
+write_frontend_env() {
+  local file="$1"
+  local api_base="$2"
+  cat >"$file" <<ENV
+VITE_API_BASE=$api_base
+VITE_ENABLE_SW=false
+ENV
+}
+
+write_private_containers() {
+  local dir="$1"
+  for name in erp4-backend erp4-frontend erp4-postgres; do
+    cat >"$dir/$name.container" <<EOF_CONTAINER
+[Container]
+Image=localhost/$name:test
+Network=erp4.network
+EOF_CONTAINER
+  done
+}
+
+write_https_caddy() {
+  local dir="$1"
+  cat >"$dir/erp4-caddy.env" <<'ENV'
+APP_DOMAIN=trial-app.example.com
+API_DOMAIN=trial-api.example.com
+ACME_EMAIL=ops@example.com
+ENV
+  cat >"$dir/erp4-caddy.container" <<'CONTAINER'
+[Container]
+Image=docker.io/library/caddy:2.9-alpine
+PublishPort=0.0.0.0:80:80
+PublishPort=0.0.0.0:443:443
+CONTAINER
+}
+
+make_private_dir() {
+  local dir="$1"
+  mkdir -p "$dir"
+  write_postgres_env "$dir"
+  write_private_backend_env "$dir"
+  write_private_containers "$dir"
+}
+
+make_https_dir() {
+  local dir="$1"
+  mkdir -p "$dir"
+  write_postgres_env "$dir"
+  write_https_backend_env "$dir"
+  write_private_containers "$dir"
+  write_https_caddy "$dir"
+}
+
+private_dir="$WORK_DIR/private"
+private_frontend="$WORK_DIR/private-frontend.env"
+make_private_dir "$private_dir"
+write_frontend_env "$private_frontend" 'http://erp4-backend:3001'
+run_success 'private-smoke minimal env without Google OIDC' \
+  "$CHECK_ENV" --profile private-smoke --target-dir "$private_dir" --frontend-build-env "$private_frontend"
+
+publish_dir="$WORK_DIR/private-publish"
+cp -a "$private_dir" "$publish_dir"
+printf 'PublishPort=127.0.0.1:55432:5432\n' >>"$publish_dir/erp4-postgres.container"
+run_failure 'private-smoke rejects host publish' 'must not publish host ports' \
+  "$CHECK_ENV" --profile private-smoke --target-dir "$publish_dir" --frontend-build-env "$private_frontend"
+
+proxy_dir="$WORK_DIR/private-proxy"
+cp -a "$private_dir" "$proxy_dir"
+: >"$proxy_dir/erp4-caddy.env"
+run_failure 'private-smoke rejects proxy files' 'must not install or start Caddy' \
+  "$CHECK_ENV" --profile private-smoke --target-dir "$proxy_dir" --frontend-build-env "$private_frontend"
+
+prod_header_dir="$WORK_DIR/private-prod-header"
+cp -a "$private_dir" "$prod_header_dir"
+python3 - "$prod_header_dir/erp4-backend.env" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+s = p.read_text()
+s = s.replace('NODE_ENV=development', 'NODE_ENV=production')
+p.write_text(s)
+PY
+run_failure 'private-smoke rejects production header auth' 'production header auth' \
+  "$CHECK_ENV" --profile private-smoke --target-dir "$prod_header_dir" --frontend-build-env "$private_frontend"
+
+https_dir="$WORK_DIR/https"
+https_frontend="$WORK_DIR/https-frontend.env"
+make_https_dir "$https_dir"
+write_frontend_env "$https_frontend" 'https://trial-api.example.com'
+run_success 'https-trial minimal env' \
+  "$CHECK_ENV" --profile https-trial --target-dir "$https_dir" --frontend-build-env "$https_frontend"
+
+http_redirect_dir="$WORK_DIR/https-http-redirect"
+cp -a "$https_dir" "$http_redirect_dir"
+python3 - "$http_redirect_dir/erp4-backend.env" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+s = p.read_text()
+s = s.replace('https://trial-api.example.com/auth/google/callback', 'http://trial-api.example.com/auth/google/callback')
+s = s.replace('REPLACE_WITH_TRIAL_GOOGLE_CLIENT_SECRET', 'GOCSPX-do-not-print-test-secret')
+p.write_text(s)
+PY
+set +e
+secret_output="$({ "$CHECK_ENV" --profile https-trial --target-dir "$http_redirect_dir" --frontend-build-env "$https_frontend"; } 2>&1)"
+secret_status=$?
+set -e
+[[ "$secret_status" -ne 0 ]] || fail 'expected https-trial HTTP redirect failure'
+grep -Eq 'requires HTTPS GOOGLE_OIDC_REDIRECT_URI|requires HTTPS' <<<"$secret_output" || {
+  printf '%s\n' "$secret_output"
+  fail 'expected HTTPS diagnostic for http redirect'
+}
+if grep -q 'GOCSPX-do-not-print-test-secret' <<<"$secret_output"; then
+  fail 'check-env output leaked a secret-like value'
+fi
+printf '%s\n' "$secret_output"
+
+insecure_cookie_dir="$WORK_DIR/https-insecure-cookie"
+cp -a "$https_dir" "$insecure_cookie_dir"
+python3 - "$insecure_cookie_dir/erp4-backend.env" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+s = p.read_text().replace('AUTH_SESSION_COOKIE_SECURE=true', 'AUTH_SESSION_COOKIE_SECURE=false')
+p.write_text(s)
+PY
+run_failure 'https-trial rejects insecure cookie' 'AUTH_SESSION_COOKIE_SECURE=true' \
+  "$CHECK_ENV" --profile https-trial --target-dir "$insecure_cookie_dir" --frontend-build-env "$https_frontend"
+
+missing_oidc_dir="$WORK_DIR/https-missing-oidc"
+cp -a "$https_dir" "$missing_oidc_dir"
+python3 - "$missing_oidc_dir/erp4-backend.env" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+lines = [line for line in p.read_text().splitlines() if not line.startswith('GOOGLE_OIDC_CLIENT_SECRET=')]
+p.write_text('\n'.join(lines) + '\n')
+PY
+run_failure 'https-trial detects missing OIDC secret' 'GOOGLE_OIDC_CLIENT_SECRET' \
+  "$CHECK_ENV" --profile https-trial --target-dir "$missing_oidc_dir" --frontend-build-env "$https_frontend"
+
+run_success 'trial readiness private-smoke can skip live stack probes' \
+  "$CHECK_TRIAL" --profile private-smoke --target-dir "$private_dir" --frontend-build-env "$private_frontend" --skip-host-check --skip-stack-check
+run_failure 'trial readiness rejects private-smoke proxy checks' 'private-smoke must not include proxy' \
+  "$CHECK_TRIAL" --profile private-smoke --include-proxy --skip-host-check --skip-env-check --skip-stack-check
+run_failure 'trial readiness requires https-trial proxy checks' 'https-trial requires --include-proxy' \
+  "$CHECK_TRIAL" --profile https-trial --skip-host-check --skip-env-check --skip-stack-check
+
+printf 'OK: Quadlet profile tests passed\n'

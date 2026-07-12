@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUTPUT_BASE_DIR="${OUTPUT_BASE_DIR:-$ROOT_DIR/tmp}"
 LINES=100
 INCLUDE_PROXY=0
+PROFILE="${SAKURA_VPS_PROFILE:-production}"
 SKIP_HTTPS=0
 RESOLVE_IP=""
 INSECURE=0
@@ -19,6 +20,7 @@ FAILED=0
 usage() {
   cat <<USAGE
 Usage: $(basename "$0") [options]
+  --profile NAME     Record production, private-smoke, or https-trial in meta.txt
   --output-dir DIR   Write evidence files under DIR (default: tmp/sakura-vps-trial-<timestamp>)
   --lines N          Pass N to logs-stack.sh (default: 100)
   --include-proxy    Include proxy-aware status/log capture and HTTPS probe
@@ -59,6 +61,11 @@ run_and_capture() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --profile)
+      [[ $# -ge 2 ]] || fail 'missing argument for --profile'
+      PROFILE="$2"
+      shift 2
+      ;;
     --output-dir)
       [[ $# -ge 2 ]] || fail 'missing argument for --output-dir'
       OUTPUT_DIR="$2"
@@ -97,6 +104,19 @@ while [[ $# -gt 0 ]]; do
 done
 
 ensure_non_negative_integer "$LINES"
+case "$PROFILE" in
+  production|private-smoke|https-trial)
+    ;;
+  *)
+    fail "unknown profile: $PROFILE"
+    ;;
+esac
+if [[ "$PROFILE" == "private-smoke" && "$INCLUDE_PROXY" -eq 1 ]]; then
+  fail 'private-smoke must not include proxy evidence'
+fi
+if [[ "$PROFILE" == "https-trial" && "$INCLUDE_PROXY" -eq 0 ]]; then
+  fail 'https-trial evidence requires --include-proxy'
+fi
 [[ -x "$STATUS_STACK" ]] || fail "helper is not executable: $STATUS_STACK"
 [[ -x "$LOGS_STACK" ]] || fail "helper is not executable: $LOGS_STACK"
 if [[ "$INCLUDE_PROXY" -eq 1 && "$SKIP_HTTPS" -eq 0 ]]; then
@@ -123,6 +143,7 @@ HTTPS_FILE="$OUTPUT_DIR/check-https.txt"
   printf 'host=%s\n' "$(hostname)"
   printf 'repo_dir=%s\n' "$ROOT_DIR"
   printf 'git_commit=%s\n' "$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || printf 'unknown')"
+  printf 'profile=%s\n' "$PROFILE"
   printf 'include_proxy=%s\n' "$INCLUDE_PROXY"
   printf 'lines=%s\n' "$LINES"
 } >"$META_FILE"

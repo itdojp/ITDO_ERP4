@@ -7,10 +7,12 @@
 - 対象ホスト名:
 - VPS IP:
 - 対象ブランチ / commit SHA:
+- profile:
 - 実行 Runbook: `docs/ops/sakura-vps-podman-trial.md`
-- 受入確認コマンド: `./scripts/quadlet/check-trial-readiness.sh`
+- 受入確認コマンド: `./scripts/quadlet/check-trial-readiness.sh --profile <private-smoke|https-trial>`
 
 ## 1. 前提確認
+
 - `./scripts/quadlet/check-host-prereqs.sh`
   - 結果:
 - `./scripts/quadlet/check-env.sh --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env`
@@ -21,6 +23,7 @@
   - 結果:
 
 ## 2. build / 配置 / 起動
+
 - `./scripts/quadlet/build-images.sh`
   - backend image:
   - frontend image:
@@ -32,6 +35,7 @@
   - 結果:
 
 ## 3. 受入確認
+
 - `./scripts/quadlet/check-trial-readiness.sh`
   - 結果:
 - 必要時 `./scripts/quadlet/check-trial-readiness.sh --include-proxy --resolve-ip <VPS_IP>`
@@ -42,6 +46,7 @@
   - 結果:
 
 ## 4. 採取した証跡
+
 - `./scripts/quadlet/collect-trial-evidence.sh --lines 100`
   - 保存先:
 - 必要時 `./scripts/quadlet/collect-trial-evidence.sh --include-proxy --resolve-ip <VPS_IP>`
@@ -56,11 +61,13 @@
 - 必要時 `./scripts/quadlet/check-https.sh`:
 
 ## 5. 判定
+
 - Go / No-Go:
 - 判定理由:
 - 未解消リスク:
 
 ## 6. 切り戻し実施時のみ
+
 - 実施コマンド:
   - `./scripts/quadlet/stop-stack.sh`
   - 必要時 `./scripts/quadlet/stop-stack.sh --include-proxy`

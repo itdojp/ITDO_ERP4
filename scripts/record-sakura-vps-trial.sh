@@ -10,6 +10,7 @@ RUN_LABEL="${RUN_LABEL:-}"
 OPERATOR_NAME="${OPERATOR_NAME:-}"
 TARGET_HOST="${TARGET_HOST:-}"
 VPS_IP="${VPS_IP:-}"
+PROFILE="${PROFILE:-${SAKURA_VPS_PROFILE:-}}"
 
 usage() {
   cat <<USAGE
@@ -24,6 +25,7 @@ Optional env:
   OPERATOR_NAME=...
   TARGET_HOST=...     # default: collected host from meta.txt
   VPS_IP=...
+  PROFILE=private-smoke|https-trial  # default: collected profile from meta.txt or production
 
 Validation:
 - DATE_STAMP must be a valid calendar date (YYYY-MM-DD)
@@ -184,10 +186,11 @@ main() {
   [[ -f "$logs_file" ]] || die "logs evidence not found: $logs_file"
   [[ -f "$timers_file" ]] || die "timer evidence not found: $timers_file"
 
-  local evidence_host git_commit include_proxy lines collected_at
+  local evidence_host git_commit include_proxy lines collected_at evidence_profile
   local status_exit logs_exit timers_exit https_exit branch_name commit_short output_file
   evidence_host="$(read_meta_value host "$meta_file")"
   git_commit="$(read_meta_value git_commit "$meta_file")"
+  evidence_profile="$(read_meta_value profile "$meta_file")"
   include_proxy="$(read_meta_value include_proxy "$meta_file")"
   lines="$(read_meta_value lines "$meta_file")"
   collected_at="$(read_meta_value collected_at "$meta_file")"
@@ -195,6 +198,17 @@ main() {
   logs_exit="$(read_meta_value logs_stack_exit "$meta_file")"
   timers_exit="$(read_meta_value list_timers_exit "$meta_file")"
   https_exit="$(read_meta_value check_https_exit "$meta_file")"
+
+  if [[ -z "$PROFILE" ]]; then
+    PROFILE="${evidence_profile:-production}"
+  fi
+  case "$PROFILE" in
+    production|private-smoke|https-trial)
+      ;;
+    *)
+      die "PROFILE must be production, private-smoke, or https-trial: $PROFILE"
+      ;;
+  esac
 
   if [[ -z "$TARGET_HOST" ]]; then
     TARGET_HOST="$evidence_host"
@@ -234,6 +248,7 @@ PY
 
   {
     printf '\n## 7. 自動採取サマリ\n'
+    printf -- '- profile: `%s`\n' "$PROFILE"
     printf -- '- sourceEvidenceDir: `%s`\n' "$(normalize_report_path "$EVIDENCE_DIR")"
     printf -- '- collectedAt: `%s`\n' "${collected_at:-unknown}"
     printf -- '- includeProxy: `%s`\n' "${include_proxy:-0}"

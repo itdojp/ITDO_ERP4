@@ -15,10 +15,12 @@ INSECURE=0
 SKIP_HOST_CHECK=0
 SKIP_ENV_CHECK=0
 SKIP_STACK_CHECK=0
+PROFILE="${SAKURA_VPS_PROFILE:-production}"
 
 usage() {
   cat <<USAGE
 Usage: $(basename "$0") [options]
+  --profile NAME           Use production, private-smoke, or https-trial validation
   --target-dir DIR          Use an alternate Quadlet target directory
   --frontend-build-env FILE Use an alternate frontend build env file
   --include-proxy           Include HTTPS probe via check-https.sh
@@ -43,6 +45,11 @@ run() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --profile)
+      [[ $# -ge 2 ]] || fail 'missing argument for --profile'
+      PROFILE="$2"
+      shift 2
+      ;;
     --target-dir)
       [[ $# -ge 2 ]] || fail 'missing argument for --target-dir'
       TARGET_DIR="$2"
@@ -89,8 +96,22 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+case "$PROFILE" in
+  production|private-smoke|https-trial)
+    ;;
+  *)
+    fail "unknown profile: $PROFILE"
+    ;;
+esac
+
 if [[ "$INCLUDE_PROXY" -eq 0 && ( -n "$RESOLVE_IP" || "$INSECURE" -eq 1 ) ]]; then
   fail '--resolve-ip and --insecure require --include-proxy'
+fi
+if [[ "$PROFILE" == "private-smoke" && "$INCLUDE_PROXY" -eq 1 ]]; then
+  fail 'private-smoke must not include proxy/HTTPS checks'
+fi
+if [[ "$PROFILE" == "https-trial" && "$INCLUDE_PROXY" -eq 0 ]]; then
+  fail 'https-trial requires --include-proxy for HTTPS readiness'
 fi
 
 if [[ "$SKIP_HOST_CHECK" -eq 0 ]]; then
@@ -111,7 +132,7 @@ if [[ "$SKIP_HOST_CHECK" -eq 0 ]]; then
 fi
 
 if [[ "$SKIP_ENV_CHECK" -eq 0 ]]; then
-  cmd=("$CHECK_ENV" --target-dir "$TARGET_DIR")
+  cmd=("$CHECK_ENV" --profile "$PROFILE" --target-dir "$TARGET_DIR")
   if [[ "$FRONTEND_BUILD_ENV_EXPLICIT" -eq 1 ]]; then
     cmd+=(--frontend-build-env "$FRONTEND_BUILD_ENV")
   fi
@@ -133,4 +154,4 @@ if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
   run "${cmd[@]}"
 fi
 
-printf 'OK: Quadlet trial readiness checks completed\n'
+printf 'OK: Quadlet trial readiness checks completed profile=%s\n' "$PROFILE"
