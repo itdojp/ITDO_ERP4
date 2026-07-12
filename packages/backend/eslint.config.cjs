@@ -9,7 +9,6 @@ const maxLinesOptions = (max) => ({
 });
 
 const existingRouteLineAllowances = [
-  ['src/routes/auth.ts', 2500],
   ['src/routes/chatRooms.ts', 3150],
   ['src/routes/projects.ts', 2100],
   ['src/routes/chat.ts', 1750],

@@ -41,6 +41,7 @@
 ### 2026-07-12
 
 - [Issue #1906 Auth Boundary Refactor Verification](2026-07-12-issue1906-auth-boundary.md)
+- [Issue #1907 Local Identity Application Service Verification](2026-07-12-issue1907-auth-local-identity.md)
 
 ### 2026-07-02
 

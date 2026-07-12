@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import argon2 from 'argon2';
+import { Prisma } from '@prisma/client';
 
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
 const IDENTITY_CSRF_HEADERS = {
@@ -337,6 +338,62 @@ test('POST /auth/user-identities/google-link rejects a second Google identity re
       }
     },
   );
+});
+
+test('POST /auth/user-identities/google-link maps subject unique conflicts', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+  let auditCalled = false;
+
+  await withPrismaStubs(
+    {
+      'userAccount.findUnique': async () => ({
+        id: 'user-001',
+        active: true,
+        deletedAt: null,
+        identities: [],
+      }),
+      'userIdentity.create': async () => {
+        throw new Prisma.PrismaClientKnownRequestError('unique conflict', {
+          code: 'P2002',
+          clientVersion: 'test',
+          meta: { target: ['providerSubject'] },
+        });
+      },
+      'auditLog.create': async () => {
+        auditCalled = true;
+        return { id: 'audit-unexpected' };
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          remoteAddress: nextRemoteAddress(),
+          method: 'POST',
+          url: '/auth/user-identities/google-link',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+            ...IDENTITY_CSRF_HEADERS,
+          },
+          payload: {
+            userAccountId: 'user-001',
+            issuer: 'https://accounts.google.com',
+            providerSubject: 'google-sub-existing',
+            ticketId: 'AUTH-MIG-001S',
+            reasonCode: 'google_link',
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error.code, 'google_identity_subject_exists');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+  assert.equal(auditCalled, false);
 });
 
 test('POST /auth/user-identities/google-link rejects past rollback window', async () => {
@@ -979,6 +1036,78 @@ test('PATCH /auth/user-identities/:identityId rejects disabling the last active 
       }
     },
   );
+});
+
+test('PATCH /auth/user-identities/:identityId maps serializable update conflicts', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+  let auditCalled = false;
+
+  await withPrismaStubs(
+    {
+      'userIdentity.findUnique': async () => ({
+        id: 'identity-google-001',
+        userAccountId: 'user-001',
+        providerType: 'google_oidc',
+        providerSubject: 'google-sub-001',
+        issuer: 'https://accounts.google.com',
+        emailSnapshot: 'user@example.com',
+        status: 'active',
+        lastAuthenticatedAt: null,
+        linkedAt: new Date('2026-03-23T00:00:00.000Z'),
+        effectiveUntil: null,
+        rollbackWindowUntil: null,
+        note: null,
+        createdAt: new Date('2026-03-23T00:00:00.000Z'),
+        updatedAt: new Date('2026-03-23T00:00:00.000Z'),
+        userAccount: {
+          id: 'user-001',
+          userName: 'legacy-user',
+          displayName: 'Legacy User',
+          active: true,
+          deletedAt: null,
+        },
+        localCredential: null,
+      }),
+      'userIdentity.count': async () => 1,
+      'userIdentity.update': async () => {
+        throw new Prisma.PrismaClientKnownRequestError('transaction conflict', {
+          code: 'P2034',
+          clientVersion: 'test',
+        });
+      },
+      'auditLog.create': async () => {
+        auditCalled = true;
+        return { id: 'audit-unexpected' };
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          remoteAddress: nextRemoteAddress(),
+          method: 'PATCH',
+          url: '/auth/user-identities/identity-google-001',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+            ...IDENTITY_CSRF_HEADERS,
+          },
+          payload: {
+            status: 'disabled',
+            ticketId: 'AUTH-MIG-004C',
+            reasonCode: 'google_disable',
+          },
+        });
+        assert.equal(res.statusCode, 409, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error.code, 'identity_update_conflict');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+  assert.equal(auditCalled, false);
 });
 
 test('PATCH /auth/user-identities/:identityId rejects past rollback window', async () => {

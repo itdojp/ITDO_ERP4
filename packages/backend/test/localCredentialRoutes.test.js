@@ -974,3 +974,51 @@ test('PATCH /auth/local-credentials/:identityId rejects blank audit fields after
 
   assert.equal(updateCalled, false);
 });
+
+test('PATCH /auth/local-credentials/:identityId returns local_credential_not_found before mutation', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+  let updateCalled = false;
+  let auditCalled = false;
+
+  await withPrismaStubs(
+    {
+      'userIdentity.findUnique': async () => null,
+      'userIdentity.update': async () => {
+        updateCalled = true;
+        throw new Error('userIdentity.update should not be called');
+      },
+      'auditLog.create': async () => {
+        auditCalled = true;
+        return { id: 'audit-unexpected' };
+      },
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'PATCH',
+          url: '/auth/local-credentials/missing-identity',
+          headers: {
+            'x-user-id': 'sys-admin',
+            'x-roles': 'system_admin',
+            ...LOCAL_CSRF_HEADERS,
+          },
+          payload: {
+            status: 'disabled',
+            ticketId: 'AUTH-404',
+            reasonCode: 'disable_missing',
+          },
+        });
+        assert.equal(res.statusCode, 404, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body.error.code, 'local_credential_not_found');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
+  assert.equal(updateCalled, false);
+  assert.equal(auditCalled, false);
+});
