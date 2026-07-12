@@ -38,7 +38,7 @@
 
 目的: 大きな責務を「純粋関数」と「I/O」に分離する。
 
-- `routes/projects.ts` のドメインロジックを `services/` へ抽出
+- `routes/projects.ts` は #1912 で project lifecycle / hierarchy / membership / reassignment orchestration を `application/projects/useCases.ts` へ抽出済み。後続で task/WBS、milestone、recurring を分割
 - `scripts/migrate-po.ts` の変換/パース処理を `src/migration/` へ分割
 - `routes/integrations.ts` と `routes/auth.ts` は service / route 分割後に default 1500行 gate へ統合済みのため、今後は `docs/quality/refactoring-hotspots.md` の残責務を service / adapter 単位で継続分割する。`routes/auth.ts` は #1908 で coverage scope completeness と baseline 閾値を固定済み。`routes/chatRooms.ts` は #1911 で default 1500行 gate と chat coverage scope に統合済みのため、次は `routes/chat.ts` 側の ack / attachment / route module 分割へ進む
 - `routes/validators.ts` は barrel に留め、TypeBox schema は `routes/validators/*.ts` のドメイン別ファイルへ追加する
@@ -60,6 +60,7 @@
 - 2026-07-12: `routes/expenses.ts` の submit / mark-paid / unmark-paid / reassign orchestration を `application/expenses/useCases.ts` へ抽出し、ActionPolicy/Approval/Notification/PeriodLock/Reassignment の直接import 7件を bounded-context baseline から削除。route allowlist cap から `expenses.ts` を除外（Issue #1905）
 - 2026-07-13: auth route modules をdefault 1500行gate内に保ち、`coverage:auth:check` のscope completeness/stale entry検出とbaseline閾値（statements/lines 89.7%、branches 70.5%、functions 97.9%）を固定（Issue #1908）
 - 2026-07-13: `routes/chatRooms.ts` をdefault 1500行gateへ統合し、chat top-level route/route module/service/application/adapter subset の `coverage:chat:check` とscope completeness/stale entry検出を追加。baseline閾値は statements/lines 53.4%、branches 59.4%、functions 70.1%（Issue #1911）
+- 2026-07-13: `routes/projects.ts` の project lifecycle / hierarchy / membership / reassignment orchestration を `application/projects/useCases.ts` へ抽出し、Org & Project→Notifications/Workflow 直接import3件を削減。route本体は 2043 行から 1279 行へ縮小しdefault 1500行gateへ統合（Issue #1912）
 
 ## 今回のP0実装（Issue #643）
 

@@ -452,39 +452,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/routes/projects.ts",
-    "to": "src/services/appNotifications.ts",
-    "unresolvedTo": "../services/appNotifications.js",
-    "dependencyTypes": ["local", "import"],
-    "rule": {
-      "severity": "error",
-      "name": "bounded-context-org-project-direction"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/routes/projects.ts",
-    "to": "src/services/periodLock.ts",
-    "unresolvedTo": "../services/periodLock.js",
-    "dependencyTypes": ["local", "import"],
-    "rule": {
-      "severity": "error",
-      "name": "bounded-context-org-project-direction"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/routes/projects.ts",
-    "to": "src/services/reassignmentLog.ts",
-    "unresolvedTo": "../services/reassignmentLog.js",
-    "dependencyTypes": ["local", "import"],
-    "rule": {
-      "severity": "error",
-      "name": "bounded-context-org-project-direction"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/routes/approvalRules.ts",
     "to": "src/services/appNotifications.ts",
     "unresolvedTo": "../services/appNotifications.js",

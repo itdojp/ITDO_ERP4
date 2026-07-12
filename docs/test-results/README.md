@@ -44,6 +44,7 @@
 - [Issue #1909 Chat room provisioning / lifecycle / membership extraction verification](2026-07-13-issue1909-chat-room-services.md)
 - [Issue #1910 Chat notification port / application effects verification](2026-07-13-issue1910-chat-notification-boundary.md)
 - [Issue #1911 Chat route split and quality gate verification](2026-07-13-issue1911-chat-quality-gate.md)
+- [Issue #1912 Projects application boundary verification](2026-07-13-issue1912-projects-application-boundary.md)
 
 ### 2026-07-12
 
