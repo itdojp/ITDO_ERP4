@@ -10,7 +10,10 @@ import {
   normalizeParentId,
   removeTaskDependency,
 } from '../../services/taskDependencyGraph.js';
-import type { ProjectActorContext } from './useCases.js';
+import {
+  isPrivilegedProjectRole,
+  type ProjectActorContext,
+} from './useCases.js';
 
 export type ProjectTaskApplicationFailure = {
   ok: false;
@@ -57,10 +60,6 @@ function actorUserId(actor: ProjectActorContext): string | null {
   return typeof actor.userId === 'string' && actor.userId.trim()
     ? actor.userId
     : null;
-}
-
-function isPrivilegedProjectRole(roles: string[]): boolean {
-  return roles.includes('admin') || roles.includes('mgmt');
 }
 
 function parseNullableDateField(body: Record<string, unknown>, key: string) {
