@@ -13,6 +13,7 @@ const contexts = [
     patterns: [
       '^src/plugins/auth\\.ts$',
       '^src/routes/(accessReviews|auth|groups|scim)\\.ts$',
+      '^src/routes/auth/.+\\.ts$',
       '^src/services/(authContext|authGateway|groupCandidates|localCredentials|rateLimitOverrides|rbac)\\.ts$',
       '^src/utils/authGroupToRoleMap\\.ts$',
     ],

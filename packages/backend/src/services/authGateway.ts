@@ -330,8 +330,8 @@ export async function exchangeGoogleAuthorizationCode(
     body,
   });
   if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`google_token_exchange_failed:${res.status}:${errorText}`);
+    await res.text().catch(() => '');
+    throw new Error(`google_token_exchange_failed:${res.status}`);
   }
   return (await res.json()) as {
     id_token?: string;

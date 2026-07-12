@@ -10,6 +10,8 @@
     "files": [
       "src/plugins/auth.ts",
       "src/routes/auth.ts",
+      "src/routes/auth/googleSessionRoutes.ts",
+      "src/routes/auth/http.ts",
       "src/services/authContext.ts",
       "src/services/authGateway.ts",
       "src/services/envValidation.ts",
