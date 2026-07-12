@@ -46,5 +46,50 @@
       "src/services/integrationRuns.ts",
       "src/services/statutoryAccountingActuals.ts"
     ]
+  },
+  "chat": {
+    "summary": "coverage/chat/coverage-summary.json",
+    "thresholds": {
+      "statements": 54.6,
+      "branches": 59.9,
+      "functions": 68.3,
+      "lines": 54.6
+    },
+    "files": [
+      "src/routes/chat.ts",
+      "src/routes/chatRooms.ts",
+      "src/routes/chatRooms/messages.ts",
+      "src/routes/chatRooms/shared.ts",
+      "src/routes/chat/shared/ackRequiredTarget.ts",
+      "src/routes/chat/shared/allMentionRateLimit.ts",
+      "src/routes/chat/shared/constants.ts",
+      "src/routes/chat/shared/inputParsers.ts",
+      "src/routes/chat/shared/mentions.ts",
+      "src/routes/chat/shared/requireUserId.ts",
+      "src/routes/chat/shared/roomAccessError.ts",
+      "src/routes/chat/shared/roomAccessGuard.ts",
+      "src/services/chatAckCandidates.ts",
+      "src/services/chatAckLimits.ts",
+      "src/services/chatAckLinkTargets.ts",
+      "src/services/chatAckNotifications.ts",
+      "src/services/chatAckRecipients.ts",
+      "src/services/chatAckReminders.ts",
+      "src/services/chatAckTemplates.ts",
+      "src/services/chatAttachmentScan.ts",
+      "src/services/chatAttachments.ts",
+      "src/services/chatExternalLlm.ts",
+      "src/services/chatMentionCandidates.ts",
+      "src/services/chatMentionRecipients.ts",
+      "src/services/chatReadState.ts",
+      "src/services/chatRoomAccess.ts",
+      "src/services/chatRoomAclAlerts.ts",
+      "src/services/chatRoomLifecycle.ts",
+      "src/services/chatRoomMembership.ts",
+      "src/services/chatRoomProvisioning.ts",
+      "src/services/personalGaChatRoom.ts",
+      "src/application/chat/chatNotificationEffects.ts",
+      "src/application/chat/chatNotificationPort.ts",
+      "src/adapters/notifications/chatNotificationAdapter.ts"
+    ]
   }
 }
