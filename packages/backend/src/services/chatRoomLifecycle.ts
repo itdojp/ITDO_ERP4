@@ -141,7 +141,7 @@ export async function listChatRoomsForUser(options: {
   const roles = Array.isArray(options.roles) ? options.roles : [];
   const userId =
     typeof options.userId === 'string' && options.userId.trim()
-      ? options.userId
+      ? options.userId.trim()
       : null;
   const projectIds = Array.isArray(options.projectIds)
     ? options.projectIds

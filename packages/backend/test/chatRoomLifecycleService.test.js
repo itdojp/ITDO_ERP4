@@ -193,6 +193,7 @@ test('listChatRoomsForUser bootstraps official rooms and returns visible metadat
   const now = new Date('2026-07-13T00:00:00.000Z');
   const createManyCalls = [];
   const createdRooms = [];
+  const memberFindManyCalls = [];
   const client = {
     groupAccount: {
       findMany: async () => [{ id: 'ga-sales', displayName: 'Sales' }],
@@ -280,13 +281,16 @@ test('listChatRoomsForUser bootstraps official rooms and returns visible metadat
       },
     },
     chatRoomMember: {
-      findMany: async () => [],
+      findMany: async (args) => {
+        memberFindManyCalls.push(args);
+        return [];
+      },
     },
   };
 
   const result = await listChatRoomsForUser({
     roles: ['admin'],
-    userId: 'actor',
+    userId: ' actor ',
     projectIds: [],
     groupIds: ['Sales'],
     groupAccountIds: ['ga-sales'],
@@ -296,6 +300,10 @@ test('listChatRoomsForUser bootstraps official rooms and returns visible metadat
   assert.deepEqual(
     createdRooms.map((room) => ({ id: room.id, type: room.type })),
     [{ id: 'company', type: 'company' }],
+  );
+  assert.deepEqual(
+    memberFindManyCalls.map((call) => call.where.userId),
+    ['actor'],
   );
   assert.deepEqual(
     createManyCalls.map((call) => ({
