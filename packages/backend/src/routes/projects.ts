@@ -18,15 +18,8 @@ import {
 } from './validators.js';
 import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
-import {
-  createProjectCreatedNotifications,
-  createProjectMemberAddedNotifications,
-  createProjectStatusChangedNotifications,
-} from '../services/appNotifications.js';
-import { logReassignment } from '../services/reassignmentLog.js';
 import { parseDueDateRule } from '../services/dueDateRule.js';
 import { toNumber } from '../services/utils.js';
-import { findPeriodLock, toPeriodKey } from '../services/periodLock.js';
 import {
   addTaskDependency,
   buildTaskDependencyGraph,
@@ -34,7 +27,17 @@ import {
   normalizeParentId,
   removeTaskDependency,
 } from '../services/taskDependencyGraph.js';
-import { DocStatusValue, TimeStatusValue } from '../types.js';
+import {
+  addProjectMember,
+  bulkAddProjectMembers,
+  createProject,
+  listProjectMemberCandidates,
+  listProjectMembers,
+  listProjects,
+  reassignProjectTask,
+  removeProjectMember,
+  updateProject,
+} from '../application/projects/useCases.js';
 
 type RecurringFrequency = 'monthly' | 'quarterly' | 'semiannual' | 'annual';
 type BillUpon = 'date' | 'acceptance' | 'time';
@@ -75,32 +78,6 @@ function parseNullableDateField(body: any, key: string) {
   return { hasProp, value };
 }
 
-async function tryCreateProjectMemberAddedNotifications(options: {
-  req: any;
-  projectId: string;
-  actorUserId?: string | null;
-  items: Array<{ userId: string; role: 'member' | 'leader' }>;
-  source: 'single' | 'bulk';
-}) {
-  const actorUserId =
-    typeof options.actorUserId === 'string' ? options.actorUserId.trim() : '';
-  if (!actorUserId) return;
-  if (options.items.length === 0) return;
-  try {
-    await createProjectMemberAddedNotifications({
-      projectId: options.projectId,
-      actorUserId,
-      items: options.items,
-      source: options.source,
-    });
-  } catch (err) {
-    options.req.log?.warn(
-      { err, projectId: options.projectId },
-      'Failed to create project member added notifications',
-    );
-  }
-}
-
 function isStartDateAfterEndDate(
   startDate: Date | null | undefined,
   endDate: Date | null | undefined,
@@ -123,10 +100,6 @@ function sendInvalidDateRangeError(
       message: `${startField} must be before or equal to ${endField}`,
     },
   });
-}
-
-function sendInvalidProjectPeriodError(reply: any) {
-  return sendInvalidDateRangeError(reply, 'startDate', 'endDate');
 }
 
 async function ensureProjectLeader(req: any, reply: any, projectId: string) {
@@ -163,49 +136,34 @@ async function hasCircularParent(taskId: string, parentTaskId: string) {
   return false;
 }
 
-async function hasCircularProjectParent(projectId: string, parentId: string) {
-  const visited = new Set<string>([projectId]);
-  let currentId: string | null = parentId;
-  while (currentId) {
-    if (visited.has(currentId)) return true;
-    visited.add(currentId);
-    const current: { parentId: string | null } | null =
-      await prisma.project.findUnique({
-        where: { id: currentId },
-        select: { parentId: true },
-      });
-    if (!current) return false;
-    currentId = current.parentId;
-  }
-  return false;
+function projectActorFromRequest(req: any) {
+  return {
+    userId: req.user?.userId ?? null,
+    roles: req.user?.roles || [],
+    projectIds: req.user?.projectIds || [],
+  };
+}
+
+function projectApplicationLogger(req: any) {
+  return typeof req.log?.warn === 'function'
+    ? { warn: req.log.warn.bind(req.log) }
+    : undefined;
+}
+
+function sendApplicationResult(reply: any, result: any) {
+  if (!result.ok) return reply.status(result.statusCode).send(result.body);
+  return result.value;
 }
 
 export async function registerProjectRoutes(app: FastifyInstance) {
   app.get(
     '/projects',
     { preHandler: requireRole(['admin', 'mgmt', 'user']) },
-    async (req) => {
-      const roles = req.user?.roles || [];
-      const projectIds = req.user?.projectIds || [];
-      if (
-        !roles.includes('admin') &&
-        !roles.includes('mgmt') &&
-        projectIds.length === 0
-      ) {
-        return { items: [] };
-      }
-      const where =
-        roles.includes('admin') || roles.includes('mgmt')
-          ? { deletedAt: null }
-          : projectIds.length
-            ? { id: { in: projectIds }, deletedAt: null }
-            : { id: { in: [] as string[] } };
-      const projects = await prisma.project.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        take: 100,
-      });
-      return { items: projects };
+    async (req, reply) => {
+      return sendApplicationResult(
+        reply,
+        await listProjects({ actor: projectActorFromRequest(req) }),
+      );
     },
   );
 
@@ -213,73 +171,14 @@ export async function registerProjectRoutes(app: FastifyInstance) {
     '/projects',
     { preHandler: requireRole(['admin', 'mgmt']), schema: projectSchema },
     async (req, reply) => {
-      const body = req.body as any;
-      const hasCustomerIdProp = Object.prototype.hasOwnProperty.call(
-        body,
-        'customerId',
+      return sendApplicationResult(
+        reply,
+        await createProject({
+          body: req.body as any,
+          actor: projectActorFromRequest(req),
+          logger: projectApplicationLogger(req),
+        }),
       );
-      const customerId =
-        hasCustomerIdProp && body.customerId !== ''
-          ? (body.customerId ?? null)
-          : null;
-      const { hasProp: hasStartDateProp, value: startDate } =
-        parseNullableDateField(body, 'startDate');
-      const { hasProp: hasEndDateProp, value: endDate } =
-        parseNullableDateField(body, 'endDate');
-      if (isStartDateAfterEndDate(startDate, endDate)) {
-        return sendInvalidProjectPeriodError(reply);
-      }
-      if (customerId) {
-        const customer = await prisma.customer.findUnique({
-          where: { id: customerId },
-          select: { id: true },
-        });
-        if (!customer) {
-          return reply.status(404).send({
-            error: { code: 'NOT_FOUND', message: 'Customer not found' },
-          });
-        }
-      }
-      const data = {
-        ...body,
-        ...(hasCustomerIdProp ? { customerId } : {}),
-        ...(hasStartDateProp ? { startDate } : {}),
-        ...(hasEndDateProp ? { endDate } : {}),
-      };
-      const userId = req.user?.userId;
-      const project = await prisma.$transaction(async (tx) => {
-        const created = await tx.project.create({
-          data: {
-            ...data,
-            createdBy: userId,
-          },
-        });
-        await tx.chatRoom.create({
-          data: {
-            id: created.id,
-            type: 'project',
-            name: created.code,
-            isOfficial: true,
-            projectId: created.id,
-            createdBy: userId,
-          },
-        });
-        return created;
-      });
-      if (project?.id) {
-        try {
-          await createProjectCreatedNotifications({
-            projectId: project.id,
-            actorUserId: userId || 'system',
-          });
-        } catch (err) {
-          req.log?.warn(
-            { err, projectId: project.id },
-            'project created notification failed',
-          );
-        }
-      }
-      return project;
     },
   );
 
@@ -288,154 +187,16 @@ export async function registerProjectRoutes(app: FastifyInstance) {
     { preHandler: requireRole(['admin', 'mgmt']), schema: projectPatchSchema },
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
-      const body = req.body as any;
-      const current = await prisma.project.findUnique({
-        where: { id: projectId },
-      });
-      if (!current) {
-        return reply.status(404).send({
-          error: { code: 'NOT_FOUND', message: 'Project not found' },
-        });
-      }
-      const hasParentIdProp = Object.prototype.hasOwnProperty.call(
-        body,
-        'parentId',
+      return sendApplicationResult(
+        reply,
+        await updateProject({
+          projectId,
+          body: req.body as any,
+          actor: projectActorFromRequest(req),
+          auditContext: auditContextFromRequest(req),
+          logger: projectApplicationLogger(req),
+        }),
       );
-      const nextParentId = hasParentIdProp
-        ? normalizeParentId(body.parentId)
-        : (current.parentId ?? null);
-      const currentParentId = current.parentId ?? null;
-      const parentChanged = hasParentIdProp && nextParentId !== currentParentId;
-      const reasonText =
-        typeof body.reasonText === 'string' ? body.reasonText.trim() : '';
-      if (parentChanged && !reasonText) {
-        return reply.status(400).send({
-          error: {
-            code: 'INVALID_REASON',
-            message: 'reasonText is required when changing project parent',
-          },
-        });
-      }
-      if (parentChanged) {
-        if (nextParentId === projectId) {
-          return reply.status(400).send({
-            error: {
-              code: 'INVALID_PARENT',
-              message: 'Project cannot be its own parent',
-            },
-          });
-        }
-        if (nextParentId) {
-          const parent = await prisma.project.findUnique({
-            where: { id: nextParentId },
-            select: { id: true, deletedAt: true },
-          });
-          if (!parent || parent.deletedAt) {
-            return reply.status(404).send({
-              error: {
-                code: 'NOT_FOUND',
-                message: 'Parent project not found',
-              },
-            });
-          }
-          if (await hasCircularProjectParent(projectId, nextParentId)) {
-            return reply.status(400).send({
-              error: {
-                code: 'VALIDATION_ERROR',
-                message: 'Parent project creates circular reference',
-              },
-            });
-          }
-        }
-      }
-      const hasCustomerIdProp = Object.prototype.hasOwnProperty.call(
-        body,
-        'customerId',
-      );
-      const customerId =
-        hasCustomerIdProp && body.customerId !== ''
-          ? (body.customerId ?? null)
-          : null;
-      if (hasCustomerIdProp && customerId) {
-        const customer = await prisma.customer.findUnique({
-          where: { id: customerId },
-          select: { id: true },
-        });
-        if (!customer) {
-          return reply.status(404).send({
-            error: { code: 'NOT_FOUND', message: 'Customer not found' },
-          });
-        }
-      }
-      const { hasProp: hasStartDateProp, value: startDate } =
-        parseNullableDateField(body, 'startDate');
-      const { hasProp: hasEndDateProp, value: endDate } =
-        parseNullableDateField(body, 'endDate');
-      const effectiveStartDate =
-        startDate === undefined ? current.startDate : startDate;
-      const effectiveEndDate =
-        endDate === undefined ? current.endDate : endDate;
-      if (isStartDateAfterEndDate(effectiveStartDate, effectiveEndDate)) {
-        return sendInvalidProjectPeriodError(reply);
-      }
-      const data = { ...body };
-      const hasStatusProp = Object.prototype.hasOwnProperty.call(
-        body,
-        'status',
-      );
-      const nextStatus = hasStatusProp ? body.status : current.status;
-      const statusChanged = hasStatusProp && nextStatus !== current.status;
-      if (hasCustomerIdProp) data.customerId = customerId;
-      if (hasParentIdProp) data.parentId = nextParentId;
-      if (hasStartDateProp) data.startDate = startDate;
-      if (hasEndDateProp) data.endDate = endDate;
-      delete data.reasonText;
-      const project = await prisma.project.update({
-        where: { id: projectId },
-        data,
-      });
-      if (parentChanged) {
-        await logAudit({
-          action: 'project_parent_updated',
-          targetTable: 'projects',
-          targetId: projectId,
-          reasonText,
-          metadata: {
-            fromParentId: currentParentId,
-            toParentId: nextParentId,
-          },
-          ...auditContextFromRequest(req),
-        });
-      }
-      if (statusChanged) {
-        await logAudit({
-          action: 'project_status_updated',
-          targetTable: 'projects',
-          targetId: projectId,
-          reasonText: reasonText || undefined,
-          metadata: {
-            fromStatus: current.status,
-            toStatus: project.status,
-            ownerUserId: project.ownerUserId,
-          } as Prisma.InputJsonValue,
-          ...auditContextFromRequest(req),
-        });
-        try {
-          await createProjectStatusChangedNotifications({
-            projectId,
-            actorUserId: req.user?.userId || 'system',
-            beforeStatus: current.status,
-            afterStatus: project.status,
-            ownerUserId: project.ownerUserId,
-          });
-        } catch (err) {
-          req.log?.warn(
-            { err, projectId, before: current.status, after: project.status },
-            'project status notification failed',
-          );
-        }
-      }
-      return project;
     },
   );
 
@@ -449,16 +210,13 @@ export async function registerProjectRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
-      const roles = req.user?.roles || [];
-      if (!isPrivilegedRole(roles)) {
-        const allowed = await ensureProjectLeader(req, reply, projectId);
-        if (!allowed) return reply;
-      }
-      const items = await prisma.projectMember.findMany({
-        where: { projectId },
-        orderBy: { createdAt: 'asc' },
-      });
-      return { items };
+      return sendApplicationResult(
+        reply,
+        await listProjectMembers({
+          projectId,
+          actor: projectActorFromRequest(req),
+        }),
+      );
     },
   );
 
@@ -473,53 +231,14 @@ export async function registerProjectRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
       const { q } = req.query as { q?: string };
-      const roles = req.user?.roles || [];
-      if (!isPrivilegedRole(roles)) {
-        const allowed = await ensureProjectLeader(req, reply, projectId);
-        if (!allowed) return reply;
-      }
-      const keyword = (q || '').trim().slice(0, 64);
-      if (keyword.length < 2) {
-        return { items: [] };
-      }
-      const escapedKeyword = keyword.replace(/[%_\\]/g, '\\$&');
-      const likePattern = `%${escapedKeyword}%`;
-      const users = await prisma.$queryRaw<
-        Array<{
-          userName: string;
-          displayName: string | null;
-          department: string | null;
-        }>
-      >`
-        SELECT
-          ua."userName",
-          ua."displayName",
-          ua."department"
-        FROM "UserAccount" AS ua
-        WHERE ua."active" = true
-          AND (
-            ua."userName" ILIKE ${likePattern} ESCAPE '\\'
-            OR ua."displayName" ILIKE ${likePattern} ESCAPE '\\'
-            OR ua."givenName" ILIKE ${likePattern} ESCAPE '\\'
-            OR ua."familyName" ILIKE ${likePattern} ESCAPE '\\'
-            OR ua."department" ILIKE ${likePattern} ESCAPE '\\'
-          )
-          AND NOT EXISTS (
-            SELECT 1
-            FROM "ProjectMember" AS pm
-            WHERE pm."projectId" = ${projectId}
-              AND pm."userId" = ua."userName"
-          )
-        ORDER BY ua."userName" ASC
-        LIMIT 20
-      `;
-      return {
-        items: users.map((user) => ({
-          userId: user.userName,
-          displayName: user.displayName,
-          department: user.department,
-        })),
-      };
+      return sendApplicationResult(
+        reply,
+        await listProjectMemberCandidates({
+          projectId,
+          query: q,
+          actor: projectActorFromRequest(req),
+        }),
+      );
     },
   );
 
@@ -534,138 +253,16 @@ export async function registerProjectRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
-      const body = req.body as { userId: string; role?: 'member' | 'leader' };
-      const roles = req.user?.roles || [];
-      const isPrivileged = isPrivilegedRole(roles);
-      if (!isPrivileged) {
-        const allowed = await ensureProjectLeader(req, reply, projectId);
-        if (!allowed) return reply;
-      }
-      const project = await prisma.project.findUnique({
-        where: { id: projectId },
-        select: {
-          id: true,
-          deletedAt: true,
-          currency: true,
-          planHours: true,
-          budgetCost: true,
-        },
-      });
-      if (!project || project.deletedAt) {
-        return reply.status(404).send({
-          error: { code: 'NOT_FOUND', message: 'Project not found' },
-        });
-      }
-      const requestedRole = body.role ?? 'member';
-      if (!isPrivileged && requestedRole !== 'member') {
-        return reply.status(403).send({
-          error: {
-            code: 'FORBIDDEN_ROLE_ASSIGNMENT',
-            message: 'Project leaders can only assign members',
-          },
-        });
-      }
-      const existing = await prisma.projectMember.findUnique({
-        where: { projectId_userId: { projectId, userId: body.userId } },
-      });
-      if (!isPrivileged && existing?.role === 'leader') {
-        return reply.status(403).send({
-          error: {
-            code: 'FORBIDDEN_LEADER_CHANGE',
-            message: 'Project leaders cannot change leader roles',
-          },
-        });
-      }
-      if (existing && existing.role === requestedRole) {
-        return existing;
-      }
-      const data = {
-        role: requestedRole,
-        updatedBy: req.user?.userId,
-      };
-      let member = existing
-        ? await prisma.projectMember.update({
-            where: { id: existing.id },
-            data,
-          })
-        : null;
-      let auditAction = existing
-        ? 'project_member_role_updated'
-        : 'project_member_added';
-      let previousRole = existing?.role ?? null;
-      if (!member) {
-        try {
-          member = await prisma.projectMember.create({
-            data: {
-              projectId,
-              userId: body.userId,
-              role: requestedRole,
-              createdBy: req.user?.userId,
-              updatedBy: req.user?.userId,
-            },
-          });
-        } catch (err) {
-          if (err instanceof Prisma.PrismaClientKnownRequestError) {
-            if (err.code === 'P2002') {
-              const fallback = await prisma.projectMember.findUnique({
-                where: { projectId_userId: { projectId, userId: body.userId } },
-              });
-              if (!fallback) throw err;
-              if (!isPrivileged && fallback.role === 'leader') {
-                return reply.status(403).send({
-                  error: {
-                    code: 'FORBIDDEN_LEADER_CHANGE',
-                    message: 'Project leaders cannot change leader roles',
-                  },
-                });
-              }
-              if (fallback.role === requestedRole) {
-                return fallback;
-              }
-              previousRole = fallback.role;
-              auditAction = 'project_member_role_updated';
-              member = await prisma.projectMember.update({
-                where: { id: fallback.id },
-                data,
-              });
-            } else {
-              throw err;
-            }
-          } else {
-            throw err;
-          }
-        }
-      }
-      if (!member) {
-        return reply.status(500).send({
-          error: {
-            code: 'PROJECT_MEMBER_SAVE_FAILED',
-            message: 'Project member could not be saved',
-          },
-        });
-      }
-      await logAudit({
-        ...auditContextFromRequest(req),
-        action: auditAction,
-        targetTable: 'ProjectMember',
-        targetId: member.id,
-        metadata: {
+      return sendApplicationResult(
+        reply,
+        await addProjectMember({
           projectId,
-          userId: body.userId,
-          role: requestedRole,
-          previousRole,
-        },
-      });
-      if (auditAction === 'project_member_added') {
-        await tryCreateProjectMemberAddedNotifications({
-          req,
-          projectId,
-          actorUserId: req.user?.userId,
-          items: [{ userId: member.userId, role: requestedRole }],
-          source: 'single',
-        });
-      }
-      return member;
+          body: req.body as { userId: string; role?: 'member' | 'leader' },
+          actor: projectActorFromRequest(req),
+          auditContext: auditContextFromRequest(req),
+          logger: projectApplicationLogger(req),
+        }),
+      );
     },
   );
 
@@ -680,130 +277,18 @@ export async function registerProjectRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
-      const body = req.body as {
-        items: Array<{ userId: string; role?: 'member' | 'leader' }>;
-      };
-      const roles = req.user?.roles || [];
-      const isPrivileged = isPrivilegedRole(roles);
-      if (!isPrivileged) {
-        const allowed = await ensureProjectLeader(req, reply, projectId);
-        if (!allowed) return reply;
-      }
-      const project = await prisma.project.findUnique({
-        where: { id: projectId },
-        select: { id: true, deletedAt: true },
-      });
-      if (!project || project.deletedAt) {
-        return reply.status(404).send({
-          error: { code: 'NOT_FOUND', message: 'Project not found' },
-        });
-      }
-
-      const actorId = req.user?.userId;
-      const failureDetails: Array<{ userId: string | null; reason: string }> =
-        [];
-      let added = 0;
-      let skipped = 0;
-      let failed = 0;
-      const notifyItems: Array<{ userId: string; role: 'member' | 'leader' }> =
-        [];
-      const seen = new Set<string>();
-      const normalized: Array<{ userId: string; role: 'member' | 'leader' }> =
-        [];
-
-      for (const item of body.items) {
-        const userId = item.userId.trim();
-        if (!userId) {
-          failed += 1;
-          if (failureDetails.length < 5) {
-            failureDetails.push({ userId: null, reason: 'missing_user_id' });
-          }
-          continue;
-        }
-        const requestedRole = item.role === 'leader' ? 'leader' : 'member';
-        if (!isPrivileged && requestedRole !== 'member') {
-          return reply.status(403).send({
-            error: {
-              code: 'FORBIDDEN_ROLE_ASSIGNMENT',
-              message: 'Project leaders can only assign members',
-            },
-          });
-        }
-        if (seen.has(userId)) {
-          skipped += 1;
-          continue;
-        }
-        seen.add(userId);
-        normalized.push({ userId, role: requestedRole });
-      }
-
-      if (normalized.length === 0) {
-        return { added, skipped, failed, failures: failureDetails };
-      }
-
-      const existing = await prisma.projectMember.findMany({
-        where: {
+      return sendApplicationResult(
+        reply,
+        await bulkAddProjectMembers({
           projectId,
-          userId: { in: normalized.map((item) => item.userId) },
-        },
-        select: { userId: true },
-      });
-      const existingSet = new Set(existing.map((member) => member.userId));
-
-      for (const item of normalized) {
-        if (existingSet.has(item.userId)) {
-          skipped += 1;
-          continue;
-        }
-        try {
-          const member = await prisma.projectMember.create({
-            data: {
-              projectId,
-              userId: item.userId,
-              role: item.role,
-              createdBy: actorId,
-              updatedBy: actorId,
-            },
-          });
-          added += 1;
-          await logAudit({
-            ...auditContextFromRequest(req),
-            action: 'project_member_added',
-            targetTable: 'ProjectMember',
-            targetId: member.id,
-            metadata: {
-              projectId,
-              userId: item.userId,
-              role: item.role,
-              source: 'bulk',
-            },
-          });
-          notifyItems.push({ userId: item.userId, role: item.role });
-        } catch (err) {
-          if (req.log && typeof req.log.warn === 'function') {
-            req.log.warn(
-              { err, projectId, userId: item.userId },
-              'Failed to create project member in bulk import',
-            );
-          }
-          failed += 1;
-          if (failureDetails.length < 5) {
-            failureDetails.push({
-              userId: item.userId,
-              reason: 'create_failed',
-            });
-          }
-        }
-      }
-
-      await tryCreateProjectMemberAddedNotifications({
-        req,
-        projectId,
-        actorUserId: actorId,
-        items: notifyItems,
-        source: 'bulk',
-      });
-      return { added, skipped, failed, failures: failureDetails };
+          body: req.body as {
+            items: Array<{ userId: string; role?: 'member' | 'leader' }>;
+          },
+          actor: projectActorFromRequest(req),
+          auditContext: auditContextFromRequest(req),
+          logger: projectApplicationLogger(req),
+        }),
+      );
     },
   );
 
@@ -820,41 +305,15 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         projectId: string;
         userId: string;
       };
-      const roles = req.user?.roles || [];
-      const isPrivileged = isPrivilegedRole(roles);
-      if (!isPrivileged) {
-        const allowed = await ensureProjectLeader(req, reply, projectId);
-        if (!allowed) return reply;
-      }
-      const member = await prisma.projectMember.findUnique({
-        where: { projectId_userId: { projectId, userId: targetUserId } },
-      });
-      if (!member) {
-        return reply.status(404).send({
-          error: { code: 'NOT_FOUND', message: 'Project member not found' },
-        });
-      }
-      if (!isPrivileged && member.role === 'leader') {
-        return reply.status(403).send({
-          error: {
-            code: 'FORBIDDEN_MEMBER_REMOVAL',
-            message: 'Project leaders cannot remove leaders',
-          },
-        });
-      }
-      await prisma.projectMember.delete({ where: { id: member.id } });
-      await logAudit({
-        ...auditContextFromRequest(req),
-        action: 'project_member_removed',
-        targetTable: 'ProjectMember',
-        targetId: member.id,
-        metadata: {
+      return sendApplicationResult(
+        reply,
+        await removeProjectMember({
           projectId,
           userId: targetUserId,
-          role: member.role,
-        },
-      });
-      return { ok: true };
+          actor: projectActorFromRequest(req),
+          auditContext: auditContextFromRequest(req),
+        }),
+      );
     },
   );
 
@@ -1270,239 +729,16 @@ export async function registerProjectRoutes(app: FastifyInstance) {
         projectId: string;
         taskId: string;
       };
-      const body = req.body as any;
-      const moveTimeEntries = body.moveTimeEntries === true;
-      const reasonText =
-        typeof body.reasonText === 'string' ? body.reasonText.trim() : '';
-      if (!reasonText) {
-        return reply.status(400).send({
-          error: { code: 'INVALID_REASON', message: 'reasonText is required' },
-        });
-      }
-      const task = await prisma.projectTask.findUnique({
-        where: { id: taskId },
-      });
-      if (!task || task.projectId !== projectId) {
-        return reply.status(404).send({
-          error: { code: 'NOT_FOUND', message: 'Task not found' },
-        });
-      }
-      if (task.deletedAt) {
-        return reply.status(400).send({
-          error: { code: 'ALREADY_DELETED', message: 'Task already deleted' },
-        });
-      }
-      const targetProject = await prisma.project.findUnique({
-        where: { id: body.toProjectId },
-        select: { id: true },
-      });
-      if (!targetProject) {
-        return reply.status(404).send({
-          error: { code: 'NOT_FOUND', message: 'Target project not found' },
-        });
-      }
-      const [
-        childCount,
-        timeCount,
-        dependencyCount,
-        estimateCount,
-        invoiceCount,
-        poCount,
-      ] = await Promise.all([
-        prisma.projectTask.count({
-          where: { parentTaskId: taskId, deletedAt: null },
+      return sendApplicationResult(
+        reply,
+        await reassignProjectTask({
+          projectId,
+          taskId,
+          body: req.body as any,
+          actor: projectActorFromRequest(req),
+          auditContext: auditContextFromRequest(req),
         }),
-        prisma.timeEntry.count({
-          where: { taskId, deletedAt: null },
-        }),
-        prisma.projectTaskDependency.count({
-          where: {
-            projectId,
-            OR: [{ fromTaskId: taskId }, { toTaskId: taskId }],
-          },
-        }),
-        prisma.estimateLine.count({ where: { taskId } }),
-        prisma.billingLine.count({ where: { taskId } }),
-        prisma.purchaseOrderLine.count({ where: { taskId } }),
-      ]);
-      if (
-        childCount > 0 ||
-        (!moveTimeEntries && timeCount > 0) ||
-        dependencyCount > 0 ||
-        estimateCount > 0 ||
-        invoiceCount > 0 ||
-        poCount > 0
-      ) {
-        return reply.status(400).send({
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Task has linked records and cannot be reassigned',
-          },
-        });
-      }
-      let timeEntries: {
-        id: string;
-        projectId: string;
-        taskId: string | null;
-        workDate: Date;
-        status: string;
-        billedInvoiceId: string | null;
-      }[] = [];
-      if (moveTimeEntries && timeCount > 0) {
-        timeEntries = await prisma.timeEntry.findMany({
-          where: { taskId, deletedAt: null },
-          select: {
-            id: true,
-            projectId: true,
-            taskId: true,
-            workDate: true,
-            status: true,
-            billedInvoiceId: true,
-          },
-        });
-        const billedEntry = timeEntries.find((entry) => entry.billedInvoiceId);
-        if (billedEntry) {
-          return reply.status(400).send({
-            error: {
-              code: 'BILLED',
-              message: 'Time entry already billed',
-            },
-          });
-        }
-        const approvedEntry = timeEntries.find(
-          (entry) => entry.status === TimeStatusValue.approved,
-        );
-        if (approvedEntry) {
-          return reply.status(400).send({
-            error: {
-              code: 'INVALID_STATUS',
-              message: 'Time entry approved',
-            },
-          });
-        }
-        const pendingApproval = await prisma.approvalInstance.findFirst({
-          where: {
-            targetTable: 'time_entries',
-            targetId: { in: timeEntries.map((entry) => entry.id) },
-            status: {
-              in: [DocStatusValue.pending_qa, DocStatusValue.pending_exec],
-            },
-          },
-          select: { id: true },
-        });
-        if (pendingApproval) {
-          return reply.status(400).send({
-            error: {
-              code: 'PENDING_APPROVAL',
-              message: 'Approval in progress',
-            },
-          });
-        }
-        const lockCache = new Map<string, boolean>();
-        const isLocked = async (periodKey: string, targetProjectId: string) => {
-          const cacheKey = `${periodKey}:${targetProjectId}`;
-          if (lockCache.has(cacheKey)) return lockCache.get(cacheKey) ?? false;
-          const lock = await findPeriodLock(periodKey, targetProjectId);
-          const locked = Boolean(lock);
-          lockCache.set(cacheKey, locked);
-          return locked;
-        };
-        for (const entry of timeEntries) {
-          const periodKey = toPeriodKey(entry.workDate);
-          const fromLocked = await isLocked(periodKey, entry.projectId);
-          if (fromLocked) {
-            return reply.status(400).send({
-              error: { code: 'PERIOD_LOCKED', message: 'Period is locked' },
-            });
-          }
-          if (body.toProjectId !== entry.projectId) {
-            const toLocked = await isLocked(periodKey, body.toProjectId);
-            if (toLocked) {
-              return reply.status(400).send({
-                error: { code: 'PERIOD_LOCKED', message: 'Period is locked' },
-              });
-            }
-          }
-        }
-      }
-      const updated = await prisma.$transaction(async (tx) => {
-        const taskUpdate = await tx.projectTask.update({
-          where: { id: taskId },
-          data: {
-            projectId: body.toProjectId,
-          },
-        });
-        if (moveTimeEntries && timeEntries.length) {
-          await tx.timeEntry.updateMany({
-            where: { id: { in: timeEntries.map((entry) => entry.id) } },
-            data: { projectId: body.toProjectId },
-          });
-        }
-        return taskUpdate;
-      });
-      await logAudit({
-        action: 'reassignment',
-        targetTable: 'project_tasks',
-        targetId: taskId,
-        reasonCode: body.reasonCode,
-        reasonText,
-        metadata: {
-          fromProjectId: projectId,
-          toProjectId: body.toProjectId,
-          fromTaskId: taskId,
-          toTaskId: taskId,
-          movedTimeEntries: moveTimeEntries ? timeEntries.length : 0,
-        },
-        ...auditContextFromRequest(req),
-      });
-      await logReassignment({
-        targetTable: 'project_tasks',
-        targetId: taskId,
-        fromProjectId: projectId,
-        toProjectId: body.toProjectId,
-        fromTaskId: taskId,
-        toTaskId: taskId,
-        reasonCode: body.reasonCode,
-        reasonText,
-        createdBy: req.user?.userId,
-      });
-      if (moveTimeEntries && timeEntries.length) {
-        const auditContext = auditContextFromRequest(req);
-        await Promise.all(
-          timeEntries.map((entry) =>
-            logAudit({
-              action: 'reassignment',
-              targetTable: 'time_entries',
-              targetId: entry.id,
-              reasonCode: body.reasonCode,
-              reasonText,
-              metadata: {
-                fromProjectId: entry.projectId,
-                toProjectId: body.toProjectId,
-                fromTaskId: entry.taskId,
-                toTaskId: entry.taskId,
-              },
-              ...auditContext,
-            }),
-          ),
-        );
-        await Promise.all(
-          timeEntries.map((entry) =>
-            logReassignment({
-              targetTable: 'time_entries',
-              targetId: entry.id,
-              fromProjectId: entry.projectId,
-              toProjectId: body.toProjectId,
-              fromTaskId: entry.taskId,
-              toTaskId: entry.taskId,
-              reasonCode: body.reasonCode,
-              reasonText,
-              createdBy: req.user?.userId,
-            }),
-          ),
-        );
-      }
-      return updated;
+      );
     },
   );
 
