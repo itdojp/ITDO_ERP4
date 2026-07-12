@@ -1,4 +1,5 @@
 export type TaskDependencyEdge = { fromTaskId: string; toTaskId: string };
+export type TaskParentNode = { id: string; parentTaskId: string | null };
 
 export function buildTaskDependencyGraph(edges: TaskDependencyEdge[]) {
   const graph = new Map<string, Set<string>>();
@@ -62,4 +63,28 @@ export function normalizeParentId(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   const trimmed = String(value).trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+export function buildTaskParentMap(nodes: TaskParentNode[]) {
+  const parents = new Map<string, string | null>();
+  for (const node of nodes) {
+    parents.set(node.id, node.parentTaskId);
+  }
+  return parents;
+}
+
+export function hasTaskParentCycle(
+  parentByTaskId: Map<string, string | null>,
+  taskId: string,
+  parentTaskId: string | null,
+) {
+  const visited = new Set<string>([taskId]);
+  let currentId = parentTaskId;
+  while (currentId) {
+    if (visited.has(currentId)) return true;
+    visited.add(currentId);
+    if (!parentByTaskId.has(currentId)) return false;
+    currentId = parentByTaskId.get(currentId) ?? null;
+  }
+  return false;
 }
