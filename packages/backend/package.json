@@ -23,7 +23,8 @@
     "data-quality:advisory": "node ../../scripts/data-quality-check.mjs --mode=advisory --fixture ../../scripts/fixtures/data-quality-valid.json --output ../../tmp/data-quality-advisory.json --summary ../../tmp/data-quality-advisory.md",
     "data-quality:test": "node --test ../../scripts/data-quality-check.test.mjs",
     "coverage:integrations": "npm run prisma:generate && tsc -p tsconfig.coverage.json && c8 --all --src src --report-dir coverage/integrations --temp-directory .nyc_output/integrations --reporter text-summary --reporter json-summary --reporter lcov node scripts/run-tests.js test/integrationExportRoutes.test.js test/integrationExportsService.test.js test/accountingIcsExportRoutes.test.js test/integrationExportJobsRoutes.test.js test/integrationExportJobsService.test.js test/integrationLeaveExportsService.test.js test/accountingMappingRuleRoutes.test.js test/accountingMappingRulesService.test.js test/integrationReconciliationRoutes.test.js test/integrationReconciliationService.test.js test/integrationRetryRoutes.test.js test/integrationRunsService.test.js test/attendanceClosingRoutes.test.js test/attendanceClosingsService.test.js",
-    "coverage:integrations:check": "npm run coverage:integrations && node scripts/check-coverage-thresholds.mjs --scope integrations"
+    "coverage:integrations:check": "npm run coverage:integrations && node scripts/check-coverage-thresholds.mjs --scope integrations",
+    "arch:bounded-context:coverage": "node scripts/check-bounded-context-coverage.mjs"
   },
   "prisma": {
     "schema": "./prisma/schema.prisma"

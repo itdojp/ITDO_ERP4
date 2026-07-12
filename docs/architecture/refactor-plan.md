@@ -30,6 +30,8 @@
 - 認証/ユーザ取得の入口を共通化（`requireUserContext`）
 - 共通処理の場所を `services/` に集約
 - 影響範囲を限定し、**数ファイルの置換に留める**
+- bounded-context 分類正本（`packages/backend/bounded-context-registry.cjs`）と `make bounded-context-coverage-check` を維持し、新規route/serviceの未分類・重複分類・stale patternをCIでブロックする
+- contextではない横断要素は `application-orchestration` / `shared-kernel` / `infrastructure` / 明示除外として理由付きで分類し、`shared` や `excluded` への大量退避でdirection gateを形骸化しない
 
 ### Phase 1（ホットスポットの分割）
 
