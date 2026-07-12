@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
-import { filterNotificationRecipients } from './appNotifications.js';
+import type { ChatNotificationPort } from '../application/chat/chatNotificationPort.js';
+import { defaultChatNotificationPort } from '../adapters/notifications/chatNotificationAdapter.js';
 
 function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -18,6 +19,7 @@ export async function runChatRoomAclMismatchAlerts(options?: {
   dryRun?: boolean;
   limit?: number;
   actorId?: string | null;
+  notificationPort?: ChatNotificationPort;
 }) {
   const dryRun = options?.dryRun === true;
   const limitRaw = options?.limit;
@@ -25,6 +27,9 @@ export async function runChatRoomAclMismatchAlerts(options?: {
     typeof limitRaw === 'number' && Number.isFinite(limitRaw)
       ? Math.max(1, Math.min(Math.floor(limitRaw), 500))
       : undefined;
+
+  const notificationPort =
+    options?.notificationPort ?? defaultChatNotificationPort;
 
   const rooms = await prisma.chatRoom.findMany({
     where: { deletedAt: null },
@@ -75,7 +80,7 @@ export async function runChatRoomAclMismatchAlerts(options?: {
       ),
     );
     if (!userIds.length) continue;
-    const filtered = await filterNotificationRecipients({
+    const filtered = await notificationPort.filterRecipients({
       kind: 'chat_room_acl_mismatch',
       userIds,
       scope: 'global',

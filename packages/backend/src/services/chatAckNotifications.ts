@@ -1,10 +1,18 @@
 import type { Prisma } from '@prisma/client';
-import type { FastifyRequest } from 'fastify';
-import { auditContextFromRequest, logAudit } from './audit.js';
-import { createChatAckRequiredNotifications } from './appNotifications.js';
+import type { AuditContext } from './audit.js';
+import { logAudit } from './audit.js';
+import {
+  toChatNotificationExcerpt,
+  type ChatNotificationPort,
+} from '../application/chat/chatNotificationPort.js';
+import { defaultChatNotificationPort } from '../adapters/notifications/chatNotificationAdapter.js';
+
+type ChatAckNotificationLogger = {
+  warn?: (payload: unknown, message: string) => void;
+};
 
 type LogChatAckRequestCreatedOptions = {
-  req: FastifyRequest;
+  auditContext: AuditContext;
   actorUserId: string;
   projectId: string | null;
   roomId: string;
@@ -44,12 +52,14 @@ export async function logChatAckRequestCreated(
       requiredUserCount: options.requiredUserIds.length,
       dueAt: options.dueAt ? options.dueAt.toISOString() : null,
     } as Prisma.InputJsonValue,
-    ...auditContextFromRequest(options.req, { userId: options.actorUserId }),
+    ...options.auditContext,
+    userId: options.actorUserId,
   });
 }
 
 type TryCreateChatAckRequiredNotificationsWithAuditOptions = {
-  req: FastifyRequest;
+  auditContext: AuditContext;
+  logger?: ChatAckNotificationLogger;
   actorUserId: string;
   projectId: string | null;
   roomId: string;
@@ -57,17 +67,20 @@ type TryCreateChatAckRequiredNotificationsWithAuditOptions = {
   messageBody: string;
   requiredUserIds: string[];
   dueAt: Date | null;
+  notificationPort?: ChatNotificationPort;
 };
 
 export async function tryCreateChatAckRequiredNotificationsWithAudit(
   options: TryCreateChatAckRequiredNotificationsWithAuditOptions,
 ) {
   try {
-    const notificationResult = await createChatAckRequiredNotifications({
+    const notificationResult = await (
+      options.notificationPort ?? defaultChatNotificationPort
+    ).createAckRequiredNotifications({
       projectId: options.projectId,
       roomId: options.roomId,
       messageId: options.messageId,
-      messageBody: options.messageBody,
+      messageExcerpt: toChatNotificationExcerpt(options.messageBody),
       senderUserId: options.actorUserId,
       requiredUserIds: options.requiredUserIds,
       dueAt: options.dueAt ? options.dueAt.toISOString() : null,
@@ -91,10 +104,11 @@ export async function tryCreateChatAckRequiredNotificationsWithAudit(
           notificationResult.recipients.includes(options.actorUserId) ===
             false && options.requiredUserIds.includes(options.actorUserId),
       } as Prisma.InputJsonValue,
-      ...auditContextFromRequest(options.req, { userId: options.actorUserId }),
+      ...options.auditContext,
+      userId: options.actorUserId,
     });
   } catch (err) {
-    options.req.log?.warn(
+    options.logger?.warn?.(
       {
         err,
         projectId: options.projectId,

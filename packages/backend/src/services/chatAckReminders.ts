@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
-import { filterNotificationRecipients } from './appNotifications.js';
+import type { ChatNotificationPort } from '../application/chat/chatNotificationPort.js';
+import { defaultChatNotificationPort } from '../adapters/notifications/chatNotificationAdapter.js';
 import { resolveChatAckRequiredRecipientUserIds } from './chatAckRecipients.js';
 
 const DEFAULT_LIMIT = 200;
@@ -14,6 +15,7 @@ type RunChatAckReminderOptions = {
   now?: Date;
   client?: typeof prisma;
   resolveRecipients?: typeof resolveChatAckRequiredRecipientUserIds;
+  notificationPort?: ChatNotificationPort;
 };
 
 export type RunChatAckReminderResult = {
@@ -82,6 +84,8 @@ export async function runChatAckReminders(
   const client = options.client ?? prisma;
   const resolveRecipients =
     options.resolveRecipients ?? resolveChatAckRequiredRecipientUserIds;
+  const notificationPort =
+    options.notificationPort ?? defaultChatNotificationPort;
   const dryRun = Boolean(options.dryRun);
   const limit = Math.min(
     Math.max(1, Math.floor(options.limit ?? DEFAULT_LIMIT)),
@@ -334,7 +338,7 @@ export async function runChatAckReminders(
   const groupedEntries = Array.from(grouped.entries());
   const filteredEntries = await Promise.all(
     groupedEntries.map(async ([key, group]) => {
-      const filtered = await filterNotificationRecipients({
+      const filtered = await notificationPort.filterRecipients({
         kind: group.kind,
         roomId: group.roomId,
         userIds: Array.from(group.userIds),
