@@ -32,6 +32,7 @@
 - 影響範囲を限定し、**数ファイルの置換に留める**
 - bounded-context 分類正本（`packages/backend/bounded-context-registry.cjs`）と `make bounded-context-coverage-check` を維持し、新規route/serviceの未分類・重複分類・stale patternをCIでブロックする
 - contextではない横断要素は `application-orchestration` / `shared-kernel` / `infrastructure` / 明示除外として理由付きで分類し、`shared` や `excluded` への大量退避でdirection gateを形骸化しない
+- Documents route が Workflow / Notifications 等へ直接依存する場合は、`src/application/<domain>/` の Fastify非依存 use case に orchestration を集約し、routeはHTTP境界、applicationはtransaction/port順序、adapterは既存service呼び出しを担う。`src/application/**` は bounded-context coverage gate の対象とする
 
 ### Phase 1（ホットスポットの分割）
 
@@ -55,6 +56,8 @@
 
 - `requireUserContext` などの共通入口が導入され、複数ルートで利用されている
 - 既存の PoC/CI/E2E が破綻しない
+
+- 2026-07-12: `routes/expenses.ts` の submit / mark-paid / unmark-paid / reassign orchestration を `application/expenses/useCases.ts` へ抽出し、ActionPolicy/Approval/Notification/PeriodLock/Reassignment の直接import 7件を bounded-context baseline から削除。route allowlist cap から `expenses.ts` を除外（Issue #1905）
 
 ## 今回のP0実装（Issue #643）
 

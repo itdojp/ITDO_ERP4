@@ -10,7 +10,7 @@ const DEFAULT_REGISTRY = path.join(
   'bounded-context-registry.cjs',
 );
 
-const TARGET_FILE_RE = /^src\/(routes|services)\/.+\.ts$/;
+const TARGET_FILE_RE = /^src\/(routes|services|application)\/.+\.ts$/;
 const EXPLICIT_REASON_KINDS = new Set(['excluded', 'generated']);
 
 function usage() {

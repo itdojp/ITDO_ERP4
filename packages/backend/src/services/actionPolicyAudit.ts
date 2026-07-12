@@ -2,7 +2,11 @@ import type { FastifyRequest } from 'fastify';
 import type { FlowType } from '../types.js';
 import { Prisma } from '@prisma/client';
 import type { EvaluateActionPolicyWithFallbackResult } from './actionPolicy.js';
-import { auditContextFromRequest, logAudit } from './audit.js';
+import {
+  auditContextFromRequest,
+  logAudit,
+  type AuditContext,
+} from './audit.js';
 
 type ActionPolicyOverrideAuditParams = {
   req: FastifyRequest;
@@ -23,13 +27,27 @@ type ActionPolicyFallbackAllowedAuditParams = {
   result: EvaluateActionPolicyWithFallbackResult;
 };
 
+type ActionPolicyOverrideContextAuditParams = Omit<
+  ActionPolicyOverrideAuditParams,
+  'req'
+> & {
+  auditContext: AuditContext;
+};
+
+type ActionPolicyFallbackAllowedContextAuditParams = Omit<
+  ActionPolicyFallbackAllowedAuditParams,
+  'req'
+> & {
+  auditContext: AuditContext;
+};
+
 // Avoid high-volume audit logs: record once per process per flowType/actionKey/targetTable combination.
 const loggedFallbackAllowedKeys = new Set<string>();
 
 // Unified audit event for "admin override" (or other configured overrides) when ActionPolicy requires a reason.
 // This keeps the decision trail discoverable even when domain routes do not have their own audit log.
-export async function logActionPolicyOverrideIfNeeded(
-  params: ActionPolicyOverrideAuditParams,
+export async function logActionPolicyOverrideForContextIfNeeded(
+  params: ActionPolicyOverrideContextAuditParams,
 ) {
   if (!params.result.policyApplied) return;
   if (!params.result.allowed) return;
@@ -48,14 +66,23 @@ export async function logActionPolicyOverrideIfNeeded(
         null) as Prisma.InputJsonValue,
       guardOverride: params.result.guardOverride ?? false,
     },
-    ...auditContextFromRequest(params.req),
+    ...params.auditContext,
+  });
+}
+
+export async function logActionPolicyOverrideIfNeeded(
+  params: ActionPolicyOverrideAuditParams,
+) {
+  await logActionPolicyOverrideForContextIfNeeded({
+    ...params,
+    auditContext: auditContextFromRequest(params.req),
   });
 }
 
 // Transitional audit event when legacy "allow when no policy exists" path is taken.
 // This is used to detect coverage gaps while migrating routes to strict ActionPolicy enforcement.
-export async function logActionPolicyFallbackAllowedIfNeeded(
-  params: ActionPolicyFallbackAllowedAuditParams,
+export async function logActionPolicyFallbackAllowedForContextIfNeeded(
+  params: ActionPolicyFallbackAllowedContextAuditParams,
 ) {
   if (params.result.policyApplied) return;
   if (!params.result.allowed) return;
@@ -72,6 +99,15 @@ export async function logActionPolicyFallbackAllowedIfNeeded(
       flowType: params.flowType,
       actionKey: params.actionKey,
     } as Prisma.InputJsonValue,
-    ...auditContextFromRequest(params.req),
+    ...params.auditContext,
+  });
+}
+
+export async function logActionPolicyFallbackAllowedIfNeeded(
+  params: ActionPolicyFallbackAllowedAuditParams,
+) {
+  await logActionPolicyFallbackAllowedForContextIfNeeded({
+    ...params,
+    auditContext: auditContextFromRequest(params.req),
   });
 }

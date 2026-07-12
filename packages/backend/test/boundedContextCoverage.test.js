@@ -105,6 +105,51 @@ test('bounded-context coverage: new routes/example.ts fixture fails when unclass
   });
 });
 
+test('bounded-context coverage: new application file fixture fails when unclassified', () => {
+  withFixtureBackend((dir) => {
+    writeFile(dir, 'src/application/expenses/useCases.ts');
+    const registry = writeRegistry(
+      dir,
+      `module.exports = { contexts: [], layers: [] };
+`,
+    );
+    const res = runFixture(dir, registry);
+    assert.notEqual(res.status, 0);
+    const data = JSON.parse(res.stdout);
+    assert.deepEqual(data.problems.unclassifiedFiles, [
+      'src/application/expenses/useCases.ts',
+    ]);
+  });
+});
+
+test('bounded-context coverage: application-orchestration layer classifies application files', () => {
+  withFixtureBackend((dir) => {
+    writeFile(dir, 'src/application/expenses/useCases.ts');
+    const registry = writeRegistry(
+      dir,
+      `module.exports = { contexts: [], layers: [
+        {
+          name: 'application-orchestration',
+          kind: 'application-orchestration',
+          displayName: 'Application orchestration',
+          patterns: ['^src/application/expenses/.+\\.ts$'],
+        },
+      ] };
+`,
+    );
+    const res = runFixture(dir, registry);
+    assert.equal(
+      res.status,
+      0,
+      `${res.stdout}
+${res.stderr}`,
+    );
+    const data = JSON.parse(res.stdout);
+    assert.equal(data.status, 'pass');
+    assert.equal(data.summary.unclassifiedFiles, 0);
+  });
+});
+
 test('bounded-context coverage: duplicate bounded-context classification fails', () => {
   withFixtureBackend((dir) => {
     writeFile(dir, 'src/services/duplicate.ts');

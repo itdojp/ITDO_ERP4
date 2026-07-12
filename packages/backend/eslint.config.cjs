@@ -14,7 +14,6 @@ const existingRouteLineAllowances = [
   ['src/routes/projects.ts', 2100],
   ['src/routes/chat.ts', 1750],
   ['src/routes/vendorDocs.ts', 1700],
-  ['src/routes/expenses.ts', 1650],
   ['src/routes/reportSubscriptions.ts', 1600],
 ];
 
