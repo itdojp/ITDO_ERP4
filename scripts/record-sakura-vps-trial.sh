@@ -25,7 +25,7 @@ Optional env:
   OPERATOR_NAME=...
   TARGET_HOST=...     # default: collected host from meta.txt
   VPS_IP=...
-  PROFILE=private-smoke|https-trial  # default: collected profile from meta.txt or production
+  PROFILE=production|private-smoke|https-trial  # default: collected profile from meta.txt or production
 
 Validation:
 - DATE_STAMP must be a valid calendar date (YYYY-MM-DD)
@@ -64,7 +64,7 @@ normalize_report_path() {
   fi
   case "$resolved" in
     "$ROOT_DIR"/*)
-      printf '%s\n' "${resolved#$ROOT_DIR/}"
+      printf '%s\n' "${resolved#"$ROOT_DIR"/}"
       ;;
     *)
       printf '%s\n' "$input"
@@ -93,8 +93,16 @@ validate_run_label() {
 }
 
 find_latest_evidence_dir() {
-  local latest
-  latest="$(ls -1dt "$ROOT_DIR"/tmp/sakura-vps-trial-* 2>/dev/null | head -n 1 || true)"
+  local candidate latest
+  latest=""
+  shopt -s nullglob
+  for candidate in "$ROOT_DIR"/tmp/sakura-vps-trial-*; do
+    [[ -d "$candidate" ]] || continue
+    if [[ -z "$latest" || "$candidate" -nt "$latest" ]]; then
+      latest="$candidate"
+    fi
+  done
+  shopt -u nullglob
   [[ -n "$latest" ]] || die 'no trial evidence directory found under tmp/'
   printf '%s\n' "$latest"
 }
@@ -248,11 +256,11 @@ PY
 
   {
     printf '\n## 7. 自動採取サマリ\n'
-    printf -- '- profile: `%s`\n' "$PROFILE"
-    printf -- '- sourceEvidenceDir: `%s`\n' "$(normalize_report_path "$EVIDENCE_DIR")"
-    printf -- '- collectedAt: `%s`\n' "${collected_at:-unknown}"
-    printf -- '- includeProxy: `%s`\n' "${include_proxy:-0}"
-    printf -- '- lines: `%s`\n' "${lines:-100}"
+    printf -- "- profile: \`%s\`\n" "$PROFILE"
+    printf -- "- sourceEvidenceDir: \`%s\`\n" "$(normalize_report_path "$EVIDENCE_DIR")"
+    printf -- "- collectedAt: \`%s\`\n" "${collected_at:-unknown}"
+    printf -- "- includeProxy: \`%s\`\n" "${include_proxy:-0}"
+    printf -- "- lines: \`%s\`\n" "${lines:-100}"
     format_exit_summary 'status-stack.sh' "$status_exit"
     format_exit_summary 'logs-stack.sh' "$logs_exit"
     format_exit_summary "systemctl --user list-timers 'erp4-*'" "$timers_exit"
@@ -260,12 +268,12 @@ PY
       format_exit_summary 'check-https.sh' "$https_exit"
     fi
     printf '\n## 8. 自動採取ファイル\n'
-    printf -- '- `%s`\n' "$(normalize_report_path "$meta_file")"
-    printf -- '- `%s`\n' "$(normalize_report_path "$status_file")"
-    printf -- '- `%s`\n' "$(normalize_report_path "$logs_file")"
-    printf -- '- `%s`\n' "$(normalize_report_path "$timers_file")"
+    printf -- "- \`%s\`\n" "$(normalize_report_path "$meta_file")"
+    printf -- "- \`%s\`\n" "$(normalize_report_path "$status_file")"
+    printf -- "- \`%s\`\n" "$(normalize_report_path "$logs_file")"
+    printf -- "- \`%s\`\n" "$(normalize_report_path "$timers_file")"
     if [[ -f "$https_file" ]]; then
-      printf -- '- `%s`\n' "$(normalize_report_path "$https_file")"
+      printf -- "- \`%s\`\n" "$(normalize_report_path "$https_file")"
     fi
   } >>"$output_file"
 

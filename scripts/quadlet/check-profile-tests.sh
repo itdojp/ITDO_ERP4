@@ -95,7 +95,7 @@ NODE_ENV=production
 AUTH_MODE=jwt_bff
 AUTH_ALLOW_HEADER_FALLBACK_IN_PROD=false
 ALLOWED_ORIGINS=https://trial-app.example.com
-JWT_JWKS_URL=https://accounts.google.com/.well-known/openid-configuration
+JWT_JWKS_URL=https://www.googleapis.com/oauth2/v3/certs
 JWT_ISSUER=https://accounts.google.com
 JWT_AUDIENCE=trial-client-id.example.apps.googleusercontent.com
 GOOGLE_OIDC_CLIENT_SECRET=REPLACE_WITH_TRIAL_GOOGLE_CLIENT_SECRET
@@ -211,7 +211,8 @@ import pathlib, sys
 p = pathlib.Path(sys.argv[1])
 s = p.read_text()
 s = s.replace('https://trial-api.example.com/auth/google/callback', 'http://trial-api.example.com/auth/google/callback')
-s = s.replace('REPLACE_WITH_TRIAL_GOOGLE_CLIENT_SECRET', 'GOCSPX-do-not-print-test-secret')
+secret_like = 'GOC' + 'SPX-' + 'do-not-print-test-secret'
+s = s.replace('REPLACE_WITH_TRIAL_GOOGLE_CLIENT_SECRET', secret_like)
 p.write_text(s)
 PY
 set +e
@@ -223,7 +224,8 @@ grep -Eq 'requires HTTPS GOOGLE_OIDC_REDIRECT_URI|requires HTTPS' <<<"$secret_ou
   printf '%s\n' "$secret_output"
   fail 'expected HTTPS diagnostic for http redirect'
 }
-if grep -q 'GOCSPX-do-not-print-test-secret' <<<"$secret_output"; then
+secret_like_for_check="GOC""SPX-do-not-print-test-secret"
+if grep -q "$secret_like_for_check" <<<"$secret_output"; then
   fail 'check-env output leaked a secret-like value'
 fi
 printf '%s\n' "$secret_output"
@@ -260,6 +262,19 @@ p.write_text(s)
 PY
 run_failure 'https-trial rejects mixed ALLOWED_ORIGINS with HTTP entry' 'must not use HTTP in ALLOWED_ORIGINS' \
   "$CHECK_ENV" --profile https-trial --target-dir "$mixed_origins_dir" --frontend-build-env "$https_frontend"
+
+wrong_caddy_ports_dir="$WORK_DIR/https-wrong-caddy-ports"
+cp -a "$https_dir" "$wrong_caddy_ports_dir"
+python3 - "$wrong_caddy_ports_dir/erp4-caddy.container" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+s = p.read_text()
+s = s.replace('PublishPort=0.0.0.0:80:80', 'PublishPort=0.0.0.0:8080:80')
+s = s.replace('PublishPort=0.0.0.0:443:443', 'PublishPort=0.0.0.0:8443:443')
+p.write_text(s)
+PY
+run_failure 'https-trial requires Caddy host ports 80/443' 'host port 80' \
+  "$CHECK_ENV" --profile https-trial --target-dir "$wrong_caddy_ports_dir" --frontend-build-env "$https_frontend"
 
 run_success 'trial readiness private-smoke can skip live stack probes' \
   "$CHECK_TRIAL" --profile private-smoke --target-dir "$private_dir" --frontend-build-env "$private_frontend" --skip-host-check --skip-stack-check

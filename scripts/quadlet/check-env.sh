@@ -144,12 +144,34 @@ require_no_publish_port() {
   fi
 }
 
-require_publish_port() {
+has_host_publish_port() {
   local file="$1"
-  local port_pattern="$2"
+  local expected_host_port="$2"
+  awk -v expected="$expected_host_port" '
+    /^[[:space:]]*PublishPort[[:space:]]*=/ {
+      value = $0
+      sub(/^[^=]*=/, "", value)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+      n = split(value, parts, ":")
+      if (n < 2) {
+        next
+      }
+      host_port = parts[n - 1]
+      sub(/\/.*$/, "", host_port)
+      if (host_port == expected) {
+        found = 1
+      }
+    }
+    END { exit found ? 0 : 1 }
+  ' "$file"
+}
+
+require_host_publish_port() {
+  local file="$1"
+  local expected_host_port="$2"
   local label="$3"
   [[ -f "$file" ]] || fail "required container file not found for profile $PROFILE: $file"
-  grep -Eq "^[[:space:]]*PublishPort[[:space:]]*=.*${port_pattern}" "$file" || fail "$label must publish $port_pattern for profile $PROFILE"
+  has_host_publish_port "$file" "$expected_host_port" || fail "$label must publish host port $expected_host_port for profile $PROFILE"
 }
 
 check_http_cookie_flag() {
@@ -273,8 +295,8 @@ check_https_trial_profile() {
   for key in APP_DOMAIN API_DOMAIN ACME_EMAIL; do
     require_env_key "$TARGET_DIR/erp4-caddy.env" "$key"
   done
-  require_publish_port "$(container_file erp4-caddy)" ':80(:80)?' erp4-caddy
-  require_publish_port "$(container_file erp4-caddy)" ':443(:443)?' erp4-caddy
+  require_host_publish_port "$(container_file erp4-caddy)" 80 erp4-caddy
+  require_host_publish_port "$(container_file erp4-caddy)" 443 erp4-caddy
 
   if [[ -f "$FRONTEND_BUILD_ENV" ]]; then
     require_https_url "$FRONTEND_BUILD_ENV" VITE_API_BASE
