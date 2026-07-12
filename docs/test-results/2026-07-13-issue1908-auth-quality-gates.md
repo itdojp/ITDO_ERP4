@@ -95,6 +95,8 @@ Reviewer-noted residual risks:
 
 ## Local verification
 
+The evidence paths in the table below are local-only raw logs under `.codex-local/tmp/`; they are not committed repository artifacts. This Markdown file is the PR-visible evidence summary, and the GitHub Actions checks on the PR are the remote canonical verification evidence.
+
 | Check                                                                                                                                                                                                                       | Result                    | Evidence                                                                         |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------- |
 | `npm ci --prefix packages/backend`                                                                                                                                                                                          | PASS                      | `.codex-local/tmp/issue1908-npm-ci-20260712T201649+0900.log`                     |
