@@ -18,6 +18,7 @@
   - Google Cloud 事前設定: [google-cloud-predeployment](google-cloud-predeployment.md)
   - Quadlet 詳細手順: [sakura-vps-podman-trial](sakura-vps-podman-trial.md)
   - env チェックリスト: [sakura-vps-env-checklist](sakura-vps-env-checklist.md)
+  - 試用プロファイル: [sakura-vps-trial-profiles](sakura-vps-trial-profiles.md)
   - 試験稼働 Go/No-Go チェックリスト: [sakura-vps-trial-checklist](sakura-vps-trial-checklist.md)
   - 試験稼働記録テンプレート: [../test-results/sakura-vps-trial-template.md](../test-results/sakura-vps-trial-template.md)
 - さくらVPS HTTPS reverse proxy: [sakura-vps-https-proxy](sakura-vps-https-proxy.md)

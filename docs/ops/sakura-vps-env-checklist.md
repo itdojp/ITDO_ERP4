@@ -5,6 +5,13 @@
 - さくらVPS 上の Quadlet 試験稼働で、どの env ファイルに何を設定するかを短時間で確認できるようにする。
 - build-time / runtime / proxy / maintenance の責務を分離して記録する。
 
+## 試用プロファイル
+
+`private-smoke` と `https-trial` の責務・禁止設定・標準コマンドは [sakura-vps-trial-profiles](sakura-vps-trial-profiles.md) を正とする。
+
+- `private-smoke`: Caddy / host publish / 実 OAuth / 外部送信を使わない非公開 smoke。`SAKURA_VPS_PROFILE=private-smoke` を backend env に置き、`./scripts/quadlet/check-env.sh --profile private-smoke` で検査する。
+- `https-trial`: trial 専用 FQDN + HTTPS + trial 専用 OAuth client。`SAKURA_VPS_PROFILE=https-trial` を backend env に置き、`./scripts/quadlet/check-env.sh --profile https-trial` と `./scripts/quadlet/check-trial-readiness.sh --profile https-trial --include-proxy` で検査する。
+
 ## build-time
 
 ### `deploy/quadlet/env/erp4-frontend-build.env`
@@ -83,7 +90,7 @@ Google OIDC をさくらVPS 実機で使う場合は FQDN + HTTPS の origin / r
 確認コマンド:
 
 ```bash
-./scripts/quadlet/check-env.sh
+./scripts/quadlet/check-env.sh --profile https-trial
 ```
 
 ## proxy

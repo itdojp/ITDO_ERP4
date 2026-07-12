@@ -1,4 +1,4 @@
-.PHONY: lint format-check typecheck build test test-backend test-frontend data-quality-test data-quality-blocking data-quality-advisory coverage coverage-auth coverage-integrations coverage-integrations-check coverage-frontend coverage-frontend-core e2e ui-evidence ui-visual-regression ui-visual-regression-update mobile-regression-log frontend-dev-api podman-smoke pr-comments audit docs-image-links-check docs-test-results-index-check ops-quality design-system-package-check eslint10-readiness-check eslint10-readiness-record dependabot-alerts-check dependabot-alerts-record dependabot-token-readiness-check dependency-watch-record backup-s3-readiness-check backup-s3-readiness-record backup-s3-restore-record external-csv-artifact-intake-record production-readiness-external-evidence-check production-readiness-external-evidence-test po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness action-policy-callsites-report action-policy-callsites-report-json action-policy-required-action-gaps action-policy-required-action-gaps-json action-policy-fallback-report action-policy-fallback-report-json release-readiness release-readiness-record action-policy-phase3-readiness action-policy-phase3-readiness-json action-policy-phase3-readiness-record action-policy-phase3-cutover-record action-policy-phase3-trial-record action-policy-phase3-target-trial-record
+.PHONY: lint format-check typecheck build test test-backend test-frontend data-quality-test data-quality-blocking data-quality-advisory coverage coverage-auth coverage-integrations coverage-integrations-check coverage-frontend coverage-frontend-core e2e ui-evidence ui-visual-regression ui-visual-regression-update mobile-regression-log frontend-dev-api podman-smoke pr-comments audit docs-image-links-check docs-test-results-index-check ops-quality design-system-package-check eslint10-readiness-check eslint10-readiness-record dependabot-alerts-check dependabot-alerts-record dependabot-token-readiness-check dependency-watch-record backup-s3-readiness-check backup-s3-readiness-record backup-s3-restore-record external-csv-artifact-intake-record production-readiness-external-evidence-check production-readiness-external-evidence-test po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness action-policy-callsites-report action-policy-callsites-report-json action-policy-required-action-gaps action-policy-required-action-gaps-json action-policy-fallback-report action-policy-fallback-report-json release-readiness release-readiness-record action-policy-phase3-readiness action-policy-phase3-readiness-json action-policy-phase3-readiness-record action-policy-phase3-cutover-record action-policy-phase3-trial-record action-policy-phase3-target-trial-record sakura-vps-profile-check
 
 lint:
 	npm run lint --prefix packages/backend
@@ -89,6 +89,7 @@ docs-test-results-index-check:
 ops-quality:
 	./scripts/check-ops-docs.sh
 	./scripts/check-ops-scripts.sh
+	./scripts/quadlet/check-profile-tests.sh
 
 design-system-package-check:
 	./scripts/check-design-system-package.sh
@@ -171,6 +172,9 @@ action-policy-fallback-report:
 
 action-policy-fallback-report-json:
 	node scripts/report-action-policy-fallback-allowed.mjs --format=json
+
+sakura-vps-profile-check:
+	./scripts/quadlet/check-profile-tests.sh
 
 action-policy-phase3-readiness:
 	node scripts/report-action-policy-phase3-readiness.mjs --format=text

@@ -1,5 +1,9 @@
 # さくらVPS 試験稼働チェックリスト
 
+## Profile selection
+
+- `private-smoke` / `https-trial` のどちらで実施したかを記録し、[sakura-vps-trial-profiles](sakura-vps-trial-profiles.md) の禁止設定に反していないことを確認する。
+
 ## 目的
 
 - さくらVPS 上の rootless Podman + Quadlet 構成について、試験稼働の Go/No-Go 判定を 1 回で再実施できる形にする。

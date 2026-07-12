@@ -14,6 +14,7 @@ mkdir -p "$TMPDIR" "$NPM_CONFIG_CACHE"
 OPS_DOC_TARGETS=(
   docs/ops/google-cloud-predeployment.md
   docs/ops/sakura-vps-deployment.md
+  docs/ops/sakura-vps-trial-profiles.md
   docs/ops/ops-automation.md
   docs/ops/codex-ops-workflows.md
   docs/ops/continuity-handoff.md
