@@ -215,7 +215,9 @@ export async function applyChatAckTemplates(options: {
     });
 
     await logChatAckRequestCreated({
-      req: options.req,
+      auditContext: auditContextFromRequest(options.req, {
+        userId: options.actorUserId,
+      }),
       actorUserId: options.actorUserId,
       projectId,
       roomId: room.id,
@@ -229,7 +231,10 @@ export async function applyChatAckTemplates(options: {
     });
 
     await tryCreateChatAckRequiredNotificationsWithAudit({
-      req: options.req,
+      auditContext: auditContextFromRequest(options.req, {
+        userId: options.actorUserId,
+      }),
+      logger: options.req.log,
       actorUserId: options.actorUserId,
       projectId,
       roomId: room.id,

@@ -31,11 +31,11 @@ import {
   getChatAttachmentScanProvider,
   scanChatAttachment,
 } from '../services/chatAttachmentScan.js';
+import { defaultChatNotificationPort } from '../adapters/notifications/chatNotificationAdapter.js';
 import {
-  createChatMentionNotifications,
-  createChatMessageNotifications,
-} from '../services/appNotifications.js';
-import { resolveRoomAudienceUserIds } from '../services/chatMentionRecipients.js';
+  tryCreateChatMentionNotificationEffects,
+  tryCreateChatMessageNotificationEffects,
+} from '../application/chat/chatNotificationEffects.js';
 import {
   getChatUnreadSummary,
   markChatAsRead,
@@ -250,121 +250,6 @@ export async function registerChatRoutes(app: FastifyInstance) {
         ...auditContextFromRequest(options.req),
       });
     }
-  }
-
-  async function tryCreateChatMentionNotifications(options: {
-    req: any;
-    projectId: string;
-    roomId: string;
-    messageId: string;
-    messageBody: string;
-    senderUserId: string;
-    mentionsAll: boolean;
-    mentionUserIds: string[];
-    mentionGroupIds: string[];
-  }) {
-    try {
-      const notificationResult = await createChatMentionNotifications({
-        projectId: options.projectId,
-        roomId: options.roomId,
-        messageId: options.messageId,
-        messageBody: options.messageBody,
-        senderUserId: options.senderUserId,
-        mentionUserIds: options.mentionUserIds,
-        mentionGroupIds: options.mentionGroupIds,
-        mentionAll: options.mentionsAll,
-      });
-      if (notificationResult.created <= 0) {
-        return notificationResult.recipients;
-      }
-
-      await logAudit({
-        action: 'chat_mention_notifications_created',
-        targetTable: 'chat_messages',
-        targetId: options.messageId,
-        metadata: {
-          projectId: options.projectId,
-          roomId: options.roomId,
-          messageId: options.messageId,
-          createdCount: notificationResult.created,
-          recipientCount: notificationResult.recipients.length,
-          recipientUserIds: notificationResult.recipients.slice(0, 20),
-          recipientsTruncated: notificationResult.truncated,
-          mentionAll: options.mentionsAll,
-          mentionUserCount: options.mentionUserIds.length,
-          mentionGroupCount: options.mentionGroupIds.length,
-          usesProjectMemberFallback:
-            notificationResult.usesProjectMemberFallback,
-        } as Prisma.InputJsonValue,
-        ...auditContextFromRequest(options.req),
-      });
-      return notificationResult.recipients;
-    } catch (err) {
-      options.req.log?.warn(
-        { err },
-        'Failed to create chat mention notifications',
-      );
-    }
-    return [];
-  }
-
-  async function tryCreateProjectChatMessageNotifications(options: {
-    req: any;
-    room: {
-      id: string;
-      type: string;
-      groupId: string | null;
-      viewerGroupIds?: unknown;
-      allowExternalUsers: boolean;
-    };
-    messageId: string;
-    messageBody: string;
-    senderUserId: string;
-    excludeUserIds?: string[];
-  }) {
-    try {
-      const audience = await resolveRoomAudienceUserIds({
-        room: options.room,
-      });
-      if (audience.size === 0) return [];
-      const notificationResult = await createChatMessageNotifications({
-        projectId: options.room.id,
-        roomId: options.room.id,
-        messageId: options.messageId,
-        messageBody: options.messageBody,
-        senderUserId: options.senderUserId,
-        recipientUserIds: Array.from(audience),
-        excludeUserIds: options.excludeUserIds,
-      });
-      if (notificationResult.created <= 0) {
-        return notificationResult.recipients;
-      }
-
-      await logAudit({
-        action: 'chat_message_notifications_created',
-        targetTable: 'chat_messages',
-        targetId: options.messageId,
-        metadata: {
-          roomId: options.room.id,
-          projectId: options.room.id,
-          messageId: options.messageId,
-          createdCount: notificationResult.created,
-          recipientCount: notificationResult.recipients.length,
-          recipientUserIds: notificationResult.recipients.slice(0, 20),
-          recipientsTruncated: notificationResult.truncated,
-          audienceCount: audience.size,
-          excludedCount: options.excludeUserIds?.length ?? 0,
-        } as Prisma.InputJsonValue,
-        ...auditContextFromRequest(options.req),
-      });
-      return notificationResult.recipients;
-    } catch (err) {
-      options.req.log?.warn(
-        { err },
-        'Failed to create project chat message notifications',
-      );
-    }
-    return [];
   }
 
   app.get(
@@ -779,10 +664,12 @@ export async function registerChatRoutes(app: FastifyInstance) {
         mentionUserIds,
         mentionGroupIds,
       });
-      const mentionRecipients = await tryCreateChatMentionNotifications({
-        req,
+      const mentionRecipients = await tryCreateChatMentionNotificationEffects({
+        auditContext: auditContextFromRequest(req),
+        logger: req.log,
+        notificationPort: defaultChatNotificationPort,
         projectId,
-        roomId: room.id,
+        room,
         messageId: message.id,
         messageBody: message.body,
         senderUserId: userId,
@@ -790,8 +677,12 @@ export async function registerChatRoutes(app: FastifyInstance) {
         mentionUserIds,
         mentionGroupIds,
       });
-      await tryCreateProjectChatMessageNotifications({
-        req,
+      await tryCreateChatMessageNotificationEffects({
+        auditContext: auditContextFromRequest(req),
+        logger: req.log,
+        failureMessage: 'Failed to create project chat message notifications',
+        notificationPort: defaultChatNotificationPort,
+        projectId,
         room,
         messageId: message.id,
         messageBody: message.body,
@@ -1031,7 +922,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         throw new Error('Expected ackRequest to be created for chat message');
       }
       await logChatAckRequestCreated({
-        req,
+        auditContext: auditContextFromRequest(req, { userId }),
         actorUserId: userId,
         projectId,
         roomId: room.id,
@@ -1051,10 +942,12 @@ export async function registerChatRoutes(app: FastifyInstance) {
         mentionUserIds,
         mentionGroupIds,
       });
-      await tryCreateChatMentionNotifications({
-        req,
+      await tryCreateChatMentionNotificationEffects({
+        auditContext: auditContextFromRequest(req),
+        logger: req.log,
+        notificationPort: defaultChatNotificationPort,
         projectId,
-        roomId: room.id,
+        room,
         messageId: message.id,
         messageBody: message.body,
         senderUserId: userId,
@@ -1063,7 +956,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         mentionGroupIds,
       });
       await tryCreateChatAckRequiredNotificationsWithAudit({
-        req,
+        auditContext: auditContextFromRequest(req, { userId }),
+        logger: req.log,
         actorUserId: userId,
         projectId,
         roomId: room.id,

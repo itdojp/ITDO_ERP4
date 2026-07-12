@@ -1,61 +1,6 @@
 [
   {
     "type": "dependency",
-    "from": "src/routes/chat.ts",
-    "to": "src/services/appNotifications.ts",
-    "unresolvedTo": "../services/appNotifications.js",
-    "dependencyTypes": ["local", "import"],
-    "rule": {
-      "severity": "error",
-      "name": "bounded-context-chat-direction"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/routes/chatRooms.ts",
-    "to": "src/services/appNotifications.ts",
-    "unresolvedTo": "../services/appNotifications.js",
-    "dependencyTypes": ["local", "import"],
-    "rule": {
-      "severity": "error",
-      "name": "bounded-context-chat-direction"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/services/chatAckNotifications.ts",
-    "to": "src/services/appNotifications.ts",
-    "unresolvedTo": "./appNotifications.js",
-    "dependencyTypes": ["local", "import"],
-    "rule": {
-      "severity": "error",
-      "name": "bounded-context-chat-direction"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/services/chatAckReminders.ts",
-    "to": "src/services/appNotifications.ts",
-    "unresolvedTo": "./appNotifications.js",
-    "dependencyTypes": ["local", "import"],
-    "rule": {
-      "severity": "error",
-      "name": "bounded-context-chat-direction"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/services/chatRoomAclAlerts.ts",
-    "to": "src/services/appNotifications.ts",
-    "unresolvedTo": "./appNotifications.js",
-    "dependencyTypes": ["local", "import"],
-    "rule": {
-      "severity": "error",
-      "name": "bounded-context-chat-direction"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/routes/dailyReports.ts",
     "to": "src/services/appNotifications.ts",
     "unresolvedTo": "../services/appNotifications.js",
