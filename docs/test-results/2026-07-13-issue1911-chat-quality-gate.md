@@ -13,7 +13,7 @@ This change verifies that `packages/backend/src/routes/chatRooms.ts` is below th
 - Removed the temporary ESLint `max-lines` allowance for `src/routes/chatRooms.ts`; it now uses the default backend limit of 1500 effective lines.
 - Added `coverage:chat` and `coverage:chat:check` in `packages/backend/package.json`.
 - Added the `chat` scope in `packages/backend/coverage-thresholds.json` and wired `npm run coverage:chat:check` into the existing `CI / backend` job.
-- Added `coverageThresholds.test.js` coverage scope tests for chat route modules, chat services, chat application effects, and the default notification adapter.
+- Added `coverageThresholds.test.js` coverage scope tests for chat top-level routes, route modules, chat services, chat application effects, and the default notification adapter.
 - Updated quality/refactoring documentation to describe the new chat gate and current route status.
 
 ## Line-count evidence
@@ -32,10 +32,10 @@ This change verifies that `packages/backend/src/routes/chatRooms.ts` is below th
 
 | Metric     | Measured configured-file coverage | Threshold |
 | ---------- | --------------------------------: | --------: |
-| statements |                            54.62% |    54.60% |
-| branches   |                            59.93% |    59.90% |
-| functions  |                            68.35% |    68.30% |
-| lines      |                            54.62% |    54.60% |
+| statements |                            53.45% |    53.40% |
+| branches   |                            59.41% |    59.40% |
+| functions  |                            70.13% |    70.10% |
+| lines      |                            53.45% |    53.40% |
 
 The lower whole-repository c8 summary printed by `coverage:chat` is not the gate value. The gate value is the configured-file aggregate printed by `scripts/check-coverage-thresholds.mjs --scope chat`.
 

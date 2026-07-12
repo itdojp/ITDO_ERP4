@@ -59,7 +59,7 @@
 
 - 2026-07-12: `routes/expenses.ts` の submit / mark-paid / unmark-paid / reassign orchestration を `application/expenses/useCases.ts` へ抽出し、ActionPolicy/Approval/Notification/PeriodLock/Reassignment の直接import 7件を bounded-context baseline から削除。route allowlist cap から `expenses.ts` を除外（Issue #1905）
 - 2026-07-13: auth route modules をdefault 1500行gate内に保ち、`coverage:auth:check` のscope completeness/stale entry検出とbaseline閾値（statements/lines 89.7%、branches 70.5%、functions 97.9%）を固定（Issue #1908）
-- 2026-07-13: `routes/chatRooms.ts` をdefault 1500行gateへ統合し、chat route/module/service/application/adapter subset の `coverage:chat:check` とscope completeness/stale entry検出を追加。baseline閾値は statements/lines 54.6%、branches 59.9%、functions 68.3%（Issue #1911）
+- 2026-07-13: `routes/chatRooms.ts` をdefault 1500行gateへ統合し、chat top-level route/route module/service/application/adapter subset の `coverage:chat:check` とscope completeness/stale entry検出を追加。baseline閾値は statements/lines 53.4%、branches 59.4%、functions 70.1%（Issue #1911）
 
 ## 今回のP0実装（Issue #643）
 

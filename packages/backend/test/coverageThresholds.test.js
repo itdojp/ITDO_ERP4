@@ -22,7 +22,8 @@ const SCRIPT_PATH = path.join(
   BACKEND_DIR,
   'scripts/check-coverage-thresholds.mjs',
 );
-const TEST_TEMP_DIR = path.join(BACKEND_DIR, '.test-tmp');
+const REPO_ROOT = path.resolve(BACKEND_DIR, '..', '..');
+const TEST_TEMP_DIR = path.join(REPO_ROOT, 'tmp', 'coverage-thresholds-test');
 
 after(() => {
   rmSync(TEST_TEMP_DIR, { recursive: true, force: true });
@@ -77,6 +78,12 @@ function readCoverageThresholdConfig() {
 function listSourceFiles(relativeDir) {
   return readdirSync(path.join(BACKEND_DIR, relativeDir))
     .filter((name) => name.endsWith('.ts'))
+    .map((name) => `${relativeDir}/${name}`);
+}
+
+function listSourceFilesMatching(relativeDir, pattern) {
+  return readdirSync(path.join(BACKEND_DIR, relativeDir))
+    .filter((name) => name.endsWith('.ts') && pattern.test(name))
     .map((name) => `${relativeDir}/${name}`);
 }
 
@@ -320,8 +327,7 @@ test('chat coverage scope includes current route modules, lifecycle services, no
   const configuredFiles = [...config.chat.files].sort();
   const chatServicePattern = /^(chat[A-Z].*|personalGaChatRoom)\.ts$/;
   const expectedFiles = [
-    'src/routes/chat.ts',
-    'src/routes/chatRooms.ts',
+    ...listSourceFilesMatching('src/routes', /^chat[^/]*\.ts$/),
     ...listSourceFilesRecursive('src/routes/chat'),
     ...listSourceFilesRecursive('src/routes/chatRooms'),
     ...readdirSync(path.join(BACKEND_DIR, 'src/services'))
@@ -337,10 +343,10 @@ test('chat coverage scope includes current route modules, lifecycle services, no
 test('chat coverage thresholds stay above the route-split baseline gate', () => {
   const config = readCoverageThresholdConfig();
   const minimums = {
-    statements: 54.6,
-    branches: 59.9,
-    functions: 68.3,
-    lines: 54.6,
+    statements: 53.4,
+    branches: 59.4,
+    functions: 70.1,
+    lines: 53.4,
   };
 
   for (const [metric, minimum] of Object.entries(minimums)) {

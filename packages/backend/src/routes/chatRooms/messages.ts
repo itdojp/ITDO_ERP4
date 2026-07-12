@@ -35,8 +35,11 @@ import { CHAT_ROLES } from '../chat/shared/constants.js';
 import {
   normalizeStringArray,
   parseLimitNumber,
-  parseNonNegativeInt,
 } from '../chat/shared/inputParsers.js';
+import {
+  buildAllMentionRateLimitMetadata,
+  enforceAllMentionRateLimit,
+} from '../chat/shared/allMentionRateLimit.js';
 import { normalizeMentions } from '../chat/shared/mentions.js';
 import { requireUserId } from '../chat/shared/requireUserId.js';
 import { parseDateParam } from '../../utils/date.js';
@@ -51,103 +54,6 @@ export async function registerChatRoomMessageRoutes(app: FastifyInstance) {
     max: 20,
     timeWindow: '1 hour',
   });
-  async function enforceAllMentionRateLimit(options: {
-    roomId: string;
-    userId: string;
-    now: Date;
-  }) {
-    const minIntervalSeconds = parseNonNegativeInt(
-      process.env.CHAT_ALL_MENTION_MIN_INTERVAL_SECONDS,
-      60 * 60,
-    );
-    const maxPer24h = parseNonNegativeInt(
-      process.env.CHAT_ALL_MENTION_MAX_PER_24H,
-      3,
-    );
-
-    const since24h = new Date(options.now.getTime() - 24 * 60 * 60 * 1000);
-
-    const [lastAll, count24h] = await Promise.all([
-      minIntervalSeconds > 0
-        ? prisma.chatMessage.findFirst({
-            where: {
-              roomId: options.roomId,
-              userId: options.userId,
-              mentionsAll: true,
-              deletedAt: null,
-            },
-            select: { createdAt: true },
-            orderBy: { createdAt: 'desc' },
-          })
-        : Promise.resolve(null),
-      maxPer24h > 0
-        ? prisma.chatMessage.count({
-            where: {
-              roomId: options.roomId,
-              userId: options.userId,
-              mentionsAll: true,
-              deletedAt: null,
-              createdAt: { gte: since24h },
-            },
-          })
-        : Promise.resolve(0),
-    ]);
-
-    if (
-      minIntervalSeconds > 0 &&
-      lastAll &&
-      options.now.getTime() - lastAll.createdAt.getTime() <
-        minIntervalSeconds * 1000
-    ) {
-      return {
-        allowed: false as const,
-        reason: 'min_interval' as const,
-        minIntervalSeconds,
-        lastAt: lastAll.createdAt,
-      };
-    }
-    if (maxPer24h > 0 && count24h >= maxPer24h) {
-      return {
-        allowed: false as const,
-        reason: 'max_24h' as const,
-        maxPer24h,
-        windowStart: since24h,
-      };
-    }
-    return { allowed: true as const };
-  }
-
-  function buildAllMentionBlockedMetadata(
-    roomId: string,
-    rateLimit:
-      | {
-          allowed: false;
-          reason: 'min_interval';
-          minIntervalSeconds: number;
-          lastAt: Date;
-        }
-      | {
-          allowed: false;
-          reason: 'max_24h';
-          maxPer24h: number;
-          windowStart: Date;
-        },
-  ) {
-    const metadata: Record<string, unknown> = {
-      roomId,
-      reason: rateLimit.reason,
-    };
-    if (rateLimit.reason === 'min_interval') {
-      metadata.minIntervalSeconds = rateLimit.minIntervalSeconds;
-      metadata.lastAt = rateLimit.lastAt.toISOString();
-    }
-    if (rateLimit.reason === 'max_24h') {
-      metadata.maxPer24h = rateLimit.maxPer24h;
-      metadata.windowStart = rateLimit.windowStart.toISOString();
-    }
-    return metadata;
-  }
-
   async function ensureAllMentionAllowed(options: {
     req: any;
     reply: any;
@@ -163,10 +69,10 @@ export async function registerChatRoomMessageRoutes(app: FastifyInstance) {
       await logAudit({
         action: 'chat_all_mention_blocked',
         targetTable: 'chat_messages',
-        metadata: buildAllMentionBlockedMetadata(
-          options.roomId,
-          rateLimit,
-        ) as Prisma.InputJsonValue,
+        metadata: {
+          roomId: options.roomId,
+          ...buildAllMentionRateLimitMetadata(rateLimit),
+        } as Prisma.InputJsonValue,
         ...auditContextFromRequest(options.req),
       });
       options.reply.status(429).send({

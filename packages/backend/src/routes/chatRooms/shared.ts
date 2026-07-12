@@ -1,3 +1,5 @@
+import type { FastifyReply, FastifyRequest } from 'fastify';
+
 import { ensureChatRoomContentAccess } from '../../services/chatRoomAccess.js';
 
 export type RoomAccessContext = {
@@ -7,7 +9,7 @@ export type RoomAccessContext = {
   groupAccountIds: string[];
 };
 
-export function readRoomAccessContext(req: any): RoomAccessContext {
+export function readRoomAccessContext(req: FastifyRequest): RoomAccessContext {
   return {
     roles: req.user?.roles || [],
     projectIds: req.user?.projectIds || [],
@@ -19,7 +21,7 @@ export function readRoomAccessContext(req: any): RoomAccessContext {
 }
 
 export async function ensureRoomAccessWithReasonError(options: {
-  reply: any;
+  reply: FastifyReply;
   roomId: string;
   userId: string;
   accessContext: RoomAccessContext;

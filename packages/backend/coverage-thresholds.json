@@ -50,13 +50,17 @@
   "chat": {
     "summary": "coverage/chat/coverage-summary.json",
     "thresholds": {
-      "statements": 54.6,
-      "branches": 59.9,
-      "functions": 68.3,
-      "lines": 54.6
+      "statements": 53.4,
+      "branches": 59.4,
+      "functions": 70.1,
+      "lines": 53.4
     },
     "files": [
       "src/routes/chat.ts",
+      "src/routes/chatAckLinks.ts",
+      "src/routes/chatAckTemplates.ts",
+      "src/routes/chatBreakGlass.ts",
+      "src/routes/chatSettings.ts",
       "src/routes/chatRooms.ts",
       "src/routes/chatRooms/messages.ts",
       "src/routes/chatRooms/shared.ts",
