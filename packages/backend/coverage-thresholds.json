@@ -2,10 +2,10 @@
   "auth": {
     "summary": "coverage/auth/coverage-summary.json",
     "thresholds": {
-      "statements": 25,
-      "branches": 60,
-      "functions": 18,
-      "lines": 25
+      "statements": 89.7,
+      "branches": 70.5,
+      "functions": 97.9,
+      "lines": 89.7
     },
     "files": [
       "src/plugins/auth.ts",

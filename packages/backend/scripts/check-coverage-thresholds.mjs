@@ -72,6 +72,17 @@ function findSummaryEntry(summary, configuredFile) {
   return entry?.[1];
 }
 
+export function validateConfiguredFilesExist(files) {
+  if (!Array.isArray(files) || files.length === 0) return;
+
+  const missing = files.filter((file) => !fs.existsSync(resolveFromCwd(file)));
+  if (missing.length > 0) {
+    throw new Error(
+      `coverage configured file does not exist: ${missing.join(', ')}`,
+    );
+  }
+}
+
 export function summarizeConfiguredFiles(summary, files) {
   if (!Array.isArray(files) || files.length === 0) {
     return summary;
@@ -147,6 +158,8 @@ export function runCoverageThresholdCheck(argv = process.argv.slice(2)) {
       `coverage threshold scope has no thresholds: ${args.scope}`,
     );
   }
+
+  validateConfiguredFilesExist(scopeConfig.files);
 
   const summaryPath = resolveFromCwd(args.summary || scopeConfig.summary);
   const summary = summarizeConfiguredFiles(

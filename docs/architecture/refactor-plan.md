@@ -40,7 +40,7 @@
 
 - `routes/projects.ts` のドメインロジックを `services/` へ抽出
 - `scripts/migrate-po.ts` の変換/パース処理を `src/migration/` へ分割
-- `routes/integrations.ts` は service 抽出後に default 1500行 gate へ統合済みのため、今後は `docs/quality/refactoring-hotspots.md` の残責務を service / adapter 単位で継続分割する。`routes/auth.ts` / `routes/chatRooms.ts` は同ドキュメントの `Route max-lines gate` allowlist cap を下げながら、機能単位の service / adapter へ抽出する
+- `routes/integrations.ts` と `routes/auth.ts` は service / route 分割後に default 1500行 gate へ統合済みのため、今後は `docs/quality/refactoring-hotspots.md` の残責務を service / adapter 単位で継続分割する。`routes/auth.ts` は #1908 で coverage scope completeness と baseline 閾値を固定済み。`routes/chatRooms.ts` は同ドキュメントの `Route max-lines gate` allowlist cap を下げながら、機能単位の service / adapter へ抽出する
 - `routes/validators.ts` は barrel に留め、TypeBox schema は `routes/validators/*.ts` のドメイン別ファイルへ追加する
 - frontend は `AdminSettings.tsx` / `RoomChat.tsx` を責務単位へ分割し、`docs/architecture/frontend-server-state.md` の server-state 導入判断に沿って hook/query 境界を段階抽出する
 
@@ -58,6 +58,7 @@
 - 既存の PoC/CI/E2E が破綻しない
 
 - 2026-07-12: `routes/expenses.ts` の submit / mark-paid / unmark-paid / reassign orchestration を `application/expenses/useCases.ts` へ抽出し、ActionPolicy/Approval/Notification/PeriodLock/Reassignment の直接import 7件を bounded-context baseline から削除。route allowlist cap から `expenses.ts` を除外（Issue #1905）
+- 2026-07-13: auth route modules をdefault 1500行gate内に保ち、`coverage:auth:check` のscope completeness/stale entry検出とbaseline閾値（statements/lines 89.7%、branches 70.5%、functions 97.9%）を固定（Issue #1908）
 
 ## 今回のP0実装（Issue #643）
 
