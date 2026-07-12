@@ -1,12 +1,12 @@
-import { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import {
-  ExpenseQaStageRequiredError,
-  submitApprovalWithUpdate,
-} from '../services/approval.js';
-import {
-  createApprovalPendingNotifications,
-  createExpenseMarkPaidNotification,
-} from '../services/appNotifications.js';
+  markExpensePaid,
+  reassignExpenseProject,
+  submitExpenseForApproval,
+  unmarkExpensePaid,
+  type ExpenseActorContext,
+  type ExpenseApplicationResult,
+} from '../application/expenses/useCases.js';
 import {
   expenseBudgetEscalationSchema,
   expenseCommentCreateSchema,
@@ -17,7 +17,7 @@ import {
   expenseSchema,
   expenseUnmarkPaidSchema,
 } from './validators.js';
-import { DocStatusValue, FlowTypeValue } from '../types.js';
+import { DocStatusValue } from '../types.js';
 import {
   hasProjectAccess,
   requireProjectAccess,
@@ -25,19 +25,7 @@ import {
 } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
-import { logReassignment } from '../services/reassignmentLog.js';
 import { parseDateParam } from '../utils/date.js';
-import { toPeriodKey } from '../services/periodLock.js';
-import {
-  evaluateActionPolicyGuards,
-  evaluateActionPolicyWithFallback,
-  type ActionPolicyGuardFailure,
-} from '../services/actionPolicy.js';
-import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
-import {
-  logActionPolicyFallbackAllowedIfNeeded,
-  logActionPolicyOverrideIfNeeded,
-} from '../services/actionPolicyAudit.js';
 import { logExpenseStateTransition } from '../services/expenseStateTransitionLog.js';
 import {
   isExpenseQaChecklistComplete,
@@ -378,37 +366,24 @@ export function applyExpensePaidAtDateRangeFilter(
   where.paidAt = paidAt;
 }
 
-function resolveExpenseReassignGuardReply(
-  failures: ActionPolicyGuardFailure[],
-) {
-  for (const failure of failures) {
-    if (
-      failure.type === 'approval_open' &&
-      failure.reason === 'approval_in_progress'
-    ) {
-      return {
-        statusCode: 400,
-        body: {
-          error: {
-            code: 'PENDING_APPROVAL',
-            message: 'Approval in progress',
-          },
-        },
-      };
-    }
-    if (failure.type === 'period_lock' && failure.reason === 'period_locked') {
-      return {
-        statusCode: 400,
-        body: {
-          error: {
-            code: 'PERIOD_LOCKED',
-            message: 'Period is locked',
-          },
-        },
-      };
-    }
+function expenseActorFromRequest(req: FastifyRequest): ExpenseActorContext {
+  return {
+    userId: req.user?.userId ?? null,
+    roles: req.user?.roles ?? [],
+    groupIds: req.user?.groupIds ?? [],
+    groupAccountIds: req.user?.groupAccountIds ?? [],
+    projectIds: req.user?.projectIds ?? [],
+  };
+}
+
+function sendExpenseApplicationResult<T>(
+  reply: FastifyReply,
+  result: ExpenseApplicationResult<T>,
+): T | FastifyReply {
+  if (!result.ok) {
+    return reply.status(result.statusCode).send(result.body);
   }
-  return null;
+  return result.value;
 }
 
 export async function registerExpenseRoutes(app: FastifyInstance) {
@@ -976,234 +951,13 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const { id } = req.params as { id: string };
-      const body = req.body as any;
-      const reasonText =
-        typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
-      const expense = await prisma.expense.findUnique({ where: { id } });
-      if (!expense) {
-        return reply.code(404).send({ error: 'not_found' });
-      }
-      if (expense.deletedAt) {
-        return reply.code(404).send({ error: 'not_found' });
-      }
-      const roles = req.user?.roles || [];
-      const userId = req.user?.userId;
-      if (
-        !roles.includes('admin') &&
-        !roles.includes('mgmt') &&
-        expense.userId !== userId
-      ) {
-        return reply.code(403).send({ error: 'forbidden' });
-      }
-      const isPrivileged = roles.includes('admin') || roles.includes('mgmt');
-      if (
-        !isPrivileged &&
-        !hasProjectAccess(roles, req.user?.projectIds || [], expense.projectId)
-      ) {
-        return reply.code(403).send({ error: 'forbidden_project' });
-      }
-      const hasReceiptEvidence = hasExpenseSubmitEvidence({
-        receiptUrl: expense.receiptUrl,
-        attachmentCount: 0,
+      const result = await submitExpenseForApproval({
+        id,
+        body: req.body as any,
+        actor: expenseActorFromRequest(req),
+        auditContext: auditContextFromRequest(req),
       });
-      if (!hasReceiptEvidence) {
-        const attachmentCount = await prisma.expenseAttachment.count({
-          where: { expenseId: id },
-        });
-        if (
-          !hasExpenseSubmitEvidence({
-            receiptUrl: expense.receiptUrl,
-            attachmentCount,
-          })
-        ) {
-          return reply.status(400).send({
-            error: {
-              code: 'RECEIPT_REQUIRED',
-              message: 'At least one expense receipt is required',
-            },
-          });
-        }
-      }
-      const budgetEscalationReason = normalizeOptionalTrimmedValue(
-        body?.budgetEscalationReason,
-      );
-      const budgetEscalationImpact = normalizeOptionalTrimmedValue(
-        body?.budgetEscalationImpact,
-      );
-      const budgetEscalationAlternative = normalizeOptionalTrimmedValue(
-        body?.budgetEscalationAlternative,
-      );
-      const effectiveExpense = {
-        ...expense,
-        ...(budgetEscalationReason !== undefined
-          ? { budgetEscalationReason }
-          : {}),
-        ...(budgetEscalationImpact !== undefined
-          ? { budgetEscalationImpact }
-          : {}),
-        ...(budgetEscalationAlternative !== undefined
-          ? { budgetEscalationAlternative }
-          : {}),
-      };
-      const budgetEvaluation = await evaluateExpenseBudget({
-        client: prisma,
-        expense: effectiveExpense,
-      });
-      if (
-        budgetEvaluation.requiresEscalation &&
-        !hasExpenseBudgetEscalationFields(effectiveExpense)
-      ) {
-        return reply.status(400).send({
-          error: {
-            code: 'BUDGET_ESCALATION_REQUIRED',
-            message:
-              'budget escalation details are required when projected expense exceeds budget',
-            details: {
-              overrunAmount: budgetEvaluation.snapshot.overrunAmount,
-              budgetCost: budgetEvaluation.snapshot.budgetCost,
-              projectedAmount: budgetEvaluation.snapshot.projectedAmount,
-              periodKey: budgetEvaluation.snapshot.periodKey,
-              missingFields:
-                missingExpenseBudgetEscalationFields(effectiveExpense),
-            },
-          },
-        });
-      }
-
-      const policyRes = await evaluateActionPolicyWithFallback({
-        flowType: FlowTypeValue.expense,
-        actionKey: 'submit',
-        actor: {
-          userId: req.user?.userId ?? null,
-          roles: req.user?.roles || [],
-          groupIds: req.user?.groupIds || [],
-          groupAccountIds: req.user?.groupAccountIds || [],
-        },
-        reasonText,
-        state: { status: expense.status, projectId: expense.projectId },
-        targetTable: 'expenses',
-        targetId: id,
-      });
-      if (policyRes.policyApplied && !policyRes.allowed) {
-        if (policyRes.reason === 'reason_required') {
-          return reply.status(400).send({
-            error: {
-              code: 'REASON_REQUIRED',
-              message: 'reasonText is required for override',
-              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
-            },
-          });
-        }
-        return reply.status(403).send({
-          error: {
-            code: resolveActionPolicyDeniedCode(policyRes),
-            message: 'Expense cannot be submitted',
-            details: {
-              reason: policyRes.reason,
-              matchedPolicyId: policyRes.matchedPolicyId ?? null,
-              guardFailures: policyRes.guardFailures ?? null,
-            },
-          },
-        });
-      }
-      await logActionPolicyFallbackAllowedIfNeeded({
-        req,
-        flowType: FlowTypeValue.expense,
-        actionKey: 'submit',
-        targetTable: 'expenses',
-        targetId: id,
-        result: policyRes,
-      });
-      await logActionPolicyOverrideIfNeeded({
-        req,
-        flowType: FlowTypeValue.expense,
-        actionKey: 'submit',
-        targetTable: 'expenses',
-        targetId: id,
-        reasonText,
-        result: policyRes,
-      });
-      const submitUpdateData: Record<string, unknown> = {
-        status: DocStatusValue.pending_qa,
-        budgetSnapshot: budgetEvaluation.snapshot as unknown as object,
-        budgetOverrunAmount: budgetEvaluation.requiresEscalation
-          ? budgetEvaluation.snapshot.overrunAmount
-          : null,
-      };
-      if (budgetEscalationReason !== undefined) {
-        submitUpdateData.budgetEscalationReason = budgetEscalationReason;
-      }
-      if (budgetEscalationImpact !== undefined) {
-        submitUpdateData.budgetEscalationImpact = budgetEscalationImpact;
-      }
-      if (budgetEscalationAlternative !== undefined) {
-        submitUpdateData.budgetEscalationAlternative =
-          budgetEscalationAlternative;
-      }
-      if (
-        budgetEscalationReason !== undefined ||
-        budgetEscalationImpact !== undefined ||
-        budgetEscalationAlternative !== undefined
-      ) {
-        submitUpdateData.budgetEscalationUpdatedAt = new Date();
-      }
-      const actorUserId = req.user?.userId || 'system';
-      let submitResult: Awaited<ReturnType<typeof submitApprovalWithUpdate>>;
-      try {
-        submitResult = await submitApprovalWithUpdate({
-          flowType: FlowTypeValue.expense,
-          targetTable: 'expenses',
-          targetId: id,
-          update: (tx) =>
-            tx.expense.update({
-              where: { id },
-              data: submitUpdateData as any,
-            }),
-          createdBy: userId,
-        });
-      } catch (error) {
-        if (error instanceof ExpenseQaStageRequiredError) {
-          return reply.status(409).send({
-            error: {
-              code: 'EXPENSE_QA_STAGE_REQUIRED',
-              message:
-                'expense approval rule must include a non-exec stage before exec stage',
-            },
-          });
-        }
-        throw error;
-      }
-      const { updated, approval } = submitResult;
-      await logExpenseStateTransition({
-        client: prisma,
-        expenseId: id,
-        from: {
-          status: expense.status,
-          settlementStatus: expense.settlementStatus,
-        },
-        to: {
-          status: updated.status,
-          settlementStatus: updated.settlementStatus,
-        },
-        actorUserId: actorUserId,
-        reasonText: reasonText || null,
-        metadata: {
-          trigger: 'submit',
-          approvalInstanceId: approval.id,
-        },
-      });
-      await createApprovalPendingNotifications({
-        approvalInstanceId: approval.id,
-        projectId: approval.projectId,
-        requesterUserId: actorUserId,
-        actorUserId,
-        flowType: approval.flowType,
-        targetTable: approval.targetTable,
-        targetId: approval.targetId,
-        currentStep: approval.currentStep,
-        steps: approval.steps,
-      });
-      return updated;
+      return sendExpenseApplicationResult(reply, result);
     },
   );
 
@@ -1219,149 +973,19 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
       const paidAt = body?.paidAt ? parseDate(body.paidAt) : new Date();
       const reasonText =
         typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
-      if (body?.paidAt && !paidAt) {
+      if (!paidAt) {
         return reply.status(400).send({
           error: { code: 'INVALID_DATE', message: 'paidAt is invalid' },
         });
       }
-
-      const expense = await prisma.expense.findUnique({ where: { id } });
-      if (!expense || expense.deletedAt) {
-        return reply.status(404).send({
-          error: { code: 'NOT_FOUND', message: 'Expense not found' },
-        });
-      }
-
-      const policyRes = await evaluateActionPolicyWithFallback({
-        flowType: FlowTypeValue.expense,
-        actionKey: 'mark_paid',
-        actor: {
-          userId: req.user?.userId ?? null,
-          roles: req.user?.roles || [],
-          groupIds: req.user?.groupIds || [],
-          groupAccountIds: req.user?.groupAccountIds || [],
-        },
+      const result = await markExpensePaid({
+        id,
+        paidAt,
         reasonText,
-        state: {
-          status: expense.status,
-          projectId: expense.projectId,
-          settlementStatus: expense.settlementStatus,
-        },
-        targetTable: 'expenses',
-        targetId: id,
+        actor: expenseActorFromRequest(req),
+        auditContext: auditContextFromRequest(req),
       });
-      if (policyRes.policyApplied && !policyRes.allowed) {
-        if (policyRes.reason === 'reason_required') {
-          return reply.status(400).send({
-            error: {
-              code: 'REASON_REQUIRED',
-              message: 'reasonText is required for override',
-              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
-            },
-          });
-        }
-        return reply.status(403).send({
-          error: {
-            code: resolveActionPolicyDeniedCode(policyRes),
-            message: 'Expense cannot be marked as paid',
-            details: {
-              reason: policyRes.reason,
-              matchedPolicyId: policyRes.matchedPolicyId ?? null,
-              guardFailures: policyRes.guardFailures ?? null,
-            },
-          },
-        });
-      }
-      await logActionPolicyFallbackAllowedIfNeeded({
-        req,
-        flowType: FlowTypeValue.expense,
-        actionKey: 'mark_paid',
-        targetTable: 'expenses',
-        targetId: id,
-        result: policyRes,
-      });
-      await logActionPolicyOverrideIfNeeded({
-        req,
-        flowType: FlowTypeValue.expense,
-        actionKey: 'mark_paid',
-        targetTable: 'expenses',
-        targetId: id,
-        reasonText,
-        result: policyRes,
-      });
-
-      if (expense.status !== DocStatusValue.approved) {
-        return reply.status(409).send({
-          error: {
-            code: 'INVALID_STATUS',
-            message: 'Expense must be approved to mark as paid',
-          },
-        });
-      }
-      if (expense.settlementStatus === 'paid') {
-        return reply.status(409).send({
-          error: {
-            code: 'ALREADY_PAID',
-            message: 'Expense is already marked as paid',
-          },
-        });
-      }
-
-      const actorId = req.user?.userId || 'system';
-      const updated = await prisma.expense.update({
-        where: { id },
-        data: {
-          settlementStatus: 'paid',
-          paidAt,
-          paidBy: actorId,
-          updatedBy: actorId,
-        },
-      });
-      await logExpenseStateTransition({
-        client: prisma,
-        expenseId: id,
-        from: {
-          status: expense.status,
-          settlementStatus: expense.settlementStatus,
-        },
-        to: {
-          status: updated.status,
-          settlementStatus: updated.settlementStatus,
-        },
-        actorUserId: actorId,
-        reasonText: reasonText || null,
-        metadata: {
-          trigger: 'mark_paid',
-          paidAt: updated.paidAt?.toISOString() ?? null,
-        },
-      });
-
-      await createExpenseMarkPaidNotification({
-        expenseId: id,
-        userId: expense.userId,
-        projectId: expense.projectId,
-        amount: expense.amount?.toString(),
-        currency: expense.currency,
-        paidAt: updated.paidAt ?? paidAt,
-        actorUserId: actorId,
-      });
-
-      await logAudit({
-        ...auditContextFromRequest(req),
-        action: 'expense_mark_paid',
-        targetTable: 'Expense',
-        targetId: id,
-        reasonText: reasonText || undefined,
-        metadata: {
-          previousStatus: expense.status,
-          paidAt: updated.paidAt?.toISOString() ?? null,
-          paidBy: updated.paidBy ?? null,
-          amount: expense.amount?.toString(),
-          currency: expense.currency,
-        },
-      });
-
-      return updated;
+      return sendExpenseApplicationResult(reply, result);
     },
   );
 
@@ -1376,118 +1000,13 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
       const body = req.body as { reasonText?: string };
       const reasonText =
         typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
-      if (!reasonText) {
-        return reply.status(400).send({
-          error: { code: 'INVALID_REASON', message: 'reasonText is required' },
-        });
-      }
-
-      const expense = await prisma.expense.findUnique({ where: { id } });
-      if (!expense || expense.deletedAt) {
-        return reply.status(404).send({
-          error: { code: 'NOT_FOUND', message: 'Expense not found' },
-        });
-      }
-
-      const policyRes = await evaluateActionPolicyWithFallback({
-        flowType: FlowTypeValue.expense,
-        actionKey: 'unmark_paid',
-        actor: {
-          userId: req.user?.userId ?? null,
-          roles: req.user?.roles || [],
-          groupIds: req.user?.groupIds || [],
-          groupAccountIds: req.user?.groupAccountIds || [],
-        },
+      const result = await unmarkExpensePaid({
+        id,
         reasonText,
-        state: {
-          status: expense.status,
-          projectId: expense.projectId,
-          settlementStatus: expense.settlementStatus,
-        },
-        targetTable: 'expenses',
-        targetId: id,
+        actor: expenseActorFromRequest(req),
+        auditContext: auditContextFromRequest(req),
       });
-      if (policyRes.policyApplied && !policyRes.allowed) {
-        return reply.status(403).send({
-          error: {
-            code: resolveActionPolicyDeniedCode(policyRes),
-            message: 'Expense cannot be unmarked as paid',
-            details: {
-              reason: policyRes.reason,
-              matchedPolicyId: policyRes.matchedPolicyId ?? null,
-              guardFailures: policyRes.guardFailures ?? null,
-            },
-          },
-        });
-      }
-      await logActionPolicyFallbackAllowedIfNeeded({
-        req,
-        flowType: FlowTypeValue.expense,
-        actionKey: 'unmark_paid',
-        targetTable: 'expenses',
-        targetId: id,
-        result: policyRes,
-      });
-      await logActionPolicyOverrideIfNeeded({
-        req,
-        flowType: FlowTypeValue.expense,
-        actionKey: 'unmark_paid',
-        targetTable: 'expenses',
-        targetId: id,
-        reasonText,
-        result: policyRes,
-      });
-
-      if (expense.settlementStatus !== 'paid') {
-        return reply.status(409).send({
-          error: {
-            code: 'INVALID_STATUS',
-            message: 'Expense is not marked as paid',
-          },
-        });
-      }
-
-      const actorId = req.user?.userId || 'system';
-      const updated = await prisma.expense.update({
-        where: { id },
-        data: {
-          settlementStatus: 'unpaid',
-          paidAt: null,
-          paidBy: null,
-          updatedBy: actorId,
-        },
-      });
-      await logExpenseStateTransition({
-        client: prisma,
-        expenseId: id,
-        from: {
-          status: expense.status,
-          settlementStatus: expense.settlementStatus,
-        },
-        to: {
-          status: updated.status,
-          settlementStatus: updated.settlementStatus,
-        },
-        actorUserId: actorId,
-        reasonText,
-        metadata: { trigger: 'unmark_paid' },
-      });
-
-      await logAudit({
-        ...auditContextFromRequest(req),
-        action: 'expense_unmark_paid',
-        targetTable: 'Expense',
-        targetId: id,
-        reasonText,
-        metadata: {
-          previousPaidAt: expense.paidAt?.toISOString() ?? null,
-          previousPaidBy: expense.paidBy ?? null,
-          amount: expense.amount?.toString(),
-          currency: expense.currency,
-        },
-      });
-
-      return updated;
+      return sendExpenseApplicationResult(reply, result);
     },
   );
 
@@ -1502,103 +1021,15 @@ export async function registerExpenseRoutes(app: FastifyInstance) {
       const body = req.body as any;
       const reasonText =
         typeof body.reasonText === 'string' ? body.reasonText.trim() : '';
-      if (!reasonText) {
-        return reply.status(400).send({
-          error: { code: 'INVALID_REASON', message: 'reasonText is required' },
-        });
-      }
-      const expense = await prisma.expense.findUnique({ where: { id } });
-      if (!expense) {
-        return reply.status(404).send({
-          error: { code: 'NOT_FOUND', message: 'Expense not found' },
-        });
-      }
-      if (expense.deletedAt) {
-        return reply.status(400).send({
-          error: { code: 'ALREADY_DELETED', message: 'Expense deleted' },
-        });
-      }
-      if (
-        expense.status !== DocStatusValue.draft &&
-        expense.status !== DocStatusValue.rejected
-      ) {
-        return reply.status(400).send({
-          error: { code: 'INVALID_STATUS', message: 'Expense not editable' },
-        });
-      }
-      const approvalGuardReply = resolveExpenseReassignGuardReply(
-        await evaluateActionPolicyGuards(
-          {
-            guards: [{ type: 'approval_open' }],
-            flowType: FlowTypeValue.expense,
-            targetTable: 'expenses',
-            targetId: id,
-          },
-          { client: prisma },
-        ),
-      );
-      if (approvalGuardReply) {
-        return reply
-          .status(approvalGuardReply.statusCode)
-          .send(approvalGuardReply.body);
-      }
-      const targetProject = await prisma.project.findUnique({
-        where: { id: body.toProjectId },
-        select: { id: true, deletedAt: true },
-      });
-      if (!targetProject || targetProject.deletedAt) {
-        return reply.status(404).send({
-          error: { code: 'NOT_FOUND', message: 'Project not found' },
-        });
-      }
-      const projectIds = [expense.projectId];
-      if (body.toProjectId !== expense.projectId) {
-        projectIds.push(body.toProjectId);
-      }
-      const periodGuardReply = resolveExpenseReassignGuardReply(
-        await evaluateActionPolicyGuards(
-          {
-            guards: [{ type: 'period_lock' }],
-            flowType: FlowTypeValue.expense,
-            state: {
-              projectIds,
-              periodKey: toPeriodKey(expense.incurredOn),
-            },
-          },
-          { client: prisma },
-        ),
-      );
-      if (periodGuardReply) {
-        return reply
-          .status(periodGuardReply.statusCode)
-          .send(periodGuardReply.body);
-      }
-      const updated = await prisma.expense.update({
-        where: { id },
-        data: { projectId: body.toProjectId },
-      });
-      await logAudit({
-        action: 'reassignment',
-        targetTable: 'expenses',
-        targetId: id,
-        reasonCode: body.reasonCode,
-        reasonText,
-        metadata: {
-          fromProjectId: expense.projectId,
-          toProjectId: body.toProjectId,
-        },
-        ...auditContextFromRequest(req),
-      });
-      await logReassignment({
-        targetTable: 'expenses',
-        targetId: id,
-        fromProjectId: expense.projectId,
+      const result = await reassignExpenseProject({
+        id,
         toProjectId: body.toProjectId,
-        reasonCode: body.reasonCode,
+        reasonCode: String(body.reasonCode ?? ''),
         reasonText,
-        createdBy: req.user?.userId,
+        actor: expenseActorFromRequest(req),
+        auditContext: auditContextFromRequest(req),
       });
-      return updated;
+      return sendExpenseApplicationResult(reply, result);
     },
   );
 }

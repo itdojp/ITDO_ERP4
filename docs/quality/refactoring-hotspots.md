@@ -65,7 +65,6 @@ frontend lint では `max-lines` を error 2500 行（blank行を除外）で有
 | `src/routes/projects.ts`            |          2100 | task dependency / WBS / member orchestration を service 化                 |
 | `src/routes/chat.ts`                |          1750 | message投稿、ack、mention、attachment処理を service 化                     |
 | `src/routes/vendorDocs.ts`          |          1700 | vendor invoice line / allocation / reconciliation を service 化            |
-| `src/routes/expenses.ts`            |          1650 | settlement / QA checklist / action policy orchestration を service 化      |
 | `src/routes/reportSubscriptions.ts` |          1600 | schedule/run/history 処理を service 化                                     |
 
 ## 進捗ログ
@@ -83,4 +82,5 @@ frontend lint では `max-lines` を error 2500 行（blank行を除外）で有
 - 2026-07-11: `routes/integrations.ts` の reconciliation summary response shaping と details CSV generation を `services/integrationReconciliation.ts` へ移し、service unit test で log response mapping と spreadsheet-safe CSV を固定。route allowlist cap を 2100 から 2050 へ縮小（Issue #1881 fourth slice）
 - 2026-07-11: `routes/integrations.ts` から HR leave export payload/dispatch/log listing と leave export log response helper を `services/integrationLeaveExports.ts` へ抽出し、service unit test と既存 route test で query normalization・payload shaping・idempotency/audit・log listing を固定。route allowlist cap を 2050 から 1600 へ縮小（Issue #1881 fifth slice）
 - 2026-07-11: `routes/integrations.ts` から attendance closing create/list/summaries のaudit orchestration・pagination・summary response lookupを `services/attendanceClosings.ts` へ抽出し、service unit test と既存 route test でaudit metadata・pagination・not found mappingを固定。route allowlist cap を 1600 から 1500 へ縮小（Issue #1881 sixth/final slice）
+- 2026-07-12: `routes/expenses.ts` の ActionPolicy/Approval/Notification/PeriodLock/Reassignment orchestration を `src/application/expenses/useCases.ts` へ抽出し、route本体を 1035 行へ縮小。default 1500行 gate 内になったため allowlist から除外（Issue #1905）
 - 2026-07-12: `routes/integrations.ts` をtemporary route allowlistから外し、default 1500行gateへ統合。`coverage:integrations:check` を既存必須 `CI / backend` jobへ追加し、integrations route / service subset の coverage baseline を固定（Issue #1882）
