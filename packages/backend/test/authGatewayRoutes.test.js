@@ -95,7 +95,7 @@ async function withPrismaStubs(stubs, fn) {
 async function withRateLimiterFailure(ip, fn) {
   const originalConsume = RateLimiterMemory.prototype.consume;
   RateLimiterMemory.prototype.consume = async function patchedConsume(key) {
-    if (ip === '*' || key === ip) {
+    if (key === ip) {
       throw new Error('rate_limited_for_test');
     }
     return originalConsume.call(this, key);
@@ -284,7 +284,7 @@ test('GET /auth/google/start redirects to Google and sets auth flow cookie', asy
 test('GET /auth/google/start returns auth_gateway_rate_limited', async () => {
   await withEnv(baseBffEnv(), async () => {
     const ip = '198.51.100.203';
-    await withRateLimiterFailure('*', async () => {
+    await withRateLimiterFailure(ip, async () => {
       await withPrismaStubs(
         {
           'authOidcFlow.create': async () => ({ id: 'flow-rate-limited' }),
