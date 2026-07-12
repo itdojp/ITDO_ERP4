@@ -54,11 +54,12 @@ function normalizeStringArray(
   options: { dedupe?: boolean; max?: number } = {},
 ): string[] {
   if (!Array.isArray(value)) return [];
-  const max = options.max ?? 200;
   const seen = new Set<string>();
   const result: string[] = [];
   for (const entry of value) {
-    if (result.length >= max) break;
+    if (typeof options.max === 'number' && result.length >= options.max) {
+      break;
+    }
     if (typeof entry !== 'string') continue;
     const trimmed = entry.trim();
     if (!trimmed) continue;

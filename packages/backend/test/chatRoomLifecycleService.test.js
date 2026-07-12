@@ -348,3 +348,64 @@ test('listChatRoomsForUser bootstraps official rooms and returns visible metadat
     ],
   );
 });
+
+test('listChatRoomsForUser evaluates full persisted viewer ACL arrays', async () => {
+  const now = new Date('2026-07-13T00:00:00.000Z');
+  const largeViewerAcl = [
+    ...Array.from({ length: 205 }, (_, index) => `ga-${index}`),
+    'ga-late',
+  ];
+  const client = {
+    groupAccount: {
+      findMany: async () => [],
+    },
+    project: {
+      findMany: async () => [],
+    },
+    chatRoom: {
+      findUnique: async () => ({ id: 'company', deletedAt: null }),
+      createMany: async () => ({ count: 0 }),
+      findMany: async (args) => {
+        if (args.where?.type === 'department') return [];
+        if (args.where?.type === 'private_group') {
+          return [
+            {
+              id: 'official-large-acl',
+              type: 'private_group',
+              name: 'Large ACL room',
+              isOfficial: true,
+              projectId: null,
+              groupId: null,
+              viewerGroupIds: largeViewerAcl,
+              posterGroupIds: [],
+              allowExternalUsers: false,
+              allowExternalIntegrations: false,
+              createdAt: now,
+              createdBy: 'admin',
+              updatedAt: now,
+              updatedBy: 'admin',
+            },
+          ];
+        }
+        return [];
+      },
+    },
+    chatRoomMember: {
+      findMany: async () => [],
+    },
+  };
+
+  const result = await listChatRoomsForUser({
+    roles: ['user'],
+    userId: 'actor',
+    projectIds: [],
+    groupIds: ['ga-late'],
+    groupAccountIds: [],
+    client,
+  });
+
+  assert.equal(
+    result.items.some((item) => item.id === 'official-large-acl'),
+    true,
+  );
+});
