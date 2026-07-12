@@ -100,10 +100,18 @@ function collectTsFiles(rootDir) {
 }
 
 function compilePatterns(entry, kind) {
+  const entryName =
+    typeof entry.name === 'string' && entry.name.trim()
+      ? entry.name
+      : '<unnamed>';
+  const displayName =
+    typeof entry.displayName === 'string' && entry.displayName.trim()
+      ? entry.displayName
+      : entryName;
   return entry.patterns.map((pattern) => ({
-    entryName: entry.name,
+    entryName,
     kind,
-    displayName: entry.displayName || entry.name,
+    displayName,
     pattern,
     regex: new RegExp(pattern),
   }));
@@ -188,16 +196,20 @@ export function checkBoundedContextCoverage({ backendRoot, registryPath }) {
     const matches = normalized.compiledPatterns.filter((pattern) =>
       pattern.regex.test(file),
     );
-    const contextMatches = contextPatterns.filter((pattern) =>
-      pattern.regex.test(file),
-    );
+    const contextMatches = [
+      ...new Set(
+        contextPatterns
+          .filter((pattern) => pattern.regex.test(file))
+          .map((pattern) => pattern.entryName),
+      ),
+    ];
     if (matches.length === 0) {
       unclassifiedFiles.push(file);
     }
     if (contextMatches.length > 1) {
       duplicateBoundedContextFiles.push({
         file,
-        contexts: contextMatches.map((match) => match.entryName).sort(),
+        contexts: contextMatches.sort(),
       });
     }
     const uniqueEntries = [...new Set(matches.map((match) => match.entryName))];

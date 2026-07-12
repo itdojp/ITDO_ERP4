@@ -124,6 +124,26 @@ test('bounded-context coverage: duplicate bounded-context classification fails',
   });
 });
 
+test('bounded-context coverage: overlapping patterns in the same context are not duplicate contexts', () => {
+  withFixtureBackend((dir) => {
+    writeFile(dir, 'src/routes/known.ts');
+    const registry = writeRegistry(
+      dir,
+      `module.exports = { contexts: [
+        {
+          name: 'known',
+          displayName: 'Known',
+          patterns: ['^src/routes/known\\\\.ts$', '^src/routes/.+\\\\.ts$'],
+        },
+      ], layers: [] };\n`,
+    );
+    const res = runFixture(dir, registry);
+    assert.equal(res.status, 0, `${res.stdout}\n${res.stderr}`);
+    const data = JSON.parse(res.stdout);
+    assert.deepEqual(data.problems.duplicateBoundedContextFiles, []);
+  });
+});
+
 test('bounded-context coverage: stale patterns fail deterministically', () => {
   withFixtureBackend((dir) => {
     writeFile(dir, 'src/routes/known.ts');
@@ -141,6 +161,27 @@ test('bounded-context coverage: stale patterns fail deterministically', () => {
         entry: 'known',
         kind: 'bounded-context',
         pattern: '^src/services/missing\\.ts$',
+      },
+    ]);
+  });
+});
+
+test('bounded-context coverage: unnamed entries report deterministically without crashing', () => {
+  withFixtureBackend((dir) => {
+    writeFile(dir, 'src/routes/known.ts');
+    const registry = writeRegistry(
+      dir,
+      `module.exports = { contexts: [
+        { displayName: 'Missing name', patterns: ['^src/routes/known\\\\.ts$'] },
+      ], layers: [] };\n`,
+    );
+    const res = runFixture(dir, registry);
+    assert.notEqual(res.status, 0);
+    const data = JSON.parse(res.stdout);
+    assert.deepEqual(data.problems.invalidEntries, [
+      {
+        entry: '<unnamed>',
+        reason: 'entry requires name and at least one pattern',
       },
     ]);
   });
