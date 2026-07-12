@@ -69,10 +69,7 @@
 - backend route 構成は、HTTP登録の変更単位を小さくするため以下に分割する。
   - `packages/backend/src/routes/auth.ts`
     - `/me`
-    - local login / local password rotation
-    - user identity admin
-    - local credential admin
-    - Google BFF/session route module の登録
+    - Google/session/local auth/user identity/local credential route module の登録のみ
   - `packages/backend/src/routes/auth/googleSessionRoutes.ts`
     - Google auth start / callback
     - current session / CSRF token
@@ -83,10 +80,18 @@
     - auth gateway rate limit
     - CSRF header/cookie一致検証
     - 共通 auth gateway error/header schema
+  - `packages/backend/src/routes/auth/localAuthRoutes.ts`
+    - local login / bootstrap password rotation の HTTP adapter
+  - `packages/backend/src/routes/auth/userIdentityAdminRoutes.ts`
+    - user identity list / Google link / local link / patch の HTTP adapter
+  - `packages/backend/src/routes/auth/localCredentialAdminRoutes.ts`
+    - local credential list / create / patch の HTTP adapter
+  - `packages/backend/src/application/auth/localIdentityUseCases.ts` / `localIdentityShared.ts`
+    - local credential・user identity の状態遷移、Prisma transaction、audit metadata、cache/session invalidation 境界
 - OIDC 認可フローの一時状態は `AuthOidcFlow`、ERP4 セッションは `AuthSession` に保持する。
 - 認証済み API 呼び出しでは `AuthSession -> UserIdentity -> UserAccount` の順に解決し、既存 RBAC と `project_members` 解決へ接続する。
 - `jwt_bff` の state-changing `/auth/*` route は Cookie の CSRF token と `x-csrf-token` header の一致を必須とする。
-- route module から application/service へ Fastify `request` / `reply` を渡さない。外部Google通信、identity解決、session作成/破棄は `services/authGateway.ts` のDTO境界を経由し、HTTP module はcookie/header/redirect/status mappingに限定する。
+- route module から application/service へ Fastify `request` / `reply` を渡さない。外部Google通信、identity解決、session作成/破棄は `services/authGateway.ts` または `application/auth/*` のDTO境界を経由し、HTTP module はcookie/header/redirect/status mappingに限定する。
 - 互換期間中は legacy lookup を残すが、主経路は `UserIdentity` へ移す。
 - 現時点の未実装項目は以下とする。
   - frontend/BFF 完全切替

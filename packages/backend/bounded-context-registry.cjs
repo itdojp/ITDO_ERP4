@@ -12,6 +12,7 @@ const contexts = [
     displayName: 'Identity & Access',
     patterns: [
       '^src/plugins/auth\\.ts$',
+      '^src/application/auth/.+\\.ts$',
       '^src/routes/(accessReviews|auth|groups|scim)\\.ts$',
       '^src/routes/auth/.+\\.ts$',
       '^src/services/(authContext|authGateway|groupCandidates|localCredentials|rateLimitOverrides|rbac)\\.ts$',

@@ -548,6 +548,54 @@ test('POST /auth/local/login blocks when MFA setup is still required', async () 
   });
 });
 
+test('POST /auth/local/login blocks when MFA challenge is required', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    const identity = await buildLocalIdentity({
+      localCredential: {
+        mfaRequired: true,
+        mfaSecretRef: 'totp://configured',
+      },
+    });
+    let sessionCreated = false;
+
+    await withPrismaStubs(
+      {
+        'userIdentity.findFirst': async () => identity,
+        'localCredential.update': async () => ({
+          id: identity.localCredential.id,
+        }),
+        'authSession.create': async () => {
+          sessionCreated = true;
+          return { id: 'unexpected-session' };
+        },
+        'auditLog.create': async () => ({ id: 'audit-001' }),
+      },
+      async () => {
+        const { buildServer } = await loadBackendModules();
+        const server = await buildServer({ logger: false });
+        try {
+          const res = await server.inject({
+            remoteAddress: nextRemoteAddress(),
+            method: 'POST',
+            url: '/auth/local/login',
+            headers: LOCAL_CSRF_HEADERS,
+            payload: {
+              loginId: 'local.user@example.com',
+              password: 'LocalPassword123',
+            },
+          });
+          assert.equal(res.statusCode, 409, res.body);
+          const body = JSON.parse(res.body);
+          assert.equal(body.error.code, 'local_mfa_challenge_required');
+        } finally {
+          await server.close();
+        }
+      },
+    );
+    assert.equal(sessionCreated, false);
+  });
+});
+
 test('POST /auth/local/login treats password verification errors as auth failures', async () => {
   await withEnv(baseBffEnv(), async () => {
     const identity = await buildLocalIdentity({

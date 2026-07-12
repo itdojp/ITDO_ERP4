@@ -39,7 +39,7 @@
   - `POST /auth/logout`
   - `AuthSession -> UserIdentity -> UserAccount` による API 認証解決
   - route registration は `routes/auth.ts` から `routes/auth/googleSessionRoutes.ts` へ Google BFF/session/CSRF/logout を分割し、`routes/auth/http.ts` に `jwt_bff` 判定・rate limit・CSRF helper を集約する
-  - local credential / user identity 管理は後続段階の対象として `routes/auth.ts` 側に残し、今回の互換範囲を Google BFF/session 境界に限定する
+  - local credential / user identity 管理は #1907 で `application/auth/localIdentityUseCases.ts` / `localIdentityShared.ts` と `routes/auth/localAuthRoutes.ts`、`routes/auth/userIdentityAdminRoutes.ts`、`routes/auth/localCredentialAdminRoutes.ts` へ分離し、`auth.ts` は `/me` と route composition に限定する
 - Phase 2 実装
   - frontend の Bearer 直送経路廃止
   - 監査/運用ガイドの本番切替手順
