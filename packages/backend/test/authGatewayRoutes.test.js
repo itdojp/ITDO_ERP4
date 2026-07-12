@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
 import { exportSPKI, generateKeyPair, SignJWT } from 'jose';
 
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
+const BACKEND_DIR = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+);
 let backendModulesCacheBust = `${Date.now()}-bootstrap`;
 let backendModulesPromise = null;
 let googleOidcTestKeyPromise = null;
@@ -88,7 +95,7 @@ async function withPrismaStubs(stubs, fn) {
 async function withRateLimiterFailure(ip, fn) {
   const originalConsume = RateLimiterMemory.prototype.consume;
   RateLimiterMemory.prototype.consume = async function patchedConsume(key) {
-    if (key === ip) {
+    if (ip === '*' || key === ip) {
       throw new Error('rate_limited_for_test');
     }
     return originalConsume.call(this, key);
@@ -185,6 +192,67 @@ test('production jwt_bff auth cookies include Secure by default', async () => {
   });
 });
 
+test('Google BFF and session endpoints return not_found when AUTH_MODE is header', () => {
+  const script = `
+    import assert from 'node:assert/strict';
+    import { buildServer } from './dist/server.js';
+
+    const server = await buildServer({ logger: false });
+    try {
+      for (const request of [
+        { method: 'GET', url: '/auth/google/start' },
+        { method: 'GET', url: '/auth/google/callback?code=auth-code&state=state-001' },
+        { method: 'GET', url: '/auth/session' },
+        { method: 'GET', url: '/auth/csrf' },
+        { method: 'GET', url: '/auth/sessions' },
+        {
+          method: 'POST',
+          url: '/auth/sessions/session-001/revoke',
+          headers: {
+            cookie: 'erp4_csrf=csrf-token-001',
+            'x-csrf-token': 'csrf-token-001',
+          },
+        },
+        {
+          method: 'POST',
+          url: '/auth/logout',
+          headers: {
+            cookie: 'erp4_csrf=csrf-token-001',
+            'x-csrf-token': 'csrf-token-001',
+          },
+        },
+      ]) {
+        const res = await server.inject(request);
+        assert.equal(
+          res.statusCode,
+          404,
+          request.method + ' ' + request.url + ': ' + res.body,
+        );
+        const body = JSON.parse(res.body);
+        assert.equal(body.error.code, 'not_found');
+      }
+    } finally {
+      await server.close();
+    }
+  `;
+
+  const result = spawnSync(
+    process.execPath,
+    ['--input-type=module', '-e', script],
+    {
+      cwd: BACKEND_DIR,
+      env: {
+        ...process.env,
+        ...baseBffEnv(),
+        AUTH_MODE: 'header',
+      },
+      encoding: 'utf8',
+    },
+  );
+
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`.trim());
+});
+
 test('GET /auth/google/start redirects to Google and sets auth flow cookie', async () => {
   await withEnv(baseBffEnv(), async () => {
     await withPrismaStubs(
@@ -210,6 +278,35 @@ test('GET /auth/google/start redirects to Google and sets auth flow cookie', asy
         }
       },
     );
+  });
+});
+
+test('GET /auth/google/start returns auth_gateway_rate_limited', async () => {
+  await withEnv(baseBffEnv(), async () => {
+    const ip = '198.51.100.203';
+    await withRateLimiterFailure('*', async () => {
+      await withPrismaStubs(
+        {
+          'authOidcFlow.create': async () => ({ id: 'flow-rate-limited' }),
+        },
+        async () => {
+          const { buildServer } = await loadBackendModules();
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'GET',
+              url: '/auth/google/start?returnTo=%2Freports',
+              remoteAddress: ip,
+            });
+            assert.equal(res.statusCode, 429, res.body);
+            const body = JSON.parse(res.body);
+            assert.equal(body.error.code, 'auth_gateway_rate_limited');
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    });
   });
 });
 
@@ -390,6 +487,8 @@ test('GET /auth/google/callback writes audit log on callback validation failure'
     new Response(
       JSON.stringify({
         error: 'invalid_grant',
+        error_description:
+          'authorization code auth-code and client-secret must not be logged',
       }),
       {
         status: 400,
@@ -439,9 +538,13 @@ test('GET /auth/google/callback writes audit log on callback validation failure'
               'callback_validation_failed',
             );
             assert.equal(capturedAudit?.metadata?.state, 'state-001');
-            assert.match(
+            assert.equal(
+              capturedAudit?.metadata?.error,
+              'google_token_exchange_failed:400',
+            );
+            assert.doesNotMatch(
               String(capturedAudit?.metadata?.error || ''),
-              /^google_token_exchange_failed:400:/,
+              /invalid_grant|auth-code|client-secret/,
             );
             assert.equal(capturedAudit?.userAgent, 'test-agent');
           } finally {
