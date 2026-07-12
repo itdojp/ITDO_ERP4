@@ -45,6 +45,7 @@
 - [Issue #1910 Chat notification port / application effects verification](2026-07-13-issue1910-chat-notification-boundary.md)
 - [Issue #1911 Chat route split and quality gate verification](2026-07-13-issue1911-chat-quality-gate.md)
 - [Issue #1912 Projects application boundary verification](2026-07-13-issue1912-projects-application-boundary.md)
+- [Issue #1913 Projects task / WBS / dependency extraction verification](2026-07-13-issue1913-project-task-boundary.md)
 
 ### 2026-07-12
 

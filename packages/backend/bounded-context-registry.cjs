@@ -24,6 +24,7 @@ const contexts = [
     displayName: 'Org & Project',
     patterns: [
       '^src/routes/projects\\.ts$',
+      '^src/routes/projects/.+\\.ts$',
       '^src/services/(entityChecks|taskDependencyGraph)\\.ts$',
     ],
   },
