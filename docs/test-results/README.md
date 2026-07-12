@@ -46,6 +46,7 @@
 - [Issue #1911 Chat route split and quality gate verification](2026-07-13-issue1911-chat-quality-gate.md)
 - [Issue #1912 Projects application boundary verification](2026-07-13-issue1912-projects-application-boundary.md)
 - [Issue #1913 Projects task / WBS / dependency extraction verification](2026-07-13-issue1913-project-task-boundary.md)
+- [Issue #1914 Projects milestone / recurring template extraction verification](2026-07-13-issue1914-project-milestone-recurring-boundary.md)
 
 ### 2026-07-12
 

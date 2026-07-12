@@ -24,9 +24,16 @@ export function projectActorFromRequest(req: FastifyRequest) {
 }
 
 export function projectApplicationLogger(req: FastifyRequest) {
-  return typeof req.log?.warn === 'function'
-    ? { warn: req.log.warn.bind(req.log) }
-    : undefined;
+  const warn =
+    typeof req.log?.warn === 'function'
+      ? req.log.warn.bind(req.log)
+      : undefined;
+  const error =
+    typeof req.log?.error === 'function'
+      ? req.log.error.bind(req.log)
+      : undefined;
+  if (!warn && !error) return undefined;
+  return { warn, error };
 }
 
 export function sendApplicationResult(reply: FastifyReply, result: any) {
