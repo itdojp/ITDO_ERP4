@@ -85,11 +85,13 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
   - `coverage:auth:check` は内部で `coverage:auth` を呼び出す
   - 閾値判定は `packages/backend/coverage-thresholds.json` の `auth.files` に列挙した認証関連ソースを `coverage-summary.json` から再集計する
   - auth 以外の backend ファイル追加は `coverage-auth` gate の分母に含めない
-- 初期閾値（2026-07-02）:
-  - statements: 25%
-  - lines: 25%
-  - branches: 60%
-  - functions: 18%
+- auth scope の対象漏れと stale entry は `packages/backend/test/coverageThresholds.test.js` で検出する
+  - `src/routes/auth/*.ts` と `src/application/auth/*.ts` の追加・削除に追従して `auth.files` を更新しない場合、completeness test または stale file test が失敗する
+- 引上げ後閾値（2026-07-13、#1908 baseline）:
+  - statements: 89.7%
+  - lines: 89.7%
+  - branches: 70.5%
+  - functions: 97.9%
 - 目的: 全体一律閾値ではなく、重要モジュール単位で coverage 低下を PR で検知する
 - 拡大方針: hotspots の Priority A 対象（projects、workflow 等）の service 抽出に合わせて scope と閾値を追加する
 
@@ -215,12 +217,14 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 
 coverage gate は `coverage-summary.json` を入力にする段階導入方式とする。全体 coverage を一律 gate 化せず、重要 subset ごとに対象ファイルを明示する。
 
-| scope        | CI job               | summary                                                        | threshold source                            | 初期閾値                                                |
+| scope        | CI job               | summary                                                        | threshold source                            | 現行閾値                                                |
 | ------------ | -------------------- | -------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------- |
-| auth         | `CI / coverage-auth` | `packages/backend/coverage/auth/coverage-summary.json`         | `packages/backend/coverage-thresholds.json` | statements/lines 25%、branches 60%、functions 18%       |
+| auth         | `CI / coverage-auth` | `packages/backend/coverage/auth/coverage-summary.json`         | `packages/backend/coverage-thresholds.json` | statements/lines 89.7%、branches 70.5%、functions 97.9% |
 | integrations | `CI / backend`       | `packages/backend/coverage/integrations/coverage-summary.json` | `packages/backend/coverage-thresholds.json` | statements/lines 91.1%、branches 72.7%、functions 97.0% |
 
 auth scope の対象ファイルは `packages/backend/coverage-thresholds.json` の `auth.files` を正とし、`src/plugins/auth.ts`、`src/application/auth/localIdentityShared.ts`、`src/application/auth/localIdentityUseCases.ts`、`src/routes/auth.ts`、`src/routes/auth/googleSessionRoutes.ts`、`src/routes/auth/http.ts`、`src/routes/auth/localAuthRoutes.ts`、`src/routes/auth/localCredentialAdminRoutes.ts`、`src/routes/auth/localIdentityHttp.ts`、`src/routes/auth/localIdentitySchemas.ts`、`src/routes/auth/userIdentityAdminRoutes.ts`、`src/services/authContext.ts`、`src/services/authGateway.ts`、`src/services/envValidation.ts`、`src/services/localCredentials.ts`、`src/utils/authGroupToRoleMap.ts` を対象にする。
+
+`auth.files` の completeness は `coverageThresholds.test.js` が `src/routes/auth/*.ts`、`src/application/auth/*.ts`、および必須 auth service / plugin / utility を実ファイル一覧から再構成して検査する。設定済みファイルが削除・リネームされている場合は、coverage checker が coverage summary 読み込み前に `coverage configured file does not exist` として失敗させる。
 
 integrations scope の初期対象ファイルは `packages/backend/coverage-thresholds.json` の `integrations.files` を正とし、`src/routes/integrations.ts` と #1880/#1881 で抽出済みの integrations 関連 service を対象にする。新しい `integration*.ts` service または既存命名規約の関連 service を追加した場合、`coverageThresholds.test.js` が `integrations.files` の更新漏れを検知する。
 

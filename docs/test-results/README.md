@@ -38,6 +38,10 @@
 - [Release Candidate Readiness Evidence Template](release-readiness-template.md)
 - [さくらVPS 試験稼働記録テンプレート](sakura-vps-trial-template.md)
 
+### 2026-07-13
+
+- [Issue #1908 Auth Quality Gates Verification](2026-07-13-issue1908-auth-quality-gates.md)
+
 ### 2026-07-12
 
 - [Issue #1906 Auth Boundary Refactor Verification](2026-07-12-issue1906-auth-boundary.md)
