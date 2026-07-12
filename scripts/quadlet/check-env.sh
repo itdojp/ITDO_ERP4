@@ -93,14 +93,6 @@ require_https_url() {
   [[ "$value" == https://* ]] || fail "$file requires HTTPS $key for profile $PROFILE"
 }
 
-forbid_http_url() {
-  local file="$1"
-  local key="$2"
-  local value
-  value="$(read_env_value "$file" "$key")"
-  [[ "$value" != http://* ]] || fail "$file must not use HTTP $key for profile $PROFILE"
-}
-
 trim_whitespace() {
   local s="$1"
   s="${s#"${s%%[![:space:]]*}"}"
@@ -108,8 +100,8 @@ trim_whitespace() {
   printf '%s' "$s"
 }
 
-# forbid_http_url_any: same as forbid_http_url but splits on commas so that
-# multi-value keys like ALLOWED_ORIGINS are each checked individually.
+# forbid_http_url_any splits on commas so that multi-value keys like
+# ALLOWED_ORIGINS are checked entry by entry.
 forbid_http_url_any() {
   local file="$1"
   local key="$2"
