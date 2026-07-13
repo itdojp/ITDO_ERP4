@@ -78,7 +78,9 @@ const defaultPorts: LeaveApplicationPorts = {
   createApprovalPendingNotifications: defaultCreateApprovalPendingNotifications,
 };
 
-function ports(overrides?: LeaveApplicationPortOverrides) {
+function ports(
+  overrides?: LeaveApplicationPortOverrides,
+): LeaveApplicationPorts {
   return { ...defaultPorts, ...(overrides ?? {}) };
 }
 

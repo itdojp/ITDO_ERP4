@@ -159,6 +159,74 @@ test('authorizeLeaveSubmit maps ActionPolicy reason requirement', async () => {
   );
 });
 
+test('authorizeLeaveSubmit maps ActionPolicy guard failure to 403 without audit side effects', async () => {
+  const calls = [];
+  const result = await authorizeLeaveSubmit({
+    id: 'leave-002',
+    status: 'draft',
+    reasonText: '',
+    actor: actor(),
+    auditContext: auditContext(),
+    ports: defaultPolicyPorts(calls, {
+      allowed: false,
+      policyApplied: true,
+      reason: 'guard_failed',
+      matchedPolicyId: 'policy-guard',
+      guardFailures: [{ type: 'approval_open' }],
+    }),
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.statusCode, 403);
+  assert.deepEqual(result.body, {
+    error: {
+      code: 'APPROVAL_REQUIRED',
+      message: 'LeaveRequest cannot be submitted',
+      details: {
+        reason: 'guard_failed',
+        matchedPolicyId: 'policy-guard',
+        guardFailures: [{ type: 'approval_open' }],
+      },
+    },
+  });
+  assert.equal(
+    calls.some(([name]) =>
+      ['policyFallbackAudit', 'policyOverrideAudit'].includes(name),
+    ),
+    false,
+  );
+});
+
+test('authorizeLeaveSubmit with no matching policy records fallback audit and returns ok', async () => {
+  const calls = [];
+  const result = await authorizeLeaveSubmit({
+    id: 'leave-003',
+    status: 'draft',
+    reasonText: null,
+    actor: actor(),
+    auditContext: auditContext(),
+    ports: defaultPolicyPorts(calls, {
+      allowed: true,
+      policyApplied: false,
+    }),
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.value, {
+    policyApplied: false,
+    matchedPolicyId: null,
+    requireReason: false,
+  });
+  const fallbackAudit = calls.find(
+    ([name]) => name === 'policyFallbackAudit',
+  )?.[1];
+  assert.equal(fallbackAudit.flowType, 'leave');
+  assert.equal(fallbackAudit.actionKey, 'submit');
+  assert.equal(fallbackAudit.targetTable, 'leave_requests');
+  assert.equal(fallbackAudit.targetId, 'leave-003');
+  assert.deepEqual(fallbackAudit.auditContext, auditContext());
+});
+
 test('loadLeaveSubmitEvidence normalizes references without exposing payload content', async () => {
   const result = await loadLeaveSubmitEvidence({
     id: 'leave-001',
