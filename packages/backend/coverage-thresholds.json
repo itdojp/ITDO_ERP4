@@ -95,5 +95,28 @@
       "src/application/chat/chatNotificationPort.ts",
       "src/adapters/notifications/chatNotificationAdapter.ts"
     ]
+  },
+  "projects": {
+    "summary": "coverage/projects/coverage-summary.json",
+    "thresholds": {
+      "statements": 66.2,
+      "branches": 59.5,
+      "functions": 77.8,
+      "lines": 66.2
+    },
+    "files": [
+      "src/routes/projects.ts",
+      "src/routes/projects/milestones.ts",
+      "src/routes/projects/recurring.ts",
+      "src/routes/projects/shared.ts",
+      "src/routes/projects/tasks.ts",
+      "src/application/projects/milestoneUseCases.ts",
+      "src/application/projects/recurringTemplateUseCases.ts",
+      "src/application/projects/taskUseCases.ts",
+      "src/application/projects/useCases.ts",
+      "src/services/entityChecks.ts",
+      "src/services/taskDependencyGraph.ts",
+      "src/services/dueDateRule.ts"
+    ]
   }
 }

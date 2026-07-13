@@ -38,7 +38,7 @@
 
 目的: 大きな責務を「純粋関数」と「I/O」に分離する。
 
-- `routes/projects.ts` は #1912 で project lifecycle / hierarchy / membership / reassignment orchestration を `application/projects/useCases.ts` へ抽出済み。#1913 で task/WBS/dependency/baseline route を `routes/projects/tasks.ts` へ分離し、DB orchestration を `application/projects/taskUseCases.ts` へ抽出済み。#1914 で milestone/recurring template route を `routes/projects/milestones.ts` / `recurring.ts` へ分離し、DB orchestration を `application/projects/milestoneUseCases.ts` / `recurringTemplateUseCases.ts` へ抽出済み。後続は projects coverage最終gateなどを別Issueで扱う
+- `routes/projects.ts` は #1912 で project lifecycle / hierarchy / membership / reassignment orchestration を `application/projects/useCases.ts` へ抽出済み。#1913 で task/WBS/dependency/baseline route を `routes/projects/tasks.ts` へ分離し、DB orchestration を `application/projects/taskUseCases.ts` へ抽出済み。#1914 で milestone/recurring template route を `routes/projects/milestones.ts` / `recurring.ts` へ分離し、DB orchestration を `application/projects/milestoneUseCases.ts` / `recurringTemplateUseCases.ts` へ抽出済み。#1915 で projects coverage最終gateを追加し、後続は残る周辺 route/service 責務を別Issueで扱う
 - `scripts/migrate-po.ts` の変換/パース処理を `src/migration/` へ分割
 - `routes/integrations.ts` と `routes/auth.ts` は service / route 分割後に default 1500行 gate へ統合済みのため、今後は `docs/quality/refactoring-hotspots.md` の残責務を service / adapter 単位で継続分割する。`routes/auth.ts` は #1908 で coverage scope completeness と baseline 閾値を固定済み。`routes/chatRooms.ts` は #1911 で default 1500行 gate と chat coverage scope に統合済みのため、次は `routes/chat.ts` 側の ack / attachment / route module 分割へ進む
 - `routes/validators.ts` は barrel に留め、TypeBox schema は `routes/validators/*.ts` のドメイン別ファイルへ追加する
@@ -63,6 +63,7 @@
 - 2026-07-13: `routes/projects.ts` の project lifecycle / hierarchy / membership / reassignment orchestration を `application/projects/useCases.ts` へ抽出し、Org & Project→Notifications/Workflow 直接import3件を削減。route本体は 2043 行から 1279 行へ縮小しdefault 1500行gateへ統合（Issue #1912）
 - 2026-07-13: project task / dependency / baseline routeを `routes/projects/tasks.ts` へ分離し、DB orchestrationを `application/projects/taskUseCases.ts` へ抽出。親子タスクcycle判定をpure helper化し、`routes/projects.ts` を 537 行まで縮小（Issue #1913）
 - 2026-07-13: project milestone CRUD / draft invoice sync と recurring template / generation-log listing を `routes/projects/milestones.ts` / `recurring.ts`、`application/projects/milestoneUseCases.ts` / `recurringTemplateUseCases.ts` へ分離。`routes/projects.ts` を 195 行まで縮小し、milestone-billing / template-job 境界を証跡化（Issue #1914）
+- 2026-07-13: `coverage:projects:check` を既存必須 `CI / backend` job に追加し、Org & Project context registry、`application/projects/**`、`services/dueDateRule.ts` の coverage scope completeness と baseline閾値（statements/lines 66.2%、branches 59.5%、functions 77.8%）を固定。`projects.ts` は temporary max-lines allowanceなしでdefault 1500行gate内を維持（Issue #1915）
 
 ## 今回のP0実装（Issue #643）
 

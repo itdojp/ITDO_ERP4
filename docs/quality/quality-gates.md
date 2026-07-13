@@ -96,7 +96,7 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
   - branches: 70.5%
   - functions: 97.9%
 - 目的: 全体一律閾値ではなく、重要モジュール単位で coverage 低下を PR で検知する
-- 拡大方針: hotspots の Priority A 対象（projects、workflow 等）の service 抽出に合わせて scope と閾値を追加する
+- 拡大方針: hotspots の Priority A 対象（workflow 等）の service 抽出に合わせて scope と閾値を追加する。projects は #1915 で focused coverage gate を追加済み。
 
 ### CI / backend integrations coverage
 
@@ -125,6 +125,21 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
   - branches: 59.4%
   - functions: 70.1%
 - 目的: #1909〜#1911 で service / application / route module 化した chat 境界の coverage 低下を、既存必須 `CI / backend` job で検知する
+
+### CI / backend projects coverage
+
+- projects 関連 subset の coverage 計測と json-summary 閾値チェック: `npm run coverage:projects:check --prefix packages/backend`
+  - `coverage:projects:check` は内部で `coverage:projects` を呼び出す
+  - 対象は `packages/backend/coverage-thresholds.json` の `projects.files` を正本とする
+  - scope は `bounded-context-registry.cjs` の `org-project` context（`src/routes/projects.ts`、`src/routes/projects/**`、`src/services/entityChecks.ts`、`src/services/taskDependencyGraph.ts`）に、`src/application/projects/**` と project recurring due-date helper（`src/services/dueDateRule.ts`）を加えたもの
+  - `packages/backend/test/coverageThresholds.test.js` は、Org & Project context registry と projects coverage scope の差分、stale entry、閾値の意図しない低下、`projects.ts` の temporary max-lines allowance 再追加を検出する
+  - projects 以外の backend ファイル追加は `projects` scope の分母に含めない
+- 初期閾値（2026-07-13、#1915 baseline）:
+  - statements: 66.2%
+  - lines: 66.2%
+  - branches: 59.5%
+  - functions: 77.8%
+- 目的: #1912〜#1914 で route / application / service に分割した project lifecycle、hierarchy、membership、task/WBS/dependency、milestone、recurring template の coverage 低下を、既存必須 `CI / backend` job で検知する
 
 ### CI / lint
 
