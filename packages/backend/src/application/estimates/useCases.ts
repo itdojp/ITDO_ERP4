@@ -90,6 +90,11 @@ function normalizeReasonText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
 function policyDeniedResponse(input: {
   result: EvaluateActionPolicyWithFallbackResult;
   reasonRequiredMessage: string;
@@ -142,13 +147,13 @@ async function auditPolicyResult(input: {
 
 export async function submitEstimateForApproval(input: {
   id: string;
-  body?: Record<string, unknown> | null;
+  body?: unknown;
   actor: EstimateActorContext;
   auditContext: AuditContext;
   ports?: EstimateApplicationPortOverrides;
 }): Promise<EstimateApplicationResult<unknown>> {
   const p = ports(input.ports);
-  const body = input.body ?? {};
+  const body = asRecord(input.body);
   const reasonText = normalizeReasonText(body.reasonText);
   const estimate = await p.db.estimate.findUnique({
     where: { id: input.id },

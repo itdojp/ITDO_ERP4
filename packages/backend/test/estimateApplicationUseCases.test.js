@@ -145,6 +145,21 @@ test('submitEstimateForApproval evaluates policy, updates in approval transactio
   assert.equal(notification.targetId, 'est-001');
 });
 
+test('submitEstimateForApproval tolerates non-object bodies', async () => {
+  const calls = [];
+  const result = await submitEstimateForApproval({
+    id: 'est-001',
+    body: 'reason as string body',
+    actor: actor(),
+    auditContext: auditContext(),
+    ports: defaultSubmitPorts(calls),
+  });
+
+  assert.equal(result.ok, true);
+  const policy = calls.find(([name]) => name === 'policy')?.[1];
+  assert.equal(policy.reasonText, '');
+});
+
 test('submitEstimateForApproval preserves absent-estimate behavior by letting approval update path decide', async () => {
   const calls = [];
   const result = await submitEstimateForApproval({
