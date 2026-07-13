@@ -12,7 +12,6 @@ import {
   reassignTimeEntry,
   submitTimeEntry,
   type TimeEntryActorContext,
-  type TimeEntryApplicationResult,
 } from '../application/timeEntries/useCases.js';
 import { auditContextFromRequest } from '../services/audit.js';
 import { parseDateParam } from '../utils/date.js';
@@ -61,16 +60,6 @@ function timeEntryActorFromRequest(req: FastifyRequest): TimeEntryActorContext {
     groupAccountIds: req.user?.groupAccountIds ?? [],
     projectIds: req.user?.projectIds ?? [],
   };
-}
-
-function sendTimeEntryApplicationResult<T>(
-  reply: FastifyReply,
-  result: TimeEntryApplicationResult<T>,
-): T | FastifyReply {
-  if (!result.ok) {
-    return reply.status(result.statusCode).send(result.body);
-  }
-  return result.value;
 }
 
 export async function registerTimeEntryRoutes(app: FastifyInstance) {
@@ -136,7 +125,13 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
           userId: req.user?.userId,
         }),
       });
-      return sendTimeEntryApplicationResult(reply, result);
+      if (!result.ok) {
+        return reply
+          .status(result.statusCode)
+          .type('application/json')
+          .send(result.body);
+      }
+      return reply.type('application/json').send(result.value);
     },
   );
 
@@ -196,7 +191,13 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
         actor: timeEntryActorFromRequest(req),
         auditContext: auditContextFromRequest(req),
       });
-      return sendTimeEntryApplicationResult(reply, result);
+      if (!result.ok) {
+        return reply
+          .status(result.statusCode)
+          .type('application/json')
+          .send(result.body);
+      }
+      return reply.type('application/json').send(result.value);
     },
   );
 
@@ -214,7 +215,13 @@ export async function registerTimeEntryRoutes(app: FastifyInstance) {
         actor: timeEntryActorFromRequest(req),
         auditContext: auditContextFromRequest(req),
       });
-      return sendTimeEntryApplicationResult(reply, result);
+      if (!result.ok) {
+        return reply
+          .status(result.statusCode)
+          .type('application/json')
+          .send(result.body);
+      }
+      return reply.type('application/json').send(result.value);
     },
   );
 }
