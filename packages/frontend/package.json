@@ -15,6 +15,8 @@
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "coverage:ui-core": "FRONTEND_COVERAGE_SCOPE=ui-core vitest run --coverage",
+    "quality-gates:test": "node ./scripts/frontend-quality-gates.test.mjs",
+    "coverage:ui-core:check": "npm run quality-gates:test && npm run coverage:ui-core && node ./scripts/check-coverage-thresholds.mjs --scope ui-core",
     "e2e": "playwright test",
     "e2e:install": "playwright install chromium",
     "lint": "eslint \"src/**/*.{ts,tsx,jsx,js}\"",

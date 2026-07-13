@@ -79,6 +79,10 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 - `packages/frontend` の依存解決（`npm ci`）
 - TypeScript typecheck: `npm run typecheck`
 - Vitest unit tests: `npm run test`
+- frontend UI core subset coverage 計測と json-summary 閾値チェック: `npm run coverage:ui-core:check`
+  - branch protection の job 名を増やさず、既存必須 `CI / frontend` の中で失敗させる
+  - 閾値判定は `packages/frontend/coverage-thresholds.json` の `ui-core.files` に列挙した core UI / server-state hook / component を `coverage-summary.json` から再集計する
+  - `packages/frontend/scripts/frontend-quality-gates.test.mjs` は、AdminSettings / RoomChat server-state 境界の対象漏れ、stale entry、閾値低下、2000行 max-lines gate を検出する
 - Vite build: `npm run build`
 
 ### CI / coverage-auth
@@ -151,7 +155,7 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 - `packages/frontend`
   - `npm run lint`
   - `npm run format:check`
-  - `max-lines` gate: frontend ESLint で UI component/module 肥大を error 2500 行として検知し、段階的に 2000/1500 行へ下げる
+  - `max-lines` gate: frontend ESLint で UI component/module 肥大を error 2000 行として検知し、次段階で 1500 行へ下げる
 - ドキュメント証跡
   - `node scripts/check-doc-image-links.mjs`
   - `make docs-test-results-index-check`
@@ -249,11 +253,13 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
 
 coverage gate は `coverage-summary.json` を入力にする段階導入方式とする。全体 coverage を一律 gate 化せず、重要 subset ごとに対象ファイルを明示する。
 
-| scope        | CI job               | summary                                                        | threshold source                            | 現行閾値                                                |
-| ------------ | -------------------- | -------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------- |
-| auth         | `CI / coverage-auth` | `packages/backend/coverage/auth/coverage-summary.json`         | `packages/backend/coverage-thresholds.json` | statements/lines 89.7%、branches 70.5%、functions 97.9% |
-| integrations | `CI / backend`       | `packages/backend/coverage/integrations/coverage-summary.json` | `packages/backend/coverage-thresholds.json` | statements/lines 91.1%、branches 72.7%、functions 97.0% |
-| chat         | `CI / backend`       | `packages/backend/coverage/chat/coverage-summary.json`         | `packages/backend/coverage-thresholds.json` | statements/lines 53.4%、branches 59.4%、functions 70.1% |
+| scope        | CI job               | summary                                                        | threshold source                             | 現行閾値                                                       |
+| ------------ | -------------------- | -------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------- |
+| auth         | `CI / coverage-auth` | `packages/backend/coverage/auth/coverage-summary.json`         | `packages/backend/coverage-thresholds.json`  | statements/lines 89.7%、branches 70.5%、functions 97.9%        |
+| integrations | `CI / backend`       | `packages/backend/coverage/integrations/coverage-summary.json` | `packages/backend/coverage-thresholds.json`  | statements/lines 91.1%、branches 72.7%、functions 97.0%        |
+| chat         | `CI / backend`       | `packages/backend/coverage/chat/coverage-summary.json`         | `packages/backend/coverage-thresholds.json`  | statements/lines 53.4%、branches 59.4%、functions 70.1%        |
+| projects     | `CI / backend`       | `packages/backend/coverage/projects/coverage-summary.json`     | `packages/backend/coverage-thresholds.json`  | statements/lines 66.2%、branches 59.5%、functions 77.8%        |
+| ui-core      | `CI / frontend`      | `packages/frontend/coverage/ui-core/coverage-summary.json`     | `packages/frontend/coverage-thresholds.json` | statements 68.2%、lines 70.6%、branches 61.1%、functions 67.3% |
 
 auth scope の対象ファイルは `packages/backend/coverage-thresholds.json` の `auth.files` を正とし、`src/plugins/auth.ts`、`src/application/auth/localIdentityShared.ts`、`src/application/auth/localIdentityUseCases.ts`、`src/routes/auth.ts`、`src/routes/auth/googleSessionRoutes.ts`、`src/routes/auth/http.ts`、`src/routes/auth/localAuthRoutes.ts`、`src/routes/auth/localCredentialAdminRoutes.ts`、`src/routes/auth/localIdentityHttp.ts`、`src/routes/auth/localIdentitySchemas.ts`、`src/routes/auth/userIdentityAdminRoutes.ts`、`src/services/authContext.ts`、`src/services/authGateway.ts`、`src/services/envValidation.ts`、`src/services/localCredentials.ts`、`src/utils/authGroupToRoleMap.ts` を対象にする。
 
@@ -263,10 +269,12 @@ integrations scope の初期対象ファイルは `packages/backend/coverage-thr
 
 chat scope の初期対象ファイルは `packages/backend/coverage-thresholds.json` の `chat.files` を正とし、`src/routes/chat.ts`、`src/routes/chatRooms.ts`、`src/routes/chat/**`、`src/routes/chatRooms/**`、chat関連service、`src/application/chat/**`、`src/adapters/notifications/chatNotificationAdapter.ts` を対象にする。新しい chat route module / service / application file を追加した場合、`coverageThresholds.test.js` が `chat.files` の更新漏れを検知する。設定済みファイルの削除・リネームは coverage checker の stale file 検査で失敗する。
 
+ui-core scope の対象ファイルは `packages/frontend/coverage-thresholds.json` の `ui-core.files` を正とし、共通 utility / UI、主要画面、AdminSettings / RoomChat の component・model・server-state hook を対象にする。AdminSettings / RoomChat 配下の production file を追加・削除した場合、`frontend-quality-gates.test.mjs` の completeness / stale file test が更新漏れを検知する。`coverage:ui-core:check` は summary から設定ファイルだけを再集計し、対象外 UI 追加で分母が恣意的に変わらないようにする。
+
 拡大時は以下を同一 PR で更新する。
 
 1. 対象 subset の coverage script
-2. `packages/backend/coverage-thresholds.json` の scope と閾値
+2. `packages/backend/coverage-thresholds.json` または `packages/frontend/coverage-thresholds.json` の scope と閾値
 3. `.github/workflows/ci.yml` の coverage job または既存 job の対象
 4. 本ドキュメントと `docs/quality/test-gaps.md`
 
