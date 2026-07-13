@@ -3,7 +3,7 @@ import { DocStatusValue, type FlowType } from '../types.js';
 import { findPeriodLock, toPeriodKey } from './periodLock.js';
 import { getEditableDays } from './worklogSetting.js';
 import { isWithinEditableDays, parseDateParam } from '../utils/date.js';
-import { isAllowedChatAckLinkTargetTable } from './chatAckLinkTargets.js';
+import { isAllowedActionPolicyChatAckLinkTargetTable } from './actionPolicyChatAckTargets.js';
 import { resolveActionPolicyRequiredActionsText } from './policyEnforcementPreset.js';
 
 export type ActionPolicyActor = {
@@ -200,7 +200,7 @@ async function evaluateChatAckCompletedGuard(ctx: GuardEvalContext) {
       } satisfies ActionPolicyGuardFailure,
     };
   }
-  if (!isAllowedChatAckLinkTargetTable(targetTable)) {
+  if (!isAllowedActionPolicyChatAckLinkTargetTable(targetTable)) {
     return {
       ok: false,
       failure: {

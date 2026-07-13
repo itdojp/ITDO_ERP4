@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { act, submitApprovalWithUpdate } from '../dist/services/approval.js';
+import { act } from '../dist/services/approval.js';
+import { submitApprovalWithUpdate } from '../dist/application/workflow/submitApproval.js';
 import { prisma } from '../dist/services/db.js';
 
 function withPrismaStubs(stubs, fn) {

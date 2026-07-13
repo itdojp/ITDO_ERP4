@@ -4,7 +4,6 @@ import { DocStatusValue } from '../types.js';
 import { prisma } from './db.js';
 import { buildAuditMetadata, logAudit, type AuditContext } from './audit.js';
 import { AppError } from './errors.js';
-import { createEvidenceSnapshotForApproval } from './evidenceSnapshot.js';
 import { stageAccountingEventForApproval } from './accountingEvents.js';
 import { logExpenseStateTransition } from './expenseStateTransitionLog.js';
 import { isExpenseQaChecklistComplete } from './expenseQaChecklist.js';
@@ -103,20 +102,6 @@ function buildRuleSnapshot(rule: any) {
     steps: rule.steps ?? null,
   };
 }
-/**
- * Options for submitApprovalWithUpdate.
- * update() runs in a transaction and should return the updated entity.
- * payload is optional when approval matching needs fields not in the update result.
- */
-type SubmitApprovalOptions = {
-  flowType: string;
-  targetTable: string;
-  targetId: string;
-  update: (tx: any) => Promise<any>;
-  payload?: Record<string, unknown>;
-  createdBy?: string;
-};
-
 const OPEN_APPROVAL_STATUSES = [
   DocStatusValue.pending_qa,
   DocStatusValue.pending_exec,
@@ -623,54 +608,6 @@ export async function createApprovalFor(
     });
   }
   return approval;
-}
-
-/**
- * Atomically update a target and create an approval instance in one transaction.
- */
-export async function submitApprovalWithUpdate(options: SubmitApprovalOptions) {
-  return prisma.$transaction(async (tx: any) => {
-    const updated = await options.update(tx);
-    const approvalPayload =
-      options.payload ?? (updated as Record<string, unknown>);
-    const approval = await createApprovalFor(
-      options.flowType,
-      options.targetTable,
-      options.targetId,
-      approvalPayload,
-      {
-        client: tx,
-        createdBy: options.createdBy,
-      },
-    );
-    const snapshotResult = await createEvidenceSnapshotForApproval(tx, {
-      approvalInstanceId: approval.id,
-      targetTable: approval.targetTable,
-      targetId: approval.targetId,
-      capturedBy: options.createdBy ?? null,
-      forceRegenerate: false,
-    });
-    if (snapshotResult.created) {
-      const snapshot = snapshotResult.snapshot;
-      await logAudit({
-        action: 'evidence_snapshot_created',
-        targetTable: 'evidence_snapshots',
-        targetId: snapshot.id,
-        userId: options.createdBy,
-        source: 'system',
-        metadata: {
-          approvalInstanceId: snapshot.approvalInstanceId,
-          targetTable: snapshot.targetTable,
-          targetId: snapshot.targetId,
-          version: snapshot.version,
-          sourceAnnotationUpdatedAt:
-            snapshot.sourceAnnotationUpdatedAt?.toISOString() ?? null,
-          trigger: 'submit_auto',
-        },
-      });
-    }
-    return { updated, approval };
-  });
 }
 
 async function updateTargetStatus(

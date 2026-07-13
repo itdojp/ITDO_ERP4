@@ -49,7 +49,7 @@ const contexts = [
     displayName: 'Workflow',
     patterns: [
       '^src/routes/(actionPolicies|approvalRules|periodLocks)\\.ts$',
-      '^src/services/(actionPolicy|actionPolicyAudit|actionPolicyErrors|approval|approvalDefaultRules|approvalEvidenceGate|approvalLogic|periodLock|reassignmentLog)\\.ts$',
+      '^src/services/(actionPolicy|actionPolicyAudit|actionPolicyChatAckTargets|actionPolicyErrors|approval|approvalDefaultRules|approvalEvidenceGate|approvalLogic|periodLock|reassignmentLog)\\.ts$',
     ],
   },
   {
@@ -109,6 +109,7 @@ const layers = [
     patterns: [
       '^src/application/expenses/.+\\.ts$',
       '^src/application/identity/.+\\.ts$',
+      '^src/application/workflow/.+\\.ts$',
       '^src/application/chat/.+\\.ts$',
       '^src/application/projects/.+\\.ts$',
       '^src/application/timeEntries/.+\\.ts$',

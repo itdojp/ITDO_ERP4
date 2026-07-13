@@ -1,6 +1,5 @@
 import { prisma } from './db.js';
-
-const ALLOWED_TARGET_TABLES = new Set(['approval_instances']);
+import { isAllowedActionPolicyChatAckLinkTargetTable } from './actionPolicyChatAckTargets.js';
 
 export type ChatAckLinkTargetValidationResult =
   | { ok: true; targetTable: 'approval_instances'; targetId: string }
@@ -44,6 +43,5 @@ export async function validateChatAckLinkTarget(options: {
 }
 
 export function isAllowedChatAckLinkTargetTable(value: string) {
-  const normalized = normalizeString(value);
-  return ALLOWED_TARGET_TABLES.has(normalized);
+  return isAllowedActionPolicyChatAckLinkTargetTable(value);
 }

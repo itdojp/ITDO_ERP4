@@ -1,9 +1,7 @@
 import type { AuditContext } from '../../services/audit.js';
 import { logAudit as defaultLogAudit } from '../../services/audit.js';
-import {
-  ExpenseQaStageRequiredError,
-  submitApprovalWithUpdate as defaultSubmitApprovalWithUpdate,
-} from '../../services/approval.js';
+import { submitApprovalWithUpdate as defaultSubmitApprovalWithUpdate } from '../workflow/submitApproval.js';
+import { ExpenseQaStageRequiredError } from '../../services/approval.js';
 import {
   createApprovalPendingNotifications as defaultCreateApprovalPendingNotifications,
   createExpenseMarkPaidNotification as defaultCreateExpenseMarkPaidNotification,

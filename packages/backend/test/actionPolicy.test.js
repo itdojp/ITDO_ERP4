@@ -620,6 +620,45 @@ test('evaluateActionPolicy: chat_ack_completed guard rejects when link missing',
   assert.equal(res.guardFailures?.[0]?.reason, 'missing_link');
 });
 
+test('evaluateActionPolicy: chat_ack_completed guard rejects unsupported target tables before loading links', async () => {
+  const policies = [
+    {
+      id: 'p1',
+      stateConstraints: null,
+      subjects: null,
+      guards: [{ type: 'chat_ack_completed' }],
+      requireReason: false,
+    },
+  ];
+  let chatAckLinksLoaded = false;
+  const fakeClient = {
+    actionPolicy: { findMany: async () => policies },
+    chatAckLink: {
+      findMany: async () => {
+        chatAckLinksLoaded = true;
+        return [];
+      },
+    },
+    chatAckRequest: { findMany: async () => [] },
+  };
+  const res = await evaluateActionPolicy(
+    {
+      flowType: 'invoice',
+      actionKey: 'approve',
+      actor: { userId: 'u1', roles: ['admin'], groupIds: [] },
+      targetTable: 'expenses',
+      targetId: 'e1',
+    },
+    { client: fakeClient },
+  );
+  assert.equal(chatAckLinksLoaded, false);
+  assert.equal(res.allowed, false);
+  assert.equal(res.reason, 'guard_failed');
+  assert.equal(res.guardFailures?.[0]?.type, 'chat_ack_completed');
+  assert.equal(res.guardFailures?.[0]?.reason, 'unsupported_target');
+  assert.deepEqual(res.guardFailures?.[0]?.details, { targetTable: 'expenses' });
+});
+
 test('evaluateActionPolicy: supports string guard shorthand', async () => {
   const policies = [
     {
