@@ -151,6 +151,66 @@ test('updateProjectMilestone synchronizes only simple unmodified draft invoices'
   ]);
 });
 
+test('updateProjectMilestone keeps the default logger when logger override is undefined', async () => {
+  const originalWarn = console.warn;
+  let warningCount = 0;
+  console.warn = () => {
+    warningCount += 1;
+  };
+  try {
+    const ports = {
+      logger: undefined,
+      db: {
+        projectMilestone: {
+          findUnique: async () => ({
+            id: 'milestone-1',
+            projectId: 'proj-1',
+            deletedAt: null,
+          }),
+          update: async ({ data }) => ({
+            id: 'milestone-1',
+            projectId: 'proj-1',
+            ...data,
+          }),
+        },
+        invoice: {
+          findFirst: async () => null,
+          findMany: async () => [
+            {
+              id: 'inv-multi',
+              totalAmount: 2000,
+              lines: [
+                { id: 'line-a', quantity: 1, unitPrice: 1000 },
+                { id: 'line-b', quantity: 1, unitPrice: 1000 },
+              ],
+            },
+          ],
+        },
+        billingLine: {
+          update: () => {
+            throw new Error('billing line update should not be called');
+          },
+        },
+        $transaction: async () => {
+          throw new Error('transaction should not be called');
+        },
+      },
+    };
+
+    const result = await updateProjectMilestone({
+      projectId: 'proj-1',
+      milestoneId: 'milestone-1',
+      body: { amount: 2000 },
+      ports,
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(warningCount, 1);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
 test('updateProjectMilestone rejects submitted linked invoices before update', async () => {
   let updateCalled = false;
   const ports = {

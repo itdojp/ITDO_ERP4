@@ -51,7 +51,11 @@ const defaultPorts: ProjectMilestoneApplicationPorts = {
 function ports(
   overrides?: ProjectMilestoneApplicationPortOverrides,
 ): ProjectMilestoneApplicationPorts {
-  return { ...defaultPorts, ...(overrides ?? {}) };
+  return {
+    ...defaultPorts,
+    ...(overrides ?? {}),
+    logger: overrides?.logger ?? defaultPorts.logger,
+  };
 }
 
 function ok<T>(value: T): ProjectMilestoneApplicationResult<T> {

@@ -97,7 +97,7 @@ Observed result:
 - `npm ci --prefix packages/backend`: PASS, 0 vulnerabilities.
 - Prisma generate: PASS.
 - backend build: PASS.
-- targeted node tests: PASS, 22 tests.
+- targeted node tests: PASS, 23 tests after Copilot review fix (22 tests before the review fix).
 - backend lint: PASS.
 - backend format-check: PASS.
 - bounded-context direction: PASS, 45 known violations ignored.
