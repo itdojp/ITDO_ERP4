@@ -1,10 +1,6 @@
-import { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { nextNumber } from '../services/numbering.js';
-import { submitApprovalWithUpdate } from '../services/approval.js';
-import { createApprovalPendingNotifications } from '../services/appNotifications.js';
-import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
-import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
-import { FlowTypeValue, DocStatusValue, TimeStatusValue } from '../types.js';
+import { DocStatusValue, TimeStatusValue } from '../types.js';
 import {
   invoiceFromTimeEntriesSchema,
   invoiceMarkPaidSchema,
@@ -13,11 +9,22 @@ import {
 import { requireProjectAccess, requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { endOfDay, parseDateParam } from '../utils/date.js';
-import { auditContextFromRequest, logAudit } from '../services/audit.js';
+import { auditContextFromRequest } from '../services/audit.js';
 import {
-  logActionPolicyFallbackAllowedIfNeeded,
-  logActionPolicyOverrideIfNeeded,
-} from '../services/actionPolicyAudit.js';
+  markInvoicePaid,
+  submitInvoiceForApproval,
+  type InvoiceActorContext,
+} from '../application/invoices/useCases.js';
+
+function invoiceActorFromRequest(req: FastifyRequest): InvoiceActorContext {
+  return {
+    userId: req.user?.userId ?? null,
+    roles: req.user?.roles ?? [],
+    groupIds: req.user?.groupIds ?? [],
+    groupAccountIds: req.user?.groupAccountIds ?? [],
+    projectIds: req.user?.projectIds ?? [],
+  };
+}
 
 export async function registerInvoiceRoutes(app: FastifyInstance) {
   const parseDate = (value?: string) => {
@@ -444,109 +451,29 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as { paidAt?: string; reasonText?: string };
-      const paidAt = body?.paidAt ? parseDate(body.paidAt) : new Date();
+      const parsedPaidAt = body?.paidAt ? parseDate(body.paidAt) : null;
+      const paidAt = parsedPaidAt ?? new Date();
       const reasonText =
         typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
-      if (body?.paidAt && !paidAt) {
+      if (body?.paidAt && !parsedPaidAt) {
         return reply.status(400).send({
           error: { code: 'INVALID_DATE', message: 'paidAt is invalid' },
         });
       }
-      const invoice = await prisma.invoice.findUnique({ where: { id } });
-      if (!invoice || invoice.deletedAt) {
-        return reply.status(404).send({
-          error: { code: 'NOT_FOUND', message: 'Invoice not found' },
-        });
-      }
-
-      const policyRes = await evaluateActionPolicyWithFallback({
-        flowType: FlowTypeValue.invoice,
-        actionKey: 'mark_paid',
-        actor: {
-          userId: req.user?.userId ?? null,
-          roles: req.user?.roles || [],
-          groupIds: req.user?.groupIds || [],
-          groupAccountIds: req.user?.groupAccountIds || [],
-        },
+      const result = await markInvoicePaid({
+        id,
+        paidAt,
         reasonText,
-        state: { status: invoice.status, projectId: invoice.projectId },
-        targetTable: 'invoices',
-        targetId: id,
+        actor: invoiceActorFromRequest(req),
+        auditContext: auditContextFromRequest(req),
       });
-      if (policyRes.policyApplied && !policyRes.allowed) {
-        if (policyRes.reason === 'reason_required') {
-          return reply.status(400).send({
-            error: {
-              code: 'REASON_REQUIRED',
-              message: 'reasonText is required for override',
-              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
-            },
-          });
-        }
-        return reply.status(403).send({
-          error: {
-            code: resolveActionPolicyDeniedCode(policyRes),
-            message: 'Invoice cannot be marked as paid',
-            details: {
-              reason: policyRes.reason,
-              matchedPolicyId: policyRes.matchedPolicyId ?? null,
-              guardFailures: policyRes.guardFailures ?? null,
-            },
-          },
-        });
+      if (!result.ok) {
+        return reply
+          .status(result.statusCode)
+          .type('application/json')
+          .send(result.body);
       }
-      await logActionPolicyFallbackAllowedIfNeeded({
-        req,
-        flowType: FlowTypeValue.invoice,
-        actionKey: 'mark_paid',
-        targetTable: 'invoices',
-        targetId: id,
-        result: policyRes,
-      });
-      await logActionPolicyOverrideIfNeeded({
-        req,
-        flowType: FlowTypeValue.invoice,
-        actionKey: 'mark_paid',
-        targetTable: 'invoices',
-        targetId: id,
-        reasonText,
-        result: policyRes,
-      });
-      if (
-        invoice.status === DocStatusValue.cancelled ||
-        invoice.status === DocStatusValue.rejected
-      ) {
-        return reply.status(409).send({
-          error: {
-            code: 'INVALID_STATUS',
-            message: 'Invoice cannot be marked as paid',
-          },
-        });
-      }
-      const actorId = req.user?.userId || 'system';
-      const updated = await prisma.invoice.update({
-        where: { id },
-        data: {
-          status: DocStatusValue.paid,
-          paidAt,
-          paidBy: actorId,
-          updatedBy: actorId,
-        },
-        include: { lines: true },
-      });
-      await logAudit({
-        ...auditContextFromRequest(req),
-        action: 'invoice_mark_paid',
-        targetTable: 'Invoice',
-        targetId: id,
-        reasonText: reasonText || undefined,
-        metadata: {
-          previousStatus: invoice.status,
-          paidAt: updated.paidAt?.toISOString(),
-          paidBy: updated.paidBy ?? null,
-        },
-      });
-      return updated;
+      return reply.type('application/json').send(result.value);
     },
   );
 
@@ -556,91 +483,19 @@ export async function registerInvoiceRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as any;
-      const reasonText =
-        typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
-      const invoice = await prisma.invoice.findUnique({
-        where: { id },
-        select: { status: true, projectId: true },
+      const result = await submitInvoiceForApproval({
+        id,
+        body,
+        actor: invoiceActorFromRequest(req),
+        auditContext: auditContextFromRequest(req),
       });
-      if (invoice) {
-        const policyRes = await evaluateActionPolicyWithFallback({
-          flowType: FlowTypeValue.invoice,
-          actionKey: 'submit',
-          actor: {
-            userId: req.user?.userId ?? null,
-            roles: req.user?.roles || [],
-            groupIds: req.user?.groupIds || [],
-            groupAccountIds: req.user?.groupAccountIds || [],
-          },
-          reasonText,
-          state: { status: invoice.status, projectId: invoice.projectId },
-          targetTable: 'invoices',
-          targetId: id,
-        });
-        if (policyRes.policyApplied && !policyRes.allowed) {
-          if (policyRes.reason === 'reason_required') {
-            return reply.status(400).send({
-              error: {
-                code: 'REASON_REQUIRED',
-                message: 'reasonText is required for override',
-                details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
-              },
-            });
-          }
-          return reply.status(403).send({
-            error: {
-              code: resolveActionPolicyDeniedCode(policyRes),
-              message: 'Invoice cannot be submitted',
-              details: {
-                reason: policyRes.reason,
-                matchedPolicyId: policyRes.matchedPolicyId ?? null,
-                guardFailures: policyRes.guardFailures ?? null,
-              },
-            },
-          });
-        }
-        await logActionPolicyFallbackAllowedIfNeeded({
-          req,
-          flowType: FlowTypeValue.invoice,
-          actionKey: 'submit',
-          targetTable: 'invoices',
-          targetId: id,
-          result: policyRes,
-        });
-        await logActionPolicyOverrideIfNeeded({
-          req,
-          flowType: FlowTypeValue.invoice,
-          actionKey: 'submit',
-          targetTable: 'invoices',
-          targetId: id,
-          reasonText,
-          result: policyRes,
-        });
+      if (!result.ok) {
+        return reply
+          .status(result.statusCode)
+          .type('application/json')
+          .send(result.body);
       }
-      const actorUserId = req.user?.userId || 'system';
-      const { updated, approval } = await submitApprovalWithUpdate({
-        flowType: FlowTypeValue.invoice,
-        targetTable: 'invoices',
-        targetId: id,
-        update: (tx) =>
-          tx.invoice.update({
-            where: { id },
-            data: { status: DocStatusValue.pending_qa },
-          }),
-        createdBy: req.user?.userId,
-      });
-      await createApprovalPendingNotifications({
-        approvalInstanceId: approval.id,
-        projectId: approval.projectId,
-        requesterUserId: actorUserId,
-        actorUserId,
-        flowType: approval.flowType,
-        targetTable: approval.targetTable,
-        targetId: approval.targetId,
-        currentStep: approval.currentStep,
-        steps: approval.steps,
-      });
-      return updated;
+      return reply.type('application/json').send(result.value);
     },
   );
 }
