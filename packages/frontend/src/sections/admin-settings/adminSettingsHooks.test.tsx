@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAdminSettingsAccountingMappingRules } from './useAdminSettingsAccountingMappingRules';
 import { useAdminSettingsIntegrations } from './useAdminSettingsIntegrations';
+import { getApprovalRuleSeriesKey } from './adminSettingsModel';
 import { useAdminSettingsPolicyResources } from './useAdminSettingsPolicyResources';
 import { useAdminSettingsReconciliation } from './useAdminSettingsReconciliation';
 import { useAdminSettingsTemplates } from './useAdminSettingsTemplates';
@@ -220,5 +221,80 @@ describe('AdminSettings resource hooks', () => {
 
     expect(api).not.toHaveBeenCalled();
     expect(setMessage).toHaveBeenCalledWith('subjects のJSONが不正です');
+  });
+
+  it('loads approval-rule audit logs per series and merges version history', async () => {
+    const activeRule = {
+      id: 'rule-current',
+      flowType: 'expense',
+      ruleKey: 'expense-default',
+      version: 2,
+      isActive: true,
+      conditions: {},
+      steps: [],
+      createdAt: '2026-07-10T00:00:00.000Z',
+      updatedAt: '2026-07-11T00:00:00.000Z',
+      effectiveFrom: '2026-07-11T00:00:00.000Z',
+      effectiveTo: null,
+      supersedesRuleId: 'rule-previous',
+    };
+    const previousRule = {
+      ...activeRule,
+      id: 'rule-previous',
+      version: 1,
+      updatedAt: '2026-07-09T00:00:00.000Z',
+      effectiveFrom: '2026-07-09T00:00:00.000Z',
+      effectiveTo: '2026-07-11T00:00:00.000Z',
+      supersedesRuleId: null,
+    };
+    api.mockImplementation((path: string) => {
+      if (path === '/approval-rules') {
+        return Promise.resolve({ items: [activeRule, previousRule] });
+      }
+      if (
+        path ===
+        '/audit-logs?targetTable=approval_rules&targetId=rule-current&limit=50&format=json'
+      ) {
+        return Promise.resolve({
+          items: [
+            { id: 'log-2', createdAt: '2026-07-12T00:00:00.000Z' },
+            { id: 'log-1', createdAt: '2026-07-11T12:00:00.000Z' },
+          ],
+        });
+      }
+      if (
+        path ===
+        '/audit-logs?targetTable=approval_rules&targetId=rule-previous&limit=50&format=json'
+      ) {
+        return Promise.resolve({
+          items: [
+            { id: 'log-1', createdAt: '2026-07-11T12:00:00.000Z' },
+            { id: 'log-0', createdAt: '2026-07-08T00:00:00.000Z' },
+          ],
+        });
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+
+    const { result } = renderAdminHook(useAdminSettingsPolicyResources);
+
+    await act(async () => {
+      await result.current.approvalRules.loadApprovalRules();
+    });
+
+    await act(async () => {
+      await result.current.approvalRules.loadAuditLogs(activeRule);
+    });
+
+    const seriesKey = getApprovalRuleSeriesKey(activeRule);
+    await waitFor(() =>
+      expect(result.current.approvalRules.auditLogs[seriesKey]).toEqual([
+        { id: 'log-2', createdAt: '2026-07-12T00:00:00.000Z' },
+        { id: 'log-1', createdAt: '2026-07-11T12:00:00.000Z' },
+        { id: 'log-0', createdAt: '2026-07-08T00:00:00.000Z' },
+      ]),
+    );
+    expect(result.current.approvalRules.auditSelected[seriesKey]).toBe('log-2');
+    expect(result.current.approvalRules.auditOpen[seriesKey]).toBe(true);
   });
 });

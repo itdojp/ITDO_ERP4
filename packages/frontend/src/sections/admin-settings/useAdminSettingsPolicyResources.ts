@@ -244,25 +244,47 @@ export function useAdminSettingsPolicyResources({
 
   const loadApprovalRuleAuditLogs = useCallback(
     async (rule: ApprovalRule) => {
-      const key = rule.id;
+      const key = getApprovalRuleSeriesKey(rule);
+      const seriesRules = ruleItems.filter(
+        (item) => getApprovalRuleSeriesKey(item) === key,
+      );
       setApprovalRuleAuditLoading((current) => ({ ...current, [key]: true }));
       try {
-        const query = new URLSearchParams({
-          targetTable: 'approval_rules',
-          targetId: rule.id,
-          limit: '20',
-        });
-        const res = await api<{ items: AuditLogItem[] }>(
-          `/audit-logs?${query.toString()}`,
+        const responses = await Promise.all(
+          seriesRules.map(async (seriesRule) => {
+            const query = new URLSearchParams({
+              targetTable: 'approval_rules',
+              targetId: seriesRule.id,
+              limit: '50',
+              format: 'json',
+            });
+            const res = await api<{ items: AuditLogItem[] }>(
+              `/audit-logs?${query.toString()}`,
+            );
+            return res.items || [];
+          }),
+        );
+        const mergedLogs = Array.from(
+          new Map(
+            responses
+              .flat()
+              .sort((left, right) => {
+                const leftTime = parseDateTime(left.createdAt)?.getTime() ?? 0;
+                const rightTime =
+                  parseDateTime(right.createdAt)?.getTime() ?? 0;
+                return rightTime - leftTime;
+              })
+              .map((item) => [item.id, item]),
+          ).values(),
         );
         setApprovalRuleAuditLogs((current) => ({
           ...current,
-          [key]: res.items || [],
+          [key]: mergedLogs,
         }));
         setApprovalRuleAuditOpen((current) => ({ ...current, [key]: true }));
         setApprovalRuleAuditSelected((current) => ({
           ...current,
-          [key]: (res.items || [])[0]?.id || '',
+          [key]: mergedLogs[0]?.id || '',
         }));
       } catch (err) {
         logError('loadApprovalRuleAuditLogs failed', err);
@@ -276,7 +298,7 @@ export function useAdminSettingsPolicyResources({
         }));
       }
     },
-    [logError],
+    [logError, ruleItems],
   );
 
   const loadActionPolicyAuditLogs = useCallback(
