@@ -54,6 +54,7 @@
 - [Issue #1919 Purchase order application boundary verification](2026-07-13-issue1919-purchase-order-application-boundary.md)
 - [Issue #1920 VendorDocs application boundary verification](2026-07-13-issue1920-vendor-docs-application-boundary.md)
 - [Issue #1921 Leave application boundary verification](2026-07-13-issue1921-leave-application-boundary.md)
+- [Issue #1922 Send application boundary verification](2026-07-13-issue1922-send-application-boundary.md)
 
 ### 2026-07-12
 
