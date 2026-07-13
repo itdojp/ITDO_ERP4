@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -35,6 +36,22 @@ type ChatSearchItem = {
   createdAt: string;
   room: ChatRoom;
 };
+
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
+};
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 const { api, apiResponse, getAuthState } = vi.hoisted(() => ({
   api: vi.fn(),
@@ -193,6 +210,16 @@ function installApiMock(options: {
     }
   >;
   failOnNotificationSave?: string[];
+  postedMessages?: Array<{
+    roomId: string;
+    body: unknown;
+  }>;
+  postMessageResponse?: ChatMessage & {
+    warning?: { code?: string; message?: string };
+  };
+  postMessagePromise?: Promise<
+    ChatMessage & { warning?: { code?: string; message?: string } }
+  >;
 }) {
   const failOnSearch = new Set(options.failOnSearch ?? []);
   const failOnGlobalSearch = new Set(options.failOnGlobalSearch ?? []);
@@ -268,6 +295,22 @@ function installApiMock(options: {
             options.messagesByRoom[roomId] ??
             [];
           return { items } as never;
+        }
+        if (resource === 'messages' && method === 'POST') {
+          const body = JSON.parse(String(init?.body ?? '{}')) as unknown;
+          options.postedMessages?.push({ roomId, body });
+          if (options.postMessagePromise) {
+            return (await options.postMessagePromise) as never;
+          }
+          return (options.postMessageResponse ??
+            makeMessage({
+              id: 'posted-message',
+              roomId,
+              body:
+                body && typeof body === 'object' && 'body' in body
+                  ? String((body as { body?: unknown }).body)
+                  : 'posted',
+            })) as never;
         }
         if (resource === 'ai-summary' && method === 'POST') {
           if (failOnExternalSummary.has(roomId)) {
@@ -436,6 +479,9 @@ describe('RoomChat', () => {
     });
     expect(screen.getByText('メッセージなし')).toBeInTheDocument();
 
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '送信' })).not.toBeDisabled();
+    });
     fireEvent.click(screen.getByRole('button', { name: '送信' }));
     expect(
       await screen.findByText('本文を入力してください'),
@@ -450,6 +496,57 @@ describe('RoomChat', () => {
         '確認対象（ユーザID/グループ/ロール）を入力してください',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('prevents duplicate message submission while the first post is in flight', async () => {
+    const post = deferred<
+      ChatMessage & { warning?: { code?: string; message?: string } }
+    >();
+    const postedMessages: Array<{ roomId: string; body: unknown }> = [];
+
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' })],
+      messagesByRoom: {
+        'room-1': [],
+      },
+      postedMessages,
+      postMessagePromise: post.promise,
+    });
+
+    render(<RoomChat />);
+
+    const roomSelect = screen.getByRole('combobox', { name: 'ルーム' });
+    fireEvent.change(roomSelect, { target: { value: 'room-1' } });
+    await waitFor(() => {
+      expect(roomSelect).toHaveValue('room-1');
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('Markdownで入力'), {
+      target: { value: 'duplicate guard' },
+    });
+    const submit = screen.getByRole('button', { name: '送信' });
+
+    fireEvent.click(submit);
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(postedMessages).toHaveLength(1));
+    expect(postedMessages[0]).toEqual({
+      roomId: 'room-1',
+      body: {
+        body: 'duplicate guard',
+      },
+    });
+
+    await act(async () => {
+      post.resolve(
+        makeMessage({
+          id: 'posted-message',
+          roomId: 'room-1',
+          body: 'duplicate guard',
+        }),
+      );
+      await post.promise;
+    });
   });
 
   it('hides the general-affairs scope switch when the user is not authorized', async () => {

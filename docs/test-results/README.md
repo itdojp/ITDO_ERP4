@@ -55,6 +55,7 @@
 - [Issue #1920 VendorDocs application boundary verification](2026-07-13-issue1920-vendor-docs-application-boundary.md)
 - [Issue #1921 Leave application boundary verification](2026-07-13-issue1921-leave-application-boundary.md)
 - [Issue #1922 Send application boundary verification](2026-07-13-issue1922-send-application-boundary.md)
+- [Issue #1923 RoomChat server-state boundary verification](2026-07-13-issue1923-roomchat-server-state.md)
 
 ### 2026-07-12
 

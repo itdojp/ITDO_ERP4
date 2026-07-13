@@ -8,7 +8,7 @@ import React, {
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
-import { api, apiResponse, getAuthState } from '../api';
+import { getAuthState } from '../api';
 import {
   Combobox,
   MentionComposer,
@@ -19,7 +19,6 @@ import {
 } from '../ui';
 import { copyToClipboard } from '../utils/clipboard';
 import { buildOpenHash } from '../utils/deepLink';
-import { toIsoFromLocalInput, toLocalDateTimeValue } from '../utils/datetime';
 import { resolveAttachmentKind } from '../utils/attachments';
 import {
   WorkflowMetricGrid,
@@ -31,23 +30,43 @@ import {
   buildDisplayedRooms,
   buildExcerpt,
   escapeMarkdownLinkLabel,
-  filterVisibleRoomsForUser,
   formatRoomLabel,
   isAckRequest,
   markdownAllowedElements,
   normalizeStringArray,
-  pageSize,
   parseTags,
   parseUserIds,
   sanitizeFilename,
   transformLinkUri,
   type ChatMessage,
-  type ChatRoom,
   type ChatSearchItem,
-  type MentionCandidates,
 } from './room-chat/roomChatModel';
+import {
+  ackRequest,
+  cancelAckRequestById,
+  createDmRoom,
+  createPrivateGroupRoom,
+  downloadMessageAttachment,
+  inviteChatRoomMembers,
+  postMessageReaction,
+  postRoomAckRequest,
+  postRoomMessage,
+  previewRoomAckTargets,
+  revokeAckRequest,
+  summarizeRoomMessages,
+  summarizeRoomMessagesWithExternalAi,
+  uploadMessageAttachment,
+} from './room-chat/roomChatApi';
 import { RoomGlobalSearch } from './room-chat/RoomGlobalSearch';
 import { RoomMessageList } from './room-chat/RoomMessageList';
+import {
+  useRoomChatAckCandidates,
+  useRoomChatMentionCandidates,
+} from './room-chat/useRoomChatCandidates';
+import { useRoomChatGlobalSearch } from './room-chat/useRoomChatGlobalSearch';
+import { useRoomChatMessages } from './room-chat/useRoomChatMessages';
+import { useRoomChatNotificationSetting } from './room-chat/useRoomChatNotificationSetting';
+import { useRoomChatRooms } from './room-chat/useRoomChatRooms';
 
 export const RoomChat: React.FC = () => {
   const auth = getAuthState();
@@ -65,14 +84,23 @@ export const RoomChat: React.FC = () => {
   const canSeeAllMeta =
     roles.includes('admin') || roles.includes('mgmt') || roles.includes('exec');
 
-  const [rooms, setRooms] = useState<ChatRoom[]>([]);
-  const [roomId, setRoomId] = useState('');
-  const [roomMessage, setRoomMessage] = useState('');
+  const {
+    rooms,
+    roomId,
+    setRoomId,
+    roomMessage,
+    setRoomMessage,
+    selectedRoom,
+    loadRooms,
+    resolveProjectRoom,
+  } = useRoomChatRooms({ canSeeAllMeta });
   const [postWarning, setPostWarning] = useState('');
   const [roomListScope, setRoomListScope] = useState<'all' | 'ga_personal'>(
     'all',
   );
   const [roomListQuery, setRoomListQuery] = useState('');
+  const [filterTag, setFilterTag] = useState('');
+  const [filterQuery, setFilterQuery] = useState('');
   const [pendingOpenMessage, setPendingOpenMessage] = useState<{
     roomId: string;
     messageId: string;
@@ -80,6 +108,7 @@ export const RoomChat: React.FC = () => {
   } | null>(null);
   const currentRoomIdRef = useRef('');
   const skipNextRoomAutoLoadRef = useRef(false);
+  const isPostingRef = useRef(false);
 
   useEffect(() => {
     currentRoomIdRef.current = roomId;
@@ -106,19 +135,22 @@ export const RoomChat: React.FC = () => {
         handler as EventListener,
       );
     };
-  }, []);
+  }, [setRoomId]);
 
-  const selectedRoom = useMemo(
-    () => rooms.find((room) => room.id === roomId) || null,
-    [rooms, roomId],
-  );
-
-  const [items, setItems] = useState<ChatMessage[]>([]);
+  const {
+    items,
+    setItems,
+    hasMore,
+    isLoading,
+    setIsLoading,
+    isLoadingMore,
+    message,
+    setMessage,
+    unreadCount,
+    highlightSince,
+    loadMessages,
+  } = useRoomChatMessages({ roomId, filterQuery, filterTag });
   const [nowMs, setNowMs] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [message, setMessage] = useState('');
   const [summary, setSummary] = useState('');
   const [summaryProvider, setSummaryProvider] = useState('');
   const [summaryModel, setSummaryModel] = useState('');
@@ -142,9 +174,6 @@ export const RoomChat: React.FC = () => {
   } | null>(null);
   const [ackPreviewMessage, setAckPreviewMessage] = useState('');
   const [ackPreviewLoading, setAckPreviewLoading] = useState(false);
-  const [mentionCandidates, setMentionCandidates] = useState<MentionCandidates>(
-    {},
-  );
   const [mentionUserIds, setMentionUserIds] = useState<string[]>([]);
   const [mentionGroupIds, setMentionGroupIds] = useState<string[]>([]);
   const [mentionAll, setMentionAll] = useState(false);
@@ -157,8 +186,10 @@ export const RoomChat: React.FC = () => {
   const [ackGroupLabelOverrides, setAckGroupLabelOverrides] = useState<
     Record<string, string>
   >({});
-  const [ackCandidates, setAckCandidates] = useState<MentionCandidates>({});
-  const [ackCandidateQuery, setAckCandidateQuery] = useState('');
+  const { mentionCandidates, fetchMentionComposerCandidates } =
+    useRoomChatMentionCandidates(roomId);
+  const { ackCandidates, ackCandidateQuery, setAckCandidateQuery } =
+    useRoomChatAckCandidates(roomId);
   const mentionUserLabelMap = useMemo(() => {
     return new Map(
       (mentionCandidates.users || []).map((user) => [
@@ -210,8 +241,6 @@ export const RoomChat: React.FC = () => {
     [ackGroupLabelMap, ackGroupLabelOverrides, mentionGroupLabelMap],
   );
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
-  const [filterTag, setFilterTag] = useState('');
-  const [filterQuery, setFilterQuery] = useState('');
   const [pendingUndoRevokeAck, setPendingUndoRevokeAck] = useState<{
     requestId: string;
   } | null>(null);
@@ -429,103 +458,55 @@ export const RoomChat: React.FC = () => {
         handler as EventListener,
       );
     };
-  }, []);
+  }, [setRoomId]);
 
-  const [globalQuery, setGlobalQuery] = useState('');
-  const [globalItems, setGlobalItems] = useState<ChatSearchItem[]>([]);
-  const [globalHasMore, setGlobalHasMore] = useState(false);
-  const [globalMessage, setGlobalMessage] = useState('');
-  const [globalLoading, setGlobalLoading] = useState(false);
+  const {
+    globalQuery,
+    setGlobalQuery,
+    globalItems,
+    setGlobalItems,
+    globalHasMore,
+    setGlobalHasMore,
+    globalMessage,
+    setGlobalMessage,
+    globalLoading,
+    loadGlobalSearch,
+  } = useRoomChatGlobalSearch();
 
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [highlightSince, setHighlightSince] = useState<Date | null>(null);
   const [pendingScrollMessageId, setPendingScrollMessageId] = useState('');
   const [highlightMessageId, setHighlightMessageId] = useState('');
 
-  const [notificationSetting, setNotificationSetting] = useState<{
-    notifyAllPosts: boolean;
-    notifyMentions: boolean;
-    muteUntil: string | null;
-  } | null>(null);
-  const [notificationSettingMessage, setNotificationSettingMessage] =
-    useState('');
-  const [isNotificationSettingLoading, setIsNotificationSettingLoading] =
-    useState(false);
-  const [muteUntilInput, setMuteUntilInput] = useState('');
+  const {
+    notificationSetting,
+    setNotificationSetting,
+    notificationSettingMessage,
+    isNotificationSettingLoading,
+    muteUntilInput,
+    setMuteUntilInput,
+    clearNotificationSetting,
+    loadNotificationSetting,
+    saveNotificationSetting,
+    applyMutePreset,
+  } = useRoomChatNotificationSetting({ roomId });
 
   const [createPrivateName, setCreatePrivateName] = useState('');
   const [createPrivateMembers, setCreatePrivateMembers] = useState('');
   const [createDmPartner, setCreateDmPartner] = useState('');
   const [inviteMembers, setInviteMembers] = useState('');
 
-  const loadRooms = async () => {
-    try {
-      const res = await api<{ items?: ChatRoom[] }>('/chat-rooms');
-      const items = Array.isArray(res.items) ? res.items : [];
-      const joinedRooms = filterVisibleRoomsForUser(items, canSeeAllMeta);
-      setRooms(joinedRooms);
-      setRoomMessage('');
-      setRoomId((currentRoomId) => {
-        if (!currentRoomId && joinedRooms.length) {
-          return joinedRooms[0].id;
-        }
-        if (
-          currentRoomId &&
-          !joinedRooms.some((room) => room.id === currentRoomId)
-        ) {
-          return joinedRooms[0]?.id || '';
-        }
-        return currentRoomId;
-      });
-    } catch (err) {
-      console.error('Failed to load chat rooms.', err);
-      setRooms([]);
-      setRoomMessage('ルーム一覧の取得に失敗しました');
-    }
-  };
-
   useEffect(() => {
-    const resolveProjectRoom = async (projectId: string) => {
-      const existingRoom = rooms.find(
-        (room) => room.type === 'project' && room.projectId === projectId,
-      );
-      if (existingRoom) {
-        setRoomListScope('all');
-        setRoomListQuery('');
-        setRoomId(existingRoom.id);
-        setRoomMessage('');
-        setMessage('');
-        return;
-      }
-      try {
-        const res = await api<{ items?: ChatRoom[] }>('/chat-rooms');
-        const items = Array.isArray(res.items) ? res.items : [];
-        const visibleRooms = filterVisibleRoomsForUser(items, canSeeAllMeta);
-        setRooms(visibleRooms);
-        const nextRoom = visibleRooms.find(
-          (room) => room.type === 'project' && room.projectId === projectId,
-        );
-        if (nextRoom) {
-          setRoomListScope('all');
-          setRoomListQuery('');
-          setRoomId(nextRoom.id);
-          setRoomMessage('');
-          setMessage('');
-          return;
-        }
-        setRoomMessage('指定された案件ルームが見つかりません');
-      } catch (err) {
-        console.error('Failed to resolve project room.', err);
-        setRoomMessage('指定された案件ルームの解決に失敗しました');
-      }
-    };
-
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<{ projectId?: unknown }>).detail;
       const projectId =
         detail && typeof detail.projectId === 'string' ? detail.projectId : '';
       if (!projectId) return;
-      resolveProjectRoom(projectId).catch(() => undefined);
+      setRoomListScope('all');
+      setRoomListQuery('');
+      resolveProjectRoom(projectId)
+        .then((resolved) => {
+          if (resolved) setMessage('');
+        })
+        .catch(() => undefined);
     };
     window.addEventListener('erp4_open_project_chat', handler as EventListener);
     return () => {
@@ -534,173 +515,7 @@ export const RoomChat: React.FC = () => {
         handler as EventListener,
       );
     };
-  }, [canSeeAllMeta, rooms]);
-
-  const loadNotificationSetting = useCallback(
-    async (targetRoomId: string) => {
-      setIsNotificationSettingLoading(true);
-      setNotificationSettingMessage('');
-      try {
-        const res = await api<{
-          notifyAllPosts?: boolean;
-          notifyMentions?: boolean;
-          muteUntil?: string | null;
-        }>(`/chat-rooms/${targetRoomId}/notification-setting`);
-        const nextSetting = {
-          notifyAllPosts: res.notifyAllPosts !== false,
-          notifyMentions: res.notifyMentions !== false,
-          muteUntil: res.muteUntil ?? null,
-        };
-        setNotificationSetting(nextSetting);
-        setMuteUntilInput(toLocalDateTimeValue(nextSetting.muteUntil));
-      } catch (err) {
-        console.error('Failed to load notification settings.', err);
-        setNotificationSettingMessage('通知設定の取得に失敗しました');
-        setNotificationSetting(null);
-        setMuteUntilInput('');
-      } finally {
-        setIsNotificationSettingLoading(false);
-      }
-    },
-    [
-      setIsNotificationSettingLoading,
-      setMuteUntilInput,
-      setNotificationSetting,
-      setNotificationSettingMessage,
-    ],
-  );
-
-  const saveNotificationSetting = async () => {
-    if (!roomId || !notificationSetting) return;
-    setIsNotificationSettingLoading(true);
-    setNotificationSettingMessage('');
-    const muteUntil = toIsoFromLocalInput(muteUntilInput);
-    if (muteUntilInput && !muteUntil) {
-      setNotificationSettingMessage('ミュート期限の形式が不正です');
-      setIsNotificationSettingLoading(false);
-      return;
-    }
-    try {
-      const res = await api<{
-        notifyAllPosts?: boolean;
-        notifyMentions?: boolean;
-        muteUntil?: string | null;
-      }>(`/chat-rooms/${roomId}/notification-setting`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          notifyAllPosts: notificationSetting.notifyAllPosts,
-          notifyMentions: notificationSetting.notifyMentions,
-          muteUntil,
-        }),
-      });
-      const nextSetting = {
-        notifyAllPosts: res.notifyAllPosts !== false,
-        notifyMentions: res.notifyMentions !== false,
-        muteUntil: res.muteUntil ?? null,
-      };
-      setNotificationSetting(nextSetting);
-      setMuteUntilInput(toLocalDateTimeValue(nextSetting.muteUntil));
-      setNotificationSettingMessage('通知設定を保存しました');
-    } catch (err) {
-      console.error('Failed to save notification settings.', err);
-      setNotificationSettingMessage('通知設定の保存に失敗しました');
-    } finally {
-      setIsNotificationSettingLoading(false);
-    }
-  };
-
-  const applyMutePreset = (minutes: number | null) => {
-    if (!minutes) {
-      setMuteUntilInput('');
-      return;
-    }
-    const now = new Date();
-    const next = new Date(now.getTime() + minutes * 60 * 1000);
-    setMuteUntilInput(toLocalDateTimeValue(next.toISOString()));
-  };
-
-  const fetchUnreadState = async (targetRoomId: string) => {
-    const res = await api<{ unreadCount?: number; lastReadAt?: string | null }>(
-      `/chat-rooms/${targetRoomId}/unread`,
-    );
-    const nextUnread =
-      typeof res.unreadCount === 'number' ? res.unreadCount : 0;
-    const lastReadAt =
-      typeof res.lastReadAt === 'string' ? new Date(res.lastReadAt) : null;
-    setUnreadCount(nextUnread);
-    setHighlightSince(lastReadAt);
-    return nextUnread;
-  };
-
-  const markRead = async (targetRoomId: string) => {
-    try {
-      await api(`/chat-rooms/${targetRoomId}/read`, { method: 'POST' });
-    } catch (err) {
-      console.warn('Failed to mark read.', err);
-    }
-  };
-
-  const loadMessages = async (options?: {
-    append?: boolean;
-    before?: string;
-    query?: string;
-    tag?: string;
-  }) => {
-    if (!roomId) return;
-    const append = options?.append === true;
-    try {
-      if (append) {
-        setIsLoadingMore(true);
-      } else {
-        setIsLoading(true);
-        setItems([]);
-      }
-      setMessage('');
-
-      const before =
-        options?.before !== undefined
-          ? options.before
-          : append && items.length
-            ? items[items.length - 1]?.createdAt
-            : '';
-      const query = new URLSearchParams();
-      query.set('limit', String(pageSize));
-      if (before) query.set('before', before);
-      const effectiveTag = options?.tag !== undefined ? options.tag : filterTag;
-      const effectiveQuery =
-        options?.query !== undefined ? options.query : filterQuery;
-
-      if (effectiveTag.trim()) query.set('tag', effectiveTag.trim());
-      const trimmedQuery = effectiveQuery.trim();
-      if (trimmedQuery && trimmedQuery.length < 2) {
-        setMessage('検索語は2文字以上で入力してください');
-        setHasMore(false);
-        return;
-      }
-      if (trimmedQuery) query.set('q', trimmedQuery);
-
-      const res = await api<{ items?: ChatMessage[] }>(
-        `/chat-rooms/${roomId}/messages?${query.toString()}`,
-      );
-      const fetched = Array.isArray(res.items) ? res.items : [];
-      if (append) {
-        setItems((prev) => [...prev, ...fetched]);
-      } else {
-        setItems(fetched);
-      }
-      setHasMore(fetched.length === pageSize);
-
-      await fetchUnreadState(roomId);
-      await markRead(roomId);
-    } catch (err) {
-      console.error('Failed to load room messages.', err);
-      setMessage('メッセージの取得に失敗しました');
-      setHasMore(false);
-    } finally {
-      setIsLoading(false);
-      setIsLoadingMore(false);
-    }
-  };
+  }, [resolveProjectRoom, setMessage]);
 
   useEffect(() => {
     if (!pendingOpenMessage) return;
@@ -738,67 +553,22 @@ export const RoomChat: React.FC = () => {
 
   useEffect(() => {
     if (!roomId) {
-      setNotificationSetting(null);
-      setNotificationSettingMessage('');
-      setMuteUntilInput('');
+      clearNotificationSetting();
       return;
     }
     loadNotificationSetting(roomId);
-  }, [roomId, loadNotificationSetting]);
+  }, [clearNotificationSetting, roomId, loadNotificationSetting]);
 
   const openSearchResult = (item: ChatSearchItem) => {
     setRoomId(item.room.id);
     setMessage('');
   };
 
-  const loadGlobalSearch = async (options?: { append?: boolean }) => {
-    const append = options?.append === true;
-    const trimmed = globalQuery.trim();
-    if (trimmed.length < 2) {
-      setGlobalMessage('検索語は2文字以上で入力してください');
-      return;
-    }
-    try {
-      setGlobalLoading(true);
-      setGlobalMessage('');
-      const before =
-        append && globalItems.length
-          ? globalItems[globalItems.length - 1]?.createdAt
-          : '';
-      const query = new URLSearchParams();
-      query.set('q', trimmed);
-      query.set('limit', String(pageSize));
-      if (before) query.set('before', before);
-      const res = await api<{ items?: ChatSearchItem[] }>(
-        `/chat-messages/search?${query.toString()}`,
-      );
-      const fetched = Array.isArray(res.items) ? res.items : [];
-      setGlobalItems((prev) => (append ? [...prev, ...fetched] : fetched));
-      setGlobalHasMore(fetched.length >= pageSize);
-    } catch (err) {
-      console.error('Failed to search chat messages.', err);
-      setGlobalMessage('検索に失敗しました');
-      if (!append) setGlobalItems([]);
-      setGlobalHasMore(false);
-    } finally {
-      setGlobalLoading(false);
-    }
-  };
-
-  const uploadAttachment = async (messageId: string, file: File) => {
-    const form = new FormData();
-    form.append('file', file, file.name);
-    await api(`/chat-messages/${messageId}/attachments`, {
-      method: 'POST',
-      body: form,
-    });
-  };
-
   const downloadAttachment = async (
     attachmentId: string,
     originalName: string,
   ) => {
-    const res = await apiResponse(`/chat-attachments/${attachmentId}`);
+    const res = await downloadMessageAttachment(attachmentId);
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new Error(`download failed (${res.status}) ${text}`);
@@ -925,80 +695,6 @@ export const RoomChat: React.FC = () => {
     [setAckGroupLabelOverrides, setAckTargetGroupIds],
   );
 
-  const fetchMentionComposerCandidates = useCallback(
-    async (query: string, kind: 'user' | 'group' | 'role') => {
-      const keyword = query.trim().toLowerCase();
-      if (!keyword || !roomId) return [];
-      if (kind === 'role') {
-        return [];
-      }
-      if (kind === 'user') {
-        return (mentionCandidates.users || [])
-          .filter((user) => {
-            const userId = user.userId.trim();
-            const displayName = user.displayName ? user.displayName.trim() : '';
-            return (
-              userId.toLowerCase().includes(keyword) ||
-              displayName.toLowerCase().includes(keyword)
-            );
-          })
-          .slice(0, 50)
-          .map((user) => ({
-            id: user.userId,
-            kind: 'user' as const,
-            label: user.displayName
-              ? `${user.displayName} (${user.userId})`
-              : user.userId,
-          }));
-      }
-      if (keyword.length < 2) {
-        return [];
-      }
-
-      const localGroups = (mentionCandidates.groups || []).map((group) => ({
-        groupId: group.groupId,
-        displayName: group.displayName ? group.displayName.trim() : '',
-      }));
-      let remoteGroups: { groupId: string; displayName?: string | null }[] = [];
-      try {
-        const response = await api<MentionCandidates>(
-          `/chat-rooms/${roomId}/ack-candidates?q=${encodeURIComponent(
-            query.trim(),
-          )}`,
-        );
-        remoteGroups = response.groups || [];
-      } catch (error) {
-        console.warn('確認対象グループ候補の取得に失敗しました', error);
-      }
-      const merged = new Map<string, string>();
-      [...localGroups, ...remoteGroups].forEach((group) => {
-        const key = group.groupId?.trim();
-        if (!key) return;
-        const label =
-          group.displayName && group.displayName.trim().length > 0
-            ? group.displayName.trim()
-            : key;
-        if (!merged.has(key)) {
-          merged.set(key, label);
-        }
-      });
-      return Array.from(merged.entries())
-        .filter(([groupId, label]) => {
-          return (
-            groupId.toLowerCase().includes(keyword) ||
-            label.toLowerCase().includes(keyword)
-          );
-        })
-        .slice(0, 20)
-        .map(([groupId, label]) => ({
-          id: groupId,
-          kind: 'group' as const,
-          label: label === groupId ? groupId : `${label} (${groupId})`,
-        }));
-    },
-    [mentionCandidates.groups, mentionCandidates.users, roomId],
-  );
-
   const addAckTargetUser = (rawValue?: string) => {
     const value = (rawValue ?? ackTargetInput).trim();
     if (!value) return;
@@ -1067,19 +763,10 @@ export const RoomChat: React.FC = () => {
       return;
     }
     try {
-      const res = await api<{
-        resolvedUserIds: string[];
-        resolvedCount: number;
-        exceedsLimit: boolean;
-        invalidUserIds: string[];
-        reason?: string;
-      }>(`/chat-rooms/${roomId}/ack-requests/preview`, {
-        method: 'POST',
-        body: JSON.stringify({
-          requiredUserIds: uniqueTargets,
-          requiredGroupIds: uniqueGroupIds,
-          requiredRoles: uniqueRoles,
-        }),
+      const res = await previewRoomAckTargets(roomId, {
+        requiredUserIds: uniqueTargets,
+        requiredGroupIds: uniqueGroupIds,
+        requiredRoles: uniqueRoles,
       });
       setAckPreview(res);
     } catch (error) {
@@ -1092,6 +779,7 @@ export const RoomChat: React.FC = () => {
 
   const postMessage = async (mode: 'message' | 'ack') => {
     if (!roomId) return;
+    if (isPostingRef.current) return;
     if (!body.trim()) {
       setMessage('本文を入力してください');
       return;
@@ -1101,6 +789,7 @@ export const RoomChat: React.FC = () => {
       if (!ok) return;
     }
     try {
+      isPostingRef.current = true;
       setIsLoading(true);
       setMessage('');
       const mentions = buildMentionsPayload();
@@ -1117,9 +806,6 @@ export const RoomChat: React.FC = () => {
         tags: tags.trim() ? parseTags(tags) : undefined,
         mentions,
       };
-      const endpoint = `/chat-rooms/${roomId}/${
-        mode === 'ack' ? 'ack-requests' : 'messages'
-      }`;
       const payload =
         mode === 'ack'
           ? (() => {
@@ -1159,15 +845,12 @@ export const RoomChat: React.FC = () => {
             })()
           : basePayload;
       if (!payload) return;
-      const created = await api<
-        ChatMessage & { warning?: { code?: string; message?: string } }
-      >(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const created =
+        mode === 'ack'
+          ? await postRoomAckRequest(roomId, payload)
+          : await postRoomMessage(roomId, payload);
       if (attachmentFile) {
-        await uploadAttachment(created.id, attachmentFile);
+        await uploadMessageAttachment(created.id, attachmentFile);
       }
       setPostWarning(created.warning?.message || '');
       setBody('');
@@ -1180,17 +863,14 @@ export const RoomChat: React.FC = () => {
       console.error('Failed to post message.', err);
       setMessage('投稿に失敗しました');
     } finally {
+      isPostingRef.current = false;
       setIsLoading(false);
     }
   };
 
   const addReaction = async (id: string, emoji: string) => {
     try {
-      const updated = await api<ChatMessage>(`/chat-messages/${id}/reactions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emoji }),
-      });
+      const updated = await postMessageReaction(id, emoji);
       setItems((prev) => prev.map((item) => (item.id === id ? updated : item)));
     } catch (err) {
       console.error('Failed to add reaction.', err);
@@ -1200,10 +880,7 @@ export const RoomChat: React.FC = () => {
 
   const ack = async (requestId: string) => {
     try {
-      const updated = await api<ChatMessage['ackRequest']>(
-        `/chat-ack-requests/${requestId}/ack`,
-        { method: 'POST' },
-      );
+      const updated = await ackRequest(requestId);
       setItems((prev) =>
         prev.map((item) =>
           item.ackRequest?.id === requestId
@@ -1222,10 +899,7 @@ export const RoomChat: React.FC = () => {
 
   const revokeAck = async (requestId: string) => {
     try {
-      const updated = await api<ChatMessage['ackRequest']>(
-        `/chat-ack-requests/${requestId}/revoke`,
-        { method: 'POST' },
-      );
+      const updated = await revokeAckRequest(requestId);
       setItems((prev) =>
         prev.map((item) =>
           item.ackRequest?.id === requestId
@@ -1245,14 +919,7 @@ export const RoomChat: React.FC = () => {
 
   const cancelAckRequest = async (requestId: string, reason?: string) => {
     try {
-      const updated = await api<ChatMessage['ackRequest']>(
-        `/chat-ack-requests/${requestId}/cancel`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reason }),
-        },
-      );
+      const updated = await cancelAckRequestById(requestId, reason);
       setItems((prev) =>
         prev.map((item) =>
           item.ackRequest?.id === requestId
@@ -1274,14 +941,9 @@ export const RoomChat: React.FC = () => {
     try {
       setRoomMessage('');
       const memberUserIds = parseUserIds(createPrivateMembers);
-      const created = await api<ChatRoom>('/chat-rooms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'private_group',
-          name: createPrivateName.trim(),
-          memberUserIds: memberUserIds.length ? memberUserIds : undefined,
-        }),
+      const created = await createPrivateGroupRoom({
+        name: createPrivateName.trim(),
+        memberUserIds: memberUserIds.length ? memberUserIds : undefined,
       });
       setCreatePrivateName('');
       setCreatePrivateMembers('');
@@ -1296,14 +958,7 @@ export const RoomChat: React.FC = () => {
   const createDm = async () => {
     try {
       setRoomMessage('');
-      const created = await api<ChatRoom>('/chat-rooms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'dm',
-          partnerUserId: createDmPartner.trim(),
-        }),
-      });
+      const created = await createDmRoom(createDmPartner.trim());
       setCreateDmPartner('');
       await loadRooms();
       setRoomId(created.id);
@@ -1322,11 +977,7 @@ export const RoomChat: React.FC = () => {
         setRoomMessage('追加するユーザIDを入力してください');
         return;
       }
-      await api(`/chat-rooms/${roomId}/members`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userIds }),
-      });
+      await inviteChatRoomMembers(roomId, userIds);
       setInviteMembers('');
       setRoomMessage('メンバーを追加しました');
     } catch (err) {
@@ -1340,17 +991,10 @@ export const RoomChat: React.FC = () => {
     try {
       setIsSummarizing(true);
       setMessage('');
-      const res = await api<{ summary?: string }>(
-        `/chat-rooms/${roomId}/summary`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ limit: 120 }),
-        },
-      );
+      const summaryText = await summarizeRoomMessages(roomId);
       setSummaryProvider('');
       setSummaryModel('');
-      setSummary(typeof res.summary === 'string' ? res.summary : '');
+      setSummary(summaryText);
     } catch (err) {
       console.error('Failed to summarize room messages.', err);
       setMessage('要約の生成に失敗しました');
@@ -1378,24 +1022,13 @@ export const RoomChat: React.FC = () => {
     try {
       setIsSummarizingExternal(true);
       setMessage('');
-      const res = await api<{
-        summary?: string;
-        provider?: string;
-        model?: string;
-      }>(`/chat-rooms/${roomId}/ai-summary`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          limit: 120,
-          since: since.toISOString(),
-          until: now.toISOString(),
-        }),
+      const res = await summarizeRoomMessagesWithExternalAi(roomId, {
+        since: since.toISOString(),
+        until: now.toISOString(),
       });
-      setSummaryProvider(
-        typeof res.provider === 'string' ? res.provider : 'external',
-      );
-      setSummaryModel(typeof res.model === 'string' ? res.model : '');
-      setSummary(typeof res.summary === 'string' ? res.summary : '');
+      setSummaryProvider(res.provider);
+      setSummaryModel(res.model);
+      setSummary(res.summary);
     } catch (err) {
       console.error('Failed to generate external summary.', err);
       setMessage('外部要約の生成に失敗しました');
@@ -1426,70 +1059,6 @@ export const RoomChat: React.FC = () => {
     if (canUseGeneralAffairsInbox) return;
     setRoomListScope('all');
   }, [canUseGeneralAffairsInbox]);
-
-  useEffect(() => {
-    if (!roomId) {
-      setMentionCandidates({});
-      return;
-    }
-
-    const controller = new AbortController();
-    let cancelled = false;
-    const run = async () => {
-      try {
-        const res = await api<MentionCandidates>(
-          `/chat-rooms/${roomId}/mention-candidates`,
-          { signal: controller.signal },
-        );
-        if (!cancelled) {
-          setMentionCandidates(res || {});
-        }
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        console.warn('メンション候補の取得に失敗しました', error);
-        if (!cancelled) setMentionCandidates({});
-      }
-    };
-    run().catch(() => undefined);
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [roomId]);
-
-  useEffect(() => {
-    setAckCandidateQuery('');
-    setAckCandidates({});
-  }, [roomId]);
-
-  useEffect(() => {
-    const keyword = ackCandidateQuery.trim();
-    if (!roomId || keyword.length < 2) {
-      setAckCandidates({});
-      return;
-    }
-    let cancelled = false;
-    const controller = new AbortController();
-    const handle = window.setTimeout(() => {
-      api<MentionCandidates>(
-        `/chat-rooms/${roomId}/ack-candidates?q=${encodeURIComponent(keyword)}`,
-        { signal: controller.signal },
-      )
-        .then((res) => {
-          if (!cancelled) setAckCandidates(res || {});
-        })
-        .catch((error) => {
-          if (controller.signal.aborted) return;
-          console.warn('確認対象候補の取得に失敗しました', error);
-          if (!cancelled) setAckCandidates({});
-        });
-    }, 200);
-    return () => {
-      cancelled = true;
-      controller.abort();
-      window.clearTimeout(handle);
-    };
-  }, [roomId, ackCandidateQuery]);
 
   const displayedRooms = buildDisplayedRooms(
     rooms,
@@ -1523,7 +1092,7 @@ export const RoomChat: React.FC = () => {
         setRoomId('');
       }
     }
-  }, [currentUserId, roomId, roomListQuery, roomListScope, rooms]);
+  }, [currentUserId, roomId, roomListQuery, roomListScope, rooms, setRoomId]);
 
   const renderMessageBody = (text: string) => (
     <ReactMarkdown
