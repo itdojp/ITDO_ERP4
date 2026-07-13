@@ -4,7 +4,10 @@
     "from": "src/routes/dailyReports.ts",
     "to": "src/services/appNotifications.ts",
     "unresolvedTo": "../services/appNotifications.js",
-    "dependencyTypes": ["local", "import"],
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
     "rule": {
       "severity": "error",
       "name": "bounded-context-documents-direction"
@@ -15,54 +18,13 @@
     "from": "src/services/leaveUpcomingNotifications.ts",
     "to": "src/services/appNotifications.ts",
     "unresolvedTo": "./appNotifications.js",
-    "dependencyTypes": ["local", "import"],
+    "dependencyTypes": [
+      "local",
+      "import"
+    ],
     "rule": {
       "severity": "error",
       "name": "bounded-context-documents-direction"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/routes/approvalRules.ts",
-    "to": "src/services/appNotifications.ts",
-    "unresolvedTo": "../services/appNotifications.js",
-    "dependencyTypes": ["local", "import"],
-    "rule": {
-      "severity": "error",
-      "name": "bounded-context-workflow-direction"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/routes/approvalRules.ts",
-    "to": "src/services/chatAckTemplates.ts",
-    "unresolvedTo": "../services/chatAckTemplates.js",
-    "dependencyTypes": ["local", "import"],
-    "rule": {
-      "severity": "error",
-      "name": "bounded-context-workflow-direction"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/services/actionPolicy.ts",
-    "to": "src/services/chatAckLinkTargets.ts",
-    "unresolvedTo": "./chatAckLinkTargets.js",
-    "dependencyTypes": ["local", "import"],
-    "rule": {
-      "severity": "error",
-      "name": "bounded-context-workflow-direction"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/services/approval.ts",
-    "to": "src/services/evidenceSnapshot.ts",
-    "unresolvedTo": "./evidenceSnapshot.js",
-    "dependencyTypes": ["local", "import"],
-    "rule": {
-      "severity": "error",
-      "name": "bounded-context-workflow-direction"
     }
   }
 ]

@@ -7,10 +7,6 @@ import {
 } from '../services/approval.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
-import {
-  createApprovalOutcomeNotification,
-  createApprovalPendingNotifications,
-} from '../services/appNotifications.js';
 import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
 import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
 import {
@@ -26,12 +22,12 @@ import {
 import { DocStatusValue, TimeStatusValue } from '../types.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { parseDateParam } from '../utils/date.js';
-import { applyChatAckTemplates } from '../services/chatAckTemplates.js';
 import { LeaveCompBalanceShortageError } from '../services/leaveCompGrants.js';
 import {
   hasQaStageBeforeExec,
   normalizeRuleStepsWithPolicy,
 } from '../services/approvalLogic.js';
+import { runApprovalActionSideEffects } from '../application/workflow/approvalActionEffects.js';
 
 function hasValidSteps(steps: unknown) {
   if (Array.isArray(steps)) {
@@ -854,64 +850,14 @@ export async function registerApprovalRuleRoutes(app: FastifyInstance) {
           where: { id },
           include: { steps: true },
         });
-        if (updated?.createdBy) {
-          if (result.status === DocStatusValue.approved) {
-            await createApprovalOutcomeNotification({
-              approvalInstanceId: updated.id,
-              projectId: updated.projectId,
-              requesterUserId: updated.createdBy,
-              actorUserId: userId,
-              flowType: updated.flowType,
-              targetTable: updated.targetTable,
-              targetId: updated.targetId,
-              outcome: 'approved',
-            });
-          } else if (result.status === DocStatusValue.rejected) {
-            await createApprovalOutcomeNotification({
-              approvalInstanceId: updated.id,
-              projectId: updated.projectId,
-              requesterUserId: updated.createdBy,
-              actorUserId: userId,
-              flowType: updated.flowType,
-              targetTable: updated.targetTable,
-              targetId: updated.targetId,
-              outcome: 'rejected',
-            });
-          } else if (
-            result.status === DocStatusValue.pending_qa ||
-            result.status === DocStatusValue.pending_exec
-          ) {
-            await createApprovalPendingNotifications({
-              approvalInstanceId: updated.id,
-              projectId: updated.projectId,
-              requesterUserId: updated.createdBy,
-              actorUserId: userId,
-              flowType: updated.flowType,
-              targetTable: updated.targetTable,
-              targetId: updated.targetId,
-              currentStep: updated.currentStep,
-              steps: updated.steps,
-            });
-          }
-        }
-        if (instance) {
-          try {
-            await applyChatAckTemplates({
-              req,
-              flowType: instance.flowType,
-              actionKey: body.action,
-              targetTable: 'approval_instances',
-              targetId: instance.id,
-              projectId: instance.projectId,
-              actorUserId: userId,
-            });
-          } catch (err) {
-            req.log?.warn(
-              { err, approvalInstanceId: instance.id },
-              'applyChatAckTemplates failed',
-            );
-          }
-        }
+        await runApprovalActionSideEffects({
+          req,
+          instance,
+          updated,
+          result,
+          actionKey: body.action,
+          actorUserId: userId,
+        });
         return result;
       } catch (err: any) {
         if (err instanceof ExpenseQaChecklistIncompleteError) {

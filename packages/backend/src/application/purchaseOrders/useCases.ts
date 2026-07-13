@@ -1,5 +1,5 @@
 import type { AuditContext } from '../../services/audit.js';
-import { submitApprovalWithUpdate as defaultSubmitApprovalWithUpdate } from '../../services/approval.js';
+import { submitApprovalWithUpdate as defaultSubmitApprovalWithUpdate } from '../workflow/submitApproval.js';
 import { createApprovalPendingNotifications as defaultCreateApprovalPendingNotifications } from '../../services/appNotifications.js';
 import {
   evaluateActionPolicyWithFallback as defaultEvaluateActionPolicyWithFallback,
