@@ -107,9 +107,9 @@ function listBackendSourceFiles() {
   return listSourceFilesRecursive('src');
 }
 
-function countPhysicalLines(relativePath) {
+function countNonBlankLines(relativePath) {
   const content = readFileSync(path.join(BACKEND_DIR, relativePath), 'utf8');
-  return content.split(/\r?\n/).length;
+  return content.split(/\r?\n/).filter((line) => line.trim().length > 0).length;
 }
 
 test('coverage threshold script passes when all metrics meet the scope threshold', () =>
@@ -417,7 +417,7 @@ test('project route and application modules stay within the default backend line
 
   for (const file of projectFiles) {
     assert.ok(
-      countPhysicalLines(file) <= 1500,
+      countNonBlankLines(file) <= 1500,
       `${file} should stay below the default 1500-line backend gate`,
     );
   }

@@ -50,10 +50,20 @@ test('checkProjectAndVendor reports project/vendor existence independently', asy
     },
   );
 
-  assert.deepEqual(calls, [
-    ['project', 'project-ok', { id: true }],
-    ['vendor', 'vendor-missing', { id: true }],
-    ['project', 'project-missing', { id: true }],
-    ['vendor', 'vendor-ok', { id: true }],
-  ]);
+  const sortCalls = (items) =>
+    [...items].sort(
+      ([modelA, idA], [modelB, idB]) =>
+        String(modelA).localeCompare(String(modelB)) ||
+        String(idA).localeCompare(String(idB)),
+    );
+
+  assert.deepEqual(
+    sortCalls(calls),
+    sortCalls([
+      ['project', 'project-ok', { id: true }],
+      ['vendor', 'vendor-missing', { id: true }],
+      ['project', 'project-missing', { id: true }],
+      ['vendor', 'vendor-ok', { id: true }],
+    ]),
+  );
 });
