@@ -142,6 +142,115 @@ describe('AdminSettings resource hooks', () => {
     );
   });
 
+  it('releases the template submit guard after a successful save', async () => {
+    const postCalls: string[] = [];
+    api.mockImplementation((path: string, init?: RequestInit) => {
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (path === '/pdf-templates') {
+        return Promise.resolve({
+          items: [
+            {
+              id: 'pdf-invoice',
+              name: 'Invoice',
+              kind: 'invoice',
+              version: '1',
+            },
+          ],
+        });
+      }
+      if (path === '/template-settings' && method === 'POST') {
+        postCalls.push(String(init?.body ?? ''));
+        return Promise.resolve({});
+      }
+      if (path === '/template-settings' && method === 'GET') {
+        return Promise.resolve({ items: [] });
+      }
+      throw new Error(`Unhandled api path: ${method} ${path}`);
+    });
+
+    const { result } = renderAdminHook(useAdminSettingsTemplates);
+    await act(async () => {
+      await result.current.loadPdfTemplates();
+    });
+    await waitFor(() =>
+      expect(result.current.form.templateId).toBe('pdf-invoice'),
+    );
+
+    await act(async () => {
+      await result.current.submit();
+    });
+    act(() => {
+      result.current.setForm((current) => ({
+        ...current,
+        templateId: 'pdf-invoice',
+        numberRule: 'RYYYY-NNNN',
+      }));
+    });
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(postCalls).toHaveLength(2);
+    expect(postCalls[1]).toBe(
+      JSON.stringify({
+        kind: 'invoice',
+        templateId: 'pdf-invoice',
+        numberRule: 'RYYYY-NNNN',
+        isDefault: true,
+      }),
+    );
+  });
+
+  it('releases the template submit guard after a failed save so users can retry', async () => {
+    let postAttempts = 0;
+    api.mockImplementation((path: string, init?: RequestInit) => {
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (path === '/pdf-templates') {
+        return Promise.resolve({
+          items: [
+            {
+              id: 'pdf-invoice',
+              name: 'Invoice',
+              kind: 'invoice',
+              version: '1',
+            },
+          ],
+        });
+      }
+      if (path === '/template-settings' && method === 'POST') {
+        postAttempts += 1;
+        if (postAttempts === 1) {
+          return Promise.reject(new Error('save failed'));
+        }
+        return Promise.resolve({});
+      }
+      if (path === '/template-settings' && method === 'GET') {
+        return Promise.resolve({ items: [] });
+      }
+      throw new Error(`Unhandled api path: ${method} ${path}`);
+    });
+
+    const { result, setMessage } = renderAdminHook(useAdminSettingsTemplates);
+    await act(async () => {
+      await result.current.loadPdfTemplates();
+    });
+    await waitFor(() =>
+      expect(result.current.form.templateId).toBe('pdf-invoice'),
+    );
+
+    await act(async () => {
+      await result.current.submit();
+    });
+    expect(setMessage).toHaveBeenCalledWith('テンプレ設定の保存に失敗しました');
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    expect(postAttempts).toBe(2);
+    expect(setMessage).toHaveBeenCalledWith('テンプレ設定を作成しました');
+  });
+
   it('ignores stale reconciliation details after the period key changes', async () => {
     const details = deferred<{ periodKey: string; items: unknown[] }>();
     api.mockImplementation((path: string) => {

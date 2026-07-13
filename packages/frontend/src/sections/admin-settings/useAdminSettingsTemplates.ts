@@ -147,6 +147,8 @@ export function useAdminSettingsTemplates({
     } catch (err) {
       logError('submitTemplateSetting failed', err);
       setMessage('テンプレ設定の保存に失敗しました');
+    } finally {
+      submitInFlightRef.current = false;
     }
   }, [
     editingId,

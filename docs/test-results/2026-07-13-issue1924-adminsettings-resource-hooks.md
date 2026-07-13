@@ -25,10 +25,10 @@
 | File                                        | Before | After | Notes                                                                                                          |
 | ------------------------------------------- | -----: | ----: | -------------------------------------------------------------------------------------------------------------- |
 | `AdminSettings.tsx`                         |   2439 |   929 | top-level orchestration now focuses on layout, alert wizard, and hook wiring                                   |
-| `useAdminSettingsPolicyResources.ts`        |      0 |   792 | largest extracted hook because approval/audit/actionPolicy/ack template remain tightly coupled in policy panel |
+| `useAdminSettingsPolicyResources.ts`        |      0 |   813 | largest extracted hook because approval/audit/actionPolicy/ack template remain tightly coupled in policy panel |
 | `useAdminSettingsAccountingMappingRules.ts` |      0 |   266 | accounting form/query/reapply boundary                                                                         |
 | `useAdminSettingsReports.ts`                |      0 |   232 | report subscription/delivery boundary                                                                          |
-| `useAdminSettingsTemplates.ts`              |      0 |   208 | template resource boundary                                                                                     |
+| `useAdminSettingsTemplates.ts`              |      0 |   210 | template resource boundary                                                                                     |
 | `useAdminSettingsIntegrations.ts`           |      0 |   176 | integration settings/run/metrics boundary                                                                      |
 | `useAdminSettingsReconciliation.ts`         |      0 |   128 | reconciliation stale guard boundary                                                                            |
 | `useAdminSettingsIntegrationExportJobs.ts`  |      0 |    99 | export job query/redispatch boundary                                                                           |
@@ -40,6 +40,8 @@ Added `packages/frontend/src/sections/admin-settings/adminSettingsHooks.test.tsx
 
 - duplicate integration setting submit while save is in-flight;
 - template kind change auto-selecting the first matching PDF template;
+- template save retry after successful and failed submissions to prove the in-flight guard is released;
+- approval rule audit history lookup keyed by series and merged across rule versions;
 - stale reconciliation details ignored after period key changes;
 - accounting mapping dependent required-field validation before API calls;
 - ActionPolicy JSON validation before mutation requests.
@@ -55,13 +57,12 @@ Stabilized existing unrelated frontend tests exposed by full suite execution:
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | --------------------------------------------------- |
 | `npm ci --prefix packages/frontend`                                                                                                                                                | PASS   | 0 vulnerabilities                                   |
 | `npm run typecheck --prefix packages/frontend`                                                                                                                                     | PASS   | TypeScript no-emit                                  |
-| `npm run test --prefix packages/frontend -- src/sections/admin-settings/adminSettingsHooks.test.tsx src/sections/AdminSettings.test.tsx`                                           | PASS   | 2 files / 22 tests                                  |
-| `npm run test --prefix packages/frontend -- src/sections/GroupManagementCard.test.tsx src/sections/admin-settings/adminSettingsHooks.test.tsx src/sections/AdminSettings.test.tsx` | PASS   | 3 files / 28 tests                                  |
-| `npm run test --prefix packages/frontend -- src/sections/RoomChat.test.tsx`                                                                                                        | PASS   | 1 file / 11 tests                                   |
-| `npm run test --prefix packages/frontend`                                                                                                                                          | PASS   | 82 files / 465 tests                                |
+| `npm run test --prefix packages/frontend -- src/sections/admin-settings/adminSettingsHooks.test.tsx src/sections/AdminSettings.test.tsx`                                           | PASS   | 2 files / 25 tests                                  |
+| `npm run test --prefix packages/frontend -- src/sections/GroupManagementCard.test.tsx src/sections/admin-settings/adminSettingsHooks.test.tsx src/sections/AdminSettings.test.tsx src/sections/RoomChat.test.tsx` | PASS   | 4 files / 42 tests                                  |
+| `npm run test --prefix packages/frontend`                                                                                                                                          | PASS   | 82 files / 468 tests                                |
 | `npm run lint --prefix packages/frontend`                                                                                                                                          | PASS   | ESLint including max-lines gate                     |
 | `npm run format:check --prefix packages/frontend`                                                                                                                                  | PASS   | Prettier check                                      |
-| `npm run build --prefix packages/frontend`                                                                                                                                         | PASS   | `AdminSettings` chunk `144.92 kB` / gzip `30.84 kB` |
+| `npm run build --prefix packages/frontend`                                                                                                                                         | PASS   | `AdminSettings` chunk `145.14 kB` / gzip `30.93 kB` |
 | `npm run build:budget --prefix packages/frontend`                                                                                                                                  | PASS   | initial JS `516.7 KiB` / gzip `157.7 KiB`           |
 | `npm audit --prefix packages/frontend --audit-level=high`                                                                                                                          | PASS   | 0 vulnerabilities                                   |
 | `node scripts/check-test-results-index.mjs`                                                                                                                                        | PASS   | index up to date                                    |
