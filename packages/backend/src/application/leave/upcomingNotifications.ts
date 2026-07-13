@@ -1,10 +1,10 @@
-import { prisma } from './db.js';
-import { dateKey } from './utils.js';
-import { parseDateParam, toDateOnly } from '../utils/date.js';
+import { prisma } from '../../services/db.js';
+import { dateKey } from '../../services/utils.js';
+import { parseDateParam, toDateOnly } from '../../utils/date.js';
 import {
   filterNotificationRecipients,
   resolveRoleRecipientUserIds,
-} from './appNotifications.js';
+} from '../../services/appNotifications.js';
 
 type RunLeaveUpcomingOptions = {
   targetDate?: string;
@@ -12,6 +12,7 @@ type RunLeaveUpcomingOptions = {
   actorId?: string | null;
   client?: typeof prisma;
   resolveRoleRecipients?: typeof resolveRoleRecipientUserIds;
+  filterRecipients?: typeof filterNotificationRecipients;
 };
 
 type RunLeaveUpcomingResult = {
@@ -57,6 +58,8 @@ export async function runLeaveUpcomingNotifications(
   const client = options.client ?? prisma;
   const resolveRoleRecipients =
     options.resolveRoleRecipients ?? resolveRoleRecipientUserIds;
+  const filterRecipients =
+    options.filterRecipients ?? filterNotificationRecipients;
   const dryRun = Boolean(options.dryRun);
   const target = resolveTargetDate(options.targetDate);
   if (!target) {
@@ -107,7 +110,7 @@ export async function runLeaveUpcomingNotifications(
     const recipients = new Set<string>([userId, ...roleRecipients]);
     const targetUserIds = Array.from(recipients);
     if (!targetUserIds.length) continue;
-    const filtered = await filterNotificationRecipients({
+    const filtered = await filterRecipients({
       kind: 'leave_upcoming',
       userIds: targetUserIds,
       scope: 'global',

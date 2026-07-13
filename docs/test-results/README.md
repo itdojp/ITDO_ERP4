@@ -40,6 +40,7 @@
 
 ### 2026-07-13
 
+- [Architecture debt baseline r1 (Issue #1928 repo-side)](2026-07-13-architecture-debt-baseline-r1.md)
 - [Issue #1908 Auth Quality Gates Verification](2026-07-13-issue1908-auth-quality-gates.md)
 - [Issue #1909 Chat room provisioning / lifecycle / membership extraction verification](2026-07-13-issue1909-chat-room-services.md)
 - [Issue #1910 Chat notification port / application effects verification](2026-07-13-issue1910-chat-notification-boundary.md)

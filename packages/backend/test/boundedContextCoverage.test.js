@@ -61,6 +61,30 @@ function runFixture(baseDir, registryPath) {
   ]);
 }
 
+function runDependencyCruiserFixture(baseDir) {
+  const depcruiseBin = path.join(
+    BACKEND_DIR,
+    'node_modules/.bin/depcruise',
+  );
+  return spawnSync(
+    depcruiseBin,
+    [
+      '--config',
+      'dependency-cruiser.config.cjs',
+      '--ignore-known',
+      'empty-known-violations.json',
+      '--output-type',
+      'err',
+      'src',
+    ],
+    {
+      cwd: baseDir,
+      env: process.env,
+      encoding: 'utf8',
+    },
+  );
+}
+
 test('bounded-context coverage: current backend tree passes', () => {
   const res = runCoverage(['--format', 'json']);
   assert.equal(res.status, 0, `${res.stdout}\n${res.stderr}`);
@@ -69,6 +93,72 @@ test('bounded-context coverage: current backend tree passes', () => {
   assert.equal(data.summary.unclassifiedFiles, 0);
   assert.equal(data.summary.duplicateBoundedContextFiles, 0);
   assert.equal(data.summary.stalePatterns, 0);
+});
+
+test('bounded-context direction gate: known violations baseline is zero', () => {
+  const knownViolations = require('../dependency-cruiser-known-violations.json');
+  assert.deepEqual(knownViolations, []);
+});
+
+test('bounded-context direction gate: zero baseline still rejects a new Documents to Notifications import', () => {
+  withFixtureBackend((dir) => {
+    writeFile(
+      dir,
+      'src/routes/dailyReports.ts',
+      `import { createDailyReportNotifications } from '../services/appNotifications.js';
+export function runDailyReportNotification() {
+  return createDailyReportNotifications();
+}
+`,
+    );
+    writeFile(
+      dir,
+      'src/services/appNotifications.ts',
+      `export function createDailyReportNotifications() {
+  return { created: 0 };
+}
+`,
+    );
+    writeRegistry(
+      dir,
+      `const contexts = [
+  { name: 'documents', displayName: 'Documents', patterns: ['^src/routes/dailyReports\\\\.ts$'] },
+  { name: 'notifications', displayName: 'Notifications', patterns: ['^src/services/appNotifications\\\\.ts$'] },
+];
+module.exports = { contexts, layers: [] };
+`,
+    );
+    writeFileSync(
+      path.join(dir, 'dependency-cruiser.config.cjs'),
+      `const { contexts } = require('./bounded-context-registry.cjs');
+function contextRule(fromContext, forbiddenContexts) {
+  return {
+    name: \`bounded-context-\${fromContext.name}-direction\`,
+    severity: 'error',
+    from: { path: fromContext.patterns },
+    to: { path: forbiddenContexts.flatMap((context) => context.patterns) },
+  };
+}
+module.exports = {
+  forbidden: contexts
+    .map((context, index) => contextRule(context, contexts.slice(index + 1)))
+    .filter((rule) => rule.to.path.length > 0),
+  options: {
+    doNotFollow: { path: 'node_modules' },
+    tsPreCompilationDeps: 'specify',
+  },
+};
+`,
+    );
+    writeFileSync(path.join(dir, 'empty-known-violations.json'), '[]\n');
+
+    const res = runDependencyCruiserFixture(dir);
+    const output = `${res.stdout}\n${res.stderr}`;
+    assert.notEqual(res.status, 0, output);
+    assert.match(output, /bounded-context-documents-direction/);
+    assert.match(output, /src\/routes\/dailyReports\.ts/);
+    assert.match(output, /src\/services\/appNotifications\.ts/);
+  });
 });
 
 test('bounded-context coverage: integrations coverage files are classified as integrations context', () => {

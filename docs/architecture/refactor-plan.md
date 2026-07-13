@@ -71,6 +71,7 @@
 - 2026-07-13: `routes/vendorDocs.ts` の vendor invoice update/PO link/submit における ActionPolicy / Approval / Notification orchestration を `application/vendorDocs/useCases.ts` へ抽出し、routeから対象cross-context直接import 5件を削除。`vendorDocs.ts` はdefault 1500行gate内へ戻し、baselineは23件から18件へ縮小（Issue #1920）
 - 2026-07-13: `routes/leave.ts` の submit における ActionPolicy / Evidence / Approval / Notification orchestration を `application/leave/useCases.ts` へ抽出し、routeから対象cross-context直接import 6件を削除。個人情報・健康情報 payload を evidence normalization に含めず、baselineは18件から12件へ縮小（Issue #1921）
 - 2026-07-13: `routes/send.ts` の invoice / estimate / purchase-order send と document-send retry における ActionPolicy / Evidence gate / send audit orchestration を `application/send/useCases.ts` へ抽出し、routeから対象cross-context直接import 4件を削除。guard→PDF→send→log/audit順序、retry cooldown/idempotency、Message-ID伝播を unit/route tests で固定し、baselineは12件から8件へ縮小（Issue #1922）
+- 2026-07-13: `dailyReports` の通知副作用を `application/dailyReports/sideEffects.ts` へ、休暇予定通知ジョブを `application/leave/upcomingNotifications.ts` へ移し、Documents→Notifications の残存2件を削除。`dependency-cruiser-known-violations.json` を空配列にし、空baselineでも新規Documents→Notifications直接importがfailするnegative testを追加（Issue #1928 repo-side）
 
 ## 今回のP0実装（Issue #643）
 

@@ -9,7 +9,7 @@ import {
 } from '../utils/date.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { getEditableDays } from '../services/worklogSetting.js';
-import { createDailyReportNotifications } from '../services/appNotifications.js';
+import { notifyDailyReportChanged } from '../application/dailyReports/sideEffects.js';
 
 export async function registerDailyReportRoutes(app: FastifyInstance) {
   app.post(
@@ -135,7 +135,7 @@ export async function registerDailyReportRoutes(app: FastifyInstance) {
         },
         ...auditContextFromRequest(req),
       });
-      await createDailyReportNotifications({
+      await notifyDailyReportChanged({
         userId: result.report.userId,
         reportDate: reportDate.toISOString().slice(0, 10),
         actorUserId: actorId,

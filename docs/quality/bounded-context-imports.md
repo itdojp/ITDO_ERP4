@@ -76,22 +76,19 @@ routes/<domain>.ts
 
 ## 既存違反 baseline
 
-2026-07-13 時点の既存違反は 2 件。#1905 以降、Documents/Chat/Org & Project routes から Workflow/Notifications/Evidence への直接importを application orchestration layer へ段階的に移している。
+2026-07-13 時点の既存違反baselineは 0 件。#1905 以降、Documents/Chat/Org & Project routes から Workflow/Notifications/Evidence への直接importを application orchestration layer へ段階的に移し、baselineを段階削減した。
 
-#1916〜#1921 では `timeEntries` / `invoices` / `estimates` / `purchaseOrders` / `vendorDocs` / `leave` の ActionPolicy・Approval・Notification・Evidence orchestration を application use case へ移し、Documents 系 baseline を 45 件から 12 件まで削減した。#1922 では `src/routes/send.ts` の ActionPolicy / ActionPolicyAudit / ActionPolicyErrors / ApprovalEvidenceGate 直接依存を `src/application/send/useCases.ts` へ移し、send route の4件を baseline から削除した。#1926 では `src/plugins/auth.ts` の agent-run 記録と `src/routes/scim.ts` の個人総務Chatルーム同期を `src/application/identity/sideEffects.ts` の adapter/use case 境界へ隔離し、Identity & Access から Ops/Chat への既知違反2件を baseline から削除した。#1927 では `approvalRules` の通知/Chat ack side effect と `submitApprovalWithUpdate` のEvidence snapshot取得を `src/application/workflow/*` の application orchestration boundary へ移し、ActionPolicy のChat ack対象テーブル判定をWorkflow内の純粋なpolicy contractへ切り出した。これにより Workflow から Notifications/Chat/Evidence への既知違反4件を baseline から削除した。
+#1916〜#1921 では `timeEntries` / `invoices` / `estimates` / `purchaseOrders` / `vendorDocs` / `leave` の ActionPolicy・Approval・Notification・Evidence orchestration を application use case へ移し、Documents 系 baseline を 45 件から 12 件まで削減した。#1922 では `src/routes/send.ts` の ActionPolicy / ActionPolicyAudit / ActionPolicyErrors / ApprovalEvidenceGate 直接依存を `src/application/send/useCases.ts` へ移し、send route の4件を baseline から削除した。#1926 では `src/plugins/auth.ts` の agent-run 記録と `src/routes/scim.ts` の個人総務Chatルーム同期を `src/application/identity/sideEffects.ts` の adapter/use case 境界へ隔離し、Identity & Access から Ops/Chat への既知違反2件を baseline から削除した。#1927 では `approvalRules` の通知/Chat ack side effect と `submitApprovalWithUpdate` のEvidence snapshot取得を `src/application/workflow/*` の application orchestration boundary へ移し、ActionPolicy のChat ack対象テーブル判定をWorkflow内の純粋なpolicy contractへ切り出した。これにより Workflow から Notifications/Chat/Evidence への既知違反4件を baseline から削除した。#1928 では `dailyReports` の日報通知副作用を `src/application/dailyReports/sideEffects.ts` へ隔離し、`leaveUpcomingNotifications` を `src/application/leave/upcomingNotifications.ts` の通知ジョブuse caseへ移した。これにより残存Documents→Notifications既知違反2件を削除し、baselineを0件にした。
 
 内訳は以下のとおり。
 
-| rule                                | count |
-| ----------------------------------- | ----: |
-| bounded-context-documents-direction |     2 |
+| rule | count |
+| ---- | ----: |
+| なし |     0 |
 
 ### 既存違反一覧
 
-|   # | rule                                | from                                         | to                                 |
-| --: | ----------------------------------- | -------------------------------------------- | ---------------------------------- |
-|   1 | bounded-context-documents-direction | `src/routes/dailyReports.ts`                 | `src/services/appNotifications.ts` |
-|   2 | bounded-context-documents-direction | `src/services/leaveUpcomingNotifications.ts` | `src/services/appNotifications.ts` |
+既存違反baselineは空配列 `[]`。新規direction違反は `npm run arch:bounded-context --prefix packages/backend` でfailさせる。
 
 ## 削減方針
 
@@ -101,5 +98,6 @@ routes/<domain>.ts
    - `documents/chat/org-project -> notifications`: 直接通知呼び出しを domain event または notification adapter に置き換える。
    - `identity-access -> ops/chat`: auth/scim から agent-run/chat-room 初期化の副作用を adapter に隔離する。
    - `workflow -> notifications/chat/evidence`: approval action side effect と submit/evidence transaction orchestration は `src/application/workflow/` へ移し、Workflow core service は後段contextを直接 import しない。
+   - `documents -> notifications`: 日報通知や休暇予定通知のような副作用は `src/application/<domain>/` のuse case / side effect adapterに集約し、Documents core route/service は Notifications contextを直接 import しない。
 3. 既存違反を削減した PR では、対象 import を解消したうえで `npx depcruise-baseline --config dependency-cruiser.config.cjs --output-to dependency-cruiser-known-violations.json src` を `packages/backend` で再実行し、baseline から削除する。
 4. bounded context ごとの専用フォルダ化が進んだ段階で、正規表現ベースの分類からディレクトリベースの分類へ移行する。
