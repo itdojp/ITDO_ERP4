@@ -546,19 +546,23 @@ describe('AdminSettings', () => {
       );
     });
 
-    expect(screen.getByTestId('report-delivery-filter')).toHaveTextContent(
-      'sub-1',
-    );
-    expect(screen.getByTestId('report-deliveries-count')).toHaveTextContent(
-      '1',
-    );
-    expect(screen.getByTestId('integration-filter')).toHaveTextContent(
-      'setting-1',
-    );
-    expect(screen.getByTestId('integration-runs-count')).toHaveTextContent('1');
-    expect(screen.getByTestId('integration-metrics-present')).toHaveTextContent(
-      'yes',
-    );
+    await waitFor(() => {
+      expect(screen.getByTestId('report-delivery-filter')).toHaveTextContent(
+        'sub-1',
+      );
+      expect(screen.getByTestId('report-deliveries-count')).toHaveTextContent(
+        '1',
+      );
+      expect(screen.getByTestId('integration-filter')).toHaveTextContent(
+        'setting-1',
+      );
+      expect(screen.getByTestId('integration-runs-count')).toHaveTextContent(
+        '1',
+      );
+      expect(
+        screen.getByTestId('integration-metrics-present'),
+      ).toHaveTextContent('yes');
+    });
   });
 
   it('reloads report deliveries and integration runs without an identifier', async () => {
@@ -575,15 +579,21 @@ describe('AdminSettings', () => {
       expect(api).toHaveBeenCalledWith('/integration-runs/metrics?days=30');
     });
 
-    expect(screen.getByTestId('report-delivery-filter')).toHaveTextContent('-');
-    expect(screen.getByTestId('report-deliveries-count')).toHaveTextContent(
-      '0',
-    );
-    expect(screen.getByTestId('integration-filter')).toHaveTextContent('-');
-    expect(screen.getByTestId('integration-runs-count')).toHaveTextContent('1');
-    expect(screen.getByTestId('integration-metrics-present')).toHaveTextContent(
-      'yes',
-    );
+    await waitFor(() => {
+      expect(screen.getByTestId('report-delivery-filter')).toHaveTextContent(
+        '-',
+      );
+      expect(screen.getByTestId('report-deliveries-count')).toHaveTextContent(
+        '0',
+      );
+      expect(screen.getByTestId('integration-filter')).toHaveTextContent('-');
+      expect(screen.getByTestId('integration-runs-count')).toHaveTextContent(
+        '1',
+      );
+      expect(
+        screen.getByTestId('integration-metrics-present'),
+      ).toHaveTextContent('yes');
+    });
   });
 
   it('updates the alert cancel label in edit mode and clears the draft on cancel', async () => {
