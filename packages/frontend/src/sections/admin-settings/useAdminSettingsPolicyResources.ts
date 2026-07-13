@@ -255,7 +255,7 @@ export function useAdminSettingsPolicyResources({
             const query = new URLSearchParams({
               targetTable: 'approval_rules',
               targetId: seriesRule.id,
-              limit: '50',
+              limit: '20',
             });
             const res = await api<{ items: AuditLogItem[] }>(
               `/audit-logs?${query.toString()}`,
