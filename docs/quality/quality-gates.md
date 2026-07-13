@@ -169,6 +169,7 @@ CIで何を検査しているか、どれを「必須ゲート（ブロック）
   - 既存違反 baseline: `packages/backend/dependency-cruiser-known-violations.json`
   - 既存違反一覧と削減方針: `docs/quality/bounded-context-imports.md`
 - `docs/architecture/greenfield-ideal-design.md` の「1.1 バウンデッドコンテキスト（モジュール分割）」に対応し、baseline 未登録の新規違反は CI で fail する。
+- 2026-07-13 の #1928 repo-side 対応で既存違反 baseline は空配列 `[]` になった。`packages/backend/test/boundedContextCoverage.test.js` は、空 baseline のまま新規 `Documents -> Notifications` 直接 import が fail する negative test を持つ。
 
 ### CI / security-audit
 

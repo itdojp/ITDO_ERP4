@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { runLeaveUpcomingNotifications } from '../dist/services/leaveUpcomingNotifications.js';
+import { runLeaveUpcomingNotifications } from '../dist/application/leave/upcomingNotifications.js';
 
 function createClient({
   leaveRequests = [],

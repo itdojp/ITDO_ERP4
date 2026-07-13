@@ -41,7 +41,7 @@ const contexts = [
     displayName: 'Documents',
     patterns: [
       '^src/routes/(dailyReports|drafts|estimates|expenses|invoices|leave|leaveEntitlements|leaveSettings|leaveWorkdayCalendar|purchaseOrders|send|timeEntries|vendorDocs|worklogSettings)\\.ts$',
-      '^src/services/(expenseBudget|expenseQaChecklist|expenseStateTransitionLog|leaveCompGrants|leaveEntitlements|leaveSettings|leaveTypes|leaveUpcomingNotifications|leaveWorkdayCalendar|numbering|recurring|vendorInvoiceAllocations|vendorInvoiceLineReconciliation|vendorInvoiceLines|worklogSetting)\\.ts$',
+      '^src/services/(expenseBudget|expenseQaChecklist|expenseStateTransitionLog|leaveCompGrants|leaveEntitlements|leaveSettings|leaveTypes|leaveWorkdayCalendar|numbering|recurring|vendorInvoiceAllocations|vendorInvoiceLineReconciliation|vendorInvoiceLines|worklogSetting)\\.ts$',
     ],
   },
   {
@@ -107,6 +107,7 @@ const layers = [
     rationale:
       'HTTP aggregation, cross-context read models, reports, dispatch/event entry points, or glue code that coordinates bounded contexts without defining a bounded context itself.',
     patterns: [
+      '^src/application/dailyReports/.+\\.ts$',
       '^src/application/expenses/.+\\.ts$',
       '^src/application/identity/.+\\.ts$',
       '^src/application/workflow/.+\\.ts$',

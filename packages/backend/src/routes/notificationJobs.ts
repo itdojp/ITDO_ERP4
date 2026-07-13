@@ -6,7 +6,7 @@ import { runNotificationEmailDeliveries } from '../services/notificationDeliveri
 import { runDailyReportMissingNotifications } from '../services/dailyReportMissing.js';
 import { runChatAckReminders } from '../services/chatAckReminders.js';
 import { runChatRoomAclMismatchAlerts } from '../services/chatRoomAclAlerts.js';
-import { runLeaveUpcomingNotifications } from '../services/leaveUpcomingNotifications.js';
+import { runLeaveUpcomingNotifications } from '../application/leave/upcomingNotifications.js';
 import { runLeaveEntitlementReminders } from '../services/leaveEntitlementReminders.js';
 import {
   dailyReportMissingRunSchema,
