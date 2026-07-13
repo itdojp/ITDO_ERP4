@@ -1,95 +1,46 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import fs from 'node:fs';
 
-const coreCoverageInclude = [
-  'src/utils/attachments.ts',
-  'src/utils/clipboard.ts',
-  'src/utils/datetime.ts',
-  'src/utils/deepLink.ts',
-  'src/utils/download.ts',
-  'src/utils/offlineQueue.ts',
-  'src/ui/statusDictionary.ts',
-  'src/ui/listStatePanel.tsx',
-  'src/sections/vendor-documents/vendorInvoiceLinePayload.ts',
-  'src/sections/vendor-documents/vendorDocumentsShared.ts',
-  'src/sections/vendor-documents/useVendorDocumentsLookups.ts',
-  'src/sections/vendor-documents/useVendorDocumentsTableData.tsx',
-  'src/sections/vendor-documents/VendorInvoiceAllocationDialog.tsx',
-  'src/sections/vendor-documents/VendorInvoiceLineDialog.tsx',
-  'src/sections/vendor-documents/VendorInvoiceSavedViewBar.tsx',
-  'src/sections/vendor-documents/VendorInvoicePoLinkDialog.tsx',
-  'src/sections/vendor-documents/PurchaseOrderSendLogsDialog.tsx',
-  'src/sections/vendor-documents/VendorDocumentsPurchaseOrdersSection.tsx',
-  'src/sections/vendor-documents/VendorDocumentsVendorInvoicesSection.tsx',
-  'src/sections/vendor-documents/VendorDocumentsVendorQuotesSection.tsx',
-  'src/sections/vendor-documents/useVendorInvoiceDialogs.ts',
-  'src/sections/vendor-documents/useVendorInvoiceSavedViews.ts',
-  'src/sections/PeriodLocks.tsx',
-  'src/sections/HelpModal.tsx',
-  'src/sections/ChatSettingsCard.tsx',
-  'src/components/AnnotationsCard.tsx',
-  // SCIM settings card coverage for the new unit test.
-  'src/sections/ScimSettingsCard.tsx',
-  'src/sections/ChatRoomSettingsCard.tsx',
-  'src/sections/RateCardSettingsCard.tsx',
-  'src/sections/DocumentSendLogs.tsx',
-  'src/sections/ProjectMilestones.tsx',
-  'src/sections/AdminJobs.tsx',
-  'src/sections/admin-settings/AccountingMappingRulesCard.tsx',
-  'src/sections/admin-settings/AuditHistoryPanel.tsx',
-  'src/sections/admin-settings/IntegrationExportJobsCard.tsx',
-  'src/sections/admin-settings/IntegrationReconciliationCard.tsx',
-  'src/sections/admin-settings/IntegrationSettingsCard.tsx',
-  'src/sections/admin-settings/AlertSettingsCard.tsx',
-  'src/sections/admin-settings/ReportSubscriptionsCard.tsx',
-  'src/sections/admin-settings/TemplateSettingsCard.tsx',
-  'src/sections/admin-settings/AuthIdentityMigrationCard.tsx',
-  'src/sections/PdfFiles.tsx',
-  'src/sections/AccessReviews.tsx',
-  'src/sections/InvoiceDetail.tsx',
-  'src/sections/AuditLogs.tsx',
-  'src/sections/Reports.tsx',
-  'src/sections/DailyReport.tsx',
-  'src/sections/EstimateDetail.tsx',
-  'src/sections/Estimates.tsx',
-  'src/sections/ChatBreakGlass.tsx',
-  'src/sections/Dashboard.tsx',
-  'src/sections/Invoices.tsx',
-  'src/sections/GlobalSearch.tsx',
-  'src/sections/LeaveRequests.tsx',
-  'src/sections/HRAnalytics.tsx',
-  'src/sections/Expenses.tsx',
-  'src/sections/MasterData.tsx',
-  'src/sections/ProjectTasks.tsx',
-  'src/sections/Projects.tsx',
-  'src/sections/Approvals.tsx',
-  'src/sections/TimeEntries.tsx',
-  'src/sections/GroupManagementCard.tsx',
-  'src/sections/AdminSettings.tsx',
-  'src/sections/VendorDocuments.tsx',
-  'src/sections/CurrentUser.tsx',
-  'src/sections/RoomChat.tsx',
-  'src/pages/App.tsx',
-  'src/hooks/useProjects.ts',
-  'src/hooks/useProjectTasks.ts',
-  'src/hooks/useChatRooms.ts',
-  'src/components/ChatEvidencePicker.tsx',
-  'src/main.tsx',
-];
+type CoverageThresholdScope = {
+  files?: unknown;
+};
 
-const uiCoreCoverageInclude = [
-  ...coreCoverageInclude,
-  'src/sections/WorklogSettingsCard.tsx',
-];
+type CoverageThresholdConfig = Record<string, CoverageThresholdScope>;
 
-const coverageInclude =
-  process.env.FRONTEND_COVERAGE_SCOPE === 'ui-core'
-    ? uiCoreCoverageInclude
-    : ['src/**/*.{ts,tsx}'];
-const coverageReportsDirectory =
-  process.env.FRONTEND_COVERAGE_SCOPE === 'ui-core'
-    ? './coverage/ui-core'
-    : './coverage/full';
+function readUiCoreCoverageInclude(): string[] {
+  const coverageThresholdConfig = JSON.parse(
+    fs.readFileSync(
+      new URL('./coverage-thresholds.json', import.meta.url),
+      'utf8',
+    ),
+  ) as CoverageThresholdConfig;
+  const uiCoreScope = coverageThresholdConfig['ui-core'];
+  if (!uiCoreScope || typeof uiCoreScope !== 'object') {
+    throw new Error(
+      'coverage-thresholds.json must define a ui-core coverage scope',
+    );
+  }
+  const { files } = uiCoreScope;
+  if (
+    !Array.isArray(files) ||
+    files.length === 0 ||
+    files.some((file) => typeof file !== 'string' || file.length === 0)
+  ) {
+    throw new Error(
+      'coverage-thresholds.json ui-core.files must be a non-empty string array',
+    );
+  }
+  return files;
+}
+
+const isUiCoreCoverage = process.env.FRONTEND_COVERAGE_SCOPE === 'ui-core';
+const coverageInclude = isUiCoreCoverage
+  ? readUiCoreCoverageInclude()
+  : ['src/**/*.{ts,tsx}'];
+const coverageReportsDirectory = isUiCoreCoverage
+  ? './coverage/ui-core'
+  : './coverage/full';
 
 export default defineConfig({
   plugins: [react()],

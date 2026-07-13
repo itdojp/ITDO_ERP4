@@ -130,4 +130,8 @@ React Query を追加するPRでは、次を同時に満たす。
 
 ## 行数ゲート
 
-frontend lint では `max-lines` を 2500 行（blank行を除外）で有効化する。これは初期導入値であり、既存の巨大コンポーネントを 2500 行未満へ落とした後、カテゴリ分割・hook抽出に合わせて 2000 行、1500 行へ段階的に下げる。
+frontend lint では `max-lines` を 2000 行（blank行を除外）で有効化する。#1923 / #1924 の RoomChat・AdminSettings hook抽出後、既存 production source に 2000 行超ファイルがないことを確認済み。次段階の 1500 行化は、`RoomChat.tsx`（1803行）、`Projects.tsx`（1695行）、`CurrentUser.tsx`（1687行）などの画面責務を追加分割し、主要 hook/component coverage を維持できることを条件に進める。
+
+## Coverage gate
+
+frontend ui-core coverage は `packages/frontend/coverage-thresholds.json` の `ui-core.files` を正本とする。`coverage:ui-core:check` は `coverage/ui-core/coverage-summary.json` から設定ファイルだけを再集計し、`CI / frontend` 内で statements 68.2%、lines 70.6%、branches 61.1%、functions 67.3% を下回る変更を fail させる。AdminSettings / RoomChat の component・model・server-state hook は completeness test で対象漏れを検出する。

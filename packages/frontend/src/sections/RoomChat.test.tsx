@@ -525,6 +525,9 @@ describe('RoomChat', () => {
       target: { value: 'duplicate guard' },
     });
     const submit = screen.getByRole('button', { name: '送信' });
+    await waitFor(() => {
+      expect(submit).not.toBeDisabled();
+    });
 
     fireEvent.click(submit);
     fireEvent.click(submit);

@@ -134,6 +134,18 @@ function setupApi(options?: {
   return calls;
 }
 
+async function findLoadedRateCardList() {
+  await waitFor(() => {
+    const list = screen.getByRole('list');
+    expect(within(list).getByText('PRJ-1 / Project One')).toBeInTheDocument();
+    expect(
+      within(list).getByRole('button', { name: '無効化' }),
+    ).toBeInTheDocument();
+  });
+
+  return screen.getByRole('list');
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -320,7 +332,7 @@ describe('RateCardSettingsCard', () => {
     render(<RateCardSettingsCard />);
     fireEvent.click(screen.getByRole('button', { name: '取得' }));
 
-    const list = await screen.findByRole('list');
+    const list = await findLoadedRateCardList();
     fireEvent.click(within(list).getByRole('button', { name: '無効化' }));
 
     const dialog = screen.getByText('この単価を無効化しますか？')
@@ -350,7 +362,7 @@ describe('RateCardSettingsCard', () => {
       render(<RateCardSettingsCard />);
       fireEvent.click(screen.getByRole('button', { name: '取得' }));
 
-      const list = await screen.findByRole('list');
+      const list = await findLoadedRateCardList();
       fireEvent.click(within(list).getByRole('button', { name: '無効化' }));
 
       const dialog = screen.getByText('この単価を無効化しますか？')

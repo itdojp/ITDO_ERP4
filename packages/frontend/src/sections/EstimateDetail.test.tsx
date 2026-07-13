@@ -115,13 +115,13 @@ describe('EstimateDetail', () => {
     });
 
     expect(
-      screen.getByText(
+      await screen.findByText(
         (_, element) =>
           element?.tagName === 'LI' && element.textContent?.includes('slack /'),
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
+      await screen.findByText(
         (_, element) => element?.textContent === 'Error: delivery failed',
       ),
     ).toBeInTheDocument();
