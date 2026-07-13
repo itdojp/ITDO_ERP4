@@ -145,7 +145,7 @@ test('submitEstimateForApproval evaluates policy, updates in approval transactio
   assert.equal(notification.targetId, 'est-001');
 });
 
-test('submitEstimateForApproval tolerates non-object bodies', async () => {
+test('submitEstimateForApproval handles non-object bodies as empty records', async () => {
   const calls = [];
   const result = await submitEstimateForApproval({
     id: 'est-001',
