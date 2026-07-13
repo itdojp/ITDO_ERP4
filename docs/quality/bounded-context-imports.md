@@ -76,30 +76,27 @@ routes/<domain>.ts
 
 ## 既存違反 baseline
 
-2026-07-13 時点の既存違反は 8 件。#1905 以降、Documents/Chat/Org & Project routes から Workflow/Notifications/Evidence への直接importを application orchestration layer へ段階的に移している。
+2026-07-13 時点の既存違反は 6 件。#1905 以降、Documents/Chat/Org & Project routes から Workflow/Notifications/Evidence への直接importを application orchestration layer へ段階的に移している。
 
-#1916〜#1921 では `timeEntries` / `invoices` / `estimates` / `purchaseOrders` / `vendorDocs` / `leave` の ActionPolicy・Approval・Notification・Evidence orchestration を application use case へ移し、Documents 系 baseline を 45 件から 12 件まで削減した。#1922 では `src/routes/send.ts` の ActionPolicy / ActionPolicyAudit / ActionPolicyErrors / ApprovalEvidenceGate 直接依存を `src/application/send/useCases.ts` へ移し、send route の4件を baseline から削除した。
+#1916〜#1921 では `timeEntries` / `invoices` / `estimates` / `purchaseOrders` / `vendorDocs` / `leave` の ActionPolicy・Approval・Notification・Evidence orchestration を application use case へ移し、Documents 系 baseline を 45 件から 12 件まで削減した。#1922 では `src/routes/send.ts` の ActionPolicy / ActionPolicyAudit / ActionPolicyErrors / ApprovalEvidenceGate 直接依存を `src/application/send/useCases.ts` へ移し、send route の4件を baseline から削除した。#1926 では `src/plugins/auth.ts` の agent-run 記録と `src/routes/scim.ts` の個人総務Chatルーム同期を `src/application/identity/sideEffects.ts` の adapter/use case 境界へ隔離し、Identity & Access から Ops/Chat への既知違反2件を baseline から削除した。
 
 内訳は以下のとおり。
 
-| rule                                      | count |
-| ----------------------------------------- | ----: |
-| bounded-context-documents-direction       |     2 |
-| bounded-context-identity-access-direction |     2 |
-| bounded-context-workflow-direction        |     4 |
+| rule                                | count |
+| ----------------------------------- | ----: |
+| bounded-context-documents-direction |     2 |
+| bounded-context-workflow-direction  |     4 |
 
 ### 既存違反一覧
 
-|   # | rule                                      | from                                         | to                                   |
-| --: | ----------------------------------------- | -------------------------------------------- | ------------------------------------ |
-|   1 | bounded-context-documents-direction       | `src/routes/dailyReports.ts`                 | `src/services/appNotifications.ts`   |
-|   2 | bounded-context-documents-direction       | `src/services/leaveUpcomingNotifications.ts` | `src/services/appNotifications.ts`   |
-|   3 | bounded-context-identity-access-direction | `src/plugins/auth.ts`                        | `src/services/agentRuns.ts`          |
-|   4 | bounded-context-identity-access-direction | `src/routes/scim.ts`                         | `src/services/personalGaChatRoom.ts` |
-|   5 | bounded-context-workflow-direction        | `src/routes/approvalRules.ts`                | `src/services/appNotifications.ts`   |
-|   6 | bounded-context-workflow-direction        | `src/routes/approvalRules.ts`                | `src/services/chatAckTemplates.ts`   |
-|   7 | bounded-context-workflow-direction        | `src/services/actionPolicy.ts`               | `src/services/chatAckLinkTargets.ts` |
-|   8 | bounded-context-workflow-direction        | `src/services/approval.ts`                   | `src/services/evidenceSnapshot.ts`   |
+|   # | rule                                | from                                         | to                                   |
+| --: | ----------------------------------- | -------------------------------------------- | ------------------------------------ |
+|   1 | bounded-context-documents-direction | `src/routes/dailyReports.ts`                 | `src/services/appNotifications.ts`   |
+|   2 | bounded-context-documents-direction | `src/services/leaveUpcomingNotifications.ts` | `src/services/appNotifications.ts`   |
+|   3 | bounded-context-workflow-direction  | `src/routes/approvalRules.ts`                | `src/services/appNotifications.ts`   |
+|   4 | bounded-context-workflow-direction  | `src/routes/approvalRules.ts`                | `src/services/chatAckTemplates.ts`   |
+|   5 | bounded-context-workflow-direction  | `src/services/actionPolicy.ts`               | `src/services/chatAckLinkTargets.ts` |
+|   6 | bounded-context-workflow-direction  | `src/services/approval.ts`                   | `src/services/evidenceSnapshot.ts`   |
 
 ## 削減方針
 

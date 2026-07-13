@@ -58,6 +58,7 @@
 - [Issue #1923 RoomChat server-state boundary verification](2026-07-13-issue1923-roomchat-server-state.md)
 - [Issue #1924 AdminSettings resource hook / form-state boundary verification](2026-07-13-issue1924-adminsettings-resource-hooks.md)
 - [Issue #1925 frontend max-lines / UI core coverage gate verification](2026-07-13-issue1925-frontend-quality-gates.md)
+- [Issue #1926 Identity side-effect adapter verification](2026-07-13-issue1926-identity-side-effects.md)
 
 ### 2026-07-12
 

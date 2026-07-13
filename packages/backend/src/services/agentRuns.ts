@@ -34,14 +34,18 @@ function normalizePath(value: unknown) {
   return index >= 0 ? raw.slice(0, index) || '/' : raw;
 }
 
-export async function persistDelegatedScopeDeniedAgentRun(input: {
+export type PersistDelegatedScopeDeniedAgentRunInput = {
   requestId?: string | null;
   method?: string | null;
   path?: string | null;
   principalUserId?: string | null;
   actorUserId?: string | null;
   scopes?: string[] | null;
-}) {
+};
+
+export async function persistDelegatedScopeDeniedAgentRun(
+  input: PersistDelegatedScopeDeniedAgentRunInput,
+) {
   const method = normalizeMethod(input.method);
   const path = normalizePath(input.path);
   const startedAt = new Date();
