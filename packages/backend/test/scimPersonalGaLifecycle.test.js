@@ -96,6 +96,51 @@ function buildScimUser(overrides = {}) {
   };
 }
 
+test('POST /scim/v2/Users creates personal GA room membership and audit evidence', async () => {
+  const memberUpserts = [];
+  const auditLogs = [];
+  await withPrismaStubs(
+    {
+      $transaction: async (handler) => handler(prisma),
+      'userAccount.findFirst': async () => null,
+      'userAccount.create': async () => buildScimUser(),
+      'groupAccount.upsert': async () => ({ id: 'general_affairs' }),
+      'chatRoom.upsert': async () => ({ id: 'pga_room_1' }),
+      'chatRoomMember.upsert': async (args) => {
+        memberUpserts.push(args);
+        return { roomId: 'pga_room_1', userId: 'employee-1', role: 'owner' };
+      },
+      'auditLog.create': async (args) => {
+        auditLogs.push(args.data);
+        return { id: `audit-${auditLogs.length}` };
+      },
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/scim/v2/Users',
+          headers: scimHeaders(),
+          payload: {
+            userName: 'employee.user',
+            externalId: 'employee-1',
+            displayName: 'Employee User',
+            active: true,
+          },
+        });
+        assert.equal(res.statusCode, 201, res.body);
+      });
+    },
+  );
+
+  assert.equal(memberUpserts.length, 1);
+  assert.equal(memberUpserts[0]?.where?.roomId_userId?.userId, 'employee-1');
+  assert.equal(memberUpserts[0]?.create?.createdBy, 'employee-1');
+  const actions = auditLogs.map((entry) => entry.action);
+  assert.equal(actions.includes('scim_user_create'), true);
+  assert.equal(actions.includes('chat_personal_ga_room_ensured'), true);
+});
+
 test('PUT /scim/v2/Users/:id deactivates previous personal GA member when identifier changes', async () => {
   const memberUpserts = [];
   const memberDeactivations = [];
@@ -277,6 +322,48 @@ test('PATCH /scim/v2/Users/:id switches personal GA member when externalId is re
   assert.equal(actions.includes('personal_ga_room_member_reactivated'), true);
   assert.equal(actions.includes('personal_ga_room_member_deactivated'), true);
   assert.equal(actions.includes('scim_user_patch'), true);
+});
+
+test('DELETE /scim/v2/Users/:id deactivates personal GA room membership and logs audit', async () => {
+  const memberDeactivations = [];
+  const auditLogs = [];
+  await withPrismaStubs(
+    {
+      'userAccount.update': async () =>
+        buildScimUser({
+          active: false,
+          deletedAt: new Date('2026-03-04T00:00:00.000Z'),
+        }),
+      'chatRoomMember.updateMany': async (args) => {
+        memberDeactivations.push(args);
+        return { count: 1 };
+      },
+      'auditLog.create': async (args) => {
+        auditLogs.push(args.data);
+        return { id: `audit-${auditLogs.length}` };
+      },
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'DELETE',
+          url: '/scim/v2/Users/ua-1',
+          headers: scimHeaders(),
+        });
+        assert.equal(res.statusCode, 204, res.body);
+      });
+    },
+  );
+
+  assert.equal(memberDeactivations.length, 1);
+  assert.equal(memberDeactivations[0]?.where?.userId, 'employee-1');
+  assert.equal(
+    memberDeactivations[0]?.data?.deletedReason,
+    'scim_user_deactivated',
+  );
+  const actions = auditLogs.map((entry) => entry.action);
+  assert.equal(actions.includes('personal_ga_room_member_deactivated'), true);
+  assert.equal(actions.includes('scim_user_deactivate'), true);
 });
 
 test('PATCH /scim/v2/Users/:id remove active deactivates personal GA member', async () => {

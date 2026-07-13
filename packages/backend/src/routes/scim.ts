@@ -6,9 +6,10 @@ import { prisma } from '../services/db.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { requireRole } from '../services/rbac.js';
 import {
-  deactivatePersonalGeneralAffairsChatRoomMember,
-  ensurePersonalGeneralAffairsChatRoom,
-} from '../services/personalGaChatRoom.js';
+  deactivateScimPersonalGaRoomForUser,
+  ensureScimPersonalGaRoomForUser,
+  syncScimPersonalGaRoomMembership,
+} from '../application/identity/sideEffects.js';
 
 const SCIM_USER_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:User';
 const SCIM_GROUP_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:Group';
@@ -440,125 +441,6 @@ async function removeGroupMembers(groupId: string, memberIds: string[]) {
   });
 }
 
-type ScimUserSnapshot = {
-  id: string;
-  externalId?: string | null;
-  userName: string;
-  displayName?: string | null;
-  active: boolean;
-};
-
-function resolveChatUserId(user: {
-  externalId?: string | null;
-  userName?: string | null;
-}) {
-  const externalId =
-    typeof user.externalId === 'string' ? user.externalId.trim() : '';
-  if (externalId) return externalId;
-  const userName =
-    typeof user.userName === 'string' ? user.userName.trim() : '';
-  return userName;
-}
-
-async function syncPersonalGaRoomMembership(options: {
-  req: FastifyRequest;
-  before: ScimUserSnapshot;
-  after: ScimUserSnapshot;
-  client?: Prisma.TransactionClient;
-}) {
-  const { req, before, after } = options;
-  const client = options.client ?? prisma;
-  const beforeChatUserId = resolveChatUserId(before);
-  const afterChatUserId = resolveChatUserId(after);
-  const activeChanged = before.active !== after.active;
-  const identifierChanged = beforeChatUserId !== afterChatUserId;
-  if (!activeChanged && !identifierChanged) {
-    return;
-  }
-
-  const auditContext = auditContextFromRequest(req, { source: 'scim' });
-  const actor =
-    afterChatUserId || beforeChatUserId || after.userName.trim() || null;
-
-  if (after.active && afterChatUserId) {
-    const ensured = await ensurePersonalGeneralAffairsChatRoom({
-      userAccountId: after.id,
-      userId: afterChatUserId,
-      userName: after.userName,
-      displayName: after.displayName,
-      createdBy: actor,
-      client,
-    });
-    await logAudit({
-      action: 'personal_ga_room_member_reactivated',
-      targetTable: 'chat_room_members',
-      targetId: `${ensured.roomId}:${afterChatUserId}`,
-      metadata: {
-        userAccountId: after.id,
-        userId: afterChatUserId,
-        roomId: ensured.roomId,
-        reason: activeChanged
-          ? 'scim_user_reactivated'
-          : 'scim_user_identifier_changed',
-      },
-      ...auditContext,
-    });
-
-    if (identifierChanged && beforeChatUserId) {
-      const deactivated = await deactivatePersonalGeneralAffairsChatRoomMember({
-        userAccountId: before.id,
-        userId: beforeChatUserId,
-        updatedBy: actor,
-        reason: 'scim_user_identifier_changed',
-        client,
-      });
-      if (deactivated.updatedCount > 0) {
-        await logAudit({
-          action: 'personal_ga_room_member_deactivated',
-          targetTable: 'chat_room_members',
-          targetId: `${deactivated.roomId}:${beforeChatUserId}`,
-          metadata: {
-            userAccountId: before.id,
-            userId: beforeChatUserId,
-            roomId: deactivated.roomId,
-            reason: 'scim_user_identifier_changed',
-            replacedByUserId: afterChatUserId,
-          },
-          ...auditContext,
-        });
-      }
-    }
-    return;
-  }
-
-  const deactivateTargets = new Set<string>();
-  if (beforeChatUserId) deactivateTargets.add(beforeChatUserId);
-  if (afterChatUserId) deactivateTargets.add(afterChatUserId);
-  for (const targetUserId of deactivateTargets) {
-    const deactivated = await deactivatePersonalGeneralAffairsChatRoomMember({
-      userAccountId: after.id,
-      userId: targetUserId,
-      updatedBy: actor,
-      reason: 'scim_user_deactivated',
-      client,
-    });
-    if (deactivated.updatedCount > 0) {
-      await logAudit({
-        action: 'personal_ga_room_member_deactivated',
-        targetTable: 'chat_room_members',
-        targetId: `${deactivated.roomId}:${targetUserId}`,
-        metadata: {
-          userAccountId: after.id,
-          userId: targetUserId,
-          roomId: deactivated.roomId,
-          reason: 'scim_user_deactivated',
-        },
-        ...auditContext,
-      });
-    }
-  }
-}
-
 export async function registerScimRoutes(app: FastifyInstance) {
   app.get(
     '/scim/status',
@@ -708,12 +590,15 @@ export async function registerScimRoutes(app: FastifyInstance) {
           },
         });
         const internalUserId = user.externalId ?? user.userName;
-        const ensured = await ensurePersonalGeneralAffairsChatRoom({
-          userAccountId: user.id,
-          userId: internalUserId,
-          userName: user.userName,
-          displayName: user.displayName,
-          createdBy: internalUserId,
+        const ensured = await ensureScimPersonalGaRoomForUser({
+          user: {
+            id: user.id,
+            externalId: user.externalId,
+            userName: user.userName,
+            displayName: user.displayName,
+            active: user.active,
+          },
+          actor: internalUserId,
           client: tx,
         });
         return { user, personalGaRoomId: ensured.roomId };
@@ -803,8 +688,8 @@ export async function registerScimRoutes(app: FastifyInstance) {
             scimMeta: payload as Prisma.InputJsonValue,
           },
         });
-        await syncPersonalGaRoomMembership({
-          req,
+        await syncScimPersonalGaRoomMembership({
+          auditContext: auditContextFromRequest(req, { source: 'scim' }),
           before: {
             id: current.id,
             externalId: current.externalId,
@@ -949,8 +834,8 @@ export async function registerScimRoutes(app: FastifyInstance) {
           where: { id },
           data: update,
         });
-        await syncPersonalGaRoomMembership({
-          req,
+        await syncScimPersonalGaRoomMembership({
+          auditContext: auditContextFromRequest(req, { source: 'scim' }),
           before: {
             id: current.id,
             externalId: current.externalId,
@@ -1002,29 +887,17 @@ export async function registerScimRoutes(app: FastifyInstance) {
         where: { id },
         data: { active: false, deletedAt: new Date() },
       });
-      const chatUserId = (updated.externalId || updated.userName || '').trim();
-      if (chatUserId) {
-        const deactivated =
-          await deactivatePersonalGeneralAffairsChatRoomMember({
-            userAccountId: updated.id,
-            userId: chatUserId,
-            updatedBy: chatUserId,
-            reason: 'scim_user_deactivated',
-          });
-        if (deactivated.updatedCount > 0) {
-          await logAudit({
-            action: 'personal_ga_room_member_deactivated',
-            targetTable: 'chat_room_members',
-            targetId: `${deactivated.roomId}:${chatUserId}`,
-            metadata: {
-              userAccountId: updated.id,
-              userId: chatUserId,
-              roomId: deactivated.roomId,
-            },
-            ...auditContextFromRequest(req, { source: 'scim' }),
-          });
-        }
-      }
+      await deactivateScimPersonalGaRoomForUser({
+        user: {
+          id: updated.id,
+          externalId: updated.externalId,
+          userName: updated.userName,
+          displayName: updated.displayName,
+          active: updated.active,
+        },
+        auditContext: auditContextFromRequest(req, { source: 'scim' }),
+        reason: 'scim_user_deactivated',
+      });
       await logAudit({
         action: 'scim_user_deactivate',
         targetTable: 'UserAccount',

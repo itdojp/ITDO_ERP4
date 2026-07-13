@@ -3,7 +3,7 @@ import { createRemoteJWKSet, importSPKI, jwtVerify } from 'jose';
 import type { CryptoKey, JWTPayload, JWTVerifyGetKey } from 'jose';
 import { RateLimiterMemory } from 'rate-limiter-flexible';
 import { prisma } from '../services/db.js';
-import { persistDelegatedScopeDeniedAgentRun } from '../services/agentRuns.js';
+import { recordDelegatedScopeDeniedAgentRun } from '../application/identity/sideEffects.js';
 import { createApiErrorResponse } from '../services/errors.js';
 import {
   buildSessionUserContext,
@@ -302,7 +302,7 @@ async function persistScopeDeniedAgentRunForRequest(req: any) {
   const auth = req.user?.auth;
   if (!auth?.delegated) return;
   try {
-    await persistDelegatedScopeDeniedAgentRun({
+    await recordDelegatedScopeDeniedAgentRun({
       requestId: req.id,
       method: req.method,
       path: req.url,

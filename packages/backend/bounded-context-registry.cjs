@@ -108,6 +108,7 @@ const layers = [
       'HTTP aggregation, cross-context read models, reports, dispatch/event entry points, or glue code that coordinates bounded contexts without defining a bounded context itself.',
     patterns: [
       '^src/application/expenses/.+\\.ts$',
+      '^src/application/identity/.+\\.ts$',
       '^src/application/chat/.+\\.ts$',
       '^src/application/projects/.+\\.ts$',
       '^src/application/timeEntries/.+\\.ts$',

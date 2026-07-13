@@ -23,28 +23,6 @@
   },
   {
     "type": "dependency",
-    "from": "src/plugins/auth.ts",
-    "to": "src/services/agentRuns.ts",
-    "unresolvedTo": "../services/agentRuns.js",
-    "dependencyTypes": ["local", "import"],
-    "rule": {
-      "severity": "error",
-      "name": "bounded-context-identity-access-direction"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/routes/scim.ts",
-    "to": "src/services/personalGaChatRoom.ts",
-    "unresolvedTo": "../services/personalGaChatRoom.js",
-    "dependencyTypes": ["local", "import"],
-    "rule": {
-      "severity": "error",
-      "name": "bounded-context-identity-access-direction"
-    }
-  },
-  {
-    "type": "dependency",
     "from": "src/routes/approvalRules.ts",
     "to": "src/services/appNotifications.ts",
     "unresolvedTo": "../services/appNotifications.js",
