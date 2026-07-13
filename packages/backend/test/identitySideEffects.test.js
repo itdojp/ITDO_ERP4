@@ -237,6 +237,27 @@ test('identity side effects: SCIM delete deactivation keeps legacy audit metadat
   });
 });
 
+test('identity side effects: SCIM ensure room uses resolved chat id as default actor', async () => {
+  const ensureCalls = [];
+
+  const result = await ensureScimPersonalGaRoomForUser(
+    {
+      user: scimUser({ externalId: ' employee-1 ' }),
+    },
+    {
+      ensurePersonalGaRoom: async (input) => {
+        ensureCalls.push(input);
+        return { roomId: 'pga_room_1' };
+      },
+    },
+  );
+
+  assert.deepEqual(result, { roomId: 'pga_room_1', userId: 'employee-1' });
+  assert.equal(ensureCalls.length, 1);
+  assert.equal(ensureCalls[0]?.userId, 'employee-1');
+  assert.equal(ensureCalls[0]?.createdBy, 'employee-1');
+});
+
 test('identity side effects: SCIM ensure room is no-op without a chat identifier', async () => {
   const result = await ensureScimPersonalGaRoomForUser(
     {
@@ -249,4 +270,22 @@ test('identity side effects: SCIM ensure room is no-op without a chat identifier
   );
 
   assert.deepEqual(result, { roomId: null, userId: null });
+});
+
+test('identity side effects: SCIM deactivate is no-op with null roomId without a chat identifier', async () => {
+  const result = await deactivateScimPersonalGaRoomForUser(
+    {
+      auditContext,
+      user: scimUser({ externalId: '   ', userName: '   ' }),
+      reason: 'scim_user_deactivated',
+    },
+    {
+      deactivatePersonalGaRoomMember: throwingPort(
+        'deactivatePersonalGaRoomMember',
+      ),
+      logAudit: throwingPort('logAudit'),
+    },
+  );
+
+  assert.deepEqual(result, { roomId: null, userId: null, updatedCount: 0 });
 });

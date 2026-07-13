@@ -589,7 +589,6 @@ export async function registerScimRoutes(app: FastifyInstance) {
             scimMeta: payload as Prisma.InputJsonValue,
           },
         });
-        const internalUserId = user.externalId ?? user.userName;
         const ensured = await ensureScimPersonalGaRoomForUser({
           user: {
             id: user.id,
@@ -598,7 +597,6 @@ export async function registerScimRoutes(app: FastifyInstance) {
             displayName: user.displayName,
             active: user.active,
           },
-          actor: internalUserId,
           client: tx,
         });
         return { user, personalGaRoomId: ensured.roomId };

@@ -227,7 +227,7 @@ export async function deactivateScimPersonalGaRoomForUser(
 ) {
   const p = ports(overrides);
   const userId = resolveScimChatUserId(options.user);
-  if (!userId) return { roomId: '', userId: null, updatedCount: 0 };
+  if (!userId) return { roomId: null, userId: null, updatedCount: 0 };
 
   const deactivated = await p.deactivatePersonalGaRoomMember({
     userAccountId: options.user.id,
