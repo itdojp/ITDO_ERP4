@@ -14,6 +14,7 @@
 - `coverage:ui-core:check` を追加し、既存必須 `CI / frontend` job 内で coverage 計測と閾値チェックを実行する。
 - `frontend-quality-gates.test.mjs` を追加し、2000行 max-lines negative test、coverage completeness、stale entry、threshold regression を固定した。
 - `RoomChat.test.tsx` の duplicate-submit test は coverage 実行時の遅延でも送信ボタン有効化を待つように安定化した。
+- `RateCardSettingsCard.test.tsx` の disable flow は CI 並列実行時に空リストを掴まないよう、対象 item と disable button の描画完了を待つように安定化した。
 
 ## Line count inventory
 
@@ -72,23 +73,24 @@ Added `packages/frontend/scripts/frontend-quality-gates.test.mjs` to cover:
 
 ## Verification
 
-| Command                                                                     | Result | Notes                                                                                              |
-| --------------------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------- |
-| `npm ci --prefix packages/frontend`                                         | PASS   | 0 vulnerabilities                                                                                  |
-| `npm run quality-gates:test --prefix packages/frontend`                     | PASS   | node:test / 10 tests                                                                               |
-| `npm run test --prefix packages/frontend -- src/sections/RoomChat.test.tsx` | PASS   | 1 file / 11 tests                                                                                  |
-| `npm run coverage:ui-core:check --prefix packages/frontend`                 | PASS   | node:test 10 tests + Vitest 82 files / 468 tests; thresholds above                                 |
-| `npm run typecheck --prefix packages/frontend`                              | PASS   | TypeScript no-emit                                                                                 |
-| `npm run lint --prefix packages/frontend`                                   | PASS   | ESLint, including `max-lines` 2000 gate                                                            |
-| `npm run format:check --prefix packages/frontend`                           | PASS   | Prettier check for frontend source                                                                 |
-| `npm run test --prefix packages/frontend`                                   | PASS   | 82 files / 468 tests                                                                               |
-| `npm run build --prefix packages/frontend`                                  | PASS   | `AdminSettings` chunk `145.14 kB` / gzip `30.93 kB`; `RoomChat` chunk `46.00 kB` / gzip `13.11 kB` |
-| `npm run build:budget --prefix packages/frontend`                           | PASS   | initial JS `516.7 KiB` / gzip `157.7 KiB`                                                          |
-| `npm audit --prefix packages/frontend --audit-level=high`                   | PASS   | 0 vulnerabilities                                                                                  |
-| `node scripts/check-test-results-index.mjs`                                 | PASS   | index up to date                                                                                   |
-| `node scripts/check-doc-image-links.mjs`                                    | PASS   | 115 image links in 323 markdown files                                                              |
-| `git diff --check`                                                          | PASS   | whitespace check                                                                                   |
-| `E2E_SCOPE=core E2E_CAPTURE=0 ./scripts/e2e-frontend.sh`                    | PASS   | 105 tests; Podman DB port fallback 55433 -> 55437                                                  |
+| Command                                                                                 | Result | Notes                                                                                              |
+| --------------------------------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------- |
+| `npm ci --prefix packages/frontend`                                                     | PASS   | 0 vulnerabilities                                                                                  |
+| `npm run quality-gates:test --prefix packages/frontend`                                 | PASS   | node:test / 10 tests                                                                               |
+| `npm run test --prefix packages/frontend -- src/sections/RoomChat.test.tsx`             | PASS   | 1 file / 11 tests                                                                                  |
+| `npm run test --prefix packages/frontend -- src/sections/RateCardSettingsCard.test.tsx` | PASS   | 1 file / 10 tests                                                                                  |
+| `npm run coverage:ui-core:check --prefix packages/frontend`                             | PASS   | node:test 10 tests + Vitest 82 files / 468 tests; thresholds above                                 |
+| `npm run typecheck --prefix packages/frontend`                                          | PASS   | TypeScript no-emit                                                                                 |
+| `npm run lint --prefix packages/frontend`                                               | PASS   | ESLint, including `max-lines` 2000 gate                                                            |
+| `npm run format:check --prefix packages/frontend`                                       | PASS   | Prettier check for frontend source                                                                 |
+| `npm run test --prefix packages/frontend`                                               | PASS   | 82 files / 468 tests                                                                               |
+| `npm run build --prefix packages/frontend`                                              | PASS   | `AdminSettings` chunk `145.14 kB` / gzip `30.93 kB`; `RoomChat` chunk `46.00 kB` / gzip `13.11 kB` |
+| `npm run build:budget --prefix packages/frontend`                                       | PASS   | initial JS `516.7 KiB` / gzip `157.7 KiB`                                                          |
+| `npm audit --prefix packages/frontend --audit-level=high`                               | PASS   | 0 vulnerabilities                                                                                  |
+| `node scripts/check-test-results-index.mjs`                                             | PASS   | index up to date                                                                                   |
+| `node scripts/check-doc-image-links.mjs`                                                | PASS   | 115 image links in 323 markdown files                                                              |
+| `git diff --check`                                                                      | PASS   | whitespace check                                                                                   |
+| `E2E_SCOPE=core E2E_CAPTURE=0 ./scripts/e2e-frontend.sh`                                | PASS   | 105 tests; Podman DB port fallback 55433 -> 55437                                                  |
 
 ## Compatibility notes
 
