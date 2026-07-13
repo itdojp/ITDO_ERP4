@@ -12,7 +12,7 @@ import { collectCallsites } from '../../../scripts/report-action-policy-callsite
 test('parseOptionsFromArgv: defaults and format validation', () => {
   const options = parseOptionsFromArgv([]);
   assert.equal(options.format, 'text');
-  assert.ok(options.callsiteRoot.endsWith('packages/backend/src/routes'));
+  assert.ok(options.callsiteRoot.endsWith('packages/backend/src'));
   assert.ok(
     options.presetFile.endsWith(
       'packages/backend/src/services/policyEnforcementPreset.ts',
@@ -77,7 +77,7 @@ test('compareCallsitesAgainstRequiredActions: identifies missing/stale and dynam
   assert.equal(report.dynamicCallsites.length, 1);
 });
 
-test('integration: phase2_core covers static route callsites without missing keys', () => {
+test('integration: phase2_core covers static backend source callsites without missing keys', () => {
   const options = parseOptionsFromArgv([]);
   const presetFile = options.presetFile;
   const presetSource = fs.readFileSync(presetFile, 'utf8');

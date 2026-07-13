@@ -1,8 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { submitApprovalWithUpdate } from '../services/approval.js';
-import { createApprovalPendingNotifications } from '../services/appNotifications.js';
-import { FlowTypeValue, DocStatusValue } from '../types.js';
+import { DocStatusValue } from '../types.js';
 import {
   vendorInvoiceAllocationsSchema,
   vendorInvoiceLinesSchema,
@@ -15,13 +13,13 @@ import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { checkProjectAndVendor } from '../services/entityChecks.js';
 import { parseDateParam } from '../utils/date.js';
-import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
-import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
-import {
-  logActionPolicyFallbackAllowedIfNeeded,
-  logActionPolicyOverrideIfNeeded,
-} from '../services/actionPolicyAudit.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
+import {
+  authorizeVendorInvoiceAction,
+  submitVendorInvoiceForApproval,
+  type VendorInvoiceActorContext,
+  type VendorInvoicePolicyAuthorization,
+} from '../application/vendorDocs/useCases.js';
 import { normalizeVendorInvoiceAllocations } from '../services/vendorInvoiceAllocations.js';
 import { normalizeVendorInvoiceLines } from '../services/vendorInvoiceLines.js';
 import {
@@ -54,14 +52,27 @@ function parseNumberValue(value: unknown) {
   return null;
 }
 
-function isVendorInvoicePreSubmitStatus(status: string) {
-  // VendorInvoice is created in `received` status. Some legacy flows may still use `draft`.
-  // When rejected, the invoice is typically returned for correction (treated as editable in normal operations).
-  return (
-    status === DocStatusValue.received ||
-    status === DocStatusValue.draft ||
-    status === DocStatusValue.rejected
-  );
+function vendorInvoiceActorFromRequest(
+  req: FastifyRequest,
+): VendorInvoiceActorContext {
+  return {
+    userId: req.user?.userId ?? null,
+    roles: req.user?.roles ?? [],
+    groupIds: req.user?.groupIds ?? [],
+    groupAccountIds: req.user?.groupAccountIds ?? [],
+    projectIds: req.user?.projectIds ?? [],
+  };
+}
+
+function sendApplicationFailure(
+  reply: FastifyReply,
+  result: { ok: false; statusCode: number; body: unknown },
+) {
+  return reply.status(result.statusCode).send(result.body);
+}
+
+function actionPolicyMetadata(policy: VendorInvoicePolicyAuthorization) {
+  return policy.auditMetadata;
 }
 
 function summarizeVendorInvoiceLineTotals(
@@ -432,63 +443,23 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
         });
       }
 
-      const policyRes = await evaluateActionPolicyWithFallback({
-        flowType: FlowTypeValue.vendor_invoice,
+      const policyResult = await authorizeVendorInvoiceAction({
+        id,
         actionKey: 'update_allocations',
-        actor: {
-          userId: req.user?.userId ?? null,
-          roles: req.user?.roles || [],
-          groupIds: req.user?.groupIds || [],
-          groupAccountIds: req.user?.groupAccountIds || [],
-        },
+        status: invoice.status,
+        projectId: invoice.projectId,
         reasonText,
-        state: { status: invoice.status, projectId: invoice.projectId },
-        targetTable: 'vendor_invoices',
-        targetId: id,
+        actor: vendorInvoiceActorFromRequest(req),
+        auditContext: auditContextFromRequest(
+          req,
+          actorId ? { userId: actorId } : {},
+        ),
+        deniedMessage: 'VendorInvoice allocations cannot be updated',
       });
-      if (policyRes.policyApplied && !policyRes.allowed) {
-        if (policyRes.reason === 'reason_required') {
-          return reply.status(400).send({
-            error: {
-              code: 'REASON_REQUIRED',
-              message: 'reasonText is required for override',
-              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
-            },
-          });
-        }
-        return reply.status(403).send({
-          error: {
-            code: resolveActionPolicyDeniedCode(policyRes),
-            message: 'VendorInvoice allocations cannot be updated',
-            details: {
-              reason: policyRes.reason,
-              matchedPolicyId: policyRes.matchedPolicyId ?? null,
-              guardFailures: policyRes.guardFailures ?? null,
-            },
-          },
-        });
-      }
-      await logActionPolicyFallbackAllowedIfNeeded({
-        req,
-        flowType: FlowTypeValue.vendor_invoice,
-        actionKey: 'update_allocations',
-        targetTable: 'vendor_invoices',
-        targetId: id,
-        result: policyRes,
-      });
-      await logActionPolicyOverrideIfNeeded({
-        req,
-        flowType: FlowTypeValue.vendor_invoice,
-        actionKey: 'update_allocations',
-        targetTable: 'vendor_invoices',
-        targetId: id,
-        reasonText,
-        result: policyRes,
-      });
+      if (!policyResult.ok) return sendApplicationFailure(reply, policyResult);
+      const policyAuthorization = policyResult.value;
 
-      const requiresReason =
-        !policyRes.policyApplied &&
-        !isVendorInvoicePreSubmitStatus(invoice.status);
+      const requiresReason = policyAuthorization.requiresLegacyReason;
       if (requiresReason && !reasonText) {
         return reply.status(400).send({
           error: {
@@ -741,12 +712,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
             diff: normalized.totals.diff,
             adjusted: normalized.adjusted,
           },
-          actionPolicy: policyRes.policyApplied
-            ? {
-                matchedPolicyId: (policyRes as any).matchedPolicyId ?? null,
-                requireReason: (policyRes as any).requireReason ?? false,
-              }
-            : { matchedPolicyId: null, requireReason: false },
+          actionPolicy: actionPolicyMetadata(policyAuthorization),
         } as Prisma.InputJsonValue,
         ...auditContextFromRequest(req, actorId ? { userId: actorId } : {}),
       });
@@ -786,63 +752,23 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
         });
       }
 
-      const policyRes = await evaluateActionPolicyWithFallback({
-        flowType: FlowTypeValue.vendor_invoice,
+      const policyResult = await authorizeVendorInvoiceAction({
+        id,
         actionKey: 'update_lines',
-        actor: {
-          userId: req.user?.userId ?? null,
-          roles: req.user?.roles || [],
-          groupIds: req.user?.groupIds || [],
-          groupAccountIds: req.user?.groupAccountIds || [],
-        },
+        status: invoice.status,
+        projectId: invoice.projectId,
         reasonText,
-        state: { status: invoice.status, projectId: invoice.projectId },
-        targetTable: 'vendor_invoices',
-        targetId: id,
+        actor: vendorInvoiceActorFromRequest(req),
+        auditContext: auditContextFromRequest(
+          req,
+          actorId ? { userId: actorId } : {},
+        ),
+        deniedMessage: 'Vendor invoice lines cannot be updated',
       });
-      if (policyRes.policyApplied && !policyRes.allowed) {
-        if (policyRes.reason === 'reason_required') {
-          return reply.status(400).send({
-            error: {
-              code: 'REASON_REQUIRED',
-              message: 'reasonText is required for override',
-              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
-            },
-          });
-        }
-        return reply.status(403).send({
-          error: {
-            code: resolveActionPolicyDeniedCode(policyRes),
-            message: 'Vendor invoice lines cannot be updated',
-            details: {
-              reason: policyRes.reason,
-              matchedPolicyId: policyRes.matchedPolicyId ?? null,
-              guardFailures: policyRes.guardFailures ?? null,
-            },
-          },
-        });
-      }
-      await logActionPolicyFallbackAllowedIfNeeded({
-        req,
-        flowType: FlowTypeValue.vendor_invoice,
-        actionKey: 'update_lines',
-        targetTable: 'vendor_invoices',
-        targetId: id,
-        result: policyRes,
-      });
-      await logActionPolicyOverrideIfNeeded({
-        req,
-        flowType: FlowTypeValue.vendor_invoice,
-        actionKey: 'update_lines',
-        targetTable: 'vendor_invoices',
-        targetId: id,
-        reasonText,
-        result: policyRes,
-      });
+      if (!policyResult.ok) return sendApplicationFailure(reply, policyResult);
+      const policyAuthorization = policyResult.value;
 
-      const requiresReason =
-        !policyRes.policyApplied &&
-        !isVendorInvoicePreSubmitStatus(invoice.status);
+      const requiresReason = policyAuthorization.requiresLegacyReason;
       if (requiresReason && !reasonText) {
         return reply.status(400).send({
           error: {
@@ -1197,12 +1123,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
             quantityByPoLine: Object.fromEntries(afterQtyByPoLine),
             autoAdjust,
           },
-          actionPolicy: policyRes.policyApplied
-            ? {
-                matchedPolicyId: (policyRes as any).matchedPolicyId ?? null,
-                requireReason: (policyRes as any).requireReason ?? false,
-              }
-            : { matchedPolicyId: null, requireReason: false },
+          actionPolicy: actionPolicyMetadata(policyAuthorization),
         } as Prisma.InputJsonValue,
         ...auditContextFromRequest(req, actorId ? { userId: actorId } : {}),
       });
@@ -1249,59 +1170,21 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
         });
       }
 
-      const policyRes = await evaluateActionPolicyWithFallback({
-        flowType: FlowTypeValue.vendor_invoice,
+      const policyResult = await authorizeVendorInvoiceAction({
+        id,
         actionKey: 'link_po',
-        actor: {
-          userId: req.user?.userId ?? null,
-          roles: req.user?.roles || [],
-          groupIds: req.user?.groupIds || [],
-          groupAccountIds: req.user?.groupAccountIds || [],
-        },
+        status: before.status,
+        projectId: before.projectId,
         reasonText,
-        state: { status: before.status, projectId: before.projectId },
-        targetTable: 'vendor_invoices',
-        targetId: id,
+        actor: vendorInvoiceActorFromRequest(req),
+        auditContext: auditContextFromRequest(
+          req,
+          actorId ? { userId: actorId } : {},
+        ),
+        deniedMessage: 'VendorInvoice purchase order cannot be linked',
       });
-      if (policyRes.policyApplied && !policyRes.allowed) {
-        if (policyRes.reason === 'reason_required') {
-          return reply.status(400).send({
-            error: {
-              code: 'REASON_REQUIRED',
-              message: 'reasonText is required for override',
-              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
-            },
-          });
-        }
-        return reply.status(403).send({
-          error: {
-            code: resolveActionPolicyDeniedCode(policyRes),
-            message: 'VendorInvoice purchase order cannot be linked',
-            details: {
-              reason: policyRes.reason,
-              matchedPolicyId: policyRes.matchedPolicyId ?? null,
-              guardFailures: policyRes.guardFailures ?? null,
-            },
-          },
-        });
-      }
-      await logActionPolicyFallbackAllowedIfNeeded({
-        req,
-        flowType: FlowTypeValue.vendor_invoice,
-        actionKey: 'link_po',
-        targetTable: 'vendor_invoices',
-        targetId: id,
-        result: policyRes,
-      });
-      await logActionPolicyOverrideIfNeeded({
-        req,
-        flowType: FlowTypeValue.vendor_invoice,
-        actionKey: 'link_po',
-        targetTable: 'vendor_invoices',
-        targetId: id,
-        reasonText,
-        result: policyRes,
-      });
+      if (!policyResult.ok) return sendApplicationFailure(reply, policyResult);
+      const policyAuthorization = policyResult.value;
 
       const purchaseOrder = await prisma.purchaseOrder.findUnique({
         where: { id: nextPurchaseOrderId },
@@ -1331,9 +1214,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
 
       // If no policy is configured yet (fallback), keep legacy-safe behavior:
       // require a reason when modifying a vendor invoice after it has been submitted.
-      const requiresReason =
-        !policyRes.policyApplied &&
-        !isVendorInvoicePreSubmitStatus(before.status);
+      const requiresReason = policyAuthorization.requiresLegacyReason;
       if (requiresReason && !reasonText) {
         return reply.status(400).send({
           error: {
@@ -1352,12 +1233,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
             fromStatus: before.status,
             fromPurchaseOrderId: before.purchaseOrderId ?? null,
             toPurchaseOrderId: purchaseOrder.id,
-            actionPolicy: policyRes.policyApplied
-              ? {
-                  matchedPolicyId: (policyRes as any).matchedPolicyId ?? null,
-                  requireReason: (policyRes as any).requireReason ?? false,
-                }
-              : { matchedPolicyId: null, requireReason: false },
+            actionPolicy: actionPolicyMetadata(policyAuthorization),
           } as Prisma.InputJsonValue,
           ...auditContextFromRequest(req, actorId ? { userId: actorId } : {}),
         });
@@ -1417,63 +1293,23 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
         });
       }
 
-      const policyRes = await evaluateActionPolicyWithFallback({
-        flowType: FlowTypeValue.vendor_invoice,
+      const policyResult = await authorizeVendorInvoiceAction({
+        id,
         actionKey: 'unlink_po',
-        actor: {
-          userId: req.user?.userId ?? null,
-          roles: req.user?.roles || [],
-          groupIds: req.user?.groupIds || [],
-          groupAccountIds: req.user?.groupAccountIds || [],
-        },
+        status: before.status,
+        projectId: before.projectId,
         reasonText,
-        state: { status: before.status, projectId: before.projectId },
-        targetTable: 'vendor_invoices',
-        targetId: id,
+        actor: vendorInvoiceActorFromRequest(req),
+        auditContext: auditContextFromRequest(
+          req,
+          actorId ? { userId: actorId } : {},
+        ),
+        deniedMessage: 'VendorInvoice purchase order cannot be unlinked',
       });
-      if (policyRes.policyApplied && !policyRes.allowed) {
-        if (policyRes.reason === 'reason_required') {
-          return reply.status(400).send({
-            error: {
-              code: 'REASON_REQUIRED',
-              message: 'reasonText is required for override',
-              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
-            },
-          });
-        }
-        return reply.status(403).send({
-          error: {
-            code: resolveActionPolicyDeniedCode(policyRes),
-            message: 'VendorInvoice purchase order cannot be unlinked',
-            details: {
-              reason: policyRes.reason,
-              matchedPolicyId: policyRes.matchedPolicyId ?? null,
-              guardFailures: policyRes.guardFailures ?? null,
-            },
-          },
-        });
-      }
-      await logActionPolicyFallbackAllowedIfNeeded({
-        req,
-        flowType: FlowTypeValue.vendor_invoice,
-        actionKey: 'unlink_po',
-        targetTable: 'vendor_invoices',
-        targetId: id,
-        result: policyRes,
-      });
-      await logActionPolicyOverrideIfNeeded({
-        req,
-        flowType: FlowTypeValue.vendor_invoice,
-        actionKey: 'unlink_po',
-        targetTable: 'vendor_invoices',
-        targetId: id,
-        reasonText,
-        result: policyRes,
-      });
+      if (!policyResult.ok) return sendApplicationFailure(reply, policyResult);
+      const policyAuthorization = policyResult.value;
 
-      const requiresReason =
-        !policyRes.policyApplied &&
-        !isVendorInvoicePreSubmitStatus(before.status);
+      const requiresReason = policyAuthorization.requiresLegacyReason;
       if (requiresReason && !reasonText) {
         return reply.status(400).send({
           error: {
@@ -1492,12 +1328,7 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
             fromStatus: before.status,
             fromPurchaseOrderId: before.purchaseOrderId ?? null,
             toPurchaseOrderId: null,
-            actionPolicy: policyRes.policyApplied
-              ? {
-                  matchedPolicyId: (policyRes as any).matchedPolicyId ?? null,
-                  requireReason: (policyRes as any).requireReason ?? false,
-                }
-              : { matchedPolicyId: null, requireReason: false },
+            actionPolicy: actionPolicyMetadata(policyAuthorization),
           } as Prisma.InputJsonValue,
           ...auditContextFromRequest(req, actorId ? { userId: actorId } : {}),
         });
@@ -1533,95 +1364,18 @@ export async function registerVendorDocRoutes(app: FastifyInstance) {
     reply: FastifyReply,
   ) => {
     const { id } = req.params as { id: string };
-    const body = req.body as any;
-    const reasonText =
-      typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
-    const vendorInvoice = await prisma.vendorInvoice.findUnique({
-      where: { id },
-      select: { status: true, projectId: true },
-    });
-    if (vendorInvoice) {
-      const policyRes = await evaluateActionPolicyWithFallback({
-        flowType: FlowTypeValue.vendor_invoice,
-        actionKey: 'submit',
-        actor: {
-          userId: req.user?.userId ?? null,
-          roles: req.user?.roles || [],
-          groupIds: req.user?.groupIds || [],
-          groupAccountIds: req.user?.groupAccountIds || [],
-        },
-        reasonText,
-        state: {
-          status: vendorInvoice.status,
-          projectId: vendorInvoice.projectId,
-        },
-        targetTable: 'vendor_invoices',
-        targetId: id,
-      });
-      if (policyRes.policyApplied && !policyRes.allowed) {
-        if (policyRes.reason === 'reason_required') {
-          return reply.status(400).send({
-            error: {
-              code: 'REASON_REQUIRED',
-              message: 'reasonText is required for override',
-              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
-            },
-          });
-        }
-        return reply.status(403).send({
-          error: {
-            code: resolveActionPolicyDeniedCode(policyRes),
-            message: 'VendorInvoice cannot be submitted',
-            details: {
-              reason: policyRes.reason,
-              matchedPolicyId: policyRes.matchedPolicyId ?? null,
-              guardFailures: policyRes.guardFailures ?? null,
-            },
-          },
-        });
-      }
-      await logActionPolicyFallbackAllowedIfNeeded({
+    const actorId = req.user?.userId;
+    const result = await submitVendorInvoiceForApproval({
+      id,
+      body: req.body,
+      actor: vendorInvoiceActorFromRequest(req),
+      auditContext: auditContextFromRequest(
         req,
-        flowType: FlowTypeValue.vendor_invoice,
-        actionKey: 'submit',
-        targetTable: 'vendor_invoices',
-        targetId: id,
-        result: policyRes,
-      });
-      await logActionPolicyOverrideIfNeeded({
-        req,
-        flowType: FlowTypeValue.vendor_invoice,
-        actionKey: 'submit',
-        targetTable: 'vendor_invoices',
-        targetId: id,
-        reasonText,
-        result: policyRes,
-      });
-    }
-    const actorUserId = req.user?.userId || 'system';
-    const { updated, approval } = await submitApprovalWithUpdate({
-      flowType: FlowTypeValue.vendor_invoice,
-      targetTable: 'vendor_invoices',
-      targetId: id,
-      update: (tx) =>
-        tx.vendorInvoice.update({
-          where: { id },
-          data: { status: DocStatusValue.pending_qa },
-        }),
-      createdBy: req.user?.userId,
+        actorId ? { userId: actorId } : {},
+      ),
     });
-    await createApprovalPendingNotifications({
-      approvalInstanceId: approval.id,
-      projectId: approval.projectId,
-      requesterUserId: actorUserId,
-      actorUserId,
-      flowType: approval.flowType,
-      targetTable: approval.targetTable,
-      targetId: approval.targetId,
-      currentStep: approval.currentStep,
-      steps: approval.steps,
-    });
-    return updated;
+    if (!result.ok) return sendApplicationFailure(reply, result);
+    return result.value;
   };
 
   app.post(

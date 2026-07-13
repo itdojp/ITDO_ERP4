@@ -7,10 +7,10 @@ import {
   parseOptionsFromArgv,
 } from '../../../scripts/report-action-policy-callsites.mjs';
 
-test('parseOptionsFromArgv: defaults to routes root and text format', () => {
+test('parseOptionsFromArgv: defaults to backend src root and text format', () => {
   const options = parseOptionsFromArgv([]);
   assert.equal(options.format, 'text');
-  assert.ok(options.root.endsWith('packages/backend/src/routes'));
+  assert.ok(options.root.endsWith('packages/backend/src'));
 });
 
 test('parseOptionsFromArgv: validates format', () => {
@@ -80,16 +80,45 @@ async function run(instance, body) {
   );
 });
 
-test('collectCallsites: scans backend route callsites', () => {
+test('collectCallsitesFromSource: skips helper declarations when scanning backend source', () => {
+  const source = `
+export async function evaluateActionPolicyWithFallback(input) {
+  return input;
+}
+
+async function run() {
+  return evaluateActionPolicyWithFallback({
+    flowType: FlowTypeValue.vendor_invoice,
+    actionKey: 'submit',
+    targetTable: 'vendor_invoices',
+  });
+}
+`;
+  const rows = collectCallsitesFromSource(source, '/tmp/actionPolicy.ts');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].flowType, 'vendor_invoice');
+  assert.equal(rows[0].actionKey, 'submit');
+});
+
+test('collectCallsites: scans backend source callsites', () => {
   const rootDir = parseOptionsFromArgv([]).root;
   const rows = collectCallsites(rootDir);
   assert.ok(rows.length > 0);
+  assert.equal(
+    rows.some(
+      (row) =>
+        row.file.endsWith('services/actionPolicy.ts') &&
+        row.flowType === 'unknown' &&
+        row.actionKey === 'unknown',
+    ),
+    false,
+  );
 
   const vendorSubmit = rows.find(
     (row) =>
       row.flowType === 'vendor_invoice' &&
       row.actionKey === 'submit' &&
-      row.file.endsWith('vendorDocs.ts'),
+      row.file.endsWith('application/vendorDocs/useCases.ts'),
   );
   assert.ok(vendorSubmit);
 

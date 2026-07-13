@@ -73,7 +73,7 @@ make action-policy-phase3-readiness
 
 注記: 中リスク操作も最終的には `phase3_strict` で未定義拒否へ移行する。
 
-### 3.3 route callsite 一覧（script 出力を整理）
+### 3.3 backend source callsite 一覧（script 出力を整理）
 
 | flowType         | actionKey            | targetTable          | risk   | file                                                |
 | ---------------- | -------------------- | -------------------- | ------ | --------------------------------------------------- |
@@ -122,7 +122,7 @@ make action-policy-phase3-readiness
   - `stale_required_actions: 0`
   - `dynamic_callsites: 0`
 - `scripts/report-action-policy-callsites.mjs` は承認アクション共通 route を `*:approve` / `*:reject` に静的展開する。
-- したがって、`phase2_core` の required actions は現行の static route callsite を全て被覆済みである。
+- したがって、`phase2_core` の required actions は現行の static backend source callsite を全て被覆済みである。
 
 ### 4.1.1 route preset テストの被覆
 

@@ -30,7 +30,7 @@
   - 参照: `packages/backend/test/sendPolicyEnforcementPreset.test.js`
 - [x] `phase2_core` で高リスク mutation route が policy 未定義拒否 / 定義許可を満たす
   - 参照: `packages/backend/test/invoicePolicyEnforcementPreset.test.js`, `packages/backend/test/invoiceMarkPaidPolicyEnforcementPreset.test.js`, `packages/backend/test/purchaseOrderPolicyEnforcementPreset.test.js`, `packages/backend/test/expensePolicyEnforcementPreset.test.js`, `packages/backend/test/vendorInvoiceSubmitPolicyEnforcementPreset.test.js`, `packages/backend/test/vendorInvoiceEditPolicyEnforcementPreset.test.js`, `packages/backend/test/vendorInvoiceLinkPoRoutes.test.js`
-- [ ] `make action-policy-callsites-report` / `make action-policy-required-action-gaps` / `make action-policy-required-action-gaps-json` を実行し、route callsite 棚卸と required actions ギャップが収束していることを確認する
+- [ ] `make action-policy-callsites-report` / `make action-policy-required-action-gaps` / `make action-policy-required-action-gaps-json` を実行し、backend source callsite（route / application use case を含む）棚卸と required actions ギャップが収束していることを確認する
   - 期待値: `missing_static_callsites: 0` / `stale_required_actions: 0` / `dynamic_callsites: 0`
 - [ ] `make action-policy-phase3-readiness` / `make action-policy-phase3-readiness-json` を実行し、`ready: yes` かつ blockers が空であることを確認する
   - 手順: `docs/ops/action-policy-phase3-strict-rollout.md` の事前確認に従う

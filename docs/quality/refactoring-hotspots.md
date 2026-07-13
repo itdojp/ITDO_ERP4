@@ -58,11 +58,10 @@ frontend lint では `max-lines` を error 2500 行（blank行を除外）で有
 2. server-state hook 抽出後、閾値を 2000 行へ下げる。
 3. 画面単位の主要 hook/component test が揃った段階で 1500 行へ下げる。
 
-| allowlist file                      | temporary cap | 削減方針                                                        |
-| ----------------------------------- | ------------: | --------------------------------------------------------------- |
-| `src/routes/chat.ts`                |          1650 | ack / attachment / route module をさらに service 化             |
-| `src/routes/vendorDocs.ts`          |          1700 | vendor invoice line / allocation / reconciliation を service 化 |
-| `src/routes/reportSubscriptions.ts` |          1600 | schedule/run/history 処理を service 化                          |
+| allowlist file                      | temporary cap | 削減方針                                            |
+| ----------------------------------- | ------------: | --------------------------------------------------- |
+| `src/routes/chat.ts`                |          1650 | ack / attachment / route module をさらに service 化 |
+| `src/routes/reportSubscriptions.ts` |          1600 | schedule/run/history 処理を service 化              |
 
 ## 進捗ログ
 
@@ -97,3 +96,4 @@ frontend lint では `max-lines` を error 2500 行（blank行を除外）で有
 - 2026-07-13: `routes/invoices.ts` の submit / mark-paid の ActionPolicy・Approval・notification・audit orchestrationを `src/application/invoices/useCases.ts` へ抽出し、route本体を 501 行で維持。Documents→Workflow/Notifications 既知違反5件を削減し、baselineを33件へ縮小（Issue #1917）
 - 2026-07-13: `routes/estimates.ts` の submit の ActionPolicy・Approval・notification・audit orchestrationを `src/application/estimates/useCases.ts` へ抽出し、route本体を 153 行で維持。Documents→Workflow/Notifications 既知違反5件を削減し、baselineを28件へ縮小（Issue #1918）
 - 2026-07-13: `routes/purchaseOrders.ts` の submit の ActionPolicy・Approval・notification・audit orchestrationを `src/application/purchaseOrders/useCases.ts` へ抽出し、route本体を 129 行で維持。Documents→Workflow/Notifications 既知違反5件を削減し、baselineを23件へ縮小（Issue #1919）
+- 2026-07-13: `routes/vendorDocs.ts` の ActionPolicy・Approval・notification orchestrationを `src/application/vendorDocs/useCases.ts` へ抽出し、route本体を 1640 行から 1394 行へ縮小。default 1500行gate内になったためtemporary allowlistから除外し、Documents→Workflow/Notifications 既知違反5件を削減してbaselineを18件へ縮小（Issue #1920）

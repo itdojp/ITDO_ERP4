@@ -10,7 +10,6 @@ const maxLinesOptions = (max) => ({
 
 const existingRouteLineAllowances = [
   ['src/routes/chat.ts', 1650],
-  ['src/routes/vendorDocs.ts', 1700],
   ['src/routes/reportSubscriptions.ts', 1600],
 ];
 

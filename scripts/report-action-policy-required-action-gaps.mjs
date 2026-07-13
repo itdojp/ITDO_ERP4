@@ -12,8 +12,8 @@ function resolveFirstExistingPath(candidates) {
 }
 
 const DEFAULT_CALLSITE_ROOT = resolveFirstExistingPath([
-  path.resolve(process.cwd(), 'packages/backend/src/routes'),
-  path.resolve(process.cwd(), 'src/routes'),
+  path.resolve(process.cwd(), 'packages/backend/src'),
+  path.resolve(process.cwd(), 'src'),
 ]);
 const DEFAULT_PRESET_FILE = resolveFirstExistingPath([
   path.resolve(process.cwd(), 'packages/backend/src/services/policyEnforcementPreset.ts'),
