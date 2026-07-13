@@ -12,9 +12,7 @@ export type RoomGlobalSearchProps = {
   setGlobalQuery: React.Dispatch<React.SetStateAction<string>>;
   loadGlobalSearch: (options?: { append?: boolean }) => AsyncVoid;
   globalLoading: boolean;
-  setGlobalItems: React.Dispatch<React.SetStateAction<ChatSearchItem[]>>;
-  setGlobalHasMore: React.Dispatch<React.SetStateAction<boolean>>;
-  setGlobalMessage: React.Dispatch<React.SetStateAction<string>>;
+  clearGlobalSearch: () => void;
   globalMessage: string;
   globalItems: ChatSearchItem[];
   globalHasMore: boolean;
@@ -27,9 +25,7 @@ export function RoomGlobalSearch({
   setGlobalQuery,
   loadGlobalSearch,
   globalLoading,
-  setGlobalItems,
-  setGlobalHasMore,
-  setGlobalMessage,
+  clearGlobalSearch,
   globalMessage,
   globalItems,
   globalHasMore,
@@ -60,9 +56,7 @@ export function RoomGlobalSearch({
           className="button secondary"
           onClick={() => {
             setGlobalQuery('');
-            setGlobalItems([]);
-            setGlobalHasMore(false);
-            setGlobalMessage('');
+            clearGlobalSearch();
           }}
           disabled={globalLoading}
         >

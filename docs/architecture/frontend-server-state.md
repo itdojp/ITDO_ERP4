@@ -41,6 +41,41 @@
 - `RoomChat.tsx`
   - ルーム選択、投稿フォーム、通知設定、API orchestration を保持。
 
+## 2026-07-13 の更新: RoomChat の server-state hook / mutation command 境界
+
+Issue #1923 では React Query 依存は追加せず、既存 `api` wrapper を使った hook / command 境界を先に固定した。
+
+### RoomChat の責務分離
+
+| boundary | file | responsibility |
+| --- | --- | --- |
+| room list query | `room-chat/useRoomChatRooms.ts` | `GET /chat-rooms`、初期ルーム選択、GA可視性フィルタ、案件 deep link 解決 |
+| message query | `room-chat/useRoomChatMessages.ts` | `GET /chat-rooms/:roomId/messages`、pagination、filter/search、unread/read-state、loading/error、stale response guard |
+| global search query | `room-chat/useRoomChatGlobalSearch.ts` | `GET /chat-messages/search`、append pagination、loading/error |
+| notification setting resource | `room-chat/useRoomChatNotificationSetting.ts` | `GET/PATCH /chat-rooms/:roomId/notification-setting`、保存 feedback、mute datetime 変換 |
+| candidate resources | `room-chat/useRoomChatCandidates.ts` | mention candidates、ack candidates、abort/debounce |
+| mutation commands | `room-chat/roomChatApi.ts` | message post、ack request、reaction、ack/revoke/cancel、attachment、room create/invite、summary、notification save |
+| local UI state | `RoomChat.tsx` | composer body/tags/preview、選択中UI、Undo、表示条件、dialog 相当の一時状態 |
+
+### Query / refetch / invalidation 方針
+
+- message post / attachment upload 後は `loadMessages()` を明示的に再実行する。
+- room create 後は `loadRooms()` を明示的に再実行し、作成済み room を選択する。
+- notification setting 保存後は PATCH レスポンスで hook state を更新する。
+- mention candidates は room change 時に abort し、ack candidates は 200ms debounce + abort で stale candidate 反映を抑止する。
+- message load は request sequence と target room を照合し、遅延した旧 room response が現在 room の messages / unread / loading state を上書きしない。
+- duplicate submit は in-flight ref で抑止し、message / ack request の二重 POST を防止する。
+
+### 行数とテスト
+
+- `RoomChat.tsx`: 2238 行 -> 1807 行。
+- 追加/拡張テスト:
+  - `useRoomChatMessages.test.tsx`
+  - `useRoomChatGlobalSearch.test.tsx`
+  - `roomChatApi.test.ts`
+  - `RoomChat.test.tsx` duplicate submit ケース
+- 詳細な検証証跡: `docs/test-results/2026-07-13-issue1923-roomchat-server-state.md`
+
 ## React Query 導入候補の境界
 
 | priority | candidate hook                       | query key / mutation boundary                                                 | 備考                                              |
