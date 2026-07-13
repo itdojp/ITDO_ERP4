@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   retryDocumentSend,
+  sendEstimateDocument,
   sendInvoiceDocument,
   sendPurchaseOrderDocument,
 } from '../dist/application/send/useCases.js';
@@ -32,6 +33,16 @@ function invoice(overrides = {}) {
     status: 'approved',
     projectId: 'proj-001',
     invoiceNo: 'INV-001',
+    ...overrides,
+  };
+}
+
+function estimate(overrides = {}) {
+  return {
+    id: 'est-001',
+    status: 'approved',
+    projectId: 'proj-001',
+    estimateNo: 'EST-001',
     ...overrides,
   };
 }
@@ -89,6 +100,7 @@ function pdfResult(overrides = {}) {
 function makePorts(calls, overrides = {}) {
   const records = {
     invoice: invoice(),
+    estimate: estimate(),
     purchaseOrder: purchaseOrder(),
     sendLog: null,
     ...overrides.records,
@@ -98,6 +110,12 @@ function makePorts(calls, overrides = {}) {
       update: async (args) => {
         calls.push(['invoiceUpdate', args]);
         return { ...records.invoice, ...args.data };
+      },
+    },
+    estimate: {
+      update: async (args) => {
+        calls.push(['estimateUpdate', args]);
+        return { ...records.estimate, ...args.data };
       },
     },
     purchaseOrder: {
@@ -119,6 +137,12 @@ function makePorts(calls, overrides = {}) {
         findUnique: async (args) => {
           calls.push(['invoiceFindUnique', args]);
           return records.invoice;
+        },
+      },
+      estimate: {
+        findUnique: async (args) => {
+          calls.push(['estimateFindUnique', args]);
+          return records.estimate;
         },
       },
       purchaseOrder: {
@@ -390,6 +414,56 @@ test('sendInvoiceDocument records failed send log and audit when PDF generation 
     ([name]) => name === 'logAudit:document_send_failed',
   )?.[1];
   assert.equal(failedAudit.metadata.error, 'pdf_generation_failed');
+});
+
+test('sendEstimateDocument uses estimate recipients, document number, and Message-ID update', async () => {
+  const calls = [];
+  const result = await sendEstimateDocument({
+    id: 'est-001',
+    actor: actor(),
+    auditContext: auditContext(),
+    ports: makePorts(calls, {
+      notify: {
+        status: 'success',
+        channel: 'email',
+        messageId: 'msg-estimate-001',
+      },
+    }),
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.value.status, 'sent');
+  assert.equal(result.value.emailMessageId, 'msg-estimate-001');
+
+  const policy = calls.find(([name]) => name === 'policy')?.[1];
+  assert.equal(policy.flowType, 'estimate');
+  assert.deepEqual(policy.state, { status: 'approved', projectId: 'proj-001' });
+
+  const sendLog = calls.find(([name]) => name === 'sendLogCreate')?.[1];
+  assert.equal(sendLog.data.kind, 'estimate');
+  assert.equal(sendLog.data.targetTable, 'estimates');
+  assert.deepEqual(sendLog.data.recipients, ['sales@example.com']);
+
+  const pdf = calls.find(([name]) => name === 'generatePdf')?.[1];
+  assert.deepEqual(pdf[1], { id: 'est-001', estimateNo: 'EST-001' });
+  assert.equal(pdf[2], 'EST-001');
+
+  const email = calls.find(([name]) => name === 'sendEstimateEmail')?.[1];
+  assert.deepEqual(email[0], ['sales@example.com']);
+  assert.equal(email[1], 'EST-001');
+  assert.deepEqual(email[3].metadata, {
+    sendLogId: 'send-log-1',
+    targetTable: 'estimates',
+    targetId: 'est-001',
+    kind: 'estimate',
+  });
+
+  const estimateUpdate = calls.find(([name]) => name === 'estimateUpdate')?.[1];
+  assert.deepEqual(estimateUpdate.data, {
+    status: 'sent',
+    pdfUrl: '/pdf-files/document.pdf',
+    emailMessageId: 'msg-estimate-001',
+  });
 });
 
 test('sendPurchaseOrderDocument updates purchase order without invoice Message-ID field', async () => {

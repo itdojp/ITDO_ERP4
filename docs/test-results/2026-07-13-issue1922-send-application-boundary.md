@@ -71,6 +71,7 @@ Retry keeps existing fail-safe/idempotency controls:
 - approval/evidence shortage stopping before PDF/external send/send-log creation
 - ActionPolicy reason-required denial stopping before evidence/external send
 - PDF generation failure creating failed send log and failed audit without external send
+- estimate send normal path covering recipients, document number, PDF payload, and Message-ID update
 - purchase order send normal path without invoice-only `emailMessageId` update field
 - retry log creation, `retryOf` metadata, completed audit, and Message-ID propagation
 - retry duplicate/idempotency blocks: `already_sent` and `retry_too_soon`
@@ -97,8 +98,8 @@ E2E_SCOPE=core E2E_CAPTURE=0 ./scripts/e2e-frontend.sh
 Results:
 
 - Backend build: PASS
-- Send application unit tests: PASS, 7 tests
-- ActionPolicy callsite / required-actions / Phase3 readiness / send targeted regression suite: PASS, 44 tests
+- Send application unit tests: PASS, 8 tests
+- ActionPolicy callsite / required-actions / Phase3 readiness / send targeted regression suite: PASS, 45 tests
 - ActionPolicy required-action gaps: PASS, missing/stale/dynamic all 0
 - Bounded-context dependency gate: PASS, 8 known violations ignored
 - Bounded-context coverage gate: PASS, 206 source files / 195 target route-service files / unclassified 0 / stale 0
