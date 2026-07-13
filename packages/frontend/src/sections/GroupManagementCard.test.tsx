@@ -256,6 +256,8 @@ describe('GroupManagementCard', () => {
 
     await waitFor(() => {
       expect(screen.getByLabelText('グループ')).toHaveValue('group-1');
+      expect(screen.getByText('メンバー数: 2')).toBeInTheDocument();
+      expect(screen.getByText('Alice')).toBeInTheDocument();
       expect(
         getCreateSection().getByRole('button', { name: '作成' }),
       ).toBeEnabled();
