@@ -12,6 +12,7 @@ import {
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test, { after } from 'node:test';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
 const BACKEND_DIR = path.resolve(
@@ -24,6 +25,7 @@ const SCRIPT_PATH = path.join(
 );
 const REPO_ROOT = path.resolve(BACKEND_DIR, '..', '..');
 const TEST_TEMP_DIR = path.join(REPO_ROOT, 'tmp', 'coverage-thresholds-test');
+const require = createRequire(import.meta.url);
 
 after(() => {
   rmSync(TEST_TEMP_DIR, { recursive: true, force: true });
@@ -99,6 +101,15 @@ function listSourceFilesRecursive(relativeDir) {
       return name.endsWith('.ts') ? [relativePath] : [];
     })
     .sort();
+}
+
+function listBackendSourceFiles() {
+  return listSourceFilesRecursive('src');
+}
+
+function countPhysicalLines(relativePath) {
+  const content = readFileSync(path.join(BACKEND_DIR, relativePath), 'utf8');
+  return content.split(/\r?\n/).length;
 }
 
 test('coverage threshold script passes when all metrics meet the scope threshold', () =>
@@ -355,6 +366,75 @@ test('chat coverage thresholds stay above the route-split baseline gate', () => 
       `chat ${metric} threshold should stay >= ${minimum}`,
     );
   }
+});
+
+test('projects coverage scope covers current Org & Project modules and shared project helpers', () => {
+  const config = readCoverageThresholdConfig();
+  const { contexts } = require('../bounded-context-registry.cjs');
+  const orgProject = contexts.find((context) => context.name === 'org-project');
+  assert.ok(orgProject, 'org-project context must exist');
+
+  const orgProjectRegexes = orgProject.patterns.map(
+    (pattern) => new RegExp(pattern),
+  );
+  const orgProjectFiles = listBackendSourceFiles().filter((file) =>
+    orgProjectRegexes.some((regex) => regex.test(file)),
+  );
+  const expectedFiles = [
+    ...orgProjectFiles,
+    ...listSourceFilesRecursive('src/application/projects'),
+    'src/services/dueDateRule.ts',
+  ].sort();
+  const configuredFiles = [...config.projects.files].sort();
+
+  assert.deepEqual(configuredFiles, expectedFiles);
+});
+
+test('projects coverage thresholds stay above the route-split baseline gate', () => {
+  const config = readCoverageThresholdConfig();
+  const minimums = {
+    statements: 66.2,
+    branches: 59.5,
+    functions: 77.8,
+    lines: 66.2,
+  };
+
+  for (const [metric, minimum] of Object.entries(minimums)) {
+    assert.ok(
+      config.projects.thresholds[metric] >= minimum,
+      `projects ${metric} threshold should stay >= ${minimum}`,
+    );
+  }
+});
+
+test('project route and application modules stay within the default backend line gate', () => {
+  const config = readCoverageThresholdConfig();
+  const projectFiles = config.projects.files.filter(
+    (file) =>
+      file.startsWith('src/routes/projects') ||
+      file.startsWith('src/application/projects'),
+  );
+
+  for (const file of projectFiles) {
+    assert.ok(
+      countPhysicalLines(file) <= 1500,
+      `${file} should stay below the default 1500-line backend gate`,
+    );
+  }
+});
+
+test('projects route uses the default max-lines gate without a temporary allowance', () => {
+  const eslintConfig = require('../eslint.config.cjs');
+  const sourceConfig = eslintConfig.find((entry) =>
+    entry.files?.includes('src/**/*.{ts,tsx}'),
+  );
+  const maxLinesRule = sourceConfig?.rules?.['max-lines'];
+  assert.equal(maxLinesRule?.[1]?.max, 1500);
+
+  const projectOverrides = eslintConfig.filter((entry) =>
+    entry.files?.includes('src/routes/projects.ts'),
+  );
+  assert.deepEqual(projectOverrides, []);
 });
 
 test('coverage configured source files exist on disk', () => {
