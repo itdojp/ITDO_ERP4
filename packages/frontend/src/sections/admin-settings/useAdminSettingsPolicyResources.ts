@@ -256,7 +256,6 @@ export function useAdminSettingsPolicyResources({
               targetTable: 'approval_rules',
               targetId: seriesRule.id,
               limit: '50',
-              format: 'json',
             });
             const res = await api<{ items: AuditLogItem[] }>(
               `/audit-logs?${query.toString()}`,

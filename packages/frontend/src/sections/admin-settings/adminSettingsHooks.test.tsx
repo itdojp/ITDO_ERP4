@@ -253,7 +253,7 @@ describe('AdminSettings resource hooks', () => {
       }
       if (
         path ===
-        '/audit-logs?targetTable=approval_rules&targetId=rule-current&limit=50&format=json'
+        '/audit-logs?targetTable=approval_rules&targetId=rule-current&limit=50'
       ) {
         return Promise.resolve({
           items: [
@@ -264,7 +264,7 @@ describe('AdminSettings resource hooks', () => {
       }
       if (
         path ===
-        '/audit-logs?targetTable=approval_rules&targetId=rule-previous&limit=50&format=json'
+        '/audit-logs?targetTable=approval_rules&targetId=rule-previous&limit=50'
       ) {
         return Promise.resolve({
           items: [
