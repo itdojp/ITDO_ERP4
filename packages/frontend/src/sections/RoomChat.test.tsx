@@ -924,9 +924,12 @@ describe('RoomChat', () => {
     fireEvent.click(screen.getByRole('button', { name: '検索' }));
 
     expect(await screen.findByText('beta result 1')).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'さらに読み込む' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('beta result 50')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'さらに読み込む' }),
+      ).toBeEnabled();
+    });
 
     fireEvent.click(screen.getByRole('button', { name: 'さらに読み込む' }));
 
