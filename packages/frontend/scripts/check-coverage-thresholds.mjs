@@ -72,8 +72,21 @@ function findSummaryEntry(summary, configuredFile) {
   return entry?.[1];
 }
 
-export function validateConfiguredFilesExist(files) {
-  if (!Array.isArray(files) || files.length === 0) return;
+export function validateConfiguredFilesExist(files, scopeName = 'unknown') {
+  if (!Array.isArray(files) || files.length === 0) {
+    throw new Error(
+      `coverage threshold scope must define a non-empty files array: ${scopeName}`,
+    );
+  }
+
+  const invalid = files.filter(
+    (file) => typeof file !== 'string' || file.length === 0,
+  );
+  if (invalid.length > 0) {
+    throw new Error(
+      `coverage configured file path must be a non-empty string: ${scopeName}`,
+    );
+  }
 
   const missing = files.filter((file) => !fs.existsSync(resolveFromCwd(file)));
   if (missing.length > 0) {
@@ -81,12 +94,12 @@ export function validateConfiguredFilesExist(files) {
       `coverage configured file does not exist: ${missing.join(', ')}`,
     );
   }
+
+  return files;
 }
 
 export function summarizeConfiguredFiles(summary, files) {
-  if (!Array.isArray(files) || files.length === 0) {
-    return summary;
-  }
+  const configuredFiles = validateConfiguredFilesExist(files, 'summary');
 
   const total = {
     statements: emptyMetric(),
@@ -96,7 +109,7 @@ export function summarizeConfiguredFiles(summary, files) {
   };
   const missing = [];
 
-  for (const file of files) {
+  for (const file of configuredFiles) {
     const entry = findSummaryEntry(summary, file);
     if (!entry) {
       missing.push(file);
@@ -159,13 +172,10 @@ export function runCoverageThresholdCheck(argv = process.argv.slice(2)) {
     );
   }
 
-  validateConfiguredFilesExist(scopeConfig.files);
+  const files = validateConfiguredFilesExist(scopeConfig.files, args.scope);
 
   const summaryPath = resolveFromCwd(args.summary || scopeConfig.summary);
-  const summary = summarizeConfiguredFiles(
-    readJson(summaryPath),
-    scopeConfig.files,
-  );
+  const summary = summarizeConfiguredFiles(readJson(summaryPath), files);
   const results = evaluateCoverageThresholds(summary, thresholds);
   const failures = results.filter((result) => !result.passed);
 

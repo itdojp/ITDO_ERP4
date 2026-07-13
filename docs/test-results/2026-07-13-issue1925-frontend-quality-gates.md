@@ -16,6 +16,7 @@
 - `RoomChat.test.tsx` の duplicate-submit test は coverage 実行時の遅延でも送信ボタン有効化を待つように安定化した。
 - `RateCardSettingsCard.test.tsx` の disable flow は CI 並列実行時に空リストを掴まないよう、対象 item と disable button の描画完了を待つように安定化した。
 - `EstimateDetail.test.tsx` の send-log retry flow は CI 並列実行時に API 呼び出し完了だけでなく、retry 後の履歴 item / error text の描画完了を待つように安定化した。
+- Copilot review 指摘に対応し、`vitest.config.ts` の `ui-core.files` validation、coverage checker の non-empty files fail-fast、`ui-core.files` 92件以上の scope shrink guard を追加した。
 
 ## Line count inventory
 
@@ -83,7 +84,7 @@ Added `packages/frontend/scripts/frontend-quality-gates.test.mjs` to cover:
 | `npm run test --prefix packages/frontend -- src/sections/RoomChat.test.tsx`                                           | PASS   | 1 file / 11 tests                                                                                  |
 | `npm run test --prefix packages/frontend -- src/sections/RateCardSettingsCard.test.tsx`                               | PASS   | 1 file / 10 tests                                                                                  |
 | `npm run test --prefix packages/frontend -- src/sections/EstimateDetail.test.tsx src/sections/InvoiceDetail.test.tsx` | PASS   | 2 files / 8 tests                                                                                  |
-| `npm run coverage:ui-core:check --prefix packages/frontend`                                                           | PASS   | node:test 10 tests + Vitest 82 files / 468 tests; thresholds above                                 |
+| `npm run coverage:ui-core:check --prefix packages/frontend`                                                           | PASS   | node:test 12 tests + Vitest 82 files / 468 tests; thresholds above                                 |
 | `npm run typecheck --prefix packages/frontend`                                                                        | PASS   | TypeScript no-emit                                                                                 |
 | `npm run lint --prefix packages/frontend`                                                                             | PASS   | ESLint, including `max-lines` 2000 gate                                                            |
 | `npm run format:check --prefix packages/frontend`                                                                     | PASS   | Prettier check for frontend source                                                                 |

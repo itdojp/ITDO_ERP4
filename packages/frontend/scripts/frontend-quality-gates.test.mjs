@@ -29,6 +29,7 @@ const TEST_TEMP_DIR = path.join(
   'frontend-quality-gates-test',
 );
 const require = createRequire(import.meta.url);
+const UI_CORE_FILE_COUNT_FLOOR = 92;
 
 afterEach(() => {
   rmSync(TEST_TEMP_DIR, { recursive: true, force: true });
@@ -83,6 +84,14 @@ function assertUiCoreCoverageCompleteness(files) {
   if (missing.length > 0) {
     throw new Error(
       `ui-core coverage scope is missing required server-state file(s): ${missing.join(', ')}`,
+    );
+  }
+}
+
+function assertUiCoreCoverageScopeSize(files) {
+  if (!Array.isArray(files) || files.length < UI_CORE_FILE_COUNT_FLOOR) {
+    throw new Error(
+      `ui-core coverage scope must include at least ${UI_CORE_FILE_COUNT_FLOOR} files`,
     );
   }
 }
@@ -192,6 +201,7 @@ test('ui-core coverage includes AdminSettings and RoomChat server-state files', 
   const config = readCoverageThresholdConfig();
 
   assertUiCoreCoverageCompleteness(config['ui-core'].files);
+  assertUiCoreCoverageScopeSize(config['ui-core'].files);
 });
 
 test('ui-core coverage completeness detects a missing server-state target', () => {
@@ -215,6 +225,15 @@ test('coverage threshold script passes when configured files meet thresholds', (
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /ui-core statements: 95\.00% >= 90\.00% PASS/);
   }));
+
+test('ui-core coverage scope-size guard detects significant scope shrink', () => {
+  const reducedToServerStateOnly = expectedServerStateCoverageFiles();
+
+  assert.throws(
+    () => assertUiCoreCoverageScopeSize(reducedToServerStateOnly),
+    /at least 92 files/,
+  );
+});
 
 test('coverage threshold script fails when a major test removal drops coverage below threshold', () =>
   withTempDir((dir) => {
@@ -242,6 +261,22 @@ test('coverage threshold script fails on stale configured files', () =>
     assert.match(
       result.stderr,
       /coverage configured file does not exist: src\/removed-ui-core-file\.tsx/,
+    );
+  }));
+
+test('coverage threshold script fails when the configured files list is empty', () =>
+  withTempDir((dir) => {
+    const { configPath } = writeCoverageFixture(dir);
+    const config = JSON.parse(readFileSync(configPath, 'utf8'));
+    config['ui-core'].files = [];
+    writeFileSync(configPath, JSON.stringify(config));
+
+    const result = runCoverageCheck(configPath);
+
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /coverage threshold scope must define a non-empty files array: ui-core/,
     );
   }));
 
