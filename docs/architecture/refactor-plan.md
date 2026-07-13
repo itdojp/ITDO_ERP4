@@ -64,6 +64,7 @@
 - 2026-07-13: project task / dependency / baseline routeを `routes/projects/tasks.ts` へ分離し、DB orchestrationを `application/projects/taskUseCases.ts` へ抽出。親子タスクcycle判定をpure helper化し、`routes/projects.ts` を 537 行まで縮小（Issue #1913）
 - 2026-07-13: project milestone CRUD / draft invoice sync と recurring template / generation-log listing を `routes/projects/milestones.ts` / `recurring.ts`、`application/projects/milestoneUseCases.ts` / `recurringTemplateUseCases.ts` へ分離。`routes/projects.ts` を 195 行まで縮小し、milestone-billing / template-job 境界を証跡化（Issue #1914）
 - 2026-07-13: `coverage:projects:check` を既存必須 `CI / backend` job に追加し、Org & Project context registry、`application/projects/**`、`services/dueDateRule.ts` の coverage scope completeness と baseline閾値（statements/lines 66.2%、branches 59.5%、functions 77.8%）を固定。`projects.ts` は temporary max-lines allowanceなしでdefault 1500行gate内を維持（Issue #1915）
+- 2026-07-13: `routes/timeEntries.ts` の patch / submit / reassign における ActionPolicy / Approval / Notification / PeriodLock / Reassignment / Audit orchestration を `application/timeEntries/useCases.ts` へ抽出し、routeから対象cross-context直接import 7件を削除。baselineは45件から38件へ縮小（Issue #1916）
 
 ## 今回のP0実装（Issue #643）
 

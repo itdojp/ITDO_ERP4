@@ -110,6 +110,7 @@ const layers = [
       '^src/application/expenses/.+\\.ts$',
       '^src/application/chat/.+\\.ts$',
       '^src/application/projects/.+\\.ts$',
+      '^src/application/timeEntries/.+\\.ts$',
       '^src/routes/(index|insights|recurringJobs|refCandidates|reportSubscriptions|reports|search|sendEvents|testHooks|wellbeing)\\.ts$',
       '^src/services/(accountingEvents|approvalEscalation|dailyReportMissing|leaveEntitlementReminders|reports)\\.ts$',
     ],
