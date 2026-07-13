@@ -80,10 +80,39 @@ async function run(instance, body) {
   );
 });
 
+test('collectCallsitesFromSource: skips helper declarations when scanning backend source', () => {
+  const source = `
+export async function evaluateActionPolicyWithFallback(input) {
+  return input;
+}
+
+async function run() {
+  return evaluateActionPolicyWithFallback({
+    flowType: FlowTypeValue.vendor_invoice,
+    actionKey: 'submit',
+    targetTable: 'vendor_invoices',
+  });
+}
+`;
+  const rows = collectCallsitesFromSource(source, '/tmp/actionPolicy.ts');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].flowType, 'vendor_invoice');
+  assert.equal(rows[0].actionKey, 'submit');
+});
+
 test('collectCallsites: scans backend source callsites', () => {
   const rootDir = parseOptionsFromArgv([]).root;
   const rows = collectCallsites(rootDir);
   assert.ok(rows.length > 0);
+  assert.equal(
+    rows.some(
+      (row) =>
+        row.file.endsWith('services/actionPolicy.ts') &&
+        row.flowType === 'unknown' &&
+        row.actionKey === 'unknown',
+    ),
+    false,
+  );
 
   const vendorSubmit = rows.find(
     (row) =>

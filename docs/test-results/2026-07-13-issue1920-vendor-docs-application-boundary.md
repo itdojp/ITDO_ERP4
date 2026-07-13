@@ -88,7 +88,7 @@ Current local results:
 - `prisma:generate`: PASS.
 - `npm run build --prefix packages/backend`: PASS.
 - Targeted vendor document application / submit policy / edit policy / PO link / allocation / line / reconciliation tests: PASS, 44 tests.
-- Targeted ActionPolicy callsite / required-actions / phase3 readiness tests: PASS, 21 tests. The callsite report now scans backend source (`src`) rather than route-only files so application-orchestration use cases remain covered after route extraction.
+- Targeted ActionPolicy callsite / required-actions / phase3 readiness tests: PASS, 22 tests after review fixes. The callsite and required-actions reports now scan backend source (`src`) rather than route-only files so application-orchestration use cases remain covered after route extraction. The callsite collector also skips the `evaluateActionPolicyWithFallback` helper declaration when scanning `src/services/actionPolicy.ts`.
 - `npm run lint --prefix packages/backend`: PASS.
 - `npm run format:check --prefix packages/backend`: PASS.
 - `npm run arch:bounded-context --prefix packages/backend`: PASS, 18 known violations ignored.

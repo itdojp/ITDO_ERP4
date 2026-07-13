@@ -16,7 +16,7 @@ test('parseOptionsFromArgv: defaults merge fallback and gap options', () => {
   assert.equal(options.take, 1000);
   assert.equal(options.to.toISOString(), '2026-03-08T00:00:00.000Z');
   assert.equal(options.from.toISOString(), '2026-03-07T00:00:00.000Z');
-  assert.ok(options.callsiteRoot.endsWith('packages/backend/src/routes'));
+  assert.ok(options.callsiteRoot.endsWith('packages/backend/src'));
   assert.ok(
     options.presetFile.endsWith(
       'packages/backend/src/services/policyEnforcementPreset.ts',

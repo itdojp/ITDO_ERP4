@@ -131,6 +131,14 @@ function countLine(source, offset) {
   return line;
 }
 
+function nextNonWhitespaceChar(source, offset) {
+  for (let i = offset; i < source.length; i += 1) {
+    const ch = source[i];
+    if (!/\s/.test(ch)) return ch;
+  }
+  return "";
+}
+
 function extractFieldExpression(text, field) {
   const pattern = new RegExp(`\\b${field}\\s*:\\s*([^,\\n}]+)`);
   const match = text.match(pattern);
@@ -232,6 +240,10 @@ export function collectCallsitesFromSource(source, filePath) {
     const closeIndex = findMatchingParen(source, openIndex);
     if (openIndex < 0 || closeIndex < 0) {
       cursor = start + marker.length;
+      continue;
+    }
+    if (nextNonWhitespaceChar(source, openIndex + 1) !== "{") {
+      cursor = closeIndex + 1;
       continue;
     }
     const argsText = source.slice(openIndex + 1, closeIndex);

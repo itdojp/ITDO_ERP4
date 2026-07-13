@@ -12,7 +12,7 @@ import { collectCallsites } from '../../../scripts/report-action-policy-callsite
 test('parseOptionsFromArgv: defaults and format validation', () => {
   const options = parseOptionsFromArgv([]);
   assert.equal(options.format, 'text');
-  assert.ok(options.callsiteRoot.endsWith('packages/backend/src/routes'));
+  assert.ok(options.callsiteRoot.endsWith('packages/backend/src'));
   assert.ok(
     options.presetFile.endsWith(
       'packages/backend/src/services/policyEnforcementPreset.ts',
