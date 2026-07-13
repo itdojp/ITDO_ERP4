@@ -1,9 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { LeaveStatus, Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
-import { submitApprovalWithUpdate } from '../services/approval.js';
-import { createApprovalPendingNotifications } from '../services/appNotifications.js';
-import { FlowTypeValue, TimeStatusValue } from '../types.js';
+import { TimeStatusValue } from '../types.js';
 import { requireRole } from '../services/rbac.js';
 import {
   leaveTypeCreateSchema,
@@ -13,13 +11,13 @@ import {
   leaveRequestSchema,
 } from './validators.js';
 import { diffInDays, endOfDay, parseDateParam } from '../utils/date.js';
-import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
-import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
+import { auditContextFromRequest } from '../services/audit.js';
 import {
-  logActionPolicyFallbackAllowedIfNeeded,
-  logActionPolicyOverrideIfNeeded,
-} from '../services/actionPolicyAudit.js';
-import { loadResolvedAnnotationReferenceState } from '../services/annotationReferences.js';
+  authorizeLeaveSubmit,
+  loadLeaveSubmitEvidence,
+  submitLeaveRequestForApproval,
+  type LeaveActorContext,
+} from '../application/leave/useCases.js';
 import { ensureLeaveSetting } from '../services/leaveSettings.js';
 import {
   computePaidLeaveBalance,
@@ -69,6 +67,29 @@ function hasGroupIntersection(lhs: string[], rhs: string[]) {
 
 function toDateOnlyString(value: Date) {
   return value.toISOString().slice(0, 10);
+}
+
+function leaveActorFromRequest(req: {
+  user?: {
+    userId?: string;
+    roles?: string[];
+    groupIds?: string[];
+    groupAccountIds?: string[];
+  };
+}): LeaveActorContext {
+  return {
+    userId: req.user?.userId ?? null,
+    roles: req.user?.roles ?? [],
+    groupIds: req.user?.groupIds ?? [],
+    groupAccountIds: req.user?.groupAccountIds ?? [],
+  };
+}
+
+function sendLeaveApplicationFailure(
+  reply: { status: (code: number) => { send: (body: unknown) => unknown } },
+  result: { ok: false; statusCode: number; body: unknown },
+) {
+  return reply.status(result.statusCode).send(result.body);
 }
 
 export async function registerLeaveRoutes(app: FastifyInstance) {
@@ -737,59 +758,16 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         return reply.code(403).send({ error: 'forbidden' });
       }
 
-      const policyRes = await evaluateActionPolicyWithFallback({
-        flowType: FlowTypeValue.leave,
-        actionKey: 'submit',
-        actor: {
-          userId: req.user?.userId ?? null,
-          roles: req.user?.roles || [],
-          groupIds: req.user?.groupIds || [],
-          groupAccountIds: req.user?.groupAccountIds || [],
-        },
+      const policyResult = await authorizeLeaveSubmit({
+        id,
+        status: leave.status,
         reasonText,
-        state: { status: leave.status },
-        targetTable: 'leave_requests',
-        targetId: id,
+        actor: leaveActorFromRequest(req),
+        auditContext: auditContextFromRequest(req),
       });
-      if (policyRes.policyApplied && !policyRes.allowed) {
-        if (policyRes.reason === 'reason_required') {
-          return reply.status(400).send({
-            error: {
-              code: 'REASON_REQUIRED',
-              message: 'reasonText is required for override',
-              details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
-            },
-          });
-        }
-        return reply.status(403).send({
-          error: {
-            code: resolveActionPolicyDeniedCode(policyRes),
-            message: 'LeaveRequest cannot be submitted',
-            details: {
-              reason: policyRes.reason,
-              matchedPolicyId: policyRes.matchedPolicyId ?? null,
-              guardFailures: policyRes.guardFailures ?? null,
-            },
-          },
-        });
+      if (!policyResult.ok) {
+        return sendLeaveApplicationFailure(reply, policyResult);
       }
-      await logActionPolicyFallbackAllowedIfNeeded({
-        req,
-        flowType: FlowTypeValue.leave,
-        actionKey: 'submit',
-        targetTable: 'leave_requests',
-        targetId: id,
-        result: policyRes,
-      });
-      await logActionPolicyOverrideIfNeeded({
-        req,
-        flowType: FlowTypeValue.leave,
-        actionKey: 'submit',
-        targetTable: 'leave_requests',
-        targetId: id,
-        reasonText,
-        result: policyRes,
-      });
       const workDateEnd = endOfDay(leave.endDate);
       const setting = await ensureLeaveSetting({
         actorId: req.user?.userId ?? null,
@@ -1033,20 +1011,8 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
         }
       }
 
-      const annotationState = await loadResolvedAnnotationReferenceState(
-        prisma,
-        'leave_request',
-        id,
-      );
-      const normalizedInternalRefs = annotationState.internalRefs.map(
-        (ref) => ({
-          kind: ref.kind,
-          refId: ref.id,
-        }),
-      );
-      const externalUrls = annotationState.externalUrls;
-      const hasAttachmentEvidence =
-        externalUrls.length > 0 || normalizedInternalRefs.length > 0;
+      const evidenceState = await loadLeaveSubmitEvidence({ id });
+      const hasAttachmentEvidence = evidenceState.hasAttachmentEvidence;
       if (
         leaveType?.attachmentPolicy === 'required' &&
         !hasAttachmentEvidence
@@ -1059,9 +1025,7 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           },
         });
       }
-      const hasConsultationEvidence = normalizedInternalRefs.some(
-        (ref) => ref.kind === 'chat_message',
-      );
+      const hasConsultationEvidence = evidenceState.hasConsultationEvidence;
 
       if (!hasConsultationEvidence) {
         if (!noConsultationConfirmed || !noConsultationReason) {
@@ -1147,32 +1111,12 @@ export async function registerLeaveRoutes(app: FastifyInstance) {
           shortageWarning: paidLeaveBalance?.shortageWarning ?? null,
         };
       }
-      const actorUserId = req.user?.userId || 'system';
-      const { updated, approval } = await submitApprovalWithUpdate({
-        flowType: FlowTypeValue.leave,
-        targetTable: 'leave_requests',
-        targetId: id,
-        update: (tx) =>
-          tx.leaveRequest.update({
-            where: { id },
-            data: { status: 'pending_manager', ...noConsultationUpdate },
-          }),
-        payload: {
-          hours: leave.hours || 0,
-          minutes: requestedLeaveMinutes,
-        },
-        createdBy: userId,
-      });
-      await createApprovalPendingNotifications({
-        approvalInstanceId: approval.id,
-        projectId: approval.projectId,
-        requesterUserId: actorUserId,
-        actorUserId,
-        flowType: approval.flowType,
-        targetTable: approval.targetTable,
-        targetId: approval.targetId,
-        currentStep: approval.currentStep,
-        steps: approval.steps,
+      const updated = await submitLeaveRequestForApproval({
+        id,
+        leave: { hours: leave.hours },
+        requestedLeaveMinutes,
+        noConsultationUpdate,
+        actor: leaveActorFromRequest(req),
       });
       return {
         ...updated,

@@ -115,6 +115,7 @@ const layers = [
       '^src/application/estimates/.+\\.ts$',
       '^src/application/purchaseOrders/.+\\.ts$',
       '^src/application/vendorDocs/.+\\.ts$',
+      '^src/application/leave/.+\\.ts$',
       '^src/routes/(index|insights|recurringJobs|refCandidates|reportSubscriptions|reports|search|sendEvents|testHooks|wellbeing)\\.ts$',
       '^src/services/(accountingEvents|approvalEscalation|dailyReportMissing|leaveEntitlementReminders|reports)\\.ts$',
     ],
