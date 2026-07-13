@@ -1,18 +1,27 @@
-import { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { nextNumber } from '../services/numbering.js';
-import { submitApprovalWithUpdate } from '../services/approval.js';
-import { createApprovalPendingNotifications } from '../services/appNotifications.js';
-import { evaluateActionPolicyWithFallback } from '../services/actionPolicy.js';
-import { resolveActionPolicyDeniedCode } from '../services/actionPolicyErrors.js';
-import {
-  logActionPolicyFallbackAllowedIfNeeded,
-  logActionPolicyOverrideIfNeeded,
-} from '../services/actionPolicyAudit.js';
-import { FlowTypeValue, DocStatusValue } from '../types.js';
+import { DocStatusValue } from '../types.js';
 import { purchaseOrderSchema } from './validators.js';
 import { requireRole } from '../services/rbac.js';
 import { prisma } from '../services/db.js';
 import { checkProjectAndVendor } from '../services/entityChecks.js';
+import { auditContextFromRequest } from '../services/audit.js';
+import {
+  submitPurchaseOrderForApproval,
+  type PurchaseOrderActorContext,
+} from '../application/purchaseOrders/useCases.js';
+
+function purchaseOrderActorFromRequest(
+  req: FastifyRequest,
+): PurchaseOrderActorContext {
+  return {
+    userId: req.user?.userId ?? null,
+    roles: req.user?.roles ?? [],
+    groupIds: req.user?.groupIds ?? [],
+    groupAccountIds: req.user?.groupAccountIds ?? [],
+    projectIds: req.user?.projectIds ?? [],
+  };
+}
 
 export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
   app.get(
@@ -102,91 +111,19 @@ export async function registerPurchaseOrderRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params as { id: string };
       const body = req.body as any;
-      const reasonText =
-        typeof body?.reasonText === 'string' ? body.reasonText.trim() : '';
-      const po = await prisma.purchaseOrder.findUnique({
-        where: { id },
-        select: { status: true, projectId: true },
+      const result = await submitPurchaseOrderForApproval({
+        id,
+        body,
+        actor: purchaseOrderActorFromRequest(req),
+        auditContext: auditContextFromRequest(req),
       });
-      if (po) {
-        const policyRes = await evaluateActionPolicyWithFallback({
-          flowType: FlowTypeValue.purchase_order,
-          actionKey: 'submit',
-          actor: {
-            userId: req.user?.userId ?? null,
-            roles: req.user?.roles || [],
-            groupIds: req.user?.groupIds || [],
-            groupAccountIds: req.user?.groupAccountIds || [],
-          },
-          reasonText,
-          state: { status: po.status, projectId: po.projectId },
-          targetTable: 'purchase_orders',
-          targetId: id,
-        });
-        if (policyRes.policyApplied && !policyRes.allowed) {
-          if (policyRes.reason === 'reason_required') {
-            return reply.status(400).send({
-              error: {
-                code: 'REASON_REQUIRED',
-                message: 'reasonText is required for override',
-                details: { matchedPolicyId: policyRes.matchedPolicyId ?? null },
-              },
-            });
-          }
-          return reply.status(403).send({
-            error: {
-              code: resolveActionPolicyDeniedCode(policyRes),
-              message: 'Purchase order cannot be submitted',
-              details: {
-                reason: policyRes.reason,
-                matchedPolicyId: policyRes.matchedPolicyId ?? null,
-                guardFailures: policyRes.guardFailures ?? null,
-              },
-            },
-          });
-        }
-        await logActionPolicyFallbackAllowedIfNeeded({
-          req,
-          flowType: FlowTypeValue.purchase_order,
-          actionKey: 'submit',
-          targetTable: 'purchase_orders',
-          targetId: id,
-          result: policyRes,
-        });
-        await logActionPolicyOverrideIfNeeded({
-          req,
-          flowType: FlowTypeValue.purchase_order,
-          actionKey: 'submit',
-          targetTable: 'purchase_orders',
-          targetId: id,
-          reasonText,
-          result: policyRes,
-        });
+      if (!result.ok) {
+        return reply
+          .status(result.statusCode)
+          .type('application/json')
+          .send(result.body);
       }
-      const actorUserId = req.user?.userId || 'system';
-      const { updated, approval } = await submitApprovalWithUpdate({
-        flowType: FlowTypeValue.purchase_order,
-        targetTable: 'purchase_orders',
-        targetId: id,
-        update: (tx) =>
-          tx.purchaseOrder.update({
-            where: { id },
-            data: { status: DocStatusValue.pending_qa },
-          }),
-        createdBy: req.user?.userId,
-      });
-      await createApprovalPendingNotifications({
-        approvalInstanceId: approval.id,
-        projectId: approval.projectId,
-        requesterUserId: actorUserId,
-        actorUserId,
-        flowType: approval.flowType,
-        targetTable: approval.targetTable,
-        targetId: approval.targetId,
-        currentStep: approval.currentStep,
-        steps: approval.steps,
-      });
-      return updated;
+      return reply.type('application/json').send(result.value);
     },
   );
 }

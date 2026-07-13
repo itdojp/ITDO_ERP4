@@ -51,6 +51,7 @@
 - [Issue #1916 TimeEntries application boundary verification](2026-07-13-issue1916-timeentries-application-boundary.md)
 - [Issue #1917 Invoice application boundary verification](2026-07-13-issue1917-invoice-application-boundary.md)
 - [Issue #1918 Estimate application boundary verification](2026-07-13-issue1918-estimate-application-boundary.md)
+- [Issue #1919 Purchase order application boundary verification](2026-07-13-issue1919-purchase-order-application-boundary.md)
 
 ### 2026-07-12
 
