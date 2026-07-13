@@ -90,9 +90,9 @@ function normalizeReasonText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  return value as Record<string, unknown>;
+function reasonTextFromBody(body: unknown): string {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return '';
+  return normalizeReasonText((body as { reasonText?: unknown }).reasonText);
 }
 
 function policyDeniedResponse(input: {
@@ -153,8 +153,7 @@ export async function submitEstimateForApproval(input: {
   ports?: EstimateApplicationPortOverrides;
 }): Promise<EstimateApplicationResult<unknown>> {
   const p = ports(input.ports);
-  const body = asRecord(input.body);
-  const reasonText = normalizeReasonText(body.reasonText);
+  const reasonText = reasonTextFromBody(input.body);
   const estimate = await p.db.estimate.findUnique({
     where: { id: input.id },
     select: { status: true, projectId: true },
