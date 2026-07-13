@@ -142,7 +142,6 @@ export const RoomChat: React.FC = () => {
     setItems,
     hasMore,
     isLoading,
-    setIsLoading,
     isLoadingMore,
     message,
     setMessage,
@@ -156,6 +155,7 @@ export const RoomChat: React.FC = () => {
   const [summaryModel, setSummaryModel] = useState('');
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [isSummarizingExternal, setIsSummarizingExternal] = useState(false);
+  const [isPosting, setIsPosting] = useState(false);
 
   const [body, setBody] = useState('');
   const [showPreview, setShowPreview] = useState(false);
@@ -464,13 +464,11 @@ export const RoomChat: React.FC = () => {
     globalQuery,
     setGlobalQuery,
     globalItems,
-    setGlobalItems,
     globalHasMore,
-    setGlobalHasMore,
     globalMessage,
-    setGlobalMessage,
     globalLoading,
     loadGlobalSearch,
+    clearGlobalSearch,
   } = useRoomChatGlobalSearch();
 
   const [pendingScrollMessageId, setPendingScrollMessageId] = useState('');
@@ -790,7 +788,7 @@ export const RoomChat: React.FC = () => {
     }
     try {
       isPostingRef.current = true;
-      setIsLoading(true);
+      setIsPosting(true);
       setMessage('');
       const mentions = buildMentionsPayload();
       const basePayload: {
@@ -864,7 +862,7 @@ export const RoomChat: React.FC = () => {
       setMessage('投稿に失敗しました');
     } finally {
       isPostingRef.current = false;
-      setIsLoading(false);
+      setIsPosting(false);
     }
   };
 
@@ -1460,7 +1458,7 @@ export const RoomChat: React.FC = () => {
               type="checkbox"
               checked={showPreview}
               onChange={(e) => setShowPreview(e.target.checked)}
-              disabled={isLoading}
+              disabled={isLoading || isPosting}
             />
             プレビュー
           </label>
@@ -1501,10 +1499,10 @@ export const RoomChat: React.FC = () => {
               placeholder="Markdownで入力"
               mentionPlaceholder="メンション対象を検索（ユーザ/グループ）"
               groupPlaceholder="確認対象グループを検索"
-              submitLabel={isLoading ? '送信中...' : '送信'}
+              submitLabel={isPosting ? '送信中...' : '送信'}
               cancelLabel="クリア"
               requiredSectionLabel="確認依頼の対象"
-              disabled={isLoading}
+              disabled={isLoading || isPosting}
               limits={{ maxBodyLength: 2000, maxMentions: 70, maxGroups: 20 }}
             />
             {(mentionCandidates.allowAll ?? true) && (
@@ -1723,7 +1721,7 @@ export const RoomChat: React.FC = () => {
               <button
                 className="button secondary"
                 onClick={() => postMessage('ack')}
-                disabled={isLoading}
+                disabled={isLoading || isPosting}
               >
                 確認依頼
               </button>
@@ -1793,9 +1791,7 @@ export const RoomChat: React.FC = () => {
         setGlobalQuery={setGlobalQuery}
         loadGlobalSearch={loadGlobalSearch}
         globalLoading={globalLoading}
-        setGlobalItems={setGlobalItems}
-        setGlobalHasMore={setGlobalHasMore}
-        setGlobalMessage={setGlobalMessage}
+        clearGlobalSearch={clearGlobalSearch}
         globalMessage={globalMessage}
         globalItems={globalItems}
         globalHasMore={globalHasMore}

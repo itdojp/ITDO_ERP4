@@ -81,4 +81,21 @@ describe('useRoomChatGlobalSearch', () => {
     expect(result.current.globalItems).toEqual([...firstPage, ...secondPage]);
     expect(result.current.globalHasMore).toBe(false);
   });
+
+  it('clears global search results through the hook action', async () => {
+    api.mockResolvedValueOnce({ items: [item('item-1')] });
+    const { result } = renderHook(() => useRoomChatGlobalSearch());
+    act(() => result.current.setGlobalQuery('beta'));
+
+    await act(async () => {
+      await result.current.loadGlobalSearch();
+    });
+    expect(result.current.globalItems).toEqual([item('item-1')]);
+
+    act(() => result.current.clearGlobalSearch());
+
+    expect(result.current.globalItems).toEqual([]);
+    expect(result.current.globalHasMore).toBe(false);
+    expect(result.current.globalMessage).toBe('');
+  });
 });

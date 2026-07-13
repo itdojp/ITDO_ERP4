@@ -58,10 +58,12 @@ Measured with `wc -l`:
   - room list message loading with unread/read side effects
   - short query validation before API call
   - room switch stale response guard
+  - stale `loadMessages` reference captured before room change does not clear the active room
   - load failure error/pagination reset
 - `packages/frontend/src/sections/room-chat/useRoomChatGlobalSearch.test.tsx`
   - short global query validation
   - append pagination using the previous last `createdAt`
+  - `clearGlobalSearch()` action resets results through the hook boundary
 - `packages/frontend/src/sections/room-chat/roomChatApi.test.ts`
   - message query key construction
   - mutation command endpoint and payload coverage for message, ack, reaction, preview, room create, and notification save
@@ -94,16 +96,16 @@ Results so far:
 
 - Frontend dependency install: PASS, 0 vulnerabilities
 - Frontend typecheck: PASS
-- Targeted RoomChat/server-state tests: PASS, 5 files / 23 tests
+- Targeted RoomChat/server-state tests: PASS, 5 files / 25 tests
 - Frontend lint: PASS
 - Frontend format check: PASS
-- Full frontend test suite: PASS, 81 files / 458 tests
+- Full frontend test suite: PASS, 81 files / 460 tests
 - Frontend build: PASS
 - Frontend build budget: PASS
   - Entry JS: 52.2 KiB / gzip 15.9 KiB
   - Initial JS total: 516.7 KiB / gzip 157.8 KiB
   - Largest JS chunk: 289.7 KiB / gzip 87.1 KiB
-  - RoomChat chunk: 46.18 kB / gzip 13.19 kB
+  - RoomChat chunk: 46.00 kB / gzip 13.11 kB
 - Frontend npm audit high: PASS, 0 vulnerabilities
 - Test-results index check: PASS
 - Markdown image-link check: PASS, 115 image links in 321 markdown files

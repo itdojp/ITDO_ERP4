@@ -35,7 +35,7 @@ export function useRoomChatGlobalSearch() {
           limit: pageSize,
         });
         setGlobalItems((prev) => (append ? [...prev, ...fetched] : fetched));
-        setGlobalHasMore(fetched.length >= pageSize);
+        setGlobalHasMore(fetched.length === pageSize);
       } catch (err) {
         console.error('Failed to search chat messages.', err);
         setGlobalMessage('検索に失敗しました');
@@ -48,16 +48,20 @@ export function useRoomChatGlobalSearch() {
     [globalQuery],
   );
 
+  const clearGlobalSearch = useCallback(() => {
+    setGlobalItems([]);
+    setGlobalHasMore(false);
+    setGlobalMessage('');
+  }, []);
+
   return {
     globalQuery,
     setGlobalQuery,
     globalItems,
-    setGlobalItems,
     globalHasMore,
-    setGlobalHasMore,
     globalMessage,
-    setGlobalMessage,
     globalLoading,
     loadGlobalSearch,
+    clearGlobalSearch,
   };
 }

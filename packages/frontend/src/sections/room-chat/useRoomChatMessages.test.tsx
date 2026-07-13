@@ -163,6 +163,29 @@ describe('useRoomChatMessages', () => {
     expect(result.current.items).toEqual([message('m2', 'room-2')]);
   });
 
+  it('ignores a loadMessages reference captured before the room changed', async () => {
+    const { result, rerender } = renderHook(
+      ({ roomId }) =>
+        useRoomChatMessages({ roomId, filterQuery: '', filterTag: '' }),
+      { initialProps: { roomId: 'room-1' } },
+    );
+    const staleLoadMessages = result.current.loadMessages;
+
+    rerender({ roomId: 'room-2' });
+    act(() => {
+      result.current.setItems([message('m2', 'room-2')]);
+    });
+
+    await act(async () => {
+      await staleLoadMessages();
+    });
+
+    expect(api).not.toHaveBeenCalled();
+    expect(result.current.items).toEqual([message('m2', 'room-2')]);
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.isLoadingMore).toBe(false);
+  });
+
   it('reports load failures without retaining pagination state', async () => {
     api.mockRejectedValueOnce(new Error('network failed'));
     const { result } = renderHook(() =>

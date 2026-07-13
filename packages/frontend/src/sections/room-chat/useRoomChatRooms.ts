@@ -75,7 +75,6 @@ export function useRoomChatRooms({
 
   return {
     rooms,
-    setRooms,
     roomId,
     setRoomId,
     roomMessage,

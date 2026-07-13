@@ -43,10 +43,9 @@ export function useRoomChatMessages({
 
   const fetchUnreadState = useCallback(async (targetRoomId: string) => {
     const unread = await fetchRoomUnreadState(targetRoomId);
-    if (roomIdRef.current !== targetRoomId) return unread.unreadCount;
+    if (roomIdRef.current !== targetRoomId) return;
     setUnreadCount(unread.unreadCount);
     setHighlightSince(unread.lastReadAt ? new Date(unread.lastReadAt) : null);
-    return unread.unreadCount;
   }, []);
 
   const markRead = useCallback(async (targetRoomId: string) => {
@@ -61,6 +60,7 @@ export function useRoomChatMessages({
     async (options?: LoadMessagesOptions) => {
       if (!roomId) return;
       const targetRoomId = roomId;
+      if (roomIdRef.current !== targetRoomId) return;
       const append = options?.append === true;
       const requestSeq = ++requestSeqRef.current;
       const isCurrentRequest = () =>
@@ -120,6 +120,9 @@ export function useRoomChatMessages({
         if (isCurrentRequest()) {
           setIsLoading(false);
           setIsLoadingMore(false);
+        } else if (requestSeqRef.current === requestSeq) {
+          setIsLoading(false);
+          setIsLoadingMore(false);
         }
       }
     },
@@ -130,18 +133,12 @@ export function useRoomChatMessages({
     items,
     setItems,
     hasMore,
-    setHasMore,
     isLoading,
-    setIsLoading,
     isLoadingMore,
     message,
     setMessage,
     unreadCount,
-    setUnreadCount,
     highlightSince,
-    setHighlightSince,
-    fetchUnreadState,
-    markRead,
     loadMessages,
   };
 }
