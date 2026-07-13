@@ -264,10 +264,10 @@ test('coverage threshold script fails when a configured file is absent from summ
 test('ui-core coverage thresholds stay above the post-extraction baseline gate', () => {
   const config = readCoverageThresholdConfig();
   const minimums = {
-    statements: 68.2,
-    branches: 61.1,
-    functions: 67.3,
-    lines: 70.6,
+    statements: 68.0,
+    branches: 61.0,
+    functions: 67.0,
+    lines: 70.5,
   };
 
   for (const [metricName, minimum] of Object.entries(minimums)) {

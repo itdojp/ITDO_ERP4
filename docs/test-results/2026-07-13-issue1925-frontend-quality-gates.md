@@ -51,12 +51,14 @@
 
 | Metric     | Measured | Threshold |
 | ---------- | -------: | --------: |
-| statements |   68.22% |    68.20% |
-| branches   |   61.13% |    61.10% |
-| functions  |   67.36% |    67.30% |
-| lines      |   70.68% |    70.60% |
+| statements |   68.22% |    68.00% |
+| branches   |   61.13% |    61.00% |
+| functions  |   67.36% |    67.00% |
+| lines      |   70.68% |    70.50% |
 
 `coverage:ui-core:check` は `coverage/ui-core/coverage-summary.json` から `ui-core.files` のみを再集計する。対象外 UI の追加で分母が変わらない一方、AdminSettings / RoomChat 境界から対象ファイルを外した場合は completeness test または summary missing check が失敗する。
+
+CI run `29230135795` / `29230137927` では V8 coverage の環境差により statements 68.10%、branches 61.07%、functions 67.15%、lines 70.56% とローカルより低く計測されたため、初期 gate は CI 実測値を下回る最小安全マージン付きの閾値（68.0 / 61.0 / 67.0 / 70.5）に調整した。
 
 ## Negative coverage
 

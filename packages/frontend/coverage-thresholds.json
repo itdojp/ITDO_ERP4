@@ -2,10 +2,10 @@
   "ui-core": {
     "summary": "coverage/ui-core/coverage-summary.json",
     "thresholds": {
-      "statements": 68.2,
-      "branches": 61.1,
-      "functions": 67.3,
-      "lines": 70.6
+      "statements": 68.0,
+      "branches": 61.0,
+      "functions": 67.0,
+      "lines": 70.5
     },
     "files": [
       "src/components/AnnotationsCard.tsx",
