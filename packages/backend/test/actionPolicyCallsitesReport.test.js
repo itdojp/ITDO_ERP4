@@ -7,10 +7,10 @@ import {
   parseOptionsFromArgv,
 } from '../../../scripts/report-action-policy-callsites.mjs';
 
-test('parseOptionsFromArgv: defaults to routes root and text format', () => {
+test('parseOptionsFromArgv: defaults to backend src root and text format', () => {
   const options = parseOptionsFromArgv([]);
   assert.equal(options.format, 'text');
-  assert.ok(options.root.endsWith('packages/backend/src/routes'));
+  assert.ok(options.root.endsWith('packages/backend/src'));
 });
 
 test('parseOptionsFromArgv: validates format', () => {
@@ -80,7 +80,7 @@ async function run(instance, body) {
   );
 });
 
-test('collectCallsites: scans backend route callsites', () => {
+test('collectCallsites: scans backend source callsites', () => {
   const rootDir = parseOptionsFromArgv([]).root;
   const rows = collectCallsites(rootDir);
   assert.ok(rows.length > 0);
@@ -89,7 +89,7 @@ test('collectCallsites: scans backend route callsites', () => {
     (row) =>
       row.flowType === 'vendor_invoice' &&
       row.actionKey === 'submit' &&
-      row.file.endsWith('vendorDocs.ts'),
+      row.file.endsWith('application/vendorDocs/useCases.ts'),
   );
   assert.ok(vendorSubmit);
 

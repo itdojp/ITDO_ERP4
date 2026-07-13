@@ -77,7 +77,7 @@ test('compareCallsitesAgainstRequiredActions: identifies missing/stale and dynam
   assert.equal(report.dynamicCallsites.length, 1);
 });
 
-test('integration: phase2_core covers static route callsites without missing keys', () => {
+test('integration: phase2_core covers static backend source callsites without missing keys', () => {
   const options = parseOptionsFromArgv([]);
   const presetFile = options.presetFile;
   const presetSource = fs.readFileSync(presetFile, 'utf8');

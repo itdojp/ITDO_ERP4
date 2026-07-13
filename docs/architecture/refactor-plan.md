@@ -68,6 +68,7 @@
 - 2026-07-13: `routes/invoices.ts` の submit / mark-paid における ActionPolicy / Approval / Notification / Audit orchestration を `application/invoices/useCases.ts` へ抽出し、routeから対象cross-context直接import 5件を削除。baselineは38件から33件へ縮小（Issue #1917）
 - 2026-07-13: `routes/estimates.ts` の submit における ActionPolicy / Approval / Notification / Audit orchestration を `application/estimates/useCases.ts` へ抽出し、routeから対象cross-context直接import 5件を削除。baselineは33件から28件へ縮小（Issue #1918）
 - 2026-07-13: `routes/purchaseOrders.ts` の submit における ActionPolicy / Approval / Notification / Audit orchestration を `application/purchaseOrders/useCases.ts` へ抽出し、routeから対象cross-context直接import 5件を削除。baselineは28件から23件へ縮小（Issue #1919）
+- 2026-07-13: `routes/vendorDocs.ts` の vendor invoice update/PO link/submit における ActionPolicy / Approval / Notification orchestration を `application/vendorDocs/useCases.ts` へ抽出し、routeから対象cross-context直接import 5件を削除。`vendorDocs.ts` はdefault 1500行gate内へ戻し、baselineは23件から18件へ縮小（Issue #1920）
 
 ## 今回のP0実装（Issue #643）
 

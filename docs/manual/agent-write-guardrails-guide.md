@@ -68,7 +68,7 @@
 
 1. static callsite 棚卸を確認する。
    - `make action-policy-callsites-report`
-   - 期待値: route callsite の棚卸結果が最新実装と一致していること
+   - 期待値: backend source callsite（route / application use case を含む）の棚卸結果が最新実装と一致していること
 2. required actions の棚卸結果を確認する。
    - `make action-policy-required-action-gaps`
    - `make action-policy-required-action-gaps-json`
