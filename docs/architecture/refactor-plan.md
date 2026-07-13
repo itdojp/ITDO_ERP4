@@ -70,6 +70,7 @@
 - 2026-07-13: `routes/purchaseOrders.ts` の submit における ActionPolicy / Approval / Notification / Audit orchestration を `application/purchaseOrders/useCases.ts` へ抽出し、routeから対象cross-context直接import 5件を削除。baselineは28件から23件へ縮小（Issue #1919）
 - 2026-07-13: `routes/vendorDocs.ts` の vendor invoice update/PO link/submit における ActionPolicy / Approval / Notification orchestration を `application/vendorDocs/useCases.ts` へ抽出し、routeから対象cross-context直接import 5件を削除。`vendorDocs.ts` はdefault 1500行gate内へ戻し、baselineは23件から18件へ縮小（Issue #1920）
 - 2026-07-13: `routes/leave.ts` の submit における ActionPolicy / Evidence / Approval / Notification orchestration を `application/leave/useCases.ts` へ抽出し、routeから対象cross-context直接import 6件を削除。個人情報・健康情報 payload を evidence normalization に含めず、baselineは18件から12件へ縮小（Issue #1921）
+- 2026-07-13: `routes/send.ts` の invoice / estimate / purchase-order send と document-send retry における ActionPolicy / Evidence gate / send audit orchestration を `application/send/useCases.ts` へ抽出し、routeから対象cross-context直接import 4件を削除。guard→PDF→send→log/audit順序、retry cooldown/idempotency、Message-ID伝播を unit/route tests で固定し、baselineは12件から8件へ縮小（Issue #1922）
 
 ## 今回のP0実装（Issue #643）
 

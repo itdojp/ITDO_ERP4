@@ -76,13 +76,15 @@ routes/<domain>.ts
 
 ## 既存違反 baseline
 
-2026-07-13 時点の既存違反は 12 件。#1905 で `src/routes/expenses.ts` の documents→workflow/notifications 直接依存 7 件を application orchestration へ移し、#1910 で chat→notifications 直接依存 5 件を削減した。#1912 では `src/routes/projects.ts` の Org & Project→Notifications/Workflow 直接依存 3 件（`appNotifications.ts` / `periodLock.ts` / `reassignmentLog.ts`）を `src/application/projects/useCases.ts` へ移し、routeからの直接importを解消した。#1913 では project task/dependency/baseline route submoduleを Org & Project に分類し、task orchestrationを `src/application/projects/taskUseCases.ts` へ移しても既知違反数45件を増やさないことを確認した。#1914 でも milestone/recurring route submoduleを Org & Project、application use caseを application-orchestration layerに分類済みの既存patternでカバーし、既知違反数45件を増やさないことを確認した。#1915 では Org & Project context registry と `coverage:projects` scope の差分を `coverageThresholds.test.js` で検出し、既知違反数45件を増やさずに projects coverage gate を追加した。#1916 では `src/routes/timeEntries.ts` の ActionPolicy / Approval / Notification / PeriodLock / Reassignment orchestration を `src/application/timeEntries/useCases.ts` へ移し、Documents→Workflow/Notifications 直接依存 7 件を baseline から削除した。#1917 では `src/routes/invoices.ts` の ActionPolicy / Approval / Notification orchestration を `src/application/invoices/useCases.ts` へ移し、Documents→Workflow/Notifications 直接依存 5 件を baseline から削除した。#1918 では `src/routes/estimates.ts` の submit-for-approval における ActionPolicy / Approval / Notification orchestration を `src/application/estimates/useCases.ts` へ移し、Documents→Workflow/Notifications 直接依存 5 件を baseline から削除した。#1919 では `src/routes/purchaseOrders.ts` の submit-for-approval における ActionPolicy / Approval / Notification orchestration を `src/application/purchaseOrders/useCases.ts` へ移し、Documents→Workflow/Notifications 直接依存 5 件を baseline から削除した。#1920 では `src/routes/vendorDocs.ts` の ActionPolicy / Approval / Notification orchestration を `src/application/vendorDocs/useCases.ts` へ移し、Documents→Workflow/Notifications 直接依存 5 件を baseline から削除した。#1921 では `src/routes/leave.ts` の ActionPolicy / Evidence / Approval / Notification orchestration を `src/application/leave/useCases.ts` へ移し、Documents→Workflow/Evidence/Notifications 直接依存 6 件を baseline から削除した。
+2026-07-13 時点の既存違反は 8 件。#1905 以降、Documents/Chat/Org & Project routes から Workflow/Notifications/Evidence への直接importを application orchestration layer へ段階的に移している。
+
+#1916〜#1921 では `timeEntries` / `invoices` / `estimates` / `purchaseOrders` / `vendorDocs` / `leave` の ActionPolicy・Approval・Notification・Evidence orchestration を application use case へ移し、Documents 系 baseline を 45 件から 12 件まで削減した。#1922 では `src/routes/send.ts` の ActionPolicy / ActionPolicyAudit / ActionPolicyErrors / ApprovalEvidenceGate 直接依存を `src/application/send/useCases.ts` へ移し、send route の4件を baseline から削除した。
 
 内訳は以下のとおり。
 
 | rule                                      | count |
 | ----------------------------------------- | ----: |
-| bounded-context-documents-direction       |     6 |
+| bounded-context-documents-direction       |     2 |
 | bounded-context-identity-access-direction |     2 |
 | bounded-context-workflow-direction        |     4 |
 
@@ -90,18 +92,14 @@ routes/<domain>.ts
 
 |   # | rule                                      | from                                         | to                                   |
 | --: | ----------------------------------------- | -------------------------------------------- | ------------------------------------ |
-|   1 | bounded-context-documents-direction       | `src/routes/dailyReports.ts` | `src/services/appNotifications.ts` |
-|   2 | bounded-context-documents-direction       | `src/routes/send.ts` | `src/services/actionPolicy.ts` |
-|   3 | bounded-context-documents-direction       | `src/routes/send.ts` | `src/services/actionPolicyAudit.ts` |
-|   4 | bounded-context-documents-direction       | `src/routes/send.ts` | `src/services/actionPolicyErrors.ts` |
-|   5 | bounded-context-documents-direction       | `src/routes/send.ts` | `src/services/approvalEvidenceGate.ts` |
-|   6 | bounded-context-documents-direction       | `src/services/leaveUpcomingNotifications.ts` | `src/services/appNotifications.ts` |
-|   7 | bounded-context-identity-access-direction | `src/plugins/auth.ts` | `src/services/agentRuns.ts` |
-|   8 | bounded-context-identity-access-direction | `src/routes/scim.ts` | `src/services/personalGaChatRoom.ts` |
-|   9 | bounded-context-workflow-direction        | `src/routes/approvalRules.ts` | `src/services/appNotifications.ts` |
-|  10 | bounded-context-workflow-direction        | `src/routes/approvalRules.ts` | `src/services/chatAckTemplates.ts` |
-|  11 | bounded-context-workflow-direction        | `src/services/actionPolicy.ts` | `src/services/chatAckLinkTargets.ts` |
-|  12 | bounded-context-workflow-direction        | `src/services/approval.ts` | `src/services/evidenceSnapshot.ts` |
+|   1 | bounded-context-documents-direction       | `src/routes/dailyReports.ts`                 | `src/services/appNotifications.ts`   |
+|   2 | bounded-context-documents-direction       | `src/services/leaveUpcomingNotifications.ts` | `src/services/appNotifications.ts`   |
+|   3 | bounded-context-identity-access-direction | `src/plugins/auth.ts`                        | `src/services/agentRuns.ts`          |
+|   4 | bounded-context-identity-access-direction | `src/routes/scim.ts`                         | `src/services/personalGaChatRoom.ts` |
+|   5 | bounded-context-workflow-direction        | `src/routes/approvalRules.ts`                | `src/services/appNotifications.ts`   |
+|   6 | bounded-context-workflow-direction        | `src/routes/approvalRules.ts`                | `src/services/chatAckTemplates.ts`   |
+|   7 | bounded-context-workflow-direction        | `src/services/actionPolicy.ts`               | `src/services/chatAckLinkTargets.ts` |
+|   8 | bounded-context-workflow-direction        | `src/services/approval.ts`                   | `src/services/evidenceSnapshot.ts`   |
 
 ## 削減方針
 

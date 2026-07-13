@@ -4,66 +4,7 @@
     "from": "src/routes/dailyReports.ts",
     "to": "src/services/appNotifications.ts",
     "unresolvedTo": "../services/appNotifications.js",
-    "dependencyTypes": [
-      "local",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "bounded-context-documents-direction"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/routes/send.ts",
-    "to": "src/services/actionPolicy.ts",
-    "unresolvedTo": "../services/actionPolicy.js",
-    "dependencyTypes": [
-      "local",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "bounded-context-documents-direction"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/routes/send.ts",
-    "to": "src/services/actionPolicyAudit.ts",
-    "unresolvedTo": "../services/actionPolicyAudit.js",
-    "dependencyTypes": [
-      "local",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "bounded-context-documents-direction"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/routes/send.ts",
-    "to": "src/services/actionPolicyErrors.ts",
-    "unresolvedTo": "../services/actionPolicyErrors.js",
-    "dependencyTypes": [
-      "local",
-      "import"
-    ],
-    "rule": {
-      "severity": "error",
-      "name": "bounded-context-documents-direction"
-    }
-  },
-  {
-    "type": "dependency",
-    "from": "src/routes/send.ts",
-    "to": "src/services/approvalEvidenceGate.ts",
-    "unresolvedTo": "../services/approvalEvidenceGate.js",
-    "dependencyTypes": [
-      "local",
-      "import"
-    ],
+    "dependencyTypes": ["local", "import"],
     "rule": {
       "severity": "error",
       "name": "bounded-context-documents-direction"
@@ -74,10 +15,7 @@
     "from": "src/services/leaveUpcomingNotifications.ts",
     "to": "src/services/appNotifications.ts",
     "unresolvedTo": "./appNotifications.js",
-    "dependencyTypes": [
-      "local",
-      "import"
-    ],
+    "dependencyTypes": ["local", "import"],
     "rule": {
       "severity": "error",
       "name": "bounded-context-documents-direction"
@@ -88,10 +26,7 @@
     "from": "src/plugins/auth.ts",
     "to": "src/services/agentRuns.ts",
     "unresolvedTo": "../services/agentRuns.js",
-    "dependencyTypes": [
-      "local",
-      "import"
-    ],
+    "dependencyTypes": ["local", "import"],
     "rule": {
       "severity": "error",
       "name": "bounded-context-identity-access-direction"
@@ -102,10 +37,7 @@
     "from": "src/routes/scim.ts",
     "to": "src/services/personalGaChatRoom.ts",
     "unresolvedTo": "../services/personalGaChatRoom.js",
-    "dependencyTypes": [
-      "local",
-      "import"
-    ],
+    "dependencyTypes": ["local", "import"],
     "rule": {
       "severity": "error",
       "name": "bounded-context-identity-access-direction"
@@ -116,10 +48,7 @@
     "from": "src/routes/approvalRules.ts",
     "to": "src/services/appNotifications.ts",
     "unresolvedTo": "../services/appNotifications.js",
-    "dependencyTypes": [
-      "local",
-      "import"
-    ],
+    "dependencyTypes": ["local", "import"],
     "rule": {
       "severity": "error",
       "name": "bounded-context-workflow-direction"
@@ -130,10 +59,7 @@
     "from": "src/routes/approvalRules.ts",
     "to": "src/services/chatAckTemplates.ts",
     "unresolvedTo": "../services/chatAckTemplates.js",
-    "dependencyTypes": [
-      "local",
-      "import"
-    ],
+    "dependencyTypes": ["local", "import"],
     "rule": {
       "severity": "error",
       "name": "bounded-context-workflow-direction"
@@ -144,10 +70,7 @@
     "from": "src/services/actionPolicy.ts",
     "to": "src/services/chatAckLinkTargets.ts",
     "unresolvedTo": "./chatAckLinkTargets.js",
-    "dependencyTypes": [
-      "local",
-      "import"
-    ],
+    "dependencyTypes": ["local", "import"],
     "rule": {
       "severity": "error",
       "name": "bounded-context-workflow-direction"
@@ -158,10 +81,7 @@
     "from": "src/services/approval.ts",
     "to": "src/services/evidenceSnapshot.ts",
     "unresolvedTo": "./evidenceSnapshot.js",
-    "dependencyTypes": [
-      "local",
-      "import"
-    ],
+    "dependencyTypes": ["local", "import"],
     "rule": {
       "severity": "error",
       "name": "bounded-context-workflow-direction"
