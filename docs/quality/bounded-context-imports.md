@@ -76,7 +76,7 @@ routes/<domain>.ts
 
 ## 既存違反 baseline
 
-2026-07-13 時点の既存違反は 45 件。#1905 で `src/routes/expenses.ts` の documents→workflow/notifications 直接依存 7 件を application orchestration へ移し、#1910 で chat→notifications 直接依存 5 件を削減した。#1912 では `src/routes/projects.ts` の Org & Project→Notifications/Workflow 直接依存 3 件（`appNotifications.ts` / `periodLock.ts` / `reassignmentLog.ts`）を `src/application/projects/useCases.ts` へ移し、routeからの直接importを解消した。#1913 では project task/dependency/baseline route submoduleを Org & Project に分類し、task orchestrationを `src/application/projects/taskUseCases.ts` へ移しても既知違反数45件を増やさないことを確認した。
+2026-07-13 時点の既存違反は 45 件。#1905 で `src/routes/expenses.ts` の documents→workflow/notifications 直接依存 7 件を application orchestration へ移し、#1910 で chat→notifications 直接依存 5 件を削減した。#1912 では `src/routes/projects.ts` の Org & Project→Notifications/Workflow 直接依存 3 件（`appNotifications.ts` / `periodLock.ts` / `reassignmentLog.ts`）を `src/application/projects/useCases.ts` へ移し、routeからの直接importを解消した。#1913 では project task/dependency/baseline route submoduleを Org & Project に分類し、task orchestrationを `src/application/projects/taskUseCases.ts` へ移しても既知違反数45件を増やさないことを確認した。#1914 でも milestone/recurring route submoduleを Org & Project、application use caseを application-orchestration layerに分類済みの既存patternでカバーし、既知違反数45件を増やさないことを確認した。
 
 内訳は以下のとおり。
 
