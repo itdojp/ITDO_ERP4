@@ -160,24 +160,44 @@ test('submitPurchaseOrderForApproval treats non-object body as empty record', as
   assert.equal(policy.reasonText, '');
 });
 
-test('submitPurchaseOrderForApproval preserves absent-purchase-order behavior by letting approval update path decide', async () => {
+test('submitPurchaseOrderForApproval skips policy for absent purchase orders and lets approval update path fail', async () => {
   const calls = [];
-  const result = await submitPurchaseOrderForApproval({
-    id: 'po-missing',
-    body: {},
-    actor: actor(),
-    auditContext: auditContext(),
-    ports: defaultSubmitPorts(calls, null),
-  });
+  const ports = {
+    ...defaultSubmitPorts(calls, null),
+    submitApprovalWithUpdate: async (options) => {
+      calls.push(['submitApprovalWithUpdate', options]);
+      return options.update({
+        purchaseOrder: {
+          update: async (args) => {
+            calls.push(['transactionUpdate', args]);
+            throw new Error('purchase order update failed');
+          },
+        },
+      });
+    },
+  };
 
-  assert.equal(result.ok, true);
-  assert.equal(result.value.id, 'po-missing');
+  await assert.rejects(
+    submitPurchaseOrderForApproval({
+      id: 'po-missing',
+      body: {},
+      actor: actor(),
+      auditContext: auditContext(),
+      ports,
+    }),
+    /purchase order update failed/,
+  );
+
   assert.equal(
     calls.some(([name]) => name === 'policy'),
     false,
   );
   assert.equal(
     calls.filter(([name]) => name === 'submitApprovalWithUpdate').length,
+    1,
+  );
+  assert.equal(
+    calls.filter(([name]) => name === 'transactionUpdate').length,
     1,
   );
 });
