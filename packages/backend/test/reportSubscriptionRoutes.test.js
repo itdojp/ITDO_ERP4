@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { buildServer } from '../dist/server.js';
+import { normalizeReportSubscriptionSchedule } from '../dist/application/reportSubscriptions/useCases.js';
 import { prisma } from '../dist/services/db.js';
 
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
@@ -80,6 +81,28 @@ function withServer(fn) {
     },
   );
 }
+
+test('normalizeReportSubscriptionSchedule preserves current cron-string semantics', () => {
+  assert.equal(normalizeReportSubscriptionSchedule(undefined), undefined);
+  assert.equal(normalizeReportSubscriptionSchedule(null), undefined);
+  assert.equal(normalizeReportSubscriptionSchedule('   '), undefined);
+  assert.equal(
+    normalizeReportSubscriptionSchedule('  0 6 * * *  '),
+    '0 6 * * *',
+  );
+  assert.equal(
+    normalizeReportSubscriptionSchedule('*/15 9-17 * * 1-5'),
+    '*/15 9-17 * * 1-5',
+  );
+  assert.throws(
+    () => normalizeReportSubscriptionSchedule('@daily'),
+    /Schedule must be a five-field cron expression/,
+  );
+  assert.throws(
+    () => normalizeReportSubscriptionSchedule('0 6 * * * Asia/Tokyo'),
+    /Schedule must be a five-field cron expression/,
+  );
+});
 
 test('GET /report-subscriptions denies non admin/mgmt user', async () => {
   await withServer(async (server) => {
@@ -236,6 +259,37 @@ test('POST /report-subscriptions rejects unsupported format in schema', async ()
     assert.equal(res.statusCode, 400, res.body);
     const body = JSON.parse(res.body);
     assert.equal(body?.error?.code, 'VALIDATION_ERROR');
+  });
+});
+
+test('POST /jobs/report-subscriptions/run keeps cron-side schedule filtering semantics', async () => {
+  let capturedFindManyArgs = null;
+  await withPrismaStubs(
+    {
+      'reportSubscription.findMany': async (args) => {
+        capturedFindManyArgs = args;
+        return [];
+      },
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/jobs/report-subscriptions/run',
+          headers: adminHeaders(),
+          payload: {},
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        const body = JSON.parse(res.body);
+        assert.equal(body?.ok, true);
+        assert.equal(body?.count, 0);
+      });
+    },
+  );
+  assert.deepEqual(capturedFindManyArgs, {
+    where: { isEnabled: true },
+    orderBy: { createdAt: 'asc' },
+    take: 200,
   });
 });
 

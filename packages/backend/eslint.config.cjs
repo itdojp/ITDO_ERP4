@@ -8,9 +8,7 @@ const maxLinesOptions = (max) => ({
   skipComments: false,
 });
 
-const existingRouteLineAllowances = [
-  ['src/routes/reportSubscriptions.ts', 1600],
-];
+const existingRouteLineAllowances = [];
 
 module.exports = [
   { ignores: ['dist', 'node_modules'] },
