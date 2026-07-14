@@ -20,16 +20,16 @@
 
 ## 必須イベント一覧（v1）
 
-| 分類                    | 必須イベント（action）                                                                                                                                      | 実装箇所（代表）                                |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| 権限・所属変更          | `project_member_added` / `project_member_removed` / `project_member_role_updated`                                                                           | `packages/backend/src/routes/projects.ts`       |
-| 権限・所属変更          | `group_created` / `group_updated` / `group_deleted` / `group_member_added` / `group_member_removed`                                                         | `packages/backend/src/routes/groups.ts`         |
-| 監査閲覧（break-glass） | `chat_break_glass_requested` / `chat_break_glass_approved` / `chat_break_glass_rejected` / `chat_break_glass_accessed`                                      | `packages/backend/src/routes/chatBreakGlass.ts` |
-| 外部送信（設定/実行）   | `chat_room_updated`（`allowExternalIntegrations` 変更を含む）                                                                                               | `packages/backend/src/routes/chatRooms.ts`      |
-| 外部送信（実行可否）    | `chat_external_llm_requested` / `chat_external_llm_succeeded` / `chat_external_llm_failed` / `chat_external_llm_blocked` / `chat_external_llm_rate_limited` | `packages/backend/src/routes/chatRooms.ts`      |
-| 添付操作                | `chat_attachment_uploaded` / `chat_attachment_downloaded` / `chat_attachment_blocked` / `chat_attachment_scan_failed`                                       | `packages/backend/src/routes/chat.ts`           |
-| 監査ログ閲覧            | `audit_log_exported`（JSON/CSVの検索・出力）                                                                                                                | `packages/backend/src/routes/auditLogs.ts`      |
-| 重要状態変更            | `project_status_updated`                                                                                                                                    | `packages/backend/src/routes/projects.ts`       |
+| 分類                    | 必須イベント（action）                                                                                                                                      | 実装箇所（代表）                                                                                                      |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| 権限・所属変更          | `project_member_added` / `project_member_removed` / `project_member_role_updated`                                                                           | `packages/backend/src/routes/projects.ts`                                                                             |
+| 権限・所属変更          | `group_created` / `group_updated` / `group_deleted` / `group_member_added` / `group_member_removed`                                                         | `packages/backend/src/routes/groups.ts`                                                                               |
+| 監査閲覧（break-glass） | `chat_break_glass_requested` / `chat_break_glass_approved` / `chat_break_glass_rejected` / `chat_break_glass_accessed`                                      | `packages/backend/src/routes/chatBreakGlass.ts`                                                                       |
+| 外部送信（設定/実行）   | `chat_room_updated`（`allowExternalIntegrations` 変更を含む）                                                                                               | `packages/backend/src/routes/chatRooms.ts`                                                                            |
+| 外部送信（実行可否）    | `chat_external_llm_requested` / `chat_external_llm_succeeded` / `chat_external_llm_failed` / `chat_external_llm_blocked` / `chat_external_llm_rate_limited` | `packages/backend/src/routes/chatRooms.ts`                                                                            |
+| 添付操作                | `chat_attachment_uploaded` / `chat_attachment_downloaded` / `chat_attachment_blocked` / `chat_attachment_scan_failed`                                       | `packages/backend/src/routes/chat/attachments.ts` / `packages/backend/src/application/chat/chatAttachmentUseCases.ts` |
+| 監査ログ閲覧            | `audit_log_exported`（JSON/CSVの検索・出力）                                                                                                                | `packages/backend/src/routes/auditLogs.ts`                                                                            |
+| 重要状態変更            | `project_status_updated`                                                                                                                                    | `packages/backend/src/routes/projects.ts`                                                                             |
 
 ## 運用ルール
 

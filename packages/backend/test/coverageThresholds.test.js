@@ -368,6 +368,36 @@ test('chat coverage thresholds stay above the route-split baseline gate', () => 
   }
 });
 
+test('chat route and application modules stay within the default backend line gate', () => {
+  const config = readCoverageThresholdConfig();
+  const chatFiles = config.chat.files.filter(
+    (file) =>
+      file.startsWith('src/routes/chat') ||
+      file.startsWith('src/application/chat'),
+  );
+
+  for (const file of chatFiles) {
+    assert.ok(
+      countNonBlankLines(file) <= 1500,
+      `${file} should stay below the default 1500-line backend gate`,
+    );
+  }
+});
+
+test('chat route uses the default max-lines gate without a temporary allowance', () => {
+  const eslintConfig = require('../eslint.config.cjs');
+  const sourceConfig = eslintConfig.find((entry) =>
+    entry.files?.includes('src/**/*.{ts,tsx}'),
+  );
+  const maxLinesRule = sourceConfig?.rules?.['max-lines'];
+  assert.equal(maxLinesRule?.[1]?.max, 1500);
+
+  const chatOverrides = eslintConfig.filter((entry) =>
+    entry.files?.includes('src/routes/chat.ts'),
+  );
+  assert.deepEqual(chatOverrides, []);
+});
+
 test('projects coverage scope covers current Org & Project modules and shared project helpers', () => {
   const config = readCoverageThresholdConfig();
   const { contexts } = require('../bounded-context-registry.cjs');
