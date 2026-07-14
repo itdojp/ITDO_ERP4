@@ -467,6 +467,25 @@ test('projects route uses the default max-lines gate without a temporary allowan
   assert.deepEqual(projectOverrides, []);
 });
 
+test('report subscriptions route uses the default max-lines gate without a temporary allowance', () => {
+  assert.ok(
+    countNonBlankLines('src/routes/reportSubscriptions.ts') <= 1500,
+    'src/routes/reportSubscriptions.ts should stay below the default 1500-line backend gate',
+  );
+
+  const eslintConfig = require('../eslint.config.cjs');
+  const sourceConfig = eslintConfig.find((entry) =>
+    entry.files?.includes('src/**/*.{ts,tsx}'),
+  );
+  const maxLinesRule = sourceConfig?.rules?.['max-lines'];
+  assert.equal(maxLinesRule?.[1]?.max, 1500);
+
+  const reportSubscriptionOverrides = eslintConfig.filter((entry) =>
+    entry.files?.includes('src/routes/reportSubscriptions.ts'),
+  );
+  assert.deepEqual(reportSubscriptionOverrides, []);
+});
+
 test('coverage configured source files exist on disk', () => {
   const config = readCoverageThresholdConfig();
 

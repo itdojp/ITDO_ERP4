@@ -58,9 +58,7 @@ frontend lint では `max-lines` を error 2000 行（blank行を除外）で有
 2. 2000 行に近い `RoomChat.tsx` / `Projects.tsx` / `CurrentUser.tsx` を追加分割する。
 3. 画面単位の主要 hook/component test が揃った段階で 1500 行へ下げる。
 
-| allowlist file                      | temporary cap | 削減方針                               |
-| ----------------------------------- | ------------: | -------------------------------------- |
-| `src/routes/reportSubscriptions.ts` |          1600 | schedule/run/history 処理を service 化 |
+現時点で backend route temporary `max-lines` allowlist は空。`src/routes/reportSubscriptions.ts` は #1959 で default 1500行 gate へ統合済み。
 
 ## 進捗ログ
 
@@ -101,3 +99,4 @@ frontend lint では `max-lines` を error 2000 行（blank行を除外）で有
 - 2026-07-13: `routes/leave.ts` の leave submit ActionPolicy・Evidence・Approval・notification orchestrationを `src/application/leave/useCases.ts` へ抽出し、Documents→Workflow/Evidence/Notifications 既知違反6件を削減してbaselineを12件へ縮小（Issue #1921）
 - 2026-07-13: `routes/send.ts` の invoice/estimate/purchase-order send と retry の ActionPolicy・Evidence gate・send audit orchestrationを `src/application/send/useCases.ts` へ抽出し、route本体を 1405 行から 227 行へ縮小。Documents→Workflow/Evidence 既知違反4件を削減してbaselineを8件へ縮小（Issue #1922）
 - 2026-07-14: `routes/chat.ts` の ack request route を `src/routes/chat/ackRequests.ts`、attachment route を `src/routes/chat/attachments.ts`、attachment scan/store/audit orchestration を `src/application/chat/chatAttachmentUseCases.ts` へ分離。`routes/chat.ts` を 738 行まで縮小し、temporary max-lines allowance から除外。chat coverage scope に新規route/application fileを追加し、chat line gate/no-allowance testを追加（Issue #1958）
+- 2026-07-14: `routes/reportSubscriptions.ts` の schedule normalize / CRUD / manual run / scheduled run / delivery retry / history orchestration を `src/application/reportSubscriptions/useCases.ts` へ移動。route本体を 1533 行から 151 行へ縮小し、最後の backend route temporary max-lines allowance を削除。現行仕様として schedule は5フィールドcron文字列の保存・正規化のみで、timezone / nextRunAt / DST計算は route/job では解釈しないことをtestとdocsで固定（Issue #1959）
