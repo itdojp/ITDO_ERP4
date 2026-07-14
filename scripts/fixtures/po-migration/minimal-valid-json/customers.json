@@ -1,0 +1,9 @@
+[
+  {
+    "legacyId": "fixture-customer-alpha",
+    "code": "PO-FIX-CUST-A",
+    "name": "PO Fixture Customer Alpha",
+    "status": "active",
+    "taxRegion": "JP"
+  }
+]

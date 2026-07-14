@@ -1,0 +1,12 @@
+[
+  {
+    "legacyId": "fixture-task-alpha",
+    "projectLegacyId": "fixture-project-alpha",
+    "name": "PO Fixture Task Alpha",
+    "status": "open",
+    "assigneeId": "po-fixture-user-alpha",
+    "progressPercent": 50,
+    "planStart": "2026-07-01",
+    "planEnd": "2026-07-15"
+  }
+]

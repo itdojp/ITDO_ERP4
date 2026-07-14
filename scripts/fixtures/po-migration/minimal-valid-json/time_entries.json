@@ -1,0 +1,13 @@
+[
+  {
+    "legacyId": "fixture-time-entry-alpha",
+    "projectLegacyId": "fixture-project-alpha",
+    "taskLegacyId": "fixture-task-alpha",
+    "userId": "po-fixture-user-alpha",
+    "workDate": "2026-07-14",
+    "minutes": 60,
+    "workType": "implementation",
+    "location": "remote",
+    "status": "approved"
+  }
+]

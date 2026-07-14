@@ -1,0 +1,15 @@
+[
+  {
+    "legacyId": "fixture-project-alpha",
+    "code": "PO-FIX-PROJ-A",
+    "name": "PO Fixture Project Alpha",
+    "status": "active",
+    "customerLegacyId": "fixture-customer-alpha",
+    "ownerUserId": "po-fixture-user-alpha",
+    "startDate": "2026-07-01",
+    "endDate": "2026-07-31",
+    "currency": "JPY",
+    "planHours": 16,
+    "budgetCost": 120000
+  }
+]

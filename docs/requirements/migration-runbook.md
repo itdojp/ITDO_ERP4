@@ -105,6 +105,27 @@ INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 \
 - Makefile 経由でも実行可能:
   - `INPUT_DIR=tmp/migration/po INPUT_FORMAT=csv APPLY=1 RUN_INTEGRITY=1 make po-migration-run-and-record`
 
+### 3.0.2 synthetic fixture gate（開発/CI用）
+
+本番データ投入前に、synthetic fixtureでCLIと主要migration経路を検証する。
+
+```bash
+npm run migration:po:fixture-dry-run --prefix packages/backend
+npm run migration:po:fixture-apply --prefix packages/backend
+# dry-run + apply をまとめて確認する場合
+npm run migration:po:fixture-test --prefix packages/backend
+```
+
+fixture runner は local PostgreSQL の専用DBのみを対象にする。既定は `postgresql://user:pass@localhost:5432/po_migration_fixture?schema=public` であり、別のhostまたは `po_migration_fixture*` 以外のDB名は拒否する。
+
+確認範囲:
+
+- 正常JSON fixtureのdry-run成功、entity count、deterministic stdout
+- dry-run前後のfixture-owned DB row数不変
+- malformed JSON / blocking CSV validation failure のexit codeとstderr
+- apply成功、post-apply integrity、rerun時のupdate semantics
+- invalid apply failure時にfixture-owned rowを残さないこと
+
 ### 3.1 dry-run（DBへ書き込まない）
 
 ```bash

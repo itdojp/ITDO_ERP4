@@ -1,0 +1,14 @@
+[
+  {
+    "legacyId": "fixture-vendor-invoice-alpha",
+    "projectLegacyId": "fixture-project-alpha",
+    "vendorLegacyId": "fixture-vendor-alpha",
+    "vendorInvoiceNo": "PO-FIX-VI-A",
+    "receivedDate": "2026-07-28",
+    "dueDate": "2026-08-31",
+    "currency": "JPY",
+    "totalAmount": 50000,
+    "status": "received",
+    "documentUrl": "https://example.invalid/po-fixture/vendor-invoice-alpha.pdf"
+  }
+]

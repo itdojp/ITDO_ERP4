@@ -1,0 +1,9 @@
+[
+  {
+    "legacyId": "fixture-vendor-alpha",
+    "code": "PO-FIX-VEND-A",
+    "name": "PO Fixture Vendor Alpha",
+    "status": "active",
+    "taxRegion": "JP"
+  }
+]
