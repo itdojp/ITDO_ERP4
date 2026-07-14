@@ -37,6 +37,7 @@ import {
   importVendorQuotes,
 } from './poImportersDocuments.js';
 import { readPoMigrationInputs } from './poInputReader.js';
+import { clearExistsCache } from './poImporterState.js';
 
 function shouldRun(options: PoMigrationCliOptions, key: string) {
   return shouldRunPoScope(options.only, key);
@@ -62,6 +63,7 @@ export async function runPoMigration(
 ): Promise<PoMigrationRunResult> {
   const logger = runtime.logger ?? console;
   const env = runtime.env ?? process.env;
+  clearExistsCache();
   const {
     users,
     customers,

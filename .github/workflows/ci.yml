@@ -48,12 +48,12 @@ jobs:
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/postgres?schema=public
       - name: Run PO migration synthetic fixture dry-run
-        run: npm run migration:po:fixture-dry-run
+        run: npm run migration:po:fixture-dry-run -- --skip-build
         working-directory: packages/backend
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/po_migration_fixture_ci?schema=public
       - name: Run PO migration synthetic fixture apply checks
-        run: npm run migration:po:fixture-apply
+        run: npm run migration:po:fixture-apply -- --skip-build
         working-directory: packages/backend
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/po_migration_fixture_ci?schema=public

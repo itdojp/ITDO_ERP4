@@ -11,7 +11,11 @@ import {
   parsePoOnlyScopes,
   requirePoApplyConfirm,
 } from '../dist/migration/poCli.js';
-import { runPoMigrationCli } from '../dist/migration/poRunner.js';
+import {
+  runPoMigration,
+  runPoMigrationCli,
+} from '../dist/migration/poRunner.js';
+import { existsCache } from '../dist/migration/poImporterState.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -19,6 +23,26 @@ const repoRoot = path.resolve(__dirname, '../../..');
 function source(relativePath) {
   return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
 }
+
+function emptyPoInputs() {
+  return {
+    users: [],
+    customers: [],
+    vendors: [],
+    projects: [],
+    tasks: [],
+    milestones: [],
+    estimates: [],
+    invoices: [],
+    purchase_orders: [],
+    vendor_quotes: [],
+    vendor_invoices: [],
+    time_entries: [],
+    expenses: [],
+  };
+}
+
+const silentLogger = { log: () => {}, error: () => {} };
 
 const expectedHelp = [
   'Usage: scripts/migrate-po.ts [--input-dir=DIR] [--input-format=json|csv] [--only=users,customers,...] [--apply]',
@@ -126,4 +150,23 @@ test('migrate-po composition roots stay thin and delegate implementation modules
     combined,
     /prisma\.(customer|project|invoice|purchaseOrder|vendorInvoice|timeEntry|expense)/,
   );
+});
+
+test('po migration run clears existence cache at invocation boundary', async () => {
+  existsCache.project.set('stale-project', true);
+
+  const result = await runPoMigration(
+    {
+      inputDir: 'tmp/migration/po',
+      inputFormat: 'json',
+      apply: false,
+      only: null,
+    },
+    emptyPoInputs(),
+    [],
+    { logger: silentLogger, env: {} },
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(existsCache.project.size, 0);
 });

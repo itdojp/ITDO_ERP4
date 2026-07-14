@@ -33,3 +33,8 @@ export const existsCache = {
   timeEntry: new Map<string, boolean>(),
   expense: new Map<string, boolean>(),
 };
+export function clearExistsCache(): void {
+  for (const cache of Object.values(existsCache)) {
+    cache.clear();
+  }
+}

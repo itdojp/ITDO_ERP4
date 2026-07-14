@@ -12,6 +12,7 @@ const allowedModes = new Set(["dry-run", "apply", "all"]);
 if (!allowedModes.has(mode)) {
   throw new Error(`invalid --mode: ${mode}`);
 }
+const skipBuild = process.argv.includes("--skip-build");
 
 const defaultDatabaseUrl =
   "postgresql://user:pass@localhost:5432/po_migration_fixture?schema=public";
@@ -35,13 +36,17 @@ function run(label, command, args, cwd) {
   }
 }
 
-run(
-  "generate Prisma client",
-  npmCommand,
-  ["run", "prisma:generate"],
-  backendDir,
-);
-run("build backend", npmCommand, ["run", "build"], backendDir);
+if (!skipBuild) {
+  run(
+    "generate Prisma client",
+    npmCommand,
+    ["run", "prisma:generate"],
+    backendDir,
+  );
+  run("build backend", npmCommand, ["run", "build"], backendDir);
+} else {
+  console.log("[po-fixture] skip Prisma client generation and backend build");
+}
 run(
   `run PO migration fixture checks (${mode})`,
   nodeCommand,
