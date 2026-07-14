@@ -38,6 +38,10 @@
 - [Release Candidate Readiness Evidence Template](release-readiness-template.md)
 - [さくらVPS 試験稼働記録テンプレート](sakura-vps-trial-template.md)
 
+### 2026-07-14
+
+- [Issue #1958 Chat route split verification](2026-07-14-issue1958-chat-route-split.md)
+
 ### 2026-07-13
 
 - [Architecture debt baseline r1 (Issue #1928 repo-side)](2026-07-13-architecture-debt-baseline-r1.md)
