@@ -99,21 +99,31 @@ test('po CLI parser preserves format and scope normalization semantics', () => {
   );
 });
 
-test('migrate-po composition root stays thin and delegates implementation modules', () => {
-  const text = source('scripts/migrate-po.ts');
-  const lineCount = text.trimEnd().split(/\r?\n/).length;
+test('migrate-po composition roots stay thin and delegate implementation modules', () => {
+  const rootScript = source('scripts/migrate-po.ts');
+  const builtEntrySource = source(
+    'packages/backend/src/migration/poCliEntry.ts',
+  );
+  const combined = `${rootScript}\n${builtEntrySource}`;
+  const rootLineCount = rootScript.trimEnd().split(/\r?\n/).length;
+  const builtEntryLineCount = builtEntrySource.trimEnd().split(/\r?\n/).length;
 
   assert.ok(
-    lineCount <= 1200,
-    `scripts/migrate-po.ts line count ${lineCount} exceeds 1200`,
+    rootLineCount <= 1200,
+    `scripts/migrate-po.ts line count ${rootLineCount} exceeds 1200`,
   );
-  assert.match(text, /runPoMigrationCli/);
+  assert.ok(
+    builtEntryLineCount <= 1200,
+    `poCliEntry.ts line count ${builtEntryLineCount} exceeds 1200`,
+  );
+  assert.match(combined, /runPoMigrationCli/);
+  assert.match(builtEntrySource, /prisma\.\$disconnect/);
   assert.doesNotMatch(
-    text,
+    combined,
     /readFileSync|parsePoCsvRecords|mapPo[A-Z]|nextNumber/,
   );
   assert.doesNotMatch(
-    text,
+    combined,
     /prisma\.(customer|project|invoice|purchaseOrder|vendorInvoice|timeEntry|expense)/,
   );
 });

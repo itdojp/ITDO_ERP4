@@ -105,17 +105,11 @@ const fixtureIds = {
   expense: makePoMigrationId("expense", "fixture-expense-alpha"),
 };
 
-const cliArgs = [
-  "--prefix",
-  "packages/backend",
-  "ts-node-esm",
-  "--project",
-  "packages/backend/tsconfig.json",
-  "scripts/migrate-po.ts",
-];
+const cliCommand = process.execPath;
+const cliArgs = ["packages/backend/dist/migration/poCliEntry.js"];
 
 function runCli(args, envOverrides = {}) {
-  const result = spawnSync(npmCommand, [...cliArgs, ...args], {
+  const result = spawnSync(cliCommand, [...cliArgs, ...args], {
     cwd: repoRoot,
     env: {
       ...process.env,
@@ -123,7 +117,6 @@ function runCli(args, envOverrides = {}) {
       NODE_OPTIONS: [process.env.NODE_OPTIONS, "--no-warnings"]
         .filter(Boolean)
         .join(" "),
-      TS_NODE_COMPILER_OPTIONS: '{"types":["node"]}',
       ...envOverrides,
     },
     encoding: "utf8",

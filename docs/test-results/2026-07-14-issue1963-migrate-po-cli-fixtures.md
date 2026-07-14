@@ -13,15 +13,19 @@
 
 ## Structure and line count
 
-| File                                              | Lines | Responsibility                                                    |
-| ------------------------------------------------- | ----: | ----------------------------------------------------------------- |
-| `scripts/migrate-po.ts` before #1963              |  2282 | CLI, input I/O, DB apply, integrity orchestration                 |
-| `scripts/migrate-po.ts` after #1963               |    18 | composition root, top-level error handling, Prisma disconnect     |
-| `packages/backend/src/migration/poCli.ts`         |    97 | CLI help/options/defaults/apply confirmation                      |
-| `packages/backend/src/migration/poInputReader.ts` |   268 | filesystem JSON/CSV input adapter                                 |
-| `packages/backend/src/migration/poRunner.ts`      |  2474 | DB-backed migration orchestration and post-apply integrity checks |
+| File                                                     | Lines | Responsibility                                                    |
+| -------------------------------------------------------- | ----: | ----------------------------------------------------------------- |
+| `scripts/migrate-po.ts` before #1963                     |  2282 | CLI, input I/O, DB apply, integrity orchestration                 |
+| `scripts/migrate-po.ts` after #1963                      |    18 | source composition root for manual script execution               |
+| `packages/backend/src/migration/poCliEntry.ts`           |    18 | built JS CLI entry for CI fixture execution and Prisma disconnect |
+| `packages/backend/src/migration/poCli.ts`                |    97 | CLI help/options/defaults/apply confirmation                      |
+| `packages/backend/src/migration/poInputReader.ts`        |   268 | filesystem JSON/CSV input adapter                                 |
+| `packages/backend/src/migration/poImporterState.ts`      |    35 | importer state/cache helpers                                      |
+| `packages/backend/src/migration/poImportersCore.ts`      |   556 | users/customers/vendors/projects/tasks/milestones importers       |
+| `packages/backend/src/migration/poImportersDocuments.ts` |  1188 | estimate/invoice/purchase-order/vendor-doc/time/expense importers |
+| `packages/backend/src/migration/poRunner.ts`             |   740 | CLI runner, orchestration, and post-apply integrity checks        |
 
-`packages/backend/test/migrationPoCli.test.js` mechanically verifies that `scripts/migrate-po.ts` stays at or below 1200 lines and does not regain parser / mapping / DB entity write responsibilities.
+`packages/backend/test/migrationPoCli.test.js` mechanically verifies that `scripts/migrate-po.ts` and the built CLI entry stay at or below 1200 lines and do not regain parser / mapping / DB entity write responsibilities.
 
 ## Synthetic fixtures
 
@@ -52,6 +56,7 @@ Safety gates:
 - The runner refuses non-local hosts.
 - The runner refuses databases whose name does not start with `po_migration_fixture`, unless `PO_MIGRATION_FIXTURE_ALLOW_SHARED_DATABASE=1` is explicitly set.
 - The runner prepares schema with `prisma db push` after the local/dedicated DB preflight.
+- The runner invokes the compiled backend CLI entry (`packages/backend/dist/migration/poCliEntry.js`) instead of relying on a TypeScript loader, so CI validates the built artifact under the same Node runtime used by the backend job.
 - Cleanup deletes only fixture-owned deterministic IDs.
 
 ## Local DB integration harness
@@ -75,9 +80,14 @@ export DATABASE_URL='postgresql://user:pass@localhost:55491/po_migration_fixture
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL=... npm run prisma:generate --prefix packages/backend`                                                                                                                                                                                   | PASS   | Prisma Client v7.8.0 generated                                                                                                                            |
 | `DATABASE_URL=... npm run build --prefix packages/backend`                                                                                                                                                                                             | PASS   | TypeScript compile                                                                                                                                        |
+| `DATABASE_URL=... npm run typecheck --prefix packages/backend`                                                                                                                                                                                         | PASS   | TypeScript no-emit check after adding built CLI entry                                                                                                     |
+| `DATABASE_URL=... npm run lint --prefix packages/backend`                                                                                                                                                                                              | PASS   | ESLint backend source                                                                                                                                     |
+| `DATABASE_URL=... npm run format:check --prefix packages/backend`                                                                                                                                                                                      | PASS   | Prettier backend source                                                                                                                                   |
 | `DATABASE_URL=... npm run test:ci --prefix packages/backend -- test/migrationCsv.test.js test/migrationLegacyIds.test.js test/migrationPoInput.test.js test/migrationPoDomain.test.js test/migrationPoCli.test.js test/migrationPoInputReader.test.js` | PASS   | 36 focused migration tests                                                                                                                                |
+| `DATABASE_URL=... npm run test:ci --prefix packages/backend -- test/migrationPoCli.test.js test/migrationPoInputReader.test.js`                                                                                                                        | PASS   | 8 focused regression tests after switching the fixture runner to built JS                                                                                 |
 | `DATABASE_URL=... npm run migration:po:fixture-dry-run --prefix packages/backend`                                                                                                                                                                      | PASS   | valid dry-run twice, deterministic stdout, dry-run DB non-mutation, invalid CSV exit 1, parse error exit 1, optional defaulting fixture exit 0/no stderr  |
 | `DATABASE_URL=... npm run migration:po:fixture-apply --prefix packages/backend`                                                                                                                                                                        | PASS   | valid apply, integrity ok, rerun updates existing deterministic IDs, fixture-owned row counts stable, invalid apply exits 1 without applying fixture rows |
+| `DATABASE_URL=... npm run migration:po:fixture-test --prefix packages/backend -- --prepare-db`                                                                                                                                                         | PASS   | all fixture gates using the compiled backend CLI entry                                                                                                    |
 
 Broader CI-equivalent checks are recorded in the PR body before merge.
 
