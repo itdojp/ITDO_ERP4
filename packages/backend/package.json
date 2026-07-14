@@ -30,7 +30,10 @@
     "coverage:projects": "npm run prisma:generate && tsc -p tsconfig.coverage.json && c8 --all --src src --report-dir coverage/projects --temp-directory .nyc_output/projects --reporter text-summary --reporter json-summary --reporter lcov node scripts/run-tests.js test/projectApplicationUseCases.test.js test/projectMemberRoutes.test.js test/projectTaskApplicationUseCases.test.js test/taskDependencyGraph.test.js test/entityChecks.test.js test/projectMilestoneApplicationUseCases.test.js test/projectRecurringTemplateApplicationUseCases.test.js test/dueDateRule.test.js test/projectChatLegacyRoomResolution.test.js test/projectChatBreakGlassLegacyRoomResolution.test.js",
     "coverage:projects:check": "npm run coverage:projects && node scripts/check-coverage-thresholds.mjs --scope projects",
     "coverage:workflow": "npm run prisma:generate && tsc -p tsconfig.coverage.json && c8 --all --src src --report-dir coverage/workflow --temp-directory .nyc_output/workflow --reporter text-summary --reporter json-summary --reporter lcov node scripts/run-tests.js test/actionPolicy.test.js test/actionPolicyErrors.test.js test/actionPolicyFallbackAudit.test.js test/approvalActionPolicyPreset.test.js test/approvalAuditMetadata.test.js test/approvalDefaultRulesConsistency.test.js test/approvalEscalation.test.js test/approvalEvidenceGate.test.js test/approvalIdempotency.test.js test/approvalLogic.test.js test/approvalRuleSelection.test.js test/approvalRulesRoutes.test.js test/workflowApprovalActionEffects.test.js test/workflowQualityGateRoutes.test.js test/expenseApplicationUseCases.test.js test/expenseReassignProjectRoutes.test.js test/timeEntryApplicationUseCases.test.js",
-    "coverage:workflow:check": "npm run coverage:workflow && node scripts/check-coverage-thresholds.mjs --scope workflow"
+    "coverage:workflow:check": "npm run coverage:workflow && node scripts/check-coverage-thresholds.mjs --scope workflow",
+    "migration:po:fixture-dry-run": "node ../../scripts/po-migration-fixture-command.mjs --mode=dry-run",
+    "migration:po:fixture-apply": "node ../../scripts/po-migration-fixture-command.mjs --mode=apply",
+    "migration:po:fixture-test": "node ../../scripts/po-migration-fixture-command.mjs --mode=all"
   },
   "prisma": {
     "schema": "./prisma/schema.prisma"

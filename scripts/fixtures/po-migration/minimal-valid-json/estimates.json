@@ -1,0 +1,22 @@
+[
+  {
+    "legacyId": "fixture-estimate-alpha",
+    "projectLegacyId": "fixture-project-alpha",
+    "estimateNo": "PO-FIX-EST-A",
+    "numberingDate": "2026-07-01",
+    "version": 1,
+    "totalAmount": 120000,
+    "currency": "JPY",
+    "status": "approved",
+    "validUntil": "2026-08-31",
+    "lines": [
+      {
+        "description": "PO Fixture estimate line",
+        "quantity": 2,
+        "unitPrice": 60000,
+        "taxRate": 0.1,
+        "taskLegacyId": "fixture-task-alpha"
+      }
+    ]
+  }
+]

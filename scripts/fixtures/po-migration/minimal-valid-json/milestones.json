@@ -1,0 +1,11 @@
+[
+  {
+    "legacyId": "fixture-milestone-alpha",
+    "projectLegacyId": "fixture-project-alpha",
+    "name": "PO Fixture Milestone Alpha",
+    "amount": 120000,
+    "billUpon": "acceptance",
+    "dueDate": "2026-07-31",
+    "taxRate": 0.1
+  }
+]

@@ -1,0 +1,24 @@
+[
+  {
+    "legacyId": "fixture-invoice-alpha",
+    "projectLegacyId": "fixture-project-alpha",
+    "invoiceNo": "PO-FIX-INV-A",
+    "issueDate": "2026-07-20",
+    "dueDate": "2026-08-31",
+    "currency": "JPY",
+    "totalAmount": 120000,
+    "status": "sent",
+    "estimateLegacyId": "fixture-estimate-alpha",
+    "milestoneLegacyId": "fixture-milestone-alpha",
+    "lines": [
+      {
+        "description": "PO Fixture invoice line",
+        "quantity": 1,
+        "unitPrice": 120000,
+        "taxRate": 0.1,
+        "taskLegacyId": "fixture-task-alpha",
+        "timeEntryRange": "2026-07-01..2026-07-31"
+      }
+    ]
+  }
+]

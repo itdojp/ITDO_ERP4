@@ -1,0 +1,14 @@
+[
+  {
+    "legacyId": "fixture-expense-alpha",
+    "projectLegacyId": "fixture-project-alpha",
+    "userId": "po-fixture-user-alpha",
+    "category": "fixture-cost",
+    "amount": 50000,
+    "currency": "JPY",
+    "incurredOn": "2026-07-10",
+    "isShared": false,
+    "status": "approved",
+    "receiptUrl": "https://example.invalid/po-fixture/receipt-alpha.pdf"
+  }
+]

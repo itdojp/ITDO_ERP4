@@ -10,6 +10,20 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: docker.io/library/postgres:15@sha256:6ab12ad4395ee49ab49fe19530f7e183c5a9c97fc47cf687b3e281bec5f91ee4
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: po_migration_fixture_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U user"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
@@ -33,6 +47,16 @@ jobs:
         working-directory: packages/backend
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/postgres?schema=public
+      - name: Run PO migration synthetic fixture dry-run
+        run: npm run migration:po:fixture-dry-run
+        working-directory: packages/backend
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/po_migration_fixture_ci?schema=public
+      - name: Run PO migration synthetic fixture apply checks
+        run: npm run migration:po:fixture-apply
+        working-directory: packages/backend
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/po_migration_fixture_ci?schema=public
       - run: npm run coverage:integrations:check
         working-directory: packages/backend
         env:

@@ -1,0 +1,10 @@
+[
+  {
+    "legacyId": "fixture-user-alpha",
+    "userId": "po-fixture-user-alpha",
+    "userName": "po.fixture.user.alpha",
+    "email": "po-fixture-user-alpha@example.invalid",
+    "displayName": "PO Fixture User Alpha",
+    "active": true
+  }
+]

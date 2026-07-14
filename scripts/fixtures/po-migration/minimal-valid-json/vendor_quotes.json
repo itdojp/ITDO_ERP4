@@ -1,0 +1,13 @@
+[
+  {
+    "legacyId": "fixture-vendor-quote-alpha",
+    "projectLegacyId": "fixture-project-alpha",
+    "vendorLegacyId": "fixture-vendor-alpha",
+    "quoteNo": "PO-FIX-VQ-A",
+    "issueDate": "2026-07-03",
+    "currency": "JPY",
+    "totalAmount": 50000,
+    "status": "received",
+    "documentUrl": "https://example.invalid/po-fixture/vendor-quote-alpha.pdf"
+  }
+]

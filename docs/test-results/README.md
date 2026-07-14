@@ -44,6 +44,7 @@
 - [Issue #1959 Report Subscriptions Application Boundary Verification](2026-07-14-issue1959-report-subscriptions-service.md)
 - [Issue #1961 migrate-po parser / encoding / ID pure module verification](2026-07-14-issue1961-migrate-po-parser-id.md)
 - [Issue #1962 migrate-po domain mapping / validation / report verification](2026-07-14-issue1962-migrate-po-domain.md)
+- [Issue #1963 migrate-po CLI orchestration / fixture gate verification](2026-07-14-issue1963-migrate-po-cli-fixtures.md)
 - [Issue #1964 Workflow focused coverage gate 検証記録](2026-07-14-issue1964-workflow-coverage-gate.md)
 
 ### 2026-07-13

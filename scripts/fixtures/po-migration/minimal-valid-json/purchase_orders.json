@@ -1,0 +1,23 @@
+[
+  {
+    "legacyId": "fixture-po-alpha",
+    "projectLegacyId": "fixture-project-alpha",
+    "vendorLegacyId": "fixture-vendor-alpha",
+    "poNo": "PO-FIX-PO-A",
+    "issueDate": "2026-07-05",
+    "dueDate": "2026-07-25",
+    "currency": "JPY",
+    "totalAmount": 50000,
+    "status": "sent",
+    "lines": [
+      {
+        "description": "PO Fixture purchase order line",
+        "quantity": 1,
+        "unitPrice": 50000,
+        "taxRate": 0.1,
+        "taskLegacyId": "fixture-task-alpha",
+        "expenseLegacyId": "fixture-expense-alpha"
+      }
+    ]
+  }
+]
