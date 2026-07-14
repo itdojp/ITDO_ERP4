@@ -108,7 +108,7 @@ const fixtureIds = {
 const cliArgs = [
   "--prefix",
   "packages/backend",
-  "ts-node",
+  "ts-node-esm",
   "--project",
   "packages/backend/tsconfig.json",
   "scripts/migrate-po.ts",
@@ -120,6 +120,9 @@ function runCli(args, envOverrides = {}) {
     env: {
       ...process.env,
       DATABASE_URL: databaseUrl,
+      NODE_OPTIONS: [process.env.NODE_OPTIONS, "--no-warnings"]
+        .filter(Boolean)
+        .join(" "),
       TS_NODE_COMPILER_OPTIONS: '{"types":["node"]}',
       ...envOverrides,
     },
