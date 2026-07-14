@@ -121,5 +121,32 @@
       "src/services/taskDependencyGraph.ts",
       "src/services/dueDateRule.ts"
     ]
+  },
+  "workflow": {
+    "summary": "coverage/workflow/coverage-summary.json",
+    "thresholds": {
+      "statements": 70.7,
+      "branches": 70.5,
+      "functions": 84.8,
+      "lines": 70.7
+    },
+    "files": [
+      "src/routes/actionPolicies.ts",
+      "src/routes/approvalRules.ts",
+      "src/routes/periodLocks.ts",
+      "src/application/workflow/approvalActionEffects.ts",
+      "src/application/workflow/submitApproval.ts",
+      "src/services/actionPolicy.ts",
+      "src/services/actionPolicyAudit.ts",
+      "src/services/actionPolicyChatAckTargets.ts",
+      "src/services/actionPolicyErrors.ts",
+      "src/services/approval.ts",
+      "src/services/approvalDefaultRules.ts",
+      "src/services/approvalEscalation.ts",
+      "src/services/approvalEvidenceGate.ts",
+      "src/services/approvalLogic.ts",
+      "src/services/periodLock.ts",
+      "src/services/reassignmentLog.ts"
+    ]
   }
 }
