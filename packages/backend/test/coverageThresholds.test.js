@@ -486,6 +486,99 @@ test('report subscriptions route uses the default max-lines gate without a tempo
   assert.deepEqual(reportSubscriptionOverrides, []);
 });
 
+test('workflow coverage scope covers Workflow context plus application boundary and escalation service', () => {
+  const config = readCoverageThresholdConfig();
+  const { contexts } = require('../bounded-context-registry.cjs');
+  const workflow = contexts.find((context) => context.name === 'workflow');
+  assert.ok(workflow, 'workflow context must exist');
+
+  const workflowRegexes = workflow.patterns.map(
+    (pattern) => new RegExp(pattern),
+  );
+  const workflowContextFiles = listBackendSourceFiles().filter((file) =>
+    workflowRegexes.some((regex) => regex.test(file)),
+  );
+  const expectedFiles = [
+    ...workflowContextFiles,
+    ...listSourceFilesRecursive('src/application/workflow'),
+    'src/services/approvalEscalation.ts',
+  ].sort();
+  const configuredFiles = [...config.workflow.files].sort();
+
+  assert.deepEqual(configuredFiles, expectedFiles);
+  assert.equal(configuredFiles.length, 16);
+});
+
+test('workflow coverage thresholds stay above the initial focused baseline gate', () => {
+  const config = readCoverageThresholdConfig();
+  const minimums = {
+    statements: 70.7,
+    branches: 70.5,
+    functions: 84.8,
+    lines: 70.7,
+  };
+
+  for (const [metric, minimum] of Object.entries(minimums)) {
+    assert.ok(
+      config.workflow.thresholds[metric] >= minimum,
+      `workflow ${metric} threshold should stay >= ${minimum}`,
+    );
+  }
+});
+
+test('workflow coverage threshold check fails when focused coverage drops below baseline', () =>
+  withTempDir((dir) => {
+    const summaryPath = path.join(dir, 'coverage-summary.json');
+    const configPath = path.join(dir, 'coverage-thresholds.json');
+    const workflowFile = path.join(BACKEND_DIR, 'src/services/actionPolicy.ts');
+
+    writeFileSync(
+      summaryPath,
+      JSON.stringify({
+        total: {
+          statements: { total: 100, covered: 100, pct: 100 },
+          branches: { total: 100, covered: 100, pct: 100 },
+          functions: { total: 100, covered: 100, pct: 100 },
+          lines: { total: 100, covered: 100, pct: 100 },
+        },
+        [workflowFile]: {
+          statements: { total: 100, covered: 70, pct: 70 },
+          branches: { total: 100, covered: 70, pct: 70 },
+          functions: { total: 100, covered: 84, pct: 84 },
+          lines: { total: 100, covered: 70, pct: 70 },
+        },
+      }),
+    );
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        workflow: {
+          summary: summaryPath,
+          files: ['src/services/actionPolicy.ts'],
+          thresholds: {
+            statements: 70.7,
+            branches: 70.5,
+            functions: 84.8,
+            lines: 70.7,
+          },
+        },
+      }),
+    );
+
+    const result = spawnSync(
+      process.execPath,
+      [SCRIPT_PATH, '--scope', 'workflow', '--config', configPath],
+      { cwd: BACKEND_DIR, encoding: 'utf8' },
+    );
+
+    assert.equal(result.status, 1);
+    assert.match(result.stdout, /workflow statements: 70\.00% >= 70\.70% FAIL/);
+    assert.match(result.stdout, /workflow branches: 70\.00% >= 70\.50% FAIL/);
+    assert.match(result.stdout, /workflow functions: 84\.00% >= 84\.80% FAIL/);
+    assert.match(result.stdout, /workflow lines: 70\.00% >= 70\.70% FAIL/);
+    assert.match(result.stderr, /coverage threshold failed for workflow/);
+  }));
+
 test('coverage configured source files exist on disk', () => {
   const config = readCoverageThresholdConfig();
 

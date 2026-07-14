@@ -42,6 +42,7 @@
 
 - [Issue #1958 Chat route split verification](2026-07-14-issue1958-chat-route-split.md)
 - [Issue #1959 Report Subscriptions Application Boundary Verification](2026-07-14-issue1959-report-subscriptions-service.md)
+- [Issue #1964 Workflow focused coverage gate 検証記録](2026-07-14-issue1964-workflow-coverage-gate.md)
 
 ### 2026-07-13
 
