@@ -12,21 +12,67 @@ import { makePoMigrationId as makeId } from '../packages/backend/dist/migration/
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-expect-error: dist JS module has no type declarations for ts-node
 import * as poInput from '../packages/backend/dist/migration/poInput.js';
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-expect-error: dist JS module has no type declarations for ts-node
+import * as poDomain from '../packages/backend/dist/migration/poDomain.js';
+import type {
+  CustomerInput,
+  EstimateInput,
+  ExpenseInput,
+  ImportSummary,
+  InvoiceInput,
+  MilestoneInput,
+  PlannedIds,
+  PoMigrationInputs,
+  ProjectInput,
+  PurchaseOrderInput,
+  TaskInput,
+  TimeEntryInput,
+  UserInput,
+  VendorInput,
+  VendorInvoiceInput,
+  VendorQuoteInput,
+} from '../packages/backend/src/migration/poDomain.js';
 
 const {
   decodePoMigrationBytes,
   ensureNoDuplicates,
-  normalizeLines,
   normalizeString,
   parseCsvBoolean,
   parseCsvItems,
   parseCsvJsonArray,
-  parseDate,
-  parseEnumValue,
   parseNumber,
   parsePoCsvRecords,
   parsePoJson,
 } = poInput;
+
+const {
+  buildPoMigrationPlannedIds,
+  buildPoTaskProjectMap,
+  formatPoMigrationIssues,
+  formatPoMigrationSummary,
+  getPoEstimateLines,
+  getPoInvoiceLines,
+  getPoPurchaseOrderLines,
+  hasPoMigrationBlockingIssues,
+  mapPoCustomer,
+  mapPoEstimateHeader,
+  mapPoExpense,
+  mapPoInvoiceHeader,
+  mapPoLineUnitPrice,
+  mapPoMilestone,
+  mapPoProject,
+  mapPoPurchaseOrderHeader,
+  mapPoTask,
+  mapPoTimeEntry,
+  mapPoUser,
+  mapPoVendor,
+  mapPoVendorInvoiceHeader,
+  mapPoVendorQuoteHeader,
+  normalizePoTaskInputs,
+  shouldRunPoScope,
+  withImportTotal,
+} = poDomain;
 
 type CliOptions = {
   inputDir: string;
@@ -39,41 +85,6 @@ type ImportError = {
   scope: string;
   legacyId?: string;
   message: string;
-};
-
-const DOC_STATUS_VALUES = [
-  'draft',
-  'pending_qa',
-  'pending_exec',
-  'approved',
-  'rejected',
-  'sent',
-  'paid',
-  'cancelled',
-  'received',
-  'acknowledged',
-] as const;
-const PROJECT_STATUS_VALUES = ['draft', 'active', 'on_hold', 'closed'] as const;
-const TIME_STATUS_VALUES = ['submitted', 'approved', 'rejected'] as const;
-
-type DocStatus = (typeof DOC_STATUS_VALUES)[number];
-type ProjectStatus = (typeof PROJECT_STATUS_VALUES)[number];
-type TimeStatus = (typeof TIME_STATUS_VALUES)[number];
-
-type PlannedIds = {
-  users: Set<string>;
-  customers: Set<string>;
-  vendors: Set<string>;
-  projects: Set<string>;
-  tasks: Set<string>;
-  milestones: Set<string>;
-  estimates: Set<string>;
-  invoices: Set<string>;
-  purchase_orders: Set<string>;
-  vendor_quotes: Set<string>;
-  vendor_invoices: Set<string>;
-  time_entries: Set<string>;
-  expenses: Set<string>;
 };
 
 function parseArgValue(key: string): string | undefined {
@@ -203,35 +214,9 @@ async function importUsers(
   let created = 0;
   let updated = 0;
   for (const item of items) {
-    const id = normalizeString(item.userId);
-    if (!id) {
-      errors.push({ scope: 'users', legacyId: item.legacyId, message: 'userId is required' });
-      continue;
-    }
-    const userName = normalizeString(item.userName);
-    if (!userName) {
-      errors.push({ scope: 'users', legacyId: item.legacyId, message: 'userName is required' });
-      continue;
-    }
-    const email = normalizeString(item.email) ?? undefined;
-    const givenName = normalizeString(item.givenName) ?? undefined;
-    const familyName = normalizeString(item.familyName) ?? undefined;
-    const fallbackDisplayName = [givenName, familyName].filter(Boolean).join(' ');
-    const displayName =
-      normalizeString(item.displayName) ??
-      (fallbackDisplayName ? fallbackDisplayName : undefined);
-    const emails = email ? [{ value: email, primary: true }] : undefined;
-    const active = item.active ?? true;
-
-    const data = {
-      id,
-      userName,
-      displayName,
-      givenName,
-      familyName,
-      active,
-      emails,
-    };
+    const mapped = mapPoUser(item, errors);
+    if (!mapped) continue;
+    const { id, data } = mapped;
     const exists = await prisma.userAccount.findUnique({ where: { id }, select: { id: true } });
     existsCache.user.set(id, !!exists);
     if (!options.apply) {
@@ -259,196 +244,6 @@ async function importUsers(
   return { created, updated };
 }
 
-type CustomerInput = {
-  legacyId: string;
-  code: string;
-  name: string;
-  status: string;
-  invoiceRegistrationId?: string | null;
-  taxRegion?: string | null;
-  billingAddress?: string | null;
-};
-
-type UserInput = {
-  legacyId: string;
-  userId: string;
-  userName: string;
-  email?: string | null;
-  displayName?: string | null;
-  givenName?: string | null;
-  familyName?: string | null;
-  active?: boolean | null;
-};
-
-type VendorInput = {
-  legacyId: string;
-  code: string;
-  name: string;
-  status: string;
-  bankInfo?: string | null;
-  taxRegion?: string | null;
-};
-
-type ProjectInput = {
-  legacyId: string;
-  code: string;
-  name: string;
-  status?: ProjectStatus;
-  projectType?: string | null;
-  parentLegacyId?: string | null;
-  customerLegacyId?: string | null;
-  ownerUserId?: string | null;
-  orgUnitId?: string | null;
-  startDate?: string | null;
-  endDate?: string | null;
-  currency?: string | null;
-  planHours?: number | null;
-  budgetCost?: number | null;
-};
-
-type TaskInput = {
-  legacyId: string;
-  projectLegacyId: string;
-  name: string;
-  status?: string | null;
-  assigneeId?: string | null;
-  parentLegacyId?: string | null;
-  progressPercent?: number | null;
-  planStart?: string | null;
-  planEnd?: string | null;
-  actualStart?: string | null;
-  actualEnd?: string | null;
-};
-
-type MilestoneInput = {
-  legacyId: string;
-  projectLegacyId: string;
-  name: string;
-  amount: number;
-  currency?: string | null;
-  billUpon?: string | null;
-  dueDate?: string | null;
-  taxRate?: number | null;
-};
-
-type TimeEntryInput = {
-  legacyId: string;
-  projectLegacyId: string;
-  userId: string;
-  workDate: string;
-  minutes: number;
-  taskLegacyId?: string | null;
-  workType?: string | null;
-  location?: string | null;
-  notes?: string | null;
-  status?: TimeStatus;
-};
-
-type ExpenseInput = {
-  legacyId: string;
-  projectLegacyId: string;
-  userId: string;
-  category: string;
-  amount: number;
-  currency: string;
-  incurredOn: string;
-  isShared?: boolean;
-  receiptUrl?: string | null;
-  status?: DocStatus;
-};
-
-type EstimateLineInput = {
-  description: string;
-  quantity?: number | null;
-  unitPrice: number;
-  taxRate?: number | null;
-  taskLegacyId?: string | null;
-};
-
-type EstimateInput = {
-  legacyId: string;
-  projectLegacyId: string;
-  estimateNo?: string | null;
-  numberingDate?: string | null;
-  version?: number | null;
-  totalAmount: number;
-  currency: string;
-  status?: DocStatus;
-  validUntil?: string | null;
-  notes?: string | null;
-  lines?: EstimateLineInput[] | null;
-};
-
-type BillingLineInput = {
-  description: string;
-  quantity?: number | null;
-  unitPrice: number;
-  taxRate?: number | null;
-  taskLegacyId?: string | null;
-  timeEntryRange?: string | null;
-};
-
-type InvoiceInput = {
-  legacyId: string;
-  projectLegacyId: string;
-  invoiceNo?: string | null;
-  issueDate?: string | null;
-  dueDate?: string | null;
-  currency: string;
-  totalAmount: number;
-  status?: DocStatus;
-  estimateLegacyId?: string | null;
-  milestoneLegacyId?: string | null;
-  lines?: BillingLineInput[] | null;
-};
-
-type PurchaseOrderLineInput = {
-  description: string;
-  quantity?: number | null;
-  unitPrice: number;
-  taxRate?: number | null;
-  taskLegacyId?: string | null;
-  expenseLegacyId?: string | null;
-};
-
-type PurchaseOrderInput = {
-  legacyId: string;
-  projectLegacyId: string;
-  vendorLegacyId: string;
-  poNo?: string | null;
-  issueDate?: string | null;
-  dueDate?: string | null;
-  currency: string;
-  totalAmount: number;
-  status?: DocStatus;
-  lines?: PurchaseOrderLineInput[] | null;
-};
-
-type VendorQuoteInput = {
-  legacyId: string;
-  projectLegacyId: string;
-  vendorLegacyId: string;
-  quoteNo?: string | null;
-  issueDate?: string | null;
-  currency: string;
-  totalAmount: number;
-  status?: DocStatus;
-  documentUrl?: string | null;
-};
-
-type VendorInvoiceInput = {
-  legacyId: string;
-  projectLegacyId: string;
-  vendorLegacyId: string;
-  vendorInvoiceNo?: string | null;
-  receivedDate?: string | null;
-  dueDate?: string | null;
-  currency: string;
-  totalAmount: number;
-  status?: DocStatus;
-  documentUrl?: string | null;
-};
-
 async function importCustomers(
   options: CliOptions,
   items: CustomerInput[],
@@ -461,18 +256,7 @@ async function importCustomers(
   let created = 0;
   let updated = 0;
   for (const item of items) {
-    const id = makeId('customer', item.legacyId);
-    const data = {
-      id,
-      code: item.code,
-      name: item.name,
-      status: item.status,
-      invoiceRegistrationId: normalizeString(item.invoiceRegistrationId) ?? undefined,
-      taxRegion: normalizeString(item.taxRegion) ?? undefined,
-      billingAddress: normalizeString(item.billingAddress) ?? undefined,
-      externalSource: 'po',
-      externalId: item.legacyId,
-    };
+    const { id, data } = mapPoCustomer(item);
     const exists = await prisma.customer.findUnique({ where: { id }, select: { id: true } });
     existsCache.customer.set(id, !!exists);
     if (!options.apply) {
@@ -512,17 +296,7 @@ async function importVendors(
   let created = 0;
   let updated = 0;
   for (const item of items) {
-    const id = makeId('vendor', item.legacyId);
-    const data = {
-      id,
-      code: item.code,
-      name: item.name,
-      status: item.status,
-      bankInfo: normalizeString(item.bankInfo) ?? undefined,
-      taxRegion: normalizeString(item.taxRegion) ?? undefined,
-      externalSource: 'po',
-      externalId: item.legacyId,
-    };
+    const { id, data } = mapPoVendor(item);
     const exists = await prisma.vendor.findUnique({ where: { id }, select: { id: true } });
     existsCache.vendor.set(id, !!exists);
     if (!options.apply) {
@@ -564,21 +338,9 @@ async function importProjects(
   let created = 0;
   let updated = 0;
   for (const item of sorted) {
-    const id = makeId('project', item.legacyId);
-    const startDate = parseDate(item.startDate);
-    const endDate = parseDate(item.endDate);
-    if (startDate && endDate && startDate.getTime() > endDate.getTime()) {
-      errors.push({
-        scope: 'projects',
-        legacyId: item.legacyId,
-        message: 'startDate must be before or equal to endDate',
-      });
-      continue;
-    }
-
-    const customerId = item.customerLegacyId
-      ? makeId('customer', item.customerLegacyId)
-      : null;
+    const mapped = mapPoProject(item, errors);
+    if (!mapped) continue;
+    const { id, customerId, parentId, data } = mapped;
     if (customerId) {
       const ok = await existsOrPlanned(
         customerId,
@@ -596,7 +358,6 @@ async function importProjects(
       }
     }
     if (item.parentLegacyId) {
-      const parentId = makeId('project', item.parentLegacyId);
       const ok = await existsOrPlanned(
         parentId,
         planned.projects,
@@ -620,22 +381,6 @@ async function importProjects(
         continue;
       }
     }
-
-    const data = {
-      id,
-      code: item.code,
-      name: item.name,
-      status: parseEnumValue(item.status, PROJECT_STATUS_VALUES, 'active'),
-      projectType: normalizeString(item.projectType) ?? undefined,
-      customerId,
-      ownerUserId: normalizeString(item.ownerUserId) ?? undefined,
-      orgUnitId: normalizeString(item.orgUnitId) ?? undefined,
-      startDate,
-      endDate,
-      currency: normalizeString(item.currency) ?? undefined,
-      planHours: parseNumber(item.planHours) ?? undefined,
-      budgetCost: parseNumber(item.budgetCost) ?? undefined,
-    };
 
     const exists = await prisma.project.findUnique({ where: { id }, select: { id: true } });
     existsCache.project.set(id, !!exists);
@@ -735,10 +480,7 @@ async function importTasks(
   errors: ImportError[],
 ) {
   if (options.only && !options.only.has('tasks')) return { created: 0, updated: 0 };
-  const normalized = items.map((item) => ({
-    ...item,
-    parentLegacyId: normalizeString(item.parentLegacyId) ?? null,
-  }));
+  const normalized = normalizePoTaskInputs(items) as TaskInput[];
   ensureNoDuplicates(
     normalized.map((item) => ({ legacyId: item.legacyId })),
     'tasks',
@@ -746,16 +488,14 @@ async function importTasks(
   );
   if (errors.length) return { created: 0, updated: 0 };
 
-  const taskProjectMap = new Map<string, string>();
-  for (const item of normalized) {
-    taskProjectMap.set(makeId('task', item.legacyId), makeId('project', item.projectLegacyId));
-  }
+  const taskProjectMap = buildPoTaskProjectMap(normalized);
 
   let created = 0;
   let updated = 0;
   for (const item of normalized) {
-    const id = makeId('task', item.legacyId);
-    const projectId = makeId('project', item.projectLegacyId);
+    const mapped = mapPoTask(item, errors);
+    if (!mapped) continue;
+    const { id, projectId, data } = mapped;
     const projectOk = await existsOrPlanned(
       projectId,
       planned.projects,
@@ -770,49 +510,6 @@ async function importTasks(
       });
       continue;
     }
-    const progressPercent = parseNumber(item.progressPercent);
-    if (progressPercent != null && (progressPercent < 0 || progressPercent > 100)) {
-      errors.push({
-        scope: 'tasks',
-        legacyId: item.legacyId,
-        message: 'progressPercent must be between 0 and 100',
-      });
-      continue;
-    }
-    const planStart = parseDate(item.planStart);
-    const planEnd = parseDate(item.planEnd);
-    if (planStart && planEnd && planStart.getTime() > planEnd.getTime()) {
-      errors.push({
-        scope: 'tasks',
-        legacyId: item.legacyId,
-        message: 'planStart must be before or equal to planEnd',
-      });
-      continue;
-    }
-    const actualStart = parseDate(item.actualStart);
-    const actualEnd = parseDate(item.actualEnd);
-    if (actualStart && actualEnd && actualStart.getTime() > actualEnd.getTime()) {
-      errors.push({
-        scope: 'tasks',
-        legacyId: item.legacyId,
-        message: 'actualStart must be before or equal to actualEnd',
-      });
-      continue;
-    }
-
-    const data = {
-      id,
-      projectId,
-      name: item.name,
-      status: normalizeString(item.status) ?? undefined,
-      assigneeId: normalizeString(item.assigneeId) ?? undefined,
-      parentTaskId: null,
-      progressPercent: progressPercent == null ? null : Math.round(progressPercent),
-      planStart,
-      planEnd,
-      actualStart,
-      actualEnd,
-    };
     const exists = await prisma.projectTask.findUnique({ where: { id }, select: { id: true } });
     existsCache.task.set(id, !!exists);
     if (!options.apply) {
@@ -925,8 +622,7 @@ async function importMilestones(
   let created = 0;
   let updated = 0;
   for (const item of items) {
-    const id = makeId('milestone', item.legacyId);
-    const projectId = makeId('project', item.projectLegacyId);
+    const { id, projectId, data } = mapPoMilestone(item);
     const projectOk = await existsOrPlanned(
       projectId,
       planned.projects,
@@ -941,18 +637,6 @@ async function importMilestones(
       });
       continue;
     }
-    const dueDate = parseDate(item.dueDate);
-    const taxRate = parseNumber(item.taxRate);
-    const data = {
-      id,
-      projectId,
-      name: item.name,
-      amount: item.amount,
-      billUpon: normalizeString(item.billUpon) ?? 'acceptance',
-      dueDate,
-      taxRate: taxRate == null ? null : taxRate,
-      invoiceTemplateId: null,
-    };
     const exists = await prisma.projectMilestone.findUnique({ where: { id }, select: { id: true } });
     existsCache.milestone.set(id, !!exists);
     if (!options.apply) {
@@ -1053,7 +737,6 @@ async function importEstimates(
   let created = 0;
   let updated = 0;
   for (const item of items) {
-    const id = makeId('estimate', item.legacyId);
     const projectId = makeId('project', item.projectLegacyId);
     const projectOk = await existsOrPlanned(
       projectId,
@@ -1070,22 +753,9 @@ async function importEstimates(
       continue;
     }
 
-    const totalAmount = parseNumber(item.totalAmount);
-    if (totalAmount == null || totalAmount < 0) {
-      errors.push({
-        scope: 'estimates',
-        legacyId: item.legacyId,
-        message: 'totalAmount must be >= 0',
-      });
-      continue;
-    }
-
-    const versionRaw = parseNumber(item.version);
-    const version = versionRaw == null ? 1 : Math.max(1, Math.trunc(versionRaw));
-    const validUntil = parseDate(item.validUntil);
-    const numberingDate = parseDate(item.numberingDate) || new Date();
-    const preferredNo = normalizeString(item.estimateNo);
-    const currency = normalizeString(item.currency) || 'JPY';
+    const mapped = mapPoEstimateHeader(item, projectId, new Date(), errors);
+    if (!mapped) continue;
+    const { id, totalAmount, version, validUntil, numberingDate, preferredNo, currency, status, notes } = mapped;
 
     const exists = await prisma.estimate.findUnique({
       where: { id },
@@ -1098,17 +768,7 @@ async function importEstimates(
       continue;
     }
 
-    const lines = normalizeLines(item.lines).length
-      ? normalizeLines(item.lines)
-      : [
-          {
-            description: `Imported (${item.legacyId})`,
-            quantity: 1,
-            unitPrice: totalAmount,
-            taxRate: null,
-            taskLegacyId: null,
-          } satisfies EstimateLineInput,
-        ];
+    const lines = getPoEstimateLines(item, totalAmount);
 
     const lineData: Array<{
       estimateId: string;
@@ -1120,15 +780,8 @@ async function importEstimates(
     }> = [];
     for (const line of lines) {
       const quantity = parseNumber(line.quantity) ?? 1;
-      const unitPrice = parseNumber(line.unitPrice);
-      if (unitPrice == null || unitPrice < 0) {
-        errors.push({
-          scope: 'estimates',
-          legacyId: item.legacyId,
-          message: 'line.unitPrice must be >= 0',
-        });
-        continue;
-      }
+      const unitPrice = mapPoLineUnitPrice('estimates', item.legacyId, line.unitPrice, errors);
+      if (unitPrice == null) continue;
       const taskLegacyId = normalizeString(line.taskLegacyId);
       const taskId = taskLegacyId
         ? await resolveTaskId(options, planned, projectId, taskLegacyId, 'estimates', item.legacyId, errors)
@@ -1162,9 +815,9 @@ async function importEstimates(
       version,
       totalAmount,
       currency,
-      status: parseEnumValue(item.status, DOC_STATUS_VALUES, 'draft'),
+      status,
       validUntil,
-      notes: normalizeString(item.notes) ?? undefined,
+      notes,
       numberingSerial: numberingSerial ?? undefined,
       pdfUrl: undefined,
       emailMessageId: undefined,
@@ -1228,7 +881,6 @@ async function importInvoices(
   let created = 0;
   let updated = 0;
   for (const item of items) {
-    const id = makeId('invoice', item.legacyId);
     const projectId = makeId('project', item.projectLegacyId);
     const projectOk = await existsOrPlanned(
       projectId,
@@ -1245,20 +897,21 @@ async function importInvoices(
       continue;
     }
 
-    const totalAmount = parseNumber(item.totalAmount);
-    if (totalAmount == null || totalAmount < 0) {
-      errors.push({ scope: 'invoices', legacyId: item.legacyId, message: 'totalAmount must be >= 0' });
-      continue;
-    }
-    const issueDate = parseDate(item.issueDate);
-    const dueDate = parseDate(item.dueDate);
-    const numberingDate = issueDate || dueDate || new Date();
-    const preferredNo = normalizeString(item.invoiceNo);
-    const currency = normalizeString(item.currency) || 'JPY';
+    const mapped = mapPoInvoiceHeader(item, projectId, new Date(), errors);
+    if (!mapped) continue;
+    const {
+      id,
+      totalAmount,
+      issueDate,
+      dueDate,
+      numberingDate,
+      preferredNo,
+      currency,
+      estimateId,
+      milestoneId,
+      status,
+    } = mapped;
 
-    const estimateId = normalizeString(item.estimateLegacyId)
-      ? makeId('estimate', item.estimateLegacyId as string)
-      : null;
     if (estimateId) {
       const ok = await existsOrPlanned(
         estimateId,
@@ -1272,9 +925,6 @@ async function importInvoices(
       }
     }
 
-    const milestoneId = normalizeString(item.milestoneLegacyId)
-      ? makeId('milestone', item.milestoneLegacyId as string)
-      : null;
     if (milestoneId) {
       const ok = await existsOrPlanned(
         milestoneId,
@@ -1299,18 +949,7 @@ async function importInvoices(
       continue;
     }
 
-    const lines = normalizeLines(item.lines).length
-      ? normalizeLines(item.lines)
-      : [
-          {
-            description: `Imported (${item.legacyId})`,
-            quantity: 1,
-            unitPrice: totalAmount,
-            taxRate: null,
-            taskLegacyId: null,
-            timeEntryRange: null,
-          } satisfies BillingLineInput,
-        ];
+    const lines = getPoInvoiceLines(item, totalAmount);
 
     const lineData: Array<{
       invoiceId: string;
@@ -1323,11 +962,8 @@ async function importInvoices(
     }> = [];
     for (const line of lines) {
       const quantity = parseNumber(line.quantity) ?? 1;
-      const unitPrice = parseNumber(line.unitPrice);
-      if (unitPrice == null || unitPrice < 0) {
-        errors.push({ scope: 'invoices', legacyId: item.legacyId, message: 'line.unitPrice must be >= 0' });
-        continue;
-      }
+      const unitPrice = mapPoLineUnitPrice('invoices', item.legacyId, line.unitPrice, errors);
+      if (unitPrice == null) continue;
       const taskLegacyId = normalizeString(line.taskLegacyId);
       const taskId = taskLegacyId
         ? await resolveTaskId(options, planned, projectId, taskLegacyId, 'invoices', item.legacyId, errors)
@@ -1365,7 +1001,7 @@ async function importInvoices(
       dueDate,
       currency,
       totalAmount,
-      status: parseEnumValue(item.status, DOC_STATUS_VALUES, 'draft'),
+      status,
       pdfUrl: undefined,
       emailMessageId: undefined,
       numberingSerial: numberingSerial ?? undefined,
@@ -1430,7 +1066,6 @@ async function importPurchaseOrders(
   let created = 0;
   let updated = 0;
   for (const item of items) {
-    const id = makeId('purchase_order', item.legacyId);
     const projectId = makeId('project', item.projectLegacyId);
     const vendorId = makeId('vendor', item.vendorLegacyId);
     const projectOk = await existsOrPlanned(
@@ -1454,16 +1089,9 @@ async function importPurchaseOrders(
       continue;
     }
 
-    const totalAmount = parseNumber(item.totalAmount);
-    if (totalAmount == null || totalAmount < 0) {
-      errors.push({ scope: 'purchase_orders', legacyId: item.legacyId, message: 'totalAmount must be >= 0' });
-      continue;
-    }
-    const issueDate = parseDate(item.issueDate);
-    const dueDate = parseDate(item.dueDate);
-    const numberingDate = issueDate || dueDate || new Date();
-    const preferredNo = normalizeString(item.poNo);
-    const currency = normalizeString(item.currency) || 'JPY';
+    const mapped = mapPoPurchaseOrderHeader(item, projectId, vendorId, new Date(), errors);
+    if (!mapped) continue;
+    const { id, totalAmount, issueDate, dueDate, numberingDate, preferredNo, currency, status } = mapped;
 
     const exists = await prisma.purchaseOrder.findUnique({
       where: { id },
@@ -1476,18 +1104,7 @@ async function importPurchaseOrders(
       continue;
     }
 
-    const lines = normalizeLines(item.lines).length
-      ? normalizeLines(item.lines)
-      : [
-          {
-            description: `Imported (${item.legacyId})`,
-            quantity: 1,
-            unitPrice: totalAmount,
-            taxRate: null,
-            taskLegacyId: null,
-            expenseLegacyId: null,
-          } satisfies PurchaseOrderLineInput,
-        ];
+    const lines = getPoPurchaseOrderLines(item, totalAmount);
 
     const lineData: Array<{
       purchaseOrderId: string;
@@ -1500,11 +1117,8 @@ async function importPurchaseOrders(
     }> = [];
     for (const line of lines) {
       const quantity = parseNumber(line.quantity) ?? 1;
-      const unitPrice = parseNumber(line.unitPrice);
-      if (unitPrice == null || unitPrice < 0) {
-        errors.push({ scope: 'purchase_orders', legacyId: item.legacyId, message: 'line.unitPrice must be >= 0' });
-        continue;
-      }
+      const unitPrice = mapPoLineUnitPrice('purchase_orders', item.legacyId, line.unitPrice, errors);
+      if (unitPrice == null) continue;
       const taskLegacyId = normalizeString(line.taskLegacyId);
       const taskId = taskLegacyId
         ? await resolveTaskId(options, planned, projectId, taskLegacyId, 'purchase_orders', item.legacyId, errors)
@@ -1557,7 +1171,7 @@ async function importPurchaseOrders(
       dueDate,
       currency,
       totalAmount,
-      status: parseEnumValue(item.status, DOC_STATUS_VALUES, 'draft'),
+      status,
       pdfUrl: undefined,
       numberingSerial: numberingSerial ?? undefined,
       deletedAt: null,
@@ -1620,7 +1234,6 @@ async function importVendorQuotes(
   let created = 0;
   let updated = 0;
   for (const item of items) {
-    const id = makeId('vendor_quote', item.legacyId);
     const projectId = makeId('project', item.projectLegacyId);
     const vendorId = makeId('vendor', item.vendorLegacyId);
     const projectOk = await existsOrPlanned(
@@ -1644,15 +1257,9 @@ async function importVendorQuotes(
       continue;
     }
 
-    const totalAmount = parseNumber(item.totalAmount);
-    if (totalAmount == null || totalAmount < 0) {
-      errors.push({ scope: 'vendor_quotes', legacyId: item.legacyId, message: 'totalAmount must be >= 0' });
-      continue;
-    }
-    const issueDate = parseDate(item.issueDate);
-    const numberingDate = issueDate || new Date();
-    const preferredNo = normalizeString(item.quoteNo);
-    const currency = normalizeString(item.currency) || 'JPY';
+    const mapped = mapPoVendorQuoteHeader(item, projectId, vendorId, new Date(), errors);
+    if (!mapped) continue;
+    const { id, totalAmount, issueDate, numberingDate, preferredNo, currency, status, documentUrl } = mapped;
 
     const exists = await prisma.vendorQuote.findUnique({
       where: { id },
@@ -1677,8 +1284,8 @@ async function importVendorQuotes(
       issueDate,
       currency,
       totalAmount,
-      status: parseEnumValue(item.status, DOC_STATUS_VALUES, 'received'),
-      documentUrl: normalizeString(item.documentUrl) ?? undefined,
+      status,
+      documentUrl,
       deletedAt: null,
       deletedReason: null,
     };
@@ -1734,7 +1341,6 @@ async function importVendorInvoices(
   let created = 0;
   let updated = 0;
   for (const item of items) {
-    const id = makeId('vendor_invoice', item.legacyId);
     const projectId = makeId('project', item.projectLegacyId);
     const vendorId = makeId('vendor', item.vendorLegacyId);
     const projectOk = await existsOrPlanned(
@@ -1758,16 +1364,19 @@ async function importVendorInvoices(
       continue;
     }
 
-    const totalAmount = parseNumber(item.totalAmount);
-    if (totalAmount == null || totalAmount < 0) {
-      errors.push({ scope: 'vendor_invoices', legacyId: item.legacyId, message: 'totalAmount must be >= 0' });
-      continue;
-    }
-    const receivedDate = parseDate(item.receivedDate);
-    const dueDate = parseDate(item.dueDate);
-    const numberingDate = receivedDate || dueDate || new Date();
-    const preferredNo = normalizeString(item.vendorInvoiceNo);
-    const currency = normalizeString(item.currency) || 'JPY';
+    const mapped = mapPoVendorInvoiceHeader(item, projectId, vendorId, new Date(), errors);
+    if (!mapped) continue;
+    const {
+      id,
+      totalAmount,
+      receivedDate,
+      dueDate,
+      numberingDate,
+      preferredNo,
+      currency,
+      status,
+      documentUrl,
+    } = mapped;
 
     const exists = await prisma.vendorInvoice.findUnique({
       where: { id },
@@ -1799,8 +1408,8 @@ async function importVendorInvoices(
       dueDate,
       currency,
       totalAmount,
-      status: parseEnumValue(item.status, DOC_STATUS_VALUES, 'received'),
-      documentUrl: normalizeString(item.documentUrl) ?? undefined,
+      status,
+      documentUrl,
       numberingSerial: numberingSerial ?? undefined,
       deletedAt: null,
       deletedReason: null,
@@ -1859,7 +1468,6 @@ async function importTimeEntries(
   let created = 0;
   let updated = 0;
   for (const item of items) {
-    const id = makeId('time_entry', item.legacyId);
     const projectId = makeId('project', item.projectLegacyId);
     const projectOk = await existsOrPlanned(
       projectId,
@@ -1889,40 +1497,9 @@ async function importTimeEntries(
         )
       : null;
     if (taskLegacyId && !taskId) continue;
-    const workDate = parseDate(item.workDate);
-    if (!workDate) {
-      errors.push({
-        scope: 'time_entries',
-        legacyId: item.legacyId,
-        message: 'invalid workDate',
-      });
-      continue;
-    }
-    const minutes = parseNumber(item.minutes);
-    if (minutes == null || minutes <= 0) {
-      errors.push({
-        scope: 'time_entries',
-        legacyId: item.legacyId,
-        message: 'minutes must be > 0',
-      });
-      continue;
-    }
-    const data = {
-      id,
-      projectId,
-      taskId,
-      billedInvoiceId: null,
-      billedAt: null,
-      userId: item.userId,
-      workDate,
-      minutes: Math.round(minutes),
-      workType: normalizeString(item.workType) ?? undefined,
-      location: normalizeString(item.location) ?? undefined,
-      notes: normalizeString(item.notes) ?? undefined,
-      status: parseEnumValue(item.status, TIME_STATUS_VALUES, 'submitted'),
-      approvedBy: null,
-      approvedAt: null,
-    };
+    const mapped = mapPoTimeEntry(item, projectId, taskId, errors);
+    if (!mapped) continue;
+    const { id, data } = mapped;
     const exists = await prisma.timeEntry.findUnique({ where: { id }, select: { id: true } });
     existsCache.timeEntry.set(id, !!exists);
     if (!options.apply) {
@@ -1967,7 +1544,6 @@ async function importExpenses(
   let created = 0;
   let updated = 0;
   for (const item of items) {
-    const id = makeId('expense', item.legacyId);
     const projectId = makeId('project', item.projectLegacyId);
     const projectOk = await existsOrPlanned(
       projectId,
@@ -1983,28 +1559,9 @@ async function importExpenses(
       });
       continue;
     }
-    const incurredOn = parseDate(item.incurredOn);
-    if (!incurredOn) {
-      errors.push({ scope: 'expenses', legacyId: item.legacyId, message: 'invalid incurredOn' });
-      continue;
-    }
-    const amount = parseNumber(item.amount);
-    if (amount == null || amount < 0) {
-      errors.push({ scope: 'expenses', legacyId: item.legacyId, message: 'amount must be >= 0' });
-      continue;
-    }
-    const data = {
-      id,
-      projectId,
-      userId: item.userId,
-      category: item.category,
-      amount,
-      currency: item.currency,
-      incurredOn,
-      isShared: item.isShared === true,
-      status: parseEnumValue(item.status, DOC_STATUS_VALUES, 'draft'),
-      receiptUrl: normalizeString(item.receiptUrl) ?? undefined,
-    };
+    const mapped = mapPoExpense(item, projectId, errors);
+    if (!mapped) continue;
+    const { id, data } = mapped;
     const exists = await prisma.expense.findUnique({ where: { id }, select: { id: true } });
     existsCache.expense.set(id, !!exists);
     if (!options.apply) {
@@ -2033,7 +1590,7 @@ async function importExpenses(
 }
 
 function shouldRun(options: CliOptions, key: string) {
-  return !options.only || options.only.has(key);
+  return shouldRunPoScope(options.only, key);
 }
 
 async function main() {
@@ -2164,129 +1721,87 @@ async function main() {
     },
   );
 
-  const planned: PlannedIds = {
-    users: new Set<string>(),
-    customers: new Set<string>(),
-    vendors: new Set<string>(),
-    projects: new Set<string>(),
-    tasks: new Set<string>(),
-    milestones: new Set<string>(),
-    estimates: new Set<string>(),
-    invoices: new Set<string>(),
-    purchase_orders: new Set<string>(),
-    vendor_quotes: new Set<string>(),
-    vendor_invoices: new Set<string>(),
-    time_entries: new Set<string>(),
-    expenses: new Set<string>(),
+  const inputs: PoMigrationInputs = {
+    users,
+    customers,
+    vendors,
+    projects,
+    tasks,
+    milestones,
+    estimates,
+    invoices,
+    purchase_orders: purchaseOrders,
+    vendor_quotes: vendorQuotes,
+    vendor_invoices: vendorInvoices,
+    time_entries: timeEntries,
+    expenses,
   };
-  if (shouldRun(options, 'users')) {
-    users.forEach((item) => planned.users.add(item.userId));
-  }
-  if (shouldRun(options, 'customers')) {
-    customers.forEach((item) => planned.customers.add(makeId('customer', item.legacyId)));
-  }
-  if (shouldRun(options, 'vendors')) {
-    vendors.forEach((item) => planned.vendors.add(makeId('vendor', item.legacyId)));
-  }
-  if (shouldRun(options, 'projects')) {
-    projects.forEach((item) => planned.projects.add(makeId('project', item.legacyId)));
-  }
-  if (shouldRun(options, 'tasks')) {
-    tasks.forEach((item) => planned.tasks.add(makeId('task', item.legacyId)));
-  }
-  if (shouldRun(options, 'milestones')) {
-    milestones.forEach((item) => planned.milestones.add(makeId('milestone', item.legacyId)));
-  }
-  if (shouldRun(options, 'estimates')) {
-    estimates.forEach((item) => planned.estimates.add(makeId('estimate', item.legacyId)));
-  }
-  if (shouldRun(options, 'invoices')) {
-    invoices.forEach((item) => planned.invoices.add(makeId('invoice', item.legacyId)));
-  }
-  if (shouldRun(options, 'purchase_orders')) {
-    purchaseOrders.forEach((item) =>
-      planned.purchase_orders.add(makeId('purchase_order', item.legacyId)),
-    );
-  }
-  if (shouldRun(options, 'vendor_quotes')) {
-    vendorQuotes.forEach((item) => planned.vendor_quotes.add(makeId('vendor_quote', item.legacyId)));
-  }
-  if (shouldRun(options, 'vendor_invoices')) {
-    vendorInvoices.forEach((item) =>
-      planned.vendor_invoices.add(makeId('vendor_invoice', item.legacyId)),
-    );
-  }
-  if (shouldRun(options, 'time_entries')) {
-    timeEntries.forEach((item) => planned.time_entries.add(makeId('time_entry', item.legacyId)));
-  }
-  if (shouldRun(options, 'expenses')) {
-    expenses.forEach((item) => planned.expenses.add(makeId('expense', item.legacyId)));
-  }
+  const planned = buildPoMigrationPlannedIds(inputs, options.only);
 
   console.log('[migration-po] input dir:', inputDir);
   console.log('[migration-po] input format:', inputFormat);
   console.log('[migration-po] mode:', apply ? 'apply' : 'dry-run');
   if (only) console.log('[migration-po] only:', Array.from(only).join(','));
 
-  const summary: Record<string, { created: number; updated: number; total: number }> = {};
+  const summary: ImportSummary = {};
 
   if (shouldRun(options, 'users')) {
     const res = await importUsers(options, users, errors);
-    summary.users = { ...res, total: users.length };
+    summary.users = withImportTotal(res, users.length);
   }
   if (shouldRun(options, 'customers')) {
     const res = await importCustomers(options, customers, errors);
-    summary.customers = { ...res, total: customers.length };
+    summary.customers = withImportTotal(res, customers.length);
   }
   if (shouldRun(options, 'vendors')) {
     const res = await importVendors(options, vendors, errors);
-    summary.vendors = { ...res, total: vendors.length };
+    summary.vendors = withImportTotal(res, vendors.length);
   }
   if (shouldRun(options, 'projects')) {
     const res = await importProjects(options, projects, planned, errors);
-    summary.projects = { ...res, total: projects.length };
+    summary.projects = withImportTotal(res, projects.length);
   }
   if (shouldRun(options, 'tasks')) {
     const res = await importTasks(options, tasks, planned, errors);
-    summary.tasks = { ...res, total: tasks.length };
+    summary.tasks = withImportTotal(res, tasks.length);
   }
   if (shouldRun(options, 'milestones')) {
     const res = await importMilestones(options, milestones, planned, errors);
-    summary.milestones = { ...res, total: milestones.length };
+    summary.milestones = withImportTotal(res, milestones.length);
   }
   if (shouldRun(options, 'estimates')) {
     const res = await importEstimates(options, estimates, planned, errors);
-    summary.estimates = { ...res, total: estimates.length };
+    summary.estimates = withImportTotal(res, estimates.length);
   }
   if (shouldRun(options, 'invoices')) {
     const res = await importInvoices(options, invoices, planned, errors);
-    summary.invoices = { ...res, total: invoices.length };
+    summary.invoices = withImportTotal(res, invoices.length);
   }
   if (shouldRun(options, 'purchase_orders')) {
     const res = await importPurchaseOrders(options, purchaseOrders, planned, errors);
-    summary.purchase_orders = { ...res, total: purchaseOrders.length };
+    summary.purchase_orders = withImportTotal(res, purchaseOrders.length);
   }
   if (shouldRun(options, 'vendor_quotes')) {
     const res = await importVendorQuotes(options, vendorQuotes, planned, errors);
-    summary.vendor_quotes = { ...res, total: vendorQuotes.length };
+    summary.vendor_quotes = withImportTotal(res, vendorQuotes.length);
   }
   if (shouldRun(options, 'vendor_invoices')) {
     const res = await importVendorInvoices(options, vendorInvoices, planned, errors);
-    summary.vendor_invoices = { ...res, total: vendorInvoices.length };
+    summary.vendor_invoices = withImportTotal(res, vendorInvoices.length);
   }
   if (shouldRun(options, 'time_entries')) {
     const res = await importTimeEntries(options, timeEntries, planned, errors);
-    summary.time_entries = { ...res, total: timeEntries.length };
+    summary.time_entries = withImportTotal(res, timeEntries.length);
   }
   if (shouldRun(options, 'expenses')) {
     const res = await importExpenses(options, expenses, planned, errors);
-    summary.expenses = { ...res, total: expenses.length };
+    summary.expenses = withImportTotal(res, expenses.length);
   }
 
-  console.log('[migration-po] summary:', JSON.stringify(summary, null, 2));
+  console.log('[migration-po] summary:', formatPoMigrationSummary(summary));
 
-  if (errors.length) {
-    console.error('[migration-po] errors:', JSON.stringify(errors.slice(0, 50), null, 2));
+  if (hasPoMigrationBlockingIssues(errors)) {
+    console.error('[migration-po] errors:', formatPoMigrationIssues(errors));
     process.exitCode = 1;
     return;
   }
@@ -2744,7 +2259,7 @@ async function main() {
     }
 
     if (verifyErrors.length) {
-      console.error('[migration-po] verify errors:', JSON.stringify(verifyErrors, null, 2));
+      console.error('[migration-po] verify errors:', formatPoMigrationIssues(verifyErrors, verifyErrors.length));
       process.exitCode = 1;
       return;
     }
