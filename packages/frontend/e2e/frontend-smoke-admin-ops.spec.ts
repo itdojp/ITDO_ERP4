@@ -206,7 +206,12 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
   if (sendLogId) {
     await sendLogSection.getByLabel('sendLogId').fill(sendLogId);
     await sendLogSection.getByRole('button', { name: 'まとめて取得' }).click();
-    await expect(sendLogSection.getByText(estimateId)).toBeVisible({
+    await expect(
+      sendLogSection
+        .getByRole('gridcell')
+        .filter({ hasText: estimateId })
+        .first(),
+    ).toBeVisible({
       timeout: actionTimeout,
     });
   }
@@ -247,7 +252,12 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
     await navigateToSection(page, '送信ログ', 'ドキュメント送信ログ');
     await sendLogSection.getByLabel('sendLogId').fill(sendLogId);
     await sendLogSection.getByRole('button', { name: '送信ログ取得' }).click();
-    await expect(sendLogSection.getByText(estimateId)).toBeVisible({
+    await expect(
+      sendLogSection
+        .getByRole('gridcell')
+        .filter({ hasText: estimateId })
+        .first(),
+    ).toBeVisible({
       timeout: actionTimeout,
     });
     await sendLogSection

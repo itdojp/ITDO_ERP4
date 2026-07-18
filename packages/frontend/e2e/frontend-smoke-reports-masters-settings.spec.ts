@@ -274,9 +274,10 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
     .locator('h2', { hasText: '顧客/業者マスタ' })
     .locator('..');
   await masterSection.scrollIntoViewIfNeeded();
-  const customerBlock = masterSection
-    .locator('h3', { hasText: '顧客' })
-    .locator('..');
+  const customerBlock = masterSection.getByRole('region', {
+    name: '顧客',
+    exact: true,
+  });
   const customerCode = `E2E-CUST-${id}`;
   const customerName = `E2E Customer ${id}`;
   await customerBlock.getByLabel('顧客コード').fill(customerCode);
@@ -284,9 +285,10 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   await customerBlock.getByRole('button', { name: '追加' }).click();
   await expect(customerBlock.getByText('顧客を追加しました')).toBeVisible();
 
-  const vendorBlock = masterSection
-    .locator('h3', { hasText: '業者' })
-    .locator('..');
+  const vendorBlock = masterSection.getByRole('region', {
+    name: '業者',
+    exact: true,
+  });
   const vendorCode = `E2E-VEND-${id}`;
   const vendorName = `E2E Vendor ${id}`;
   await vendorBlock.getByLabel('業者コード').fill(vendorCode);
@@ -351,9 +353,10 @@ test('frontend smoke reports masters settings @extended', async ({ page }) => {
   ).toHaveValue(vendorAnnotationText, { timeout: actionTimeout });
   await vendorAnnotationDialog2.getByRole('button', { name: '閉じる' }).click();
 
-  const contactBlock = masterSection
-    .locator('h3', { hasText: '連絡先' })
-    .locator('..');
+  const contactBlock = masterSection.getByRole('region', {
+    name: '連絡先',
+    exact: true,
+  });
   const contactOwnerSelect = contactBlock.getByLabel('連絡先の紐付け先');
   await expect(
     contactOwnerSelect.locator('option', { hasText: customerCode }),
