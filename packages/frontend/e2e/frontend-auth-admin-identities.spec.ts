@@ -428,7 +428,9 @@ test('frontend auth identity migration remains hidden without system_admin @exte
   ).toBeVisible();
 
   await expect(page.getByTestId('auth-identity-migration-card')).toHaveCount(0);
-  await expect(page.getByText('認証方式移行')).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: '認証方式移行' }),
+  ).toBeVisible();
   await expect(
     page.getByText(
       'この設定は system_admin ロールを持つユーザーのみが操作できます。',
