@@ -71,6 +71,6 @@
 - 実施コマンド:
   - `./scripts/quadlet/stop-stack.sh`
   - 必要時 `./scripts/quadlet/stop-stack.sh --include-proxy`
-  - 必要時 `./scripts/quadlet/rollback-latest.sh --skip-stack-check`
+  - 必要時 `./scripts/quadlet/rollback-latest.sh --profile <profile> --skip-stack-check`
 - 結果:
 - 追加対応:

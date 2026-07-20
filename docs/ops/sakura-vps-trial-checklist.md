@@ -199,7 +199,7 @@ proxy を含める場合:
 既存設定へ戻す必要がある場合:
 
 ```bash
-./scripts/quadlet/rollback-latest.sh --skip-stack-check
+./scripts/quadlet/rollback-latest.sh --profile "$PROFILE" --skip-stack-check
 ```
 
 設定だけ戻す場合:

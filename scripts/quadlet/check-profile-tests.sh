@@ -18,6 +18,7 @@ INSTALL_UNITS="$ROOT_DIR/scripts/quadlet/install-user-units.sh"
 START_STACK="$ROOT_DIR/scripts/quadlet/start-stack.sh"
 RESTART_STACK="$ROOT_DIR/scripts/quadlet/restart-stack.sh"
 UPDATE_STACK="$ROOT_DIR/scripts/quadlet/update-stack.sh"
+ROLLBACK_LATEST="$ROOT_DIR/scripts/quadlet/rollback-latest.sh"
 
 fail() {
   printf 'ERROR: %s\n' "$*" >&2
@@ -243,6 +244,21 @@ run_success 'update stack propagates private-smoke profile' \
   env INSTALL_UNITS="$fake_install" SYSTEMCTL=true \
   "$UPDATE_STACK" --profile private-smoke --skip-build --skip-stack-check
 grep -Fq -- '--profile private-smoke' "$profile_args_file" || fail 'update-stack did not propagate private-smoke to install-user-units'
+
+fake_restore="$WORK_DIR/fake-restore.sh"
+fake_restart="$WORK_DIR/fake-restart.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$fake_restore"
+cat >"$fake_restart" <<EOF_FAKE_RESTART
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >"$profile_args_file"
+EOF_FAKE_RESTART
+chmod +x "$fake_restore" "$fake_restart"
+run_success 'rollback latest propagates private-smoke profile' \
+  env RESTORE_LATEST="$fake_restore" RESTART_STACK="$fake_restart" \
+  "$ROLLBACK_LATEST" --profile private-smoke --backup-dir "$WORK_DIR" --target-dir "$installed_private_dir" --skip-stack-check
+grep -Fq -- '--profile private-smoke' "$profile_args_file" || fail 'rollback-latest did not propagate private-smoke to restart-stack'
+run_failure 'rollback latest rejects private-smoke proxy' 'private-smoke must not include proxy' \
+  "$ROLLBACK_LATEST" --profile private-smoke --include-proxy --skip-restart
 
 private_dir="$WORK_DIR/private"
 private_frontend="$WORK_DIR/private-frontend.env"

@@ -12,6 +12,7 @@ SKIP_RESTART=0
 SKIP_DAEMON_RELOAD=0
 SKIP_ENV_CHECK=0
 SKIP_STACK_CHECK=0
+PROFILE="${SAKURA_VPS_PROFILE:-production}"
 
 usage() {
   cat <<USAGE
@@ -20,6 +21,7 @@ Usage: $(basename "$0") [options]
   --backup-dir DIR       Directory that contains backup archives
   --target-dir DIR       Restore target directory (default: ~/.config/containers/systemd)
   --include-proxy        Restart erp4-caddy.service after restore
+  --profile NAME         Use production, private-smoke, or https-trial when restarting
   --print-archive        Print the selected archive path before restore
   --skip-daemon-reload   Pass through to restore-latest.sh
   --skip-restart         Restore config only; do not restart the stack
@@ -49,6 +51,11 @@ while [[ $# -gt 0 ]]; do
     --include-proxy)
       INCLUDE_PROXY=1
       shift
+      ;;
+    --profile)
+      [[ $# -ge 2 ]] || fail 'missing argument for --profile'
+      PROFILE="$2"
+      shift 2
       ;;
     --print-archive)
       PRINT_ARCHIVE=1
@@ -80,6 +87,17 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+case "$PROFILE" in
+  production|private-smoke|https-trial) ;;
+  *) fail "unknown profile: $PROFILE" ;;
+esac
+if [[ "$PROFILE" == "private-smoke" && "$INCLUDE_PROXY" -eq 1 ]]; then
+  fail 'private-smoke must not include proxy'
+fi
+if [[ "$PROFILE" == "https-trial" && "$INCLUDE_PROXY" -eq 0 ]]; then
+  fail 'https-trial requires --include-proxy'
+fi
+
 [[ -x "$RESTORE_LATEST" ]] || fail "restore command is not executable: $RESTORE_LATEST"
 
 restore_args=(
@@ -103,7 +121,7 @@ fi
 
 [[ -x "$RESTART_STACK" ]] || fail "restart command is not executable: $RESTART_STACK"
 
-restart_args=()
+restart_args=(--profile "$PROFILE")
 if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
   restart_args+=(--include-proxy)
 fi
