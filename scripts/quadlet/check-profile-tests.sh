@@ -14,6 +14,10 @@ trap cleanup EXIT
 
 CHECK_ENV="$ROOT_DIR/scripts/quadlet/check-env.sh"
 CHECK_TRIAL="$ROOT_DIR/scripts/quadlet/check-trial-readiness.sh"
+INSTALL_UNITS="$ROOT_DIR/scripts/quadlet/install-user-units.sh"
+START_STACK="$ROOT_DIR/scripts/quadlet/start-stack.sh"
+RESTART_STACK="$ROOT_DIR/scripts/quadlet/restart-stack.sh"
+UPDATE_STACK="$ROOT_DIR/scripts/quadlet/update-stack.sh"
 
 fail() {
   printf 'ERROR: %s\n' "$*" >&2
@@ -165,6 +169,80 @@ make_https_dir() {
   write_private_containers "$dir"
   write_https_caddy "$dir"
 }
+
+installed_private_dir="$WORK_DIR/installed-private"
+installed_private_frontend="$WORK_DIR/installed-private-frontend.env"
+run_success 'private-smoke installer selects profile units' \
+  env SYSTEMCTL=true QUADLET_INSTALL_MODE=copy QUADLET_TARGET_DIR="$installed_private_dir" ERP4_IMAGE_TAG=test-profile \
+  "$INSTALL_UNITS" --profile private-smoke
+for proxy_artifact in \
+  erp4-caddy.container \
+  erp4-caddy.env \
+  erp4-caddy.Caddyfile \
+  erp4-caddy-data.volume \
+  erp4-caddy-config.volume; do
+  [[ ! -e "$installed_private_dir/$proxy_artifact" ]] || fail "private-smoke installer created proxy artifact: $proxy_artifact"
+done
+if grep -Eq '^[[:space:]]*PublishPort[[:space:]]*=' "$installed_private_dir/erp4-postgres.container"; then
+  fail 'private-smoke installer retained a PostgreSQL host publish port'
+fi
+grep -Fq 'localhost/erp4-backend:test-profile' "$installed_private_dir/erp4-backend.container" || \
+  fail 'private-smoke installer did not render the requested image tag'
+write_postgres_env "$installed_private_dir"
+write_private_backend_env "$installed_private_dir"
+write_frontend_env "$installed_private_frontend" 'http://erp4-backend:3001'
+run_success 'installed private-smoke target passes env validation' \
+  "$CHECK_ENV" --profile private-smoke --target-dir "$installed_private_dir" --frontend-build-env "$installed_private_frontend"
+
+stale_proxy_dir="$WORK_DIR/private-stale-proxy"
+mkdir -p "$stale_proxy_dir"
+: >"$stale_proxy_dir/erp4-caddy.env"
+run_failure 'private-smoke installer rejects stale proxy artifacts' 'back up and remove proxy artifacts explicitly' \
+  env SYSTEMCTL=true QUADLET_INSTALL_MODE=copy QUADLET_TARGET_DIR="$stale_proxy_dir" ERP4_IMAGE_TAG=test-profile \
+  "$INSTALL_UNITS" --profile private-smoke
+
+profile_args_file="$WORK_DIR/profile-args.txt"
+fake_check_env="$WORK_DIR/fake-check-env.sh"
+cat >"$fake_check_env" <<EOF_FAKE_CHECK
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >"$profile_args_file"
+EOF_FAKE_CHECK
+chmod +x "$fake_check_env"
+run_success 'start stack propagates private-smoke profile' \
+  env CHECK_ENV="$fake_check_env" CHECK_STACK=true SYSTEMCTL=true QUADLET_TARGET_DIR="$installed_private_dir" \
+  "$START_STACK" --profile private-smoke --skip-stack-check
+grep -Fq -- '--profile private-smoke' "$profile_args_file" || fail 'start-stack did not propagate private-smoke to check-env'
+run_failure 'start stack rejects private-smoke proxy' 'private-smoke must not include proxy' \
+  env SYSTEMCTL=true "$START_STACK" --profile private-smoke --include-proxy --skip-env-check --skip-stack-check
+
+fake_stop="$WORK_DIR/fake-stop.sh"
+fake_start="$WORK_DIR/fake-start.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$fake_stop"
+cat >"$fake_start" <<EOF_FAKE_START
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >"$profile_args_file"
+EOF_FAKE_START
+chmod +x "$fake_stop" "$fake_start"
+run_success 'restart stack propagates private-smoke profile' \
+  env STOP_STACK="$fake_stop" START_STACK="$fake_start" SYSTEMCTL=true \
+  "$RESTART_STACK" --profile private-smoke --skip-stack-check
+grep -Fq -- '--profile private-smoke' "$profile_args_file" || fail 'restart-stack did not propagate private-smoke to start-stack'
+run_success 'restart stack propagates https-trial proxy profile' \
+  env STOP_STACK="$fake_stop" START_STACK="$fake_start" SYSTEMCTL=true \
+  "$RESTART_STACK" --profile https-trial --include-proxy --skip-stack-check
+grep -Fq -- '--profile https-trial' "$profile_args_file" || fail 'restart-stack did not propagate https-trial to start-stack'
+grep -Fq -- '--include-proxy' "$profile_args_file" || fail 'restart-stack did not propagate include-proxy to start-stack'
+
+fake_install="$WORK_DIR/fake-install.sh"
+cat >"$fake_install" <<EOF_FAKE_INSTALL
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >"$profile_args_file"
+EOF_FAKE_INSTALL
+chmod +x "$fake_install"
+run_success 'update stack propagates private-smoke profile' \
+  env INSTALL_UNITS="$fake_install" SYSTEMCTL=true \
+  "$UPDATE_STACK" --profile private-smoke --skip-build --skip-stack-check
+grep -Fq -- '--profile private-smoke' "$profile_args_file" || fail 'update-stack did not propagate private-smoke to install-user-units'
 
 private_dir="$WORK_DIR/private"
 private_frontend="$WORK_DIR/private-frontend.env"

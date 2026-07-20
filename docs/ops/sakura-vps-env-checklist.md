@@ -142,15 +142,16 @@ Google OIDC をさくらVPS 実機で使う場合は FQDN + HTTPS の origin / r
 
 ## 受入前の最小確認順
 
-1. `deploy/quadlet/env/erp4-frontend-build.env` を編集
-2. `./scripts/quadlet/check-env.sh --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env`
-3. `./scripts/quadlet/build-images.sh`
-4. `./scripts/quadlet/install-user-units.sh`
-5. `~/.config/containers/systemd/` 配下の runtime / proxy / maintenance env を編集
-6. `./scripts/quadlet/check-env.sh`
-7. 必要時 `./scripts/quadlet/check-proxy.sh`
-8. `./scripts/quadlet/start-stack.sh`
-9. `./scripts/quadlet/check-trial-readiness.sh`
+1. `PROFILE=private-smoke` または `PROFILE=https-trial` を固定
+2. `deploy/quadlet/env/erp4-frontend-build.env` を編集
+3. `./scripts/quadlet/check-env.sh --profile "$PROFILE" --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env`
+4. `./scripts/quadlet/build-images.sh`
+5. `./scripts/quadlet/install-user-units.sh --profile "$PROFILE"`
+6. `~/.config/containers/systemd/` 配下の runtime / proxy / maintenance env を編集
+7. `./scripts/quadlet/check-env.sh --profile "$PROFILE"`
+8. 必要時 `./scripts/quadlet/check-proxy.sh`
+9. `./scripts/quadlet/start-stack.sh --profile "$PROFILE"`
+10. `./scripts/quadlet/check-trial-readiness.sh --profile "$PROFILE"`
 
 ## 関連 Runbook
 

@@ -5,6 +5,17 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SRC_DIR="$ROOT_DIR/deploy/quadlet"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
 MODE="${QUADLET_INSTALL_MODE:-link}"
+PROFILE="${SAKURA_VPS_PROFILE:-production}"
+SYSTEMCTL="${SYSTEMCTL:-systemctl}"
+
+usage() {
+  cat <<USAGE
+Usage: $(basename "$0") [options]
+  --profile NAME     Install production, private-smoke, or https-trial units
+  --target-dir DIR   Install units into DIR
+  -h, --help         Show this help message and exit
+USAGE
+}
 
 fail() {
   printf 'ERROR: %s\n' "$*" >&2
@@ -32,7 +43,7 @@ resolve_image_tag() {
 
 run_daemon_reload() {
   local output
-  if output="$(systemctl --user daemon-reload 2>&1)"; then
+  if output="$("$SYSTEMCTL" --user daemon-reload 2>&1)"; then
     return 0
   fi
   if grep -Fq 'Failed to connect to bus' <<<"$output"; then
@@ -43,6 +54,58 @@ run_daemon_reload() {
   return 1
 }
 
+is_proxy_artifact() {
+  case "$(basename "$1")" in
+    erp4-caddy.*|erp4-caddy-*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+require_clean_private_smoke_target() {
+  local path
+  for path in \
+    "$TARGET_DIR/erp4-caddy.container" \
+    "$TARGET_DIR/erp4-caddy.env" \
+    "$TARGET_DIR/erp4-caddy.Caddyfile" \
+    "$TARGET_DIR/erp4-caddy-data.volume" \
+    "$TARGET_DIR/erp4-caddy-config.volume"; do
+    if [[ -e "$path" || -L "$path" ]]; then
+      fail "private-smoke target contains proxy artifact: $path; back up and remove proxy artifacts explicitly before retrying"
+    fi
+  done
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --profile)
+      [[ $# -ge 2 ]] || fail 'missing argument for --profile'
+      PROFILE="$2"
+      shift 2
+      ;;
+    --target-dir)
+      [[ $# -ge 2 ]] || fail 'missing argument for --target-dir'
+      TARGET_DIR="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      fail "unknown argument: $1"
+      ;;
+  esac
+done
+
+case "$PROFILE" in
+  production|private-smoke|https-trial) ;;
+  *) fail "unknown profile: $PROFILE" ;;
+esac
+
+if [[ "$PROFILE" == "private-smoke" ]]; then
+  require_clean_private_smoke_target
+fi
+
 mkdir -p "$TARGET_DIR"
 shopt -s nullglob
 ERP4_IMAGE_TAG="$(resolve_image_tag)"
@@ -52,6 +115,10 @@ install_unit() {
   local src="$1"
   local name
   name="$(basename "$src")"
+  local profile_src="$SRC_DIR/profiles/$PROFILE/$name"
+  if [[ -f "$profile_src" ]]; then
+    src="$profile_src"
+  fi
   local dst="$TARGET_DIR/$name"
   if grep -Fq 'REPLACE_WITH_COMMIT_SHA' "$src"; then
     sed "s/REPLACE_WITH_COMMIT_SHA/${ERP4_IMAGE_TAG}/g" "$src" > "$dst"
@@ -64,10 +131,16 @@ install_unit() {
 }
 
 for unit in "$SRC_DIR"/*.network "$SRC_DIR"/*.volume "$SRC_DIR"/*.container "$SRC_DIR"/*.service "$SRC_DIR"/*.timer; do
+  if [[ "$PROFILE" == "private-smoke" ]] && is_proxy_artifact "$unit"; then
+    continue
+  fi
   install_unit "$unit"
 done
 
 for example in "$SRC_DIR"/env/*.example "$SRC_DIR"/config/*.example; do
+  if [[ "$PROFILE" == "private-smoke" ]] && is_proxy_artifact "$example"; then
+    continue
+  fi
   local_name="$(basename "$example" .example)"
   if [[ ! -f "$TARGET_DIR/$local_name" ]]; then
     mode=0600
@@ -82,18 +155,21 @@ done
 
 shopt -u nullglob
 
-if command -v systemctl >/dev/null 2>&1; then
+if command -v "$SYSTEMCTL" >/dev/null 2>&1; then
   run_daemon_reload
 else
   warn "systemctl not found; skipped daemon-reload"
 fi
 
 printf 'installed units into %s\n' "$TARGET_DIR"
+printf 'installed profile: %s\n' "$PROFILE"
 printf 'rendered local application image tag: %s\n' "$ERP4_IMAGE_TAG"
 printf 'next: edit %s/erp4-postgres.env and %s/erp4-backend.env, then run:\n' "$TARGET_DIR" "$TARGET_DIR"
 printf '  systemctl --user enable --now erp4-postgres.service erp4-migrate.service erp4-backend.service erp4-frontend.service\n'
-printf 'optional HTTPS proxy: edit %s/erp4-caddy.env and %s/erp4-caddy.Caddyfile, then run:\n' "$TARGET_DIR" "$TARGET_DIR"
-printf '  systemctl --user enable --now erp4-caddy.service\n'
+if [[ "$PROFILE" != "private-smoke" ]]; then
+  printf 'optional HTTPS proxy: edit %s/erp4-caddy.env and %s/erp4-caddy.Caddyfile, then run:\n' "$TARGET_DIR" "$TARGET_DIR"
+  printf '  systemctl --user enable --now erp4-caddy.service\n'
+fi
 printf 'optional scheduled config backups: edit %s/erp4-maintenance.env, then run:\n' "$TARGET_DIR"
 printf '  systemctl --user enable --now erp4-config-backup.timer\n'
 printf 'optional scheduled database backups: edit %s/erp4-maintenance.env, then run:\n' "$TARGET_DIR"

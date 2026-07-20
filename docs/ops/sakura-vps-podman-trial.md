@@ -133,11 +133,16 @@ ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" ./scripts/quadlet/build-images
 
 ## 4. Quadlet 配置
 
+profileを先に固定する。非公開試験は `private-smoke`、HTTPS試験は `https-trial`、従来の本番相当構成は `production` を使う。
+
 ```bash
-./scripts/quadlet/install-user-units.sh
+PROFILE=private-smoke
+ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" \
+  ./scripts/quadlet/install-user-units.sh --profile "$PROFILE"
 ```
 
 `install-user-units.sh` は `deploy/quadlet/*.container` / `*.service` 内の `REPLACE_WITH_COMMIT_SHA` を `ERP4_IMAGE_TAG`（未指定時は現在の Git commit 短縮 SHA）で展開して配置します。`build-images.sh` と同じ tag を使うため、必要に応じて同じ `ERP4_IMAGE_TAG` を指定してください。
+`private-smoke` では非公開PostgreSQL overlayを選択してCaddyを配置しません。既存のCaddy artifactがある場合は無断削除せず停止します。
 
 配置先:
 
@@ -194,7 +199,7 @@ REPORT_STORAGE_DIR=/var/lib/erp4/reports
 runtime env を編集したら、unit 起動前に検証します。
 
 ```bash
-./scripts/quadlet/check-env.sh
+./scripts/quadlet/check-env.sh --profile "$PROFILE"
 ```
 
 任意で backup / prune / DB backup 用の maintenance env を編集します。
@@ -215,13 +220,13 @@ ERP4_DB_BACKUP_SKIP_GLOBALS=0
 通常起動:
 
 ```bash
-./scripts/quadlet/start-stack.sh
+./scripts/quadlet/start-stack.sh --profile "$PROFILE"
 ```
 
 proxy も起動する場合:
 
 ```bash
-./scripts/quadlet/start-stack.sh --include-proxy
+./scripts/quadlet/start-stack.sh --profile "$PROFILE" --include-proxy
 ```
 
 手動で分ける場合:
@@ -343,8 +348,8 @@ backup / prune を手動で 1 回実行する場合:
 再起動する場合:
 
 ```bash
-./scripts/quadlet/restart-stack.sh
-./scripts/quadlet/restart-stack.sh --include-proxy
+./scripts/quadlet/restart-stack.sh --profile "$PROFILE"
+./scripts/quadlet/restart-stack.sh --profile "$PROFILE" --include-proxy
 ```
 
 `restart-stack.sh` は `stop-stack.sh` と `start-stack.sh` を直列実行します。`--include-proxy` を付けると `erp4-caddy.service` も再起動対象に含まれます。さらに `--skip-stack-check` を指定していない場合のみ、post-start 確認として `status-stack.sh --include-proxy` まで実行します。`--skip-env-check` と `--skip-stack-check` は `start-stack.sh` に透過的に渡されるため、`--skip-stack-check` 指定時は proxy を含む post-start の状態確認も省略されます。
@@ -435,9 +440,9 @@ git fetch origin
 git checkout main
 git pull --ff-only
 # 次のいずれか 1 つを選んで実行
-./scripts/quadlet/update-stack.sh
-./scripts/quadlet/update-stack.sh --backup-before-update
-./scripts/quadlet/update-stack.sh --backup-before-update --include-proxy
+./scripts/quadlet/update-stack.sh --profile "$PROFILE"
+./scripts/quadlet/update-stack.sh --profile "$PROFILE" --backup-before-update
+./scripts/quadlet/update-stack.sh --profile "$PROFILE" --backup-before-update --include-proxy
 ```
 
 `update-stack.sh` は必要に応じて `--backup-before-update` で `backup-and-check.sh --include-units` を先行実行し、その後 `build-images.sh` を実行して `erp4-migrate.service` / `erp4-backend.service` / `erp4-frontend.service` を順に再起動します。`--include-proxy` を付けると backup 対象にも proxy 設定を含め、`erp4-caddy.service` も再起動します。post-update 確認は `check-stack.sh` を実行し、`--include-proxy` 指定時は追加で `status-stack.sh --include-proxy` を実行して proxy を含む稼働状況を確認します。`--skip-build` と `--skip-stack-check` を付けると、イメージ再ビルドや post-update 確認を個別に省略できます。`BACKUP_AND_CHECK` / `BUILD_IMAGES` / `CHECK_STACK` / `STATUS_STACK` / `SYSTEMCTL` を環境変数で差し替えると、ローカル検証や運用フローの置き換えがしやすくなります。

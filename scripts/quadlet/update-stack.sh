@@ -13,6 +13,7 @@ SKIP_BUILD=0
 SKIP_INSTALL_UNITS=0
 SKIP_STACK_CHECK=0
 INCLUDE_PROXY=0
+PROFILE="${SAKURA_VPS_PROFILE:-production}"
 
 usage() {
   cat <<USAGE
@@ -21,6 +22,7 @@ Usage: $(basename "$0") [options]
   --skip-build
   --skip-install-units
   --skip-stack-check
+  --profile NAME
   --include-proxy
 USAGE
 }
@@ -59,7 +61,7 @@ run_install_units() {
     return 0
   fi
 
-  "$INSTALL_UNITS"
+  "$INSTALL_UNITS" --profile "$PROFILE"
 }
 
 run_backup() {
@@ -113,6 +115,11 @@ while [[ $# -gt 0 ]]; do
       SKIP_STACK_CHECK=1
       shift
       ;;
+    --profile)
+      [[ $# -ge 2 ]] || fail 'missing argument for --profile'
+      PROFILE="$2"
+      shift 2
+      ;;
     --include-proxy)
       INCLUDE_PROXY=1
       shift
@@ -126,6 +133,17 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+case "$PROFILE" in
+  production|private-smoke|https-trial) ;;
+  *) fail "unknown profile: $PROFILE" ;;
+esac
+if [[ "$PROFILE" == "private-smoke" && "$INCLUDE_PROXY" -eq 1 ]]; then
+  fail 'private-smoke must not include proxy'
+fi
+if [[ "$PROFILE" == "https-trial" && "$INCLUDE_PROXY" -eq 0 ]]; then
+  fail 'https-trial requires --include-proxy'
+fi
 
 if [[ "$BACKUP_BEFORE_UPDATE" -eq 1 ]]; then
   [[ -x "$BACKUP_AND_CHECK" ]] || fail "backup command is not executable: $BACKUP_AND_CHECK"

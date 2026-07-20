@@ -159,6 +159,8 @@ run_smoke 'sakura bootstrap dry-run' \
   scripts/ops/sakura-vps-bootstrap.sh --dry-run --deploy-user deploy --repo-parent "$SMOKE_DIR/repo-parent" --repo-dir "$SMOKE_DIR/repo-parent/ITDO_ERP4" --skip-apt --skip-linger
 run_smoke 'sakura deploy dry-run with all mutating phases skipped' \
   scripts/ops/sakura-vps-deploy.sh --dry-run --repo-dir "$ROOT_DIR" --target-dir "$SMOKE_DIR/quadlet" --frontend-build-env "$SMOKE_DIR/frontend-build.env" --skip-git-update --skip-npm-ci --skip-build-images --skip-start
+run_smoke 'sakura private-smoke deploy dry-run propagates profile' \
+  scripts/ops/sakura-vps-deploy.sh --dry-run --profile private-smoke --repo-dir "$ROOT_DIR" --target-dir "$SMOKE_DIR/quadlet" --frontend-build-env "$SMOKE_DIR/frontend-build.env" --skip-git-update --skip-npm-ci --skip-build-images --skip-start
 run_controlled_check 'sakura preflight check' 'Summary: failures=[1-9][0-9]*' \
   scripts/ops/sakura-vps-preflight.sh --check --repo-dir "$ROOT_DIR" --min-memory-mb 1 --min-disk-mb 1 --port 1
 run_controlled_check 'sakura verify check without live stack' '(failed to connect to systemd user bus|http[[:space:]]+backend health[[:space:]]+failed|db[[:space:]]+postgres ready[[:space:]]+failed|verification failed: [1-9][0-9]* step\(s\))' --require 'OK: Quadlet env validation passed' \

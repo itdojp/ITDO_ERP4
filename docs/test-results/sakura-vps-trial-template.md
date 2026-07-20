@@ -15,9 +15,9 @@
 
 - `./scripts/quadlet/check-host-prereqs.sh`
   - 結果:
-- `./scripts/quadlet/check-env.sh --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env`
+- `./scripts/quadlet/check-env.sh --profile <profile> --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env`
   - 結果:
-- `./scripts/quadlet/check-env.sh`
+- `./scripts/quadlet/check-env.sh --profile <profile>`
   - 結果:
 - 必要時 `./scripts/quadlet/check-proxy.sh`
   - 結果:
@@ -27,18 +27,18 @@
 - `./scripts/quadlet/build-images.sh`
   - backend image:
   - frontend image:
-- `./scripts/quadlet/install-user-units.sh`
+- `./scripts/quadlet/install-user-units.sh --profile <profile>`
   - 結果:
-- `./scripts/quadlet/start-stack.sh`
+- `./scripts/quadlet/start-stack.sh --profile <profile>`
   - 結果:
-- 必要時 `./scripts/quadlet/start-stack.sh --include-proxy`
+- 必要時 `./scripts/quadlet/start-stack.sh --profile https-trial --include-proxy`
   - 結果:
 
 ## 3. 受入確認
 
-- `./scripts/quadlet/check-trial-readiness.sh`
+- `./scripts/quadlet/check-trial-readiness.sh --profile <profile>`
   - 結果:
-- 必要時 `./scripts/quadlet/check-trial-readiness.sh --include-proxy --resolve-ip <VPS_IP>`
+- 必要時 `./scripts/quadlet/check-trial-readiness.sh --profile https-trial --include-proxy --resolve-ip <VPS_IP>`
   - 結果:
 - `./scripts/quadlet/status-stack.sh`
   - 結果:
@@ -47,9 +47,9 @@
 
 ## 4. 採取した証跡
 
-- `./scripts/quadlet/collect-trial-evidence.sh --lines 100`
+- `./scripts/quadlet/collect-trial-evidence.sh --profile <profile> --lines 100`
   - 保存先:
-- 必要時 `./scripts/quadlet/collect-trial-evidence.sh --include-proxy --resolve-ip <VPS_IP>`
+- 必要時 `./scripts/quadlet/collect-trial-evidence.sh --profile https-trial --include-proxy --resolve-ip <VPS_IP>`
   - 保存先:
 - 個別採取した場合の保存先:
   - `./scripts/quadlet/logs-stack.sh --lines 100`

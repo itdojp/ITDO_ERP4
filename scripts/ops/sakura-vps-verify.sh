@@ -16,6 +16,7 @@ GDRIVE_MODE="skip"
 MARKDOWN_SUMMARY=""
 SUMMARY_LINES=()
 FAILURES=0
+PROFILE="${SAKURA_VPS_PROFILE:-production}"
 
 usage() {
   cat <<USAGE
@@ -28,6 +29,7 @@ Options:
   --check                         Run verification (default)
   --target-dir DIR                Quadlet target directory
   --frontend-build-env FILE       Frontend build env file
+  --profile NAME                  Use production, private-smoke, or https-trial
   --include-proxy                 Verify HTTPS proxy as well
   --resolve-ip ADDR               Pass to check-https.sh before DNS propagation
   --insecure                      Pass -k to HTTPS verification
@@ -59,6 +61,7 @@ write_summary() {
   {
     printf '# ERP4 Sakura VPS verification\n\n'
     printf -- '- Date: `%s`\n' "$(ops_timestamp)"
+    printf -- '- Profile: `%s`\n' "$PROFILE"
     printf -- '- Target dir: `%s`\n' "$TARGET_DIR"
     printf -- '- Include proxy: `%s`\n' "$INCLUDE_PROXY"
     printf -- '- Google Drive mode: `%s`\n\n' "$GDRIVE_MODE"
@@ -81,6 +84,11 @@ while [[ $# -gt 0 ]]; do
     --frontend-build-env)
       ops_require_arg "$1" "${2:-}"
       FRONTEND_BUILD_ENV="$2"
+      shift 2
+      ;;
+    --profile)
+      ops_require_arg "$1" "${2:-}"
+      PROFILE="$2"
       shift 2
       ;;
     --include-proxy)
@@ -118,8 +126,18 @@ done
 
 [[ "$MODE" == "check" ]] || ops_fail 'only --check is supported by this script'
 case "$GDRIVE_MODE" in skip|read|write) ;; *) ops_fail '--gdrive-mode must be skip, read, or write' ;; esac
+case "$PROFILE" in
+  production|private-smoke|https-trial) ;;
+  *) ops_fail "unknown profile: $PROFILE" ;;
+esac
+if [[ "$PROFILE" == "private-smoke" && "$INCLUDE_PROXY" -eq 1 ]]; then
+  ops_fail 'private-smoke must not include proxy'
+fi
+if [[ "$PROFILE" == "https-trial" && "$INCLUDE_PROXY" -eq 0 ]]; then
+  ops_fail 'https-trial requires --include-proxy'
+fi
 
-run_step 'Quadlet env validation' "$ROOT_DIR/scripts/quadlet/check-env.sh" --target-dir "$TARGET_DIR" --frontend-build-env "$FRONTEND_BUILD_ENV" || true
+run_step 'Quadlet env validation' "$ROOT_DIR/scripts/quadlet/check-env.sh" --profile "$PROFILE" --target-dir "$TARGET_DIR" --frontend-build-env "$FRONTEND_BUILD_ENV" || true
 run_step 'Quadlet stack readiness' "$ROOT_DIR/scripts/quadlet/check-stack.sh" || true
 run_step 'Quadlet stack status' "$ROOT_DIR/scripts/quadlet/status-stack.sh" || true
 if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
