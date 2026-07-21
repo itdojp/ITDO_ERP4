@@ -126,7 +126,20 @@ if [[ "$family" == s3api ]]; then
         elif [[ "$prefix" == */db/ ]]; then printf '%s\n' "\${FAKE_LIST_DATABASE_KEY:-None}"
         else printf 'None\n'; fi
       else
-        if [[ -n "\${FAKE_INVENTORY_JSON:-}" ]]; then printf '%s\n' "$FAKE_INVENTORY_JSON"; else printf '{\"Contents\":[]}\n'; fi
+        prefix="$(value_after --prefix)"
+        if [[ -n "\${FAKE_INVENTORY_JSON:-}" ]]; then
+          printf '%s\n' "$FAKE_INVENTORY_JSON"
+        elif [[ "$prefix" == */globals/ ]]; then
+          if [[ "\${FAKE_LIST_GLOBALS_KEY:-None}" == None ]]; then printf '{\"Contents\":[]}\n'; else printf '{\"Contents\":[{\"Key\":\"%s\",\"LastModified\":\"2026-07-22T00:00:00Z\"}]}\n' "$FAKE_LIST_GLOBALS_KEY"; fi
+        elif [[ "$prefix" == */assets/ ]]; then
+          if [[ "\${FAKE_LIST_ASSETS_KEY:-None}" == None ]]; then printf '{\"Contents\":[]}\n'; else printf '{\"Contents\":[{\"Key\":\"%s\",\"LastModified\":\"2026-07-22T00:00:00Z\"}]}\n' "$FAKE_LIST_ASSETS_KEY"; fi
+        elif [[ "$prefix" == */metadata/ ]]; then
+          if [[ "\${FAKE_LIST_METADATA_KEY:-None}" == None ]]; then printf '{\"Contents\":[]}\n'; else printf '{\"Contents\":[{\"Key\":\"%s\",\"LastModified\":\"2026-07-22T00:00:00Z\"}]}\n' "$FAKE_LIST_METADATA_KEY"; fi
+        elif [[ "\${FAKE_LIST_DATABASE_KEY:-None}" != None ]]; then
+          printf '{\"Contents\":[{\"Key\":\"%s\",\"LastModified\":\"2026-07-22T00:00:00Z\"}]}\n' "$FAKE_LIST_DATABASE_KEY"
+        else
+          printf '{\"Contents\":[]}\n'
+        fi
       fi
       ;;
     put-object)
@@ -517,7 +530,7 @@ test("Sakura upload requires encrypted files and uploads unique manifests", () =
       ).length > 0,
       true,
     );
-    assert.match(readFileSync(env.FAKE_AWS_LOG, "utf8"), /ends_with/);
+    assert.match(readFileSync(env.FAKE_AWS_LOG, "utf8"), /--output json/);
 
     const invalidManifest = path.join(
       downloadDir,

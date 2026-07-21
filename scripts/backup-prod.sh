@@ -317,18 +317,39 @@ remote_copy_files() {
   fi
 }
 
-s3_latest_key() {
-  local prefix=$1
-  local key
-  key=$(aws_cli s3api list-objects-v2 \
+select_latest_s3_key() {
+  local prefix="$1" required_type="${2:-any}"
+  aws_cli s3api list-objects-v2 \
     --bucket "$S3_BUCKET" \
-    --prefix "${prefix}/" \
-    --query "sort_by(Contents[?!ends_with(Key, '.manifest.json')],&LastModified)[-1].Key" \
-    --output text 2>/dev/null) || return 1
-  if [[ "$key" == "None" ]]; then
-    key=""
-  fi
-  echo "$key"
+    --prefix "${prefix%/}/" \
+    --output json 2>/dev/null | node -e '
+let raw = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => { raw += chunk; });
+process.stdin.on("end", () => {
+  const input = JSON.parse(raw);
+  const contents = input.Contents ?? [];
+  if (!Array.isArray(contents)) process.exit(2);
+  const requiredType = process.argv[1];
+  const expectedPrefix = process.argv[2];
+  const candidates = contents
+    .filter((entry) =>
+      typeof entry?.Key === "string" &&
+      typeof entry?.LastModified === "string" &&
+      entry.Key.startsWith(expectedPrefix) &&
+      !entry.Key.endsWith(".manifest.json") &&
+      (requiredType === "any" || entry.Key.includes(`/${requiredType}/`)),
+    )
+    .map((entry) => ({ ...entry, timestamp: Date.parse(entry.LastModified) }));
+  if (candidates.some((entry) => Number.isNaN(entry.timestamp))) process.exit(3);
+  candidates.sort((left, right) => right.timestamp - left.timestamp || right.Key.localeCompare(left.Key));
+  process.stdout.write(candidates[0]?.Key ?? "");
+});
+' "$required_type" "${prefix%/}/"
+}
+
+s3_latest_key() {
+  select_latest_s3_key "$1" any
 }
 
 backup_date_path() {
@@ -645,14 +666,7 @@ download_verified_artifact() {
 
 s3_latest_sakura_database_key() {
   local prefix="${S3_PREFIX%/}/${BACKUP_RETENTION_CLASS}/"
-  local key
-  key=$(aws_cli s3api list-objects-v2 \
-    --bucket "$S3_BUCKET" \
-    --prefix "$prefix" \
-    --query "sort_by(Contents[?contains(Key, '/database/') && !ends_with(Key, '.manifest.json')],&LastModified)[-1].Key" \
-    --output text 2>/dev/null) || return 1
-  [[ "$key" != "None" ]] || key=""
-  printf '%s\n' "$key"
+  select_latest_s3_key "$prefix" database
 }
 
 remove_plaintext_after_copy() {
@@ -1008,6 +1022,8 @@ download_latest() {
   fi
 
   local db_file globals_file
+  validate_safe_token S3_OBJECT_NAME "$(basename "$db_key")"
+  validate_safe_token S3_OBJECT_NAME "$(basename "$globals_key")"
   db_file="$BACKUP_DIR/$(basename "$db_key")"
   globals_file="$BACKUP_DIR/$(basename "$globals_key")"
   log "downloading latest db dump"
@@ -1018,6 +1034,7 @@ download_latest() {
     "s3://${S3_BUCKET}/${globals_key}" "$globals_file"
   if [[ -n "$assets_key" ]]; then
     local assets_file
+    validate_safe_token S3_OBJECT_NAME "$(basename "$assets_key")"
     assets_file="$BACKUP_DIR/$(basename "$assets_key")"
     log "downloading latest assets archive"
     s3_copy_quiet 'latest assets backup download failed' \
