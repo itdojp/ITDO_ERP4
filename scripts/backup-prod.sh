@@ -134,6 +134,25 @@ validate_safe_token() {
   }
 }
 
+validate_safe_filename() {
+  local name="$1" value="$2"
+  [[ "$value" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$ ]] || {
+    echo "$name contains unsupported characters" >&2
+    exit 1
+  }
+}
+
+cleanup_staged_download() {
+  local directory="$1" staged_file
+  for staged_file in "$directory"/*; do
+    [[ -e "$staged_file" || -L "$staged_file" ]] || continue
+    if [[ -f "$staged_file" || -L "$staged_file" ]]; then
+      rm -f -- "$staged_file"
+    fi
+  done
+  rmdir -- "$directory" 2>/dev/null || true
+}
+
 validate_sakura_backup_id() {
   local value="$1"
   if [[ "$S3_PROVIDER" == "sakura" ]]; then
@@ -293,7 +312,7 @@ remote_copy_files() {
   if command -v rsync >/dev/null 2>&1; then
     local rsync_rsh
     rsync_rsh=$(build_rsync_rsh)
-    rsync -av --protect-args -e "$rsync_rsh" "$@" "${target}:${REMOTE_DIR}/"
+    rsync -a --quiet --protect-args -e "$rsync_rsh" "$@" "${target}:${REMOTE_DIR}/"
   else
     require_cmd scp
     local scp_args=()
@@ -440,18 +459,23 @@ create_or_verify_manifest() {
     encryption_algorithm=openpgp
   fi
   if [[ -f "$manifest_file" ]]; then
-    node "$ROOT_DIR/scripts/backup-s3-manifest.mjs" verify \
+    local -a verify_args=(
       --artifact "$artifact_file" --manifest "$manifest_file" \
       --type "$(artifact_type_name "$kind")" \
       --backup-id "$backup_id" \
-      --generated-at "$generated_at" \
       --environment "$ENVIRONMENT" \
       --retention-class "$BACKUP_RETENTION_CLASS" \
       --commit-sha "$commit_sha" \
       --database-version "${DB_VERSION:-unknown}" \
       --schema-version "${SCHEMA_VERSION:-unknown}" \
       --app-version "${APP_VERSION:-unknown}" \
-      --encryption "$encryption_algorithm" >/dev/null || return 1
+      --encryption "$encryption_algorithm"
+    )
+    if [[ "$S3_PROVIDER" == "sakura" ]]; then
+      verify_args+=(--generated-at "$generated_at")
+    fi
+    node "$ROOT_DIR/scripts/backup-s3-manifest.mjs" verify \
+      "${verify_args[@]}" >/dev/null || return 1
   else
     if [[ "$S3_PROVIDER" == "sakura" && "$source_file" == "$artifact_file" ]]; then
       echo 'pre-encrypted Sakura artifacts require their existing manifest sidecar' >&2
@@ -574,7 +598,7 @@ sakura_download_context() {
   artifact_name="${segments[${#segments[@]} - 1]}"
   artifact_type="${segments[${#segments[@]} - 2]}"
   backup_id="${segments[${#segments[@]} - 3]}"
-  validate_safe_token S3_OBJECT_NAME "$artifact_name"
+  validate_safe_filename S3_OBJECT_NAME "$artifact_name"
   validate_safe_token BACKUP_ID "$backup_id"
   validate_sakura_backup_id "$backup_id"
   case "$artifact_type" in
@@ -596,7 +620,7 @@ download_verified_artifact() {
   local artifact_name destination manifest_destination scratch_root download_dir temporary_artifact temporary_manifest
   local sakura_context artifact_type backup_id commit_sha
   artifact_name="$(basename "$key")"
-  validate_safe_token S3_OBJECT_NAME "$artifact_name"
+  validate_safe_filename S3_OBJECT_NAME "$artifact_name"
   [[ "$artifact_name" != *.manifest.json ]] || { echo 'manifest key cannot be downloaded as an artifact' >&2; exit 1; }
   destination="$BACKUP_DIR/$artifact_name"
   manifest_destination="${destination}.manifest.json"
@@ -838,9 +862,24 @@ backup() {
     upload_artifact "$meta_file" "$meta_upload" metadata "$base"
   fi
 
-  local remote_files=("$db_upload" "$globals_upload" "$meta_upload")
-  [[ -z "$assets_upload" ]] || remote_files+=("$assets_upload")
-  remote_copy_files "${remote_files[@]}"
+  if remote_enabled; then
+    local db_manifest globals_manifest assets_manifest="" meta_manifest
+    db_manifest=$(create_or_verify_manifest "$db_file" "$db_upload" db "$base")
+    globals_manifest=$(create_or_verify_manifest "$globals_file" "$globals_upload" globals "$base")
+    meta_manifest=$(create_or_verify_manifest "$meta_file" "$meta_upload" metadata "$base")
+    if [[ -n "$assets_upload" ]]; then
+      assets_manifest=$(create_or_verify_manifest "$assets_file" "$assets_upload" assets "$base")
+    fi
+    local remote_files=(
+      "$db_upload" "$db_manifest"
+      "$globals_upload" "$globals_manifest"
+      "$meta_upload" "$meta_manifest"
+    )
+    if [[ -n "$assets_upload" ]]; then
+      remote_files+=("$assets_upload" "$assets_manifest")
+    fi
+    remote_copy_files "${remote_files[@]}"
+  fi
   remove_plaintext_after_copy "$db_file" "$db_upload"
   remove_plaintext_after_copy "$globals_file" "$globals_upload"
   remove_plaintext_after_copy "$meta_file" "$meta_upload"
@@ -1022,8 +1061,8 @@ download_latest() {
   fi
 
   local db_file globals_file
-  validate_safe_token S3_OBJECT_NAME "$(basename "$db_key")"
-  validate_safe_token S3_OBJECT_NAME "$(basename "$globals_key")"
+  validate_safe_filename S3_OBJECT_NAME "$(basename "$db_key")"
+  validate_safe_filename S3_OBJECT_NAME "$(basename "$globals_key")"
   db_file="$BACKUP_DIR/$(basename "$db_key")"
   globals_file="$BACKUP_DIR/$(basename "$globals_key")"
   log "downloading latest db dump"
@@ -1034,7 +1073,7 @@ download_latest() {
     "s3://${S3_BUCKET}/${globals_key}" "$globals_file"
   if [[ -n "$assets_key" ]]; then
     local assets_file
-    validate_safe_token S3_OBJECT_NAME "$(basename "$assets_key")"
+    validate_safe_filename S3_OBJECT_NAME "$(basename "$assets_key")"
     assets_file="$BACKUP_DIR/$(basename "$assets_key")"
     log "downloading latest assets archive"
     s3_copy_quiet 'latest assets backup download failed' \
@@ -1056,31 +1095,114 @@ download_latest_remote() {
   local globals_key
   local assets_key
   local meta_key
-  db_key=$(ssh_remote "find '$REMOTE_DIR' -maxdepth 1 -type f -name '${BACKUP_PREFIX}-*-db.dump*' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-" || true)
-  globals_key=$(ssh_remote "find '$REMOTE_DIR' -maxdepth 1 -type f -name '${BACKUP_PREFIX}-*-globals.sql*' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-" || true)
-  assets_key=$(ssh_remote "find '$REMOTE_DIR' -maxdepth 1 -type f -name '${BACKUP_PREFIX}-*-assets.tar.gz*' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-" || true)
-  meta_key=$(ssh_remote "find '$REMOTE_DIR' -maxdepth 1 -type f -name '${BACKUP_PREFIX}-*-meta.json*' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-" || true)
+  db_key=$(ssh_remote "find '$REMOTE_DIR' -maxdepth 1 -type f -name '${BACKUP_PREFIX}-*-db.dump*' ! -name '*.manifest.json' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-" || true)
+  globals_key=$(ssh_remote "find '$REMOTE_DIR' -maxdepth 1 -type f -name '${BACKUP_PREFIX}-*-globals.sql*' ! -name '*.manifest.json' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-" || true)
+  assets_key=$(ssh_remote "find '$REMOTE_DIR' -maxdepth 1 -type f -name '${BACKUP_PREFIX}-*-assets.tar.gz*' ! -name '*.manifest.json' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-" || true)
+  meta_key=$(ssh_remote "find '$REMOTE_DIR' -maxdepth 1 -type f -name '${BACKUP_PREFIX}-*-meta.json*' ! -name '*.manifest.json' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-" || true)
 
-  if [[ -z "$db_key" || -z "$globals_key" ]]; then
+  if [[ -z "$db_key" || -z "$globals_key" || -z "$meta_key" ]]; then
     echo "backups were not found on the configured remote target" >&2
     exit 1
+  fi
+
+  local remote_root="${REMOTE_DIR%/}/"
+  local artifact_key artifact_name
+  for artifact_key in "$db_key" "$globals_key" "$meta_key"; do
+    [[ "$artifact_key" == "$remote_root"* ]] || {
+      echo 'remote backup path is outside the configured directory' >&2
+      exit 1
+    }
+    artifact_name="${artifact_key#"$remote_root"}"
+    [[ "$artifact_name" != */* ]] || {
+      echo 'remote backup path contains an unexpected directory' >&2
+      exit 1
+    }
+    validate_safe_filename REMOTE_ARTIFACT_NAME "$artifact_name"
+  done
+  if [[ -n "$assets_key" ]]; then
+    [[ "$assets_key" == "$remote_root"* ]] || {
+      echo 'remote backup path is outside the configured directory' >&2
+      exit 1
+    }
+    artifact_name="${assets_key#"$remote_root"}"
+    [[ "$artifact_name" != */* ]] || {
+      echo 'remote backup path contains an unexpected directory' >&2
+      exit 1
+    }
+    validate_safe_filename REMOTE_ARTIFACT_NAME "$artifact_name"
+  fi
+
+  local db_name globals_name meta_name assets_name="" backup_id
+  db_name=$(basename "$db_key")
+  globals_name=$(basename "$globals_key")
+  meta_name=$(basename "$meta_key")
+  case "$db_name" in
+    *-db.dump) backup_id="${db_name%-db.dump}" ;;
+    *-db.dump.gpg) backup_id="${db_name%-db.dump.gpg}" ;;
+    *) echo 'remote database artifact name is invalid' >&2; exit 1 ;;
+  esac
+  validate_safe_token BACKUP_ID "$backup_id"
+  case "$globals_name" in
+    "${backup_id}-globals.sql"|"${backup_id}-globals.sql.gpg") ;;
+    *) echo 'remote globals artifact belongs to a different backup bundle' >&2; exit 1 ;;
+  esac
+  case "$meta_name" in
+    "${backup_id}-meta.json"|"${backup_id}-meta.json.gpg") ;;
+    *) echo 'remote metadata artifact belongs to a different backup bundle' >&2; exit 1 ;;
+  esac
+  if [[ -n "$assets_key" ]]; then
+    assets_name=$(basename "$assets_key")
+    case "$assets_name" in
+      "${backup_id}-assets.tar.gz"|"${backup_id}-assets.tar.gz.gpg") ;;
+      *) echo 'remote assets artifact belongs to a different backup bundle' >&2; exit 1 ;;
+    esac
   fi
 
   local target
   target=$(remote_target)
 
-  local download_files=("$db_key" "$globals_key")
+  local artifact_keys=("$db_key" "$globals_key" "$meta_key")
+  local artifact_types=(database globals metadata)
   if [[ -n "$assets_key" ]]; then
-    download_files+=("$assets_key")
+    artifact_keys+=("$assets_key")
+    artifact_types+=(assets)
   fi
-  if [[ -n "$meta_key" ]]; then
-    download_files+=("$meta_key")
-  fi
+
+  local download_files=()
+  for artifact_key in "${artifact_keys[@]}"; do
+    if ! ssh_remote "test -f '${artifact_key}.manifest.json'"; then
+      echo 'remote backup manifest sidecar is missing' >&2
+      exit 1
+    fi
+    download_files+=("$artifact_key" "${artifact_key}.manifest.json")
+  done
+
+  local scratch_root download_dir
+  scratch_root="${ERP4_TMP_DIR:-$ROOT_DIR/.codex-local/tmp}"
+  mkdir -p "$scratch_root"
+  chmod 700 "$scratch_root"
+  download_dir=$(mktemp -d "$scratch_root/backup-remote-download.XXXXXX")
+
+  local destination
+  for artifact_key in "${artifact_keys[@]}"; do
+    artifact_name=$(basename "$artifact_key")
+    destination="$BACKUP_DIR/$artifact_name"
+    [[ ! -e "$destination" && ! -e "${destination}.manifest.json" ]] || {
+      rmdir -- "$download_dir"
+      echo 'download destination already exists; refusing to overwrite' >&2
+      exit 1
+    }
+  done
 
   if command -v rsync >/dev/null 2>&1; then
     local rsync_rsh
     rsync_rsh=$(build_rsync_rsh)
-    rsync -av --protect-args -e "$rsync_rsh" "${download_files[@]/#/${target}:}" "$BACKUP_DIR/"
+    if ! rsync -a --quiet --protect-args -e "$rsync_rsh" \
+         "${download_files[@]/#/${target}:}" "$download_dir/"; then
+      cleanup_staged_download "$download_dir"
+      echo 'remote backup download failed' >&2
+      exit 1
+    fi
   else
     require_cmd scp
     local scp_args=()
@@ -1097,9 +1219,51 @@ download_latest_remote() {
     for remote_path in "${download_files[@]}"; do
       local remote_spec
       remote_spec="${target}:$(printf '%q' "$remote_path")"
-      scp "${scp_args[@]}" "$remote_spec" "$BACKUP_DIR/"
+      if ! scp "${scp_args[@]}" "$remote_spec" "$download_dir/"; then
+        cleanup_staged_download "$download_dir"
+        echo 'remote backup download failed' >&2
+        exit 1
+      fi
     done
   fi
+
+  local index local_artifact local_manifest verification_failed=0
+  for index in "${!artifact_keys[@]}"; do
+    artifact_name=$(basename "${artifact_keys[$index]}")
+    local_artifact="$download_dir/$artifact_name"
+    local_manifest="${local_artifact}.manifest.json"
+    if ! node "$ROOT_DIR/scripts/backup-s3-manifest.mjs" verify \
+         --artifact "$local_artifact" --manifest "$local_manifest" \
+         --type "${artifact_types[$index]}" --backup-id "$backup_id" \
+         --environment "$ENVIRONMENT" \
+         --retention-class "$BACKUP_RETENTION_CLASS" >/dev/null; then
+      verification_failed=1
+      break
+    fi
+    if [[ "$local_artifact" == *.gpg ]] && ! (assert_openpgp_encrypted "$local_artifact"); then
+      verification_failed=1
+      break
+    fi
+  done
+  if [[ "$verification_failed" == "1" ]]; then
+    cleanup_staged_download "$download_dir"
+    echo 'remote backup integrity/context verification failed' >&2
+    exit 1
+  fi
+
+  for artifact_key in "${artifact_keys[@]}"; do
+    artifact_name=$(basename "$artifact_key")
+    local_artifact="$download_dir/$artifact_name"
+    local_manifest="${local_artifact}.manifest.json"
+    destination="$BACKUP_DIR/$artifact_name"
+    if ! mv --no-clobber -- "$local_artifact" "$destination" || [[ -e "$local_artifact" ]] ||
+       ! mv --no-clobber -- "$local_manifest" "${destination}.manifest.json" || [[ -e "$local_manifest" ]]; then
+      echo 'verified remote bundle could not be published without overwrite; manual recovery is required' >&2
+      exit 1
+    fi
+  done
+  rmdir -- "$download_dir"
+  log 'remote download completed with manifest verification'
 }
 
 restore() {

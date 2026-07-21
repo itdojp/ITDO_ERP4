@@ -111,7 +111,7 @@ value_after() {
     if [[ "\${args[$i]}" == "$needle" ]]; then printf '%s' "\${args[$((i + 1))]}"; return; fi
   done
 }
-safe_key() { printf '%s' "$1" | tr '/:' '__'; }
+safe_key() { printf '%s' "$1" | sha256sum | cut -d' ' -f1; }
 if [[ "$family" == s3api ]]; then
   case "$operation" in
     head-bucket) exit 0 ;;
@@ -185,6 +185,80 @@ fi
 `,
   );
   chmodSync(aws, 0o755);
+  return bin;
+}
+
+function installFakeRemoteBackupTools(dir) {
+  const bin = path.join(dir, "remote-bin");
+  mkdirSync(bin, { recursive: true });
+  const tools = {
+    pg_dump: `#!/usr/bin/env bash
+set -euo pipefail
+args=("$@")
+for i in "\${!args[@]}"; do
+  if [[ "\${args[$i]}" == -f ]]; then printf 'database-placeholder\n' >"\${args[$((i + 1))]}"; exit 0; fi
+done
+exit 2
+`,
+    pg_dumpall: `#!/usr/bin/env bash
+set -euo pipefail
+args=("$@")
+for i in "\${!args[@]}"; do
+  if [[ "\${args[$i]}" == -f ]]; then printf 'globals-placeholder\n' >"\${args[$((i + 1))]}"; exit 0; fi
+done
+exit 2
+`,
+    ssh: `#!/usr/bin/env bash
+set -euo pipefail
+args=("$@")
+index=0
+while (( index < \${#args[@]} )); do
+  case "\${args[$index]}" in
+    -p|-i|-o) index=$((index + 2)) ;;
+    -*) index=$((index + 1)) ;;
+    *) break ;;
+  esac
+done
+index=$((index + 1))
+(( index < \${#args[@]} )) || exit 0
+exec bash -c "\${args[$index]}"
+`,
+    rsync: `#!/usr/bin/env bash
+set -euo pipefail
+args=("$@")
+operands=()
+skip_next=0
+for arg in "\${args[@]}"; do
+  if (( skip_next == 1 )); then skip_next=0; continue; fi
+  case "$arg" in
+    -e) skip_next=1 ;;
+    -*) ;;
+    *) operands+=("$arg") ;;
+  esac
+done
+(( \${#operands[@]} >= 2 )) || exit 2
+last_index=$((\${#operands[@]} - 1))
+destination="\${operands[$last_index]}"
+if [[ "$destination" == *:* ]]; then
+  destination="\${destination#*:}"
+  mkdir -p "$destination"
+  for ((i = 0; i < last_index; i += 1)); do
+    cp -- "\${operands[$i]}" "$destination/"
+  done
+else
+  mkdir -p "$destination"
+  for ((i = 0; i < last_index; i += 1)); do
+    source="\${operands[$i]#*:}"
+    cp -- "$source" "$destination/"
+  done
+fi
+`,
+  };
+  for (const [name, contents] of Object.entries(tools)) {
+    const file = path.join(bin, name);
+    writeFileSync(file, contents);
+    chmodSync(file, 0o755);
+  }
   return bin;
 }
 
@@ -655,6 +729,67 @@ test("Sakura upload requires encrypted files and uploads unique manifests", () =
   });
 });
 
+test("Sakura accepts artifact filenames derived from a 128-character backup ID", () => {
+  withScratch("backup-s3-long-name-", (dir) => {
+    const env = fakeEnv(dir);
+    const gpgBin = installFakeGpg(dir);
+    const encryptedEnv = { ...env, PATH: `${gpgBin}:${env.PATH}` };
+    const suffix = "-20260722-030405-deadbeefcafe";
+    const bundle = `${"a".repeat(128 - suffix.length)}${suffix}`;
+    assert.equal(bundle.length, 128);
+    const database = path.join(dir, `${bundle}-db.dump`);
+    const globals = path.join(dir, `${bundle}-globals.sql`);
+    const metadata = path.join(dir, `${bundle}-meta.json`);
+    writeFileSync(database, "database-placeholder");
+    writeFileSync(globals, "globals-placeholder");
+    writeFileSync(metadata, '{"sanitized":true}\n');
+
+    const uploaded = run("bash", ["scripts/backup-prod.sh", "upload"], {
+      ...encryptedEnv,
+      S3_PROVIDER: "sakura",
+      S3_ENDPOINT_URL: "https://s3.example.invalid",
+      S3_BUCKET: "bucket-placeholder",
+      S3_PREFIX: "erp4/prod",
+      BACKUP_RETENTION_CLASS: "daily",
+      BACKUP_FILE: database,
+      BACKUP_GLOBALS_FILE: globals,
+      BACKUP_ID: bundle,
+      COMMIT_SHA: "deadbeefcafe",
+      ENVIRONMENT: "prod",
+      DB_NAME: "erp4",
+      DB_VERSION: "17.5",
+      SCHEMA_VERSION: "20260722000000_example",
+      APP_VERSION: "1.0.0-test",
+      GPG_RECIPIENT: "test-recipient",
+    });
+    assert.equal(uploaded.status, 0, `${uploaded.stderr}\n${uploaded.stdout}`);
+
+    const remoteBase = `erp4/prod/daily/2026/07/${bundle}`;
+    const downloadDir = path.join(dir, "downloads");
+    const downloaded = run("bash", ["scripts/backup-prod.sh", "download"], {
+      ...encryptedEnv,
+      S3_PROVIDER: "sakura",
+      S3_ENDPOINT_URL: "https://s3.example.invalid",
+      S3_BUCKET: "bucket-placeholder",
+      S3_PREFIX: "erp4/prod",
+      BACKUP_RETENTION_CLASS: "daily",
+      BACKUP_DIR: downloadDir,
+      FAKE_LIST_DATABASE_KEY: `${remoteBase}/database/${path.basename(database)}.gpg`,
+      FAKE_LIST_GLOBALS_KEY: `${remoteBase}/globals/${path.basename(globals)}.gpg`,
+      FAKE_LIST_METADATA_KEY: `${remoteBase}/metadata/${path.basename(metadata)}.gpg`,
+    });
+    assert.equal(
+      downloaded.status,
+      0,
+      `${downloaded.stderr}\n${downloaded.stdout}`,
+    );
+    assert.equal(
+      existsSync(path.join(downloadDir, `${path.basename(database)}.gpg`)),
+      true,
+    );
+  });
+});
+
 test("AWS profile preserves custom endpoint, KMS and legacy key layout", () => {
   withScratch("backup-s3-aws-", (dir) => {
     const env = fakeEnv(dir);
@@ -693,6 +828,102 @@ test("AWS profile preserves custom endpoint, KMS and legacy key layout", () => {
     );
     assert.match(calls, /erp4\/prod\/db\/erp4-20260722-010203-db\.dump/);
     assert.match(calls, /--sse aws:kms --sse-kms-key-id alias\/erp4-backup/);
+
+    const manifestFile = `${database}.manifest.json`;
+    const manifest = JSON.parse(readFileSync(manifestFile, "utf8"));
+    manifest.generatedAt = "2026-01-01T00:00:00.000Z";
+    writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`);
+    const reusedManifest = run("bash", ["scripts/backup-prod.sh", "upload"], {
+      ...env,
+      S3_PROVIDER: "aws",
+      S3_ENDPOINT_URL: "https://aws-compatible.example.invalid",
+      S3_BUCKET: "bucket-placeholder",
+      S3_PREFIX: "erp4/prod",
+      SSE_KMS_KEY_ID: "alias/erp4-backup",
+      BACKUP_FILE: database,
+      BACKUP_GLOBALS_FILE: globals,
+      COMMIT_SHA: "deadbeefcafe",
+    });
+    assert.equal(
+      reusedManifest.status,
+      0,
+      `${reusedManifest.stderr}\n${reusedManifest.stdout}`,
+    );
+  });
+});
+
+test("remote-host backup copies and verifies artifact manifest pairs", () => {
+  withScratch("backup-remote-manifest-", (dir) => {
+    const bin = installFakeRemoteBackupTools(dir);
+    const backupDir = path.join(dir, "backups");
+    const remoteDir = path.join(dir, "remote");
+    const commonEnv = {
+      PATH: `${bin}:${process.env.PATH}`,
+      ERP4_TMP_DIR: path.join(dir, "scratch"),
+      BACKUP_PREFIX: "erp4",
+      BACKUP_TIMESTAMP: "20260722-040506",
+      BACKUP_RETENTION_CLASS: "daily",
+      ENVIRONMENT: "prod",
+      COMMIT_SHA: "deadbeefcafe",
+      DB_HOST: "database.internal.invalid",
+      DB_USER: "erp4",
+      DB_PASSWORD: "password-placeholder",
+      DB_NAME: "erp4",
+      REMOTE_HOST: "backup-host.invalid",
+      REMOTE_DIR: remoteDir,
+    };
+    const backedUp = run("bash", ["scripts/backup-prod.sh", "backup"], {
+      ...commonEnv,
+      BACKUP_DIR: backupDir,
+    });
+    assert.equal(backedUp.status, 0, `${backedUp.stderr}\n${backedUp.stdout}`);
+
+    const bundle = "erp4-20260722-040506";
+    for (const suffix of ["db.dump", "globals.sql", "meta.json"]) {
+      assert.equal(
+        existsSync(path.join(remoteDir, `${bundle}-${suffix}`)),
+        true,
+      );
+      assert.equal(
+        existsSync(path.join(remoteDir, `${bundle}-${suffix}.manifest.json`)),
+        true,
+      );
+    }
+
+    rmSync(backupDir, { recursive: true, force: true });
+    const downloadDir = path.join(dir, "downloads");
+    const downloaded = run("bash", ["scripts/backup-prod.sh", "download"], {
+      ...commonEnv,
+      BACKUP_DIR: downloadDir,
+    });
+    assert.equal(
+      downloaded.status,
+      0,
+      `${downloaded.stderr}\n${downloaded.stdout}`,
+    );
+    for (const suffix of ["db.dump", "globals.sql", "meta.json"]) {
+      assert.equal(
+        existsSync(path.join(downloadDir, `${bundle}-${suffix}`)),
+        true,
+      );
+      assert.equal(
+        existsSync(path.join(downloadDir, `${bundle}-${suffix}.manifest.json`)),
+        true,
+      );
+    }
+
+    writeFileSync(path.join(remoteDir, `${bundle}-db.dump`), "tampered\n");
+    const rejectedDir = path.join(dir, "rejected-download");
+    const rejected = run("bash", ["scripts/backup-prod.sh", "download"], {
+      ...commonEnv,
+      BACKUP_DIR: rejectedDir,
+    });
+    assert.notEqual(rejected.status, 0);
+    assert.match(rejected.stderr, /integrity\/context verification failed/);
+    assert.equal(
+      existsSync(path.join(rejectedDir, `${bundle}-db.dump`)),
+      false,
+    );
   });
 });
 

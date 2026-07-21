@@ -201,6 +201,12 @@ BACKUP_MANIFEST_FILE="$PRIVATE_BACKUP_DIR/<artifact>.manifest.json" \
 make backup-s3-check
 ```
 
+### 4.5 既存remote-host経路
+
+`REMOTE_HOST` / `REMOTE_DIR`を指定した移行・検証用経路でも、database、globals、必須metadata、任意assetsをそれぞれのmanifest sidecarと対で転送する。downloadは最新artifactのbundle ID一致、manifestのenvironment / retention class / artifact type、SHA-256をprivate scratchで検証し、`.gpg`ではOpenPGP packetも確認してから`BACKUP_DIR`へ公開する。manifest欠落、世代混在、既存destinationがある場合はfail closedとし、旧来のmanifestなしremote backupは自動復元しない。
+
+remote-host経路はSakura移行中のcopy-only sourceであり、Sakura object storeの実証を代替しない。廃止判断は#1981で行い、それまではsourceを削除しない。
+
 ## 5. partial uploadの処理
 
 artifact upload後、manifest upload前等で失敗するとorphanが残り得る。自動削除・上書きretryは行わない。
