@@ -101,7 +101,10 @@ function parseInteger(
 ) {
   const value = normalized(env[key]);
   if (!value) return fallback;
-  const parsed = Number(value);
+  if (!/^[0-9]+$/.test(value)) {
+    throw new GoogleDriveConfigurationError([key]);
+  }
+  const parsed = Number.parseInt(value, 10);
   if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
     throw new GoogleDriveConfigurationError([key]);
   }
