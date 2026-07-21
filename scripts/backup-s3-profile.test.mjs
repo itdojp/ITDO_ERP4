@@ -829,12 +829,36 @@ test("retention plan protects minimum generations and reports dry-run deletes", 
       JSON.stringify({
         Contents: [
           ...bundleEntries(
-            "daily/2025/01/erp4-20250101-000000-deadbeef",
-            "2025-01-01T00:00:00Z",
+            "hourly/2026/07/19/erp4-20260719-000000-badf00d",
+            "2026-07-19T00:00:00Z",
+          ),
+          ...bundleEntries(
+            "hourly/2026/07/22/erp4-20260722-000000-feedface",
+            "2026-07-22T00:00:00Z",
+          ),
+          ...bundleEntries(
+            "daily/2026/05/erp4-20260501-000000-deadbeef",
+            "2026-05-01T00:00:00Z",
           ),
           ...bundleEntries(
             "daily/2026/07/erp4-20260721-000000-cafebabe",
             "2026-07-21T00:00:00Z",
+          ),
+          ...bundleEntries(
+            "weekly/2026/erp4-20260101-000000-abcdef01",
+            "2026-01-01T00:00:00Z",
+          ),
+          ...bundleEntries(
+            "weekly/2026/erp4-20260721-010000-abcdef02",
+            "2026-07-21T01:00:00Z",
+          ),
+          ...bundleEntries(
+            "monthly/2025/erp4-20250101-000000-1234abcd",
+            "2025-01-01T00:00:00Z",
+          ),
+          ...bundleEntries(
+            "monthly/2026/erp4-20260721-020000-5678abcd",
+            "2026-07-21T02:00:00Z",
           ),
         ],
       }),
@@ -868,10 +892,42 @@ test("retention plan protects minimum generations and reports dry-run deletes", 
     const plan = JSON.parse(readFileSync(jsonOut));
     assert.equal(plan.applyAllowed, true);
     assert.deepEqual(plan.deleteBundles, [
-      "daily/2025/01/erp4-20250101-000000-deadbeef",
+      "daily/2026/05/erp4-20260501-000000-deadbeef",
+      "hourly/2026/07/19/erp4-20260719-000000-badf00d",
+      "monthly/2025/erp4-20250101-000000-1234abcd",
+      "weekly/2026/erp4-20260101-000000-abcdef01",
     ]);
-    assert.equal(plan.deleteKeys.length, 6);
-    assert.match(readFileSync(markdownOut, "utf8"), /Delete bundles: `1`/);
+    assert.equal(plan.deleteKeys.length, 24);
+    assert.deepEqual(
+      Object.fromEntries(
+        Object.entries(plan.classes).map(([name, value]) => [
+          name,
+          {
+            cutoff: value.cutoff,
+            deleteBundles: value.deleteBundles,
+          },
+        ]),
+      ),
+      {
+        hourly: {
+          cutoff: "2026-07-20T00:00:00.000Z",
+          deleteBundles: 1,
+        },
+        daily: {
+          cutoff: "2026-06-22T00:00:00.000Z",
+          deleteBundles: 1,
+        },
+        weekly: {
+          cutoff: "2026-04-29T00:00:00.000Z",
+          deleteBundles: 1,
+        },
+        monthly: {
+          cutoff: "2025-06-22T00:00:00.000Z",
+          deleteBundles: 1,
+        },
+      },
+    );
+    assert.match(readFileSync(markdownOut, "utf8"), /Delete bundles: `4`/);
   });
 });
 
