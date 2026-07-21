@@ -158,7 +158,7 @@ E2E_CAPTURE=0 E2E_SCOPE=extended ./scripts/e2e-frontend.sh
 - 削除は既定で `trashed=true` に更新し、完全削除しない
 - `files.create` は `ignoreDefaultVisibility=true` とし、Drive URL や直接共有権限を返さず、domain-wide delegation を追加しない
 - runtime の get / stat / trash は、対象 file の parent folder と Shared Drive ID が設定境界と一致する場合だけ許可する
-- operator preflight は folder permissions を全 page 確認し、有効 permission が単一 user 主体だけでない場合（domain / anyone / group / 複数 user を含む）は No-Go とする
+- operator preflight は folder permissions を全 page 確認する。My Driveでは有効permissionが単一user主体だけでない場合をNo-Goとする。Shared Driveでは0件またはShared Driveから継承されたpermissionだけを許可し、direct permission、domain、anyoneをNo-Goとする
 - Chat upload後のDB永続化失敗に対するcompensating cleanupは、failure semanticsを推測で変更せず #1982 で仕様化する。#1976では既存の外部storage→DB順序を維持する
 - write probeのcreate結果不明・trash失敗時の保護済みrecovery workflowは #1983 で追加する。#1976のwrite modeを実行する際は途中失敗後に再実行せず運用担当者へエスカレーションする
 

@@ -360,11 +360,7 @@ function mapMetadata(
     createdAt: file.createdTime ?? null,
     modifiedAt: file.modifiedTime ?? null,
     originalName:
-      file.appProperties?.erp4OriginalName ??
-      file.originalFilename ??
-      file.name ??
-      fallback?.originalName ??
-      'object',
+      file.originalFilename ?? file.name ?? fallback?.originalName ?? 'object',
     sizeBytes: normalizeSize(file.size) ?? fallback?.sizeBytes ?? null,
     trashed: file.trashed ?? false,
   };

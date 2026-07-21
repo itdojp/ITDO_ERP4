@@ -10,12 +10,20 @@ export type GoogleDriveCheckMode = 'read' | 'write';
 
 type PermissionData = {
   deleted?: boolean | null;
+  permissionDetails?: Array<{
+    inherited?: boolean | null;
+  }> | null;
   type?: string | null;
 };
+
+function escapeDriveQueryLiteral(value: string) {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
 
 async function assertPrivateFolderPermissions(
   drive: GoogleDriveApi,
   folderId: string,
+  sharedDriveId: string | undefined,
   tuning: GoogleDriveTuningConfig,
 ) {
   const permissions: PermissionData[] = [];
@@ -29,7 +37,7 @@ async function assertPrivateFolderPermissions(
         pageSize: 100,
         pageToken,
         fields:
-          'nextPageToken,permissions(id,type,role,deleted,permissionDetails)',
+          'nextPageToken,permissions(id,type,role,deleted,permissionDetails(inherited))',
       },
       { retry: false, timeout: tuning.timeoutMs },
     );
@@ -52,10 +60,19 @@ async function assertPrivateFolderPermissions(
   } while (pageToken);
 
   const active = permissions.filter((permission) => !permission.deleted);
-  if (
-    active.length !== 1 ||
-    active.some((permission) => permission.type !== 'user')
-  ) {
+  const invalid = sharedDriveId
+    ? active.some(
+        (permission) =>
+          permission.type === 'anyone' ||
+          permission.type === 'domain' ||
+          !permission.permissionDetails?.length ||
+          permission.permissionDetails.some(
+            (detail) => detail.inherited !== true,
+          ),
+      )
+    : active.length !== 1 ||
+      active.some((permission) => permission.type !== 'user');
+  if (invalid) {
     throw new GoogleDriveObjectStoreError({
       code: 'forbidden',
       operation: 'target_check',
@@ -110,12 +127,13 @@ export async function runGoogleDriveCheck(options: {
   const permissionCount = await assertPrivateFolderPermissions(
     drive,
     folderId,
+    sharedDriveId,
     tuning,
   );
-  log(`[gdrive] private permission entries: ${permissionCount}`);
+  log(`[gdrive] permission entries inspected: ${permissionCount}`);
 
   const listParams: Record<string, unknown> = {
-    q: `'${folderId.replace(/'/g, "\\'")}' in parents and trashed=false`,
+    q: `'${escapeDriveQueryLiteral(folderId)}' in parents and trashed=false`,
     pageSize: 5,
     supportsAllDrives: true,
     includeItemsFromAllDrives: true,

@@ -9,8 +9,7 @@ import {
   stat,
   writeFile,
 } from 'node:fs/promises';
-import { join } from 'node:path';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 
 import { runGoogleDriveCheck } from '../dist/cli/googleDriveCheckService.js';
@@ -255,7 +254,13 @@ test('Google Drive write preflight checks privacy, creates, and trashes without 
         calls.push({ method: 'permissions.list', params, options });
         return {
           data: {
-            permissions: [{ id: 'sensitive-permission-id', type: 'user' }],
+            permissions: [
+              {
+                id: 'sensitive-permission-id',
+                type: 'user',
+                permissionDetails: [{ inherited: true }],
+              },
+            ],
           },
         };
       },
@@ -286,6 +291,130 @@ test('Google Drive write preflight checks privacy, creates, and trashes without 
     true,
   );
   assert.doesNotMatch(logs.join('\n'), /sensitive-/);
+});
+
+test('Google Drive Shared Drive preflight allows inherited or empty permissions only', async () => {
+  for (const permissions of [
+    [],
+    [
+      {
+        id: 'inherited-group-placeholder',
+        type: 'group',
+        permissionDetails: [{ inherited: true }],
+      },
+    ],
+  ]) {
+    const drive = {
+      createResumable: async () => assert.fail('not expected'),
+      files: {
+        get: async () => ({
+          data: {
+            id: 'folder-placeholder',
+            mimeType: 'application/vnd.google-apps.folder',
+            driveId: 'shared-drive-placeholder',
+            trashed: false,
+          },
+        }),
+        list: async () => ({ data: { files: [] } }),
+        create: async () => assert.fail('not expected'),
+        update: async () => assert.fail('not expected'),
+      },
+      permissions: {
+        list: async () => ({ data: { permissions } }),
+      },
+    };
+    await runGoogleDriveCheck({
+      drive,
+      folderId: 'folder-placeholder',
+      sharedDriveId: 'shared-drive-placeholder',
+      mode: 'read',
+      tuning,
+      log: () => {},
+    });
+  }
+});
+
+test('Google Drive Shared Drive preflight rejects direct folder permission', async () => {
+  const drive = {
+    createResumable: async () => assert.fail('not expected'),
+    files: {
+      get: async () => ({
+        data: {
+          id: 'folder-placeholder',
+          mimeType: 'application/vnd.google-apps.folder',
+          driveId: 'shared-drive-placeholder',
+          trashed: false,
+        },
+      }),
+      list: async () => ({ data: { files: [] } }),
+      create: async () => assert.fail('not expected'),
+      update: async () => assert.fail('not expected'),
+    },
+    permissions: {
+      list: async () => ({
+        data: {
+          permissions: [
+            {
+              id: 'direct-user-placeholder',
+              type: 'user',
+              permissionDetails: [{ inherited: false }],
+            },
+          ],
+        },
+      }),
+    },
+  };
+
+  await assert.rejects(
+    runGoogleDriveCheck({
+      drive,
+      folderId: 'folder-placeholder',
+      sharedDriveId: 'shared-drive-placeholder',
+      mode: 'read',
+      tuning,
+      log: () => {},
+    }),
+    /google_drive_forbidden/,
+  );
+});
+
+test('Google Drive preflight escapes backslashes and quotes in list query literals', async () => {
+  let query;
+  const drive = {
+    createResumable: async () => assert.fail('not expected'),
+    files: {
+      get: async () => ({
+        data: {
+          id: 'folder-placeholder',
+          mimeType: 'application/vnd.google-apps.folder',
+          trashed: false,
+        },
+      }),
+      list: async (params) => {
+        query = params.q;
+        return { data: { files: [] } };
+      },
+      create: async () => assert.fail('not expected'),
+      update: async () => assert.fail('not expected'),
+    },
+    permissions: {
+      list: async () => ({
+        data: { permissions: [{ id: 'owner-placeholder', type: 'user' }] },
+      }),
+    },
+  };
+
+  await runGoogleDriveCheck({
+    drive,
+    folderId: "folder\\'placeholder",
+    mode: 'read',
+    tuning,
+    log: () => {},
+  });
+  assert.equal(
+    query,
+    "'folder\\\\\\'placeholder' in parents and trashed=false",
+  );
 });
 
 test('Google Drive preflight rejects broad folder permissions before write', async () => {
