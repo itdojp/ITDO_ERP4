@@ -1,4 +1,4 @@
-.PHONY: lint format-check typecheck build test test-backend test-frontend data-quality-test data-quality-blocking data-quality-advisory coverage coverage-auth coverage-integrations coverage-integrations-check coverage-frontend coverage-frontend-core e2e ui-evidence ui-visual-regression ui-visual-regression-update mobile-regression-log frontend-dev-api podman-smoke pr-comments audit docs-image-links-check docs-test-results-index-check ops-quality design-system-package-check eslint10-readiness-check eslint10-readiness-record dependabot-alerts-check dependabot-alerts-record dependabot-token-readiness-check dependency-watch-record backup-s3-readiness-check backup-s3-readiness-record backup-s3-restore-record external-csv-artifact-intake-record production-readiness-external-evidence-check production-readiness-external-evidence-test po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness action-policy-callsites-report action-policy-callsites-report-json action-policy-required-action-gaps action-policy-required-action-gaps-json action-policy-fallback-report action-policy-fallback-report-json release-readiness release-readiness-record action-policy-phase3-readiness action-policy-phase3-readiness-json action-policy-phase3-readiness-record action-policy-phase3-cutover-record action-policy-phase3-trial-record action-policy-phase3-target-trial-record sakura-vps-profile-check bounded-context-coverage-check
+.PHONY: lint format-check typecheck build test test-backend test-frontend data-quality-test data-quality-blocking data-quality-advisory coverage coverage-auth coverage-integrations coverage-integrations-check coverage-frontend coverage-frontend-core e2e ui-evidence ui-visual-regression ui-visual-regression-update mobile-regression-log frontend-dev-api podman-smoke pr-comments audit docs-image-links-check docs-test-results-index-check ops-quality design-system-package-check eslint10-readiness-check eslint10-readiness-record dependabot-alerts-check dependabot-alerts-record dependabot-token-readiness-check dependency-watch-record backup-s3-readiness-check backup-s3-readiness-record backup-s3-restore-record backup-s3-profile-test backup-s3-backup backup-s3-upload backup-s3-download backup-s3-check backup-s3-prune-plan backup-s3-prune-apply external-csv-artifact-intake-record production-readiness-external-evidence-check production-readiness-external-evidence-test po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness action-policy-callsites-report action-policy-callsites-report-json action-policy-required-action-gaps action-policy-required-action-gaps-json action-policy-fallback-report action-policy-fallback-report-json release-readiness release-readiness-record action-policy-phase3-readiness action-policy-phase3-readiness-json action-policy-phase3-readiness-record action-policy-phase3-cutover-record action-policy-phase3-trial-record action-policy-phase3-target-trial-record sakura-vps-profile-check bounded-context-coverage-check
 
 lint:
 	npm run lint --prefix packages/backend
@@ -93,6 +93,7 @@ ops-quality:
 	./scripts/check-ops-docs.sh
 	./scripts/check-ops-scripts.sh
 	./scripts/quadlet/check-profile-tests.sh
+	node --test scripts/backup-s3-profile.test.mjs
 
 design-system-package-check:
 	./scripts/check-design-system-package.sh
@@ -123,6 +124,29 @@ backup-s3-readiness-record:
 
 backup-s3-restore-record:
 	./scripts/record-backup-s3-restore.sh
+
+backup-s3-profile-test:
+	node --test scripts/backup-s3-profile.test.mjs
+
+backup-s3-backup:
+	./scripts/backup-prod.sh backup
+
+backup-s3-upload:
+	./scripts/backup-prod.sh upload
+
+backup-s3-download:
+	./scripts/backup-prod.sh download
+
+backup-s3-check:
+	./scripts/backup-prod.sh check
+
+backup-s3-prune-plan:
+	@test -n "$(PLAN_JSON)" -a -n "$(PLAN_MARKDOWN)" || (echo 'PLAN_JSON and PLAN_MARKDOWN are required' >&2; exit 1)
+	./scripts/backup-s3-retention.sh --dry-run --plan-json "$(PLAN_JSON)" --plan-markdown "$(PLAN_MARKDOWN)"
+
+backup-s3-prune-apply:
+	@test -n "$(PLAN_JSON)" -a -n "$(RESULT_JSON)" || (echo 'PLAN_JSON and RESULT_JSON are required' >&2; exit 1)
+	./scripts/backup-s3-retention.sh --apply --plan-json "$(PLAN_JSON)" --result-json "$(RESULT_JSON)"
 
 external-csv-artifact-intake-record:
 	node scripts/record-external-csv-artifact-intake.mjs

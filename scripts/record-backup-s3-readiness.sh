@@ -112,6 +112,13 @@ has_failed_summary() {
   grep -Eq 'failed with [0-9]+ warning\(s\)|SUMMARY status=fail' "$log_file"
 }
 
+assert_log_safe() {
+  local log_file="$1"
+  if grep -Eiq 'AKIA[0-9A-Z]{16}|AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY|SESSION_TOKEN)=|aws_(access_key_id|secret_access_key|session_token)[[:space:]]*=|Authorization:[[:space:]]*(Bearer|AWS)|X-Amz-(Credential|Signature|Security-Token)=|https://[^/@[:space:]]+:[^/@[:space:]]+@|-----BEGIN .*PRIVATE KEY-----' "$log_file"; then
+    die 'readiness log contains a secret-like value; sanitize the source log before recording evidence'
+  fi
+}
+
 validate_date_stamp() {
   if [[ ! "$DATE_STAMP" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
     die "DATE_STAMP must be YYYY-MM-DD (got: ${DATE_STAMP})"
@@ -197,7 +204,7 @@ write_report() {
   local source_log
   source_log="$(format_source_path "$log_file")"
   local warnings errors summary_status summary_source
-  local machine_summary_line machine_summary_status
+  local machine_summary_line machine_summary_status machine_provider machine_execution_mode machine_check_write machine_real_run_confirm
   local machine_warning_count machine_error_count
   local warnings_by_lines warnings_by_summary
   local errors_by_lines errors_by_summary errors_by_status
@@ -208,12 +215,20 @@ write_report() {
   machine_summary_status=""
   machine_warning_count=""
   machine_error_count=""
+  machine_provider=""
+  machine_execution_mode=""
+  machine_check_write=""
+  machine_real_run_confirm=""
   summary_source="legacy-log-scan"
 
   if [[ -n "$machine_summary_line" ]]; then
     machine_summary_status="$(extract_machine_summary_field "$machine_summary_line" "status" || true)"
     machine_warning_count="$(extract_machine_summary_field "$machine_summary_line" "warning_count" || true)"
     machine_error_count="$(extract_machine_summary_field "$machine_summary_line" "error_count" || true)"
+    machine_provider="$(extract_machine_summary_field "$machine_summary_line" "provider" || true)"
+    machine_execution_mode="$(extract_machine_summary_field "$machine_summary_line" "execution_mode" || true)"
+    machine_check_write="$(extract_machine_summary_field "$machine_summary_line" "check_write" || true)"
+    machine_real_run_confirm="$(extract_machine_summary_field "$machine_summary_line" "real_run_confirm" || true)"
     summary_source="summary-line"
   fi
 
@@ -259,6 +274,9 @@ write_report() {
   if [[ -n "$check_status" && "$check_status" != "0" ]]; then
     summary_status="fail"
   fi
+  if [[ "$RUN_CHECK" != "1" || "$machine_execution_mode" != "real" || "$machine_check_write" != "1" || "$machine_real_run_confirm" != "1" ]]; then
+    summary_status="blocked"
+  fi
 
   {
     echo "# S3バックアップ Readiness 記録"
@@ -267,6 +285,11 @@ write_report() {
     echo "- sourceLogFile: \`$source_log\`"
     echo "- summarySource: ${summary_source}"
     echo "- summaryStatus: ${summary_status}"
+    echo "- provider: ${machine_provider:-unknown}"
+    echo "- executionMode: ${machine_execution_mode:-unknown}"
+    echo "- writeProbe: ${machine_check_write:-unknown}"
+    echo "- realRunConfirmed: ${machine_real_run_confirm:-unknown}"
+    echo "- evidenceBasis: $([[ "$RUN_CHECK" == "1" ]] && printf direct-check || printf external-sanitized-log)"
     echo "- warningCount: ${warnings}"
     echo "- errorCount: ${errors}"
     if [[ -n "$check_status" ]]; then
@@ -314,6 +337,7 @@ main() {
   if [[ ! -f "$LOG_FILE" ]]; then
     die "log file not found: $LOG_FILE"
   fi
+  assert_log_safe "$LOG_FILE"
 
   mkdir -p "$OUT_DIR"
   local output_file
