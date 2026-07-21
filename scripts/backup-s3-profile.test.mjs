@@ -67,6 +67,45 @@ cat "$source" >>"$output"
   return bin;
 }
 
+function installFakeRestoreTools(dir) {
+  const bin = path.join(dir, "restore-bin");
+  mkdirSync(bin, { recursive: true });
+  const tools = {
+    gpg: `#!/usr/bin/env bash
+set -euo pipefail
+args=("$@")
+printf 'gpg ' >>"$FAKE_RESTORE_LOG"
+printf '%q ' "$@" >>"$FAKE_RESTORE_LOG"
+printf '\n' >>"$FAKE_RESTORE_LOG"
+[[ " $* " != *' --yes '* ]] || exit 91
+output=''
+for i in "\${!args[@]}"; do
+  if [[ "\${args[$i]}" == --output ]]; then output="\${args[$((i + 1))]}"; fi
+done
+[[ -n "$output" ]]
+cp -- "\${args[-1]}" "$output"
+`,
+    psql: `#!/usr/bin/env bash
+set -euo pipefail
+printf 'psql ' >>"$FAKE_RESTORE_LOG"
+printf '%q ' "$@" >>"$FAKE_RESTORE_LOG"
+printf '\n' >>"$FAKE_RESTORE_LOG"
+`,
+    pg_restore: `#!/usr/bin/env bash
+set -euo pipefail
+printf 'pg_restore ' >>"$FAKE_RESTORE_LOG"
+printf '%q ' "$@" >>"$FAKE_RESTORE_LOG"
+printf '\n' >>"$FAKE_RESTORE_LOG"
+`,
+  };
+  for (const [name, contents] of Object.entries(tools)) {
+    const file = path.join(bin, name);
+    writeFileSync(file, contents);
+    chmodSync(file, 0o755);
+  }
+  return bin;
+}
+
 function installFailingManifestMove(dir) {
   const bin = path.join(dir, "mv-bin");
   const mv = path.join(bin, "mv");
@@ -790,18 +829,119 @@ test("Sakura accepts artifact filenames derived from a 128-character backup ID",
   });
 });
 
+test("restore auto-selects encrypted artifacts and never passes gpg --yes", () => {
+  withScratch("backup-s3-restore-encrypted-", (dir) => {
+    const backupDir = path.join(dir, "backups");
+    mkdirSync(backupDir);
+    const bundle = "erp4-20260722-010203-deadbeefcafe";
+    const database = path.join(backupDir, `${bundle}-db.dump.gpg`);
+    const globals = path.join(backupDir, `${bundle}-globals.sql.gpg`);
+    writeFileSync(database, "encrypted-database-placeholder\n");
+    writeFileSync(globals, "encrypted-globals-placeholder\n");
+    const restoreBin = installFakeRestoreTools(dir);
+    const restoreLog = path.join(dir, "restore.log");
+
+    const result = run("bash", ["scripts/backup-prod.sh", "restore"], {
+      PATH: `${restoreBin}:${process.env.PATH}`,
+      FAKE_RESTORE_LOG: restoreLog,
+      BACKUP_DIR: backupDir,
+      RESTORE_CONFIRM: "1",
+      DB_HOST: "database.invalid",
+      DB_USER: "erp4",
+      DB_PASSWORD: "sensitive-password-placeholder",
+      DB_NAME: "isolated_restore",
+    });
+
+    assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+    assert.equal(existsSync(database.slice(0, -4)), true);
+    assert.equal(existsSync(globals.slice(0, -4)), true);
+    const calls = readFileSync(restoreLog, "utf8");
+    assert.match(calls, /gpg .*--decrypt/);
+    assert.doesNotMatch(calls, /--yes/);
+    assert.match(calls, /psql /);
+    assert.match(calls, /pg_restore /);
+    assert.doesNotMatch(
+      `${result.stdout}\n${result.stderr}`,
+      /sensitive-password-placeholder/,
+    );
+  });
+});
+
+test("restore refuses to overwrite decrypted database, globals, or assets", () => {
+  for (const artifact of ["database", "globals", "assets"]) {
+    withScratch(`backup-s3-restore-no-clobber-${artifact}-`, (dir) => {
+      const backupDir = path.join(dir, "backups");
+      mkdirSync(backupDir);
+      const bundle = "erp4-20260722-010203-deadbeefcafe";
+      const database = path.join(backupDir, `${bundle}-db.dump`);
+      const globals = path.join(backupDir, `${bundle}-globals.sql`);
+      const assets = path.join(backupDir, `${bundle}-assets.tar.gz`);
+      writeFileSync(database, "database-plaintext-sentinel\n");
+      writeFileSync(globals, "globals-plaintext-sentinel\n");
+      writeFileSync(assets, "assets-plaintext-sentinel\n");
+      writeFileSync(`${database}.gpg`, "encrypted-database-placeholder\n");
+      writeFileSync(`${globals}.gpg`, "encrypted-globals-placeholder\n");
+      writeFileSync(`${assets}.gpg`, "encrypted-assets-placeholder\n");
+      const restoreBin = installFakeRestoreTools(dir);
+      const restoreLog = path.join(dir, "restore.log");
+      const env = {
+        PATH: `${restoreBin}:${process.env.PATH}`,
+        FAKE_RESTORE_LOG: restoreLog,
+        BACKUP_DIR: backupDir,
+        RESTORE_CONFIRM: "1",
+        DB_HOST: "database.invalid",
+        DB_USER: "erp4",
+        DB_PASSWORD: "sensitive-password-placeholder",
+        DB_NAME: "isolated_restore",
+        BACKUP_FILE:
+          artifact === "database" ? `${database}.gpg` : database,
+        BACKUP_GLOBALS_FILE:
+          artifact === "globals" ? `${globals}.gpg` : globals,
+        ...(artifact === "assets"
+          ? {
+              SKIP_GLOBALS: "1",
+              ASSET_DIR: path.join(dir, "asset-restore"),
+              BACKUP_ASSETS_FILE: `${assets}.gpg`,
+            }
+          : {}),
+      };
+
+      const result = run("bash", ["scripts/backup-prod.sh", "restore"], env);
+      assert.notEqual(result.status, 0, artifact);
+      assert.match(
+        result.stderr,
+        new RegExp(`refusing to overwrite existing decrypted ${artifact}`),
+      );
+      assert.equal(
+        readFileSync(
+          artifact === "database"
+            ? database
+            : artifact === "globals"
+              ? globals
+              : assets,
+          "utf8",
+        ),
+        `${artifact}-plaintext-sentinel\n`,
+      );
+    });
+  }
+});
+
 test("AWS profile preserves custom endpoint, KMS and legacy key layout", () => {
   withScratch("backup-s3-aws-", (dir) => {
     const env = fakeEnv(dir);
     const database = path.join(dir, "erp4-20260722-010203-db.dump");
     const globals = path.join(dir, "erp4-20260722-010203-globals.sql");
+    const metadata = path.join(dir, "erp4-20260722-010203-meta.json");
     writeFileSync(database, "database-placeholder");
     writeFileSync(globals, "globals-placeholder");
+    writeFileSync(metadata, '{"sanitized":true}\n');
     const insecure = run("bash", ["scripts/backup-prod.sh", "upload"], {
       ...env,
       S3_PROVIDER: "aws",
       S3_ENDPOINT_URL: "http://aws-compatible.example.invalid",
       S3_BUCKET: "bucket-placeholder",
+      BACKUP_DIR: dir,
       BACKUP_FILE: database,
       BACKUP_GLOBALS_FILE: globals,
       COMMIT_SHA: "deadbeefcafe",
@@ -816,6 +956,7 @@ test("AWS profile preserves custom endpoint, KMS and legacy key layout", () => {
       S3_BUCKET: "bucket-placeholder",
       S3_PREFIX: "erp4/prod",
       SSE_KMS_KEY_ID: "alias/erp4-backup",
+      BACKUP_DIR: dir,
       BACKUP_FILE: database,
       BACKUP_GLOBALS_FILE: globals,
       COMMIT_SHA: "deadbeefcafe",
@@ -827,6 +968,7 @@ test("AWS profile preserves custom endpoint, KMS and legacy key layout", () => {
       /--endpoint-url https:\/\/aws-compatible\.example\.invalid/,
     );
     assert.match(calls, /erp4\/prod\/db\/erp4-20260722-010203-db\.dump/);
+    assert.match(calls, /erp4\/prod\/meta\/erp4-20260722-010203-meta\.json/);
     assert.match(calls, /--sse aws:kms --sse-kms-key-id alias\/erp4-backup/);
 
     const manifestFile = `${database}.manifest.json`;

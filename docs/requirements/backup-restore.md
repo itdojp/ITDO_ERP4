@@ -158,16 +158,19 @@ repo-side profile test:
 make backup-s3-profile-test
 ```
 
-backup / upload / verified download / manifest check:
+新規backup（`S3_BUCKET`設定時は同一コマンド内でuploadまで実行）/ verified download / manifest check:
 
 ```bash
 make backup-s3-backup
-make backup-s3-upload
 make backup-s3-download
 BACKUP_FILE="$PRIVATE_BACKUP_DIR/<artifact>" \
 BACKUP_MANIFEST_FILE="$PRIVATE_BACKUP_DIR/<artifact>.manifest.json" \
 make backup-s3-check
 ```
+
+既存のlocal bundleだけを後からuploadする場合は、`make backup-s3-backup`の代わりに
+対象artifactを`BACKUP_FILE` / `BACKUP_GLOBALS_FILE`で指定して
+`make backup-s3-upload`を使用する。同じimmutable keyへ`backup`直後に再uploadしない。
 
 S3_VERIFY_DOWNLOAD=1ではupload直後にremote objectをprivate scratchへdownloadし、同じmanifestでSHA-256を再検証する。
 

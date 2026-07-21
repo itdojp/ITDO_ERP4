@@ -396,6 +396,9 @@ artifact_type_name() {
 artifact_remote_prefix() {
   local kind="$1" backup_id="$2"
   if [[ "$S3_PROVIDER" == "aws" ]]; then
+    # Preserve the pre-Sakura AWS key layout used by existing inventory and
+    # restore tooling.
+    [[ "$kind" != "metadata" ]] || kind="meta"
     printf '%s/%s\n' "${S3_PREFIX%/}" "$kind"
     return
   fi
@@ -1278,9 +1281,11 @@ restore() {
 
   local backup_file="${BACKUP_FILE:-}"
   local globals_file="${BACKUP_GLOBALS_FILE:-}"
-  if [[ -z "$backup_file" || -z "$globals_file" ]]; then
-    backup_file=$(ls -1t "$BACKUP_DIR"/${BACKUP_PREFIX}-*-db.dump 2>/dev/null | head -1)
-    globals_file=$(ls -1t "$BACKUP_DIR"/${BACKUP_PREFIX}-*-globals.sql 2>/dev/null | head -1)
+  if [[ -z "$backup_file" ]]; then
+    backup_file=$(latest_local_artifact '-db.dump*')
+  fi
+  if [[ -z "$globals_file" ]]; then
+    globals_file=$(latest_local_artifact '-globals.sql*')
   fi
 
   if [[ -z "$backup_file" || ! -f "$backup_file" ]]; then
@@ -1296,7 +1301,11 @@ restore() {
   if [[ "$backup_file" == *.gpg ]]; then
     require_cmd gpg
     local decrypted_backup="${backup_file%.gpg}"
-    if ! gpg "${gpg_args[@]}" --batch --yes --output "$decrypted_backup" \
+    if [[ -e "$decrypted_backup" || -L "$decrypted_backup" ]]; then
+      echo 'refusing to overwrite existing decrypted database artifact' >&2
+      exit 1
+    fi
+    if ! gpg "${gpg_args[@]}" --batch --output "$decrypted_backup" \
       --decrypt "$backup_file" >/dev/null 2>&1; then
       echo 'OpenPGP database decrypt failed; inspect the private operator log' >&2
       exit 1
@@ -1312,7 +1321,11 @@ restore() {
     if [[ "$globals_file" == *.gpg ]]; then
       require_cmd gpg
       local decrypted_globals="${globals_file%.gpg}"
-      if ! gpg "${gpg_args[@]}" --batch --yes --output "$decrypted_globals" \
+      if [[ -e "$decrypted_globals" || -L "$decrypted_globals" ]]; then
+        echo 'refusing to overwrite existing decrypted globals artifact' >&2
+        exit 1
+      fi
+      if ! gpg "${gpg_args[@]}" --batch --output "$decrypted_globals" \
         --decrypt "$globals_file" >/dev/null 2>&1; then
         echo 'OpenPGP globals decrypt failed; inspect the private operator log' >&2
         exit 1
@@ -1336,7 +1349,11 @@ restore() {
       if [[ "$assets_file" == *.gpg ]]; then
         require_cmd gpg
         local decrypted_assets="${assets_file%.gpg}"
-        if ! gpg "${gpg_args[@]}" --batch --yes --output "$decrypted_assets" \
+        if [[ -e "$decrypted_assets" || -L "$decrypted_assets" ]]; then
+          echo 'refusing to overwrite existing decrypted assets artifact' >&2
+          exit 1
+        fi
+        if ! gpg "${gpg_args[@]}" --batch --output "$decrypted_assets" \
           --decrypt "$assets_file" >/dev/null 2>&1; then
           echo 'OpenPGP assets decrypt failed; inspect the private operator log' >&2
           exit 1

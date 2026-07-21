@@ -291,6 +291,10 @@ remote inventoryがplan生成時から変化していれば拒否する。partia
 RESTORE_CONFIRM=1 ./scripts/backup-prod.sh restore
 ```
 
+未指定時は`BACKUP_DIR`から最新の`*-db.dump[.gpg]`と
+`*-globals.sql[.gpg]`を選択し、manifest sidecarは対象外にする。`.gpg` artifactの
+復号先plaintextが既に存在する場合は上書きせず停止する。
+
 このコマンドをproductionまたは用途不明DBへ実行しない。assets restore先がnon-emptyの場合はoverwrite riskを評価する。
 
 ### 7.3 evidence
