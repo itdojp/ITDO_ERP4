@@ -67,7 +67,7 @@ const contexts = [
       '^src/routes/chat[^/]*\\.ts$',
       '^src/routes/chat/.+\\.ts$',
       '^src/routes/chatRooms/.+\\.ts$',
-      '^src/services/(chatAckCandidates|chatAckLimits|chatAckLinkTargets|chatAckNotifications|chatAckRecipients|chatAckReminders|chatAckTemplates|chatAttachmentScan|chatAttachments|chatExternalLlm|chatMentionCandidates|chatMentionRecipients|chatReadState|chatRoomAccess|chatRoomAclAlerts|chatRoomLifecycle|chatRoomMembership|chatRoomProvisioning|personalGaChatRoom)\\.ts$',
+      '^src/services/(chatAckCandidates|chatAckLimits|chatAckLinkTargets|chatAckNotifications|chatAckRecipients|chatAckReminders|chatAckTemplates|chatAttachmentScan|chatExternalLlm|chatMentionCandidates|chatMentionRecipients|chatReadState|chatRoomAccess|chatRoomAclAlerts|chatRoomLifecycle|chatRoomMembership|chatRoomProvisioning|personalGaChatRoom)\\.ts$',
     ],
   },
   {
@@ -146,6 +146,9 @@ const layers = [
       'Database, audit, readiness, PDF, outbound notification transports, safe HTTP, and environment/runtime adapters used by multiple contexts.',
     patterns: [
       '^src/adapters/notifications/.+\\.ts$',
+      '^src/adapters/storage/.+\\.ts$',
+      '^src/cli/googleDrive(Check|CheckService|ProvisionFolder|ProvisionService)\\.ts$',
+      '^src/infrastructure/storage/.+\\.ts$',
       '^src/routes/(pdfFiles|pdfTemplates|templateSettings)\\.ts$',
       '^src/services/(audit|db|envValidation|notifier|pdf|pdfTemplates|readiness|safeHttpClient|webPush)\\.ts$',
     ],

@@ -333,7 +333,7 @@ test('auth coverage thresholds stay above the post-split baseline gate', () => {
   }
 });
 
-test('chat coverage scope includes current route modules, lifecycle services, notification effects, and default adapter', () => {
+test('chat coverage scope includes current route, application, and storage adapter modules', () => {
   const config = readCoverageThresholdConfig();
   const configuredFiles = [...config.chat.files].sort();
   const chatServicePattern = /^(chat[A-Z].*|personalGaChatRoom)\.ts$/;
@@ -346,6 +346,12 @@ test('chat coverage scope includes current route modules, lifecycle services, no
       .map((name) => `src/services/${name}`),
     ...listSourceFilesRecursive('src/application/chat'),
     'src/adapters/notifications/chatNotificationAdapter.ts',
+    ...listSourceFilesRecursive('src/adapters/storage'),
+    ...listSourceFilesRecursive('src/infrastructure/storage'),
+    'src/cli/googleDriveCheck.ts',
+    'src/cli/googleDriveCheckService.ts',
+    'src/cli/googleDriveProvisionFolder.ts',
+    'src/cli/googleDriveProvisionService.ts',
   ].sort();
 
   assert.deepEqual(configuredFiles, expectedFiles);
