@@ -176,6 +176,7 @@ test('resumable transport starts a Drive session and uploads to its validated UR
   assert.equal(calls[1].method, 'PUT');
   assert.match(calls[1].url, /^https:\/\/www\.googleapis\.com\/upload\//);
   assert.equal(calls[1].headers['Content-Length'], '7');
+  assert.equal(calls[1].headers['Content-Range'], 'bytes 0-6/7');
   assert.equal((await readAll(calls[1].data)).toString(), 'content');
   assert.deepEqual(response.data, { id: 'uploaded-placeholder' });
 });

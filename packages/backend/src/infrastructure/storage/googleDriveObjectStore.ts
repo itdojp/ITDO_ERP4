@@ -199,6 +199,7 @@ export function createGoogleDriveResumableCreate(
       method: 'PUT',
       headers: {
         'Content-Length': String(input.media.sizeBytes),
+        'Content-Range': `bytes 0-${input.media.sizeBytes - 1}/${input.media.sizeBytes}`,
         'Content-Type': input.media.mimeType ?? 'application/octet-stream',
       },
       data: input.media.body,
