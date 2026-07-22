@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DISABLE_STACK="${DISABLE_STACK:-$ROOT_DIR/scripts/quadlet/disable-stack.sh}"
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
+SYSTEMD_USER_TARGET_DIR="${SYSTEMD_USER_TARGET_DIR:-$HOME/.config/systemd/user}"
 INCLUDE_PROXY=0
 PURGE_CONFIG=0
 REMOVE_EMPTY_TARGET_DIR=0
@@ -15,6 +16,8 @@ Usage: $(basename "$0") [options]
   -h, --help             Show this help message and exit
   --include-proxy        Uninstall erp4-caddy.service related files as well
   --target-dir DIR       Set the target directory for generated quadlet files
+  --systemd-user-target-dir DIR
+                         Set the native systemd user unit directory
   --purge-config         Also remove env/config files from the target directory
   --remove-empty-dir     Remove the target directory if it becomes empty
 USAGE
@@ -45,6 +48,24 @@ remove_file_if_exists() {
   fi
 }
 
+remove_managed_native_link() {
+  local name="$1"
+  local path="$SYSTEMD_USER_TARGET_DIR/$name"
+  local expected="$TARGET_DIR/$name"
+  if [[ -L "$path" ]]; then
+    local current_target
+    current_target="$(readlink "$path")"
+    if [[ "$current_target" == "$expected" ]]; then
+      rm -f "$path"
+      printf 'removed %s\n' "$path"
+    else
+      printf 'WARN: preserved unmanaged native systemd unit symlink %s -> %s\n' "$path" "$current_target" >&2
+    fi
+  elif [[ -e "$path" ]]; then
+    printf 'WARN: preserved unmanaged native systemd unit %s\n' "$path" >&2
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --include-proxy)
@@ -54,6 +75,11 @@ while [[ $# -gt 0 ]]; do
     --target-dir)
       [[ $# -ge 2 ]] || fail 'missing argument for --target-dir'
       TARGET_DIR="$2"
+      shift 2
+      ;;
+    --systemd-user-target-dir)
+      [[ $# -ge 2 ]] || fail 'missing argument for --systemd-user-target-dir'
+      SYSTEMD_USER_TARGET_DIR="$2"
       shift 2
       ;;
     --purge-config)
@@ -83,6 +109,8 @@ if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
 else
   "$DISABLE_STACK"
 fi
+
+remove_managed_native_link erp4-migrate.service
 
 for name in \
   erp4.network \

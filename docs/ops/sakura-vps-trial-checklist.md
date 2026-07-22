@@ -77,8 +77,10 @@ ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" \
 - `~/.config/containers/systemd/erp4-frontend.container`
 - 必要時:
   - `~/.config/containers/systemd/erp4-caddy.container`
-  - `~/.config/containers/systemd/erp4-config-backup.timer`
-  - `~/.config/containers/systemd/erp4-db-backup.timer`
+  - `~/.config/systemd/user/erp4-config-backup.timer`
+  - `~/.config/systemd/user/erp4-db-backup.timer`
+
+native `.service` / `.timer` は `~/.config/containers/systemd/` 側の管理対象ファイルを参照するsymlinkとして `~/.config/systemd/user/` に登録される。通常ファイルまたは別の参照先との競合時はinstallerが上書きせず停止する。
 
 ### 5. runtime env / proxy 設定の編集と検証
 

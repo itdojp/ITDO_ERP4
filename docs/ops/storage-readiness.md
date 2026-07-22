@@ -185,11 +185,13 @@ repo-side作業ではenable/startしない。対象VPSでenvと手動read-only c
 ./scripts/quadlet/install-user-units.sh
 systemctl --user daemon-reload
 systemd-analyze --user verify \
-  ~/.config/containers/systemd/erp4-storage-readiness.service \
-  ~/.config/containers/systemd/erp4-storage-readiness.timer
+  ~/.config/systemd/user/erp4-storage-readiness.service \
+  ~/.config/systemd/user/erp4-storage-readiness.timer
 systemctl --user start erp4-storage-readiness.service
 systemctl --user status erp4-storage-readiness.service --no-pager
 ```
+
+installerはnative `.service` / `.timer` の管理対象symlinkをsystemd user unitの探索先 `~/.config/systemd/user/` に登録する。`~/.config/containers/systemd/` 側の同名ファイルは設定バックアップ用の正本であり、Quadlet generatorがnative unitを生成するわけではない。
 
 手動checkのsanitized JSONとexitを確認した後だけtimerを有効化する。
 

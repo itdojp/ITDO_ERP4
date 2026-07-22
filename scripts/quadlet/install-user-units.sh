@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SRC_DIR="$ROOT_DIR/deploy/quadlet"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
+SYSTEMD_USER_TARGET_DIR="${SYSTEMD_USER_TARGET_DIR:-$HOME/.config/systemd/user}"
 MODE="${QUADLET_INSTALL_MODE:-link}"
 PROFILE="${SAKURA_VPS_PROFILE:-production}"
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
@@ -13,6 +14,8 @@ usage() {
 Usage: $(basename "$0") [options]
   --profile NAME     Install production, private-smoke, or https-trial units
   --target-dir DIR   Install units into DIR
+  --systemd-user-target-dir DIR
+                     Register native .service/.timer units in DIR
   -h, --help         Show this help message and exit
 USAGE
 }
@@ -75,6 +78,27 @@ require_clean_private_smoke_target() {
   done
 }
 
+require_managed_native_target() {
+  local unit name source destination current_target
+  for unit in "$SRC_DIR"/*.service "$SRC_DIR"/*.timer; do
+    name="$(basename "$unit")"
+    source="$TARGET_DIR/$name"
+    destination="$SYSTEMD_USER_TARGET_DIR/$name"
+    if [[ "$source" == "$destination" ]]; then
+      continue
+    fi
+    if [[ -e "$destination" && ! -L "$destination" ]]; then
+      fail "native systemd unit already exists and will not be overwritten: $destination"
+    fi
+    if [[ -L "$destination" ]]; then
+      current_target="$(readlink "$destination")"
+      if [[ "$current_target" != "$source" ]]; then
+        fail "native systemd unit symlink points outside the managed Quadlet target: $destination -> $current_target"
+      fi
+    fi
+  done
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --profile)
@@ -85,6 +109,11 @@ while [[ $# -gt 0 ]]; do
     --target-dir)
       [[ $# -ge 2 ]] || fail 'missing argument for --target-dir'
       TARGET_DIR="$2"
+      shift 2
+      ;;
+    --systemd-user-target-dir)
+      [[ $# -ge 2 ]] || fail 'missing argument for --systemd-user-target-dir'
+      SYSTEMD_USER_TARGET_DIR="$2"
       shift 2
       ;;
     -h|--help)
@@ -105,8 +134,9 @@ esac
 if [[ "$PROFILE" == "private-smoke" ]]; then
   require_clean_private_smoke_target
 fi
+require_managed_native_target
 
-mkdir -p "$TARGET_DIR"
+mkdir -p "$TARGET_DIR" "$SYSTEMD_USER_TARGET_DIR"
 shopt -s nullglob
 ERP4_IMAGE_TAG="$(resolve_image_tag)"
 export ERP4_IMAGE_TAG
@@ -130,11 +160,38 @@ install_unit() {
   fi
 }
 
+register_native_unit() {
+  local name="$1"
+  local source="$TARGET_DIR/$name"
+  local destination="$SYSTEMD_USER_TARGET_DIR/$name"
+
+  [[ -e "$source" || -L "$source" ]] || fail "native unit source not found: $source"
+  if [[ "$source" == "$destination" ]]; then
+    return 0
+  fi
+  if [[ -L "$destination" ]]; then
+    local current_target
+    current_target="$(readlink "$destination")"
+    if [[ "$current_target" != "$source" ]]; then
+      fail "native systemd unit symlink changed during install: $destination -> $current_target"
+    fi
+    return 0
+  fi
+  ln -s "$source" "$destination"
+}
+
 for unit in "$SRC_DIR"/*.network "$SRC_DIR"/*.volume "$SRC_DIR"/*.container "$SRC_DIR"/*.service "$SRC_DIR"/*.timer; do
   if [[ "$PROFILE" == "private-smoke" ]] && is_proxy_artifact "$unit"; then
     continue
   fi
   install_unit "$unit"
+done
+
+# Quadlet's generator ignores native .service/.timer files. Keep their managed
+# copies beside the Quadlet sources for backup compatibility, and register only
+# those native units in systemd's user unit search path.
+for unit in "$SRC_DIR"/*.service "$SRC_DIR"/*.timer; do
+  register_native_unit "$(basename "$unit")"
 done
 
 for example in "$SRC_DIR"/env/*.example "$SRC_DIR"/config/*.example; do
@@ -162,6 +219,7 @@ else
 fi
 
 printf 'installed units into %s\n' "$TARGET_DIR"
+printf 'registered native systemd user units in %s\n' "$SYSTEMD_USER_TARGET_DIR"
 printf 'installed profile: %s\n' "$PROFILE"
 printf 'rendered local application image tag: %s\n' "$ERP4_IMAGE_TAG"
 printf 'next: edit %s/erp4-postgres.env and %s/erp4-backend.env, then run:\n' "$TARGET_DIR" "$TARGET_DIR"

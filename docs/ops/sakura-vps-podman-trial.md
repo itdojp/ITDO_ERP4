@@ -154,6 +154,8 @@ ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" \
 - `~/.config/containers/systemd/erp4-postgres.env`
 - `~/.config/containers/systemd/erp4-backend.env`
 
+`.service` / `.timer` は設定バックアップとの互換性のため上記ディレクトリにも保持しますが、Quadlet generatorの対象ではありません。installerはsystemd user managerが読み込めるよう、同じnative unitへの管理対象symlinkを `~/.config/systemd/user/` に登録します。既存の通常ファイルまたは別の参照先を持つsymlinkと競合した場合は上書きせず停止します。検証用に配置先を分離する場合は `SYSTEMD_USER_TARGET_DIR` または `--systemd-user-target-dir` を明示してください。
+
 `erp4-postgres.env` の例:
 
 ```dotenv
@@ -371,7 +373,7 @@ Quadlet の unit 定義ファイル自体を取り除く場合:
 ./scripts/quadlet/uninstall-stack.sh --include-proxy --purge-config
 ```
 
-`uninstall-stack.sh` は `disable-stack.sh` を先に実行したうえで、`~/.config/containers/systemd/` 配下の Quadlet unit 定義を削除し、最後に `systemctl --user daemon-reload` で user manager の定義キャッシュを更新します。既定では `erp4-postgres.env` / `erp4-backend.env` / `erp4-caddy.env` / `erp4-caddy.Caddyfile` / `erp4-frontend-build.env` は保持します。secret やドメイン設定、frontend build 用 env も消したい場合だけ `--purge-config` を使ってください。Podman volume やイメージ、アプリケーションデータ自体は削除しません。
+`uninstall-stack.sh` は `disable-stack.sh` を先に実行したうえで、`~/.config/containers/systemd/` 配下の Quadlet unit 定義と、installerが `~/.config/systemd/user/erp4-migrate.service` に登録した管理対象symlinkを削除し、最後に `systemctl --user daemon-reload` で user manager の定義キャッシュを更新します。別の参照先を持つsymlinkや通常ファイルは削除しません。既定では `erp4-postgres.env` / `erp4-backend.env` / `erp4-caddy.env` / `erp4-caddy.Caddyfile` / `erp4-frontend-build.env` は保持します。secret やドメイン設定、frontend build 用 env も消したい場合だけ `--purge-config` を使ってください。Podman volume やイメージ、アプリケーションデータ自体は削除しません。
 
 ## 5.1 設定バックアップ
 

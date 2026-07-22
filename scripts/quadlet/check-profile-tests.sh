@@ -15,6 +15,7 @@ trap cleanup EXIT
 CHECK_ENV="$ROOT_DIR/scripts/quadlet/check-env.sh"
 CHECK_TRIAL="$ROOT_DIR/scripts/quadlet/check-trial-readiness.sh"
 INSTALL_UNITS="$ROOT_DIR/scripts/quadlet/install-user-units.sh"
+UNINSTALL_STACK="$ROOT_DIR/scripts/quadlet/uninstall-stack.sh"
 START_STACK="$ROOT_DIR/scripts/quadlet/start-stack.sh"
 RESTART_STACK="$ROOT_DIR/scripts/quadlet/restart-stack.sh"
 UPDATE_STACK="$ROOT_DIR/scripts/quadlet/update-stack.sh"
@@ -174,10 +175,12 @@ make_https_dir() {
 }
 
 installed_private_dir="$WORK_DIR/installed-private"
+installed_private_systemd_dir="$WORK_DIR/installed-private-systemd"
 installed_private_frontend="$WORK_DIR/installed-private-frontend.env"
 run_success 'private-smoke installer selects profile units' \
-  env SYSTEMCTL=true QUADLET_INSTALL_MODE=copy QUADLET_TARGET_DIR="$installed_private_dir" ERP4_IMAGE_TAG=test-profile \
-  "$INSTALL_UNITS" --profile private-smoke
+  env SYSTEMCTL=true QUADLET_INSTALL_MODE=copy QUADLET_TARGET_DIR="$installed_private_dir" \
+  ERP4_IMAGE_TAG=test-profile \
+  "$INSTALL_UNITS" --profile private-smoke --systemd-user-target-dir "$installed_private_systemd_dir"
 for proxy_artifact in \
   erp4-caddy.container \
   erp4-caddy.env \
@@ -191,17 +194,65 @@ if grep -Eq '^[[:space:]]*PublishPort[[:space:]]*=' "$installed_private_dir/erp4
 fi
 grep -Fq 'localhost/erp4-backend:test-profile' "$installed_private_dir/erp4-backend.container" || \
   fail 'private-smoke installer did not render the requested image tag'
+for native_unit in \
+  erp4-migrate.service \
+  erp4-config-backup.service \
+  erp4-config-backup.timer \
+  erp4-db-backup.service \
+  erp4-db-backup.timer \
+  erp4-config-prune.service \
+  erp4-config-prune.timer \
+  erp4-storage-readiness.service \
+  erp4-storage-readiness.timer; do
+  native_path="$installed_private_systemd_dir/$native_unit"
+  [[ -L "$native_path" ]] || fail "installer did not register native systemd user unit: $native_unit"
+  [[ "$(readlink "$native_path")" == "$installed_private_dir/$native_unit" ]] || \
+    fail "native systemd user unit points outside the managed Quadlet target: $native_unit"
+done
+if find "$installed_private_systemd_dir" -maxdepth 1 \
+  \( -name '*.container' -o -name '*.network' -o -name '*.volume' \) -print -quit | grep -q .; then
+  fail 'installer registered a Quadlet source in the native systemd user unit path'
+fi
+run_success 'private-smoke installer is idempotent for native unit registration' \
+  env SYSTEMCTL=true QUADLET_INSTALL_MODE=copy QUADLET_TARGET_DIR="$installed_private_dir" \
+  SYSTEMD_USER_TARGET_DIR="$installed_private_systemd_dir" ERP4_IMAGE_TAG=test-profile \
+  "$INSTALL_UNITS" --profile private-smoke
+
+native_collision_dir="$WORK_DIR/native-collision"
+mkdir -p "$native_collision_dir"
+: >"$native_collision_dir/erp4-migrate.service"
+run_failure 'installer refuses unmanaged native systemd unit collision' 'will not be overwritten' \
+  env SYSTEMCTL=true QUADLET_INSTALL_MODE=copy QUADLET_TARGET_DIR="$WORK_DIR/native-collision-quadlet" \
+  SYSTEMD_USER_TARGET_DIR="$native_collision_dir" ERP4_IMAGE_TAG=test-profile \
+  "$INSTALL_UNITS" --profile private-smoke
+[[ ! -e "$WORK_DIR/native-collision-quadlet" ]] || fail 'native unit collision left a partial Quadlet install'
+[[ "$(find "$native_collision_dir" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ]] || \
+  fail 'native unit collision left partial systemd user registrations'
 write_postgres_env "$installed_private_dir"
 write_private_backend_env "$installed_private_dir"
 write_frontend_env "$installed_private_frontend" 'http://erp4-backend:3001'
 run_success 'installed private-smoke target passes env validation' \
   "$CHECK_ENV" --profile private-smoke --target-dir "$installed_private_dir" --frontend-build-env "$installed_private_frontend"
 
+uninstall_quadlet_dir="$WORK_DIR/uninstall-quadlet"
+uninstall_systemd_dir="$WORK_DIR/uninstall-systemd"
+run_success 'installer prepares managed native link uninstall fixture' \
+  env SYSTEMCTL=true QUADLET_INSTALL_MODE=copy QUADLET_TARGET_DIR="$uninstall_quadlet_dir" \
+  SYSTEMD_USER_TARGET_DIR="$uninstall_systemd_dir" ERP4_IMAGE_TAG=test-profile \
+  "$INSTALL_UNITS" --profile private-smoke
+run_success 'uninstaller removes managed migrate native link' \
+  env SYSTEMCTL=true DISABLE_STACK=/usr/bin/true QUADLET_TARGET_DIR="$uninstall_quadlet_dir" \
+  SYSTEMD_USER_TARGET_DIR="$uninstall_systemd_dir" \
+  "$UNINSTALL_STACK" --target-dir "$uninstall_quadlet_dir" --systemd-user-target-dir "$uninstall_systemd_dir"
+[[ ! -e "$uninstall_systemd_dir/erp4-migrate.service" && ! -L "$uninstall_systemd_dir/erp4-migrate.service" ]] || \
+  fail 'uninstaller left the managed migrate native link behind'
+
 stale_proxy_dir="$WORK_DIR/private-stale-proxy"
 mkdir -p "$stale_proxy_dir"
 : >"$stale_proxy_dir/erp4-caddy.env"
 run_failure 'private-smoke installer rejects stale proxy artifacts' 'back up and remove proxy artifacts explicitly' \
-  env SYSTEMCTL=true QUADLET_INSTALL_MODE=copy QUADLET_TARGET_DIR="$stale_proxy_dir" ERP4_IMAGE_TAG=test-profile \
+  env SYSTEMCTL=true QUADLET_INSTALL_MODE=copy QUADLET_TARGET_DIR="$stale_proxy_dir" \
+  SYSTEMD_USER_TARGET_DIR="$WORK_DIR/stale-proxy-systemd" ERP4_IMAGE_TAG=test-profile \
   "$INSTALL_UNITS" --profile private-smoke
 
 profile_args_file="$WORK_DIR/profile-args.txt"

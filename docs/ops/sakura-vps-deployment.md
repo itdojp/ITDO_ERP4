@@ -278,6 +278,7 @@ Google OIDC の backend redirect フローだけを使う場合、`VITE_GOOGLE_C
 非公開の導入リハーサルでは、上記の `production` を `private-smoke` に置き換える。profileはinstallだけでなくcheck/start/restart/updateにも同じ値を渡す。`private-smoke` installerはCaddyを配置せず、既存Caddy artifactを検出した場合は安全のため停止する。
 
 runtime env は `~/.config/containers/systemd/` 配下で管理する。
+Quadlet sourceも同ディレクトリへ配置し、native `.service` / `.timer` はinstallerが `~/.config/systemd/user/` へ管理対象symlinkとして登録する。Quadlet generatorはnative unitを生成しないため、手動配置時に両者を混同しない。
 
 重要:
 
