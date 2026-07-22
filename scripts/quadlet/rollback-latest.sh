@@ -6,6 +6,7 @@ RESTORE_LATEST="${RESTORE_LATEST:-$SCRIPT_DIR/restore-latest.sh}"
 RESTART_STACK="${RESTART_STACK:-$SCRIPT_DIR/restart-stack.sh}"
 BACKUP_DIR="${QUADLET_BACKUP_DIR:-$HOME/.local/share/erp4/quadlet-backups}"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
+SYSTEMD_USER_TARGET_DIR="${SYSTEMD_USER_TARGET_DIR:-$HOME/.config/systemd/user}"
 INCLUDE_PROXY=0
 PRINT_ARCHIVE=0
 SKIP_RESTART=0
@@ -20,6 +21,8 @@ Usage: $(basename "$0") [options]
   -h, --help             Show this help message and exit
   --backup-dir DIR       Directory that contains backup archives
   --target-dir DIR       Restore target directory (default: ~/.config/containers/systemd)
+  --systemd-user-target-dir DIR
+                         Pass through to restore-latest.sh
   --include-proxy        Restart erp4-caddy.service after restore
   --profile NAME         Use production, private-smoke, or https-trial when restarting
   --print-archive        Print the selected archive path before restore
@@ -46,6 +49,11 @@ while [[ $# -gt 0 ]]; do
     --target-dir)
       [[ $# -ge 2 ]] || fail 'missing argument for --target-dir'
       TARGET_DIR="$2"
+      shift 2
+      ;;
+    --systemd-user-target-dir)
+      [[ $# -ge 2 ]] || fail 'missing argument for --systemd-user-target-dir'
+      SYSTEMD_USER_TARGET_DIR="$2"
       shift 2
       ;;
     --include-proxy)
@@ -103,6 +111,7 @@ fi
 restore_args=(
   --backup-dir "$BACKUP_DIR"
   --target-dir "$TARGET_DIR"
+  --systemd-user-target-dir "$SYSTEMD_USER_TARGET_DIR"
   --overwrite
 )
 if [[ "$PRINT_ARCHIVE" -eq 1 ]]; then

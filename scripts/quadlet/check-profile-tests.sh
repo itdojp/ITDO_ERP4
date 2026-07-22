@@ -328,6 +328,25 @@ run_failure 'restore rejects unmanaged native systemd unit collision before extr
   --systemd-user-target-dir "$restore_collision_systemd_dir" --skip-daemon-reload
 [[ ! -e "$restore_collision_dir" ]] || fail 'native unit collision left a partial restore target'
 
+restore_latest_args_file="$WORK_DIR/restore-latest-args.txt"
+fake_list_backups="$WORK_DIR/fake-list-backups.sh"
+fake_restore_config="$WORK_DIR/fake-restore-config.sh"
+cat >"$fake_list_backups" <<EOF_FAKE_LIST_BACKUPS
+#!/usr/bin/env bash
+printf '%s\n' "$link_backup_archive"
+EOF_FAKE_LIST_BACKUPS
+cat >"$fake_restore_config" <<EOF_FAKE_RESTORE_CONFIG
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >"$restore_latest_args_file"
+EOF_FAKE_RESTORE_CONFIG
+chmod +x "$fake_list_backups" "$fake_restore_config"
+run_success 'restore-latest propagates native systemd target dir' \
+  env LIST_BACKUPS_SCRIPT="$fake_list_backups" RESTORE_CONFIG_SCRIPT="$fake_restore_config" \
+  "$ROOT_DIR/scripts/quadlet/restore-latest.sh" --target-dir "$link_restore_dir" \
+  --systemd-user-target-dir "$link_restore_systemd_dir" --overwrite --skip-daemon-reload
+grep -Fq -- "--systemd-user-target-dir $link_restore_systemd_dir" "$restore_latest_args_file" || \
+  fail 'restore-latest did not propagate systemd-user-target-dir to restore-config'
+
 unsafe_backup_dir="$WORK_DIR/unsafe-backup-source"
 mkdir -p "$unsafe_backup_dir"
 printf 'not-a-runtime-env\n' >"$WORK_DIR/outside.env"
@@ -581,7 +600,13 @@ fi
 
 fake_restore="$WORK_DIR/fake-restore.sh"
 fake_restart="$WORK_DIR/fake-restart.sh"
+rollback_restore_args_file="$WORK_DIR/rollback-restore-args.txt"
+rollback_systemd_dir="$WORK_DIR/rollback-systemd"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$fake_restore"
+cat >"$fake_restore" <<EOF_FAKE_RESTORE
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >"$rollback_restore_args_file"
+EOF_FAKE_RESTORE
 cat >"$fake_restart" <<EOF_FAKE_RESTART
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >"$profile_args_file"
@@ -589,8 +614,11 @@ EOF_FAKE_RESTART
 chmod +x "$fake_restore" "$fake_restart"
 run_success 'rollback latest propagates private-smoke profile' \
   env RESTORE_LATEST="$fake_restore" RESTART_STACK="$fake_restart" \
-  "$ROLLBACK_LATEST" --profile private-smoke --backup-dir "$WORK_DIR" --target-dir "$installed_private_dir" --skip-stack-check
+  "$ROLLBACK_LATEST" --profile private-smoke --backup-dir "$WORK_DIR" --target-dir "$installed_private_dir" \
+  --systemd-user-target-dir "$rollback_systemd_dir" --skip-stack-check
 grep -Fq -- '--profile private-smoke' "$profile_args_file" || fail 'rollback-latest did not propagate private-smoke to restart-stack'
+grep -Fq -- "--systemd-user-target-dir $rollback_systemd_dir" "$rollback_restore_args_file" || \
+  fail 'rollback-latest did not propagate systemd-user-target-dir to restore-latest'
 run_failure 'rollback latest rejects private-smoke proxy' 'private-smoke must not include proxy' \
   "$ROLLBACK_LATEST" --profile private-smoke --include-proxy --skip-restart
 

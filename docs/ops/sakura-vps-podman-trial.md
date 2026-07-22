@@ -406,6 +406,8 @@ stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の 
 ./scripts/quadlet/rollback-latest.sh --profile "$PROFILE" --include-proxy --skip-env-check
 ```
 
+検証用に native systemd user unit の配置先を既定以外へ分離している場合は、`restore-latest.sh` / `rollback-latest.sh` にも `--systemd-user-target-dir <dir>` を付けて、復元時のmanaged symlink再登録先を install/uninstall と一致させてください。
+
 バックアップ archive が増えた場合は、`prune-backups.sh` で保持数または保持日数に合わせて削除できます。`--keep-count` と `--keep-days` は併用でき、その場合はいずれかの条件を満たす archive を保持します。削除対象を先に確認したい場合は `--dry-run` を使ってください。
 
 ```bash
