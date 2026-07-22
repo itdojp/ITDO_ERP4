@@ -201,6 +201,7 @@ CHAT_ATTACHMENT_GDRIVE_CLIENT_ID=placeholder-client-id
 CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET=placeholder-client-secret
 CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN=placeholder-refresh-token
 CHAT_ATTACHMENT_GDRIVE_FOLDER_ID=placeholder-folder-id
+PDF_GDRIVE_FOLDER_ID=placeholder-pdf-folder-id
 ENV
 chmod 600 "$gdrive_legacy_env"
 
@@ -211,6 +212,7 @@ ERP4_GDRIVE_CLIENT_SECRET=placeholder-common-client-secret
 ERP4_GDRIVE_REFRESH_TOKEN=placeholder-common-refresh-token
 ERP4_GDRIVE_SHARED_DRIVE_ID=placeholder-shared-drive-id
 CHAT_ATTACHMENT_GDRIVE_FOLDER_ID=placeholder-folder-id
+PDF_GDRIVE_FOLDER_ID=placeholder-pdf-folder-id
 ENV
 chmod 600 "$gdrive_common_env"
 
@@ -226,6 +228,10 @@ run_smoke 'gcp-drive legacy alias dry-run with placeholder env' \
   scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_legacy_env" --mode read --markdown-summary "$SMOKE_DIR/gdrive-legacy.md"
 run_smoke 'gcp-drive common credential dry-run with placeholder env' \
   scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_common_env" --mode read --markdown-summary "$SMOKE_DIR/gdrive-common.md"
+run_smoke 'gcp-drive non-Chat target uses common credentials' \
+  scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_common_env" --target pdf --mode read --markdown-summary "$SMOKE_DIR/gdrive-pdf.md"
+run_controlled_check 'gcp-drive non-Chat target rejects legacy-only credentials' 'non-Chat targets do not use legacy fallback' \
+  scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_legacy_env" --target pdf --mode read
 gdrive_permissive_env="$SMOKE_DIR/gdrive-permissive-ci.env"
 cp "$gdrive_common_env" "$gdrive_permissive_env"
 chmod 644 "$gdrive_permissive_env"

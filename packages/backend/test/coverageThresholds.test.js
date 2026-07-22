@@ -333,7 +333,7 @@ test('auth coverage thresholds stay above the post-split baseline gate', () => {
   }
 });
 
-test('chat coverage scope includes current route, application, and storage adapter modules', () => {
+test('chat coverage scope includes current route, application, and Chat storage adapter modules', () => {
   const config = readCoverageThresholdConfig();
   const configuredFiles = [...config.chat.files].sort();
   const chatServicePattern = /^(chat[A-Z].*|personalGaChatRoom)\.ts$/;
@@ -346,7 +346,7 @@ test('chat coverage scope includes current route, application, and storage adapt
       .map((name) => `src/services/${name}`),
     ...listSourceFilesRecursive('src/application/chat'),
     'src/adapters/notifications/chatNotificationAdapter.ts',
-    ...listSourceFilesRecursive('src/adapters/storage'),
+    'src/adapters/storage/chatAttachmentStorageAdapter.ts',
     ...listSourceFilesRecursive('src/infrastructure/storage'),
     'src/cli/googleDriveCheck.ts',
     'src/cli/googleDriveCheckService.ts',
@@ -355,6 +355,35 @@ test('chat coverage scope includes current route, application, and storage adapt
   ].sort();
 
   assert.deepEqual(configuredFiles, expectedFiles);
+});
+
+test('storage coverage scope includes executable artifact storage foundation modules', () => {
+  const config = readCoverageThresholdConfig();
+  const configuredFiles = [...config.storage.files].sort();
+  const expectedFiles = [
+    'src/adapters/storage/artifactStorageAdapter.ts',
+    'src/application/storage/artifactMigrationService.ts',
+    'src/cli/storageArtifactMigration.ts',
+  ].sort();
+
+  assert.deepEqual(configuredFiles, expectedFiles);
+});
+
+test('storage coverage thresholds enforce the initial focused quality gate', () => {
+  const config = readCoverageThresholdConfig();
+  const minimums = {
+    statements: 89,
+    branches: 73.9,
+    functions: 100,
+    lines: 89,
+  };
+
+  for (const [metric, minimum] of Object.entries(minimums)) {
+    assert.ok(
+      config.storage.thresholds[metric] >= minimum,
+      `storage ${metric} threshold should stay >= ${minimum}`,
+    );
+  }
 });
 
 test('chat coverage thresholds stay above the route-split baseline gate', () => {

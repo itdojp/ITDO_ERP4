@@ -5,6 +5,7 @@ export type ObjectStoreBody = Buffer | (() => Readable);
 export type ObjectStorePutInput = {
   body: ObjectStoreBody;
   contentType: string | null;
+  idempotencyKey?: string;
   originalName: string;
   sha256: string;
   sizeBytes: number;

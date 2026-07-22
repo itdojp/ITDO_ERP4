@@ -40,6 +40,7 @@ const contexts = [
     name: 'documents',
     displayName: 'Documents',
     patterns: [
+      '^src/application/pdf/.+\\.ts$',
       '^src/routes/(dailyReports|drafts|estimates|expenses|invoices|leave|leaveEntitlements|leaveSettings|leaveWorkdayCalendar|purchaseOrders|send|timeEntries|vendorDocs|worklogSettings)\\.ts$',
       '^src/services/(expenseBudget|expenseQaChecklist|expenseStateTransitionLog|leaveCompGrants|leaveEntitlements|leaveSettings|leaveTypes|leaveWorkdayCalendar|numbering|recurring|vendorInvoiceAllocations|vendorInvoiceLineReconciliation|vendorInvoiceLines|worklogSetting)\\.ts$',
     ],
@@ -56,6 +57,7 @@ const contexts = [
     name: 'evidence-references',
     displayName: 'Evidence & References',
     patterns: [
+      '^src/application/evidence/.+\\.ts$',
       '^src/routes/(annotationSettings|annotations|evidenceSnapshots)\\.ts$',
       '^src/services/(annotationReferences|evidencePackArchive|evidencePackExport|evidenceSnapshot)\\.ts$',
     ],
@@ -121,6 +123,7 @@ const layers = [
       '^src/application/vendorDocs/.+\\.ts$',
       '^src/application/leave/.+\\.ts$',
       '^src/application/reportSubscriptions/.+\\.ts$',
+      '^src/application/storage/.+\\.ts$',
       '^src/routes/(index|insights|recurringJobs|refCandidates|reportSubscriptions|reports|search|sendEvents|testHooks|wellbeing)\\.ts$',
       '^src/services/(accountingEvents|approvalEscalation|dailyReportMissing|leaveEntitlementReminders|reports)\\.ts$',
     ],
@@ -147,7 +150,7 @@ const layers = [
     patterns: [
       '^src/adapters/notifications/.+\\.ts$',
       '^src/adapters/storage/.+\\.ts$',
-      '^src/cli/googleDrive(Check|CheckService|ProvisionFolder|ProvisionService)\\.ts$',
+      '^src/cli/(googleDrive(Check|CheckService|ProvisionFolder|ProvisionService)|storageArtifactMigration)\\.ts$',
       '^src/infrastructure/storage/.+\\.ts$',
       '^src/routes/(pdfFiles|pdfTemplates|templateSettings)\\.ts$',
       '^src/services/(audit|db|envValidation|notifier|pdf|pdfTemplates|readiness|safeHttpClient|webPush)\\.ts$',
