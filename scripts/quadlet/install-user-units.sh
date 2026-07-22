@@ -126,6 +126,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+command -v realpath >/dev/null 2>&1 || fail 'required command not found: realpath'
+[[ -n "$TARGET_DIR" ]] || fail 'target directory must not be empty'
+[[ -n "$SYSTEMD_USER_TARGET_DIR" ]] || fail 'systemd user target directory must not be empty'
+TARGET_DIR="$(realpath -m -- "$TARGET_DIR")"
+SYSTEMD_USER_TARGET_DIR="$(realpath -m -- "$SYSTEMD_USER_TARGET_DIR")"
+
 case "$PROFILE" in
   production|private-smoke|https-trial) ;;
   *) fail "unknown profile: $PROFILE" ;;

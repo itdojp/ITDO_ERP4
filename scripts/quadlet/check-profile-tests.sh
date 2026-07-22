@@ -231,6 +231,24 @@ run_failure 'installer refuses unmanaged native systemd unit collision' 'will no
 [[ ! -e "$WORK_DIR/native-collision-quadlet" ]] || fail 'native unit collision left a partial Quadlet install'
 [[ "$(find "$native_collision_dir" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ]] || \
   fail 'native unit collision left partial systemd user registrations'
+
+relative_install_cwd="$WORK_DIR/relative-install-cwd"
+mkdir -p "$relative_install_cwd"
+run_success 'installer canonicalizes relative native unit link targets' \
+  env SYSTEMCTL=true QUADLET_INSTALL_MODE=copy ERP4_IMAGE_TAG=test-profile \
+  bash -c 'cd "$1" && "$2" --profile private-smoke --target-dir quadlet --systemd-user-target-dir systemd-user' \
+  bash "$relative_install_cwd" "$INSTALL_UNITS"
+[[ "$(readlink "$relative_install_cwd/systemd-user/erp4-migrate.service")" == \
+  "$relative_install_cwd/quadlet/erp4-migrate.service" ]] || \
+  fail 'installer wrote a non-canonical relative native unit link target'
+run_success 'uninstaller canonicalizes relative managed native unit paths' \
+  env SYSTEMCTL=true DISABLE_STACK=/usr/bin/true bash -c \
+  'cd "$1" && "$2" --target-dir quadlet --systemd-user-target-dir systemd-user' \
+  bash "$relative_install_cwd" "$UNINSTALL_STACK"
+[[ ! -e "$relative_install_cwd/systemd-user/erp4-migrate.service" && \
+  ! -L "$relative_install_cwd/systemd-user/erp4-migrate.service" ]] || \
+  fail 'uninstaller left a managed native unit installed through a relative target path'
+
 write_postgres_env "$installed_private_dir"
 write_private_backend_env "$installed_private_dir"
 write_frontend_env "$installed_private_frontend" 'http://erp4-backend:3001'
@@ -318,6 +336,16 @@ run_success 'restore skip-daemon-reload still registers native systemd units' \
   --skip-daemon-reload
 [[ -L "$link_restore_skip_systemd_dir/erp4-migrate.service" ]] || \
   fail 'restore --skip-daemon-reload skipped native systemd unit registration'
+
+relative_restore_cwd="$WORK_DIR/relative-restore-cwd"
+mkdir -p "$relative_restore_cwd"
+run_success 'restore canonicalizes relative native unit link targets' \
+  env SYSTEMCTL=/usr/bin/false bash -c \
+  'cd "$1" && "$2" --archive "$3" --target-dir quadlet --systemd-user-target-dir systemd-user --skip-daemon-reload' \
+  bash "$relative_restore_cwd" "$RESTORE_CONFIG" "$link_backup_archive"
+[[ "$(readlink "$relative_restore_cwd/systemd-user/erp4-migrate.service")" == \
+  "$relative_restore_cwd/quadlet/erp4-migrate.service" ]] || \
+  fail 'restore wrote a non-canonical relative native unit link target'
 
 restore_collision_dir="$WORK_DIR/link-backup-restore-collision"
 restore_collision_systemd_dir="$WORK_DIR/link-backup-restore-collision-systemd"

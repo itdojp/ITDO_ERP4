@@ -154,7 +154,7 @@ ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" \
 - `~/.config/containers/systemd/erp4-postgres.env`
 - `~/.config/containers/systemd/erp4-backend.env`
 
-`.service` / `.timer` は設定バックアップとの互換性のため上記ディレクトリにも保持しますが、Quadlet generatorの対象ではありません。installerはsystemd user managerが読み込めるよう、同じnative unitへの管理対象symlinkを `~/.config/systemd/user/` に登録します。既存の通常ファイルまたは別の参照先を持つsymlinkと競合した場合は上書きせず停止します。検証用に配置先を分離する場合は `SYSTEMD_USER_TARGET_DIR` または `--systemd-user-target-dir` を明示してください。
+`.service` / `.timer` は設定バックアップとの互換性のため上記ディレクトリにも保持しますが、Quadlet generatorの対象ではありません。installerはsystemd user managerが読み込めるよう、同じnative unitへの管理対象symlinkを `~/.config/systemd/user/` に登録します。既存の通常ファイルまたは別の参照先を持つsymlinkと競合した場合は上書きせず停止します。検証用に配置先を分離する場合は `SYSTEMD_USER_TARGET_DIR` または `--systemd-user-target-dir` を明示してください。install/restore/uninstall helperは、相対指定されたQuadlet targetとsystemd user targetを現在の作業ディレクトリ基準の絶対pathへ正規化してからmanaged linkを操作します。
 
 `erp4-postgres.env` の例:
 
