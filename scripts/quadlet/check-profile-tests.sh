@@ -69,7 +69,7 @@ verify_native_unit_semantics() {
   local source_dir="$2"
   local verify_dir="$WORK_DIR/systemd-verify-${label//[^A-Za-z0-9_.-]/_}"
   local unit_path="$verify_dir"
-  local systemd_dir output status name
+  local systemd_dir output status name verify_executable
   local -a native_services=(
     erp4-config-backup.service
     erp4-config-prune.service
@@ -80,9 +80,21 @@ verify_native_unit_semantics() {
   local -a verify_paths=()
 
   command -v systemd-analyze >/dev/null 2>&1 || fail 'required command not found: systemd-analyze'
+  verify_executable="$(type -P true)"
+  [[ "$verify_executable" == /* && -x "$verify_executable" ]] || \
+    fail 'required executable not found for static unit verification: true'
   mkdir -p "$verify_dir"
   for name in "${native_services[@]}"; do
-    cp -- "$source_dir/$name" "$verify_dir/$name"
+    if [[ "$name" == erp4-migrate.service ]]; then
+      grep -Fq 'ExecStart=/usr/bin/podman run ' "$source_dir/$name" || \
+        fail 'migration service does not use the expected Podman ExecStart'
+      sed "s|^ExecStart=/usr/bin/podman run |ExecStart=$verify_executable run |" \
+        "$source_dir/$name" >"$verify_dir/$name"
+      grep -Fq "ExecStart=$verify_executable run " "$verify_dir/$name" || \
+        fail 'could not isolate migration service verification from the Podman executable'
+    else
+      cp -- "$source_dir/$name" "$verify_dir/$name"
+    fi
     verify_paths+=("$verify_dir/$name")
   done
   for name in erp4-postgres.service erp4-backend.service; do
