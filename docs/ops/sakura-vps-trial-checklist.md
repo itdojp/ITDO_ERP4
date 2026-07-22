@@ -80,7 +80,7 @@ ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" \
   - `~/.config/systemd/user/erp4-config-backup.timer`
   - `~/.config/systemd/user/erp4-db-backup.timer`
 
-native `.service` / `.timer` は `~/.config/containers/systemd/` 側の管理対象ファイルを参照するsymlinkとして `~/.config/systemd/user/` に登録される。通常ファイルまたは別の参照先との競合時はinstallerが上書きせず停止する。
+native `.service` / `.timer` は `~/.config/containers/systemd/` 側の管理対象ファイルを参照するsymlinkとして `~/.config/systemd/user/` に登録される。path依存のnative serviceはinstall時に選択した絶対`QUADLET_TARGET_DIR`を埋め込み、unit内部の`EnvironmentFile`、migrationの`--env-file`、backup処理のtargetを同じ配置先へ揃える。通常ファイルまたは別の参照先との競合時はinstallerが上書きせず停止する。
 
 ### 5. runtime env / proxy 設定の編集と検証
 

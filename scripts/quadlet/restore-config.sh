@@ -8,6 +8,9 @@ OVERWRITE=0
 LIST_ONLY=0
 SKIP_DAEMON_RELOAD=0
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
+TARGET_MARKER_PREFIX='# X-ERP4-QuadletTarget='
+LEGACY_TARGET='%h/.config/containers/systemd'
+LEGACY_SHELL_TARGET='$HOME/.config/containers/systemd'
 NATIVE_UNITS=(
   erp4-migrate.service
   erp4-config-backup.service
@@ -18,6 +21,13 @@ NATIVE_UNITS=(
   erp4-config-prune.timer
   erp4-storage-readiness.service
   erp4-storage-readiness.timer
+)
+PATH_DEPENDENT_NATIVE_UNITS=(
+  erp4-migrate.service
+  erp4-config-backup.service
+  erp4-db-backup.service
+  erp4-config-prune.service
+  erp4-storage-readiness.service
 )
 
 usage() {
@@ -58,6 +68,70 @@ is_managed_native_unit() {
     [[ "$candidate" == "$name" ]] && return 0
   done
   return 1
+}
+
+is_path_dependent_native_unit() {
+  local candidate="$1"
+  local name
+  for name in "${PATH_DEPENDENT_NATIVE_UNITS[@]}"; do
+    [[ "$candidate" == "$name" ]] && return 0
+  done
+  return 1
+}
+
+validate_native_target_path() {
+  local path="$1"
+  [[ "$path" =~ ^/[A-Za-z0-9._/+:,-]+$ ]] || \
+    fail "native unit contains an unsafe Quadlet target path: $path"
+}
+
+preflight_native_unit_targets() {
+  local name content marker old_target occurrence_count
+  local -a markers=()
+  for name in "${restored_native_units[@]}"; do
+    is_path_dependent_native_unit "$name" || continue
+    content="$(tar -xOzf "$ARCHIVE" "$name")" || fail "could not read native unit from archive: $name"
+    markers=()
+    mapfile -t markers < <(grep -F "$TARGET_MARKER_PREFIX" <<<"$content" || true)
+    if [[ ${#markers[@]} -gt 1 ]]; then
+      fail "native unit contains multiple Quadlet target markers: $name"
+    fi
+    if [[ ${#markers[@]} -eq 1 ]]; then
+      marker="${markers[0]}"
+      [[ "$marker" == "$TARGET_MARKER_PREFIX"* ]] || fail "invalid Quadlet target marker: $name"
+      old_target="${marker#"$TARGET_MARKER_PREFIX"}"
+      validate_native_target_path "$old_target"
+    elif grep -Fq "$LEGACY_TARGET" <<<"$content"; then
+      old_target="$LEGACY_TARGET"
+    else
+      fail "native unit does not declare its Quadlet target path: $name"
+    fi
+    occurrence_count="$({ grep -Fo "$old_target" <<<"$content" || true; } | wc -l)"
+    [[ "$occurrence_count" -ge 2 || "$old_target" == "$LEGACY_TARGET" && "$occurrence_count" -ge 1 ]] || \
+      fail "native unit Quadlet target marker is not used by the unit: $name"
+    restored_native_unit_old_targets["$name"]="$old_target"
+  done
+}
+
+render_restored_native_unit_targets() {
+  local name source old_target temp_file line
+  for name in "${!restored_native_unit_old_targets[@]}"; do
+    source="$TARGET_DIR/$name"
+    old_target="${restored_native_unit_old_targets[$name]}"
+    temp_file="$(mktemp "$TARGET_DIR/.${name}.tmp.XXXXXX")" || fail "could not create temporary restored unit: $name"
+    if ! {
+      printf '%s%s\n' "$TARGET_MARKER_PREFIX" "$TARGET_DIR"
+      while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ "$line" == "$TARGET_MARKER_PREFIX"* ]] && continue
+        line="${line//"$old_target"/"$TARGET_DIR"}"
+        line="${line//"$LEGACY_SHELL_TARGET"/"$TARGET_DIR"}"
+        printf '%s\n' "$line"
+      done <"$source"
+    } >"$temp_file" || ! chmod 0644 "$temp_file" || ! mv -fT -- "$temp_file" "$source"; then
+      rm -f -- "$temp_file"
+      fail "could not render restored native unit target: $name"
+    fi
+  done
 }
 
 ensure_private_directory() {
@@ -143,6 +217,7 @@ command -v realpath >/dev/null 2>&1 || fail 'required command not found: realpat
 [[ -n "$SYSTEMD_USER_TARGET_DIR" ]] || fail 'systemd user target directory must not be empty'
 TARGET_DIR="$(realpath -m -- "$TARGET_DIR")"
 SYSTEMD_USER_TARGET_DIR="$(realpath -m -- "$SYSTEMD_USER_TARGET_DIR")"
+validate_native_target_path "$TARGET_DIR"
 
 [[ -n "$ARCHIVE" ]] || fail '--archive is required'
 [[ -f "$ARCHIVE" ]] || fail "archive not found: $ARCHIVE"
@@ -161,6 +236,7 @@ mapfile -t entry_details <<<"$entry_details_output"
 
 requires_daemon_reload=0
 restored_native_units=()
+declare -A restored_native_unit_old_targets=()
 for i in "${!entries[@]}"; do
   entry="${entries[$i]}"
   detail="${entry_details[$i]}"
@@ -183,6 +259,7 @@ if [[ "$LIST_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
+preflight_native_unit_targets
 preflight_native_unit_links
 
 if [[ "$OVERWRITE" -eq 0 ]]; then
@@ -205,6 +282,7 @@ fi
 
 ensure_private_directory "$TARGET_DIR"
 tar -C "$TARGET_DIR" --no-same-owner --no-same-permissions -xzf "$ARCHIVE"
+render_restored_native_unit_targets
 register_native_unit_links
 
 if [[ "$SKIP_DAEMON_RELOAD" -eq 0 && "$requires_daemon_reload" -eq 1 ]]; then

@@ -379,6 +379,8 @@ Quadlet の unit 定義ファイル自体を取り除く場合:
 
 `uninstall-stack.sh` は `disable-stack.sh` を先に実行したうえで、installerが登録したmigrate、backup、prune、storage readinessのnative service/timerを停止・無効化します。その後、`~/.config/containers/systemd/` 配下の管理対象unit定義、PostgreSQL unit state、`~/.config/systemd/user/` 配下の管理対象symlinkを削除し、最後に `systemctl --user daemon-reload` でuser managerの定義キャッシュを更新します。別の参照先を持つsymlinkや通常ファイルは停止・削除しません。既定では `erp4-postgres.env` / `erp4-backend.env` / `erp4-frontend-build.env` / `erp4-maintenance.env` / `erp4-storage-readiness.env` と、proxy用の `erp4-caddy.env` / `erp4-caddy.Caddyfile` を保持します。これらのsecret、保守設定、ドメイン設定、frontend build用envも消したい場合だけ `--purge-config` を使ってください。Podman volumeやイメージ、アプリケーションデータ自体は削除しません。
 
+`install-user-units.sh --target-dir` はnative service内部の`EnvironmentFile`、migrationの`--env-file`、backupの`QUADLET_TARGET_DIR`へ、正規化済みの同じ絶対pathを埋め込みます。unit構文へ安全に埋め込めない文字を含むtarget pathは部分install前に拒否します。`--include-units` backup内のpath依存serviceには配置先markerを保持し、`restore-config.sh`はarchive展開前にmarkerを検証したうえで、新しいrestore targetへ全参照を再配置します。これにより非既定targetへrestore/rollbackしても、native lifecycleが既定の`~/.config/containers/systemd/`を参照しません。
+
 ## 5.1 設定バックアップ
 
 stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の env/config を tar.gz で退避できます。既定ではbackend、frontend build、PostgreSQL、maintenance、storage readiness用のenvを対象にし、`--include-proxy` でCaddy設定、`--include-units` でQuadlet定義も含めます。maintenanceとstorage readinessのenvにはbackup保存先、保持設定、provider/readiness設定などの機微情報が含まれ得るため、archive全体をsecretとして扱います。既定の出力先は `~/.local/share/erp4/quadlet-backups/` です。

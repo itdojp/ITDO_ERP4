@@ -131,6 +131,8 @@ command -v realpath >/dev/null 2>&1 || fail 'required command not found: realpat
 [[ -n "$SYSTEMD_USER_TARGET_DIR" ]] || fail 'systemd user target directory must not be empty'
 TARGET_DIR="$(realpath -m -- "$TARGET_DIR")"
 SYSTEMD_USER_TARGET_DIR="$(realpath -m -- "$SYSTEMD_USER_TARGET_DIR")"
+[[ "$TARGET_DIR" =~ ^/[A-Za-z0-9._/+:,-]+$ ]] || \
+  fail "target directory contains characters unsafe for native systemd unit rendering: $TARGET_DIR"
 
 case "$PROFILE" in
   production|private-smoke|https-trial) ;;
@@ -149,16 +151,22 @@ export ERP4_IMAGE_TAG
 
 install_unit() {
   local src="$1"
-  local name
+  local name temp_file
   name="$(basename "$src")"
   local profile_src="$SRC_DIR/profiles/$PROFILE/$name"
   if [[ -f "$profile_src" ]]; then
     src="$profile_src"
   fi
   local dst="$TARGET_DIR/$name"
-  if grep -Fq 'REPLACE_WITH_COMMIT_SHA' "$src"; then
-    sed "s/REPLACE_WITH_COMMIT_SHA/${ERP4_IMAGE_TAG}/g" "$src" > "$dst"
-    chmod 0644 "$dst"
+  if grep -Eq 'REPLACE_WITH_COMMIT_SHA|/REPLACE_WITH_QUADLET_TARGET_DIR' "$src"; then
+    temp_file="$(mktemp "$TARGET_DIR/.${name}.tmp.XXXXXX")" || fail "could not create temporary unit file for $name"
+    if ! sed \
+      -e "s|REPLACE_WITH_COMMIT_SHA|${ERP4_IMAGE_TAG}|g" \
+      -e "s|/REPLACE_WITH_QUADLET_TARGET_DIR|${TARGET_DIR}|g" \
+      "$src" >"$temp_file" || ! chmod 0644 "$temp_file" || ! mv -fT -- "$temp_file" "$dst"; then
+      rm -f -- "$temp_file"
+      fail "could not render unit: $name"
+    fi
   elif [[ "$MODE" == "copy" ]]; then
     install -m 0644 "$src" "$dst"
   else

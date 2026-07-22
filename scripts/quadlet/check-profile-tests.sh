@@ -212,6 +212,19 @@ for native_unit in \
   [[ "$(readlink "$native_path")" == "$installed_private_dir/$native_unit" ]] || \
     fail "native systemd user unit points outside the managed Quadlet target: $native_unit"
 done
+for path_dependent_unit in \
+  erp4-migrate.service \
+  erp4-config-backup.service \
+  erp4-db-backup.service \
+  erp4-config-prune.service \
+  erp4-storage-readiness.service; do
+  grep -Fq "$installed_private_dir" "$installed_private_dir/$path_dependent_unit" || \
+    fail "installer did not render the Quadlet target into native unit: $path_dependent_unit"
+  if grep -Eq 'REPLACE_WITH_QUADLET_TARGET_DIR|%h/\.config/containers/systemd' \
+    "$installed_private_dir/$path_dependent_unit"; then
+    fail "installer left a stale Quadlet target in native unit: $path_dependent_unit"
+  fi
+done
 if find "$installed_private_systemd_dir" -maxdepth 1 \
   \( -name '*.container' -o -name '*.network' -o -name '*.volume' \) -print -quit | grep -q .; then
   fail 'installer registered a Quadlet source in the native systemd user unit path'
@@ -231,6 +244,11 @@ run_failure 'installer refuses unmanaged native systemd unit collision' 'will no
 [[ ! -e "$WORK_DIR/native-collision-quadlet" ]] || fail 'native unit collision left a partial Quadlet install'
 [[ "$(find "$native_collision_dir" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ]] || \
   fail 'native unit collision left partial systemd user registrations'
+run_failure 'installer rejects a native target path unsafe for unit rendering' 'unsafe for native systemd unit rendering' \
+  env SYSTEMCTL=true ERP4_IMAGE_TAG=test-profile \
+  "$INSTALL_UNITS" --profile private-smoke --target-dir "$WORK_DIR/unsafe target" \
+  --systemd-user-target-dir "$WORK_DIR/unsafe-target-systemd"
+[[ ! -e "$WORK_DIR/unsafe target" ]] || fail 'unsafe target validation left a partial install'
 
 relative_install_cwd="$WORK_DIR/relative-install-cwd"
 mkdir -p "$relative_install_cwd"
@@ -266,8 +284,11 @@ run_success 'default link-mode installer prepares backup fixture' \
   env SYSTEMCTL=true QUADLET_TARGET_DIR="$link_backup_quadlet_dir" \
   SYSTEMD_USER_TARGET_DIR="$link_backup_systemd_dir" ERP4_IMAGE_TAG=test-profile \
   "$INSTALL_UNITS" --profile private-smoke
-[[ -L "$link_backup_quadlet_dir/erp4-config-backup.service" ]] || \
-  fail 'default installer mode did not create the expected managed unit link fixture'
+[[ -L "$link_backup_quadlet_dir/erp4-postgres.volume" ]] || \
+  fail 'default installer mode did not create the expected managed Quadlet link fixture'
+[[ -f "$link_backup_quadlet_dir/erp4-config-backup.service" && \
+  ! -L "$link_backup_quadlet_dir/erp4-config-backup.service" ]] || \
+  fail 'default installer mode did not render the path-dependent native unit as a regular file'
 link_backup_archive="$(
   "$BACKUP_CONFIG" \
     --target-dir "$link_backup_quadlet_dir" \
@@ -327,6 +348,51 @@ for restored_name in \
   [[ "$(readlink "$link_restore_systemd_dir/$restored_name")" == "$link_restore_dir/$restored_name" ]] || \
     fail "restored native systemd unit points outside the restore target: $restored_name"
 done
+for path_dependent_unit in \
+  erp4-migrate.service \
+  erp4-config-backup.service \
+  erp4-db-backup.service \
+  erp4-config-prune.service \
+  erp4-storage-readiness.service; do
+  grep -Fq "$link_restore_dir" "$link_restore_dir/$path_dependent_unit" || \
+    fail "restore did not relocate native unit to the restore target: $path_dependent_unit"
+  if grep -Fq "$link_backup_quadlet_dir" "$link_restore_dir/$path_dependent_unit" || \
+    grep -Eq 'REPLACE_WITH_QUADLET_TARGET_DIR|%h/\.config/containers/systemd' \
+      "$link_restore_dir/$path_dependent_unit"; then
+    fail "restore retained a stale Quadlet target in native unit: $path_dependent_unit"
+  fi
+done
+
+legacy_unit_stage="$WORK_DIR/legacy-unit-stage"
+legacy_unit_archive="$WORK_DIR/legacy-unit-archive.tar.gz"
+legacy_restore_dir="$WORK_DIR/legacy-unit-restore"
+legacy_restore_systemd_dir="$WORK_DIR/legacy-unit-restore-systemd"
+mkdir -p "$legacy_unit_stage"
+legacy_path_dependent_units=(
+  erp4-migrate.service
+  erp4-config-backup.service
+  erp4-db-backup.service
+  erp4-config-prune.service
+  erp4-storage-readiness.service
+)
+for path_dependent_unit in "${legacy_path_dependent_units[@]}"; do
+  sed \
+    -e '/^# X-ERP4-QuadletTarget=/d' \
+    -e "s|$link_backup_quadlet_dir|%h/.config/containers/systemd|g" \
+    "$link_backup_quadlet_dir/$path_dependent_unit" >"$legacy_unit_stage/$path_dependent_unit"
+done
+tar -C "$legacy_unit_stage" -czf "$legacy_unit_archive" "${legacy_path_dependent_units[@]}"
+run_success 'restore relocates markerless legacy native units' \
+  env SYSTEMCTL=true "$RESTORE_CONFIG" --archive "$legacy_unit_archive" \
+  --target-dir "$legacy_restore_dir" --systemd-user-target-dir "$legacy_restore_systemd_dir"
+for path_dependent_unit in "${legacy_path_dependent_units[@]}"; do
+  grep -Fq "$legacy_restore_dir" "$legacy_restore_dir/$path_dependent_unit" || \
+    fail "legacy restore did not render the new Quadlet target: $path_dependent_unit"
+  if grep -Eq '%h/\.config/containers/systemd|\$HOME/\.config/containers/systemd' \
+    "$legacy_restore_dir/$path_dependent_unit"; then
+    fail "legacy restore retained a default Quadlet target: $path_dependent_unit"
+  fi
+done
 
 link_restore_skip_dir="$WORK_DIR/link-backup-restore-skip-reload"
 link_restore_skip_systemd_dir="$WORK_DIR/link-backup-restore-skip-reload-systemd"
@@ -346,6 +412,8 @@ run_success 'restore canonicalizes relative native unit link targets' \
 [[ "$(readlink "$relative_restore_cwd/systemd-user/erp4-migrate.service")" == \
   "$relative_restore_cwd/quadlet/erp4-migrate.service" ]] || \
   fail 'restore wrote a non-canonical relative native unit link target'
+grep -Fq "$relative_restore_cwd/quadlet" "$relative_restore_cwd/quadlet/erp4-migrate.service" || \
+  fail 'restore did not render the canonical relative target into the native unit'
 
 restore_collision_dir="$WORK_DIR/link-backup-restore-collision"
 restore_collision_systemd_dir="$WORK_DIR/link-backup-restore-collision-systemd"
