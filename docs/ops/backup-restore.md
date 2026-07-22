@@ -242,6 +242,18 @@ BACKUP_DIGEST='<sanitized SHA-256 selector>' make backup-gdrive-stat
 
 summaryは世代数、最新時刻、fresh/stale/unknown、anomaly件数、object件数だけを返す。Drive quotaを取得できない場合は`unknown`とし、値を推測しない。file IDは`BACKUP_GDRIVE_STATE_DIR`（未指定時`BACKUP_DIR/.gdrive-state`）のmode 600 JSONだけへ記録する。
 
+secondary uploadは1 writer hostに限定し、同一host上のtimer・手動実行を含む全processで同じ永続`BACKUP_GDRIVE_STATE_DIR`を使用する。hash化backup ID単位のexclusive lockを取得できない場合は、Driveへwriteせず`backup_google_drive_upload_in_progress`で停止する。複数hostまたは異なるstate directoryから同じbackup folderへuploadしてはならない。
+
+異常終了後に`backup_google_drive_upload_in_progress`が継続する場合、lockを自動期限切れにしない。運用担当者はprivate host上で次を確認する。
+
+1. 同一世代のsecondary CLI / backup timerが実行中でない。
+2. primary bundleとmanifestが保持されている。
+3. read-only inventoryで同一世代のcomplete / incomplete / duplicate状態を確認した。
+4. 実行中processがないことを別担当者と確認後、`BACKUP_GDRIVE_STATE_DIR`内の該当hash lockだけを解除する。
+5. incomplete / duplicateがある場合は再uploadせず、後述のpartial upload手順へ進む。objectが存在しない場合だけ同じbundleを再実行する。
+
+lock名、backup digest、state JSON、Drive identifierはprivate evidenceとして扱い、Issue・PR・公開logへ転記しない。
+
 Driveからの復元入力取得は、hash化backup selectorとowner-only出力先を使う。既存fileを上書きせず、全objectのSHA-256 / MD5 / size、manifest、OpenPGP packet、bundle整合を再検証してからhandoff JSONを作る。
 
 ```bash

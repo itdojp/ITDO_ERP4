@@ -533,6 +533,86 @@ async function ensurePrivateStateDir(stateDir: string) {
   }
 }
 
+type GenerationUploadLock = {
+  dev: number;
+  handle: FileHandle;
+  ino: number;
+  lockPath: string;
+};
+
+async function acquireGenerationUploadLock(
+  stateDir: string,
+  backupDigest: string,
+): Promise<GenerationUploadLock> {
+  await ensurePrivateStateDir(stateDir);
+  const lockPath = path.join(stateDir, `.upload-${backupDigest}.lock`);
+  let handle: FileHandle;
+  try {
+    handle = await open(
+      lockPath,
+      constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_RDWR |
+        constants.O_NOFOLLOW,
+      0o600,
+    );
+  } catch (error) {
+    const code =
+      error && typeof error === 'object' && 'code' in error
+        ? String(error.code)
+        : '';
+    if (code === 'EEXIST') fail('backup_google_drive_upload_in_progress');
+    fail('backup_google_drive_lock_failed');
+  }
+  try {
+    const info = await handle.stat({ bigint: false });
+    if (
+      !info.isFile() ||
+      info.uid !== process.getuid?.() ||
+      (info.mode & 0o077) !== 0
+    ) {
+      fail('backup_google_drive_lock_failed');
+    }
+    await handle.sync();
+    return {
+      dev: Number(info.dev),
+      handle,
+      ino: Number(info.ino),
+      lockPath,
+    };
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await unlink(lockPath).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function releaseGenerationUploadLock(lock: GenerationUploadLock) {
+  try {
+    const [opened, current] = await Promise.all([
+      lock.handle.stat({ bigint: false }),
+      lstat(lock.lockPath),
+    ]);
+    if (
+      !current.isFile() ||
+      current.isSymbolicLink() ||
+      current.uid !== process.getuid?.() ||
+      (current.mode & 0o077) !== 0 ||
+      Number(opened.dev) !== lock.dev ||
+      Number(opened.ino) !== lock.ino ||
+      Number(current.dev) !== lock.dev ||
+      Number(current.ino) !== lock.ino
+    ) {
+      fail('backup_google_drive_lock_release_failed');
+    }
+    await unlink(lock.lockPath);
+  } catch {
+    fail('backup_google_drive_lock_release_failed');
+  } finally {
+    await lock.handle.close().catch(() => undefined);
+  }
+}
+
 async function writePrivateState(
   stateDir: string,
   document: Record<string, unknown>,
@@ -576,96 +656,104 @@ export async function uploadBackupBundle(options: {
     options.assertEncrypted ?? ((handle) => assertOpenPgpEncrypted(handle)),
   );
   try {
-    const uploaded: Array<{
-      artifactType: BackupArtifactType;
-      fileId: string;
-      originalName: string;
-      role: BackupObjectRole;
-      sha256: string;
-      sizeBytes: number;
-    }> = [];
-    for (const source of pinned) {
-      if (
-        !identitiesMatch(
-          source.identity,
-          identity(await source.handle.stat({ bigint: false })),
-        )
-      ) {
-        fail('backup_google_drive_source_changed');
-      }
-      const artifactName = path.basename(source.artifactPath);
-      const artifactProperties = backupProperties(
-        source.manifest,
-        'artifact',
-        source.manifest.artifact.sha256,
-        source.md5,
-      );
-      const artifact = await putIdempotently(options.store, {
-        body: (start = 0) =>
-          source.handle.createReadStream({ autoClose: false, start }),
-        contentType: 'application/octet-stream',
-        name: artifactName,
-        properties: artifactProperties,
-        md5: source.md5,
-        sha256: source.manifest.artifact.sha256,
-        sizeBytes: source.manifest.artifact.sizeBytes,
-      });
-      const manifestName = `${artifactName}.manifest.json`;
-      const manifestProperties = backupProperties(
-        source.manifest,
-        'manifest',
-        source.manifestSha256,
-        source.manifestMd5,
-      );
-      const manifest = await putIdempotently(options.store, {
-        body: source.manifestBuffer,
-        contentType: 'application/json',
-        name: manifestName,
-        properties: manifestProperties,
-        md5: source.manifestMd5,
-        sha256: source.manifestSha256,
-        sizeBytes: source.manifestBuffer.length,
-      });
-      await readRemote(options.store, manifest);
-      if (options.verifyDownload) await readRemote(options.store, artifact);
-      uploaded.push(
-        {
-          artifactType: source.manifest.artifact.type,
-          fileId: artifact.key,
-          originalName: artifactName,
-          role: 'artifact',
-          sha256: source.manifest.artifact.sha256,
-          sizeBytes: source.manifest.artifact.sizeBytes,
-        },
-        {
-          artifactType: source.manifest.artifact.type,
-          fileId: manifest.key,
-          originalName: manifestName,
-          role: 'manifest',
-          sha256: source.manifestSha256,
-          sizeBytes: source.manifestBuffer.length,
-        },
-      );
-    }
     const first = pinned[0].manifest;
     const backupDigest = hashBuffer(Buffer.from(first.backupId));
-    await writePrivateState(
+    const lock = await acquireGenerationUploadLock(
       options.stateDir,
-      {
-        schemaVersion: 'erp4.backup.gdrive-state.v1',
-        backupDigest,
-        generatedAt: first.generatedAt,
-        retentionClass: first.retentionClass,
-        files: uploaded,
-      },
       backupDigest,
     );
-    return {
-      backupDigest,
-      objectCount: uploaded.length,
-      retentionClass: first.retentionClass,
-      status: 'success' as const,
-    };
+    try {
+      const uploaded: Array<{
+        artifactType: BackupArtifactType;
+        fileId: string;
+        originalName: string;
+        role: BackupObjectRole;
+        sha256: string;
+        sizeBytes: number;
+      }> = [];
+      for (const source of pinned) {
+        if (
+          !identitiesMatch(
+            source.identity,
+            identity(await source.handle.stat({ bigint: false })),
+          )
+        ) {
+          fail('backup_google_drive_source_changed');
+        }
+        const artifactName = path.basename(source.artifactPath);
+        const artifactProperties = backupProperties(
+          source.manifest,
+          'artifact',
+          source.manifest.artifact.sha256,
+          source.md5,
+        );
+        const artifact = await putIdempotently(options.store, {
+          body: (start = 0) =>
+            source.handle.createReadStream({ autoClose: false, start }),
+          contentType: 'application/octet-stream',
+          name: artifactName,
+          properties: artifactProperties,
+          md5: source.md5,
+          sha256: source.manifest.artifact.sha256,
+          sizeBytes: source.manifest.artifact.sizeBytes,
+        });
+        const manifestName = `${artifactName}.manifest.json`;
+        const manifestProperties = backupProperties(
+          source.manifest,
+          'manifest',
+          source.manifestSha256,
+          source.manifestMd5,
+        );
+        const manifest = await putIdempotently(options.store, {
+          body: source.manifestBuffer,
+          contentType: 'application/json',
+          name: manifestName,
+          properties: manifestProperties,
+          md5: source.manifestMd5,
+          sha256: source.manifestSha256,
+          sizeBytes: source.manifestBuffer.length,
+        });
+        await readRemote(options.store, manifest);
+        if (options.verifyDownload) await readRemote(options.store, artifact);
+        uploaded.push(
+          {
+            artifactType: source.manifest.artifact.type,
+            fileId: artifact.key,
+            originalName: artifactName,
+            role: 'artifact',
+            sha256: source.manifest.artifact.sha256,
+            sizeBytes: source.manifest.artifact.sizeBytes,
+          },
+          {
+            artifactType: source.manifest.artifact.type,
+            fileId: manifest.key,
+            originalName: manifestName,
+            role: 'manifest',
+            sha256: source.manifestSha256,
+            sizeBytes: source.manifestBuffer.length,
+          },
+        );
+      }
+      await writePrivateState(
+        options.stateDir,
+        {
+          schemaVersion: 'erp4.backup.gdrive-state.v1',
+          backupDigest,
+          generatedAt: first.generatedAt,
+          retentionClass: first.retentionClass,
+          files: uploaded,
+        },
+        backupDigest,
+      );
+      return {
+        backupDigest,
+        objectCount: uploaded.length,
+        retentionClass: first.retentionClass,
+        status: 'success' as const,
+      };
+    } finally {
+      await releaseGenerationUploadLock(lock);
+    }
   } finally {
     await Promise.allSettled(pinned.map((source) => source.handle.close()));
   }

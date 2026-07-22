@@ -19,6 +19,7 @@ fakeとlocal filesystemだけを使用したrepo-side検証である。実Google
 - Shared Driveとbackup専用folderを必須とし、個人My Driveを自動採用しない。
 - `.gpg` artifact、OpenPGP packet、manifest、bundle context、ciphertext size / SHA-256を検証し、平文と不完全bundleをremote write前に拒否する。
 - Drive private appPropertiesで世代・種類・role・checksumを追跡し、Drive file IDはowner-only local stateにだけ保存する。
+- 同一世代のsecondary uploadはowner-only state directoryのexclusive lockで直列化し、競合processを最初のremote write前に拒否する。lockの自動期限切れや複数writer hostは許可しない。
 - resumable uploadはsessionを1回だけ開始し、retryable interruption後に同一sessionへstatus queryして確認済みoffsetから再開する。
 - list / freshness / stat / download / restore handoff / retention dry-runをsanitized CLIで提供する。
 - daily 30日、weekly 12週、monthly 13か月相当を既定とし、各classの最新世代を保護する。duplicate、orphan、0-byte、checksum mismatch、不完全世代があればapplyを拒否する。
@@ -28,15 +29,15 @@ fakeとlocal filesystemだけを使用したrepo-side検証である。実Google
 
 | 検証                                | 結果 | 詳細                                                               |
 | ----------------------------------- | ---- | ------------------------------------------------------------------ |
-| Google Drive / backup focused tests | PASS | 43 tests                                                           |
-| focused coverage                    | PASS | statements 86.75%、branches 80.29%、functions 95.06%、lines 86.75% |
+| Google Drive / backup focused tests | PASS | 44 tests                                                           |
+| focused coverage                    | PASS | statements 86.59%、branches 79.67%、functions 95.18%、lines 86.59% |
 | Sakura backup profile tests         | PASS | 20 tests                                                           |
 | `make ops-quality`                  | PASS | docs、shell syntax / guard、Quadlet profile、backup profileを含む  |
 | `make lint`                         | PASS | backend / frontend                                                 |
 | `make format-check`                 | PASS | backend / frontend                                                 |
 | `make typecheck`                    | PASS | backend / frontend                                                 |
 | `make build`                        | PASS | backend / frontend                                                 |
-| `make test`                         | PASS | backend 1,374 tests、frontend 82 files / 468 tests                 |
+| `make test`                         | PASS | backend 1,375 tests、frontend 82 files / 468 tests                 |
 | dependency boundary                 | PASS | 248 modules / 956 dependencies、違反0                              |
 | bounded-context coverage            | PASS | source 235、未分類 / stale / duplicate / ambiguous 0               |
 | docs image links                    | PASS | 115 links / 333 Markdown files                                     |
@@ -44,7 +45,7 @@ fakeとlocal filesystemだけを使用したrepo-side検証である。実Google
 | `make audit`                        | PASS | backend / frontend high以上0件                                     |
 | `git diff --check`                  | PASS | whitespace errorなし                                               |
 
-backend full test中に、DB未起動による既存の非致命`P1001` audit warningが出力されたが、suiteは1,374件すべて成功した。今回のbackup pathはDBへ接続しない。
+backend full test中に、DB未起動による既存の非致命`P1001` audit warningが出力されたが、suiteは1,375件すべて成功した。今回のbackup pathはDBへ接続しない。
 
 ## テストしたfailure semantics
 
@@ -55,6 +56,7 @@ backend full test中に、DB未起動による既存の非致命`P1001` audit wa
 - plaintext、OpenPGPでないartifact、不完全bundle、manifest checksum不一致をremote write前に拒否する。
 - resumable session URLを新規作成し直さず、同一sessionの確認済みoffsetから再開する。
 - logical duplicateまたは既存object metadata conflictを新規uploadで上書き・複製せずfail closedする。
+- 同一state directoryから同じgenerationを並行uploadした場合、第2processは`backup_google_drive_upload_in_progress`で停止し、remote `put`を実行しない。正常終了時はlockを安全に解除する。
 - request file、artifact、download先、local stateはnon-symlink / owner-only / no-clobber条件を検証する。
 - inventory異常世代はfresh / readyとして集計せず、retention applyを拒否する。
 - download後にsize、SHA-256、MD5、manifest、OpenPGP packet、bundle contextを再検証してからowner-only handoffを作る。

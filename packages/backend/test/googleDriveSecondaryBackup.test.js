@@ -5,6 +5,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   stat,
   writeFile,
@@ -204,6 +205,60 @@ test('upload validates an encrypted complete bundle and is idempotent', async ()
     assert.equal((await stat(stateDir)).mode & 0o077, 0);
     assert.doesNotMatch(JSON.stringify(first), /file-|folder-|secret-/);
   } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('same-generation concurrent upload is serialized before remote writes', async () => {
+  const directory = await scratch('backup-gdrive-concurrent-');
+  const stateDir = path.join(directory, 'state');
+  const fake = createFakeStore();
+  const originalPut = fake.store.put;
+  let releaseFirstPut;
+  const firstPutGate = new Promise((resolve) => {
+    releaseFirstPut = resolve;
+  });
+  let markFirstPutStarted;
+  const firstPutStarted = new Promise((resolve) => {
+    markFirstPutStarted = resolve;
+  });
+  let blocked = false;
+  fake.store.put = async (value) => {
+    if (!blocked) {
+      blocked = true;
+      markFirstPutStarted();
+      await firstPutGate;
+    }
+    return originalPut(value);
+  };
+  try {
+    const options = {
+      artifactPaths: await createBundle(directory),
+      assertEncrypted: async () => undefined,
+      stateDir,
+      store: fake.store,
+    };
+    const first = uploadBackupBundle(options);
+    await firstPutStarted;
+    try {
+      await assert.rejects(uploadBackupBundle(options), {
+        message: 'backup_google_drive_upload_in_progress',
+      });
+      assert.equal(fake.puts, 0, 'the competing upload must not reach put');
+    } finally {
+      releaseFirstPut();
+    }
+    const result = await first;
+
+    assert.equal(result.status, 'success');
+    assert.equal(fake.puts, 6);
+    assert.equal(fake.objects.size, 6);
+    assert.equal(
+      (await readdir(stateDir)).some((name) => name.endsWith('.lock')),
+      false,
+    );
+  } finally {
+    releaseFirstPut?.();
     await rm(directory, { recursive: true, force: true });
   }
 });
