@@ -30,7 +30,7 @@
 
 | Command                                                           | Result | Notes                                                                            |
 | ----------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------- |
-| focused storage / PDF / Evidence / Report / env tests             | PASS   | 10 files / 126 tests（最終分割・直接Report PDF failure test追加後）              |
+| focused storage / PDF / Evidence / Report / env tests             | PASS   | 10 files / 127 tests（Copilot追加のEvidence artifact UUID検証を含む）            |
 | `npm run coverage:storage:check --prefix packages/backend`        | PASS   | 32 tests。statements/lines 91.29%、branches 76.16%、functions 100%。閾値変更なし |
 | `make lint`                                                       | PASS   | backend / frontend                                                               |
 | `make format-check`                                               | PASS   | backend / frontend                                                               |
