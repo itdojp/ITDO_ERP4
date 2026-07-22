@@ -128,12 +128,14 @@ test('S3 source paginates, bounds manifest reads and returns SHA metadata', asyn
 
 test('S3 source aborts inventory once the readiness cap is exceeded', async () => {
   let listCalls = 0;
+  const continuationTokens = [];
   const client = {
     async send(command) {
       if (command.constructor.name !== 'ListObjectsV2Command') {
         assert.fail('unexpected command');
       }
       listCalls += 1;
+      continuationTokens.push(command.input.ContinuationToken);
       if (listCalls === 1) {
         return {
           Contents: Array.from({ length: 19_999 }, (_, index) => ({
@@ -161,6 +163,7 @@ test('S3 source aborts inventory once the readiness cap is exceeded', async () =
   });
   await assert.rejects(source.list(), /backup_inventory_too_large/);
   assert.equal(listCalls, 2);
+  assert.deepEqual(continuationTokens, [undefined, 'page-2']);
 });
 
 test('Sakura source requires a credential-free HTTPS origin', () => {
