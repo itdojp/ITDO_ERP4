@@ -359,4 +359,14 @@ run_failure 'trial readiness rejects private-smoke proxy checks' 'private-smoke 
 run_failure 'trial readiness requires https-trial proxy checks' 'https-trial requires --include-proxy' \
   "$CHECK_TRIAL" --profile https-trial --skip-host-check --skip-env-check --skip-stack-check
 
+storage_service="$ROOT_DIR/deploy/quadlet/erp4-storage-readiness.service"
+storage_timer="$ROOT_DIR/deploy/quadlet/erp4-storage-readiness.timer"
+grep -Fq 'Type=oneshot' "$storage_service" || fail 'storage readiness must remain oneshot'
+grep -Fq './scripts/storage-readiness.sh --format json' "$storage_service" || fail 'storage readiness service entrypoint missing'
+grep -Fq 'SyslogIdentifier=erp4-storage-readiness' "$storage_service" || fail 'storage readiness journal identifier missing'
+grep -Fq 'Persistent=true' "$storage_timer" || fail 'storage readiness timer must be persistent'
+if grep -Eqi '(restore|prune|delete-object|trash)' "$storage_service"; then
+  fail 'storage readiness service must not restore, prune, or delete objects'
+fi
+
 printf 'OK: Quadlet profile tests passed\n'

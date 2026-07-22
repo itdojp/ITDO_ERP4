@@ -12,7 +12,10 @@ import {
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 
-import { runGoogleDriveCheck } from '../dist/cli/googleDriveCheckService.js';
+import {
+  readGoogleDriveQuota,
+  runGoogleDriveCheck,
+} from '../dist/cli/googleDriveCheckService.js';
 import {
   provisionGoogleDriveFolder,
   reconcileGoogleDriveProvision,
@@ -492,4 +495,61 @@ test('Google Drive preflight rejects broad folder permissions before write', asy
     /google_drive_forbidden/,
   );
   assert.equal(creates, 0);
+});
+
+test('Google Drive quota uses bounded about fields and exact percentage math', async () => {
+  let call;
+  const result = await readGoogleDriveQuota({
+    drive: {
+      about: {
+        get: async (params, options) => {
+          call = { params, options };
+          return {
+            data: {
+              storageQuota: {
+                limit: '100000000000000000000',
+                usage: '70550000000000000000',
+              },
+            },
+          };
+        },
+      },
+    },
+    tuning,
+  });
+  assert.deepEqual(result, { state: 'available', usagePercent: 70.55 });
+  assert.deepEqual(call, {
+    params: { fields: 'storageQuota(limit,usage)' },
+    options: { retry: false, timeout: 1234 },
+  });
+});
+
+test('Google Drive quota without an applicable limit remains unknown', async () => {
+  assert.deepEqual(
+    await readGoogleDriveQuota({
+      drive: {
+        about: {
+          get: async () => ({ data: { storageQuota: { usage: '10' } } }),
+        },
+      },
+      tuning,
+    }),
+    { state: 'unknown' },
+  );
+});
+
+test('Google Drive quota does not round a value below the warning boundary up', async () => {
+  assert.deepEqual(
+    await readGoogleDriveQuota({
+      drive: {
+        about: {
+          get: async () => ({
+            data: { storageQuota: { limit: '20000', usage: '13999' } },
+          }),
+        },
+      },
+      tuning,
+    }),
+    { state: 'available', usagePercent: 69.99 },
+  );
 });

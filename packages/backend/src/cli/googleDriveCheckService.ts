@@ -8,6 +8,9 @@ import {
 
 export type GoogleDriveCheckMode = 'read' | 'write';
 
+export type GoogleDriveQuotaResult =
+  { state: 'available'; usagePercent: number } | { state: 'unknown' };
+
 type PermissionData = {
   deleted?: boolean | null;
   permissionDetails?: Array<{
@@ -147,7 +150,13 @@ export async function runGoogleDriveCheck(options: {
   const listedFiles = (list.data as { files?: unknown[] }).files;
   log(`[gdrive] listed object count: ${listedFiles?.length ?? 0}`);
 
-  if (mode !== 'write') return;
+  if (mode !== 'write') {
+    return {
+      permissionEntries: permissionCount,
+      listedObjects: listedFiles?.length ?? 0,
+      writeProbe: 'not_requested' as const,
+    };
+  }
 
   const created = await drive.files.create(
     {
@@ -185,4 +194,44 @@ export async function runGoogleDriveCheck(options: {
     requestOptions,
   );
   log('[gdrive] write probe trashed: true');
+  return {
+    permissionEntries: permissionCount,
+    listedObjects: listedFiles?.length ?? 0,
+    writeProbe: 'trashed' as const,
+  };
+}
+
+function parseQuotaInteger(value: unknown) {
+  if (typeof value !== 'string' || !/^[0-9]+$/.test(value)) return null;
+  try {
+    return BigInt(value);
+  } catch {
+    return null;
+  }
+}
+
+export async function readGoogleDriveQuota(options: {
+  drive: GoogleDriveApi;
+  tuning: GoogleDriveTuningConfig;
+}): Promise<GoogleDriveQuotaResult> {
+  const response = await options.drive.about.get(
+    { fields: 'storageQuota(limit,usage)' },
+    { retry: false, timeout: options.tuning.timeoutMs },
+  );
+  const storageQuota = (response.data as { storageQuota?: unknown })
+    .storageQuota as { limit?: unknown; usage?: unknown } | undefined;
+  const limit = parseQuotaInteger(storageQuota?.limit);
+  const usage = parseQuotaInteger(storageQuota?.usage);
+  if (limit === null || usage === null || limit <= 0n) {
+    return { state: 'unknown' };
+  }
+  const basisPoints = (usage * 10_000n) / limit;
+  const safeBasisPoints =
+    basisPoints > BigInt(Number.MAX_SAFE_INTEGER)
+      ? Number.MAX_SAFE_INTEGER
+      : Number(basisPoints);
+  return {
+    state: 'available',
+    usagePercent: safeBasisPoints / 100,
+  };
 }

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run ERP4 storage and backup readiness hourly
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=10m
+Persistent=true
+Unit=erp4-storage-readiness.service
+
+[Install]
+WantedBy=timers.target

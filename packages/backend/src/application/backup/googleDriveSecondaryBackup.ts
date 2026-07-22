@@ -17,6 +17,10 @@ import type {
   ObjectStore,
   ObjectStoreMetadata,
 } from '../../infrastructure/storage/objectStore.js';
+import type {
+  BackupReadinessObservation,
+  BackupReadinessPolicy,
+} from './storageReadiness.js';
 
 const BACKUP_SCHEMA = 'v1';
 const MANIFEST_SCHEMA = 'erp4.backup.manifest.v1';
@@ -105,6 +109,7 @@ export type BackupInventorySummary = {
       completeGenerations: number;
       freshness: 'fresh' | 'stale' | 'unknown';
       latestGeneratedAt: string | null;
+      oldestGeneratedAt: string | null;
     }
   >;
   objectCount: number;
@@ -944,6 +949,7 @@ export function summarizeBackupInventory(
               ? 'fresh'
               : 'stale',
           latestGeneratedAt: latest ?? null,
+          oldestGeneratedAt: timestamps[0] ?? null,
         },
       ];
     }),
@@ -1109,6 +1115,9 @@ export async function downloadBackupGeneration(options: {
 export function planBackupRetention(
   inventory: BackupInventory,
   now = new Date(),
+  options?: {
+    minimums?: Partial<Record<BackupRetentionClass, number>>;
+  },
 ): BackupRetentionPlan {
   if (inventory.anomalies.length > 0) {
     return {
@@ -1129,6 +1138,7 @@ export function planBackupRetention(
   let candidateGenerations = 0;
   let protectedGenerations = 0;
   for (const retentionClass of RETENTION_CLASSES) {
+    const minimum = Math.max(1, options?.minimums?.[retentionClass] ?? 1);
     const digests = [
       ...new Set(
         inventory.records
@@ -1148,7 +1158,7 @@ export function planBackupRetention(
       const generation = completeGenerationRecords(inventory, digest);
       const generatedAt = new Date(generation.records[0].generatedAt);
       if (
-        index > 0 &&
+        index >= minimum &&
         now.getTime() - generatedAt.getTime() > retentionMs[retentionClass]
       ) {
         candidateGenerations += 1;
@@ -1165,6 +1175,60 @@ export function planBackupRetention(
     keys,
     mode: 'dry-run',
     protectedGenerations,
+  };
+}
+
+export function inspectGoogleDriveBackupReadiness(
+  inventory: BackupInventory,
+  now = new Date(),
+  policy?: BackupReadinessPolicy,
+): BackupReadinessObservation {
+  const summary = summarizeBackupInventory(inventory, now);
+  const anomalyCounts: BackupReadinessObservation['anomalyCounts'] = {};
+  const mapping: Record<
+    BackupInventoryAnomalyCode,
+    keyof BackupReadinessObservation['anomalyCounts']
+  > = {
+    checksum_metadata_mismatch: 'checksum_mismatch',
+    duplicate_object: 'duplicate_object',
+    generation_incomplete: 'generation_incomplete',
+    invalid_metadata: 'invalid_manifest',
+    orphan_pair: 'orphan_pair',
+    zero_size: 'zero_size',
+  };
+  for (const [code, count] of Object.entries(summary.anomalyCounts)) {
+    if (!count) continue;
+    const mapped = mapping[code as BackupInventoryAnomalyCode];
+    anomalyCounts[mapped] = (anomalyCounts[mapped] ?? 0) + count;
+  }
+  return {
+    anomalyCounts,
+    classCounts: {
+      daily: summary.classes.daily.completeGenerations,
+      weekly: summary.classes.weekly.completeGenerations,
+      monthly: summary.classes.monthly.completeGenerations,
+    },
+    classTimestamps: {
+      daily: {
+        latestGeneratedAt: summary.classes.daily.latestGeneratedAt,
+        oldestGeneratedAt: summary.classes.daily.oldestGeneratedAt,
+      },
+      weekly: {
+        latestGeneratedAt: summary.classes.weekly.latestGeneratedAt,
+        oldestGeneratedAt: summary.classes.weekly.oldestGeneratedAt,
+      },
+      monthly: {
+        latestGeneratedAt: summary.classes.monthly.latestGeneratedAt,
+        oldestGeneratedAt: summary.classes.monthly.oldestGeneratedAt,
+      },
+    },
+    configured: true,
+    latestGeneratedAt: summary.classes.daily.latestGeneratedAt,
+    retentionCandidates: planBackupRetention(
+      inventory,
+      now,
+      policy ? { minimums: policy.minimums } : undefined,
+    ).candidateGenerations,
   };
 }
 

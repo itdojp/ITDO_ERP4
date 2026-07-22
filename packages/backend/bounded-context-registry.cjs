@@ -151,7 +151,7 @@ const layers = [
     patterns: [
       '^src/adapters/notifications/.+\\.ts$',
       '^src/adapters/storage/.+\\.ts$',
-      '^src/cli/(googleDrive(Check|CheckService|ProvisionFolder|ProvisionService)|storageArtifactMigration)\\.ts$',
+      '^src/cli/(googleDrive(Check|CheckService|ProvisionFolder|ProvisionService)|storageArtifactMigration|storageReadiness(Service)?)\\.ts$',
       '^src/infrastructure/backup/.+\\.ts$',
       '^src/infrastructure/storage/.+\\.ts$',
       '^src/routes/(pdfFiles|pdfTemplates|templateSettings)\\.ts$',
