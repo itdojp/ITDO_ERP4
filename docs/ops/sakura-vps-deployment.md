@@ -64,7 +64,8 @@ Go 条件:
 
 - [ ] frontend/backend の FQDN が決まっている
 - [ ] Google OIDC を使う場合、OAuth client と redirect URI が確定している
-- [ ] Google Drive 添付を使う場合、Drive API / refresh token / folder ID が揃っている
+- [ ] Google Driveを使うcontextごとにDrive API / refresh token / 専用folder IDが揃っている
+- [ ] PDF / Evidence archive / Reportをgdriveへ切り替える場合、#1981のcopy-only照合・cutover承認・rollback windowが揃っている
 - [ ] secret の保管先と転記方法が決まっている
 - [ ] 本番secretを Issue / PR / docs に貼らない運用が合意されている
 
@@ -283,6 +284,8 @@ runtime env は `~/.config/containers/systemd/` 配下で管理する。
 - `DATABASE_URL` の host は Podman network の `erp4-postgres` を使う。
 - `ALLOWED_ORIGINS` は frontend の公開 origin のみに絞る。
 - production の `AUTH_MODE=jwt_bff` では HTTPS 公開を前提にし、`AUTH_SESSION_COOKIE_SECURE=true` または未指定（production default true）にする。`AUTH_SESSION_COOKIE_SECURE=false` と HTTP origin / redirect URL は production validation で拒否される。
+- `PDF_PROVIDER`、`EVIDENCE_ARCHIVE_PROVIDER`、`REPORT_PROVIDER`は明示する。`gdrive`選択時は完全な`ERP4_GDRIVE_*` credential setと対応する専用folder IDがなければ起動前検証を失敗させる。
+- repository側runtime対応だけを理由にproduction providerを切り替えない。#1981の承認までは現行providerを維持する。
 
 確認:
 
@@ -336,6 +339,8 @@ Google OIDC / Drive を使う場合:
 - 標準 wrapper `./scripts/ops/gcp-drive-check.sh --env-file <mode-0600-env> --target <chat|pdf|evidence|report> --mode read` が有効化対象contextごとに成功する。
 - write probe は対象環境と実行者を確認し、人間が承認した場合だけ `--mode write` で実行する。作成したprobeは完全削除せずtrashする。
 - credential / folder ID / Drive ID はstdoutや証跡へ出さず、共通 `ERP4_GDRIVE_*` credentialとcontext固有 `*_GDRIVE_FOLDER_ID`を保護済みenvで渡す。非Chat contextは旧Chat credential aliasを使用しない。
+- cutover検証ではsanitized test recordを生成し、PDFは`/pdf-files/artifacts/:artifactId`、Evidenceは`/approval-instances/:id/evidence-pack/archives/:artifactId`、Reportは`/report-outputs/:artifactId`から権限を持つuserだけが取得できることを確認する。API応答・監査metadataへDrive URL、provider key、folder IDを残さない。
+- provider upload失敗時にlocalへ暗黙fallbackしないこと、Reportのdry-runがupload・local write・delivery row作成を行わないことを確認する。
 - 失敗時は [google-cloud-predeployment](google-cloud-predeployment.md) のトラブルシュートへ戻る。
 
 ## 9. backup / restore / rollback
@@ -391,6 +396,8 @@ DB restoreの詳細:
 - [quadlet-db-backup-restore](quadlet-db-backup-restore.md)
 - [backup-restore](backup-restore.md)
 
+application artifactの復旧では、DB内の`StorageArtifact` metadata、Google Drive object、local providerの既存volumeを別々の復旧対象として扱う。復旧順と認可済みendpointの確認項目は[DR計画](dr-plan.md)を参照し、#1981の実Drive演習前に成功扱いしない。
+
 更新時のrollback候補:
 
 - 前回commitへ戻す。
@@ -435,6 +442,11 @@ Commit SHA:
 Google Cloud config reference:
 OIDC enabled: yes/no
 Drive enabled: yes/no
+PDF provider: local|external|gdrive
+Evidence archive provider: local|s3|gdrive
+Report provider: local|gdrive
+Drive context read preflight: pass/fail/blocked
+Artifact authorized download: pass/fail/blocked
 Backup provider: sakura|aws
 OpenPGP client encryption: pass/fail/blocked
 S3 real readiness: pass/fail/blocked
@@ -457,6 +469,7 @@ Go 条件:
 - frontend が公開URLで応答する。
 - HTTPS証明書が有効である。
 - OIDC/Driveを使う場合は各疎通確認が成功している。
+- gdriveへcutoverするcontextは、copy-only count / size / SHA-256照合、認可済みendpointからの取得、local既存record reader、rollback条件が#1981の証跡で確認されている。
 - backup取得先、client-side暗号化、verified download、isolated restore手順が確認済みである。
 - secret がIssue/PR/docs/logへ漏れていない。
 

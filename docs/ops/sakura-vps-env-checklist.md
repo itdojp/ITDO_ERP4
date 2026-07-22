@@ -81,16 +81,17 @@ Google OIDC をさくらVPS 実機で使う場合は FQDN + HTTPS の origin / r
 - `PDF_PROVIDER`
 - `PDF_STORAGE_DIR`
 - `PDF_BASE_URL`
-- `PDF_GDRIVE_FOLDER_ID`（copy-only applyまたは将来のgdrive provider時。実値は記録しない）
+- `PDF_GDRIVE_FOLDER_ID`（copy-only applyまたはgdrive provider時。実値は記録しない）
 - `EVIDENCE_ARCHIVE_PROVIDER`
 - `EVIDENCE_ARCHIVE_LOCAL_DIR`
-- `EVIDENCE_ARCHIVE_GDRIVE_FOLDER_ID`（copy-only applyまたは将来のgdrive provider時。実値は記録しない）
+- `EVIDENCE_ARCHIVE_GDRIVE_FOLDER_ID`（copy-only applyまたはgdrive provider時。実値は記録しない）
 - `CHAT_ATTACHMENT_PROVIDER`
 - `CHAT_ATTACHMENT_LOCAL_DIR`
+- `REPORT_PROVIDER`
 - `REPORT_STORAGE_DIR`
-- `REPORT_GDRIVE_FOLDER_ID`（copy-only applyまたは将来のgdrive provider時。実値は記録しない）
+- `REPORT_GDRIVE_FOLDER_ID`（copy-only applyまたはgdrive provider時。実値は記録しない）
 
-非ChatのGoogle Drive設定では完全な`ERP4_GDRIVE_*` credential setを使い、旧`CHAT_ATTACHMENT_GDRIVE_*` aliasへfallbackしない。#1977のruntime integrationと#1981のcutover承認前はproviderをgdriveへ変更しない。
+非ChatのGoogle Drive設定では完全な`ERP4_GDRIVE_*` credential setを使い、旧`CHAT_ATTACHMENT_GDRIVE_*` aliasへfallbackしない。repository側runtime実装が存在しても、実folderのread/write preflight、copy-only照合、rollback windowを確認する#1981のcutover承認前はproduction providerをgdriveへ変更しない。
 
 確認コマンド:
 

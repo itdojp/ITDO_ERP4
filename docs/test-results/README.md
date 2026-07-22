@@ -42,6 +42,7 @@
 ### 2026-07-22
 
 - [Issue #1977 Storage artifact foundation verification](2026-07-22-issue1977-storage-artifact-foundation.md)
+- [Issue #1977 Storage context runtime integration verification](2026-07-22-issue1977-storage-context-integration.md)
 
 ### 2026-07-14
 
