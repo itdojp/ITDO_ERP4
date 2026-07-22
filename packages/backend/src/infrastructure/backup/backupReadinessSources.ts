@@ -241,13 +241,13 @@ export function createS3BackupObjectSource(options: {
           if (!object.Key || !Number.isSafeInteger(object.Size)) {
             throw new Error('backup_s3_inventory_invalid');
           }
+          if (result.length >= MAX_S3_INVENTORY_ENTRIES) {
+            throw new Error('backup_inventory_too_large');
+          }
           result.push({
             key: toRelativeKey(object.Key),
             sizeBytes: Number(object.Size),
           });
-          if (result.length > MAX_S3_INVENTORY_ENTRIES) {
-            throw new Error('backup_inventory_too_large');
-          }
         }
         if (!response.IsTruncated) break;
         const next = response.NextContinuationToken;

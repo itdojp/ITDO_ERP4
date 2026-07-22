@@ -134,12 +134,22 @@ test('S3 source aborts inventory once the readiness cap is exceeded', async () =
         assert.fail('unexpected command');
       }
       listCalls += 1;
+      if (listCalls === 1) {
+        return {
+          Contents: Array.from({ length: 19_999 }, (_, index) => ({
+            Key: `erp4/prod/${String(index).padStart(5, '0')}.gpg`,
+            Size: 10,
+          })),
+          IsTruncated: true,
+          NextContinuationToken: 'page-2',
+        };
+      }
       return {
-        Contents: Array.from({ length: 20_001 }, (_, index) => ({
-          Key: `erp4/prod/${String(index).padStart(5, '0')}.gpg`,
+        Contents: Array.from({ length: 2 }, (_, index) => ({
+          Key: `erp4/prod/overflow-${String(index).padStart(2, '0')}.gpg`,
           Size: 10,
         })),
-        IsTruncated: true,
+        IsTruncated: false,
         NextContinuationToken: 'should-not-be-used',
       };
     },
@@ -150,7 +160,7 @@ test('S3 source aborts inventory once the readiness cap is exceeded', async () =
     prefix: 'erp4/prod',
   });
   await assert.rejects(source.list(), /backup_inventory_too_large/);
-  assert.equal(listCalls, 1);
+  assert.equal(listCalls, 2);
 });
 
 test('Sakura source requires a credential-free HTTPS origin', () => {
