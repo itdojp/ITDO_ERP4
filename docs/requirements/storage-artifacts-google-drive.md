@@ -60,7 +60,7 @@ expand-only migrationで次を追跡する。
 - 保存先directoryとfileのsymlinkを拒否し、directoryは実行user所有かつgroup/other permissionなし（通常`0700`）、fileは実行user所有かつ`0600`を要求する。
 - local file I/OはLinuxの`/proc/self/fd`を介して検証済みdirectory file descriptorへ固定し、directory path差し替えを検出してfail closedとする。
 - 新規fileはexclusive create、mode `0600`とする。
-- 保存直後とopen前にsize・SHA-256を検証する。
+- 保存直後に取得内容のsize・SHA-256を検証する。open時はprovider metadataだけでなく、取得した実バイト列をsize上限付きで最後まで再計算し、検証済み内容だけを呼び出し側へ返す。
 - current providerを切り替えた後もrow単位のproviderで既存local recordを解決する。
 
 既存`/pdf-files/<filename>`、Evidenceのlocal/S3 object key、ReportのCSV/`filePath` payload readerを維持する。これらへDrive file IDを格納しない。

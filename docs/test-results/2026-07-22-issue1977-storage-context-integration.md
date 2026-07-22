@@ -13,6 +13,7 @@
 - Evidence content / metadataを別artifactとして保存し、approval閲覧権限とowner scopeをdownload時に再検証
 - Report出力をdelivery作成前に1回だけ保存し、retryは同じartifactをopenして再生成・再uploadしない
 - PDF / Evidence / Reportの認可済みdownload endpointを追加し、Drive URL、folder ID、provider keyを応答・監査metadataへ露出しない
+- Drive downloadはmetadata一致だけで成功扱いにせず、取得した実バイト列のsize・SHA-256を検証してから各endpointへ返す
 - gdrive障害時のlocal / S3暗黙fallbackを禁止し、Report artifact取得のretryable / permanent failureを既存delivery状態へ反映
 - `PDF_PROVIDER`、`EVIDENCE_ARCHIVE_PROVIDER`、`REPORT_PROVIDER`とcontext別folderをbackend / Quadletでfail-closed検証
 - local provider、external PDF、Evidence S3、既存local record readerを後方互換経路として維持
@@ -30,8 +31,8 @@
 
 | Command                                                           | Result | Notes                                                                            |
 | ----------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------- |
-| focused storage / PDF / Evidence / Report / env tests             | PASS   | 10 files / 127 tests（Copilot追加のEvidence artifact UUID検証を含む）            |
-| `npm run coverage:storage:check --prefix packages/backend`        | PASS   | 32 tests。statements/lines 91.29%、branches 76.16%、functions 100%。閾値変更なし |
+| focused storage / PDF / Evidence / Report / env tests             | PASS   | 10 files / 128 tests（UUID検証とDrive download実バイト列検証を含む）             |
+| `npm run coverage:storage:check --prefix packages/backend`        | PASS   | 33 tests。statements/lines 91.09%、branches 75.91%、functions 100%。閾値変更なし |
 | `make lint`                                                       | PASS   | backend / frontend                                                               |
 | `make format-check`                                               | PASS   | backend / frontend                                                               |
 | `make typecheck`                                                  | PASS   | backend / frontend                                                               |

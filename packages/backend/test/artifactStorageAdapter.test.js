@@ -465,6 +465,49 @@ test('Google Drive artifact uses only common credentials and verifies stat befor
   ]);
 });
 
+test('Google Drive open rejects downloaded bytes that differ from verified metadata', async () => {
+  const expected = Buffer.from('expected-content');
+  const corrupted = Buffer.from('corrupt-content!');
+  assert.equal(corrupted.length, expected.length);
+  const value = input(expected);
+  const db = createArtifactDb();
+  const ready = addPendingRow(db, value);
+  ready.providerKey = 'drive-file-placeholder';
+  ready.status = 'ready';
+  const adapter = createArtifactStorageAdapter({
+    context: 'pdf',
+    db,
+    env: {
+      PDF_GDRIVE_FOLDER_ID: 'folder-placeholder',
+      ERP4_GDRIVE_CLIENT_ID: 'common-client',
+      ERP4_GDRIVE_CLIENT_SECRET: 'common-secret',
+      ERP4_GDRIVE_REFRESH_TOKEN: 'common-refresh',
+    },
+    folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
+    localDir: 'unused-local-directory',
+    objectStoreFactory: () => ({
+      get: async () => ({ stream: Readable.from(corrupted) }),
+      put: async () => assert.fail('put must not be called'),
+      stat: async () => ({
+        key: ready.providerKey,
+        checksum: { sha256: value.sha256 },
+        contentType: value.contentType,
+        createdAt: null,
+        modifiedAt: null,
+        originalName: value.originalName,
+        sizeBytes: value.sizeBytes,
+        trashed: false,
+      }),
+      trash: async () => assert.fail('trash must not be called'),
+    }),
+    provider: 'gdrive',
+  });
+
+  await assert.rejects(() => adapter.open(ready.id), {
+    message: 'artifact_remote_verification_failed',
+  });
+});
+
 test('legacy-only Google credentials fail closed and record a sanitized failure code', async () => {
   const db = createArtifactDb();
   const adapter = createArtifactStorageAdapter({

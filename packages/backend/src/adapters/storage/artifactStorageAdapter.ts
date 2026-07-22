@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { FileHandle } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 import type { PrismaClient, StorageArtifact } from '@prisma/client';
@@ -146,11 +147,40 @@ async function verifyObjectContent(
   for await (const chunk of stream) {
     const buffer = Buffer.from(chunk);
     sizeBytes += buffer.length;
+    if (sizeBytes > input.sizeBytes) {
+      stream.destroy();
+      throw new Error('artifact_remote_verification_failed');
+    }
     hash.update(buffer);
   }
   if (sizeBytes !== input.sizeBytes || hash.digest('hex') !== input.sha256) {
     throw new Error('artifact_remote_verification_failed');
   }
+}
+
+async function readVerifiedObjectContent(
+  store: ObjectStore,
+  providerKey: string,
+  input: Pick<StoreArtifactInput, 'sha256' | 'sizeBytes'>,
+) {
+  const { stream } = await store.get(providerKey);
+  const chunks: Buffer[] = [];
+  const hash = createHash('sha256');
+  let sizeBytes = 0;
+  for await (const chunk of stream) {
+    const buffer = Buffer.from(chunk);
+    sizeBytes += buffer.length;
+    if (sizeBytes > input.sizeBytes) {
+      stream.destroy();
+      throw new Error('artifact_remote_verification_failed');
+    }
+    chunks.push(buffer);
+    hash.update(buffer);
+  }
+  if (sizeBytes !== input.sizeBytes || hash.digest('hex') !== input.sha256) {
+    throw new Error('artifact_remote_verification_failed');
+  }
+  return Buffer.concat(chunks, sizeBytes);
 }
 
 async function writeLocalArtifact(
@@ -500,16 +530,21 @@ export function createArtifactStorageAdapter(
         throw new Error('artifact_provider_invalid');
       }
       if (row.provider === 'gdrive') {
+        const artifact = toSafeResult(row);
         const metadata = await getObjectStore().stat(row.providerKey);
         if (
           metadata.trashed ||
-          metadata.sizeBytes !== Number(row.sizeBytes) ||
+          metadata.sizeBytes !== artifact.sizeBytes ||
           metadata.checksum.sha256 !== row.sha256
         ) {
           throw new Error('artifact_remote_verification_failed');
         }
-        const opened = await getObjectStore().get(row.providerKey);
-        return { artifact: toSafeResult(row), stream: opened.stream };
+        const content = await readVerifiedObjectContent(
+          getObjectStore(),
+          row.providerKey,
+          artifact,
+        );
+        return { artifact, stream: Readable.from(content) };
       }
       if (!UUID_PATTERN.test(row.providerKey)) {
         throw new Error('artifact_provider_key_invalid');
