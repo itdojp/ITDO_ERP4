@@ -41,6 +41,8 @@
 | `make ops-quality`                                                | PASS   | ops docs/scripts、Quadlet profile、S3 backup profile 19 tests                    |
 | `npm run arch:bounded-context --prefix packages/backend`          | PASS   | 278 modules / 1,189 dependencies、違反なし                                       |
 | `npm run arch:bounded-context:coverage --prefix packages/backend` | PASS   | source 243、target 211、unclassified / stale / duplicate / ambiguous 0           |
+| OpenAPI exportと`docs/api/openapi.json`のdiff                     | PASS   | Evidence provider enumと3つのartifact download endpointを同期                    |
+| `./scripts/secret-scan.sh`                                        | PASS   | tracked files 1,797、match 0                                                     |
 | `git diff --check`                                                | PASS   | whitespace errorなし                                                             |
 
 `make test`中、local PostgreSQLを起動していない既存のvendor invoice監査testで非致命的なPrisma `P1001` warningが出力されたが、test suiteは全件成功した。

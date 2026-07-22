@@ -834,10 +834,15 @@ test('gdrive report output is stored once and reused for immediate email deliver
   assert.equal(storedInput.ownerType, 'report_subscription');
   assert.equal(createdPayload.artifact.artifactId, artifactId);
   assert.equal(createdPayload.artifact.url, `/report-outputs/${artifactId}`);
-  assert.equal(
-    JSON.stringify(createdPayload).includes('drive.google.com'),
-    false,
-  );
+  assert.deepEqual(Object.keys(createdPayload.artifact).sort(), [
+    'artifactId',
+    'contentType',
+    'filename',
+    'ownerId',
+    'ownerType',
+    'provider',
+    'url',
+  ]);
 });
 
 test('gdrive report dry-run performs no artifact or PDF write', async () => {

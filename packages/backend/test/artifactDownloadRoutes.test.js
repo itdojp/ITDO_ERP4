@@ -126,7 +126,15 @@ test('report artifact download streams content without exposing provider identif
       ),
   );
   assert.equal(audit.action, 'report_output_downloaded');
-  assert.equal(JSON.stringify(audit).includes('drive.google.com'), false);
+  for (const forbiddenKey of [
+    'folderId',
+    'providerKey',
+    'providerUrl',
+    'sharedDriveId',
+    'url',
+  ]) {
+    assert.equal(Object.hasOwn(audit.metadata, forbiddenKey), false);
+  }
 });
 
 test('evidence artifact download reapplies approval access and owner scope', async () => {

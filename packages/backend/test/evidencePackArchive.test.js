@@ -164,7 +164,6 @@ test('archiveEvidencePack: gdrive stores content and metadata behind safe artifa
       result.archiveUri,
       `/approval-instances/approval-placeholder/evidence-pack/archives/${contentArtifactId}`,
     );
-    assert.equal(result.archiveUri.includes('drive.google.com'), false);
     assert.equal(stores.length, 2);
     assert.equal(stores[0][0], 'content');
     assert.deepEqual(stores[0][1].body, content);

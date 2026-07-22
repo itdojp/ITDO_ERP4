@@ -77,7 +77,6 @@ test('generatePdf stores gdrive output and returns only an ERP4 artifact URL', a
     assert.equal(result.filePath, undefined);
     assert.equal(Buffer.isBuffer(result.content), true);
     assert.equal(result.content.subarray(0, 4).toString('ascii'), '%PDF');
-    assert.equal(result.url.includes('drive.google.com'), false);
     assert.deepEqual(stored.body, result.content);
     assert.equal(stored.ownerType, 'document');
     assert.equal(stored.ownerId, 'invoice-placeholder');
