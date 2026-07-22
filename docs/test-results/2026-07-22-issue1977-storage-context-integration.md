@@ -39,7 +39,7 @@
 | `make format-check`                                               | PASS   | backend / frontend                                                               |
 | `make typecheck`                                                  | PASS   | backend / frontend                                                               |
 | `make build`                                                      | PASS   | backend / frontend                                                               |
-| `make test`                                                       | PASS   | backend 1,417 tests、frontend 82 files / 468 tests                               |
+| `make test`                                                       | PASS   | backend 1,438 tests、frontend 82 files / 468 tests                               |
 | `make audit`                                                      | PASS   | backend / frontendともhigh以上0                                                  |
 | `make ops-quality`                                                | PASS   | ops docs/scripts、Quadlet profile、S3 backup profile 19 tests                    |
 | `npm run arch:bounded-context --prefix packages/backend`          | PASS   | 278 modules / 1,189 dependencies、違反なし                                       |
