@@ -12,7 +12,7 @@
 - #1976の共通`GoogleDriveObjectStore`を利用するlocal / gdrive共通artifact adapter
 - Drive private `appProperties`へhash化idempotency keyを保存する再実行安全性
 - upload完了後のDB更新失敗を、remoteのhash化idempotency keyまたは既存local UUID fileの全量checksumでread-only復旧する。pending復旧と通常openは欠落local directoryを作成せずfail closedとする
-- local I/Oを検証済みdirectory file descriptorへ固定し、path差し替え、owner不一致、symlink、permission違反をfail closedにする
+- local I/Oを検証済みdirectory file descriptorへ固定し、canonicalization前後のpath inodeと固定FDを逐次再照合して、path差し替え、owner不一致、symlink、permission違反をfail closedにする
 - dry-run既定、source削除なし、count / size / aggregate SHA-256を照合するcopy-only migration helper
 - inventory時に`O_NOFOLLOW`で開いたfile handleをupload完了まで保持し、path差し替え後も検証済みinodeだけをstreamするTOCTOU対策
 - Chat / PDF / Evidence / Report別folderのprovision・read/write preflight
@@ -33,7 +33,7 @@ PDF / Evidence archive / Reportのruntime provider接続、認可済みdownload 
 | Command                                                           | Result | Notes                                                                                            |
 | ----------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------ |
 | focused storage / Google Drive tests                              | PASS   | 最終review修正後のartifact adapter targeted test 24 tests                                        |
-| `npm run coverage:storage:check --prefix packages/backend`        | PASS   | 32 tests。statements/lines 91.18%、branches 75.24%、functions 100%。既存閾値は変更なし           |
+| `npm run coverage:storage:check --prefix packages/backend`        | PASS   | 32 tests。statements/lines 91.22%、branches 75.56%、functions 100%。既存閾値は変更なし           |
 | `npm run coverage:chat:check --prefix packages/backend`           | PASS   | 199 tests。scoped statements/lines 58.29%、branches 64.64%、functions 75.00%。既存閾値は変更なし |
 | `make lint`                                                       | PASS   | backend / frontend                                                                               |
 | `make format-check`                                               | PASS   | backend / frontend                                                                               |

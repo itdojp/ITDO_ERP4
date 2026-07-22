@@ -95,17 +95,23 @@ export async function openLocalArtifactDirectory(
   const assertBound = async () => {
     assertOpen();
     try {
-      const [openedInfo, pathInfo, canonicalPath] = await Promise.all([
-        handle.stat(),
-        lstat(resolved),
-        realpath(resolved),
-      ]);
-      assertOwnedDirectory(openedInfo);
-      assertOwnedDirectory(pathInfo);
+      const openedInfoBefore = await handle.stat();
+      assertOwnedDirectory(openedInfoBefore);
+      const pathInfoBefore = await lstat(resolved);
+      assertOwnedDirectory(pathInfoBefore);
+      const canonicalPath = await realpath(resolved);
+      const pathInfoAfter = await lstat(resolved);
+      assertOwnedDirectory(pathInfoAfter);
+      const openedInfoAfter = await handle.stat();
+      assertOwnedDirectory(openedInfoAfter);
       if (
         canonicalPath !== resolved ||
-        openedInfo.dev !== pathInfo.dev ||
-        openedInfo.ino !== pathInfo.ino
+        openedInfoBefore.dev !== openedInfoAfter.dev ||
+        openedInfoBefore.ino !== openedInfoAfter.ino ||
+        openedInfoAfter.dev !== pathInfoBefore.dev ||
+        openedInfoAfter.ino !== pathInfoBefore.ino ||
+        openedInfoAfter.dev !== pathInfoAfter.dev ||
+        openedInfoAfter.ino !== pathInfoAfter.ino
       ) {
         throw new Error('artifact_local_directory_unsafe');
       }
