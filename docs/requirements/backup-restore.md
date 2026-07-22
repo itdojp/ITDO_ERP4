@@ -142,6 +142,14 @@ Sakura追加必須:
 - SCHEMA_VERSION
 - APP_VERSION
 
+Google Drive secondaryを有効にする場合の追加必須:
+
+- `BACKUP_SECONDARY_PROVIDER=gdrive`
+- backup専用`BACKUP_GDRIVE_CLIENT_ID` / `BACKUP_GDRIVE_CLIENT_SECRET` / `BACKUP_GDRIVE_REFRESH_TOKEN`
+- `BACKUP_GDRIVE_SHARED_DRIVE_ID` / `BACKUP_GDRIVE_FOLDER_ID`
+
+backup credentialは`ERP4_GDRIVE_*`や`CHAT_ATTACHMENT_GDRIVE_*`へfallbackしない。個人My Driveは正常構成として扱わず、repo-side実装ではShared Drive IDを必須とする。hourlyはsecondary対象外であり、daily / weekly / monthlyだけをcopyする。
+
 endpointはuserinfo、query、fragment、非HTTPSを拒否する。prefix、backup ID、filenameはpath traversalとunsafe segmentを拒否する。
 
 ## 標準コマンド
@@ -175,6 +183,12 @@ make backup-s3-check
 `make backup-s3-upload`を使用する。同じimmutable keyへ`backup`直後に再uploadしない。
 
 S3_VERIFY_DOWNLOAD=1ではupload直後にremote objectをprivate scratchへdownloadし、同じmanifestでSHA-256を再検証する。
+
+`BACKUP_SECONDARY_PROVIDER=gdrive`では、Sakura primaryの全artifact / manifest uploadとsize/checksum検証が完了した後だけ同じ暗号化bundleをDriveへcopyする。`S3_VERIFY_DOWNLOAD=0`でも、各remote manifestをprivate scratchへ再downloadして送信元とbyte一致することを必須とする。`S3_VERIFY_DOWNLOAD=1`ではartifact本体も再downloadして検証する。`.gpg`拡張子、OpenPGP packet、manifest context、ciphertext SHA-256 / MD5 / sizeを再検証し、平文・0-byte・世代混在を拒否する。secondary failureはprimaryを未成功に戻さず、job全体を`partial_failure`かつnon-zeroにする。primary failure時はsecondaryを呼ばない。
+
+Drive objectは既存のUTC timestampを含むimmutable artifact名で保存し、private appPropertiesでhash化backup ID、retention class、artifact type、role、ciphertext SHA-256、object SHA-256 / MD5を管理する。Drive revisionや同名上書きを世代管理に使わない。local stateはmode 600でDrive file IDを保持するが、通常summary、Issue、PR、証跡へfile/folder IDやDrive URLを出さない。
+
+Driveのlist/createは原子的予約ではないため、secondary uploadは1 writer hostに限定し、全timer/processが同じ`BACKUP_GDRIVE_STATE_DIR`を使用する。uploadはhash化backup ID単位のmode 600 exclusive lockを取得してからlist/putを開始する。同一世代の競合はremote write前に`backup_google_drive_upload_in_progress`でfail closedとし、異なる世代は独立して処理できる。process異常終了で残るlockを時間だけで自動削除してはならない。実行processがないこととprivate inventoryを確認したoperatorだけがstale lockを解除する。複数host・異なるstate directoryから同じbackup folderへ書き込む構成は非対応とする。
 
 さくら公式仕様ではwrite時のprovider側整合性checkはMD5とそれ以外で挙動が異なるため、#544のSakura実証ではS3_VERIFY_DOWNLOAD=1を必須とし、download後のmanifest SHA-256を最終判定にする。
 
