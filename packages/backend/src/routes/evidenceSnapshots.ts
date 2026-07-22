@@ -999,7 +999,10 @@ export async function registerEvidenceSnapshotRoutes(
       };
       if (!UUID_PATTERN.test(artifactId)) {
         return reply.status(400).send({
-          error: { code: 'INVALID_ARTIFACT_ID', message: 'Invalid artifact ID' },
+          error: {
+            code: 'INVALID_ARTIFACT_ID',
+            message: 'Invalid artifact ID',
+          },
         });
       }
       const approval = await prisma.approvalInstance.findUnique({
