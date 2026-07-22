@@ -549,7 +549,8 @@ export function createArtifactStorageAdapter(
       if (!UUID_PATTERN.test(row.providerKey)) {
         throw new Error('artifact_provider_key_invalid');
       }
-      const root = await assertSafeLocalDirectory(options.localDir);
+      const root = await findSafeLocalDirectory(options.localDir);
+      if (!root) throw new Error('artifact_local_directory_unsafe');
       const filePath = path.join(root, row.providerKey);
       let handle: FileHandle;
       try {

@@ -11,7 +11,7 @@
 - expand-only `StorageArtifact` metadata（`pending / ready / failed`）とcontext別storage port
 - #1976の共通`GoogleDriveObjectStore`を利用するlocal / gdrive共通artifact adapter
 - Drive private `appProperties`へhash化idempotency keyを保存する再実行安全性
-- upload完了後のDB更新失敗を、remoteのhash化idempotency keyまたは既存local UUID fileの全量checksumでread-only復旧する。欠落local directoryは作成せず`artifact_store_in_progress`を維持
+- upload完了後のDB更新失敗を、remoteのhash化idempotency keyまたは既存local UUID fileの全量checksumでread-only復旧する。pending復旧と通常openは欠落local directoryを作成せずfail closedとする
 - dry-run既定、source削除なし、count / size / aggregate SHA-256を照合するcopy-only migration helper
 - inventory時に`O_NOFOLLOW`で開いたfile handleをupload完了まで保持し、path差し替え後も検証済みinodeだけをstreamするTOCTOU対策
 - Chat / PDF / Evidence / Report別folderのprovision・read/write preflight
@@ -31,14 +31,14 @@ PDF / Evidence archive / Reportのruntime provider接続、認可済みdownload 
 
 | Command                                                           | Result | Notes                                                                                            |
 | ----------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------ |
-| focused storage / Google Drive tests                              | PASS   | 最終review修正後のartifact adapter targeted test 21 tests                                        |
-| `npm run coverage:storage:check --prefix packages/backend`        | PASS   | 29 tests。statements/lines 90.58%、branches 74.83%、functions 100%。既存閾値は変更なし            |
+| focused storage / Google Drive tests                              | PASS   | 最終review修正後のartifact adapter targeted test 22 tests                                        |
+| `npm run coverage:storage:check --prefix packages/backend`        | PASS   | 30 tests。statements/lines 90.59%、branches 75.09%、functions 100%。既存閾値は変更なし            |
 | `npm run coverage:chat:check --prefix packages/backend`           | PASS   | 199 tests。scoped statements/lines 59.15%、branches 64.66%、functions 75.73%。既存閾値は変更なし |
 | `make lint`                                                       | PASS   | backend / frontend                                                                               |
 | `make format-check`                                               | PASS   | backend / frontend                                                                               |
 | `make typecheck`                                                  | PASS   | backend / frontend                                                                               |
 | `make build`                                                      | PASS   | backend / frontend                                                                               |
-| `make test`                                                       | PASS   | 最終review修正後 backend 1,393 tests、frontend 468 tests                                         |
+| `make test`                                                       | PASS   | 最終review修正後 backend 1,394 tests、frontend 468 tests                                         |
 | `make ops-quality`                                                | PASS   | ops script checks、Quadlet profile tests、S3 backup profile 19 tests                             |
 | `npm run arch:bounded-context --prefix packages/backend`          | PASS   | 252 modules / 966 dependencies、違反なし                                                         |
 | `npm run arch:bounded-context:coverage --prefix packages/backend` | PASS   | source 239、target 209、unclassified / stale / duplicate / ambiguous 0                           |

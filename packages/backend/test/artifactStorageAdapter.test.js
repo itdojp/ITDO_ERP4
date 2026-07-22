@@ -217,6 +217,32 @@ test('local reader rejects a different context and corrupted content', async () 
   }
 });
 
+test('local reader does not create a missing storage directory', async () => {
+  const scratchDir = await createScratchDir();
+  const localDir = path.join(scratchDir, 'missing-storage');
+  const db = createArtifactDb();
+  const ready = addPendingRow(db, input(), 'local');
+  ready.providerKey = ready.id;
+  ready.status = 'ready';
+  try {
+    const adapter = createArtifactStorageAdapter({
+      context: 'pdf',
+      db,
+      env: {},
+      folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
+      localDir,
+      provider: 'local',
+    });
+
+    await assert.rejects(() => adapter.open(ready.id), {
+      message: 'artifact_local_directory_unsafe',
+    });
+    await assert.rejects(() => lstat(localDir), { code: 'ENOENT' });
+  } finally {
+    await rm(scratchDir, { recursive: true, force: true });
+  }
+});
+
 test('local write removes a partial destination after a source stream failure', async () => {
   const localDir = await createScratchDir();
   const db = createArtifactDb();
