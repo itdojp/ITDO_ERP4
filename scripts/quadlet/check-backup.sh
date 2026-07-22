@@ -71,7 +71,7 @@ for i in "${!entries[@]}"; do
       has_proxy=1
       ;;
   esac
-  if [[ "$entry" =~ \.(container|service|volume|network)$ ]]; then
+  if [[ "$entry" =~ \.(container|service|timer|volume|network)$ ]]; then
     has_units=1
   fi
 done

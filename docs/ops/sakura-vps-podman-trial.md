@@ -373,7 +373,7 @@ Quadlet の unit 定義ファイル自体を取り除く場合:
 ./scripts/quadlet/uninstall-stack.sh --include-proxy --purge-config
 ```
 
-`uninstall-stack.sh` は `disable-stack.sh` を先に実行したうえで、`~/.config/containers/systemd/` 配下の Quadlet unit 定義と、installerが `~/.config/systemd/user/erp4-migrate.service` に登録した管理対象symlinkを削除し、最後に `systemctl --user daemon-reload` で user manager の定義キャッシュを更新します。別の参照先を持つsymlinkや通常ファイルは削除しません。既定では `erp4-postgres.env` / `erp4-backend.env` / `erp4-caddy.env` / `erp4-caddy.Caddyfile` / `erp4-frontend-build.env` は保持します。secret やドメイン設定、frontend build 用 env も消したい場合だけ `--purge-config` を使ってください。Podman volume やイメージ、アプリケーションデータ自体は削除しません。
+`uninstall-stack.sh` は `disable-stack.sh` を先に実行したうえで、installerが登録したmigrate、backup、prune、storage readinessのnative service/timerを停止・無効化します。その後、`~/.config/containers/systemd/` 配下の管理対象unit定義と `~/.config/systemd/user/` 配下の管理対象symlinkを削除し、最後に `systemctl --user daemon-reload` でuser managerの定義キャッシュを更新します。別の参照先を持つsymlinkや通常ファイルは停止・削除しません。既定では `erp4-postgres.env` / `erp4-backend.env` / `erp4-caddy.env` / `erp4-caddy.Caddyfile` / `erp4-frontend-build.env` は保持します。secret やドメイン設定、frontend build 用 env も消したい場合だけ `--purge-config` を使ってください。Podman volumeやイメージ、アプリケーションデータ自体は削除しません。
 
 ## 5.1 設定バックアップ
 
@@ -387,7 +387,7 @@ stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の 
 ./scripts/quadlet/backup-and-check.sh --include-proxy --include-units --list --print-archive
 ```
 
-`backup-and-check.sh` は `backup-config.sh` で archive を生成した直後に、同じ archive を `check-backup.sh` で検証します。生成される tar.gz には DB 接続情報や JWT secret などの機微情報が含まれる可能性があるため、保存先は第三者から見えない場所を選んでください。`backup-config.sh` は出力先ディレクトリを `0700`、archive を `0600` に寄せますが、外部へコピーする場合も同等の権限制御を前提にしてください。
+`backup-and-check.sh` は `backup-config.sh` で archive を生成した直後に、同じ archive を `check-backup.sh` で検証します。既定link modeのunitは、`deploy/quadlet/` 配下を参照するinstaller管理symlinkだけをdereferenceし、archive内ではregular fileとして保存します。env/config symlinkや管理対象外を指すunit symlinkはfail-closedで拒否します。`--include-units` はstorage readinessのservice/timerも含み、復元元repositoryがなくてもunit定義を復元できます。生成されるtar.gzにはDB接続情報やJWT secretなどの機微情報が含まれる可能性があるため、保存先は第三者から見えない場所を選んでください。`backup-config.sh` は出力先ディレクトリを `0700`、archiveを `0600` に寄せますが、外部へコピーする場合も同等の権限制御を前提にしてください。
 
 復元する場合は、archive 内容を確認したうえで `restore-config.sh` を使います。既存ファイルがある場合は既定で停止するため、上書きが必要な場合だけ `--overwrite` を付けてください。unit 定義を含む archive を戻すときは、既定で `systemctl --user daemon-reload` まで実行します。
 

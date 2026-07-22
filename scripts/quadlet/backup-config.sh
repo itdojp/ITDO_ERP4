@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+MANAGED_UNIT_SOURCE_DIR="$ROOT_DIR/deploy/quadlet"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
 OUTPUT_DIR="${QUADLET_BACKUP_DIR:-$HOME/.local/share/erp4/quadlet-backups}"
 STAMP="${STAMP_OVERRIDE:-$(date +%Y%m%d-%H%M%S)}"
@@ -61,6 +63,7 @@ done
 
 [[ -d "$TARGET_DIR" ]] || fail "target directory not found: $TARGET_DIR"
 command -v tar >/dev/null 2>&1 || fail 'required command not found: tar'
+command -v realpath >/dev/null 2>&1 || fail 'required command not found: realpath'
 umask 077
 mkdir -p -m 700 "$OUTPUT_DIR"
 
@@ -69,6 +72,7 @@ files=(
   erp4-backend.env
   erp4-frontend-build.env
   erp4-maintenance.env
+  erp4-storage-readiness.env
 )
 
 if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
@@ -90,6 +94,8 @@ if [[ "$INCLUDE_UNITS" -eq 1 ]]; then
     erp4-db-backup.timer
     erp4-config-prune.service
     erp4-config-prune.timer
+    erp4-storage-readiness.service
+    erp4-storage-readiness.timer
   )
   if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
     files+=(
@@ -102,7 +108,22 @@ fi
 
 staged=()
 for name in "${files[@]}"; do
-  if [[ -f "$TARGET_DIR/$name" ]]; then
+  path="$TARGET_DIR/$name"
+  if [[ -L "$path" && ! -f "$path" ]]; then
+    fail "backup source is a broken symlink: $path"
+  fi
+  if [[ -L "$path" ]]; then
+    case "$name" in
+      *.container|*.service|*.timer|*.volume|*.network) ;;
+      *) fail "env/config backup source must not be a symlink: $path" ;;
+    esac
+    resolved="$(realpath "$path")"
+    case "$resolved" in
+      "$MANAGED_UNIT_SOURCE_DIR"/*) ;;
+      *) fail "unit symlink points outside the managed source directory: $path -> $resolved" ;;
+    esac
+  fi
+  if [[ -f "$path" ]]; then
     staged+=("$name")
   fi
 done
@@ -110,7 +131,10 @@ done
 [[ ${#staged[@]} -gt 0 ]] || fail "no matching files found in $TARGET_DIR"
 
 archive="$OUTPUT_DIR/erp4-quadlet-config-$STAMP.tar.gz"
-tar -C "$TARGET_DIR" -czf "$archive" "${staged[@]}"
+# Default link-mode installs point unit files back to deploy/quadlet. Archive
+# those validated managed links as regular files so restore/check never depend
+# on the original repository path.
+tar --dereference -C "$TARGET_DIR" -czf "$archive" "${staged[@]}"
 chmod 600 "$archive"
 
 if [[ "$PRINT_ARCHIVE" -eq 1 ]]; then

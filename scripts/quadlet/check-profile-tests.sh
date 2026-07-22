@@ -16,6 +16,9 @@ CHECK_ENV="$ROOT_DIR/scripts/quadlet/check-env.sh"
 CHECK_TRIAL="$ROOT_DIR/scripts/quadlet/check-trial-readiness.sh"
 INSTALL_UNITS="$ROOT_DIR/scripts/quadlet/install-user-units.sh"
 UNINSTALL_STACK="$ROOT_DIR/scripts/quadlet/uninstall-stack.sh"
+BACKUP_CONFIG="$ROOT_DIR/scripts/quadlet/backup-config.sh"
+CHECK_BACKUP="$ROOT_DIR/scripts/quadlet/check-backup.sh"
+RESTORE_CONFIG="$ROOT_DIR/scripts/quadlet/restore-config.sh"
 START_STACK="$ROOT_DIR/scripts/quadlet/start-stack.sh"
 RESTART_STACK="$ROOT_DIR/scripts/quadlet/restart-stack.sh"
 UPDATE_STACK="$ROOT_DIR/scripts/quadlet/update-stack.sh"
@@ -234,18 +237,115 @@ write_frontend_env "$installed_private_frontend" 'http://erp4-backend:3001'
 run_success 'installed private-smoke target passes env validation' \
   "$CHECK_ENV" --profile private-smoke --target-dir "$installed_private_dir" --frontend-build-env "$installed_private_frontend"
 
+link_backup_quadlet_dir="$WORK_DIR/link-backup-quadlet"
+link_backup_systemd_dir="$WORK_DIR/link-backup-systemd"
+link_backup_output_dir="$WORK_DIR/link-backup-output"
+link_restore_dir="$WORK_DIR/link-backup-restore"
+run_success 'default link-mode installer prepares backup fixture' \
+  env SYSTEMCTL=true QUADLET_TARGET_DIR="$link_backup_quadlet_dir" \
+  SYSTEMD_USER_TARGET_DIR="$link_backup_systemd_dir" ERP4_IMAGE_TAG=test-profile \
+  "$INSTALL_UNITS" --profile private-smoke
+[[ -L "$link_backup_quadlet_dir/erp4-config-backup.service" ]] || \
+  fail 'default installer mode did not create the expected managed unit link fixture'
+link_backup_archive="$(
+  "$BACKUP_CONFIG" \
+    --target-dir "$link_backup_quadlet_dir" \
+    --output-dir "$link_backup_output_dir" \
+    --include-units \
+    --print-archive
+)"
+run_success 'default link-mode unit backup validates as regular files' \
+  "$CHECK_BACKUP" --archive "$link_backup_archive"
+if tar -tvzf "$link_backup_archive" | grep -Eq '^l'; then
+  fail 'default link-mode unit backup retained a symbolic-link archive entry'
+fi
+for backed_up_name in \
+  erp4-storage-readiness.env \
+  erp4-storage-readiness.service \
+  erp4-storage-readiness.timer; do
+  tar -tzf "$link_backup_archive" | grep -Fxq "$backed_up_name" || \
+    fail "default link-mode backup omitted storage readiness artifact: $backed_up_name"
+done
+run_success 'default link-mode unit backup restores independently of source links' \
+  "$RESTORE_CONFIG" --archive "$link_backup_archive" --target-dir "$link_restore_dir" --skip-daemon-reload
+for restored_name in erp4-storage-readiness.service erp4-storage-readiness.timer; do
+  [[ -f "$link_restore_dir/$restored_name" && ! -L "$link_restore_dir/$restored_name" ]] || \
+    fail "restored native unit is not a regular file: $restored_name"
+done
+
+unsafe_backup_dir="$WORK_DIR/unsafe-backup-source"
+mkdir -p "$unsafe_backup_dir"
+printf 'not-a-runtime-env\n' >"$WORK_DIR/outside.env"
+ln -s "$WORK_DIR/outside.env" "$unsafe_backup_dir/erp4-postgres.env"
+run_failure 'config backup rejects env symlink dereference' 'env/config backup source must not be a symlink' \
+  "$BACKUP_CONFIG" --target-dir "$unsafe_backup_dir" --output-dir "$WORK_DIR/unsafe-backup-output"
+
 uninstall_quadlet_dir="$WORK_DIR/uninstall-quadlet"
 uninstall_systemd_dir="$WORK_DIR/uninstall-systemd"
+uninstall_systemctl_log="$WORK_DIR/uninstall-systemctl.log"
+fake_uninstall_systemctl="$WORK_DIR/fake-uninstall-systemctl.sh"
+cat >"$fake_uninstall_systemctl" <<EOF_FAKE_SYSTEMCTL
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"$uninstall_systemctl_log"
+EOF_FAKE_SYSTEMCTL
+chmod +x "$fake_uninstall_systemctl"
 run_success 'installer prepares managed native link uninstall fixture' \
   env SYSTEMCTL=true QUADLET_INSTALL_MODE=copy QUADLET_TARGET_DIR="$uninstall_quadlet_dir" \
   SYSTEMD_USER_TARGET_DIR="$uninstall_systemd_dir" ERP4_IMAGE_TAG=test-profile \
   "$INSTALL_UNITS" --profile private-smoke
-run_success 'uninstaller removes managed migrate native link' \
-  env SYSTEMCTL=true DISABLE_STACK=/usr/bin/true QUADLET_TARGET_DIR="$uninstall_quadlet_dir" \
+run_success 'uninstaller removes all managed native links' \
+  env SYSTEMCTL="$fake_uninstall_systemctl" DISABLE_STACK=/usr/bin/true QUADLET_TARGET_DIR="$uninstall_quadlet_dir" \
   SYSTEMD_USER_TARGET_DIR="$uninstall_systemd_dir" \
   "$UNINSTALL_STACK" --target-dir "$uninstall_quadlet_dir" --systemd-user-target-dir "$uninstall_systemd_dir"
-[[ ! -e "$uninstall_systemd_dir/erp4-migrate.service" && ! -L "$uninstall_systemd_dir/erp4-migrate.service" ]] || \
-  fail 'uninstaller left the managed migrate native link behind'
+for native_unit in \
+  erp4-migrate.service \
+  erp4-config-backup.service \
+  erp4-config-backup.timer \
+  erp4-db-backup.service \
+  erp4-db-backup.timer \
+  erp4-config-prune.service \
+  erp4-config-prune.timer \
+  erp4-storage-readiness.service \
+  erp4-storage-readiness.timer; do
+  [[ ! -e "$uninstall_systemd_dir/$native_unit" && ! -L "$uninstall_systemd_dir/$native_unit" ]] || \
+    fail "uninstaller left a managed native link behind: $native_unit"
+  [[ ! -e "$uninstall_quadlet_dir/$native_unit" && ! -L "$uninstall_quadlet_dir/$native_unit" ]] || \
+    fail "uninstaller left a managed native source behind: $native_unit"
+  grep -Fq -- "$native_unit" "$uninstall_systemctl_log" || \
+    fail "uninstaller did not disable managed native unit: $native_unit"
+done
+grep -Fq -- '--user disable --now' "$uninstall_systemctl_log" || \
+  fail 'uninstaller did not stop and disable managed native units before removal'
+
+same_target_dir="$WORK_DIR/uninstall-same-target"
+same_target_systemctl_log="$WORK_DIR/uninstall-same-target-systemctl.log"
+fake_same_target_systemctl="$WORK_DIR/fake-uninstall-same-target-systemctl.sh"
+cat >"$fake_same_target_systemctl" <<EOF_FAKE_SYSTEMCTL
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"$same_target_systemctl_log"
+EOF_FAKE_SYSTEMCTL
+chmod +x "$fake_same_target_systemctl"
+run_success 'installer prepares shared Quadlet and systemd target fixture' \
+  env SYSTEMCTL=true QUADLET_INSTALL_MODE=copy QUADLET_TARGET_DIR="$same_target_dir" \
+  SYSTEMD_USER_TARGET_DIR="$same_target_dir" ERP4_IMAGE_TAG=test-profile \
+  "$INSTALL_UNITS" --profile private-smoke
+run_success 'uninstaller disables native units when target directories are identical' \
+  env SYSTEMCTL="$fake_same_target_systemctl" DISABLE_STACK=/usr/bin/true QUADLET_TARGET_DIR="$same_target_dir" \
+  SYSTEMD_USER_TARGET_DIR="$same_target_dir" \
+  "$UNINSTALL_STACK" --target-dir "$same_target_dir" --systemd-user-target-dir "$same_target_dir"
+for native_unit in \
+  erp4-migrate.service \
+  erp4-config-backup.service \
+  erp4-config-backup.timer \
+  erp4-db-backup.service \
+  erp4-db-backup.timer \
+  erp4-config-prune.service \
+  erp4-config-prune.timer \
+  erp4-storage-readiness.service \
+  erp4-storage-readiness.timer; do
+  grep -Fq -- "$native_unit" "$same_target_systemctl_log" || \
+    fail "same-target uninstaller did not disable managed native unit: $native_unit"
+done
 
 stale_proxy_dir="$WORK_DIR/private-stale-proxy"
 mkdir -p "$stale_proxy_dir"

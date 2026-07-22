@@ -9,6 +9,17 @@ SYSTEMD_USER_TARGET_DIR="${SYSTEMD_USER_TARGET_DIR:-$HOME/.config/systemd/user}"
 INCLUDE_PROXY=0
 PURGE_CONFIG=0
 REMOVE_EMPTY_TARGET_DIR=0
+NATIVE_UNITS=(
+  erp4-migrate.service
+  erp4-config-backup.service
+  erp4-config-backup.timer
+  erp4-db-backup.service
+  erp4-db-backup.timer
+  erp4-config-prune.service
+  erp4-config-prune.timer
+  erp4-storage-readiness.service
+  erp4-storage-readiness.timer
+)
 
 usage() {
   cat <<USAGE
@@ -52,6 +63,9 @@ remove_managed_native_link() {
   local name="$1"
   local path="$SYSTEMD_USER_TARGET_DIR/$name"
   local expected="$TARGET_DIR/$name"
+  if [[ "$path" == "$expected" ]]; then
+    return 0
+  fi
   if [[ -L "$path" ]]; then
     local current_target
     current_target="$(readlink "$path")"
@@ -64,6 +78,32 @@ remove_managed_native_link() {
   elif [[ -e "$path" ]]; then
     printf 'WARN: preserved unmanaged native systemd unit %s\n' "$path" >&2
   fi
+}
+
+disable_managed_native_units() {
+  local name path expected output
+  local managed=()
+  for name in "${NATIVE_UNITS[@]}"; do
+    path="$SYSTEMD_USER_TARGET_DIR/$name"
+    expected="$TARGET_DIR/$name"
+    if [[ "$path" == "$expected" && ( -e "$path" || -L "$path" ) ]]; then
+      managed+=("$name")
+    elif [[ -L "$path" && "$(readlink "$path")" == "$expected" ]]; then
+      managed+=("$name")
+    fi
+  done
+  if [[ ${#managed[@]} -eq 0 ]]; then
+    return 0
+  fi
+  if output="$("$SYSTEMCTL" --user disable --now "${managed[@]}" 2>&1)"; then
+    [[ -n "$output" ]] && printf '%s\n' "$output"
+    return 0
+  fi
+  if grep -Fq 'Failed to connect to bus' <<<"$output"; then
+    fail "systemctl --user failed because the user bus is unavailable; log in with a user session or run 'sudo loginctl enable-linger $(id -un)'"
+  fi
+  printf '%s\n' "$output" >&2
+  return 1
 }
 
 while [[ $# -gt 0 ]]; do
@@ -110,7 +150,10 @@ else
   "$DISABLE_STACK"
 fi
 
-remove_managed_native_link erp4-migrate.service
+disable_managed_native_units
+for name in "${NATIVE_UNITS[@]}"; do
+  remove_managed_native_link "$name"
+done
 
 for name in \
   erp4.network \
@@ -119,7 +162,15 @@ for name in \
   erp4-postgres.container \
   erp4-migrate.service \
   erp4-backend.container \
-  erp4-frontend.container; do
+  erp4-frontend.container \
+  erp4-config-backup.service \
+  erp4-config-backup.timer \
+  erp4-db-backup.service \
+  erp4-db-backup.timer \
+  erp4-config-prune.service \
+  erp4-config-prune.timer \
+  erp4-storage-readiness.service \
+  erp4-storage-readiness.timer; do
   remove_file_if_exists "$TARGET_DIR/$name"
 done
 

@@ -95,7 +95,7 @@ for i in "${!entries[@]}"; do
   [[ "$entry" != *'/'* ]] || fail "archive contains nested paths: $entry"
   [[ "$entry" != '.' && "$entry" != '..' ]] || fail "archive contains an invalid entry: $entry"
   [[ "${detail:0:1}" == "-" ]] || fail "archive contains a non-regular entry: $entry"
-  if [[ "$entry" =~ \.(container|service|volume|network)$ ]]; then
+  if [[ "$entry" =~ \.(container|service|timer|volume|network)$ ]]; then
     requires_daemon_reload=1
   fi
 done
