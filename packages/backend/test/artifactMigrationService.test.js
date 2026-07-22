@@ -5,6 +5,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   stat,
   symlink,
@@ -168,6 +169,50 @@ test('apply verifies count, size, digest and is idempotent on rerun', async () =
     assert.equal(fake.calls, 4);
   } finally {
     await rm(sourceDir, { recursive: true, force: true });
+  }
+});
+
+test('apply streams the pinned source when its path is replaced after inventory', async () => {
+  const sourceDir = await createScratchDir();
+  const sourcePath = path.join(sourceDir, 'document.pdf');
+  const movedPath = path.join(sourceDir, 'document-original.pdf');
+  const outsideDir = await createScratchDir();
+  const outsidePath = path.join(outsideDir, 'private.txt');
+  const expected = Buffer.from('approved source');
+  const privateContent = Buffer.from('must not be uploaded');
+  await writeFile(sourcePath, expected);
+  await writeFile(outsidePath, privateContent);
+  let uploaded;
+  try {
+    const report = await migrateLocalArtifacts({
+      context: 'pdf',
+      mode: 'apply',
+      port: {
+        open: async () => assert.fail('open must not be called'),
+        store: async (input) => {
+          await rename(sourcePath, movedPath);
+          await symlink(outsidePath, sourcePath);
+          uploaded = await readAll(input.body);
+          return {
+            artifactId: randomUUID(),
+            contentType: input.contentType,
+            createdAt: '2026-07-22T00:00:00.000Z',
+            originalName: input.originalName,
+            provider: 'gdrive',
+            sha256: input.sha256,
+            sizeBytes: input.sizeBytes,
+          };
+        },
+      },
+      sourceDir,
+    });
+
+    assert.equal(report.verified, true);
+    assert.deepEqual(uploaded, expected);
+    assert.notDeepEqual(uploaded, privateContent);
+  } finally {
+    await rm(sourceDir, { recursive: true, force: true });
+    await rm(outsideDir, { recursive: true, force: true });
   }
 });
 

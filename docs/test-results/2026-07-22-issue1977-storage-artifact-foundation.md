@@ -12,6 +12,7 @@
 - #1976の共通`GoogleDriveObjectStore`を利用するlocal / gdrive共通artifact adapter
 - Drive private `appProperties`へhash化idempotency keyを保存する再実行安全性
 - dry-run既定、source削除なし、count / size / aggregate SHA-256を照合するcopy-only migration helper
+- inventory時に`O_NOFOLLOW`で開いたfile handleをupload完了まで保持し、path差し替え後も検証済みinodeだけをstreamするTOCTOU対策
 - Chat / PDF / Evidence / Report別folderのprovision・read/write preflight
 - migration Runbook、Google Cloud事前設定、さくらVPS設定一覧、backup対象契約
 
@@ -29,14 +30,14 @@ PDF / Evidence archive / Reportのruntime provider接続、認可済みdownload 
 
 | Command                                                           | Result | Notes                                                                                            |
 | ----------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------ |
-| focused storage / Google Drive tests                              | PASS   | 79 tests、fake object store / CLI / config / migration                                           |
-| `npm run coverage:storage:check --prefix packages/backend`        | PASS   | 19 tests。statements 89.01%、branches 73.95%、functions 100%、lines 89.01%                       |
+| focused storage / Google Drive tests                              | PASS   | 初回79 tests。review修正後のmigration targeted test 8 tests                                      |
+| `npm run coverage:storage:check --prefix packages/backend`        | PASS   | 20 tests。statements 89.28%、branches 74.14%、functions 100%、lines 89.28%                       |
 | `npm run coverage:chat:check --prefix packages/backend`           | PASS   | 199 tests。scoped statements/lines 59.15%、branches 64.66%、functions 75.73%。既存閾値は変更なし |
 | `make lint`                                                       | PASS   | backend / frontend                                                                               |
 | `make format-check`                                               | PASS   | backend / frontend                                                                               |
 | `make typecheck`                                                  | PASS   | backend / frontend                                                                               |
 | `make build`                                                      | PASS   | backend / frontend                                                                               |
-| `make test`                                                       | PASS   | backend 1,383 tests、frontend 468 tests                                                          |
+| `make test`                                                       | PASS   | review修正後 backend 1,384 tests、frontend 468 tests                                             |
 | `make ops-quality`                                                | PASS   | ops script checks、Quadlet profile tests、S3 backup profile 19 tests                             |
 | `npm run arch:bounded-context --prefix packages/backend`          | PASS   | 252 modules / 966 dependencies、違反なし                                                         |
 | `npm run arch:bounded-context:coverage --prefix packages/backend` | PASS   | source 239、target 209、unclassified / stale / duplicate / ambiguous 0                           |

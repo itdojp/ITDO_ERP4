@@ -185,14 +185,16 @@ context別のfolder env:
 
 ERP4 側への対応:
 
-| Google 側           | ERP4 env                              |
-| ------------------- | ------------------------------------- |
-| OAuth client ID     | `ERP4_GDRIVE_CLIENT_ID`               |
-| OAuth client secret | `ERP4_GDRIVE_CLIENT_SECRET`           |
-| refresh token       | `ERP4_GDRIVE_REFRESH_TOKEN`           |
-| Shared Drive ID     | `ERP4_GDRIVE_SHARED_DRIVE_ID`（任意） |
-| folder ID           | 上記context別`*_GDRIVE_FOLDER_ID`     |
-| provider switch     | 各contextの`*_PROVIDER=gdrive`        |
+| Google 側           | ERP4 env                                  |
+| ------------------- | ----------------------------------------- |
+| OAuth client ID     | `ERP4_GDRIVE_CLIENT_ID`                   |
+| OAuth client secret | `ERP4_GDRIVE_CLIENT_SECRET`               |
+| refresh token       | `ERP4_GDRIVE_REFRESH_TOKEN`               |
+| Shared Drive ID     | `ERP4_GDRIVE_SHARED_DRIVE_ID`（任意）     |
+| folder ID           | 上記context別`*_GDRIVE_FOLDER_ID`         |
+| provider switch     | Chatのみ`CHAT_ATTACHMENT_PROVIDER=gdrive` |
+
+このfoundation PRではPDF、Evidence archive、Reportのfolder preflightとstorage portまでを提供する。これら3 contextのruntime provider切替は#1977の後続runtime integration PRで実装・検証するまで設定しない。未実装の`PDF_PROVIDER=gdrive`、`EVIDENCE_ARCHIVE_PROVIDER=gdrive`、`REPORT_PROVIDER=gdrive`を本番envへ追加してはならない。
 
 旧 `CHAT_ATTACHMENT_GDRIVE_CLIENT_ID` / `CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET` / `CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN` は deprecated な後方互換 fallback とする。共通キーを1つでも設定した場合は完全な `ERP4_GDRIVE_*` 3点setを必須とし、field単位の混在は拒否する。共通setが未設定の場合だけ完全な旧setへfallbackし、両方が完全な場合は共通setを優先する。ログにはcredential値を出さない。
 
