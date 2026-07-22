@@ -160,6 +160,7 @@ for name in \
   erp4-postgres.volume \
   erp4-backend-data.volume \
   erp4-postgres.container \
+  erp4-postgres-unit.sha256 \
   erp4-migrate.service \
   erp4-backend.container \
   erp4-frontend.container \

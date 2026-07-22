@@ -2,7 +2,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/unit-state.sh
+source "$SCRIPT_DIR/lib/unit-state.sh"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
+POSTGRES_UNIT="$TARGET_DIR/erp4-postgres.container"
+POSTGRES_UNIT_STATE="$TARGET_DIR/erp4-postgres-unit.sha256"
 BACKUP_AND_CHECK="${BACKUP_AND_CHECK:-$SCRIPT_DIR/backup-and-check.sh}"
 BUILD_IMAGES="${BUILD_IMAGES:-$SCRIPT_DIR/build-images.sh}"
 INSTALL_UNITS="${INSTALL_UNITS:-$SCRIPT_DIR/install-user-units.sh}"
@@ -63,28 +67,23 @@ run_build_images() {
 }
 
 run_install_units() {
-  local before after
-  if [[ "$SKIP_INSTALL_UNITS" -eq 1 ]]; then
-    return 0
+  local desired recorded
+  if [[ "$SKIP_INSTALL_UNITS" -eq 0 ]]; then
+    "$INSTALL_UNITS" --profile "$PROFILE"
   fi
 
-  before="$(postgres_unit_signature)"
-  "$INSTALL_UNITS" --profile "$PROFILE"
-  after="$(postgres_unit_signature)"
-  if [[ "$before" != "$after" ]]; then
+  desired="$(erp4_unit_content_sha256 "$POSTGRES_UNIT")" || fail "PostgreSQL unit not found: $POSTGRES_UNIT"
+  recorded="$(erp4_read_unit_state "$POSTGRES_UNIT_STATE" || true)"
+  if [[ "$recorded" != "$desired" ]]; then
     POSTGRES_UNIT_CHANGED=1
   fi
 }
 
-postgres_unit_signature() {
-  local path="$TARGET_DIR/erp4-postgres.container"
-  if [[ -L "$path" ]]; then
-    printf 'link:%s\n' "$(readlink "$path")"
-  elif [[ -f "$path" ]]; then
-    sha256sum "$path" | awk '{print "file:" $1}'
-  else
-    printf '%s\n' absent
-  fi
+record_postgres_unit_state() {
+  local digest
+  digest="$(erp4_unit_content_sha256 "$POSTGRES_UNIT")" || fail "PostgreSQL unit not found: $POSTGRES_UNIT"
+  erp4_write_unit_state "$POSTGRES_UNIT_STATE" "$digest" || \
+    fail "could not record PostgreSQL unit state: $POSTGRES_UNIT_STATE"
 }
 
 wait_postgres_ready() {
@@ -185,6 +184,7 @@ if [[ "$BACKUP_BEFORE_UPDATE" -eq 1 ]]; then
   run_backup
 fi
 command -v "$SYSTEMCTL" >/dev/null 2>&1 || fail "required command not found: $SYSTEMCTL"
+[[ ! -L "$POSTGRES_UNIT_STATE" ]] || fail "PostgreSQL unit state must not be a symlink: $POSTGRES_UNIT_STATE"
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   [[ -x "$BUILD_IMAGES" ]] || fail "build command is not executable: $BUILD_IMAGES"
 fi
@@ -205,6 +205,7 @@ if [[ "$POSTGRES_UNIT_CHANGED" -eq 1 ]]; then
   command -v "$PODMAN" >/dev/null 2>&1 || fail "required command not found: $PODMAN"
   restart_unit erp4-postgres.service
   wait_postgres_ready
+  record_postgres_unit_state
 fi
 restart_unit erp4-migrate.service
 restart_unit erp4-backend.service

@@ -329,6 +329,7 @@ run_success 'installer prepares shared Quadlet and systemd target fixture' \
   env SYSTEMCTL=true QUADLET_INSTALL_MODE=copy QUADLET_TARGET_DIR="$same_target_dir" \
   SYSTEMD_USER_TARGET_DIR="$same_target_dir" ERP4_IMAGE_TAG=test-profile \
   "$INSTALL_UNITS" --profile private-smoke
+printf '%064d\n' 0 >"$same_target_dir/erp4-postgres-unit.sha256"
 run_success 'uninstaller disables native units when target directories are identical' \
   env SYSTEMCTL="$fake_same_target_systemctl" DISABLE_STACK=/usr/bin/true QUADLET_TARGET_DIR="$same_target_dir" \
   SYSTEMD_USER_TARGET_DIR="$same_target_dir" \
@@ -346,6 +347,8 @@ for native_unit in \
   grep -Fq -- "$native_unit" "$same_target_systemctl_log" || \
     fail "same-target uninstaller did not disable managed native unit: $native_unit"
 done
+[[ ! -e "$same_target_dir/erp4-postgres-unit.sha256" && ! -L "$same_target_dir/erp4-postgres-unit.sha256" ]] || \
+  fail 'uninstaller left managed PostgreSQL unit state behind'
 for purged_config in \
   erp4-postgres.env \
   erp4-backend.env \
@@ -375,6 +378,10 @@ run_success 'start stack propagates private-smoke profile' \
   env CHECK_ENV="$fake_check_env" CHECK_STACK=true SYSTEMCTL=true QUADLET_TARGET_DIR="$installed_private_dir" \
   "$START_STACK" --profile private-smoke --skip-stack-check
 grep -Fq -- '--profile private-smoke' "$profile_args_file" || fail 'start-stack did not propagate private-smoke to check-env'
+[[ -f "$installed_private_dir/erp4-postgres-unit.sha256" && ! -L "$installed_private_dir/erp4-postgres-unit.sha256" ]] || \
+  fail 'start-stack did not record PostgreSQL unit state'
+[[ "$(stat -c %a "$installed_private_dir/erp4-postgres-unit.sha256")" == 600 ]] || \
+  fail 'PostgreSQL unit state is not owner-only'
 run_failure 'start stack rejects private-smoke proxy' 'private-smoke must not include proxy' \
   env SYSTEMCTL=true "$START_STACK" --profile private-smoke --include-proxy --skip-env-check --skip-stack-check
 
@@ -403,7 +410,7 @@ printf '%s\n' "\$*" >"$profile_args_file"
 EOF_FAKE_INSTALL
 chmod +x "$fake_install"
 run_success 'update stack propagates private-smoke profile' \
-  env INSTALL_UNITS="$fake_install" SYSTEMCTL=true \
+  env QUADLET_TARGET_DIR="$installed_private_dir" INSTALL_UNITS="$fake_install" SYSTEMCTL=true \
   "$UPDATE_STACK" --profile private-smoke --skip-build --skip-stack-check
 grep -Fq -- '--profile private-smoke' "$profile_args_file" || fail 'update-stack did not propagate private-smoke to install-user-units'
 
@@ -452,6 +459,51 @@ if grep -Fq -- 'erp4-postgres.service' "$update_systemctl_log"; then
 fi
 [[ ! -s "$update_podman_log" ]] || fail 'update-stack probed PostgreSQL even though its unit was unchanged'
 
+link_update_source="$WORK_DIR/update-link-source.container"
+link_update_target="$WORK_DIR/update-link-target"
+fake_link_update_install="$WORK_DIR/fake-link-update-install.sh"
+mkdir -p "$link_update_target"
+cp "$ROOT_DIR/deploy/quadlet/profiles/private-smoke/erp4-postgres.container" "$link_update_source"
+ln -s "$link_update_source" "$link_update_target/erp4-postgres.container"
+sha256sum "$link_update_source" | awk '{print $1}' >"$link_update_target/erp4-postgres-unit.sha256"
+cat >"$fake_link_update_install" <<EOF_FAKE_LINK_UPDATE_INSTALL
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >"$profile_args_file"
+EOF_FAKE_LINK_UPDATE_INSTALL
+chmod +x "$fake_link_update_install"
+printf '\n# same-profile content update\n' >>"$link_update_source"
+: >"$update_systemctl_log"
+: >"$update_podman_log"
+run_success 'update stack detects same-profile content changes through a stable unit symlink' \
+  env QUADLET_TARGET_DIR="$link_update_target" INSTALL_UNITS="$fake_link_update_install" \
+  SYSTEMCTL="$fake_update_systemctl" PODMAN="$fake_update_podman" POSTGRES_READY_TIMEOUT_SECONDS=2 \
+  "$UPDATE_STACK" --profile private-smoke --skip-build --skip-stack-check
+[[ "$(sed -n '1p' "$update_systemctl_log")" == '--user restart erp4-postgres.service' ]] || \
+  fail 'update-stack did not restart PostgreSQL after same-path unit content change'
+[[ "$(cat "$link_update_target/erp4-postgres-unit.sha256")" == "$(sha256sum "$link_update_source" | awk '{print $1}')" ]] || \
+  fail 'update-stack did not record the applied same-profile unit content hash'
+
+chmod 0644 "$link_update_target/erp4-postgres-unit.sha256"
+: >"$update_systemctl_log"
+run_success 'update stack replaces a non-owner-only unit state after a safe PostgreSQL restart' \
+  env QUADLET_TARGET_DIR="$link_update_target" INSTALL_UNITS="$fake_link_update_install" \
+  SYSTEMCTL="$fake_update_systemctl" PODMAN="$fake_update_podman" POSTGRES_READY_TIMEOUT_SECONDS=2 \
+  "$UPDATE_STACK" --profile private-smoke --skip-build --skip-stack-check
+[[ "$(sed -n '1p' "$update_systemctl_log")" == '--user restart erp4-postgres.service' ]] || \
+  fail 'update-stack trusted a non-owner-only PostgreSQL unit state'
+[[ "$(stat -c %a "$link_update_target/erp4-postgres-unit.sha256")" == 600 ]] || \
+  fail 'update-stack did not replace PostgreSQL unit state with owner-only permissions'
+
+unsafe_state_target="$WORK_DIR/update-unsafe-state-target"
+mkdir -p "$unsafe_state_target"
+cp "$ROOT_DIR/deploy/quadlet/profiles/private-smoke/erp4-postgres.container" \
+  "$unsafe_state_target/erp4-postgres.container"
+printf '%064d\n' 0 >"$WORK_DIR/outside-unit-state"
+ln -s "$WORK_DIR/outside-unit-state" "$unsafe_state_target/erp4-postgres-unit.sha256"
+run_failure 'update stack rejects a symbolic-link unit state file' 'unit state must not be a symlink' \
+  env QUADLET_TARGET_DIR="$unsafe_state_target" INSTALL_UNITS="$fake_link_update_install" SYSTEMCTL=true \
+  "$UPDATE_STACK" --profile private-smoke --skip-build --skip-stack-check
+
 fake_unready_podman="$WORK_DIR/fake-update-unready-podman.sh"
 cat >"$fake_unready_podman" <<EOF_FAKE_UNREADY_PODMAN
 #!/usr/bin/env bash
@@ -460,6 +512,7 @@ exit 1
 EOF_FAKE_UNREADY_PODMAN
 chmod +x "$fake_unready_podman"
 cp "$ROOT_DIR/deploy/quadlet/erp4-postgres.container" "$update_target_dir/erp4-postgres.container"
+sha256sum "$update_target_dir/erp4-postgres.container" | awk '{print $1}' >"$update_target_dir/erp4-postgres-unit.sha256"
 : >"$update_systemctl_log"
 : >"$update_podman_log"
 run_failure 'update stack fails before migration when changed PostgreSQL is not ready' 'did not become ready' \
