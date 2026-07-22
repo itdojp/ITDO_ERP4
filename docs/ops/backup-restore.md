@@ -207,6 +207,72 @@ make backup-s3-check
 
 remote-host経路はSakura移行中のcopy-only sourceであり、Sakura object storeの実証を代替しない。廃止判断は#1981で行い、それまではsourceを削除しない。
 
+### 4.6 Google Drive secondary copy
+
+責任分界:
+
+- Sakura S3-compatible object storageがprimaryであり、Driveだけのbackup成功状態は作らない。
+- `backup-prod.sh backup|upload`はprimary bundleを全件検証した後だけsecondary CLIを呼ぶ。
+- hourlyはVPS localとSakuraだけに保持し、Driveへ送らない。
+- Driveへ送るのはOpenPGP暗号化済み`.gpg` artifactと対応manifestだけである。
+- secondary failureはsanitized `partial_failure`をstderrへ残してnon-zero終了する。primary objectは自動削除しない。
+
+Google側ではapplication file用とは別のOAuth client / refresh tokenと、backup専用Shared Drive folderを用意する。writer principalは専用folderに必要な最小権限だけを持ち、個人My Drive、domain-wide delegation、公開linkを使用しない。値はowner-only private envへ入力し、CLI引数、shell history、Issue、PRへ記載しない。
+
+```bash
+npm run build --prefix packages/backend
+./scripts/backup-gdrive-secondary.sh check-config
+```
+
+標準backup/uploadは既存commandを使う。`BACKUP_SECONDARY_PROVIDER=gdrive`の場合、primary成功後に自動copyされる。
+
+```bash
+make backup-s3-backup
+# または既存bundle
+make backup-s3-upload
+```
+
+read-only inventory / freshness:
+
+```bash
+make backup-gdrive-list
+make backup-gdrive-freshness
+BACKUP_DIGEST='<sanitized SHA-256 selector>' make backup-gdrive-stat
+```
+
+summaryは世代数、最新時刻、fresh/stale/unknown、anomaly件数、object件数だけを返す。Drive quotaを取得できない場合は`unknown`とし、値を推測しない。file IDは`BACKUP_GDRIVE_STATE_DIR`（未指定時`BACKUP_DIR/.gdrive-state`）のmode 600 JSONだけへ記録する。
+
+Driveからの復元入力取得は、hash化backup selectorとowner-only出力先を使う。既存fileを上書きせず、全objectのSHA-256 / MD5 / size、manifest、OpenPGP packet、bundle整合を再検証してからhandoff JSONを作る。
+
+```bash
+install -d -m 700 "$PRIVATE_GDRIVE_DOWNLOAD_DIR"
+BACKUP_DIGEST='<reviewed SHA-256 selector>' \
+BACKUP_GDRIVE_DOWNLOAD_DIR="$PRIVATE_GDRIVE_DOWNLOAD_DIR" \
+BACKUP_GDRIVE_HANDOFF_FILE="$PRIVATE_GDRIVE_DOWNLOAD_DIR/restore-handoff.json" \
+make backup-gdrive-download
+```
+
+handoffの`BACKUP_FILE` / `BACKUP_GLOBALS_FILE` / `BACKUP_ASSETS_FILE`を確認し、実restoreは#544の隔離DB、人間承認、`RESTORE_CONFIRM=1`が揃った別工程で行う。download command自体はrestoreを実行しない。
+
+retentionはdaily 30日、weekly 12週、monthly 13か月で、各classの最新1世代を必ず保護する。inventoryにduplicate、orphan manifest、0-byte、checksum mismatch、incomplete generationがあればapply不可となる。
+
+```bash
+make backup-gdrive-prune-plan
+```
+
+通常pruneはtrash-onlyであり、完全削除しない。apply/trash機能はrepo-sideで実装・fake検証するが、本作業では実行しない。実行には対象inventoryのprivate reviewと明示的人間承認に加え、`--apply` + `BACKUP_GDRIVE_PRUNE_CONFIRM=1`または`BACKUP_GDRIVE_TRASH_CONFIRM=1`が必要である。
+
+token rotation / revoke:
+
+1. backup専用principalとfolder membershipを確認する。
+2. 新refresh tokenを承認済みsecret storeへ登録し、旧値を表示しない。
+3. `check-config`、read-only list、syntheticな暗号化bundleのupload/downloadを対象環境で実証する。
+4. timer/envをatomicに新tokenへ切り替える。
+5. 旧tokenをGoogle側でrevokeし、旧tokenでauth failureになることをprivate logで確認する。
+6. sanitizedな時刻、結果、commit SHAだけをevidenceへ記録する。
+
+実Drive preflightの再開commandは、private env読込後の`./scripts/backup-gdrive-secondary.sh list`である。folder ID、file ID、OAuth token、raw API errorは証跡へ転記しない。
+
 ## 5. partial uploadの処理
 
 artifact upload後、manifest upload前等で失敗するとorphanが残り得る。自動削除・上書きretryは行わない。

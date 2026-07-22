@@ -70,12 +70,24 @@
 
 Sakura backupの復元では、real readiness、verified download、manifest SHA-256、OpenPGP復号、isolated DB restore、件数・金額・参照・file整合性、plaintext cleanupを#544のpass条件とする。fake provider testは復元演習の代替にしない。
 
+復元sourceは次の順で判断する。
+
+1. Sakura primaryの対象世代をinventoryし、artifact / manifest / size / SHA-256 / OpenPGP packetを検証してdownloadする。
+2. Sakura primaryが利用不能、credential障害、または対象世代破損の場合だけ、Google Drive secondaryのsanitized inventoryから同一世代をhash selectorで選ぶ。
+3. `make backup-gdrive-download`でowner-only scratchへ取得し、size / SHA-256 / MD5、manifest、OpenPGP packet、bundle整合を再検証してrestore handoffを作る。
+4. handoffを入力として、承認済みの隔離DBへ復号・restoreする。本番DBへ直接restoreしない。
+5. 件数・金額・参照・application file整合、RTO/RPO、plaintext cleanupを確認する。
+
+Google DriveはSakura primaryの代替成功条件ではない。secondaryがfreshでもprimary失敗を隠さず、`partial_failure`として復旧・監視対象にする。Driveからのdownload成功もDB restore成功とは別の証跡であり、#544の隔離restoreを完了するまでreal restore passと記録しない。
+
 ## 復元演習（定期）
 
 ### 方針（暫定）
 
 - まずは **週1回**（検証環境）で実施し、所要時間/失敗要因を記録する
 - 本番相当は、実行環境が用意できた時点で定期化（nightly/weekly）
+- 少なくとも四半期ごとに、Sakura primary障害を想定したGoogle Drive secondaryからのdownload・handoff・隔離restoreを演習する
+- #1981のcopy-only移行中はsourceを削除せず、primary/secondary双方のfreshnessと同一bundle checksumを確認してからcutover判断する
 
 ### 記録（テンプレ）
 
@@ -87,4 +99,5 @@ Sakura backupの復元では、real readiness、verified download、manifest SHA
 
 - バックアップ/リストア（Runbook）: `docs/ops/backup-restore.md`
 - S3-compatible storage設定決定: `docs/ops/backup-s3-decision-checklist.md`
+- Google Drive secondary copy: `docs/ops/backup-restore.md#46-google-drive-secondary-copy`
 - 障害対応: `docs/ops/incident-response.md`
