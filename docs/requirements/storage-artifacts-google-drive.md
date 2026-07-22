@@ -57,7 +57,8 @@ expand-only migrationで次を追跡する。
 ## local providerの安全条件
 
 - provider keyは生成したUUIDだけを許可する。
-- 保存先directoryとfileのsymlinkを拒否し、directoryはgroup/other permissionなし（通常`0700`）を要求する。
+- 保存先directoryとfileのsymlinkを拒否し、directoryは実行user所有かつgroup/other permissionなし（通常`0700`）、fileは実行user所有かつ`0600`を要求する。
+- local file I/OはLinuxの`/proc/self/fd`を介して検証済みdirectory file descriptorへ固定し、directory path差し替えを検出してfail closedとする。
 - 新規fileはexclusive create、mode `0600`とする。
 - 保存直後とopen前にsize・SHA-256を検証する。
 - current providerを切り替えた後もrow単位のproviderで既存local recordを解決する。

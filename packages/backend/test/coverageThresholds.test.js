@@ -364,6 +364,7 @@ test('storage coverage scope includes executable artifact storage foundation mod
     'src/adapters/storage/artifactStorageAdapter.ts',
     'src/application/storage/artifactMigrationService.ts',
     'src/cli/storageArtifactMigration.ts',
+    'src/infrastructure/storage/localArtifactDirectory.ts',
   ].sort();
 
   assert.deepEqual(configuredFiles, expectedFiles);

@@ -6,6 +6,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   writeFile,
 } from 'node:fs/promises';
@@ -14,6 +15,10 @@ import { Readable } from 'node:stream';
 import test from 'node:test';
 
 import { createArtifactStorageAdapter } from '../dist/adapters/storage/artifactStorageAdapter.js';
+import {
+  assertSafeLocalFileHandle,
+  openLocalArtifactDirectory,
+} from '../dist/infrastructure/storage/localArtifactDirectory.js';
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -146,6 +151,60 @@ async function createScratchDir() {
   await mkdir(scratchRoot, { recursive: true });
   return mkdtemp(path.join(scratchRoot, 'erp4-artifact-storage-'));
 }
+
+test('local directory capability stays anchored and detects path replacement', async () => {
+  const scratchDir = await createScratchDir();
+  const localDir = path.join(scratchDir, 'storage');
+  const movedDir = path.join(scratchDir, 'storage-moved');
+  const providerKey = randomUUID();
+  const trusted = Buffer.from('trusted-artifact');
+  const replacement = Buffer.from('replacement-data');
+  await mkdir(localDir, { mode: 0o700 });
+  await writeFile(path.join(localDir, providerKey), trusted, { mode: 0o600 });
+  const directory = await openLocalArtifactDirectory(localDir, {
+    create: false,
+  });
+  assert.ok(directory);
+  try {
+    await rename(localDir, movedDir);
+    await mkdir(localDir, { mode: 0o700 });
+    await writeFile(path.join(localDir, providerKey), replacement, {
+      mode: 0o600,
+    });
+
+    await assert.rejects(() => directory.openRead('..'), {
+      message: 'artifact_provider_key_invalid',
+    });
+    const handle = await directory.openRead(providerKey);
+    try {
+      assert.deepEqual(await handle.readFile(), trusted);
+    } finally {
+      await handle.close();
+    }
+    await assert.rejects(() => directory.assertBound(), {
+      message: 'artifact_local_directory_unsafe',
+    });
+  } finally {
+    await directory.close();
+    await rm(scratchDir, { recursive: true, force: true });
+  }
+});
+
+test('local file ownership mismatch fails closed before content verification', async () => {
+  const uid = process.getuid?.();
+  assert.notEqual(uid, undefined);
+  await assert.rejects(
+    () =>
+      assertSafeLocalFileHandle({
+        stat: async () => ({
+          isFile: () => true,
+          mode: 0o100600,
+          uid: uid + 1,
+        }),
+      }),
+    { message: 'artifact_local_file_unsafe' },
+  );
+});
 
 test('local artifact lifecycle is pending then verified ready without exposing providerKey', async () => {
   const localDir = await createScratchDir();

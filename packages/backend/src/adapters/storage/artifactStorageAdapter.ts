@@ -1,14 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
-import {
-  lstat,
-  mkdir,
-  open,
-  realpath,
-  unlink,
-  type FileHandle,
-} from 'node:fs/promises';
-import path from 'node:path';
+import type { FileHandle } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 
 import type { PrismaClient, StorageArtifact } from '@prisma/client';
@@ -31,6 +22,10 @@ import {
   GoogleDriveObjectStore,
   GoogleDriveObjectStoreError,
 } from '../../infrastructure/storage/googleDriveObjectStore.js';
+import {
+  assertSafeLocalFileHandle,
+  openLocalArtifactDirectory,
+} from '../../infrastructure/storage/localArtifactDirectory.js';
 import type { ObjectStore } from '../../infrastructure/storage/objectStore.js';
 import { prisma } from '../../services/db.js';
 
@@ -123,52 +118,11 @@ function assertMatchingArtifact(
   }
 }
 
-async function findSafeLocalDirectory(localDir: string) {
-  try {
-    const resolved = path.resolve(localDir);
-    const info = await lstat(resolved);
-    if (
-      !info.isDirectory() ||
-      info.isSymbolicLink() ||
-      (info.mode & 0o077) !== 0 ||
-      (await realpath(resolved)) !== resolved
-    ) {
-      throw new Error('artifact_local_directory_unsafe');
-    }
-    return resolved;
-  } catch (error) {
-    const code =
-      error && typeof error === 'object' && 'code' in error
-        ? String(error.code)
-        : '';
-    if (code === 'ENOENT') return null;
-    if (error instanceof Error && /^artifact_[a-z0-9_]+$/.test(error.message)) {
-      throw error;
-    }
-    throw new Error('artifact_local_directory_unsafe');
-  }
-}
-
-async function assertSafeLocalDirectory(localDir: string) {
-  const resolved = path.resolve(localDir);
-  try {
-    await mkdir(resolved, { recursive: true, mode: 0o700 });
-  } catch {
-    throw new Error('artifact_local_directory_unsafe');
-  }
-  const safeDirectory = await findSafeLocalDirectory(resolved);
-  if (!safeDirectory) throw new Error('artifact_local_directory_unsafe');
-  return safeDirectory;
-}
-
 async function verifyLocalHandle(
   handle: FileHandle,
   input: Pick<StoreArtifactInput, 'sha256' | 'sizeBytes'>,
 ) {
-  const info = await handle.stat();
-  if (!info.isFile() || (info.mode & 0o077) !== 0) {
-    throw new Error('artifact_local_file_unsafe');
-  }
+  const info = await assertSafeLocalFileHandle(handle);
   const hash = createHash('sha256');
   for await (const chunk of handle.createReadStream({
     autoClose: false,
@@ -204,20 +158,15 @@ async function writeLocalArtifact(
   providerKey: string,
   input: StoreArtifactInput,
 ) {
-  const root = await assertSafeLocalDirectory(localDir);
-  const filePath = path.join(root, providerKey);
+  const directory = await openLocalArtifactDirectory(localDir, {
+    create: true,
+  });
+  if (!directory) throw new Error('artifact_local_directory_unsafe');
   let created = false;
   try {
     let output: FileHandle | undefined;
     try {
-      output = await open(
-        filePath,
-        constants.O_CREAT |
-          constants.O_EXCL |
-          constants.O_WRONLY |
-          constants.O_NOFOLLOW,
-        0o600,
-      );
+      output = await directory.openWriteExclusive(providerKey);
       created = true;
     } catch (error) {
       const code =
@@ -241,21 +190,21 @@ async function writeLocalArtifact(
         await output.close();
       }
     }
-    const handle = await open(
-      filePath,
-      constants.O_RDONLY | constants.O_NOFOLLOW,
-    );
+    const handle = await directory.openRead(providerKey);
     try {
       await verifyLocalHandle(handle, input);
     } finally {
       await handle.close();
     }
+    await directory.assertBound();
   } catch (error) {
-    if (created) await unlink(filePath).catch(() => undefined);
+    if (created) await directory.unlink(providerKey).catch(() => undefined);
     if (error instanceof Error && /^artifact_[a-z0-9_]+$/.test(error.message)) {
       throw error;
     }
     throw new Error('artifact_local_io_failed');
+  } finally {
+    await directory.close().catch(() => undefined);
   }
   return providerKey;
 }
@@ -265,13 +214,15 @@ async function findCompletedLocalArtifact(
   providerKey: string,
   input: Pick<StoreArtifactInput, 'sha256' | 'sizeBytes'>,
 ) {
-  const root = await findSafeLocalDirectory(localDir);
-  if (!root) return null;
-  const filePath = path.join(root, providerKey);
+  const directory = await openLocalArtifactDirectory(localDir, {
+    create: false,
+  });
+  if (!directory) return null;
   let handle: FileHandle;
   try {
-    handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    handle = await directory.openRead(providerKey);
   } catch (error) {
+    await directory.close().catch(() => undefined);
     const code =
       error && typeof error === 'object' && 'code' in error
         ? String(error.code)
@@ -281,6 +232,7 @@ async function findCompletedLocalArtifact(
   }
   try {
     await verifyLocalHandle(handle, input);
+    await directory.assertBound();
     return providerKey;
   } catch (error) {
     if (
@@ -292,6 +244,7 @@ async function findCompletedLocalArtifact(
     throw error;
   } finally {
     await handle.close();
+    await directory.close();
   }
 }
 
@@ -549,16 +502,15 @@ export function createArtifactStorageAdapter(
       if (!UUID_PATTERN.test(row.providerKey)) {
         throw new Error('artifact_provider_key_invalid');
       }
-      const root = await findSafeLocalDirectory(options.localDir);
-      if (!root) throw new Error('artifact_local_directory_unsafe');
-      const filePath = path.join(root, row.providerKey);
+      const directory = await openLocalArtifactDirectory(options.localDir, {
+        create: false,
+      });
+      if (!directory) throw new Error('artifact_local_directory_unsafe');
       let handle: FileHandle;
       try {
-        handle = await open(
-          filePath,
-          constants.O_RDONLY | constants.O_NOFOLLOW,
-        );
+        handle = await directory.openRead(row.providerKey);
       } catch {
+        await directory.close().catch(() => undefined);
         throw new Error('artifact_not_found');
       }
       try {
@@ -566,12 +518,15 @@ export function createArtifactStorageAdapter(
           sha256: row.sha256,
           sizeBytes: Number(row.sizeBytes),
         });
+        await directory.assertBound();
+        await directory.close();
         const stream = handle.createReadStream({ start: 0 });
         return {
           artifact: toSafeResult(row),
           stream,
         };
       } catch (error) {
+        await directory.close().catch(() => undefined);
         await handle.close();
         if (
           error instanceof Error &&
