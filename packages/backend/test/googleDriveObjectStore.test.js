@@ -51,6 +51,12 @@ async function readAll(stream) {
   return Buffer.concat(chunks);
 }
 
+async function readBody(body, start = 0) {
+  return readAll(
+    Buffer.isBuffer(body) ? Readable.from(body.subarray(start)) : body(start),
+  );
+}
+
 test('put uploads multipart data to a dedicated folder with safe metadata', async () => {
   const calls = [];
   const drive = makeDrive({
@@ -101,7 +107,7 @@ test('put selects resumable transport at the configured threshold', async () => 
     {
       ...makeDrive(),
       createResumable: async (input, options) => {
-        call = { input, options, body: await readAll(input.media.body) };
+        call = { input, options, body: await readBody(input.media.body) };
         return { data: { id: 'large-placeholder' } };
       },
     },
@@ -216,6 +222,7 @@ test('idempotent put uses Shared Drive corpus and writes only hashed private met
   );
 
   await store.put({
+    appProperties: { erp4Context: 'report' },
     body: Buffer.from('data'),
     contentType: 'text/csv',
     idempotencyKey,
@@ -227,6 +234,7 @@ test('idempotent put uses Shared Drive corpus and writes only hashed private met
   assert.equal(listCall.params.corpora, 'drive');
   assert.equal(listCall.params.driveId, 'shared-placeholder');
   assert.deepEqual(createCall.params.requestBody.appProperties, {
+    erp4Context: 'report',
     erp4Sha256: 'sha-placeholder',
     erp4IdempotencyKey: digest,
   });
@@ -234,6 +242,34 @@ test('idempotent put uses Shared Drive corpus and writes only hashed private met
     JSON.stringify(createCall.params.requestBody.appProperties),
     /source-placeholder/,
   );
+});
+
+test('put rejects caller overrides for adapter-owned private metadata', async () => {
+  for (const appProperties of [
+    { erp4Sha256: 'caller-value' },
+    { erp4IdempotencyKey: 'caller-value' },
+  ]) {
+    const store = new GoogleDriveObjectStore(
+      makeDrive({
+        create: async () => assert.fail('reserved metadata must be rejected'),
+      }),
+      baseOptions,
+    );
+    await assert.rejects(
+      store.put({
+        appProperties,
+        body: Buffer.from('data'),
+        contentType: null,
+        originalName: 'object.bin',
+        sha256: 'sha-placeholder',
+        sizeBytes: 4,
+      }),
+      (error) =>
+        error instanceof GoogleDriveObjectStoreError &&
+        error.operation === 'upload' &&
+        error.code === 'permanent',
+    );
+  }
 });
 
 test('idempotent put fails closed for ambiguous or mismatched lookup results', async () => {
@@ -297,7 +333,7 @@ test('resumable transport starts a Drive session and uploads to its validated UR
         appProperties: { erp4Sha256: 'sha-placeholder' },
       },
       media: {
-        body: Readable.from('content'),
+        body: () => Readable.from('content'),
         mimeType: 'application/octet-stream',
         sizeBytes: 7,
       },
@@ -346,7 +382,7 @@ test('resumable transport rejects an untrusted session URL without sending conte
         appProperties: { erp4Sha256: 'sha-placeholder' },
       },
       media: {
-        body: Readable.from('content'),
+        body: () => Readable.from('content'),
         sizeBytes: 7,
       },
     }),
@@ -356,6 +392,71 @@ test('resumable transport rejects an untrusted session URL without sending conte
       error.operation === 'upload',
   );
   assert.equal(calls, 1);
+});
+
+test('resumable transport resumes the same session from the acknowledged offset', async () => {
+  const calls = [];
+  const starts = [];
+  const sleeps = [];
+  const createResumable = createGoogleDriveResumableCreate(
+    async (options) => {
+      const call = { ...options };
+      if (options.data instanceof Readable) {
+        call.uploaded = await readAll(options.data);
+      }
+      calls.push(call);
+      if (calls.length === 1) {
+        return {
+          data: null,
+          headers: {
+            location:
+              'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=opaque-placeholder',
+          },
+        };
+      }
+      if (calls.length === 2) {
+        const error = new Error('sensitive transport failure');
+        error.response = { status: 503 };
+        throw error;
+      }
+      if (calls.length === 3) {
+        return {
+          data: null,
+          headers: { range: 'bytes=0-2' },
+          status: 308,
+        };
+      }
+      return { data: { id: 'uploaded-placeholder' }, status: 200 };
+    },
+    { random: () => 0, sleep: async (delay) => sleeps.push(delay) },
+  );
+
+  const response = await createResumable(
+    {
+      fields: 'id',
+      requestBody: {
+        name: 'large.bin',
+        parents: ['folder-placeholder'],
+        appProperties: { erp4Sha256: 'sha-placeholder' },
+      },
+      media: {
+        body: (start = 0) => {
+          starts.push(start);
+          return Readable.from(Buffer.from('content').subarray(start));
+        },
+        sizeBytes: 7,
+      },
+    },
+    { maxRetries: 2, retryBaseDelayMs: 100, timeout: 1234 },
+  );
+
+  assert.deepEqual(response.data, { id: 'uploaded-placeholder' });
+  assert.equal(calls.filter((call) => call.method === 'POST').length, 1);
+  assert.equal(calls[2].headers['Content-Range'], 'bytes */7');
+  assert.equal(calls[3].headers['Content-Range'], 'bytes 3-6/7');
+  assert.equal(calls[3].uploaded.toString(), 'tent');
+  assert.deepEqual(starts, [0, 3]);
+  assert.deepEqual(sleeps, [100]);
 });
 
 test('put validates the configured Shared Drive target once', async () => {
@@ -585,6 +686,92 @@ test('stat maps Drive checksum and metadata using Shared Drive parameters', asyn
   });
   assert.equal(result.originalName, 'original-name.pdf');
   assert.equal(result.sizeBytes, 42);
+});
+
+test('list scopes every page to the configured Shared Drive and private properties', async () => {
+  const calls = [];
+  const store = new GoogleDriveObjectStore(
+    makeDrive({
+      get: async () => ({
+        data: {
+          id: 'folder-placeholder',
+          driveId: 'shared-placeholder',
+          mimeType: 'application/vnd.google-apps.folder',
+          trashed: false,
+        },
+      }),
+      list: async (params, options) => {
+        calls.push({ params, options });
+        return {
+          data: {
+            files: [
+              {
+                id: `file-${calls.length}`,
+                name: `backup-${calls.length}.gpg`,
+                size: '42',
+                appProperties: {
+                  erp4BackupSchema: 'v1',
+                  erp4Sha256: 'a'.repeat(64),
+                },
+                driveId: 'shared-placeholder',
+                parents: ['folder-placeholder'],
+              },
+            ],
+            incompleteSearch: false,
+            nextPageToken: calls.length === 1 ? 'next-placeholder' : null,
+          },
+        };
+      },
+    }),
+    { ...baseOptions, sharedDriveId: 'shared-placeholder' },
+  );
+
+  const result = await store.list({
+    appProperties: { erp4BackupSchema: 'v1' },
+    pageSize: 100,
+  });
+
+  assert.equal(result.items.length, 2);
+  assert.equal(calls.length, 2);
+  for (const call of calls) {
+    assert.equal(call.params.supportsAllDrives, true);
+    assert.equal(call.params.includeItemsFromAllDrives, true);
+    assert.equal(call.params.corpora, 'drive');
+    assert.equal(call.params.driveId, 'shared-placeholder');
+    assert.match(call.params.q, /'folder-placeholder' in parents/);
+    assert.match(call.params.q, /erp4BackupSchema/);
+    assert.equal(call.options.retry, false);
+  }
+  assert.equal(calls[1].params.pageToken, 'next-placeholder');
+  assert.equal(result.items[0].appProperties.erp4BackupSchema, 'v1');
+  assert.equal(result.items[0].checksum.sha256, 'a'.repeat(64));
+});
+
+test('list rejects an incomplete Shared Drive search', async () => {
+  const store = new GoogleDriveObjectStore(
+    makeDrive({
+      get: async () => ({
+        data: {
+          id: 'folder-placeholder',
+          driveId: 'shared-placeholder',
+          mimeType: 'application/vnd.google-apps.folder',
+          trashed: false,
+        },
+      }),
+      list: async () => ({
+        data: { files: [], incompleteSearch: true },
+      }),
+    }),
+    { ...baseOptions, sharedDriveId: 'shared-placeholder' },
+  );
+
+  await assert.rejects(
+    store.list({ appProperties: { erp4BackupSchema: 'v1' } }),
+    (error) =>
+      error instanceof GoogleDriveObjectStoreError &&
+      error.operation === 'list' &&
+      error.code === 'permanent',
+  );
 });
 
 test('trash uses files.update rather than permanent deletion', async () => {

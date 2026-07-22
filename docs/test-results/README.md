@@ -24,6 +24,7 @@
 - [ActionPolicy phase3 cutover 記録テンプレート](action-policy-phase3-cutover-template.md)
 - [ActionPolicy phase3 readiness 記録テンプレート](action-policy-phase3-readiness-template.md)
 - [ActionPolicy phase3 target-environment trial 記録テンプレート](action-policy-phase3-target-trial-template.md)
+- [Google Drive backup secondary 証跡テンプレート](backup-gdrive-secondary-template.md)
 - [S3-compatible backup readiness 記録テンプレート](backup-s3-readiness-template.md)
 - [S3-compatible backup/restore 実証跡テンプレート](backup-s3-restore-template.md)
 - [チャット添付AV（Staging）検証テンプレート](chat-attachments-av-staging-template.md)
@@ -43,6 +44,7 @@
 
 - [Issue #1977 Storage artifact foundation verification](2026-07-22-issue1977-storage-artifact-foundation.md)
 - [Issue #1977 Storage context runtime integration verification](2026-07-22-issue1977-storage-context-integration.md)
+- [Issue #1979 Google Drive backup secondary repo-side検証](2026-07-22-issue1979-backup-gdrive-secondary.md)
 
 ### 2026-07-14
 

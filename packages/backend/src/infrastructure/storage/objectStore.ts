@@ -1,6 +1,6 @@
 import type { Readable } from 'stream';
 
-export type ObjectStoreBody = Buffer | (() => Readable);
+export type ObjectStoreBody = Buffer | ((start?: number) => Readable);
 
 export type ObjectStorePutInput = {
   body: ObjectStoreBody;
@@ -9,6 +9,7 @@ export type ObjectStorePutInput = {
   originalName: string;
   sha256: string;
   sizeBytes: number;
+  appProperties?: Record<string, string>;
 };
 
 export type ObjectStoreIdempotencyLookupInput = Pick<
@@ -33,6 +34,16 @@ export type ObjectStoreMetadata = {
   originalName: string;
   sizeBytes: number | null;
   trashed: boolean;
+  appProperties?: Record<string, string>;
+};
+
+export type ObjectStoreListInput = {
+  appProperties?: Record<string, string>;
+  pageSize?: number;
+};
+
+export type ObjectStoreListResult = {
+  items: ObjectStoreMetadata[];
 };
 
 export type ObjectStoreGetResult = {
@@ -45,6 +56,7 @@ export type ObjectStore = {
   ): Promise<ObjectStoreMetadata | null>;
   put(input: ObjectStorePutInput): Promise<ObjectStoreMetadata>;
   get(key: string): Promise<ObjectStoreGetResult>;
+  list(input?: ObjectStoreListInput): Promise<ObjectStoreListResult>;
   stat(key: string): Promise<ObjectStoreMetadata>;
   trash(key: string): Promise<void>;
 };

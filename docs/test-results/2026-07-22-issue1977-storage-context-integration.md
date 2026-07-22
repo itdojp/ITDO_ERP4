@@ -2,7 +2,8 @@
 
 - 実施日: 2026-07-22 JST
 - branch: `feat/1977-storage-context-integration`
-- base: `origin/main` `e267dab03c74cc4c046584c45289baefdd0259b3`
+- initial base: `origin/main` `e267dab03c74cc4c046584c45289baefdd0259b3`
+- final integrated base: `origin/main` `11c37733faa9ccc71f6b0f060a7c39f166916d6e`（#1979 merge後）
 - 対象: #1977 final runtime integration（`Closes #1977`予定）
 - 検証種別: repository-side / fake provider。実Google Drive・production provider切替・実データ移行ではない
 
@@ -32,6 +33,7 @@
 | Command                                                           | Result | Notes                                                                            |
 | ----------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------- |
 | focused storage / PDF / Evidence / Report / env tests             | PASS   | 10 files / 128 tests（UUID検証とDrive download実バイト列検証を含む）             |
+| post-main combined #1977 / #1979 focused tests                    | PASS   | 14 files / 176 tests（共通object storeとbackup secondaryの結合回帰を含む）       |
 | `npm run coverage:storage:check --prefix packages/backend`        | PASS   | 33 tests。statements/lines 91.09%、branches 75.91%、functions 100%。閾値変更なし |
 | `make lint`                                                       | PASS   | backend / frontend                                                               |
 | `make format-check`                                               | PASS   | backend / frontend                                                               |
