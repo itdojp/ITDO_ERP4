@@ -288,7 +288,7 @@ systemctl --user enable --now erp4-config-backup.timer
 systemctl --user list-timers erp4-config-backup.timer
 ```
 
-既定では毎日 03:15 に `erp4-config-backup.service` が実行され、`backup-and-check.sh --include-units` が呼ばれます。`ERP4_BACKUP_INCLUDE_PROXY=1` のときだけ proxy 設定も backup に含めます。backup 対象には `erp4-maintenance.env` も含まれ、`--include-units` を付けた実行では `erp4-config-backup.service` / `erp4-config-backup.timer` / `erp4-db-backup.service` / `erp4-db-backup.timer` / `erp4-config-prune.service` / `erp4-config-prune.timer` も archive に含まれます。
+既定では毎日 03:15 に `erp4-config-backup.service` が実行され、`backup-and-check.sh --include-units` が呼ばれます。`ERP4_BACKUP_INCLUDE_PROXY=1` のときだけ proxy 設定も backup に含めます。backup 対象には `erp4-maintenance.env` / `erp4-storage-readiness.env` も含まれ、`--include-units` を付けた実行ではconfig backup、DB backup、config prune、storage readinessの各service/timerもarchiveに含まれます。
 
 定期 DB backup を有効化する場合:
 
@@ -373,11 +373,11 @@ Quadlet の unit 定義ファイル自体を取り除く場合:
 ./scripts/quadlet/uninstall-stack.sh --include-proxy --purge-config
 ```
 
-`uninstall-stack.sh` は `disable-stack.sh` を先に実行したうえで、installerが登録したmigrate、backup、prune、storage readinessのnative service/timerを停止・無効化します。その後、`~/.config/containers/systemd/` 配下の管理対象unit定義と `~/.config/systemd/user/` 配下の管理対象symlinkを削除し、最後に `systemctl --user daemon-reload` でuser managerの定義キャッシュを更新します。別の参照先を持つsymlinkや通常ファイルは停止・削除しません。既定では `erp4-postgres.env` / `erp4-backend.env` / `erp4-caddy.env` / `erp4-caddy.Caddyfile` / `erp4-frontend-build.env` は保持します。secret やドメイン設定、frontend build 用 env も消したい場合だけ `--purge-config` を使ってください。Podman volumeやイメージ、アプリケーションデータ自体は削除しません。
+`uninstall-stack.sh` は `disable-stack.sh` を先に実行したうえで、installerが登録したmigrate、backup、prune、storage readinessのnative service/timerを停止・無効化します。その後、`~/.config/containers/systemd/` 配下の管理対象unit定義と `~/.config/systemd/user/` 配下の管理対象symlinkを削除し、最後に `systemctl --user daemon-reload` でuser managerの定義キャッシュを更新します。別の参照先を持つsymlinkや通常ファイルは停止・削除しません。既定では `erp4-postgres.env` / `erp4-backend.env` / `erp4-frontend-build.env` / `erp4-maintenance.env` / `erp4-storage-readiness.env` と、proxy用の `erp4-caddy.env` / `erp4-caddy.Caddyfile` を保持します。これらのsecret、保守設定、ドメイン設定、frontend build用envも消したい場合だけ `--purge-config` を使ってください。Podman volumeやイメージ、アプリケーションデータ自体は削除しません。
 
 ## 5.1 設定バックアップ
 
-stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の env/config を tar.gz で退避できます。既定では backend/frontend/postgres 用の env を対象にし、`--include-proxy` で Caddy 設定、`--include-units` で Quadlet 定義も含めます。既定の出力先は `~/.local/share/erp4/quadlet-backups/` です。
+stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の env/config を tar.gz で退避できます。既定ではbackend、frontend build、PostgreSQL、maintenance、storage readiness用のenvを対象にし、`--include-proxy` でCaddy設定、`--include-units` でQuadlet定義も含めます。maintenanceとstorage readinessのenvにはbackup保存先、保持設定、provider/readiness設定などの機微情報が含まれ得るため、archive全体をsecretとして扱います。既定の出力先は `~/.local/share/erp4/quadlet-backups/` です。
 
 ```bash
 ./scripts/quadlet/backup-config.sh
@@ -447,7 +447,7 @@ git pull --ff-only
 ./scripts/quadlet/update-stack.sh --profile "$PROFILE" --backup-before-update --include-proxy
 ```
 
-`update-stack.sh` は必要に応じて `--backup-before-update` で `backup-and-check.sh --include-units` を先行実行し、その後 `build-images.sh` を実行して `erp4-migrate.service` / `erp4-backend.service` / `erp4-frontend.service` を順に再起動します。`--include-proxy` を付けると backup 対象にも proxy 設定を含め、`erp4-caddy.service` も再起動します。post-update 確認は `check-stack.sh` を実行し、`--include-proxy` 指定時は追加で `status-stack.sh --include-proxy` を実行して proxy を含む稼働状況を確認します。`--skip-build` と `--skip-stack-check` を付けると、イメージ再ビルドや post-update 確認を個別に省略できます。`BACKUP_AND_CHECK` / `BUILD_IMAGES` / `CHECK_STACK` / `STATUS_STACK` / `SYSTEMCTL` を環境変数で差し替えると、ローカル検証や運用フローの置き換えがしやすくなります。
+`update-stack.sh` は必要に応じて `--backup-before-update` で `backup-and-check.sh --include-units` を先行実行し、その後 `build-images.sh` とprofile-awareなunit installを実行して、`erp4-migrate.service` / `erp4-backend.service` / `erp4-frontend.service` を順に再起動します。install前後でPostgreSQL unitのprofile定義が変わった場合だけ `erp4-postgres.service` も先に再起動し、`pg_isready` 成功後にmigrationへ進みます。これによりproduction/https-trialとprivate-smokeの切替時に旧host publish設定を残しません。`--include-proxy` を付けるとbackup対象にもproxy設定を含め、`erp4-caddy.service` も再起動します。post-update確認は `check-stack.sh` を実行し、`--include-proxy` 指定時は追加で `status-stack.sh --include-proxy` を実行してproxyを含む稼働状況を確認します。`--skip-build` と `--skip-stack-check` を付けると、イメージ再ビルドやpost-update確認を個別に省略できます。`BACKUP_AND_CHECK` / `BUILD_IMAGES` / `INSTALL_UNITS` / `CHECK_STACK` / `STATUS_STACK` / `SYSTEMCTL` / `PODMAN` を環境変数で差し替えると、ローカル検証や運用フローの置き換えがしやすくなります。
 
 DB migration を伴う更新では、`erp4-migrate.service` 完了を確認してから backend を再起動します。
 

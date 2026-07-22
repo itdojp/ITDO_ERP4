@@ -184,7 +184,12 @@ if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
 fi
 
 if [[ "$PURGE_CONFIG" -eq 1 ]]; then
-  for name in erp4-postgres.env erp4-backend.env erp4-frontend-build.env; do
+  for name in \
+    erp4-postgres.env \
+    erp4-backend.env \
+    erp4-frontend-build.env \
+    erp4-maintenance.env \
+    erp4-storage-readiness.env; do
     remove_file_if_exists "$TARGET_DIR/$name"
   done
   if [[ "$INCLUDE_PROXY" -eq 1 ]]; then

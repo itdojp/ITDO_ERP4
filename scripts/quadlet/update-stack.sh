@@ -2,18 +2,24 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
 BACKUP_AND_CHECK="${BACKUP_AND_CHECK:-$SCRIPT_DIR/backup-and-check.sh}"
 BUILD_IMAGES="${BUILD_IMAGES:-$SCRIPT_DIR/build-images.sh}"
 INSTALL_UNITS="${INSTALL_UNITS:-$SCRIPT_DIR/install-user-units.sh}"
 CHECK_STACK="${CHECK_STACK:-$SCRIPT_DIR/check-stack.sh}"
 STATUS_STACK="${STATUS_STACK:-$SCRIPT_DIR/status-stack.sh}"
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
+PODMAN="${PODMAN:-podman}"
+POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-erp4-postgres}"
+POSTGRES_USER="${POSTGRES_USER:-erp4}"
+POSTGRES_READY_TIMEOUT_SECONDS="${POSTGRES_READY_TIMEOUT_SECONDS:-60}"
 BACKUP_BEFORE_UPDATE=0
 SKIP_BUILD=0
 SKIP_INSTALL_UNITS=0
 SKIP_STACK_CHECK=0
 INCLUDE_PROXY=0
 PROFILE="${SAKURA_VPS_PROFILE:-production}"
+POSTGRES_UNIT_CHANGED=0
 
 usage() {
   cat <<USAGE
@@ -57,11 +63,39 @@ run_build_images() {
 }
 
 run_install_units() {
+  local before after
   if [[ "$SKIP_INSTALL_UNITS" -eq 1 ]]; then
     return 0
   fi
 
+  before="$(postgres_unit_signature)"
   "$INSTALL_UNITS" --profile "$PROFILE"
+  after="$(postgres_unit_signature)"
+  if [[ "$before" != "$after" ]]; then
+    POSTGRES_UNIT_CHANGED=1
+  fi
+}
+
+postgres_unit_signature() {
+  local path="$TARGET_DIR/erp4-postgres.container"
+  if [[ -L "$path" ]]; then
+    printf 'link:%s\n' "$(readlink "$path")"
+  elif [[ -f "$path" ]]; then
+    sha256sum "$path" | awk '{print "file:" $1}'
+  else
+    printf '%s\n' absent
+  fi
+}
+
+wait_postgres_ready() {
+  local deadline=$((SECONDS + POSTGRES_READY_TIMEOUT_SECONDS))
+  while (( SECONDS < deadline )); do
+    if "$PODMAN" exec "$POSTGRES_CONTAINER" pg_isready -U "$POSTGRES_USER" -t 1 >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  fail "PostgreSQL did not become ready within ${POSTGRES_READY_TIMEOUT_SECONDS}s after unit change"
 }
 
 run_backup() {
@@ -138,6 +172,7 @@ case "$PROFILE" in
   production|private-smoke|https-trial) ;;
   *) fail "unknown profile: $PROFILE" ;;
 esac
+[[ "$POSTGRES_READY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]] || fail 'POSTGRES_READY_TIMEOUT_SECONDS must be a positive integer'
 if [[ "$PROFILE" == "private-smoke" && "$INCLUDE_PROXY" -eq 1 ]]; then
   fail 'private-smoke must not include proxy'
 fi
@@ -166,6 +201,11 @@ fi
 run_build_images
 run_install_units
 
+if [[ "$POSTGRES_UNIT_CHANGED" -eq 1 ]]; then
+  command -v "$PODMAN" >/dev/null 2>&1 || fail "required command not found: $PODMAN"
+  restart_unit erp4-postgres.service
+  wait_postgres_ready
+fi
 restart_unit erp4-migrate.service
 restart_unit erp4-backend.service
 restart_unit erp4-frontend.service

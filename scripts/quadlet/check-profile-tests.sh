@@ -332,7 +332,7 @@ run_success 'installer prepares shared Quadlet and systemd target fixture' \
 run_success 'uninstaller disables native units when target directories are identical' \
   env SYSTEMCTL="$fake_same_target_systemctl" DISABLE_STACK=/usr/bin/true QUADLET_TARGET_DIR="$same_target_dir" \
   SYSTEMD_USER_TARGET_DIR="$same_target_dir" \
-  "$UNINSTALL_STACK" --target-dir "$same_target_dir" --systemd-user-target-dir "$same_target_dir"
+  "$UNINSTALL_STACK" --target-dir "$same_target_dir" --systemd-user-target-dir "$same_target_dir" --purge-config
 for native_unit in \
   erp4-migrate.service \
   erp4-config-backup.service \
@@ -345,6 +345,15 @@ for native_unit in \
   erp4-storage-readiness.timer; do
   grep -Fq -- "$native_unit" "$same_target_systemctl_log" || \
     fail "same-target uninstaller did not disable managed native unit: $native_unit"
+done
+for purged_config in \
+  erp4-postgres.env \
+  erp4-backend.env \
+  erp4-frontend-build.env \
+  erp4-maintenance.env \
+  erp4-storage-readiness.env; do
+  [[ ! -e "$same_target_dir/$purged_config" && ! -L "$same_target_dir/$purged_config" ]] || \
+    fail "uninstaller --purge-config left managed config behind: $purged_config"
 done
 
 stale_proxy_dir="$WORK_DIR/private-stale-proxy"
@@ -397,6 +406,69 @@ run_success 'update stack propagates private-smoke profile' \
   env INSTALL_UNITS="$fake_install" SYSTEMCTL=true \
   "$UPDATE_STACK" --profile private-smoke --skip-build --skip-stack-check
 grep -Fq -- '--profile private-smoke' "$profile_args_file" || fail 'update-stack did not propagate private-smoke to install-user-units'
+
+update_target_dir="$WORK_DIR/update-profile-target"
+update_systemctl_log="$WORK_DIR/update-profile-systemctl.log"
+update_podman_log="$WORK_DIR/update-profile-podman.log"
+fake_update_install="$WORK_DIR/fake-update-install.sh"
+fake_update_systemctl="$WORK_DIR/fake-update-systemctl.sh"
+fake_update_podman="$WORK_DIR/fake-update-podman.sh"
+mkdir -p "$update_target_dir"
+cp "$ROOT_DIR/deploy/quadlet/erp4-postgres.container" "$update_target_dir/erp4-postgres.container"
+cat >"$fake_update_install" <<EOF_FAKE_UPDATE_INSTALL
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >"$profile_args_file"
+cp "$ROOT_DIR/deploy/quadlet/profiles/private-smoke/erp4-postgres.container" \
+  "$update_target_dir/erp4-postgres.container"
+EOF_FAKE_UPDATE_INSTALL
+cat >"$fake_update_systemctl" <<EOF_FAKE_UPDATE_SYSTEMCTL
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"$update_systemctl_log"
+EOF_FAKE_UPDATE_SYSTEMCTL
+cat >"$fake_update_podman" <<EOF_FAKE_UPDATE_PODMAN
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"$update_podman_log"
+EOF_FAKE_UPDATE_PODMAN
+chmod +x "$fake_update_install" "$fake_update_systemctl" "$fake_update_podman"
+run_success 'update stack restarts PostgreSQL when private-smoke changes its unit' \
+  env QUADLET_TARGET_DIR="$update_target_dir" INSTALL_UNITS="$fake_update_install" \
+  SYSTEMCTL="$fake_update_systemctl" PODMAN="$fake_update_podman" POSTGRES_READY_TIMEOUT_SECONDS=2 \
+  "$UPDATE_STACK" --profile private-smoke --skip-build --skip-stack-check
+[[ "$(sed -n '1p' "$update_systemctl_log")" == '--user restart erp4-postgres.service' ]] || \
+  fail 'update-stack did not restart changed PostgreSQL unit before migrations'
+grep -Fxq -- 'exec erp4-postgres pg_isready -U erp4 -t 1' "$update_podman_log" || \
+  fail 'update-stack did not wait for PostgreSQL readiness after profile change'
+grep -Fq -- '--profile private-smoke' "$profile_args_file" || \
+  fail 'profile-changing update did not propagate private-smoke to installer'
+
+: >"$update_systemctl_log"
+: >"$update_podman_log"
+run_success 'update stack avoids PostgreSQL restart when its profile unit is unchanged' \
+  env QUADLET_TARGET_DIR="$update_target_dir" INSTALL_UNITS="$fake_update_install" \
+  SYSTEMCTL="$fake_update_systemctl" PODMAN="$fake_update_podman" POSTGRES_READY_TIMEOUT_SECONDS=2 \
+  "$UPDATE_STACK" --profile private-smoke --skip-build --skip-stack-check
+if grep -Fq -- 'erp4-postgres.service' "$update_systemctl_log"; then
+  fail 'update-stack restarted unchanged PostgreSQL unit'
+fi
+[[ ! -s "$update_podman_log" ]] || fail 'update-stack probed PostgreSQL even though its unit was unchanged'
+
+fake_unready_podman="$WORK_DIR/fake-update-unready-podman.sh"
+cat >"$fake_unready_podman" <<EOF_FAKE_UNREADY_PODMAN
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"$update_podman_log"
+exit 1
+EOF_FAKE_UNREADY_PODMAN
+chmod +x "$fake_unready_podman"
+cp "$ROOT_DIR/deploy/quadlet/erp4-postgres.container" "$update_target_dir/erp4-postgres.container"
+: >"$update_systemctl_log"
+: >"$update_podman_log"
+run_failure 'update stack fails before migration when changed PostgreSQL is not ready' 'did not become ready' \
+  env QUADLET_TARGET_DIR="$update_target_dir" INSTALL_UNITS="$fake_update_install" \
+  SYSTEMCTL="$fake_update_systemctl" PODMAN="$fake_unready_podman" POSTGRES_READY_TIMEOUT_SECONDS=1 \
+  "$UPDATE_STACK" --profile private-smoke --skip-build --skip-stack-check
+if grep -Fq -- 'erp4-migrate.service' "$update_systemctl_log"; then
+  fail 'update-stack continued to migration after PostgreSQL readiness failure'
+fi
 
 fake_restore="$WORK_DIR/fake-restore.sh"
 fake_restart="$WORK_DIR/fake-restart.sh"

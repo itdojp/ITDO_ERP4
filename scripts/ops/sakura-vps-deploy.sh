@@ -101,7 +101,6 @@ run_deploy() {
   fi
 
   if [[ "$SKIP_START" -eq 0 ]]; then
-    ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$REPO_DIR/scripts/quadlet/install-user-units.sh" --profile "$PROFILE"
     local stack_cmd
     if [[ "$UPDATE_EXISTING" -eq 1 ]]; then
       stack_cmd="$REPO_DIR/scripts/quadlet/update-stack.sh"
@@ -112,6 +111,7 @@ run_deploy() {
       fi
     else
       stack_cmd="$REPO_DIR/scripts/quadlet/start-stack.sh"
+      ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$REPO_DIR/scripts/quadlet/install-user-units.sh" --profile "$PROFILE"
       if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
         ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$stack_cmd" --profile "$PROFILE" --include-proxy
       else
