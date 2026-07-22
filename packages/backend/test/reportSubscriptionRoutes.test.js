@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
+import { Readable } from 'node:stream';
 import test from 'node:test';
 
 import { buildServer } from '../dist/server.js';
-import { normalizeReportSubscriptionSchedule } from '../dist/application/reportSubscriptions/useCases.js';
+import {
+  normalizeReportSubscriptionSchedule,
+  retryDueReportDeliveries,
+  runReportSubscriptionById,
+} from '../dist/application/reportSubscriptions/useCases.js';
 import { prisma } from '../dist/services/db.js';
 
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
@@ -725,4 +730,367 @@ test('POST /jobs/report-deliveries/retry processes pending and failed deliveries
   assert.equal(pendingUpdate?.data?.retryCount, 0);
   assert.equal(failedUpdate?.data?.status, 'stub');
   assert.equal(failedUpdate?.data?.retryCount, 2);
+});
+
+test('gdrive report output is stored once and reused for immediate email delivery', async () => {
+  let content;
+  const artifactId = '11111111-1111-4111-8111-111111111111';
+  let storeCount = 0;
+  let openCount = 0;
+  let storedInput;
+  let createdPayload;
+  const storage = {
+    store: async (input) => {
+      storeCount += 1;
+      storedInput = input;
+      content = input.body;
+      return {
+        artifactId,
+        contentType: input.contentType,
+        createdAt: '2026-07-22T00:00:00.000Z',
+        originalName: input.originalName,
+        provider: 'gdrive',
+        sha256: input.sha256,
+        sizeBytes: input.sizeBytes,
+      };
+    },
+    open: async (id, scope) => {
+      openCount += 1;
+      assert.equal(id, artifactId);
+      assert.deepEqual(scope, {
+        ownerId: 'sub-gdrive',
+        ownerType: 'report_subscription',
+      });
+      return {
+        artifact: {
+          artifactId,
+          contentType: 'text/csv; charset=utf-8',
+          createdAt: '2026-07-22T00:00:00.000Z',
+          originalName: 'delivery-due.csv',
+          provider: 'gdrive',
+          sha256: 'a'.repeat(64),
+          sizeBytes: content.length,
+        },
+        stream: Readable.from(content),
+      };
+    },
+  };
+
+  await withEnv({ MAIL_TRANSPORT: 'stub', REPORT_PROVIDER: 'gdrive' }, () =>
+    withPrismaStubs(
+      {
+        'reportSubscription.findUnique': async () => ({
+          id: 'sub-gdrive',
+          reportKey: 'delivery-due',
+          name: 'Delivery due',
+          format: 'csv',
+          params: {},
+          recipients: { emails: ['ops@example.com'] },
+          channels: ['email'],
+          isEnabled: true,
+        }),
+        'projectMilestone.findMany': async () => [],
+        'reportDelivery.create': async ({ data }) => {
+          createdPayload = data.payload;
+          return {
+            id: 'delivery-gdrive',
+            channel: data.channel,
+            status: data.status,
+            payload: data.payload,
+            target: data.target,
+            retryCount: data.retryCount,
+            nextRetryAt: data.nextRetryAt,
+          };
+        },
+        'reportDelivery.updateMany': async () => ({ count: 1 }),
+        'reportDelivery.update': async ({ where, data }) => ({
+          id: where.id,
+          ...data,
+        }),
+        'reportSubscription.update': async ({ where, data }) => ({
+          id: where.id,
+          ...data,
+        }),
+      },
+      async () => {
+        const result = await runReportSubscriptionById(
+          'sub-gdrive',
+          'operator-placeholder',
+          false,
+          {
+            createStorage: () => storage,
+            now: () => new Date('2026-07-22T00:00:00.000Z'),
+          },
+        );
+        assert.equal(result.deliveries[0].status, 'stub');
+      },
+    ),
+  );
+
+  assert.equal(storeCount, 1);
+  assert.equal(openCount, 1);
+  assert.deepEqual(storedInput.body, content);
+  assert.equal(storedInput.ownerId, 'sub-gdrive');
+  assert.equal(storedInput.ownerType, 'report_subscription');
+  assert.equal(createdPayload.artifact.artifactId, artifactId);
+  assert.equal(createdPayload.artifact.url, `/report-outputs/${artifactId}`);
+  assert.deepEqual(Object.keys(createdPayload.artifact).sort(), [
+    'artifactId',
+    'contentType',
+    'filename',
+    'ownerId',
+    'ownerType',
+    'provider',
+    'url',
+  ]);
+});
+
+test('gdrive report dry-run performs no artifact or PDF write', async () => {
+  let storageCalls = 0;
+  let renderCalls = 0;
+  let generateCalls = 0;
+  await withEnv({ REPORT_PROVIDER: 'gdrive' }, () =>
+    withPrismaStubs(
+      {
+        'reportSubscription.findUnique': async () => ({
+          id: 'sub-dry-run',
+          reportKey: 'delivery-due',
+          name: 'Delivery due',
+          format: 'pdf',
+          params: {},
+          recipients: { users: ['user-placeholder'] },
+          channels: ['dashboard'],
+          isEnabled: true,
+        }),
+        'projectMilestone.findMany': async () => [],
+      },
+      async () => {
+        const result = await runReportSubscriptionById(
+          'sub-dry-run',
+          'operator-placeholder',
+          true,
+          {
+            createStorage: () => {
+              storageCalls += 1;
+              throw new Error('storage_must_not_be_created');
+            },
+            generatePdf: async () => {
+              generateCalls += 1;
+              throw new Error('pdf_must_not_be_written');
+            },
+            now: () => new Date('2026-07-22T00:00:00.000Z'),
+            renderPdfBuffer: async () => {
+              renderCalls += 1;
+              throw new Error('pdf_must_not_be_rendered');
+            },
+          },
+        );
+        assert.equal(result.deliveries.length, 0);
+        assert.equal(result.payload.artifact, undefined);
+        assert.match(result.payload.pdf.url, /^stub:\/\/pdf\//);
+      },
+    ),
+  );
+  assert.equal(storageCalls, 0);
+  assert.equal(renderCalls, 0);
+  assert.equal(generateCalls, 0);
+});
+
+test('gdrive PDF report renders to memory and persists a report artifact', async () => {
+  const artifactId = '22222222-2222-4222-8222-222222222222';
+  const pdfContent = Buffer.from('%PDF-report-placeholder', 'utf8');
+  let storedInput;
+  let generatedPdfCalls = 0;
+  await withEnv({ REPORT_PROVIDER: 'gdrive', PDF_PROVIDER: 'local' }, () =>
+    withPrismaStubs(
+      {
+        'reportSubscription.findUnique': async () => ({
+          id: 'sub-pdf-gdrive',
+          reportKey: 'delivery-due',
+          name: 'Delivery due',
+          format: 'pdf',
+          params: {},
+          recipients: { users: ['user-placeholder'] },
+          channels: ['dashboard'],
+          isEnabled: true,
+        }),
+        'projectMilestone.findMany': async () => [],
+        'reportDelivery.create': async ({ data }) => ({
+          id: 'delivery-pdf-gdrive',
+          channel: data.channel,
+          status: data.status,
+          payload: data.payload,
+          target: data.target,
+          retryCount: data.retryCount ?? 0,
+          nextRetryAt: data.nextRetryAt ?? null,
+        }),
+        'reportSubscription.update': async ({ where, data }) => ({
+          id: where.id,
+          ...data,
+        }),
+      },
+      async () => {
+        const result = await runReportSubscriptionById(
+          'sub-pdf-gdrive',
+          'operator-placeholder',
+          false,
+          {
+            createStorage: () => ({
+              store: async (input) => {
+                storedInput = input;
+                return {
+                  artifactId,
+                  contentType: input.contentType,
+                  createdAt: '2026-07-22T00:00:00.000Z',
+                  originalName: input.originalName,
+                  provider: 'gdrive',
+                  sha256: input.sha256,
+                  sizeBytes: input.sizeBytes,
+                };
+              },
+            }),
+            generatePdf: async () => {
+              generatedPdfCalls += 1;
+              throw new Error('local_pdf_must_not_be_generated');
+            },
+            now: () => new Date('2026-07-22T00:00:00.000Z'),
+            renderPdfBuffer: async () => pdfContent,
+          },
+        );
+        assert.equal(result.payload.artifact.artifactId, artifactId);
+        assert.equal(result.payload.pdf.filePath, undefined);
+        assert.equal(result.payload.pdf.url, `/report-outputs/${artifactId}`);
+      },
+    ),
+  );
+  assert.equal(generatedPdfCalls, 0);
+  assert.deepEqual(storedInput.body, pdfContent);
+  assert.equal(storedInput.contentType, 'application/pdf');
+  assert.equal(storedInput.ownerType, 'report_subscription');
+});
+
+test('gdrive report storage failure stops before delivery creation without local fallback', async () => {
+  let deliveryCreates = 0;
+  let failedRunStatus;
+  await withEnv({ REPORT_PROVIDER: 'gdrive' }, () =>
+    withPrismaStubs(
+      {
+        'reportSubscription.findUnique': async () => ({
+          id: 'sub-gdrive-failure',
+          reportKey: 'delivery-due',
+          name: 'Delivery due',
+          format: 'csv',
+          params: {},
+          recipients: { emails: ['ops@example.com'] },
+          channels: ['email'],
+          isEnabled: true,
+        }),
+        'projectMilestone.findMany': async () => [],
+        'reportDelivery.create': async () => {
+          deliveryCreates += 1;
+        },
+        'reportSubscription.update': async ({ data }) => {
+          failedRunStatus = data.lastRunStatus;
+          return data;
+        },
+      },
+      async () => {
+        await assert.rejects(
+          runReportSubscriptionById(
+            'sub-gdrive-failure',
+            'operator-placeholder',
+            false,
+            {
+              createStorage: () => ({
+                store: async () => {
+                  throw new Error('google_drive_quota');
+                },
+              }),
+              now: () => new Date('2026-07-22T00:00:00.000Z'),
+            },
+          ),
+          /google_drive_quota/,
+        );
+      },
+    ),
+  );
+  assert.equal(deliveryCreates, 0);
+  assert.equal(failedRunStatus, 'failed');
+});
+
+test('gdrive report retry reopens the same artifact and schedules retryable failures', async () => {
+  const artifactId = '33333333-3333-4333-8333-333333333333';
+  let updateData;
+  let storageCreates = 0;
+  let openCalls = 0;
+  await withEnv(
+    {
+      REPORT_PROVIDER: 'gdrive',
+      REPORT_DELIVERY_RETRY_MAX: '3',
+      REPORT_DELIVERY_RETRY_BASE_MINUTES: '1',
+    },
+    () =>
+      withPrismaStubs(
+        {
+          'reportDelivery.findMany': async (args) =>
+            args.where?.status === 'pending'
+              ? []
+              : [
+                  {
+                    id: 'delivery-gdrive-retry',
+                    channel: 'email',
+                    status: 'failed',
+                    target: 'ops@example.com',
+                    payload: {
+                      reportKey: 'delivery-due',
+                      name: 'Delivery due',
+                      format: 'csv',
+                      params: null,
+                      generatedAt: '2026-07-22T00:00:00.000Z',
+                      data: { items: [] },
+                      artifact: {
+                        artifactId,
+                        contentType: 'text/csv; charset=utf-8',
+                        filename: 'delivery-due.csv',
+                        ownerId: 'sub-gdrive-retry',
+                        ownerType: 'report_subscription',
+                        provider: 'gdrive',
+                        url: `/report-outputs/${artifactId}`,
+                      },
+                    },
+                    retryCount: 1,
+                    nextRetryAt: new Date('2026-07-21T23:00:00.000Z'),
+                    createdAt: new Date('2026-07-21T22:00:00.000Z'),
+                  },
+                ],
+          'reportDelivery.updateMany': async () => ({ count: 1 }),
+          'reportDelivery.update': async ({ where, data }) => {
+            updateData = data;
+            return { id: where.id, ...data };
+          },
+        },
+        async () => {
+          const result = await retryDueReportDeliveries(false, {
+            createStorage: () => {
+              storageCreates += 1;
+              return {
+                open: async (id) => {
+                  openCalls += 1;
+                  assert.equal(id, artifactId);
+                  const error = new Error('google_drive_timeout');
+                  error.retryable = true;
+                  throw error;
+                },
+              };
+            },
+          });
+          assert.equal(result.items[0].status, 'failed');
+        },
+      ),
+  );
+  assert.equal(storageCreates, 1);
+  assert.equal(openCalls, 1);
+  assert.equal(updateData.status, 'failed');
+  assert.equal(updateData.retryCount, 2);
+  assert.ok(updateData.nextRetryAt instanceof Date);
 });

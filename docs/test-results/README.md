@@ -24,8 +24,9 @@
 - [ActionPolicy phase3 cutover 記録テンプレート](action-policy-phase3-cutover-template.md)
 - [ActionPolicy phase3 readiness 記録テンプレート](action-policy-phase3-readiness-template.md)
 - [ActionPolicy phase3 target-environment trial 記録テンプレート](action-policy-phase3-target-trial-template.md)
-- [S3バックアップ Readiness 記録テンプレート](backup-s3-readiness-template.md)
-- [S3 backup/restore 実証跡テンプレート](backup-s3-restore-template.md)
+- [Google Drive backup secondary 証跡テンプレート](backup-gdrive-secondary-template.md)
+- [S3-compatible backup readiness 記録テンプレート](backup-s3-readiness-template.md)
+- [S3-compatible backup/restore 実証跡テンプレート](backup-s3-restore-template.md)
 - [チャット添付AV（Staging）検証テンプレート](chat-attachments-av-staging-template.md)
 - [DBバックアップ健全性確認 記録テンプレート](db-backup-health-template.md)
 - [Dependabot alerts 監視記録テンプレート](dependabot-alerts-template.md)
@@ -37,6 +38,15 @@
 - [Release Backup Evidence Template](release-backup-evidence-template.md)
 - [Release Candidate Readiness Evidence Template](release-readiness-template.md)
 - [さくらVPS 試験稼働記録テンプレート](sakura-vps-trial-template.md)
+- [Storage artifact migration evidence template](storage-artifact-migration-template.md)
+- [Storage／backup統合readiness 記録テンプレート](storage-readiness-template.md)
+
+### 2026-07-22
+
+- [Issue #1977 Storage artifact foundation verification](2026-07-22-issue1977-storage-artifact-foundation.md)
+- [Issue #1977 Storage context runtime integration verification](2026-07-22-issue1977-storage-context-integration.md)
+- [Issue #1979 Google Drive backup secondary repo-side検証](2026-07-22-issue1979-backup-gdrive-secondary.md)
+- [Issue #1980 Storage／backup統合readiness repo-side検証](2026-07-22-issue1980-storage-readiness.md)
 
 ### 2026-07-14
 

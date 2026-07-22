@@ -8,10 +8,12 @@ RUN_LABEL="${RUN_LABEL:-}"
 TARGET_ENVIRONMENT="${TARGET_ENVIRONMENT:-}"
 OPERATOR="${OPERATOR:-}"
 RESTORE_STATUS="${RESTORE_STATUS:-}"
+S3_PROVIDER="${S3_PROVIDER:-}"
 S3_BUCKET="${S3_BUCKET:-}"
 S3_REGION="${S3_REGION:-}"
 S3_PREFIX="${S3_PREFIX:-}"
 ENCRYPTION_MODE="${ENCRYPTION_MODE:-}"
+CLIENT_ENCRYPTION_MODE="${CLIENT_ENCRYPTION_MODE:-}"
 KMS_KEY_ID="${KMS_KEY_ID:-}"
 DECISION_RECORD_FILE="${DECISION_RECORD_FILE:-}"
 READINESS_RECORD_FILE="${READINESS_RECORD_FILE:-}"
@@ -27,10 +29,13 @@ readonly -a REQUIRED_DECISION_FIELDS=(
   "environment"
   "owner"
   "reviewers"
+  "provider"
   "bucketName"
   "region"
   "s3Prefix"
+  "postUploadDownloadVerification"
   "encryptionMode"
+  "clientSideEncryption"
   "kmsKeyIdOrAlias"
   "versioning"
   "lifecycleDailyDays"
@@ -49,8 +54,8 @@ usage() {
   cat <<USAGE
 Usage:
   TARGET_ENVIRONMENT=prod OPERATOR=alice RESTORE_STATUS=pass \\
-  S3_BUCKET=erp4-backups S3_REGION=ap-northeast-1 S3_PREFIX=erp4/prod \\
-  ENCRYPTION_MODE=SSE-KMS KMS_KEY_ID=alias/erp4-backup \\
+  S3_PROVIDER=sakura S3_BUCKET=... S3_REGION=... S3_PREFIX=... \\
+  ENCRYPTION_MODE=GPG CLIENT_ENCRYPTION_MODE=OpenPGP \\
   DECISION_RECORD_FILE=docs/ops/backup-s3-decision-checklist.md \\
   READINESS_RECORD_FILE=docs/test-results/YYYY-MM-DD-backup-s3-readiness-rN.md \\
   BACKUP_LOG_FILE=tmp/backup-prod/backup.log \\
@@ -67,10 +72,12 @@ Optional env:
   RESTORE_STATUS=pass|failed|blocked  # required
   TARGET_ENVIRONMENT=...              # required
   OPERATOR=...                        # required
+  S3_PROVIDER=aws|sakura              # required when RESTORE_STATUS=pass
   S3_BUCKET=...                       # required when RESTORE_STATUS=pass
   S3_REGION=...                       # required when RESTORE_STATUS=pass
   S3_PREFIX=...                       # required when RESTORE_STATUS=pass
-  ENCRYPTION_MODE=SSE-KMS|SSE-S3      # required when RESTORE_STATUS=pass
+  ENCRYPTION_MODE=GPG|SSE-KMS|SSE-S3  # required when RESTORE_STATUS=pass
+  CLIENT_ENCRYPTION_MODE=OpenPGP|none # required when RESTORE_STATUS=pass
   KMS_KEY_ID=...                      # required when ENCRYPTION_MODE=SSE-KMS and RESTORE_STATUS=pass
   DECISION_RECORD_FILE=...            # required when RESTORE_STATUS=pass; must have no required placeholders
   READINESS_RECORD_FILE=...           # required when RESTORE_STATUS=pass; summaryStatus pass and CHECK_WRITE=1
@@ -95,7 +102,9 @@ Validation:
 - RUN_LABEL must match ^[A-Za-z0-9][A-Za-z0-9._-]*$.
 - A pass record requires finalized S3 decision fields, S3 readiness pass with write probe,
   backup/upload/download/restore logs, and post-restore integrity JSON with all required checks true.
-- Decision record bucket/region/prefix/encryption/environment values must match the supplied env.
+- Decision record provider/bucket/region/prefix/encryption/environment values must match the supplied env.
+- Sakura pass requires ENCRYPTION_MODE=GPG and CLIENT_ENCRYPTION_MODE=OpenPGP.
+- A target-specific record must use a private OUT_DIR outside docs/.
 - Existing output files are never overwritten.
 USAGE
 }
@@ -160,11 +169,29 @@ validate_enums() {
     "") die "RESTORE_STATUS is required and must be pass, failed, or blocked" ;;
     *) die "RESTORE_STATUS must be pass, failed, or blocked" ;;
   esac
+  if [[ -n "$S3_PROVIDER" ]]; then
+    case "$S3_PROVIDER" in
+      aws|sakura) ;;
+      *) die "S3_PROVIDER must be aws or sakura" ;;
+    esac
+  fi
   if [[ -n "$ENCRYPTION_MODE" ]]; then
     case "$ENCRYPTION_MODE" in
-      SSE-KMS|SSE-S3) ;;
-      *) die "ENCRYPTION_MODE must be SSE-KMS or SSE-S3" ;;
+      GPG|SSE-KMS|SSE-S3) ;;
+      *) die "ENCRYPTION_MODE must be GPG, SSE-KMS, or SSE-S3" ;;
     esac
+  fi
+  if [[ -n "$CLIENT_ENCRYPTION_MODE" ]]; then
+    case "$CLIENT_ENCRYPTION_MODE" in
+      OpenPGP|none) ;;
+      *) die "CLIENT_ENCRYPTION_MODE must be OpenPGP or none" ;;
+    esac
+  fi
+  if [[ "$RESTORE_STATUS" == "pass" && "$S3_PROVIDER" == "sakura" && ( "$ENCRYPTION_MODE" != "GPG" || "$CLIENT_ENCRYPTION_MODE" != "OpenPGP" ) ]]; then
+    die "Sakura pass evidence requires GPG/OpenPGP client-side encryption"
+  fi
+  if [[ "$RESTORE_STATUS" == "pass" && "$S3_PROVIDER" == "aws" && "$ENCRYPTION_MODE" == "GPG" ]]; then
+    die "AWS pass evidence requires SSE-KMS or SSE-S3 as ENCRYPTION_MODE"
   fi
 }
 
@@ -255,13 +282,17 @@ decision_mismatch_fields() {
   local file_path="$1"
   local -a mismatches=()
   decision_value_matches "$file_path" "environment" "$TARGET_ENVIRONMENT" || mismatches+=("environment")
+  decision_value_matches "$file_path" "provider" "$S3_PROVIDER" || mismatches+=("provider")
   decision_value_matches "$file_path" "bucketName" "$S3_BUCKET" || mismatches+=("bucketName")
   decision_value_matches "$file_path" "region" "$S3_REGION" || mismatches+=("region")
   decision_value_matches "$file_path" "s3Prefix" "$S3_PREFIX" || mismatches+=("s3Prefix")
   decision_value_matches "$file_path" "encryptionMode" "$ENCRYPTION_MODE" || mismatches+=("encryptionMode")
+  decision_value_matches "$file_path" "clientSideEncryption" "$CLIENT_ENCRYPTION_MODE" || mismatches+=("clientSideEncryption")
   if [[ "$ENCRYPTION_MODE" == "SSE-KMS" ]]; then
     decision_value_matches "$file_path" "kmsKeyIdOrAlias" "$KMS_KEY_ID" || mismatches+=("kmsKeyIdOrAlias")
   elif [[ "$ENCRYPTION_MODE" == "SSE-S3" ]]; then
+    decision_value_matches "$file_path" "kmsKeyIdOrAlias" "n/a" || mismatches+=("kmsKeyIdOrAlias")
+  elif [[ "$ENCRYPTION_MODE" == "GPG" ]]; then
     decision_value_matches "$file_path" "kmsKeyIdOrAlias" "n/a" || mismatches+=("kmsKeyIdOrAlias")
   fi
   if ((${#mismatches[@]} > 0)); then
@@ -280,6 +311,14 @@ readiness_is_pass() {
 readiness_has_write_probe() {
   local file_path="$1"
   grep -Eq "check_write=1|CHECK_WRITE=1|CHECK_WRITE:[[:space:]]*\`?1\`?" "$file_path"
+}
+
+readiness_is_direct_real_run() {
+  local file_path="$1"
+  grep -Eq "executionMode:[[:space:]]*\`?real\`?" "$file_path" &&
+    grep -Eq "writeProbe:[[:space:]]*\`?1\`?" "$file_path" &&
+    grep -Eq "realRunConfirmed:[[:space:]]*\`?1\`?" "$file_path" &&
+    grep -Eq "evidenceBasis:[[:space:]]*\`?direct-check\`?" "$file_path"
 }
 
 validate_integrity_json() {
@@ -384,10 +423,12 @@ main() {
   require_non_empty "$OPERATOR" "OPERATOR"
 
   if [[ "$RESTORE_STATUS" == "pass" ]]; then
+    require_non_empty "$S3_PROVIDER" "S3_PROVIDER"
     require_non_empty "$S3_BUCKET" "S3_BUCKET"
     require_non_empty "$S3_REGION" "S3_REGION"
     require_non_empty "$S3_PREFIX" "S3_PREFIX"
     require_non_empty "$ENCRYPTION_MODE" "ENCRYPTION_MODE"
+    require_non_empty "$CLIENT_ENCRYPTION_MODE" "CLIENT_ENCRYPTION_MODE"
     if [[ "$ENCRYPTION_MODE" == "SSE-KMS" ]]; then
       require_non_empty "$KMS_KEY_ID" "KMS_KEY_ID"
     fi
@@ -401,6 +442,11 @@ main() {
   fi
 
   OUT_DIR="$(resolve_absolute_path "$OUT_DIR")"
+  OUT_DIR="$(realpath -m -- "$OUT_DIR")"
+  if [[ ( "$OUT_DIR" == "$ROOT_DIR/docs" || "$OUT_DIR" == "$ROOT_DIR/docs/"* ) &&
+        ( "$RESTORE_STATUS" == "pass" || -n "$S3_BUCKET" || -n "$S3_REGION" || -n "$S3_PREFIX" || -n "$KMS_KEY_ID" ) ]]; then
+    die "target-specific S3 restore evidence requires a private OUT_DIR outside docs/"
+  fi
   mkdir -p "$OUT_DIR"
 
   if [[ -n "$DECISION_RECORD_FILE" ]]; then
@@ -450,7 +496,7 @@ main() {
     fi
   fi
 
-  if [[ -n "$READINESS_RECORD_FILE" ]] && readiness_is_pass "$READINESS_RECORD_FILE" && readiness_has_write_probe "$READINESS_RECORD_FILE"; then
+  if [[ -n "$READINESS_RECORD_FILE" ]] && readiness_is_pass "$READINESS_RECORD_FILE" && readiness_has_write_probe "$READINESS_RECORD_FILE" && readiness_is_direct_real_run "$READINESS_RECORD_FILE"; then
     readiness_complete=true
   fi
 
@@ -485,7 +531,7 @@ main() {
 
   if [[ "$RESTORE_STATUS" == "pass" ]]; then
     [[ "$decision_complete" == "true" ]] || die "RESTORE_STATUS=pass requires finalized and matching decision record fields (missing: $decision_missing; mismatches: $decision_mismatches)"
-    [[ "$readiness_complete" == "true" ]] || die "RESTORE_STATUS=pass requires S3 readiness record with summaryStatus=pass and CHECK_WRITE=1"
+    [[ "$readiness_complete" == "true" ]] || die "RESTORE_STATUS=pass requires direct real S3 readiness with summaryStatus=pass, writeProbe=1, and realRunConfirmed=1"
     [[ "$logs_complete" == "true" ]] || die "RESTORE_STATUS=pass requires backup/upload/download/restore logs"
     [[ "$integrity_complete" == "true" ]] || die "RESTORE_STATUS=pass requires integrity checks to be true (counts=$counts_match amounts=$amounts_match references=$references_match files=$files_match)"
   fi
@@ -503,10 +549,12 @@ main() {
       printf -- '- targetEnvironment: %s%s%s\n' "$code_tick" "$TARGET_ENVIRONMENT" "$code_tick"
       printf -- '- operator: %s%s%s\n' "$code_tick" "$OPERATOR" "$code_tick"
       printf -- '- restoreStatus: %s%s%s\n' "$code_tick" "$RESTORE_STATUS" "$code_tick"
+      printf -- '- s3Provider: %s%s%s\n' "$code_tick" "${S3_PROVIDER:-not_provided}" "$code_tick"
       printf -- '- s3Bucket: %s%s%s\n' "$code_tick" "${S3_BUCKET:-not_provided}" "$code_tick"
       printf -- '- s3Region: %s%s%s\n' "$code_tick" "${S3_REGION:-not_provided}" "$code_tick"
       printf -- '- s3Prefix: %s%s%s\n' "$code_tick" "${S3_PREFIX:-not_provided}" "$code_tick"
       printf -- '- encryptionMode: %s%s%s\n' "$code_tick" "${ENCRYPTION_MODE:-not_provided}" "$code_tick"
+      printf -- '- clientEncryptionMode: %s%s%s\n' "$code_tick" "${CLIENT_ENCRYPTION_MODE:-not_provided}" "$code_tick"
       printf -- '- kmsKeyId: %s%s%s\n' "$code_tick" "${KMS_KEY_ID:-not_provided}" "$code_tick"
       echo "- branch: $(git -C "$ROOT_DIR" branch --show-current)"
       echo "- commit: $(git -C "$ROOT_DIR" rev-parse HEAD)"

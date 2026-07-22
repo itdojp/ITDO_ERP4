@@ -1,0 +1,891 @@
+import { createHash } from 'node:crypto';
+import { PassThrough, Readable } from 'stream';
+import googleapis from 'googleapis';
+
+import type {
+  ObjectStore,
+  ObjectStoreBody,
+  ObjectStoreIdempotencyLookupInput,
+  ObjectStoreListInput,
+  ObjectStoreMetadata,
+  ObjectStorePutInput,
+} from './objectStore.js';
+import type {
+  GoogleDriveCredentialConfig,
+  GoogleDriveTuningConfig,
+} from './googleDriveConfig.js';
+
+type DriveFileData = {
+  id?: string | null;
+  name?: string | null;
+  originalFilename?: string | null;
+  mimeType?: string | null;
+  size?: string | null;
+  md5Checksum?: string | null;
+  sha1Checksum?: string | null;
+  sha256Checksum?: string | null;
+  appProperties?: Record<string, string> | null;
+  trashed?: boolean | null;
+  driveId?: string | null;
+  parents?: string[] | null;
+  createdTime?: string | null;
+  modifiedTime?: string | null;
+};
+
+type DriveResponse = { data: unknown };
+
+type DriveListData = {
+  files?: DriveFileData[] | null;
+  incompleteSearch?: boolean | null;
+  nextPageToken?: string | null;
+};
+
+type GoogleDriveResumableCreateInput = {
+  fields: string;
+  media: {
+    body: ObjectStoreBody;
+    mimeType?: string;
+    sizeBytes: number;
+  };
+  requestBody: {
+    appProperties: Record<string, string>;
+    name: string;
+    parents: string[];
+  };
+};
+
+type GoogleDriveAuthorizedRequest = (
+  options: Record<string, unknown>,
+) => Promise<{ data: unknown; headers?: unknown; status?: number }>;
+
+export type GoogleDriveApi = {
+  about: {
+    get(
+      params: Record<string, unknown>,
+      options?: Record<string, unknown>,
+    ): Promise<DriveResponse>;
+  };
+  createResumable(
+    input: GoogleDriveResumableCreateInput,
+    options?: Record<string, unknown>,
+  ): Promise<DriveResponse>;
+  files: {
+    create(
+      params: Record<string, unknown>,
+      options?: Record<string, unknown>,
+    ): Promise<DriveResponse>;
+    get(
+      params: Record<string, unknown>,
+      options?: Record<string, unknown>,
+    ): Promise<DriveResponse>;
+    list(
+      params: Record<string, unknown>,
+      options?: Record<string, unknown>,
+    ): Promise<DriveResponse>;
+    update(
+      params: Record<string, unknown>,
+      options?: Record<string, unknown>,
+    ): Promise<DriveResponse>;
+  };
+  permissions: {
+    list(
+      params: Record<string, unknown>,
+      options?: Record<string, unknown>,
+    ): Promise<DriveResponse>;
+  };
+};
+
+export type GoogleDriveObjectStoreOptions = GoogleDriveTuningConfig & {
+  folderId: string;
+  sharedDriveId?: string;
+};
+
+export type GoogleDriveObjectStoreErrorCode =
+  | 'auth_expired'
+  | 'forbidden'
+  | 'not_found'
+  | 'quota'
+  | 'retryable'
+  | 'permanent'
+  | 'timeout';
+
+type GoogleDriveOperation =
+  'download' | 'list' | 'stat' | 'target_check' | 'trash' | 'upload';
+
+export class GoogleDriveObjectStoreError extends Error {
+  readonly code: GoogleDriveObjectStoreErrorCode;
+  readonly operation: GoogleDriveOperation;
+  readonly retryable: boolean;
+  readonly status?: number;
+
+  constructor(options: {
+    code: GoogleDriveObjectStoreErrorCode;
+    operation: GoogleDriveOperation;
+    retryable: boolean;
+    status?: number;
+  }) {
+    super(`google_drive_${options.code}`);
+    this.name = 'GoogleDriveObjectStoreError';
+    this.code = options.code;
+    this.operation = options.operation;
+    this.retryable = options.retryable;
+    this.status = options.status;
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object'
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function readHeader(headers: unknown, name: string) {
+  const record = asRecord(headers);
+  if (!record) return undefined;
+  if (typeof record.get === 'function') {
+    const value = record.get.call(headers, name);
+    return typeof value === 'string' ? value : undefined;
+  }
+  const value = record[name] ?? record[name.toLowerCase()];
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value) && typeof value[0] === 'string') return value[0];
+  return undefined;
+}
+
+function validateResumableSessionUrl(value: string | undefined) {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== 'https:' ||
+      url.hostname !== 'www.googleapis.com' ||
+      url.port !== '' ||
+      url.username !== '' ||
+      url.password !== '' ||
+      url.pathname !== '/upload/drive/v3/files'
+    ) {
+      return undefined;
+    }
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+export function createGoogleDriveResumableCreate(
+  request: GoogleDriveAuthorizedRequest,
+  dependencies: {
+    random?: () => number;
+    sleep?: (milliseconds: number) => Promise<void>;
+  } = {},
+) {
+  return async (
+    input: GoogleDriveResumableCreateInput,
+    options: Record<string, unknown> = {},
+  ): Promise<DriveResponse> => {
+    const timeout = options.timeout;
+    const maxRetries =
+      typeof options.maxRetries === 'number' &&
+      Number.isInteger(options.maxRetries) &&
+      options.maxRetries >= 0
+        ? options.maxRetries
+        : 0;
+    const retryBaseDelayMs =
+      typeof options.retryBaseDelayMs === 'number' &&
+      Number.isInteger(options.retryBaseDelayMs) &&
+      options.retryBaseDelayMs > 0
+        ? options.retryBaseDelayMs
+        : 250;
+    const initiated = await request({
+      url: 'https://www.googleapis.com/upload/drive/v3/files',
+      method: 'POST',
+      params: {
+        uploadType: 'resumable',
+        supportsAllDrives: true,
+        ignoreDefaultVisibility: true,
+        fields: input.fields,
+      },
+      headers: {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'X-Upload-Content-Length': String(input.media.sizeBytes),
+        'X-Upload-Content-Type':
+          input.media.mimeType ?? 'application/octet-stream',
+      },
+      data: input.requestBody,
+      retry: false,
+      timeout,
+    });
+    const sessionUrl = validateResumableSessionUrl(
+      readHeader(initiated.headers, 'location'),
+    );
+    if (!sessionUrl) {
+      throw new GoogleDriveObjectStoreError({
+        code: 'permanent',
+        operation: 'upload',
+        retryable: false,
+      });
+    }
+
+    const sleep =
+      dependencies.sleep ??
+      ((milliseconds: number) =>
+        new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+    const delay = async (attempt: number) => {
+      const base = retryBaseDelayMs * 2 ** attempt;
+      const jitter = Math.floor(
+        (dependencies.random?.() ?? Math.random()) * retryBaseDelayMs,
+      );
+      await sleep(Math.min(base + jitter, 64_000));
+    };
+    const nextOffset = (headers: unknown) => {
+      const range = readHeader(headers, 'range');
+      if (!range) return 0;
+      const match = /^bytes=0-([0-9]+)$/.exec(range);
+      if (!match) {
+        throw new GoogleDriveObjectStoreError({
+          code: 'permanent',
+          operation: 'upload',
+          retryable: false,
+        });
+      }
+      const value = Number(match[1]) + 1;
+      if (!Number.isSafeInteger(value) || value >= input.media.sizeBytes) {
+        throw new GoogleDriveObjectStoreError({
+          code: 'permanent',
+          operation: 'upload',
+          retryable: false,
+        });
+      }
+      return value;
+    };
+    const statusQuery = () =>
+      request({
+        url: sessionUrl,
+        method: 'PUT',
+        headers: {
+          'Content-Length': '0',
+          'Content-Range': `bytes */${input.media.sizeBytes}`,
+        },
+        responseType: 'json',
+        retry: false,
+        timeout,
+        validateStatus: (status: number) =>
+          status === 200 || status === 201 || status === 308,
+      });
+
+    let offset = 0;
+    let retries = 0;
+    while (true) {
+      try {
+        const uploaded = await request({
+          url: sessionUrl,
+          method: 'PUT',
+          headers: {
+            'Content-Length': String(input.media.sizeBytes - offset),
+            'Content-Range': `bytes ${offset}-${input.media.sizeBytes - 1}/${input.media.sizeBytes}`,
+            'Content-Type': input.media.mimeType ?? 'application/octet-stream',
+          },
+          data: toReadable(input.media.body, offset),
+          responseType: 'json',
+          retry: false,
+          timeout,
+          validateStatus: (status: number) =>
+            status === 200 || status === 201 || status === 308,
+        });
+        if (uploaded.status !== 308) return { data: uploaded.data };
+        const uploadedOffset = nextOffset(uploaded.headers);
+        if (uploadedOffset <= offset) {
+          throw new GoogleDriveObjectStoreError({
+            code: 'permanent',
+            operation: 'upload',
+            retryable: false,
+          });
+        }
+        offset = uploadedOffset;
+        continue;
+      } catch (error) {
+        const normalized = normalizeGoogleDriveError(error, 'upload');
+        if (!normalized.retryable || retries >= maxRetries) throw normalized;
+      }
+
+      while (true) {
+        await delay(retries);
+        retries += 1;
+        try {
+          const status = await statusQuery();
+          if (status.status !== 308) return { data: status.data };
+          const resumedOffset = nextOffset(status.headers);
+          if (resumedOffset < offset) {
+            throw new GoogleDriveObjectStoreError({
+              code: 'permanent',
+              operation: 'upload',
+              retryable: false,
+            });
+          }
+          offset = resumedOffset;
+          break;
+        } catch (error) {
+          const normalized = normalizeGoogleDriveError(error, 'upload');
+          if (!normalized.retryable || retries >= maxRetries) throw normalized;
+        }
+      }
+    }
+  };
+}
+
+function readStatus(error: unknown) {
+  const record = asRecord(error);
+  const response = asRecord(record?.response);
+  const status = response?.status ?? record?.status ?? record?.code;
+  if (typeof status === 'number') return status;
+  if (typeof status === 'string' && /^\d{3}$/.test(status))
+    return Number(status);
+  return undefined;
+}
+
+function collectReasons(error: unknown) {
+  const record = asRecord(error);
+  const response = asRecord(record?.response);
+  const data = asRecord(response?.data);
+  const nestedError = asRecord(data?.error);
+  const reasons: string[] = [];
+  const addReason = (value: unknown) => {
+    if (typeof value === 'string') reasons.push(value.toLowerCase());
+  };
+  addReason(record?.code);
+  addReason(data?.error);
+  addReason(nestedError?.status);
+  const candidates = [record?.errors, data?.errors, nestedError?.errors];
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate)) continue;
+    for (const item of candidate) addReason(asRecord(item)?.reason);
+  }
+  return reasons;
+}
+
+export function normalizeGoogleDriveError(
+  error: unknown,
+  operation: GoogleDriveOperation,
+) {
+  if (error instanceof GoogleDriveObjectStoreError) return error;
+
+  const status = readStatus(error);
+  const reasons = collectReasons(error);
+  const hasReason = (pattern: RegExp) =>
+    reasons.some((reason) => pattern.test(reason));
+  const timeout =
+    status === 408 ||
+    hasReason(/^(aborterror|econnaborted|etimedout|timeout)$/) ||
+    asRecord(error)?.name === 'AbortError';
+
+  if (timeout) {
+    return new GoogleDriveObjectStoreError({
+      code: 'timeout',
+      operation,
+      retryable: true,
+      status,
+    });
+  }
+  if (status === 401 || hasReason(/^(autherror|invalid_grant)$/)) {
+    return new GoogleDriveObjectStoreError({
+      code: 'auth_expired',
+      operation,
+      retryable: false,
+      status,
+    });
+  }
+  if (status === 404) {
+    return new GoogleDriveObjectStoreError({
+      code: 'not_found',
+      operation,
+      retryable: false,
+      status,
+    });
+  }
+  if (
+    status === 403 &&
+    hasReason(/(storagequota|dailylimit|quotaexceeded|teamdrivefilelimit)/)
+  ) {
+    return new GoogleDriveObjectStoreError({
+      code: 'quota',
+      operation,
+      retryable: false,
+      status,
+    });
+  }
+  if (status === 429 || (status === 403 && hasReason(/ratelimit/))) {
+    return new GoogleDriveObjectStoreError({
+      code: 'quota',
+      operation,
+      retryable: true,
+      status,
+    });
+  }
+  if (
+    (typeof status === 'number' && status >= 500 && status <= 599) ||
+    hasReason(/^(econnreset|enetunreach|enotfound|eai_again|epipe)$/)
+  ) {
+    return new GoogleDriveObjectStoreError({
+      code: 'retryable',
+      operation,
+      retryable: true,
+      status,
+    });
+  }
+  if (status === 403) {
+    return new GoogleDriveObjectStoreError({
+      code: 'forbidden',
+      operation,
+      retryable: false,
+      status,
+    });
+  }
+  return new GoogleDriveObjectStoreError({
+    code: 'permanent',
+    operation,
+    retryable: false,
+    status,
+  });
+}
+
+function normalizeSize(value: string | null | undefined) {
+  if (!value || !/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function mapMetadata(
+  file: DriveFileData,
+  operation: GoogleDriveOperation,
+  fallback?: Pick<
+    ObjectStorePutInput,
+    'contentType' | 'originalName' | 'sha256' | 'sizeBytes'
+  >,
+): ObjectStoreMetadata {
+  if (!file.id) {
+    throw new GoogleDriveObjectStoreError({
+      code: 'permanent',
+      operation,
+      retryable: false,
+    });
+  }
+  return {
+    key: file.id,
+    checksum: {
+      md5: file.md5Checksum ?? undefined,
+      sha1: file.sha1Checksum ?? undefined,
+      sha256:
+        file.sha256Checksum ??
+        file.appProperties?.erp4Sha256 ??
+        fallback?.sha256,
+    },
+    contentType: file.mimeType ?? fallback?.contentType ?? null,
+    createdAt: file.createdTime ?? null,
+    modifiedAt: file.modifiedTime ?? null,
+    originalName:
+      file.originalFilename ?? file.name ?? fallback?.originalName ?? 'object',
+    sizeBytes: normalizeSize(file.size) ?? fallback?.sizeBytes ?? null,
+    trashed: file.trashed ?? false,
+    appProperties: file.appProperties ?? undefined,
+  };
+}
+
+function toReadable(body: ObjectStorePutInput['body'], start = 0) {
+  return Buffer.isBuffer(body)
+    ? Readable.from(body.subarray(start))
+    : body(start);
+}
+
+function escapeDriveQueryLiteral(value: string) {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function validateAppProperties(
+  values: Record<string, string> | undefined,
+  operation: GoogleDriveOperation,
+) {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(values ?? {})) {
+    if (
+      key === 'erp4IdempotencyKey' ||
+      key === 'erp4Sha256' ||
+      !/^erp4[A-Za-z0-9]{1,60}$/.test(key) ||
+      !/^[A-Za-z0-9._:+-]{1,124}$/.test(value)
+    ) {
+      throw new GoogleDriveObjectStoreError({
+        code: 'permanent',
+        operation,
+        retryable: false,
+      });
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+function hashIdempotencyKey(value: string) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+export class GoogleDriveObjectStore implements ObjectStore {
+  private targetCheck: Promise<void> | null = null;
+
+  constructor(
+    private readonly drive: GoogleDriveApi,
+    private readonly options: GoogleDriveObjectStoreOptions,
+    private readonly dependencies: {
+      sleep?: (milliseconds: number) => Promise<void>;
+      random?: () => number;
+    } = {},
+  ) {}
+
+  private async execute<T>(
+    operation: GoogleDriveOperation,
+    request: () => Promise<T>,
+    retry = true,
+  ): Promise<T> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await request();
+      } catch (error) {
+        const normalized = normalizeGoogleDriveError(error, operation);
+        if (
+          !retry ||
+          !normalized.retryable ||
+          attempt >= this.options.maxRetries
+        ) {
+          throw normalized;
+        }
+        const baseDelay = this.options.retryBaseDelayMs * 2 ** attempt;
+        const jitter = Math.floor(
+          (this.dependencies.random?.() ?? Math.random()) *
+            this.options.retryBaseDelayMs,
+        );
+        const delay = Math.min(baseDelay + jitter, 64_000);
+        await (
+          this.dependencies.sleep ??
+          ((milliseconds) =>
+            new Promise((resolve) => setTimeout(resolve, milliseconds)))
+        )(delay);
+      }
+    }
+  }
+
+  private assertScopedFile(
+    file: DriveFileData,
+    operation: GoogleDriveOperation,
+  ) {
+    const expectedDriveId = this.options.sharedDriveId ?? null;
+    const actualDriveId = file.driveId ?? null;
+    if (
+      actualDriveId !== expectedDriveId ||
+      !file.parents?.includes(this.options.folderId)
+    ) {
+      throw new GoogleDriveObjectStoreError({
+        code: 'permanent',
+        operation,
+        retryable: false,
+      });
+    }
+  }
+
+  private async getScopedFile(key: string, operation: GoogleDriveOperation) {
+    const response = await this.drive.files.get(
+      {
+        fileId: key,
+        supportsAllDrives: true,
+        fields:
+          'id,name,originalFilename,mimeType,size,md5Checksum,sha1Checksum,sha256Checksum,appProperties,trashed,driveId,parents,createdTime,modifiedTime',
+      },
+      { retry: false, timeout: this.options.timeoutMs },
+    );
+    const file = response.data as DriveFileData;
+    this.assertScopedFile(file, operation);
+    return file;
+  }
+
+  private async ensureStorageTarget() {
+    if (!this.targetCheck) {
+      this.targetCheck = this.execute('target_check', async () => {
+        const response = await this.drive.files.get(
+          {
+            fileId: this.options.folderId,
+            fields: 'id,driveId,mimeType,trashed',
+            supportsAllDrives: true,
+          },
+          { retry: false, timeout: this.options.timeoutMs },
+        );
+        const folder = response.data as DriveFileData;
+        if (
+          (folder.driveId ?? null) !== (this.options.sharedDriveId ?? null) ||
+          folder.mimeType !== 'application/vnd.google-apps.folder' ||
+          folder.trashed === true
+        ) {
+          throw new GoogleDriveObjectStoreError({
+            code: 'permanent',
+            operation: 'target_check',
+            retryable: false,
+          });
+        }
+      }).catch((error) => {
+        this.targetCheck = null;
+        throw error;
+      });
+    }
+    await this.targetCheck;
+  }
+
+  private async findIdempotentObject(input: ObjectStoreIdempotencyLookupInput) {
+    const digest = hashIdempotencyKey(input.idempotencyKey);
+    const response = await this.execute('upload', () =>
+      this.drive.files.list(
+        {
+          q:
+            `'${escapeDriveQueryLiteral(this.options.folderId)}' in parents and ` +
+            `trashed=false and appProperties has { key='erp4IdempotencyKey' and value='${digest}' }`,
+          fields:
+            'nextPageToken,incompleteSearch,files(id,name,originalFilename,mimeType,size,md5Checksum,sha1Checksum,sha256Checksum,appProperties,trashed,driveId,parents,createdTime,modifiedTime)',
+          pageSize: 2,
+          spaces: 'drive',
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true,
+          ...(this.options.sharedDriveId
+            ? {
+                corpora: 'drive',
+                driveId: this.options.sharedDriveId,
+              }
+            : { corpora: 'user' }),
+        },
+        { retry: false, timeout: this.options.timeoutMs },
+      ),
+    );
+    const data = response.data as DriveListData;
+    const files = data.files ?? [];
+    if (data.incompleteSearch || data.nextPageToken || files.length > 1) {
+      throw new GoogleDriveObjectStoreError({
+        code: 'permanent',
+        operation: 'upload',
+        retryable: false,
+      });
+    }
+    const file = files[0];
+    if (!file) return null;
+    this.assertScopedFile(file, 'upload');
+    const metadata = mapMetadata(file, 'upload');
+    if (
+      metadata.checksum.sha256 !== input.sha256 ||
+      metadata.sizeBytes !== input.sizeBytes
+    ) {
+      throw new GoogleDriveObjectStoreError({
+        code: 'permanent',
+        operation: 'upload',
+        retryable: false,
+      });
+    }
+    return metadata;
+  }
+
+  async findByIdempotencyKey(input: ObjectStoreIdempotencyLookupInput) {
+    await this.ensureStorageTarget();
+    return this.findIdempotentObject(input);
+  }
+
+  async put(input: ObjectStorePutInput) {
+    await this.ensureStorageTarget();
+    const existing = input.idempotencyKey
+      ? await this.findIdempotentObject({
+          idempotencyKey: input.idempotencyKey,
+          sha256: input.sha256,
+          sizeBytes: input.sizeBytes,
+        })
+      : null;
+    if (existing) return existing;
+    const appProperties = {
+      ...validateAppProperties(input.appProperties, 'upload'),
+      erp4Sha256: input.sha256,
+      ...(input.idempotencyKey
+        ? { erp4IdempotencyKey: hashIdempotencyKey(input.idempotencyKey) }
+        : {}),
+    };
+    // A fresh files.create retry can duplicate an object when the first request's
+    // outcome is ambiguous. Large payloads use one resumable session, but this
+    // adapter deliberately never starts a second create/session request.
+    return this.execute(
+      'upload',
+      async () => {
+        const request = {
+          requestBody: {
+            name: input.originalName,
+            parents: [this.options.folderId],
+            appProperties,
+          },
+          media: {
+            mimeType: input.contentType || undefined,
+            body: input.body,
+            sizeBytes: input.sizeBytes,
+          },
+          fields:
+            'id,name,originalFilename,mimeType,size,md5Checksum,sha1Checksum,sha256Checksum,appProperties,trashed,createdTime,modifiedTime',
+        };
+        const response =
+          input.sizeBytes >= this.options.resumableUploadThresholdBytes
+            ? await this.drive.createResumable(request, {
+                retry: false,
+                timeout: this.options.timeoutMs,
+                maxRetries: this.options.maxRetries,
+                retryBaseDelayMs: this.options.retryBaseDelayMs,
+              })
+            : await this.drive.files.create(
+                {
+                  supportsAllDrives: true,
+                  ignoreDefaultVisibility: true,
+                  requestBody: request.requestBody,
+                  media: {
+                    ...request.media,
+                    body: toReadable(request.media.body),
+                  },
+                  fields: request.fields,
+                },
+                { retry: false, timeout: this.options.timeoutMs },
+              );
+        return mapMetadata(response.data as DriveFileData, 'upload', input);
+      },
+      false,
+    );
+  }
+
+  async get(key: string) {
+    return this.execute('download', async () => {
+      await this.getScopedFile(key, 'download');
+      const response = await this.drive.files.get(
+        { fileId: key, alt: 'media', supportsAllDrives: true },
+        {
+          responseType: 'stream',
+          retry: false,
+          timeout: this.options.timeoutMs,
+        },
+      );
+      const source = response.data;
+      if (!(source instanceof Readable)) {
+        throw new GoogleDriveObjectStoreError({
+          code: 'permanent',
+          operation: 'download',
+          retryable: false,
+        });
+      }
+      const stream = new PassThrough();
+      source.once('error', (error) => {
+        stream.destroy(normalizeGoogleDriveError(error, 'download'));
+      });
+      stream.once('close', () => {
+        if (!source.destroyed) source.destroy();
+      });
+      source.pipe(stream);
+      return { stream };
+    });
+  }
+
+  async list(input: ObjectStoreListInput = {}) {
+    await this.ensureStorageTarget();
+    const appProperties = validateAppProperties(input.appProperties, 'list');
+    const pageSize = input.pageSize ?? 1000;
+    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 1000) {
+      throw new GoogleDriveObjectStoreError({
+        code: 'permanent',
+        operation: 'list',
+        retryable: false,
+      });
+    }
+    const query = [
+      `'${escapeDriveQueryLiteral(this.options.folderId)}' in parents`,
+      'trashed = false',
+      ...Object.entries(appProperties)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(
+          ([key, value]) =>
+            `appProperties has { key='${escapeDriveQueryLiteral(key)}' and value='${escapeDriveQueryLiteral(value)}' }`,
+        ),
+    ].join(' and ');
+    const items: ObjectStoreMetadata[] = [];
+    let pageToken: string | undefined;
+    do {
+      const response = await this.execute('list', () =>
+        this.drive.files.list(
+          {
+            q: query,
+            spaces: 'drive',
+            corpora: this.options.sharedDriveId ? 'drive' : 'user',
+            driveId: this.options.sharedDriveId,
+            supportsAllDrives: true,
+            includeItemsFromAllDrives: true,
+            pageSize,
+            pageToken,
+            fields:
+              'nextPageToken,incompleteSearch,files(id,name,originalFilename,mimeType,size,md5Checksum,sha1Checksum,sha256Checksum,appProperties,trashed,driveId,parents,createdTime,modifiedTime)',
+          },
+          { retry: false, timeout: this.options.timeoutMs },
+        ),
+      );
+      const page = response.data as DriveListData;
+      if (page.incompleteSearch === true || !Array.isArray(page.files)) {
+        throw new GoogleDriveObjectStoreError({
+          code: 'permanent',
+          operation: 'list',
+          retryable: false,
+        });
+      }
+      for (const file of page.files) {
+        this.assertScopedFile(file, 'list');
+        items.push(mapMetadata(file, 'list'));
+      }
+      pageToken = page.nextPageToken ?? undefined;
+    } while (pageToken);
+    return { items };
+  }
+
+  async stat(key: string) {
+    return this.execute('stat', async () => {
+      const file = await this.getScopedFile(key, 'stat');
+      return mapMetadata(file, 'stat');
+    });
+  }
+
+  async trash(key: string) {
+    await this.execute('trash', async () => {
+      await this.getScopedFile(key, 'trash');
+      await this.drive.files.update(
+        {
+          fileId: key,
+          supportsAllDrives: true,
+          requestBody: { trashed: true },
+          fields: 'id,trashed',
+        },
+        { retry: false, timeout: this.options.timeoutMs },
+      );
+    });
+  }
+}
+
+export function createGoogleDriveApi(credentials: GoogleDriveCredentialConfig) {
+  const { google } = googleapis as unknown as {
+    google: typeof import('googleapis').google;
+  };
+  const oauth2Client = new google.auth.OAuth2({
+    clientId: credentials.clientId,
+    clientSecret: credentials.clientSecret,
+  });
+  oauth2Client.setCredentials({ refresh_token: credentials.refreshToken });
+  const drive = google.drive({
+    version: 'v3',
+    auth: oauth2Client,
+  });
+  const createResumable = createGoogleDriveResumableCreate((options) =>
+    oauth2Client.request(options),
+  );
+  return {
+    about: drive.about,
+    createResumable,
+    files: drive.files,
+    permissions: drive.permissions,
+  } as unknown as GoogleDriveApi;
+}

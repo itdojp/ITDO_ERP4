@@ -69,6 +69,7 @@ EVIDENCE_ARCHIVE_PROVIDER=local
 EVIDENCE_ARCHIVE_LOCAL_DIR=/var/lib/erp4/evidence-archives
 CHAT_ATTACHMENT_PROVIDER=local
 CHAT_ATTACHMENT_LOCAL_DIR=/var/lib/erp4/chat-attachments
+REPORT_PROVIDER=local
 REPORT_STORAGE_DIR=/var/lib/erp4/reports
 BACKEND
 

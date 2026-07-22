@@ -2045,6 +2045,31 @@ model ReportDelivery {
   @@index([status, nextRetryAt])
 }
 
+model StorageArtifact {
+  id             String    @id @default(uuid())
+  context        String
+  provider       String
+  providerKey    String?
+  status         String    @default("pending")
+  idempotencyKey String?
+  originalName   String
+  contentType    String?
+  sizeBytes      BigInt
+  sha256         String
+  ownerType      String?
+  ownerId        String?
+  failureCode    String?
+  createdAt      DateTime  @default(now())
+  createdBy      String?
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  @@unique([context, provider, providerKey])
+  @@unique([context, provider, idempotencyKey])
+  @@index([context, status, createdAt])
+  @@index([ownerType, ownerId, createdAt])
+}
+
 model DailyReport {
   id               String                @id @default(uuid())
   userId           String

@@ -81,11 +81,17 @@ Google OIDC をさくらVPS 実機で使う場合は FQDN + HTTPS の origin / r
 - `PDF_PROVIDER`
 - `PDF_STORAGE_DIR`
 - `PDF_BASE_URL`
+- `PDF_GDRIVE_FOLDER_ID`（copy-only applyまたはgdrive provider時。実値は記録しない）
 - `EVIDENCE_ARCHIVE_PROVIDER`
 - `EVIDENCE_ARCHIVE_LOCAL_DIR`
+- `EVIDENCE_ARCHIVE_GDRIVE_FOLDER_ID`（copy-only applyまたはgdrive provider時。実値は記録しない）
 - `CHAT_ATTACHMENT_PROVIDER`
 - `CHAT_ATTACHMENT_LOCAL_DIR`
+- `REPORT_PROVIDER`
 - `REPORT_STORAGE_DIR`
+- `REPORT_GDRIVE_FOLDER_ID`（copy-only applyまたはgdrive provider時。実値は記録しない）
+
+非ChatのGoogle Drive設定では完全な`ERP4_GDRIVE_*` credential setを使い、旧`CHAT_ATTACHMENT_GDRIVE_*` aliasへfallbackしない。repository側runtime実装が存在しても、実folderのread/write preflight、copy-only照合、rollback windowを確認する#1981のcutover承認前はproduction providerをgdriveへ変更しない。
 
 確認コマンド:
 
@@ -139,6 +145,44 @@ Google OIDC をさくらVPS 実機で使う場合は FQDN + HTTPS の origin / r
 - `ERP4_BACKUP_KEEP_COUNT`
 - `ERP4_BACKUP_KEEP_DAYS`
 - `ERP4_DB_BACKUP_SKIP_GLOBALS`
+
+### repository外のoffsite backup env
+
+さくらobject storage向けの値はQuadlet envへ混在させず、repository外のmode 600・current owner・non-symlink fileで管理する。実値、credential、private endpoint、bucket識別子、GPG識別子はこのchecklistへ記載しない。
+
+profile / target:
+
+- `S3_PROVIDER=sakura`
+- `S3_ENDPOINT_URL`（credentialを含まないHTTPS origin）
+- `S3_BUCKET`
+- `S3_PREFIX`
+- `S3_REGION`
+- `ENVIRONMENT`
+- `BACKUP_RETENTION_CLASS`
+
+暗号化 / manifest context:
+
+- `GPG_RECIPIENT`
+- `GPG_HOME`
+- `GPG_REMOVE_PLAINTEXT`
+- `COMMIT_SHA`
+- `DB_VERSION`
+- `SCHEMA_VERSION`
+- `APP_VERSION`
+- `S3_VERIFY_DOWNLOAD`
+
+readiness / retention:
+
+- `S3_EXECUTION_MODE`
+- `S3_REAL_RUN_CONFIRM`
+- `CHECK_WRITE`
+- `S3_OPERATOR_EVIDENCE_FILE`
+- `RETENTION_MIN_HOURLY`
+- `RETENTION_MIN_DAILY`
+- `RETENTION_MIN_WEEKLY`
+- `RETENTION_MIN_MONTHLY`
+
+real mode、write/delete probe、timer有効化、restore、retention applyは人間承認後にだけ実施する。標準手順は[backup-restore](backup-restore.md)を参照する。
 
 ## 受入前の最小確認順
 

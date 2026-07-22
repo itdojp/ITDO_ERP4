@@ -266,6 +266,8 @@ test('check-po-migration-input-readiness: emits fail SUMMARY before strict exit'
 
 test('check-backup-s3-readiness: fails when aws command is missing', () => {
   const res = runScript('check-backup-s3-readiness.sh', {
+    S3_PROVIDER: 'aws',
+    S3_EXECUTION_MODE: 'fake',
     S3_BUCKET: 'dummy-bucket',
     PATH: '/non-existent-path',
   });
@@ -276,6 +278,8 @@ test('check-backup-s3-readiness: fails when aws command is missing', () => {
 test('check-backup-s3-readiness: validates EXPECT_SSE value before AWS calls', () => {
   withFakeAwsBin((binDir) => {
     const res = runScript('check-backup-s3-readiness.sh', {
+      S3_PROVIDER: 'aws',
+      S3_EXECUTION_MODE: 'fake',
       S3_BUCKET: 'dummy-bucket',
       EXPECT_SSE: 'invalid',
       PATH: `${binDir}:${process.env.PATH || ''}`,
@@ -287,6 +291,8 @@ test('check-backup-s3-readiness: validates EXPECT_SSE value before AWS calls', (
 
 test('check-backup-s3-readiness: validates STRICT value before AWS calls', () => {
   const res = runScript('check-backup-s3-readiness.sh', {
+    S3_PROVIDER: 'aws',
+    S3_EXECUTION_MODE: 'fake',
     S3_BUCKET: 'dummy-bucket',
     STRICT: '2',
     PATH: '/non-existent-path',
@@ -297,6 +303,8 @@ test('check-backup-s3-readiness: validates STRICT value before AWS calls', () =>
 
 test('check-backup-s3-readiness: validates CHECK_WRITE value before AWS calls', () => {
   const res = runScript('check-backup-s3-readiness.sh', {
+    S3_PROVIDER: 'aws',
+    S3_EXECUTION_MODE: 'fake',
     S3_BUCKET: 'dummy-bucket',
     CHECK_WRITE: 'yes',
     PATH: '/non-existent-path',
@@ -308,6 +316,8 @@ test('check-backup-s3-readiness: validates CHECK_WRITE value before AWS calls', 
 test('check-backup-s3-readiness: emits machine-readable SUMMARY line', () => {
   withFakeAwsBin((binDir) => {
     const res = runScript('check-backup-s3-readiness.sh', {
+      S3_PROVIDER: 'aws',
+      S3_EXECUTION_MODE: 'fake',
       S3_BUCKET: 'dummy-bucket',
       STRICT: '0',
       PATH: `${binDir}:${process.env.PATH || ''}`,
@@ -347,7 +357,8 @@ test('record-backup-s3-readiness: writes a report from an existing log file', ()
     );
     assert.equal(existsSync(reportPath), true);
     const report = readFileSync(reportPath, 'utf8');
-    assert.match(report, /summaryStatus: fail/);
+    assert.match(report, /summaryStatus: blocked/);
+    assert.match(report, /evidenceBasis: external-sanitized-log/);
     assert.match(report, /warningCount: 1/);
     assert.match(report, /errorCount: 1/);
   });
@@ -441,7 +452,7 @@ test('record-backup-s3-readiness: uses summary warning count when WARN lines are
       '2026-02-24-backup-s3-readiness-r-summary.md',
     );
     const report = readFileSync(reportPath, 'utf8');
-    assert.match(report, /summaryStatus: warn/);
+    assert.match(report, /summaryStatus: blocked/);
     assert.match(report, /warningCount: 3/);
     assert.match(report, /errorCount: 0/);
   });
@@ -473,7 +484,7 @@ test('record-backup-s3-readiness: uses machine-readable SUMMARY line when availa
     );
     const report = readFileSync(reportPath, 'utf8');
     assert.match(report, /summarySource: summary-line/);
-    assert.match(report, /summaryStatus: warn/);
+    assert.match(report, /summaryStatus: blocked/);
     assert.match(report, /warningCount: 4/);
     assert.match(report, /errorCount: 0/);
   });
@@ -557,7 +568,8 @@ test('record-backup-s3-readiness: runs CHECK_SCRIPT and respects FAIL_ON_CHECK',
     );
     assert.equal(existsSync(reportPath1), true);
     const report1 = readFileSync(reportPath1, 'utf8');
-    assert.match(report1, /summaryStatus: fail/);
+    assert.match(report1, /summaryStatus: blocked/);
+    assert.match(report1, /evidenceBasis: direct-check/);
     assert.match(report1, /checkExitCode: 42/);
     assert.match(report1, /errorCount: 1/);
 
@@ -585,10 +597,13 @@ function writeCompleteBackupS3DecisionRecord(filePath) {
       '- owner: infra-owner',
       '- reviewers: admin, management',
       '- relatedIssue: `#544`',
+      '- provider: aws',
       '- bucketName: erp4-backups',
       '- region: ap-northeast-1',
       '- s3Prefix: erp4/prod',
+      '- postUploadDownloadVerification: required',
       '- encryptionMode: SSE-KMS',
+      '- clientSideEncryption: none',
       '- kmsKeyIdOrAlias: alias/erp4-backup',
       '- kmsKeyAdmin: arn:aws:iam::123456789012:role/erp4-kms-admin',
       '- kmsKeyUsagePrincipals: arn:aws:iam::123456789012:role/erp4-backup-writer',
@@ -629,6 +644,10 @@ function writeBackupS3RestoreEvidenceFiles(dir, overrides = {}) {
     [
       '# S3バックアップ Readiness 記録',
       '- summaryStatus: pass',
+      '- executionMode: real',
+      '- writeProbe: 1',
+      '- realRunConfirmed: 1',
+      '- evidenceBasis: direct-check',
       '```text',
       '[backup-s3-preflight] SUMMARY status=pass warning_count=0 error_count=0 strict=1 check_write=1',
       '```',
@@ -678,6 +697,8 @@ test('record-backup-s3-restore: writes pass report with full S3 restore evidence
       TARGET_ENVIRONMENT: 'prod',
       OPERATOR: 'alice',
       RESTORE_STATUS: 'pass',
+      S3_PROVIDER: 'aws',
+      CLIENT_ENCRYPTION_MODE: 'none',
       S3_BUCKET: 'erp4-backups',
       S3_REGION: 'ap-northeast-1',
       S3_PREFIX: 'erp4/prod',
@@ -725,6 +746,10 @@ test('record-backup-s3-restore: accepts uppercase CHECK_WRITE=1 readiness eviden
       [
         '# S3バックアップ Readiness 記録',
         '- summaryStatus: pass',
+        '- executionMode: real',
+        '- writeProbe: 1',
+        '- realRunConfirmed: 1',
+        '- evidenceBasis: direct-check',
         '```text',
         '[backup-s3-preflight] SUMMARY status=pass warning_count=0 error_count=0 strict=1 CHECK_WRITE=1',
         '```',
@@ -739,6 +764,8 @@ test('record-backup-s3-restore: accepts uppercase CHECK_WRITE=1 readiness eviden
       TARGET_ENVIRONMENT: 'prod',
       OPERATOR: 'alice',
       RESTORE_STATUS: 'pass',
+      S3_PROVIDER: 'aws',
+      CLIENT_ENCRYPTION_MODE: 'none',
       S3_BUCKET: 'erp4-backups',
       S3_REGION: 'ap-northeast-1',
       S3_PREFIX: 'erp4/prod',
@@ -773,6 +800,8 @@ test('record-backup-s3-restore: rejects pass report with incomplete decision rec
       TARGET_ENVIRONMENT: 'prod',
       OPERATOR: 'alice',
       RESTORE_STATUS: 'pass',
+      S3_PROVIDER: 'aws',
+      CLIENT_ENCRYPTION_MODE: 'none',
       S3_BUCKET: 'erp4-backups',
       S3_REGION: 'ap-northeast-1',
       S3_PREFIX: 'erp4/prod',
@@ -840,6 +869,8 @@ test('record-backup-s3-restore: rejects pass report with placeholder decision op
       TARGET_ENVIRONMENT: 'prod',
       OPERATOR: 'alice',
       RESTORE_STATUS: 'pass',
+      S3_PROVIDER: 'aws',
+      CLIENT_ENCRYPTION_MODE: 'none',
       S3_BUCKET: 'erp4-backups',
       S3_REGION: 'ap-northeast-1',
       S3_PREFIX: 'erp4/prod',
@@ -882,6 +913,8 @@ test('record-backup-s3-restore: rejects pass report with mismatched decision rec
       TARGET_ENVIRONMENT: 'prod',
       OPERATOR: 'alice',
       RESTORE_STATUS: 'pass',
+      S3_PROVIDER: 'aws',
+      CLIENT_ENCRYPTION_MODE: 'none',
       S3_BUCKET: 'erp4-backups',
       S3_REGION: 'ap-northeast-1',
       S3_PREFIX: 'erp4/prod',
@@ -923,6 +956,8 @@ test('record-backup-s3-restore: accepts SSE-S3 when KMS decision is explicitly n
       TARGET_ENVIRONMENT: 'prod',
       OPERATOR: 'alice',
       RESTORE_STATUS: 'pass',
+      S3_PROVIDER: 'aws',
+      CLIENT_ENCRYPTION_MODE: 'none',
       S3_BUCKET: 'erp4-backups',
       S3_REGION: 'ap-northeast-1',
       S3_PREFIX: 'erp4/prod',
@@ -936,6 +971,168 @@ test('record-backup-s3-restore: accepts SSE-S3 when KMS decision is explicitly n
       INTEGRITY_REPORT_JSON: evidence.integrityJson,
     });
     assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+  });
+});
+
+test('record-backup-s3-restore: accepts Sakura only with GPG/OpenPGP evidence', () => {
+  withRepoTempDir('backup-s3-restore-test-', (dir) => {
+    const outDir = path.join(dir, 'out');
+    mkdirSync(outDir, { recursive: true });
+    const evidence = writeBackupS3RestoreEvidenceFiles(dir);
+    const original = readFileSync(evidence.decisionRecord, 'utf8');
+    writeFileSync(
+      evidence.decisionRecord,
+      original
+        .replace('- provider: aws', '- provider: sakura')
+        .replace('- encryptionMode: SSE-KMS', '- encryptionMode: GPG')
+        .replace(
+          '- clientSideEncryption: none',
+          '- clientSideEncryption: OpenPGP',
+        )
+        .replace(
+          '- kmsKeyIdOrAlias: alias/erp4-backup',
+          '- kmsKeyIdOrAlias: n/a',
+        ),
+    );
+
+    const res = runScript('record-backup-s3-restore.sh', {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-09',
+      RUN_LABEL: 'sakura-gpg',
+      TARGET_ENVIRONMENT: 'prod',
+      OPERATOR: 'operator-role',
+      RESTORE_STATUS: 'pass',
+      S3_PROVIDER: 'sakura',
+      CLIENT_ENCRYPTION_MODE: 'OpenPGP',
+      S3_BUCKET: 'erp4-backups',
+      S3_REGION: 'ap-northeast-1',
+      S3_PREFIX: 'erp4/prod',
+      ENCRYPTION_MODE: 'GPG',
+      DECISION_RECORD_FILE: evidence.decisionRecord,
+      READINESS_RECORD_FILE: evidence.readinessRecord,
+      BACKUP_LOG_FILE: evidence.backupLog,
+      UPLOAD_LOG_FILE: evidence.uploadLog,
+      DOWNLOAD_LOG_FILE: evidence.downloadLog,
+      RESTORE_LOG_FILE: evidence.restoreLog,
+      INTEGRITY_REPORT_JSON: evidence.integrityJson,
+    });
+    assert.equal(res.status, 0, `${res.stderr}\n${res.stdout}`);
+    const report = readFileSync(
+      path.join(outDir, '2026-03-09-backup-s3-restore-sakura-gpg.md'),
+      'utf8',
+    );
+    assert.match(report, /s3Provider: `sakura`/);
+    assert.match(report, /clientEncryptionMode: `OpenPGP`/);
+  });
+});
+
+test('record-backup-s3-restore: rejects target-specific pass evidence under docs', () => {
+  withRepoTempDir('backup-s3-restore-test-', (dir) => {
+    const evidence = writeBackupS3RestoreEvidenceFiles(dir);
+    const original = readFileSync(evidence.decisionRecord, 'utf8');
+    writeFileSync(
+      evidence.decisionRecord,
+      original
+        .replace('- provider: aws', '- provider: sakura')
+        .replace('- encryptionMode: SSE-KMS', '- encryptionMode: GPG')
+        .replace(
+          '- clientSideEncryption: none',
+          '- clientSideEncryption: OpenPGP',
+        )
+        .replace(
+          '- kmsKeyIdOrAlias: alias/erp4-backup',
+          '- kmsKeyIdOrAlias: n/a',
+        ),
+    );
+
+    const commonEnv = {
+      DATE_STAMP: '2026-03-09',
+      TARGET_ENVIRONMENT: 'prod',
+      OPERATOR: 'operator-role',
+      RESTORE_STATUS: 'pass',
+      S3_PROVIDER: 'sakura',
+      CLIENT_ENCRYPTION_MODE: 'OpenPGP',
+      S3_BUCKET: 'erp4-backups',
+      S3_REGION: 'ap-northeast-1',
+      S3_PREFIX: 'erp4/prod',
+      ENCRYPTION_MODE: 'GPG',
+      DECISION_RECORD_FILE: evidence.decisionRecord,
+      READINESS_RECORD_FILE: evidence.readinessRecord,
+      BACKUP_LOG_FILE: evidence.backupLog,
+      UPLOAD_LOG_FILE: evidence.uploadLog,
+      DOWNLOAD_LOG_FILE: evidence.downloadLog,
+      RESTORE_LOG_FILE: evidence.restoreLog,
+      INTEGRITY_REPORT_JSON: evidence.integrityJson,
+    };
+    const res = runScript('record-backup-s3-restore.sh', {
+      ...commonEnv,
+      RUN_LABEL: 'must-stay-private',
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(
+      res.stderr,
+      /target-specific S3 restore evidence requires a private OUT_DIR outside docs/,
+    );
+    assert.equal(
+      existsSync(
+        path.join(
+          ROOT_DIR,
+          'docs/test-results/2026-03-09-backup-s3-restore-must-stay-private.md',
+        ),
+      ),
+      false,
+    );
+
+    const traversalRes = runScript('record-backup-s3-restore.sh', {
+      ...commonEnv,
+      OUT_DIR: path.join(ROOT_DIR, 'private-evidence', '..', 'docs', 'test-results'),
+      RUN_LABEL: 'must-normalize-private-path',
+    });
+    assert.notEqual(traversalRes.status, 0);
+    assert.match(
+      traversalRes.stderr,
+      /target-specific S3 restore evidence requires a private OUT_DIR outside docs/,
+    );
+    assert.equal(
+      existsSync(
+        path.join(
+          ROOT_DIR,
+          'docs/test-results/2026-03-09-backup-s3-restore-must-normalize-private-path.md',
+        ),
+      ),
+      false,
+    );
+  });
+});
+
+test('record-backup-s3-restore: rejects Sakura pass without OpenPGP', () => {
+  withRepoTempDir('backup-s3-restore-test-', (dir) => {
+    const outDir = path.join(dir, 'out');
+    mkdirSync(outDir, { recursive: true });
+    const evidence = writeBackupS3RestoreEvidenceFiles(dir);
+    const res = runScript('record-backup-s3-restore.sh', {
+      OUT_DIR: outDir,
+      DATE_STAMP: '2026-03-09',
+      RUN_LABEL: 'sakura-no-gpg',
+      TARGET_ENVIRONMENT: 'prod',
+      OPERATOR: 'operator-role',
+      RESTORE_STATUS: 'pass',
+      S3_PROVIDER: 'sakura',
+      CLIENT_ENCRYPTION_MODE: 'none',
+      S3_BUCKET: 'erp4-backups',
+      S3_REGION: 'ap-northeast-1',
+      S3_PREFIX: 'erp4/prod',
+      ENCRYPTION_MODE: 'SSE-S3',
+      DECISION_RECORD_FILE: evidence.decisionRecord,
+      READINESS_RECORD_FILE: evidence.readinessRecord,
+      BACKUP_LOG_FILE: evidence.backupLog,
+      UPLOAD_LOG_FILE: evidence.uploadLog,
+      DOWNLOAD_LOG_FILE: evidence.downloadLog,
+      RESTORE_LOG_FILE: evidence.restoreLog,
+      INTEGRITY_REPORT_JSON: evidence.integrityJson,
+    });
+    assert.notEqual(res.status, 0);
+    assert.match(res.stderr, /requires GPG\/OpenPGP client-side encryption/);
   });
 });
 
@@ -962,6 +1159,8 @@ test('record-backup-s3-restore: rejects SSE-S3 when KMS decision keeps template 
       TARGET_ENVIRONMENT: 'prod',
       OPERATOR: 'alice',
       RESTORE_STATUS: 'pass',
+      S3_PROVIDER: 'aws',
+      CLIENT_ENCRYPTION_MODE: 'none',
       S3_BUCKET: 'erp4-backups',
       S3_REGION: 'ap-northeast-1',
       S3_PREFIX: 'erp4/prod',
@@ -994,6 +1193,8 @@ test('record-backup-s3-restore: rejects pass report with failing integrity check
       TARGET_ENVIRONMENT: 'prod',
       OPERATOR: 'alice',
       RESTORE_STATUS: 'pass',
+      S3_PROVIDER: 'aws',
+      CLIENT_ENCRYPTION_MODE: 'none',
       S3_BUCKET: 'erp4-backups',
       S3_REGION: 'ap-northeast-1',
       S3_PREFIX: 'erp4/prod',
@@ -1030,6 +1231,8 @@ test('record-backup-s3-restore: reports invalid integrity JSON without stack tra
       TARGET_ENVIRONMENT: 'prod',
       OPERATOR: 'alice',
       RESTORE_STATUS: 'pass',
+      S3_PROVIDER: 'aws',
+      CLIENT_ENCRYPTION_MODE: 'none',
       S3_BUCKET: 'erp4-backups',
       S3_REGION: 'ap-northeast-1',
       S3_PREFIX: 'erp4/prod',
@@ -1059,6 +1262,10 @@ test('record-backup-s3-restore: rejects pass report when readiness has no write 
       [
         '# S3バックアップ Readiness 記録',
         '- summaryStatus: pass',
+        '- executionMode: real',
+        '- writeProbe: 0',
+        '- realRunConfirmed: 1',
+        '- evidenceBasis: direct-check',
         '[backup-s3-preflight] SUMMARY status=pass warning_count=0 error_count=0 strict=1 check_write=0',
         '',
       ].join('\n'),
@@ -1071,6 +1278,8 @@ test('record-backup-s3-restore: rejects pass report when readiness has no write 
       TARGET_ENVIRONMENT: 'prod',
       OPERATOR: 'alice',
       RESTORE_STATUS: 'pass',
+      S3_PROVIDER: 'aws',
+      CLIENT_ENCRYPTION_MODE: 'none',
       S3_BUCKET: 'erp4-backups',
       S3_REGION: 'ap-northeast-1',
       S3_PREFIX: 'erp4/prod',
@@ -1087,7 +1296,7 @@ test('record-backup-s3-restore: rejects pass report when readiness has no write 
     assert.notEqual(res.status, 0);
     assert.match(
       String(res.stderr),
-      /RESTORE_STATUS=pass requires S3 readiness record with summaryStatus=pass and CHECK_WRITE=1/,
+      /RESTORE_STATUS=pass requires direct real S3 readiness/,
     );
   });
 });

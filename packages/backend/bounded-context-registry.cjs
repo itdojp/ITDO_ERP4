@@ -40,6 +40,7 @@ const contexts = [
     name: 'documents',
     displayName: 'Documents',
     patterns: [
+      '^src/application/pdf/.+\\.ts$',
       '^src/routes/(dailyReports|drafts|estimates|expenses|invoices|leave|leaveEntitlements|leaveSettings|leaveWorkdayCalendar|purchaseOrders|send|timeEntries|vendorDocs|worklogSettings)\\.ts$',
       '^src/services/(expenseBudget|expenseQaChecklist|expenseStateTransitionLog|leaveCompGrants|leaveEntitlements|leaveSettings|leaveTypes|leaveWorkdayCalendar|numbering|recurring|vendorInvoiceAllocations|vendorInvoiceLineReconciliation|vendorInvoiceLines|worklogSetting)\\.ts$',
     ],
@@ -56,6 +57,7 @@ const contexts = [
     name: 'evidence-references',
     displayName: 'Evidence & References',
     patterns: [
+      '^src/application/evidence/.+\\.ts$',
       '^src/routes/(annotationSettings|annotations|evidenceSnapshots)\\.ts$',
       '^src/services/(annotationReferences|evidencePackArchive|evidencePackExport|evidenceSnapshot)\\.ts$',
     ],
@@ -67,7 +69,7 @@ const contexts = [
       '^src/routes/chat[^/]*\\.ts$',
       '^src/routes/chat/.+\\.ts$',
       '^src/routes/chatRooms/.+\\.ts$',
-      '^src/services/(chatAckCandidates|chatAckLimits|chatAckLinkTargets|chatAckNotifications|chatAckRecipients|chatAckReminders|chatAckTemplates|chatAttachmentScan|chatAttachments|chatExternalLlm|chatMentionCandidates|chatMentionRecipients|chatReadState|chatRoomAccess|chatRoomAclAlerts|chatRoomLifecycle|chatRoomMembership|chatRoomProvisioning|personalGaChatRoom)\\.ts$',
+      '^src/services/(chatAckCandidates|chatAckLimits|chatAckLinkTargets|chatAckNotifications|chatAckRecipients|chatAckReminders|chatAckTemplates|chatAttachmentScan|chatExternalLlm|chatMentionCandidates|chatMentionRecipients|chatReadState|chatRoomAccess|chatRoomAclAlerts|chatRoomLifecycle|chatRoomMembership|chatRoomProvisioning|personalGaChatRoom)\\.ts$',
     ],
   },
   {
@@ -107,6 +109,7 @@ const layers = [
     rationale:
       'HTTP aggregation, cross-context read models, reports, dispatch/event entry points, or glue code that coordinates bounded contexts without defining a bounded context itself.',
     patterns: [
+      '^src/application/backup/.+\\.ts$',
       '^src/application/dailyReports/.+\\.ts$',
       '^src/application/expenses/.+\\.ts$',
       '^src/application/identity/.+\\.ts$',
@@ -121,6 +124,7 @@ const layers = [
       '^src/application/vendorDocs/.+\\.ts$',
       '^src/application/leave/.+\\.ts$',
       '^src/application/reportSubscriptions/.+\\.ts$',
+      '^src/application/storage/.+\\.ts$',
       '^src/routes/(index|insights|recurringJobs|refCandidates|reportSubscriptions|reports|search|sendEvents|testHooks|wellbeing)\\.ts$',
       '^src/services/(accountingEvents|approvalEscalation|dailyReportMissing|leaveEntitlementReminders|reports)\\.ts$',
     ],
@@ -146,6 +150,10 @@ const layers = [
       'Database, audit, readiness, PDF, outbound notification transports, safe HTTP, and environment/runtime adapters used by multiple contexts.',
     patterns: [
       '^src/adapters/notifications/.+\\.ts$',
+      '^src/adapters/storage/.+\\.ts$',
+      '^src/cli/(googleDrive(Check|CheckService|ProvisionFolder|ProvisionService)|storageArtifactMigration|storageReadiness(Service)?)\\.ts$',
+      '^src/infrastructure/backup/.+\\.ts$',
+      '^src/infrastructure/storage/.+\\.ts$',
       '^src/routes/(pdfFiles|pdfTemplates|templateSettings)\\.ts$',
       '^src/services/(audit|db|envValidation|notifier|pdf|pdfTemplates|readiness|safeHttpClient|webPush)\\.ts$',
     ],

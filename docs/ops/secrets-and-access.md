@@ -58,7 +58,7 @@
 
 | 種別    | 名前                                     | 利用箇所         | 保管場所                  | 所有者       | ローテーション          | 最終棚卸し日 | 最終ローテーション/演習日 | 失効手順                                                                  |
 | ------- | ---------------------------------------- | ---------------- | ------------------------- | ------------ | ----------------------- | ------------ | ------------------------- | ------------------------------------------------------------------------- |
-| OAuth   | `CHAT_ATTACHMENT_GDRIVE_*`               | chat attachments | GitHub Secrets / 実行環境 | Platform/Ops | 半年ごと + 事象発生時   | 2026-02-19   | 未記録                    | Google Cloud Console で旧 credential を revoke し、refresh token を再発行 |
+| OAuth   | `ERP4_GDRIVE_*` credentials              | chat attachments | GitHub Secrets / 実行環境 | Platform/Ops | 半年ごと + 事象発生時   | 2026-02-19   | 未記録                    | Google Cloud Console で旧 credential を revoke し、refresh token を再発行 |
 | API key | `SENDGRID_API_KEY`                       | notifier         | GitHub Secrets / 実行環境 | Platform/Ops | 四半期ごと + 事象発生時 | 2026-02-19   | 2026-02-18（演習）        | SendGrid Dashboard で旧 key revoke → 新 key 作成                          |
 | API key | `CHAT_EXTERNAL_LLM_OPENAI_API_KEY`       | chat summary     | GitHub Secrets / 実行環境 | Platform/Ops | 四半期ごと + 事象発生時 | 2026-02-19   | 未記録                    | OpenAI console で旧 key revoke → 新 key 作成                              |
 | JWT     | `JWT_PUBLIC_KEY` / `JWT_JWKS_URL`        | 認証             | GitHub Secrets / 実行環境 | Platform/Ops | 半年ごと + 事象発生時   | 2026-02-19   | 未記録                    | 新鍵を配備し、旧鍵を無効化（重複期間を短期で設定）                        |
@@ -83,12 +83,15 @@
 3. Push 通知の送信を検証する（少なくとも 1 件）
 4. 旧鍵を失効し、影響範囲を記録する
 
-### 3) OAuth（`CHAT_ATTACHMENT_GDRIVE_*`）
+### 3) OAuth（`ERP4_GDRIVE_*`）
 
 1. OAuth client secret / refresh token を再発行する
-2. 実行環境へ反映し backend を再起動する
-3. 添付の upload/download をスモーク実施する
-4. 旧 token を revoke する
+2. `ERP4_GDRIVE_CLIENT_ID` / `ERP4_GDRIVE_CLIENT_SECRET` / `ERP4_GDRIVE_REFRESH_TOKEN` を実行環境へ反映し backend を再起動する
+3. [ops-automation](ops-automation.md) の `scripts/ops/gcp-drive-check.sh` で read / write operator preflight を実施する
+4. 添付の upload/download をスモーク実施する
+5. 旧 token を revoke する
+
+旧 `CHAT_ATTACHMENT_GDRIVE_CLIENT_ID` / `CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET` / `CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN` は deprecated な後方互換 fallback です。共通キーを1つでも設定した場合は完全な `ERP4_GDRIVE_*` setを必須とし、field単位の混在を拒否します。共通setが未設定の場合だけ完全な旧setへfallbackし、両方が完全な場合は共通setを優先します。新規設定・ローテーションでは旧キーを使いません。
 
 ### 4) 外部API（`SENDGRID_API_KEY` / `CHAT_EXTERNAL_LLM_OPENAI_API_KEY`）
 
@@ -108,6 +111,9 @@
 
 - backend 基本疎通:
   - `BASE_URL=http://localhost:3001 ./scripts/smoke-backend.sh`
+- Google Drive Chat 添付:
+  - `./scripts/ops/gcp-drive-check.sh --env-file .codex-local/secure/gdrive.env --mode read`
+  - `./scripts/ops/gcp-drive-check.sh --env-file .codex-local/secure/gdrive.env --mode write`
 - メール通知（stub/smtp 設定確認を含む最小チェック）:
   - `npm run build --prefix packages/backend`
   - `npx ts-node --project packages/backend/tsconfig.json scripts/smoke-email.ts`
@@ -127,7 +133,8 @@
 ## 最小権限（例）
 
 - DB: アプリ用ユーザはスキーマ単位で必要権限のみ（DDL/スーパーユーザ不可）
-- ストレージ（Google Drive 等）: 専用フォルダ/専用アカウント、必要スコープ最小化。さくらVPS導入前のGoogle Cloud / Drive / OAuth確認は [google-cloud-predeployment](google-cloud-predeployment.md) を参照する。
+- ストレージ（Google Drive 等）: production は Shared Drive の専用 subfolder を推奨し、必要スコープを最小化する。`drive.file` で既存 Shared Drive folder にアクセスできるかは、実ユーザ membership / scope による operator preflight で確認し、推測だけで `drive` scope を必須にしない。domain-wide delegation は追加しない。さくらVPS導入前のGoogle Cloud / Drive / OAuth確認は [google-cloud-predeployment](google-cloud-predeployment.md) を参照する。
+- Google Drive の credential 値、folder ID、Drive ID はログ、stdout、Issue、PR、Markdown 証跡へ出さない。Drive URLや直接共有権限もアプリ利用者へ返さない。
 - GitHub: Fine-grained PAT / Actions Secrets のアクセス範囲を最小化
 
 ### DBユーザ（アプリ用ロール分離）

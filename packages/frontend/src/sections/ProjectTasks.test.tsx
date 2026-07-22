@@ -419,17 +419,19 @@ describe('ProjectTasks', () => {
       });
     });
 
-    expect(api).toHaveBeenCalledWith(
-      '/projects/project-1/tasks/task-2/dependencies',
-      {
-        method: 'PUT',
-        body: JSON.stringify({ predecessorIds: ['task-1'] }),
-      },
-    );
-    expect(screen.getByText('更新しました')).toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: 'キャンセル' }),
-    ).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith(
+        '/projects/project-1/tasks/task-2/dependencies',
+        {
+          method: 'PUT',
+          body: JSON.stringify({ predecessorIds: ['task-1'] }),
+        },
+      );
+      expect(screen.getByText('更新しました')).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: 'キャンセル' }),
+      ).not.toBeInTheDocument();
+    });
   });
 
   it('requires a deletion reason and removes the task for privileged users', async () => {

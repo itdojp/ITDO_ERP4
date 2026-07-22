@@ -126,7 +126,12 @@ type ActionPolicyAuditParams = {
 type SendEmail = (
   recipients: string[],
   documentNo: string,
-  pdf: { filename?: string; path?: string; url?: string },
+  pdf: {
+    content?: Buffer;
+    filename?: string;
+    path?: string;
+    url?: string;
+  },
   options?: { metadata?: Record<string, string> },
 ) => Promise<NotifyResult>;
 
@@ -657,7 +662,7 @@ async function sendDocument(
     buildPdfOptions(resolved.setting),
   );
   const recipients = config.recipients;
-  if (!pdf.filePath || !pdf.filename) {
+  if ((!pdf.filePath && !pdf.content) || !pdf.filename) {
     const failedSendLog = await createSendLog(p.db, {
       kind: config.kind,
       targetTable: config.targetTable,
@@ -711,6 +716,7 @@ async function sendDocument(
     documentNo,
     {
       filename: pdf.filename,
+      content: pdf.content,
       path: pdf.filePath,
       url: pdf.url,
     },
@@ -788,7 +794,7 @@ async function retryTargetSend(input: {
     documentNo,
     buildPdfOptions(resolved.setting),
   );
-  if (!pdf.filePath || !pdf.filename) {
+  if ((!pdf.filePath && !pdf.content) || !pdf.filename) {
     const failedRetryLog = await createSendLog(p.db, {
       kind: config.kind,
       targetTable: config.targetTable,
@@ -850,7 +856,12 @@ async function retryTargetSend(input: {
   const notifyResult = await config.sendEmail(
     recipients,
     documentNo,
-    { filename: pdf.filename, path: pdf.filePath, url: pdf.url },
+    {
+      filename: pdf.filename,
+      content: pdf.content,
+      path: pdf.filePath,
+      url: pdf.url,
+    },
     {
       metadata: buildEmailMetadata({
         sendLogId: retryLog.id,

@@ -174,6 +174,8 @@ printf 'optional scheduled config backups: edit %s/erp4-maintenance.env, then ru
 printf '  systemctl --user enable --now erp4-config-backup.timer\n'
 printf 'optional scheduled database backups: edit %s/erp4-maintenance.env, then run:\n' "$TARGET_DIR"
 printf '  systemctl --user enable --now erp4-db-backup.timer\n'
+printf 'optional storage readiness monitoring: edit %s/erp4-storage-readiness.env, then run:\n' "$TARGET_DIR"
+printf '  systemctl --user enable --now erp4-storage-readiness.timer\n'
 printf 'optional scheduled backup pruning: edit %s/erp4-maintenance.env, then run:\n' "$TARGET_DIR"
 printf '  systemctl --user enable --now erp4-config-prune.timer\n'
 printf 'note: rootless auto-start requires sudo loginctl enable-linger %s\n' "$(id -un)"

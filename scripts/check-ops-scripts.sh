@@ -17,10 +17,35 @@ trap cleanup EXIT
 
 mapfile -t OPS_SHELL_FILES < <(find scripts/ops -type f -name '*.sh' | sort)
 mapfile -t OPS_ENTRYPOINTS < <(find scripts/ops -maxdepth 1 -type f -name '*.sh' | sort)
+BACKUP_SHELL_FILES=(
+  scripts/backup-prod.sh
+  scripts/backup-s3-retention.sh
+  scripts/check-backup-s3-readiness.sh
+  scripts/record-backup-s3-readiness.sh
+  scripts/record-backup-s3-restore.sh
+  scripts/record-storage-readiness.sh
+  scripts/storage-readiness.sh
+)
+BACKUP_NODE_FILES=(
+  scripts/backup-s3-manifest.mjs
+  scripts/backup-s3-retention.mjs
+  scripts/backup-s3-profile.test.mjs
+  scripts/storage-readiness-record.mjs
+  scripts/storage-readiness-record.test.mjs
+)
 
 printf '==> Checking ops shell script syntax\n'
 for file in "${OPS_SHELL_FILES[@]}"; do
   bash -n "$file"
+  printf 'syntax ok: %s\n' "$file"
+done
+
+for file in "${BACKUP_SHELL_FILES[@]}"; do
+  bash -n "$file"
+  printf 'syntax ok: %s\n' "$file"
+done
+for file in "${BACKUP_NODE_FILES[@]}"; do
+  node --check "$file"
   printf 'syntax ok: %s\n' "$file"
 done
 
@@ -59,6 +84,40 @@ require_env_key() {
   fi
 }
 
+require_env_key_declared() {
+  local file="$1"
+  local key="$2"
+  if ! grep -Eq "^${key}=" "$file"; then
+    printf 'missing declared sample env key: %s in %s\n' "$key" "$file" >&2
+    return 1
+  fi
+}
+
+storage_readiness_env="deploy/quadlet/env/erp4-storage-readiness.env.example"
+for key in \
+  ENVIRONMENT \
+  BACKUP_DIR \
+  BACKUP_PREFIX \
+  STORAGE_READINESS_DRIVE_WARNING_PERCENT \
+  STORAGE_READINESS_DRIVE_CRITICAL_PERCENT \
+  STORAGE_READINESS_LOCAL_MAX_AGE_HOURS \
+  STORAGE_READINESS_SAKURA_MAX_AGE_HOURS \
+  STORAGE_READINESS_S3_TIMEOUT_MS \
+  STORAGE_READINESS_GDRIVE_MAX_AGE_HOURS \
+  STORAGE_READINESS_RESTORE_MAX_AGE_DAYS \
+  STORAGE_READINESS_MIN_HOURLY \
+  STORAGE_READINESS_MIN_DAILY \
+  STORAGE_READINESS_MIN_WEEKLY \
+  STORAGE_READINESS_MIN_MONTHLY \
+  STORAGE_READINESS_RESTORE_EVIDENCE_FILE \
+  STORAGE_READINESS_RESTORE_EXPECTED_BACKUP_ID; do
+  require_env_key_declared "$storage_readiness_env" "$key"
+done
+grep -Fq 'status --porcelain --untracked-files=normal' scripts/record-storage-readiness.sh || {
+  printf 'record-storage-readiness.sh must bind evidence to a clean repository\n' >&2
+  exit 1
+}
+
 printf '==> Checking sample env keys and secret-like values\n'
 gcp_env="docs/ops/examples/gcp-preflight.env.example"
 vps_env="docs/ops/examples/vps-ops.env.example"
@@ -87,10 +146,52 @@ for key in \
   require_env_key "$vps_env" "$key"
 done
 
+backup_env="docs/requirements/backup-restore.env.example"
+for key in \
+  ENVIRONMENT \
+  COMMIT_SHA \
+  DB_VERSION \
+  SCHEMA_VERSION \
+  APP_VERSION \
+  BACKUP_RETENTION_CLASS \
+  GPG_RECIPIENT \
+  GPG_REMOVE_PLAINTEXT \
+  S3_PROVIDER \
+  S3_ENDPOINT_URL \
+  S3_BUCKET \
+  S3_PREFIX \
+  S3_REGION \
+  S3_VERIFY_DOWNLOAD \
+  BACKUP_SECONDARY_PROVIDER \
+  BACKUP_GDRIVE_CLIENT_ID \
+  BACKUP_GDRIVE_CLIENT_SECRET \
+  BACKUP_GDRIVE_REFRESH_TOKEN \
+  BACKUP_GDRIVE_SHARED_DRIVE_ID \
+  BACKUP_GDRIVE_FOLDER_ID \
+  BACKUP_GDRIVE_UPLOAD_TIMEOUT_SEC \
+  BACKUP_GDRIVE_RETRY_MAX \
+  BACKUP_GDRIVE_VERIFY_DOWNLOAD \
+  BACKUP_GDRIVE_STATE_DIR \
+  BACKUP_GDRIVE_TRASH_CONFIRM \
+  BACKUP_GDRIVE_PRUNE_CONFIRM \
+  S3_EXECUTION_MODE \
+  S3_REAL_RUN_CONFIRM \
+  CHECK_WRITE \
+  S3_OPERATOR_EVIDENCE_FILE \
+  RETENTION_MIN_HOURLY \
+  RETENTION_MIN_DAILY \
+  RETENTION_MIN_WEEKLY \
+  RETENTION_MIN_MONTHLY \
+  PRUNE_CONFIRM \
+  RETENTION_EXCLUSIVE_LOCK_CONFIRM \
+  RETENTION_PLAN_SHA256; do
+  require_env_key_declared "$backup_env" "$key"
+done
+
 private_key_pattern='-----''BEGIN (RSA|EC|OPENSSH) PRIVATE KEY-----|-----''BEGIN PRIVATE KEY-----|-----''BEGIN PGP PRIVATE KEY BLOCK-----'
 secret_pattern="(${private_key_pattern}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|GOCSPX-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{80,}|xox[baprs]-[A-Za-z0-9-]{10,}|https://hooks\.slack\.com/services/[A-Za-z0-9/_-]{20,}|ya29\.[0-9A-Za-z._-]{20,})"
 secret_matches="$SMOKE_DIR/secret-like-matches.txt"
-if grep -RInE "$secret_pattern" docs/ops/examples/*.env.example > "$secret_matches"; then
+if grep -HnE "$secret_pattern" docs/ops/examples/*.env.example "$backup_env" > "$secret_matches"; then
   printf 'Sample env file contains a value that looks like a real secret. Locations only are shown to avoid reprinting the value.\n' >&2
   awk -F: 'NF >= 2 { print $1 ":" $2 }' "$secret_matches" >&2
   printf 'Replace the value with a placeholder or secret resource name.\n' >&2
@@ -136,14 +237,26 @@ run_controlled_check() {
   return "$status"
 }
 
-gdrive_env="$SMOKE_DIR/gdrive-ci.env"
-cat > "$gdrive_env" <<'ENV'
+gdrive_legacy_env="$SMOKE_DIR/gdrive-legacy-ci.env"
+cat > "$gdrive_legacy_env" <<'ENV'
 CHAT_ATTACHMENT_GDRIVE_CLIENT_ID=placeholder-client-id
 CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET=placeholder-client-secret
 CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN=placeholder-refresh-token
 CHAT_ATTACHMENT_GDRIVE_FOLDER_ID=placeholder-folder-id
+PDF_GDRIVE_FOLDER_ID=placeholder-pdf-folder-id
 ENV
-chmod 600 "$gdrive_env"
+chmod 600 "$gdrive_legacy_env"
+
+gdrive_common_env="$SMOKE_DIR/gdrive-common-ci.env"
+cat > "$gdrive_common_env" <<'ENV'
+ERP4_GDRIVE_CLIENT_ID=placeholder-common-client-id
+ERP4_GDRIVE_CLIENT_SECRET=placeholder-common-client-secret
+ERP4_GDRIVE_REFRESH_TOKEN=placeholder-common-refresh-token
+ERP4_GDRIVE_SHARED_DRIVE_ID=placeholder-shared-drive-id
+CHAT_ATTACHMENT_GDRIVE_FOLDER_ID=placeholder-folder-id
+PDF_GDRIVE_FOLDER_ID=placeholder-pdf-folder-id
+ENV
+chmod 600 "$gdrive_common_env"
 
 mkdir -p "$SMOKE_DIR/quadlet"
 cp deploy/quadlet/env/erp4-postgres.env.example "$SMOKE_DIR/quadlet/erp4-postgres.env"
@@ -153,8 +266,33 @@ chmod 600 "$SMOKE_DIR/quadlet/erp4-postgres.env" "$SMOKE_DIR/quadlet/erp4-backen
 
 run_controlled_check 'gcp-preflight missing-gcloud or unauthenticated safe check' '(gcloud is not installed|Summary: failures=[1-9][0-9]*)' \
   scripts/ops/gcp-preflight.sh --check --project erp4-ci-smoke --allow-missing-gcloud --markdown-summary "$SMOKE_DIR/gcp-preflight.md"
-run_smoke 'gcp-drive dry-run with placeholder env' \
-  scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_env" --mode read --markdown-summary "$SMOKE_DIR/gdrive.md"
+run_smoke 'gcp-drive legacy alias dry-run with placeholder env' \
+  scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_legacy_env" --mode read --markdown-summary "$SMOKE_DIR/gdrive-legacy.md"
+run_smoke 'gcp-drive common credential dry-run with placeholder env' \
+  scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_common_env" --mode read --markdown-summary "$SMOKE_DIR/gdrive-common.md"
+run_smoke 'gcp-drive non-Chat target uses common credentials' \
+  scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_common_env" --target pdf --mode read --markdown-summary "$SMOKE_DIR/gdrive-pdf.md"
+run_controlled_check 'gcp-drive non-Chat target rejects legacy-only credentials' 'non-Chat targets do not use legacy fallback' \
+  scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_legacy_env" --target pdf --mode read
+gdrive_permissive_env="$SMOKE_DIR/gdrive-permissive-ci.env"
+cp "$gdrive_common_env" "$gdrive_permissive_env"
+chmod 644 "$gdrive_permissive_env"
+run_controlled_check 'gcp-drive rejects permissive credential file mode' 'should not be readable' \
+  scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_permissive_env" --mode read
+gdrive_symlink_env="$SMOKE_DIR/gdrive-symlink-ci.env"
+ln -s "$gdrive_common_env" "$gdrive_symlink_env"
+run_controlled_check 'gcp-drive rejects credential file symlink' 'must not be a symbolic link' \
+  scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_symlink_env" --mode read
+run_controlled_check 'gcp-drive provision requires protected output file' 'folder-id-output-file' \
+  scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_common_env" --mode read --provision-folder
+gdrive_reconcile_state="$SMOKE_DIR/gdrive-provision-state.env"
+cat >"$gdrive_reconcile_state" <<'ENV'
+ERP4_GDRIVE_PROVISION_MARKER=00000000-0000-4000-8000-000000000000
+ERP4_GDRIVE_PROVISION_STATE=CREATE_STARTED
+ENV
+chmod 600 "$gdrive_reconcile_state"
+run_smoke 'gcp-drive provision reconciliation dry-run' \
+  scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_common_env" --mode read --reconcile-provision --folder-id-output-file "$gdrive_reconcile_state"
 run_smoke 'sakura bootstrap dry-run' \
   scripts/ops/sakura-vps-bootstrap.sh --dry-run --deploy-user deploy --repo-parent "$SMOKE_DIR/repo-parent" --repo-dir "$SMOKE_DIR/repo-parent/ITDO_ERP4" --skip-apt --skip-linger
 run_smoke 'sakura deploy dry-run with all mutating phases skipped' \

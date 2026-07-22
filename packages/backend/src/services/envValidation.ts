@@ -1,3 +1,10 @@
+import {
+  GoogleDriveConfigurationError,
+  resolveGoogleDriveCommonCredentials,
+  resolveGoogleDriveCredentials,
+  resolveGoogleDriveTuningConfig,
+} from '../infrastructure/storage/googleDriveConfig.js';
+
 type ValidationIssue = {
   key: string;
   message: string;
@@ -355,21 +362,30 @@ export function assertValidBackendEnv() {
     );
   }
   if (attachmentProvider === 'gdrive') {
-    assertRequired(
-      issues,
-      'CHAT_ATTACHMENT_GDRIVE_CLIENT_ID',
-      process.env.CHAT_ATTACHMENT_GDRIVE_CLIENT_ID,
-    );
-    assertRequired(
-      issues,
-      'CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET',
-      process.env.CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET,
-    );
-    assertRequired(
-      issues,
-      'CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN',
-      process.env.CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN,
-    );
+    try {
+      resolveGoogleDriveCredentials(process.env);
+    } catch (error) {
+      if (!(error instanceof GoogleDriveConfigurationError)) throw error;
+      for (const key of error.keys) {
+        addIssue(
+          issues,
+          key,
+          'ERP4_GDRIVE_* または対応する CHAT_ATTACHMENT_GDRIVE_* 互換キーが必須です',
+        );
+      }
+    }
+    try {
+      resolveGoogleDriveTuningConfig(process.env);
+    } catch (error) {
+      if (!(error instanceof GoogleDriveConfigurationError)) throw error;
+      for (const key of error.keys) {
+        addIssue(
+          issues,
+          key,
+          '0以上または1以上の整数という各設定条件を満たしてください',
+        );
+      }
+    }
     assertRequired(
       issues,
       'CHAT_ATTACHMENT_GDRIVE_FOLDER_ID',
@@ -414,12 +430,12 @@ export function assertValidBackendEnv() {
   const pdfProvider = (process.env.PDF_PROVIDER || 'local')
     .trim()
     .toLowerCase();
-  const allowedPdfProviders = new Set(['local', 'external']);
+  const allowedPdfProviders = new Set(['local', 'external', 'gdrive']);
   if (!allowedPdfProviders.has(pdfProvider)) {
     addIssue(
       issues,
       'PDF_PROVIDER',
-      'local|external のいずれかを指定してください',
+      'local|external|gdrive のいずれかを指定してください',
     );
   }
   if (pdfProvider === 'external') {
@@ -483,12 +499,12 @@ export function assertValidBackendEnv() {
   )
     .trim()
     .toLowerCase();
-  const allowedEvidenceArchiveProviders = new Set(['local', 's3']);
+  const allowedEvidenceArchiveProviders = new Set(['local', 's3', 'gdrive']);
   if (!allowedEvidenceArchiveProviders.has(evidenceArchiveProvider)) {
     addIssue(
       issues,
       'EVIDENCE_ARCHIVE_PROVIDER',
-      'local|s3 のいずれかを指定してください',
+      'local|s3|gdrive のいずれかを指定してください',
     );
   }
   if (evidenceArchiveProvider === 's3') {
@@ -545,6 +561,67 @@ export function assertValidBackendEnv() {
         'EVIDENCE_ARCHIVE_S3_KMS_KEY_ID',
         process.env.EVIDENCE_ARCHIVE_S3_KMS_KEY_ID,
       );
+    }
+  }
+
+  const reportProvider = (process.env.REPORT_PROVIDER || 'local')
+    .trim()
+    .toLowerCase();
+  if (!new Set(['local', 'gdrive']).has(reportProvider)) {
+    addIssue(
+      issues,
+      'REPORT_PROVIDER',
+      'local|gdrive のいずれかを指定してください',
+    );
+  }
+
+  const nonChatGoogleDriveContexts = [
+    {
+      enabled: pdfProvider === 'gdrive',
+      folderKey: 'PDF_GDRIVE_FOLDER_ID',
+    },
+    {
+      enabled: evidenceArchiveProvider === 'gdrive',
+      folderKey: 'EVIDENCE_ARCHIVE_GDRIVE_FOLDER_ID',
+    },
+    {
+      enabled: reportProvider === 'gdrive',
+      folderKey: 'REPORT_GDRIVE_FOLDER_ID',
+    },
+  ];
+  if (nonChatGoogleDriveContexts.some((context) => context.enabled)) {
+    try {
+      resolveGoogleDriveCommonCredentials(process.env);
+    } catch (error) {
+      if (!(error instanceof GoogleDriveConfigurationError)) throw error;
+      for (const key of error.keys) {
+        addIssue(
+          issues,
+          key,
+          '非Chat Google Drive providerでは完全なERP4_GDRIVE_* credential setが必須です',
+        );
+      }
+    }
+    try {
+      resolveGoogleDriveTuningConfig(process.env);
+    } catch (error) {
+      if (!(error instanceof GoogleDriveConfigurationError)) throw error;
+      for (const key of error.keys) {
+        addIssue(
+          issues,
+          key,
+          '0以上または1以上の整数という各設定条件を満たしてください',
+        );
+      }
+    }
+    for (const context of nonChatGoogleDriveContexts) {
+      if (context.enabled) {
+        assertRequired(
+          issues,
+          context.folderKey,
+          process.env[context.folderKey],
+        );
+      }
     }
   }
 

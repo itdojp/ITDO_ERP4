@@ -1,47 +1,110 @@
-# S3バックアップ Readiness 記録テンプレート
+# S3-compatible backup readiness 記録テンプレート
+
+このtemplateをrepositoryへcommitする場合はsanitized summaryだけを記載する。credential、private endpoint、実bucket名、object key、GPG/KMS識別子、raw provider logはprivate evidenceに保持する。
+
+## 実行context
 
 - executedAt: YYYY-MM-DDTHH:MM:SSZ
-- environment: prod|staging|poc
-- branch: `<branch>`
-- commit: `<short-sha>`
-- operator: `<name>`
+- environmentLabel: <non-secret label>
+- provider: sakura|aws
+- branch: <branch>
+- commit: <full-sha>
+- operatorRole: <role-or-team>
+- privateEvidenceReference: <controlled record reference>
+- targetFingerprint: <sanitized SHA-256 fingerprint>
 
-## 入力値
-- S3_BUCKET:
-- S3_REGION:
-- EXPECT_SSE: aws:kms|AES256|any
-- SSE_KMS_KEY_ID:
+## 入力状態
+
+- S3_EXECUTION_MODE: fake|real
+- S3_REAL_RUN_CONFIRM: 0|1
 - CHECK_WRITE: 0|1
 - STRICT: 0|1
-- DATE_STAMP: YYYY-MM-DD
-- RUN_LABEL: r1|r2|...（任意。未指定時は r1, r2, ... を自動採番）
+- S3_OPERATOR_EVIDENCE_FILE: missing|private-present
+- endpointValidation: pass|fail
+- credentialSource: <secret-resource reference; no value>
 
 ## 実行コマンド
-```bash
-S3_BUCKET=... S3_REGION=... EXPECT_SSE=... SSE_KMS_KEY_ID=... CHECK_WRITE=... \
-  make backup-s3-readiness-check
-```
+
+repo-side fake:
 
 ```bash
-# 検証実行 + 記録を一度に実施
-RUN_CHECK=1 FAIL_ON_CHECK=1 \
-S3_BUCKET=... S3_REGION=... EXPECT_SSE=... SSE_KMS_KEY_ID=... CHECK_WRITE=... \
-  make backup-s3-readiness-record
+S3_EXECUTION_MODE=fake \
+S3_REAL_RUN_CONFIRM=0 \
+CHECK_WRITE=0 \
+make backup-s3-readiness-check
+```
+
+#544 real evidence（承認・credential・targetが揃った場合のみ）:
+
+```bash
+S3_EXECUTION_MODE=real \
+S3_REAL_RUN_CONFIRM=1 \
+CHECK_WRITE=1 \
+RUN_CHECK=1 \
+FAIL_ON_CHECK=1 \
+make backup-s3-readiness-record
 ```
 
 ## 判定
-- result: pass|warn|fail
-- summarySource: summary-line|legacy-log-scan
+
+- summaryStatus: pass|blocked|failed
+- executionMode: fake|real
+- writeProbe: 0|1
+- realRunConfirmed: 0|1
+- evidenceBasis: direct-check|external-sanitized-log
 - warningCount:
 - errorCount:
-- checkExitCode:
+- notApplicableCount:
+- operatorEvidence: present|missing
 
-## ログ（抜粋）
-```text
-<check-backup-s3-readiness output>
-# 末尾の機械可読行（実装）
-# [backup-s3-preflight] SUMMARY status=... warning_count=... error_count=... strict=... check_write=...
-```
+passは次の全条件を満たす場合だけ使用する。
 
-## 対応メモ
-- 
+- summaryStatus: pass
+- executionMode: real
+- writeProbe: 1
+- realRunConfirmed: 1
+- evidenceBasis: direct-check
+- SakuraではoperatorEvidence: present
+- put / head / get / delete round-trip成功
+
+fake runまたはexternal-sanitized-logはblockedとする。
+
+## provider別確認
+
+### 共通
+
+- [ ] profile / endpoint / prefix validation
+- [ ] bucket access / list
+- [ ] write / head / get / delete probe
+- [ ] object size / SHA-256
+- [ ] secret-like valueがsummaryにない
+
+### Sakura
+
+- [ ] bucket location / versioning / bucket ACL direct check
+- [ ] AWS固有検査はnot_applicableと理由を記録
+- [ ] versioningStatus evidence
+- [ ] publicAccessStatus evidence
+- [ ] accessControlStatus evidence
+- [ ] retentionStatus evidence
+- [ ] AWS KMSを必須としていない
+- [ ] versioning有効時のsynthetic probe versionをversion ID指定でcleanup
+
+### AWS
+
+- [ ] region
+- [ ] versioning
+- [ ] server-side encryption
+- [ ] lifecycle
+- [ ] Public Access Block
+- [ ] KMS（SSE-KMSの場合）
+
+## blocker / 再開
+
+- completedRepoSide:
+- unverifiedRealOperation:
+- missingInputOrApproval:
+- secureInputChannel:
+- resumeCommand:
+- firstReadOnlyCheck:
+- reasonIssueRemainsOpen:

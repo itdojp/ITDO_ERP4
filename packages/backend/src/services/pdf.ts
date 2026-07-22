@@ -1,8 +1,10 @@
-import { createWriteStream } from 'fs';
 import { promises as fs } from 'fs';
 import path from 'path';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
+import { PassThrough } from 'node:stream';
 import PDFDocument from 'pdfkit';
+import { createPdfArtifactStorageAdapter } from '../adapters/storage/contextArtifactStorageAdapters.js';
+import type { PdfStoragePort } from '../application/pdf/pdfStoragePort.js';
 import { safeFetch } from './safeHttpClient.js';
 import { readBoundedResponseText, redactSensitiveText } from './redaction.js';
 
@@ -33,8 +35,17 @@ type PdfRenderAssets = {
 
 export type PdfResult = {
   url: string;
+  artifactId?: string;
+  content?: Buffer;
   filePath?: string;
   filename?: string;
+  provider?: 'gdrive' | 'local';
+};
+
+type GeneratePdfDependencies = {
+  createStorage?: () => PdfStoragePort;
+  now?: () => Date;
+  storageProvider?: 'gdrive' | 'local';
 };
 
 const SAFE_FILENAME_REGEX = /^[a-zA-Z0-9._-]+\.pdf$/;
@@ -112,9 +123,10 @@ function resolvePdfBaseUrl() {
   return base.endsWith('/') ? base.slice(0, -1) : base;
 }
 
-function resolvePdfProvider() {
+function resolvePdfProvider(): 'external' | 'gdrive' | 'local' {
   const provider = (process.env.PDF_PROVIDER || 'local').toLowerCase();
-  return provider === 'external' ? 'external' : 'local';
+  if (provider === 'external' || provider === 'gdrive') return provider;
+  return 'local';
 }
 
 function sanitizeFilenamePart(value: string) {
@@ -145,13 +157,14 @@ function buildPdfFilename(
   templateId: string,
   payload: PdfPayload,
   hint?: string,
+  now = new Date(),
 ) {
   const rawId =
     typeof payload['id'] === 'string' ? payload['id'] : randomUUID();
   const safeId = sanitizeFilenamePart(rawId);
   const safeTemplate = sanitizeFilenamePart(templateId);
   const safeHint = hint ? sanitizeFilenamePart(hint) : 'doc';
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '');
+  const timestamp = now.toISOString().replace(/[:.]/g, '');
   return `${safeTemplate}-${safeHint}-${safeId}-${timestamp}.pdf`;
 }
 
@@ -309,76 +322,123 @@ async function resolvePdfAssets(
   return { logo, signatureImage };
 }
 
-async function writePdfFile(
-  filePath: string,
+function drawPdfDocument(
+  doc: PDFKit.PDFDocument,
   templateId: string,
   payload: PdfPayload,
   layout: PdfLayoutConfig,
   assets: PdfRenderAssets,
   options?: PdfRenderOptions,
+  generatedAt = new Date(),
 ) {
-  await new Promise<void>((resolve, reject) => {
+  if (assets.logo) {
+    doc.image(assets.logo, doc.x, doc.y, { fit: [120, 60] });
+  }
+  const headerLines = [
+    layout.companyName,
+    layout.companyAddress,
+    layout.companyPhone,
+    layout.companyEmail,
+  ].filter(Boolean);
+  if (headerLines.length) {
+    doc.fontSize(10).text(headerLines.join('\n'), { align: 'right' });
+  }
+  doc.moveDown(1);
+  doc.fontSize(18).text(layout.documentTitle || 'ERP4 Document', {
+    align: 'left',
+  });
+  doc.moveDown(0.5);
+  doc.fontSize(12).text(`Template: ${templateId}`);
+  doc.text(`Generated: ${generatedAt.toISOString()}`);
+  doc.moveDown();
+  doc.fontSize(12).text('Payload');
+  doc.moveDown(0.5);
+
+  const entries = Object.entries(payload).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  if (!entries.length) {
+    doc.text('(empty)');
+  }
+  for (const [key, value] of entries) {
+    const formatted = formatPdfValue(value);
+    doc.text(`${key}: ${formatted}`);
+  }
+
+  const signatureText = options?.signatureText || layout.signatureText;
+  if (signatureText || assets.signatureImage || layout.signatureLabel) {
+    doc.moveDown(2);
+    if (layout.signatureLabel) {
+      doc.fontSize(10).text(layout.signatureLabel, { align: 'right' });
+    }
+    if (assets.signatureImage) {
+      doc.image(assets.signatureImage, doc.x, doc.y, { fit: [160, 80] });
+      doc.moveDown(3);
+    }
+    if (signatureText) {
+      doc.fontSize(10).text(signatureText, { align: 'right' });
+    }
+  }
+  if (layout.footerNote) {
+    doc.moveDown(2);
+    doc.fontSize(9).text(layout.footerNote, { align: 'center' });
+  }
+}
+
+async function renderInternalPdf(
+  templateId: string,
+  payload: PdfPayload,
+  layout: PdfLayoutConfig,
+  assets: PdfRenderAssets,
+  options?: PdfRenderOptions,
+  generatedAt = new Date(),
+) {
+  return new Promise<Buffer>((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 48 });
-    const stream = createWriteStream(filePath);
-    stream.on('finish', resolve);
-    stream.on('error', reject);
-    doc.on('error', reject);
-    doc.pipe(stream);
-
-    if (assets.logo) {
-      doc.image(assets.logo, doc.x, doc.y, { fit: [120, 60] });
-    }
-    const headerLines = [
-      layout.companyName,
-      layout.companyAddress,
-      layout.companyPhone,
-      layout.companyEmail,
-    ].filter(Boolean);
-    if (headerLines.length) {
-      doc.fontSize(10).text(headerLines.join('\n'), { align: 'right' });
-    }
-    doc.moveDown(1);
-    doc.fontSize(18).text(layout.documentTitle || 'ERP4 Document', {
-      align: 'left',
+    const output = new PassThrough();
+    const chunks: Buffer[] = [];
+    let sizeBytes = 0;
+    output.on('data', (chunk: Buffer | Uint8Array) => {
+      const buffer = Buffer.from(chunk);
+      sizeBytes += buffer.length;
+      chunks.push(buffer);
     });
-    doc.moveDown(0.5);
-    doc.fontSize(12).text(`Template: ${templateId}`);
-    doc.text(`Generated: ${new Date().toISOString()}`);
-    doc.moveDown();
-    doc.fontSize(12).text('Payload');
-    doc.moveDown(0.5);
-
-    const entries = Object.entries(payload).sort(([a], [b]) =>
-      a.localeCompare(b),
+    output.on('end', () => resolve(Buffer.concat(chunks, sizeBytes)));
+    output.on('error', reject);
+    doc.on('error', reject);
+    doc.pipe(output);
+    drawPdfDocument(
+      doc,
+      templateId,
+      payload,
+      layout,
+      assets,
+      options,
+      generatedAt,
     );
-    if (!entries.length) {
-      doc.text('(empty)');
-    }
-    for (const [key, value] of entries) {
-      const formatted = formatPdfValue(value);
-      doc.text(`${key}: ${formatted}`);
-    }
-
-    const signatureText = options?.signatureText || layout.signatureText;
-    if (signatureText || assets.signatureImage || layout.signatureLabel) {
-      doc.moveDown(2);
-      if (layout.signatureLabel) {
-        doc.fontSize(10).text(layout.signatureLabel, { align: 'right' });
-      }
-      if (assets.signatureImage) {
-        doc.image(assets.signatureImage, doc.x, doc.y, { fit: [160, 80] });
-        doc.moveDown(3);
-      }
-      if (signatureText) {
-        doc.fontSize(10).text(signatureText, { align: 'right' });
-      }
-    }
-    if (layout.footerNote) {
-      doc.moveDown(2);
-      doc.fontSize(9).text(layout.footerNote, { align: 'center' });
-    }
     doc.end();
   });
+}
+
+export async function renderPdfBuffer(
+  templateId: string,
+  payload: PdfPayload,
+  options?: PdfRenderOptions,
+  generatedAt = new Date(),
+) {
+  if (resolvePdfProvider() === 'external') {
+    return requestExternalPdf(templateId, payload, options);
+  }
+  const layout = normalizeLayoutConfig(options?.layoutConfig);
+  const assets = await resolvePdfAssets(options, layout);
+  return renderInternalPdf(
+    templateId,
+    payload,
+    layout,
+    assets,
+    options,
+    generatedAt,
+  );
 }
 
 async function requestExternalPdf(
@@ -437,39 +497,56 @@ export async function generatePdf(
   payload: PdfPayload,
   hint?: string,
   options?: PdfRenderOptions,
+  dependencies: GeneratePdfDependencies = {},
 ): Promise<PdfResult> {
   try {
+    const configuredProvider = resolvePdfProvider();
+    const provider = dependencies.storageProvider ?? configuredProvider;
+    const now = dependencies.now?.() ?? new Date();
+    const filename = buildPdfFilename(templateId, payload, hint, now);
+    const content = await renderPdfBuffer(templateId, payload, options, now);
+
+    if (provider === 'gdrive') {
+      const sha256 = createHash('sha256').update(content).digest('hex');
+      const ownerId = pickString(payload['id']) || randomUUID();
+      const storage =
+        dependencies.createStorage?.() ??
+        createPdfArtifactStorageAdapter({ provider: 'gdrive' });
+      const stored = await storage.store({
+        body: content,
+        contentType: 'application/pdf',
+        idempotencyKey: `pdf:${templateId}:${ownerId}:${sha256}`,
+        originalName: filename,
+        ownerId,
+        ownerType: 'document',
+        sha256,
+        sizeBytes: content.length,
+        storageName: `${randomUUID()}.pdf`,
+      });
+      return {
+        artifactId: stored.artifactId,
+        content,
+        filename,
+        provider: 'gdrive',
+        url: `/pdf-files/artifacts/${stored.artifactId}`,
+      };
+    }
+
     const storageDir = resolvePdfStorageDir();
     await fs.mkdir(storageDir, { recursive: true });
-    const filename = buildPdfFilename(templateId, payload, hint);
     const filePath = resolvePdfOutputPath(storageDir, filename);
-    const layout = normalizeLayoutConfig(options?.layoutConfig);
-    if (resolvePdfProvider() === 'external') {
-      const externalPdf = await requestExternalPdf(
-        templateId,
-        payload,
-        options,
-      );
-      await fs.writeFile(filePath, externalPdf);
-    } else {
-      const assets = await resolvePdfAssets(options, layout);
-      await writePdfFile(
-        filePath,
-        templateId,
-        payload,
-        layout,
-        assets,
-        options,
-      );
-    }
+    await fs.writeFile(filePath, content);
     const url = `${resolvePdfBaseUrl()}/${filename}`;
-    return { url, filePath, filename };
+    return { url, filePath, filename, provider: 'local' };
   } catch (err) {
     const fallbackId =
       typeof payload['id'] === 'string' ? payload['id'] : 'unknown';
     console.error('[pdf generate failed]', {
       templateId,
-      message: err instanceof Error ? err.message : 'unknown_error',
+      message: redactSensitiveText(
+        err instanceof Error ? err.message : 'unknown_error',
+        200,
+      ),
     });
     return { url: `stub://pdf/${templateId}/${fallbackId}` };
   }

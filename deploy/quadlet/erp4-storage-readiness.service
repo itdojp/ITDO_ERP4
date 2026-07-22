@@ -1,0 +1,14 @@
+[Unit]
+Description=ERP4 storage and backup readiness check
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/containers/systemd/erp4-maintenance.env
+EnvironmentFile=-%h/.config/containers/systemd/erp4-backend.env
+EnvironmentFile=%h/.config/containers/systemd/erp4-storage-readiness.env
+ExecStart=/usr/bin/bash -c 'set -euo pipefail; cd "$ERP4_REPO_DIR"; ./scripts/storage-readiness.sh --format json'
+SyslogIdentifier=erp4-storage-readiness
+UMask=0077
+NoNewPrivileges=true

@@ -32,6 +32,7 @@
 ### バックアップ/リストア
 
 - [backup-restore](backup-restore.md)
+  - Storage／backup統合readiness: [storage-readiness](storage-readiness.md)
   - Quadlet DB backup/restore 補助: [quadlet-db-backup-restore](quadlet-db-backup-restore.md)
   - DR計画（RTO/RPO/復元演習）: [dr-plan](dr-plan.md)
   - 詳細: [docs/requirements/backup-restore.md](../requirements/backup-restore.md)
@@ -41,6 +42,12 @@
 
 - [migration](migration.md)
   - 詳細: [docs/requirements/migration-runbook.md](../requirements/migration-runbook.md)
+
+### ストレージ移行
+
+- PDF・Evidence・Report copy-only移行: [storage-artifact-migration](storage-artifact-migration.md)
+  - 契約: [storage-artifacts-google-drive](../requirements/storage-artifacts-google-drive.md)
+  - 証跡テンプレート: [storage-artifact-migration-template](../test-results/storage-artifact-migration-template.md)
 
 ### 添付AVスキャン
 
@@ -52,6 +59,7 @@
 ### 監視/障害対応
 
 - health/readiness/ログ: [observability](observability.md)
+- Google Drive容量、backup freshness/retention/integrity、restore証跡: [storage-readiness](storage-readiness.md)
 - SLI/SLO（暫定）: [slo](slo.md)
 - アラート設計: [alerting](alerting.md)
   - 発火条件、暫定 SEV、通知テンプレートの入口

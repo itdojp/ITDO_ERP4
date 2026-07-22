@@ -1,7 +1,8 @@
 import type { Prisma } from '@prisma/client';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { defaultChatAttachmentStoragePort } from '../../adapters/storage/chatAttachmentStorageAdapter.js';
+import type { ChatAttachmentStoragePort } from '../../application/chat/chatAttachmentStoragePort.js';
 import { uploadChatAttachment } from '../../application/chat/chatAttachmentUseCases.js';
-import { openAttachment } from '../../services/chatAttachments.js';
 import { auditContextFromRequest, logAudit } from '../../services/audit.js';
 import { prisma } from '../../services/db.js';
 import { requireRole } from '../../services/rbac.js';
@@ -36,11 +37,16 @@ async function readFileBuffer(
 export function registerChatAttachmentRoutes(
   app: FastifyInstance,
   deps: {
+    attachmentStorage?: ChatAttachmentStoragePort;
     chatRoles: readonly string[];
     ensureRoomContentAccessFromRequest: EnsureRoomContentAccessFromRequest;
   },
 ) {
-  const { chatRoles, ensureRoomContentAccessFromRequest } = deps;
+  const {
+    attachmentStorage = defaultChatAttachmentStoragePort,
+    chatRoles,
+    ensureRoomContentAccessFromRequest,
+  } = deps;
   const attachmentUploadRateLimit = getRouteRateLimitOptions(
     'RATE_LIMIT_ATTACHMENT_UPLOAD',
     {
@@ -119,15 +125,18 @@ export function registerChatAttachmentRoutes(
         throw err;
       }
 
-      const result = await uploadChatAttachment({
-        message: { id: message.id, roomId: message.roomId },
-        room: { type: access.room.type },
-        userId,
-        buffer,
-        filename,
-        mimeType: mimetype,
-        auditContext: auditContextFromRequest(req),
-      });
+      const result = await uploadChatAttachment(
+        {
+          message: { id: message.id, roomId: message.roomId },
+          room: { type: access.room.type },
+          userId,
+          buffer,
+          filename,
+          mimeType: mimetype,
+          auditContext: auditContextFromRequest(req),
+        },
+        { attachmentStorage },
+      );
       if (!result.ok) {
         if (result.reason === 'av_unavailable') {
           return reply.status(503).send({
@@ -181,7 +190,7 @@ export function registerChatAttachmentRoutes(
       );
       reply.type(attachment.mimeType || 'application/octet-stream');
 
-      const opened = await openAttachment(
+      const opened = await attachmentStorage.open(
         attachment.provider === 'gdrive' ? 'gdrive' : 'local',
         attachment.providerKey,
       );
