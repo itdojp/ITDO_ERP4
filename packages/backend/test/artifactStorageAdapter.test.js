@@ -54,7 +54,10 @@ function createArtifactDb() {
             row.id === where.id &&
             row.context === where.context &&
             row.status === where.status &&
-            row.deletedAt === where.deletedAt,
+            row.deletedAt === where.deletedAt &&
+            (where.ownerType === undefined ||
+              row.ownerType === where.ownerType) &&
+            (where.ownerId === undefined || row.ownerId === where.ownerId),
         ) ?? null,
       create: async ({ data }) => {
         if (
@@ -230,10 +233,29 @@ test('local artifact lifecycle is pending then verified ready without exposing p
     assert.deepEqual(await readFile(filePath), body);
     assert.equal((await lstat(filePath)).mode & 0o777, 0o600);
 
-    const opened = await adapter.open(stored.artifactId);
+    const opened = await adapter.open(stored.artifactId, {
+      ownerType: 'invoice',
+      ownerId: 'owner-placeholder',
+    });
     assert.equal(opened.artifact.artifactId, stored.artifactId);
     assert.equal(Object.hasOwn(opened.artifact, 'providerKey'), false);
     assert.deepEqual(await readAll(opened.stream), body);
+    await assert.rejects(
+      () =>
+        adapter.open(stored.artifactId, {
+          ownerType: 'invoice',
+          ownerId: 'different-owner',
+        }),
+      { message: 'artifact_not_found' },
+    );
+    await assert.rejects(
+      () =>
+        adapter.open(stored.artifactId, {
+          ownerType: 'invoice',
+          ownerId: '',
+        }),
+      { message: 'artifact_owner_scope_invalid' },
+    );
   } finally {
     await rm(localDir, { recursive: true, force: true });
   }

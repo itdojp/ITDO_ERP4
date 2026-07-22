@@ -14,11 +14,29 @@ import {
 import {
   generatePdf,
   isSafePdfFilename,
+  renderPdfBuffer,
   resolvePdfFilePath,
 } from '../../services/pdf.js';
 import { sendEmail } from '../../services/notifier.js';
 import { toCsv } from '../../utils/csv.js';
 import { parseDateParam } from '../../utils/date.js';
+import {
+  isRetryableReportDeliveryError,
+  isRetryableThrownReportDeliveryError,
+  parseReportDeliveryTargets,
+} from './reportDeliveryPolicy.js';
+import {
+  buildReportFilename,
+  readReportArtifactBuffer,
+  resolveReportProvider,
+  resolveReportStorageDir,
+  sanitizeReportFilenamePart,
+  storeReportOutputArtifact,
+  type ReportArtifactRef,
+  type ReportStorageDependencies,
+} from './reportOutputArtifacts.js';
+
+export type { ReportStorageDependencies } from './reportOutputArtifacts.js';
 
 export type ReportSubscriptionBody = {
   name?: string;
@@ -48,6 +66,7 @@ type ReportPayload = {
   params: Prisma.InputJsonValue | null;
   generatedAt: string;
   data: Prisma.InputJsonValue;
+  artifact?: ReportArtifactRef;
   csv?: string;
   csvFilename?: string;
   pdf?: {
@@ -76,21 +95,6 @@ export class ReportSubscriptionNotFoundError extends Error {
 const DEFAULT_REPORT_RETRY_MAX = 3;
 const DEFAULT_REPORT_RETRY_BASE_MINUTES = 60;
 const DEFAULT_REPORT_RETRY_MAX_DELAY_MINUTES = 24 * 60;
-const DEFAULT_REPORT_STORAGE_DIR = '/tmp/erp4/reports';
-
-const NON_RETRYABLE_ERRORS = new Set([
-  'missing_email',
-  'missing_recipients',
-  'invalid_recipient',
-  'missing_attachment',
-  'csv_missing',
-  'pdf_missing',
-  'pdf_template_missing',
-  'unknown_channel',
-  'smtp_config_missing',
-  'smtp_disabled',
-  'smtp_unavailable',
-]);
 
 function parseNonNegativeInt(value: string | undefined, fallback: number) {
   if (!value) return fallback;
@@ -120,10 +124,6 @@ function resolveReportRetryMaxDelayMinutes() {
   );
 }
 
-function resolveReportStorageDir() {
-  return process.env.REPORT_STORAGE_DIR || DEFAULT_REPORT_STORAGE_DIR;
-}
-
 function computeNextRetryAt(now: Date, attempt: number, baseMinutes: number) {
   if (attempt <= 0 || baseMinutes <= 0) return null;
   const factor = Math.pow(2, attempt - 1);
@@ -134,22 +134,6 @@ function computeNextRetryAt(now: Date, attempt: number, baseMinutes: number) {
       : baseMinutes * factor;
   const delayMs = cappedMinutes * 60 * 1000;
   return new Date(now.getTime() + delayMs);
-}
-
-function sanitizeFilenamePart(value: string) {
-  return value.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/-+/g, '-');
-}
-
-function buildReportFilename(
-  reportKey: string,
-  format: 'csv' | 'pdf',
-  hint?: string,
-) {
-  const safeKey = sanitizeFilenamePart(reportKey || 'report');
-  const safeHint = hint ? sanitizeFilenamePart(hint) : '';
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '');
-  const suffix = safeHint ? `-${safeHint}` : '';
-  return `${safeKey}${suffix}-${timestamp}.${format}`;
 }
 
 async function fileExists(filePath: string) {
@@ -183,19 +167,6 @@ function normalizeRecipients(value: unknown): Recipients {
 function normalizeChannels(value: unknown) {
   const channels = normalizeStringArray(value);
   return channels.length ? channels : ['dashboard'];
-}
-
-function isRetryableError(error?: string | null) {
-  if (!error) return true;
-  return !NON_RETRYABLE_ERRORS.has(error);
-}
-
-function parseTargetList(value?: string | null) {
-  if (!value) return [];
-  return value
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
 }
 
 function isReportPayload(value: unknown): value is ReportPayload {
@@ -268,7 +239,7 @@ function normalizeFormat(value: string | null): 'csv' | 'pdf' {
 async function writeReportFile(filename: string, content: string) {
   const storageDir = resolveReportStorageDir();
   await fs.mkdir(storageDir, { recursive: true });
-  const safeName = sanitizeFilenamePart(filename || 'report');
+  const safeName = sanitizeReportFilenamePart(filename || 'report');
   const filePath = path.join(storageDir, safeName);
   await fs.writeFile(filePath, content);
   return { filePath, filename: safeName };
@@ -321,7 +292,20 @@ async function notifyPermanentFailure(meta: {
   }
 }
 
-async function buildCsvAttachment(payload: ReportPayload) {
+async function buildCsvAttachment(
+  payload: ReportPayload,
+  dependencies: ReportStorageDependencies,
+) {
+  if (payload.artifact) {
+    return {
+      attachment: {
+        filename: payload.artifact.filename,
+        content: await readReportArtifactBuffer(dependencies, payload.artifact),
+        contentType: payload.artifact.contentType,
+      },
+      filename: payload.artifact.filename,
+    };
+  }
   if (!payload.csv) {
     throw new Error('csv_missing');
   }
@@ -342,9 +326,22 @@ async function buildCsvAttachment(payload: ReportPayload) {
   };
 }
 
-async function buildPdfAttachment(payload: ReportPayload) {
+async function buildPdfAttachment(
+  payload: ReportPayload,
+  dependencies: ReportStorageDependencies,
+) {
   if (!payload.pdf) {
     throw new Error('pdf_missing');
+  }
+  if (payload.artifact) {
+    return {
+      attachment: {
+        filename: payload.artifact.filename,
+        content: await readReportArtifactBuffer(dependencies, payload.artifact),
+        contentType: payload.artifact.contentType,
+      },
+      pdf: payload.pdf,
+    };
   }
   let filePath = payload.pdf.filePath;
   let filename = payload.pdf.filename;
@@ -363,7 +360,7 @@ async function buildPdfAttachment(payload: ReportPayload) {
     const data = isPlainObject(payload.data)
       ? payload.data
       : { data: payload.data };
-    const result = await generatePdf(
+    const result = await (dependencies.generatePdf ?? generatePdf)(
       templateId,
       data as Record<string, unknown>,
       payload.reportKey,
@@ -429,7 +426,11 @@ function parseIdList(value: unknown) {
 
 async function buildReportPayload(
   subscription: ReportSubscription,
+  actorId: string | undefined,
+  dryRun: boolean,
+  dependencies: ReportStorageDependencies,
 ): Promise<ReportPayload> {
+  const generatedAt = dependencies.now?.() ?? new Date();
   const params = isPlainObject(subscription.params) ? subscription.params : {};
   const format = normalizeFormat(subscription.format);
   const layout = typeof params.layout === 'string' ? params.layout : undefined;
@@ -446,6 +447,8 @@ async function buildReportPayload(
         filename?: string;
       }
     | undefined;
+  let pdfHint: string | undefined;
+  let artifact: ReportArtifactRef | undefined;
 
   switch (subscription.reportKey) {
     case 'project-effort': {
@@ -465,15 +468,12 @@ async function buildReportPayload(
           subscription.reportKey,
           'csv',
           subscription.id,
+          generatedAt,
         );
       } else {
         const templateId = buildTemplateId('project-effort', layout);
-        const { url, filePath, filename } = await generatePdf(
-          templateId,
-          toJsonValue(result) as Record<string, unknown>,
-          'project-effort',
-        );
-        pdf = { templateId, url, filePath, filename };
+        pdf = { templateId, url: '' };
+        pdfHint = 'project-effort';
       }
       break;
     }
@@ -520,15 +520,12 @@ async function buildReportPayload(
           subscription.reportKey,
           'csv',
           subscription.id,
+          generatedAt,
         );
       } else {
         const templateId = buildTemplateId('project-profit', layout);
-        const { url, filePath, filename } = await generatePdf(
-          templateId,
-          toJsonValue(result) as Record<string, unknown>,
-          'project-profit',
-        );
-        pdf = { templateId, url, filePath, filename };
+        pdf = { templateId, url: '' };
+        pdfHint = 'project-profit';
       }
       break;
     }
@@ -584,15 +581,12 @@ async function buildReportPayload(
           subscription.reportKey,
           'csv',
           subscription.id,
+          generatedAt,
         );
       } else {
         const templateId = buildTemplateId('project-profit-by-user', layout);
-        const { url, filePath, filename } = await generatePdf(
-          templateId,
-          toJsonValue(result) as Record<string, unknown>,
-          'project-profit-by-user',
-        );
-        pdf = { templateId, url, filePath, filename };
+        pdf = { templateId, url: '' };
+        pdfHint = 'project-profit-by-user';
       }
       break;
     }
@@ -656,15 +650,12 @@ async function buildReportPayload(
           subscription.reportKey,
           'csv',
           subscription.id,
+          generatedAt,
         );
       } else {
         const templateId = buildTemplateId('project-profit-by-group', layout);
-        const { url, filePath, filename } = await generatePdf(
-          templateId,
-          toJsonValue(result) as Record<string, unknown>,
-          'project-profit-by-group',
-        );
-        pdf = { templateId, url, filePath, filename };
+        pdf = { templateId, url: '' };
+        pdfHint = 'project-profit-by-group';
       }
       break;
     }
@@ -688,15 +679,12 @@ async function buildReportPayload(
           subscription.reportKey,
           'csv',
           subscription.id,
+          generatedAt,
         );
       } else {
         const templateId = buildTemplateId('group-effort', layout);
-        const { url, filePath, filename } = await generatePdf(
-          templateId,
-          toJsonValue({ items: result }) as Record<string, unknown>,
-          'group-effort',
-        );
-        pdf = { templateId, url, filePath, filename };
+        pdf = { templateId, url: '' };
+        pdfHint = 'group-effort';
       }
       break;
     }
@@ -717,15 +705,12 @@ async function buildReportPayload(
           subscription.reportKey,
           'csv',
           subscription.id,
+          generatedAt,
         );
       } else {
         const templateId = buildTemplateId('overtime', layout);
-        const { url, filePath, filename } = await generatePdf(
-          templateId,
-          toJsonValue(result) as Record<string, unknown>,
-          'overtime',
-        );
-        pdf = { templateId, url, filePath, filename };
+        pdf = { templateId, url: '' };
+        pdfHint = 'overtime';
       }
       break;
     }
@@ -770,15 +755,12 @@ async function buildReportPayload(
           subscription.reportKey,
           'csv',
           subscription.id,
+          generatedAt,
         );
       } else {
         const templateId = buildTemplateId('delivery-due', layout);
-        const { url, filePath, filename } = await generatePdf(
-          templateId,
-          toJsonValue({ items: result }) as Record<string, unknown>,
-          'delivery-due',
-        );
-        pdf = { templateId, url, filePath, filename };
+        pdf = { templateId, url: '' };
+        pdfHint = 'delivery-due';
       }
       break;
     }
@@ -789,14 +771,95 @@ async function buildReportPayload(
       );
   }
 
+  const dataJson = toJsonValue(data);
+  if (pdf) {
+    if (dryRun) {
+      pdf = {
+        ...pdf,
+        url: `stub://pdf/${pdf.templateId}/dry-run`,
+      };
+    } else if (resolveReportProvider() === 'local') {
+      const result = await (dependencies.generatePdf ?? generatePdf)(
+        pdf.templateId,
+        dataJson as Record<string, unknown>,
+        pdfHint,
+        undefined,
+        {
+          now: () => generatedAt,
+          storageProvider: 'local',
+        },
+      );
+      pdf = {
+        ...pdf,
+        url: result.url,
+        filePath: result.filePath,
+        filename: result.filename,
+      };
+    }
+  }
+
+  if (!dryRun && resolveReportProvider() === 'gdrive') {
+    let content: Buffer;
+    let contentType: string;
+    let filename: string;
+    if (format === 'csv') {
+      if (!csv) throw new Error('csv_missing');
+      content = Buffer.from(csv, 'utf8');
+      contentType = 'text/csv; charset=utf-8';
+      filename =
+        csvFilename ||
+        buildReportFilename(
+          subscription.reportKey,
+          'csv',
+          undefined,
+          generatedAt,
+        );
+    } else {
+      if (!pdf) throw new Error('pdf_missing');
+      content = await (dependencies.renderPdfBuffer ?? renderPdfBuffer)(
+        pdf.templateId,
+        dataJson as Record<string, unknown>,
+        undefined,
+        generatedAt,
+      );
+      contentType = 'application/pdf';
+      filename = buildReportFilename(
+        subscription.reportKey,
+        'pdf',
+        subscription.id,
+        generatedAt,
+      );
+    }
+    artifact = await storeReportOutputArtifact({
+      actorId,
+      content,
+      contentType,
+      dependencies,
+      filename,
+      format,
+      generatedAt,
+      subscriptionId: subscription.id,
+    });
+    if (pdf) {
+      pdf = {
+        ...pdf,
+        url: artifact.url,
+        filename,
+      };
+    }
+  }
+
   const payload: ReportPayload = {
     reportKey: subscription.reportKey,
     name: subscription.name ?? null,
     format,
     params: normalizeJsonValue(subscription.params),
-    generatedAt: new Date().toISOString(),
-    data: toJsonValue(data),
+    generatedAt: generatedAt.toISOString(),
+    data: dataJson,
   };
+  if (artifact) {
+    payload.artifact = artifact;
+  }
   if (csv) {
     payload.csv = csv;
   }
@@ -983,7 +1046,7 @@ async function persistUnexpectedDeliveryFailure(
     ? delivery.retryCount + 1
     : delivery.retryCount;
   const retryable =
-    isRetryableError(errorMessage) &&
+    isRetryableReportDeliveryError(errorMessage) &&
     retryBase > 0 &&
     (isRetry ? nextRetryCount < retryMax : retryMax > 0);
   const status = retryable ? 'failed' : 'failed_permanent';
@@ -1016,13 +1079,19 @@ async function runSubscription(
   subscription: ReportSubscription,
   actorId: string | undefined,
   dryRun: boolean,
+  dependencies: ReportStorageDependencies,
 ) {
   const recipients = normalizeRecipients(subscription.recipients);
   const channels = normalizeChannels(subscription.channels);
   if (!channels.length) {
     throw new Error('channels_required');
   }
-  const payload = await buildReportPayload(subscription);
+  const payload = await buildReportPayload(
+    subscription,
+    actorId,
+    dryRun,
+    dependencies,
+  );
   if (dryRun) {
     return {
       payload,
@@ -1067,7 +1136,11 @@ async function runSubscription(
         continue;
       }
       try {
-        const result = await retryReportDelivery(queuedItem, false);
+        const result = await retryReportDelivery(
+          queuedItem,
+          false,
+          dependencies,
+        );
         createdDeliveries.push(result);
         deliveryStatuses.push(result.status);
       } catch (error) {
@@ -1097,6 +1170,7 @@ async function runSubscription(
 async function retryReportDelivery(
   delivery: ReportDeliveryQueueItem,
   dryRun: boolean,
+  dependencies: ReportStorageDependencies,
 ) {
   const now = new Date();
   const isRetry =
@@ -1136,7 +1210,7 @@ async function retryReportDelivery(
   }
   const payload = delivery.payload as ReportPayload;
   let payloadToStore = payload;
-  const emails = parseTargetList(delivery.target);
+  const emails = parseReportDeliveryTargets(delivery.target);
   if (!emails.length) {
     if (!dryRun) {
       const updated = await prisma.reportDelivery.update({
@@ -1163,16 +1237,29 @@ async function retryReportDelivery(
       error: 'missing_email',
     };
   }
+  if (dryRun) {
+    return {
+      id: delivery.id,
+      status: 'dry_run',
+      target: emails.join(','),
+    };
+  }
   const attachments = [];
   try {
     if (payload.format === 'csv') {
-      const { attachment, filename } = await buildCsvAttachment(payload);
+      const { attachment, filename } = await buildCsvAttachment(
+        payload,
+        dependencies,
+      );
       if (filename && payload.csvFilename !== filename) {
         payloadToStore = { ...payloadToStore, csvFilename: filename };
       }
       attachments.push(attachment);
     } else {
-      const { attachment, pdf } = await buildPdfAttachment(payload);
+      const { attachment, pdf } = await buildPdfAttachment(
+        payload,
+        dependencies,
+      );
       if (pdf && payload.pdf !== pdf) {
         payloadToStore = { ...payloadToStore, pdf };
       }
@@ -1180,36 +1267,45 @@ async function retryReportDelivery(
     }
   } catch (err) {
     const error = err instanceof Error ? err.message : 'missing_attachment';
+    const retryMax = resolveReportRetryMax();
+    const retryBase = resolveReportRetryBaseMinutes();
+    const nextRetryCount = isRetry
+      ? delivery.retryCount + 1
+      : delivery.retryCount;
+    const retryable =
+      isRetryableThrownReportDeliveryError(err, error) &&
+      retryBase > 0 &&
+      (isRetry ? nextRetryCount < retryMax : retryMax > 0);
+    const status = retryable ? 'failed' : 'failed_permanent';
+    const nextRetryAt = retryable
+      ? computeNextRetryAt(now, nextRetryCount + 1, retryBase)
+      : null;
     if (!dryRun) {
       const updated = await prisma.reportDelivery.update({
         where: { id: delivery.id },
         data: {
-          status: 'failed_permanent',
+          status,
           error,
+          retryCount: nextRetryCount,
+          nextRetryAt,
           lastErrorAt: now,
           sentAt: now,
-          nextRetryAt: null,
         },
       });
-      await notifyPermanentFailure({
-        reportKey: payload.reportKey,
-        channel: delivery.channel,
-        target: delivery.target,
-        error,
-      });
+      if (status === 'failed_permanent') {
+        await notifyPermanentFailure({
+          reportKey: payload.reportKey,
+          channel: delivery.channel,
+          target: delivery.target,
+          error,
+        });
+      }
       return updated;
     }
     return {
       id: delivery.id,
-      status: 'failed_permanent',
+      status,
       error,
-    };
-  }
-  if (dryRun) {
-    return {
-      id: delivery.id,
-      status: 'dry_run',
-      target: emails.join(','),
     };
   }
   const emailResult = await sendEmail(
@@ -1226,7 +1322,7 @@ async function retryReportDelivery(
     : delivery.retryCount;
   const retryable =
     emailResult.status === 'failed' &&
-    isRetryableError(error) &&
+    isRetryableReportDeliveryError(error) &&
     retryBase > 0 &&
     (isRetry ? nextRetryCount < retryMax : retryMax > 0);
   const nextRetryAt = retryable
@@ -1357,6 +1453,7 @@ export async function runReportSubscriptionById(
   id: string,
   actorId: string | undefined,
   dryRun: boolean,
+  dependencies: ReportStorageDependencies = {},
 ) {
   const subscription = await prisma.reportSubscription.findUnique({
     where: { id },
@@ -1365,7 +1462,7 @@ export async function runReportSubscriptionById(
     throw new ReportSubscriptionNotFoundError();
   }
   try {
-    return await runSubscription(subscription, actorId, dryRun);
+    return await runSubscription(subscription, actorId, dryRun, dependencies);
   } catch (err) {
     if (!dryRun) {
       await updateRunStatus(subscription.id, 'failed', actorId);
@@ -1377,6 +1474,7 @@ export async function runReportSubscriptionById(
 export async function runDueReportSubscriptions(
   actorId: string | undefined,
   dryRun: boolean,
+  dependencies: ReportStorageDependencies = {},
 ) {
   const items = await prisma.reportSubscription.findMany({
     where: { isEnabled: true },
@@ -1386,7 +1484,7 @@ export async function runDueReportSubscriptions(
   const results = [];
   for (const item of items) {
     try {
-      const result = await runSubscription(item, actorId, dryRun);
+      const result = await runSubscription(item, actorId, dryRun, dependencies);
       results.push({
         id: item.id,
         reportKey: item.reportKey,
@@ -1411,7 +1509,10 @@ export async function runDueReportSubscriptions(
   return { ok: true, count: results.length, items: results };
 }
 
-export async function retryDueReportDeliveries(dryRun: boolean) {
+export async function retryDueReportDeliveries(
+  dryRun: boolean,
+  dependencies: ReportStorageDependencies = {},
+) {
   const retryMax = resolveReportRetryMax();
   const now = new Date();
   const pendingItems = await prisma.reportDelivery.findMany({
@@ -1445,7 +1546,7 @@ export async function retryDueReportDeliveries(dryRun: boolean) {
         });
         continue;
       }
-      const result = await retryReportDelivery(item, dryRun);
+      const result = await retryReportDelivery(item, dryRun, dependencies);
       results.push(result);
     } catch (err) {
       if (!dryRun) {

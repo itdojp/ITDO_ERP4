@@ -336,6 +336,34 @@ test('sendInvoiceDocument runs guard, pdf, send, log, update sequence and propag
   assert.equal(sendLogUpdate.data.providerMessageId, 'msg-invoice-001');
 });
 
+test('sendInvoiceDocument accepts an in-memory gdrive PDF attachment', async () => {
+  const calls = [];
+  const content = Buffer.from('%PDF-placeholder', 'utf8');
+  const result = await sendInvoiceDocument({
+    id: 'inv-001',
+    actor: actor(),
+    auditContext: auditContext(),
+    ports: makePorts(calls, {
+      pdf: {
+        url: '/pdf-files/artifacts/11111111-1111-4111-8111-111111111111',
+        artifactId: '11111111-1111-4111-8111-111111111111',
+        content,
+        filename: 'document.pdf',
+        provider: 'gdrive',
+      },
+    }),
+  });
+
+  assert.equal(result.ok, true);
+  const email = calls.find(([name]) => name === 'sendInvoiceEmail')?.[1];
+  assert.equal(email[2].path, undefined);
+  assert.deepEqual(email[2].content, content);
+  assert.equal(
+    email[2].url,
+    '/pdf-files/artifacts/11111111-1111-4111-8111-111111111111',
+  );
+});
+
 test('sendInvoiceDocument stops before external send when approval evidence is missing', async () => {
   const calls = [];
   const result = await sendInvoiceDocument({

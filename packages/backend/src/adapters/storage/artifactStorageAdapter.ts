@@ -474,13 +474,25 @@ export function createArtifactStorageAdapter(
       }
     },
 
-    async open(artifactId) {
+    async open(artifactId, scope) {
+      if (
+        scope &&
+        (!scope.ownerType.trim() ||
+          !scope.ownerId.trim() ||
+          scope.ownerType.length > 100 ||
+          scope.ownerId.length > 255)
+      ) {
+        throw new Error('artifact_owner_scope_invalid');
+      }
       const row = await db.storageArtifact.findFirst({
         where: {
           id: artifactId,
           context: options.context,
           status: 'ready',
           deletedAt: null,
+          ...(scope
+            ? { ownerType: scope.ownerType, ownerId: scope.ownerId }
+            : {}),
         },
       });
       if (!row?.providerKey) throw new Error('artifact_not_found');

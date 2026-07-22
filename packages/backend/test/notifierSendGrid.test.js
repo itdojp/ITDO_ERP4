@@ -65,3 +65,68 @@ test('sendEmail redacts bounded SendGrid failure diagnostics', async () => {
   assert.ok(String(details.body).length < 600);
   assert.equal(details.requestId, 'sg-req-1');
 });
+
+test('sendEmail accepts an in-memory attachment without requiring a local path', async () => {
+  const { sendEmail } = await import('../dist/services/notifier.js');
+  const originalFetch = globalThis.fetch;
+  let payload;
+  try {
+    globalThis.fetch = async (_url, init) => {
+      payload = JSON.parse(init.body);
+      return new Response(null, {
+        status: 202,
+        headers: { 'x-message-id': 'message-placeholder' },
+      });
+    };
+    await withEnv(
+      {
+        MAIL_TRANSPORT: 'sendgrid',
+        SENDGRID_API_KEY: 'test-placeholder',
+        SENDGRID_BASE_URL: 'https://127.0.0.1/v3',
+        SENDGRID_ALLOW_PRIVATE_IP: 'true',
+        SENDGRID_ALLOWED_HOSTS: '',
+        MAIL_FROM: 'noreply@example.com',
+      },
+      async () => {
+        const result = await sendEmail(
+          ['user@example.com'],
+          'subject',
+          'body',
+          {
+            attachments: [
+              {
+                filename: 'document.pdf',
+                content: Buffer.from('%PDF-placeholder', 'utf8'),
+                contentType: 'application/pdf',
+              },
+            ],
+          },
+        );
+        assert.equal(result.status, 'success');
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  assert.equal(payload.attachments.length, 1);
+  assert.equal(payload.attachments[0].filename, 'document.pdf');
+  assert.equal(
+    payload.attachments[0].content,
+    Buffer.from('%PDF-placeholder', 'utf8').toString('base64'),
+  );
+});
+
+test('sendEmail rejects ambiguous attachment sources before transport', async () => {
+  const { sendEmail } = await import('../dist/services/notifier.js');
+  const result = await sendEmail(['user@example.com'], 'subject', 'body', {
+    attachments: [
+      {
+        filename: 'document.pdf',
+        path: '/not/read.pdf',
+        content: Buffer.from('%PDF-placeholder', 'utf8'),
+      },
+    ],
+  });
+  assert.equal(result.status, 'failed');
+  assert.equal(result.error, 'email_attachment_source_invalid');
+});

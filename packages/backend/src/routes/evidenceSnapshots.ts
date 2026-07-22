@@ -10,6 +10,8 @@ import {
   renderEvidencePackPdf,
 } from '../services/evidencePackExport.js';
 import { archiveEvidencePack } from '../services/evidencePackArchive.js';
+import { createEvidenceArtifactStorageAdapter } from '../adapters/storage/contextArtifactStorageAdapters.js';
+import type { EvidenceArchiveStoragePort } from '../application/evidence/evidenceArchiveStoragePort.js';
 import { createEvidenceSnapshotForApproval } from '../services/evidenceSnapshot.js';
 import {
   evidencePackArchiveBodySchema,
@@ -258,7 +260,7 @@ const evidencePackArchiveResponseSchema = {
         'mask',
       ],
       properties: {
-        provider: { type: 'string', enum: ['local', 's3'] },
+        provider: { type: 'string', enum: ['gdrive', 'local', 's3'] },
         objectKey: { type: 'string' },
         metadataKey: { type: 'string' },
         archiveUri: { type: 'string' },
@@ -688,7 +690,14 @@ async function resolveEvidenceSnapshotDiffRange(
   return { fromSnapshot, toSnapshot };
 }
 
-export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
+type EvidenceSnapshotRouteDependencies = {
+  createArchiveStorage?: () => EvidenceArchiveStoragePort;
+};
+
+export async function registerEvidenceSnapshotRoutes(
+  app: FastifyInstance,
+  dependencies: EvidenceSnapshotRouteDependencies = {},
+) {
   app.post(
     '/approval-instances/:id/evidence-snapshot',
     {
@@ -966,6 +975,99 @@ export async function registerEvidenceSnapshotRoutes(app: FastifyInstance) {
         changedKeys: diff.map((item) => item.key),
         changes: diff,
       };
+    },
+  );
+
+  app.get(
+    '/approval-instances/:id/evidence-pack/archives/:artifactId',
+    {
+      preHandler: requireRole(['admin', 'mgmt', 'exec', 'user']),
+      config: {
+        rateLimit: {
+          max: 60,
+          timeWindow: '1 minute',
+        },
+      },
+    },
+    async (req, reply) => {
+      const { id, artifactId } = req.params as {
+        id: string;
+        artifactId: string;
+      };
+      const approval = await prisma.approvalInstance.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          targetTable: true,
+          projectId: true,
+          createdBy: true,
+        },
+      });
+      if (!approval) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Approval instance not found' },
+        });
+      }
+      if (!canReadApprovalInstance(approval, req.user ?? null)) {
+        return reply.status(403).send({
+          error: { code: 'FORBIDDEN', message: 'Access denied' },
+        });
+      }
+
+      try {
+        const storage =
+          dependencies.createArchiveStorage?.() ??
+          createEvidenceArtifactStorageAdapter({ provider: 'gdrive' });
+        const opened = await storage.open(artifactId, {
+          ownerId: approval.id,
+          ownerType: 'approval_instance',
+        });
+        const filename = sanitizeAttachmentFilename(
+          opened.artifact.originalName,
+        );
+        reply.header(
+          'Content-Disposition',
+          `attachment; filename="${filename}"`,
+        );
+        reply.type(opened.artifact.contentType || 'application/octet-stream');
+        await logAudit({
+          action: 'evidence_pack_archive_downloaded',
+          targetTable: 'approval_instances',
+          targetId: approval.id,
+          metadata: {
+            approvalInstanceId: approval.id,
+            artifactId: opened.artifact.artifactId,
+            checksumSha256: opened.artifact.sha256,
+            sizeBytes: opened.artifact.sizeBytes,
+          } as Prisma.InputJsonValue,
+          ...auditContextFromRequest(req),
+        });
+        opened.stream.on('error', (error) => {
+          opened.stream.destroy();
+          req.log.error(
+            {
+              error: error instanceof Error ? error.message : 'stream_failed',
+            },
+            'Error while streaming evidence archive',
+          );
+          if (!reply.raw.headersSent) {
+            reply.status(500).send({ error: 'internal_error' });
+          }
+        });
+        return reply.send(opened.stream);
+      } catch (error) {
+        if (error instanceof Error && error.message === 'artifact_not_found') {
+          return reply.status(404).send({
+            error: { code: 'NOT_FOUND', message: 'Archive not found' },
+          });
+        }
+        return reply.status(500).send({
+          error: {
+            code: 'EVIDENCE_ARCHIVE_DOWNLOAD_FAILED',
+            message: 'Failed to download evidence archive',
+          },
+        });
+      }
     },
   );
 

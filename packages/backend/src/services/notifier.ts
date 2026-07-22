@@ -16,8 +16,9 @@ export type NotifyResult = {
 };
 
 type EmailAttachment = {
+  content?: Buffer;
   filename: string;
-  path: string;
+  path?: string;
   contentType?: string;
 };
 
@@ -187,6 +188,12 @@ function normalizeMetadata(metadata?: Record<string, string>) {
   return Object.fromEntries(entries.map(([key, value]) => [key, value.trim()]));
 }
 
+function hasValidAttachmentSource(item: EmailAttachment) {
+  const hasContent = Buffer.isBuffer(item.content);
+  const hasPath = typeof item.path === 'string' && item.path.length > 0;
+  return hasContent !== hasPath;
+}
+
 function logSmtpError(err: unknown) {
   console.error('[smtp send failed]', {
     message: err instanceof Error ? err.message : 'send_failed',
@@ -208,7 +215,13 @@ async function buildSendGridAttachments(options?: EmailOptions) {
   if (!attachments || attachments.length === 0) return undefined;
   const results = await Promise.all(
     attachments.map(async (item) => {
-      const buffer = await fs.readFile(item.path);
+      const hasContent = Buffer.isBuffer(item.content);
+      if (!hasValidAttachmentSource(item)) {
+        throw new Error('email_attachment_source_invalid');
+      }
+      const buffer = hasContent
+        ? (item.content as Buffer)
+        : await fs.readFile(item.path as string);
       return {
         content: buffer.toString('base64'),
         filename: item.filename,
@@ -380,6 +393,14 @@ export async function sendEmail(
       channel: 'email',
       target: to.join(','),
       error: 'invalid_recipient',
+    };
+  }
+  if (options?.attachments?.some((item) => !hasValidAttachmentSource(item))) {
+    return {
+      status: 'failed',
+      channel: 'email',
+      target: valid.join(','),
+      error: 'email_attachment_source_invalid',
     };
   }
   const config = resolveMailConfig();
@@ -739,10 +760,23 @@ export function buildStubResults(channels: string[]): NotifyResult[] {
 }
 
 type PdfInfo = {
+  content?: Buffer;
   filename?: string;
   path?: string;
   url?: string;
 };
+
+function buildPdfAttachment(pdf?: PdfInfo): EmailAttachment[] | undefined {
+  if (!pdf?.filename) return undefined;
+  return [
+    {
+      filename: pdf.filename,
+      ...(pdf.content ? { content: pdf.content } : {}),
+      ...(pdf.path ? { path: pdf.path } : {}),
+      contentType: 'application/pdf',
+    },
+  ];
+}
 
 export async function sendInvoiceEmail(
   to: string[],
@@ -753,16 +787,7 @@ export async function sendInvoiceEmail(
   const body = pdf?.url
     ? `Invoice email (placeholder)\nPDF: ${pdf.url}`
     : 'Invoice email (placeholder)';
-  const attachments =
-    pdf?.path && pdf.filename
-      ? [
-          {
-            filename: pdf.filename,
-            path: pdf.path,
-            contentType: 'application/pdf',
-          },
-        ]
-      : undefined;
+  const attachments = buildPdfAttachment(pdf);
   return sendEmail(to, `Invoice ${invoiceNo}`, body, {
     attachments,
     metadata: options?.metadata,
@@ -778,16 +803,7 @@ export async function sendEstimateEmail(
   const body = pdf?.url
     ? `Estimate email (placeholder)\nPDF: ${pdf.url}`
     : 'Estimate email (placeholder)';
-  const attachments =
-    pdf?.path && pdf.filename
-      ? [
-          {
-            filename: pdf.filename,
-            path: pdf.path,
-            contentType: 'application/pdf',
-          },
-        ]
-      : undefined;
+  const attachments = buildPdfAttachment(pdf);
   return sendEmail(to, `Estimate ${estimateNo}`, body, {
     attachments,
     metadata: options?.metadata,
@@ -803,16 +819,7 @@ export async function sendPurchaseOrderEmail(
   const body = pdf?.url
     ? `Purchase order email (placeholder)\nPDF: ${pdf.url}`
     : 'Purchase order email (placeholder)';
-  const attachments =
-    pdf?.path && pdf.filename
-      ? [
-          {
-            filename: pdf.filename,
-            path: pdf.path,
-            contentType: 'application/pdf',
-          },
-        ]
-      : undefined;
+  const attachments = buildPdfAttachment(pdf);
   return sendEmail(to, `PO ${poNo}`, body, {
     attachments,
     metadata: options?.metadata,
