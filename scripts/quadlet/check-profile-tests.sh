@@ -607,6 +607,22 @@ run_failure 'update stack rejects a symbolic-link unit state file' 'unit state m
   env QUADLET_TARGET_DIR="$unsafe_state_target" INSTALL_UNITS="$fake_link_update_install" SYSTEMCTL=true \
   "$UPDATE_STACK" --profile private-smoke --skip-build --skip-stack-check
 
+unlink "$unsafe_state_target/erp4-postgres-unit.sha256"
+mkdir "$unsafe_state_target/erp4-postgres-unit.sha256"
+: >"$update_systemctl_log"
+run_failure 'update stack rejects a directory unit state before restart' 'unit state must be a regular file' \
+  env QUADLET_TARGET_DIR="$unsafe_state_target" INSTALL_UNITS="$fake_link_update_install" \
+  SYSTEMCTL="$fake_update_systemctl" \
+  "$UPDATE_STACK" --profile private-smoke --skip-build --skip-stack-check
+[[ ! -s "$update_systemctl_log" ]] || fail 'update-stack performed lifecycle actions for a directory unit state'
+run_failure 'unit state writer rejects a directory destination' 'writer rejected directory state' \
+  bash -c 'source "$1"; if erp4_write_unit_state "$2" "$3"; then exit 0; fi; printf "%s\n" "writer rejected directory state"; exit 1' \
+  _ "$ROOT_DIR/scripts/quadlet/lib/unit-state.sh" \
+  "$unsafe_state_target/erp4-postgres-unit.sha256" "$(printf '%064d' 0)"
+if find "$unsafe_state_target" -maxdepth 1 -name 'erp4-postgres-unit.sha256.tmp.*' -print -quit | grep -q .; then
+  fail 'unit state writer left a temporary file after rejecting a directory destination'
+fi
+
 fake_unready_podman="$WORK_DIR/fake-update-unready-podman.sh"
 cat >"$fake_unready_podman" <<EOF_FAKE_UNREADY_PODMAN
 #!/usr/bin/env bash
@@ -629,6 +645,7 @@ fi
 fake_restore="$WORK_DIR/fake-restore.sh"
 fake_restart="$WORK_DIR/fake-restart.sh"
 rollback_restore_args_file="$WORK_DIR/rollback-restore-args.txt"
+rollback_restart_target_file="$WORK_DIR/rollback-restart-target.txt"
 rollback_systemd_dir="$WORK_DIR/rollback-systemd"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$fake_restore"
 cat >"$fake_restore" <<EOF_FAKE_RESTORE
@@ -638,6 +655,7 @@ EOF_FAKE_RESTORE
 cat >"$fake_restart" <<EOF_FAKE_RESTART
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >"$profile_args_file"
+printf '%s\n' "\${QUADLET_TARGET_DIR:-}" >"$rollback_restart_target_file"
 EOF_FAKE_RESTART
 chmod +x "$fake_restore" "$fake_restart"
 run_success 'rollback latest propagates private-smoke profile' \
@@ -645,8 +663,12 @@ run_success 'rollback latest propagates private-smoke profile' \
   "$ROLLBACK_LATEST" --profile private-smoke --backup-dir "$WORK_DIR" --target-dir "$installed_private_dir" \
   --systemd-user-target-dir "$rollback_systemd_dir" --skip-stack-check
 grep -Fq -- '--profile private-smoke' "$profile_args_file" || fail 'rollback-latest did not propagate private-smoke to restart-stack'
+grep -Fq -- "--target-dir $installed_private_dir" "$rollback_restore_args_file" || \
+  fail 'rollback-latest did not propagate target-dir to restore-latest'
 grep -Fq -- "--systemd-user-target-dir $rollback_systemd_dir" "$rollback_restore_args_file" || \
   fail 'rollback-latest did not propagate systemd-user-target-dir to restore-latest'
+[[ "$(cat "$rollback_restart_target_file")" == "$installed_private_dir" ]] || \
+  fail 'rollback-latest did not propagate target-dir to restart-stack'
 run_failure 'rollback latest rejects private-smoke proxy' 'private-smoke must not include proxy' \
   "$ROLLBACK_LATEST" --profile private-smoke --include-proxy --skip-restart
 

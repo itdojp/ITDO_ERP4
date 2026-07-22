@@ -94,6 +94,8 @@ fi
 
 command -v "$SYSTEMCTL" >/dev/null 2>&1 || fail "required command not found: $SYSTEMCTL"
 [[ ! -L "$POSTGRES_UNIT_STATE" ]] || fail "PostgreSQL unit state must not be a symlink: $POSTGRES_UNIT_STATE"
+[[ ! -e "$POSTGRES_UNIT_STATE" || -f "$POSTGRES_UNIT_STATE" ]] || \
+  fail "PostgreSQL unit state must be a regular file: $POSTGRES_UNIT_STATE"
 if [[ "$INCLUDE_PROXY" -eq 1 && "$SKIP_STACK_CHECK" -eq 0 ]]; then
   [[ -x "$STATUS_STACK" ]] || fail "status stack script is not executable: $STATUS_STACK"
 fi

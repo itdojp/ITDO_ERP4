@@ -22,8 +22,9 @@ erp4_write_unit_state() {
   local temp_file
   [[ "$value" =~ ^[0-9a-f]{64}$ ]] || return 1
   [[ ! -L "$state_file" ]] || return 1
+  [[ ! -e "$state_file" || -f "$state_file" ]] || return 1
   temp_file="$(mktemp "${state_file}.tmp.XXXXXX")" || return 1
-  if ! printf '%s\n' "$value" >"$temp_file" || ! chmod 0600 "$temp_file" || ! mv -f -- "$temp_file" "$state_file"; then
+  if ! printf '%s\n' "$value" >"$temp_file" || ! chmod 0600 "$temp_file" || ! mv -fT -- "$temp_file" "$state_file"; then
     rm -f -- "$temp_file"
     return 1
   fi

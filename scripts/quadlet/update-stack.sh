@@ -185,6 +185,8 @@ if [[ "$BACKUP_BEFORE_UPDATE" -eq 1 ]]; then
 fi
 command -v "$SYSTEMCTL" >/dev/null 2>&1 || fail "required command not found: $SYSTEMCTL"
 [[ ! -L "$POSTGRES_UNIT_STATE" ]] || fail "PostgreSQL unit state must not be a symlink: $POSTGRES_UNIT_STATE"
+[[ ! -e "$POSTGRES_UNIT_STATE" || -f "$POSTGRES_UNIT_STATE" ]] || \
+  fail "PostgreSQL unit state must be a regular file: $POSTGRES_UNIT_STATE"
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
   [[ -x "$BUILD_IMAGES" ]] || fail "build command is not executable: $BUILD_IMAGES"
 fi
