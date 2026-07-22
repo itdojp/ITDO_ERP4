@@ -59,6 +59,12 @@ type GoogleDriveAuthorizedRequest = (
 ) => Promise<{ data: unknown; headers?: unknown; status?: number }>;
 
 export type GoogleDriveApi = {
+  about: {
+    get(
+      params: Record<string, unknown>,
+      options?: Record<string, unknown>,
+    ): Promise<DriveResponse>;
+  };
   createResumable(
     input: GoogleDriveResumableCreateInput,
     options?: Record<string, unknown>,
@@ -877,6 +883,7 @@ export function createGoogleDriveApi(credentials: GoogleDriveCredentialConfig) {
     oauth2Client.request(options),
   );
   return {
+    about: drive.about,
     createResumable,
     files: drive.files,
     permissions: drive.permissions,

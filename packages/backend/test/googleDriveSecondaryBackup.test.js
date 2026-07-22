@@ -478,6 +478,13 @@ test('retention stays dry-run, keeps the newest generation, and trash is explici
     assert.equal(plan.candidateGenerations, 1);
     assert.equal(plan.candidateObjects, 6);
     assert.equal(plan.protectedGenerations, 1);
+    const minimumProtected = planBackupRetention(
+      inventory,
+      new Date('2026-07-22T12:00:00.000Z'),
+      { minimums: { daily: 2 } },
+    );
+    assert.equal(minimumProtected.candidateGenerations, 0);
+    assert.equal(minimumProtected.protectedGenerations, 2);
     assert.equal(
       [...fake.objects.values()].filter((item) => item.metadata.trashed).length,
       0,

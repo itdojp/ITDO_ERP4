@@ -23,11 +23,15 @@ BACKUP_SHELL_FILES=(
   scripts/check-backup-s3-readiness.sh
   scripts/record-backup-s3-readiness.sh
   scripts/record-backup-s3-restore.sh
+  scripts/record-storage-readiness.sh
+  scripts/storage-readiness.sh
 )
 BACKUP_NODE_FILES=(
   scripts/backup-s3-manifest.mjs
   scripts/backup-s3-retention.mjs
   scripts/backup-s3-profile.test.mjs
+  scripts/storage-readiness-record.mjs
+  scripts/storage-readiness-record.test.mjs
 )
 
 printf '==> Checking ops shell script syntax\n'
@@ -35,6 +39,7 @@ for file in "${OPS_SHELL_FILES[@]}"; do
   bash -n "$file"
   printf 'syntax ok: %s\n' "$file"
 done
+
 for file in "${BACKUP_SHELL_FILES[@]}"; do
   bash -n "$file"
   printf 'syntax ok: %s\n' "$file"
@@ -86,6 +91,31 @@ require_env_key_declared() {
     printf 'missing declared sample env key: %s in %s\n' "$key" "$file" >&2
     return 1
   fi
+}
+
+storage_readiness_env="deploy/quadlet/env/erp4-storage-readiness.env.example"
+for key in \
+  ENVIRONMENT \
+  BACKUP_DIR \
+  BACKUP_PREFIX \
+  STORAGE_READINESS_DRIVE_WARNING_PERCENT \
+  STORAGE_READINESS_DRIVE_CRITICAL_PERCENT \
+  STORAGE_READINESS_LOCAL_MAX_AGE_HOURS \
+  STORAGE_READINESS_SAKURA_MAX_AGE_HOURS \
+  STORAGE_READINESS_S3_TIMEOUT_MS \
+  STORAGE_READINESS_GDRIVE_MAX_AGE_HOURS \
+  STORAGE_READINESS_RESTORE_MAX_AGE_DAYS \
+  STORAGE_READINESS_MIN_HOURLY \
+  STORAGE_READINESS_MIN_DAILY \
+  STORAGE_READINESS_MIN_WEEKLY \
+  STORAGE_READINESS_MIN_MONTHLY \
+  STORAGE_READINESS_RESTORE_EVIDENCE_FILE \
+  STORAGE_READINESS_RESTORE_EXPECTED_BACKUP_ID; do
+  require_env_key_declared "$storage_readiness_env" "$key"
+done
+grep -Fq 'status --porcelain --untracked-files=normal' scripts/record-storage-readiness.sh || {
+  printf 'record-storage-readiness.sh must bind evidence to a clean repository\n' >&2
+  exit 1
 }
 
 printf '==> Checking sample env keys and secret-like values\n'

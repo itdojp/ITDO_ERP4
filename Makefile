@@ -1,4 +1,4 @@
-.PHONY: lint format-check typecheck build test test-backend test-frontend data-quality-test data-quality-blocking data-quality-advisory coverage coverage-auth coverage-integrations coverage-integrations-check coverage-frontend coverage-frontend-core e2e ui-evidence ui-visual-regression ui-visual-regression-update mobile-regression-log frontend-dev-api podman-smoke pr-comments audit docs-image-links-check docs-test-results-index-check ops-quality design-system-package-check eslint10-readiness-check eslint10-readiness-record dependabot-alerts-check dependabot-alerts-record dependabot-token-readiness-check dependency-watch-record backup-s3-readiness-check backup-s3-readiness-record backup-s3-restore-record backup-s3-profile-test backup-s3-backup backup-s3-upload backup-s3-download backup-s3-check backup-s3-prune-plan backup-s3-prune-apply backup-gdrive-config-check backup-gdrive-list backup-gdrive-freshness backup-gdrive-stat backup-gdrive-download backup-gdrive-prune-plan external-csv-artifact-intake-record production-readiness-external-evidence-check production-readiness-external-evidence-test po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness action-policy-callsites-report action-policy-callsites-report-json action-policy-required-action-gaps action-policy-required-action-gaps-json action-policy-fallback-report action-policy-fallback-report-json release-readiness release-readiness-record action-policy-phase3-readiness action-policy-phase3-readiness-json action-policy-phase3-readiness-record action-policy-phase3-cutover-record action-policy-phase3-trial-record action-policy-phase3-target-trial-record sakura-vps-profile-check bounded-context-coverage-check
+.PHONY: lint format-check typecheck build test test-backend test-frontend data-quality-test data-quality-blocking data-quality-advisory coverage coverage-auth coverage-integrations coverage-integrations-check coverage-frontend coverage-frontend-core e2e ui-evidence ui-visual-regression ui-visual-regression-update mobile-regression-log frontend-dev-api podman-smoke pr-comments audit docs-image-links-check docs-test-results-index-check ops-quality design-system-package-check eslint10-readiness-check eslint10-readiness-record dependabot-alerts-check dependabot-alerts-record dependabot-token-readiness-check dependency-watch-record backup-s3-readiness-check backup-s3-readiness-record backup-s3-restore-record backup-s3-profile-test backup-s3-backup backup-s3-upload backup-s3-download backup-s3-check backup-s3-prune-plan backup-s3-prune-apply backup-gdrive-config-check backup-gdrive-list backup-gdrive-freshness backup-gdrive-stat backup-gdrive-download backup-gdrive-prune-plan storage-readiness storage-readiness-record external-csv-artifact-intake-record production-readiness-external-evidence-check production-readiness-external-evidence-test po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness action-policy-callsites-report action-policy-callsites-report-json action-policy-required-action-gaps action-policy-required-action-gaps-json action-policy-fallback-report action-policy-fallback-report-json release-readiness release-readiness-record action-policy-phase3-readiness action-policy-phase3-readiness-json action-policy-phase3-readiness-record action-policy-phase3-cutover-record action-policy-phase3-trial-record action-policy-phase3-target-trial-record sakura-vps-profile-check bounded-context-coverage-check
 
 lint:
 	npm run lint --prefix packages/backend
@@ -94,6 +94,7 @@ ops-quality:
 	./scripts/check-ops-scripts.sh
 	./scripts/quadlet/check-profile-tests.sh
 	node --test scripts/backup-s3-profile.test.mjs
+	node --test scripts/storage-readiness-record.test.mjs
 
 design-system-package-check:
 	./scripts/check-design-system-package.sh
@@ -167,6 +168,12 @@ backup-gdrive-download:
 
 backup-gdrive-prune-plan:
 	./scripts/backup-gdrive-secondary.sh prune
+
+storage-readiness:
+	./scripts/storage-readiness.sh --format json
+
+storage-readiness-record:
+	./scripts/record-storage-readiness.sh
 
 external-csv-artifact-intake-record:
 	node scripts/record-external-csv-artifact-intake.mjs
