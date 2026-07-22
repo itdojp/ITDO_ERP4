@@ -239,25 +239,32 @@ validate_secondary_profile() {
   case "$BACKUP_SECONDARY_PROVIDER" in
     none) return 0 ;;
     gdrive) ;;
-    *) echo 'BACKUP_SECONDARY_PROVIDER must be none or gdrive' >&2; exit 1 ;;
+    *) echo 'BACKUP_SECONDARY_PROVIDER must be none or gdrive' >&2; return 1 ;;
   esac
   if [[ "$S3_PROVIDER" != "sakura" || -z "${S3_BUCKET:-}" ]]; then
     echo 'Google Drive secondary requires a successful Sakura primary profile' >&2
-    exit 1
+    return 1
   fi
   if [[ "$BACKUP_RETENTION_CLASS" == "hourly" ]]; then
     return 0
   fi
-  require_cmd node
+  if ! command -v node >/dev/null 2>&1; then
+    echo 'Missing required command: node' >&2
+    return 1
+  fi
   if [[ ! -x "$BACKUP_GDRIVE_CLI" || -L "$BACKUP_GDRIVE_CLI" ]]; then
     echo 'backup Google Drive CLI is unavailable' >&2
-    exit 1
+    return 1
   fi
   "$BACKUP_GDRIVE_CLI" check-config >/dev/null
 }
 
 copy_bundle_to_secondary() {
-  if [[ "$BACKUP_SECONDARY_PROVIDER" != "gdrive" ]]; then
+  if ! validate_secondary_profile; then
+    echo '{"status":"partial_failure","primary":"success","secondary":"failed"}' >&2
+    return 1
+  fi
+  if [[ "$BACKUP_SECONDARY_PROVIDER" == "none" ]]; then
     return 0
   fi
   if [[ "$BACKUP_RETENTION_CLASS" == "hourly" ]]; then
@@ -861,7 +868,6 @@ backup() {
       }
     fi
   fi
-  validate_secondary_profile
   pg_env
   if [[ "$S3_PROVIDER" == "sakura" ]]; then
     require_cmd psql
@@ -1042,7 +1048,6 @@ upload_existing() {
   validate_safe_token BACKUP_ID "$backup_id"
   validate_sakura_backup_id "$backup_id"
   validate_s3_profile
-  validate_secondary_profile
 
   if [[ "$S3_PROVIDER" == "sakura" ]]; then
     [[ "$backup_id" == "$(basename "$bundle_base")" ]] || {

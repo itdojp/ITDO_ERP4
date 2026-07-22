@@ -340,6 +340,10 @@ if [[ "\${1:-}" == upload ]]; then
   fi
   printf '{"status":"success","objectCount":6}\n'
 fi
+if [[ "\${1:-}" == check-config && "\${FAKE_GDRIVE_SECONDARY_FAIL_CONFIG:-0}" == 1 ]]; then
+  printf '%s\n' "\${FAKE_GDRIVE_SECONDARY_ERROR:-google_drive_auth_expired}" >&2
+  exit 43
+fi
 `,
   );
   chmodSync(script, 0o755);
@@ -372,6 +376,7 @@ function runSecondaryUploadScenario(
     corruptRemoteManifest = false,
     failRemoteManifestDownload = false,
     failSecondary = false,
+    failSecondaryConfig = false,
     retentionClass = "daily",
     secondaryError = "google_drive_retryable",
   } = {},
@@ -384,6 +389,7 @@ function runSecondaryUploadScenario(
     ...env,
     ...secondary,
     FAKE_GDRIVE_SECONDARY_ERROR: secondaryError,
+    FAKE_GDRIVE_SECONDARY_FAIL_CONFIG: failSecondaryConfig ? "1" : "0",
     PATH: `${gpgBin}:${env.PATH}`,
     S3_PROVIDER: "sakura",
     S3_ENDPOINT_URL: "https://s3.example.invalid",
@@ -940,9 +946,7 @@ test("Google Drive secondary runs only after a verified Sakura primary bundle", 
   withScratch("backup-gdrive-primary-failure-", (dir) => {
     const scenario = runSecondaryUploadScenario(dir, { failPrimary: true });
     assert.notEqual(scenario.result.status, 0);
-    const calls = readFileSync(scenario.FAKE_GDRIVE_SECONDARY_LOG, "utf8");
-    assert.match(calls, /^check-config/m);
-    assert.doesNotMatch(calls, /^upload /m);
+    assert.equal(existsSync(scenario.FAKE_GDRIVE_SECONDARY_LOG), false);
     assert.doesNotMatch(scenario.result.stderr, /partial_failure/);
   });
 
@@ -952,9 +956,7 @@ test("Google Drive secondary runs only after a verified Sakura primary bundle", 
     });
     assert.notEqual(scenario.result.status, 0);
     assert.match(scenario.result.stderr, /remote manifest mismatch/);
-    const calls = readFileSync(scenario.FAKE_GDRIVE_SECONDARY_LOG, "utf8");
-    assert.match(calls, /^check-config/m);
-    assert.doesNotMatch(calls, /^upload /m);
+    assert.equal(existsSync(scenario.FAKE_GDRIVE_SECONDARY_LOG), false);
     assert.doesNotMatch(scenario.result.stderr, /partial_failure/);
     assert.deepEqual(secondaryRequestFiles(scenario), []);
   });
@@ -965,9 +967,7 @@ test("Google Drive secondary runs only after a verified Sakura primary bundle", 
     });
     assert.notEqual(scenario.result.status, 0);
     assert.match(scenario.result.stderr, /remote manifest download failed/);
-    const calls = readFileSync(scenario.FAKE_GDRIVE_SECONDARY_LOG, "utf8");
-    assert.match(calls, /^check-config/m);
-    assert.doesNotMatch(calls, /^upload /m);
+    assert.equal(existsSync(scenario.FAKE_GDRIVE_SECONDARY_LOG), false);
     assert.doesNotMatch(scenario.result.stderr, /partial_failure/);
     assert.deepEqual(secondaryRequestFiles(scenario), []);
   });
@@ -983,6 +983,36 @@ test("Google Drive secondary runs only after a verified Sakura primary bundle", 
     );
     assert.match(scenario.result.stdout, /secondary skipped for hourly/);
     assert.equal(existsSync(scenario.FAKE_GDRIVE_SECONDARY_LOG), false);
+  });
+
+  withScratch("backup-gdrive-secondary-config-failure-", (dir) => {
+    const scenario = runSecondaryUploadScenario(dir, {
+      failSecondaryConfig: true,
+      secondaryError: "google_drive_auth_expired",
+    });
+    assert.notEqual(scenario.result.status, 0);
+    assert.match(scenario.result.stderr, /google_drive_auth_expired/);
+    assert.match(
+      scenario.result.stderr,
+      /"status":"partial_failure","primary":"success","secondary":"failed"/,
+    );
+    const secondaryCalls = readFileSync(
+      scenario.FAKE_GDRIVE_SECONDARY_LOG,
+      "utf8",
+    );
+    assert.match(secondaryCalls, /^check-config/m);
+    assert.doesNotMatch(secondaryCalls, /^upload /m);
+    const primaryCalls = readFileSync(scenario.env.FAKE_AWS_LOG, "utf8");
+    assert.equal(
+      primaryCalls
+        .split("\n")
+        .filter(
+          (line) =>
+            line.includes("s3 cp s3://") && line.includes(".manifest.json"),
+        ).length,
+      3,
+    );
+    assert.deepEqual(secondaryRequestFiles(scenario), []);
   });
 });
 
