@@ -47,6 +47,8 @@ fakeとlocal filesystemだけを使用したrepo-side検証である。実Google
 
 backend full test中に、DB未起動による既存の非致命`P1001` audit warningが出力されたが、suiteは1,375件すべて成功した。今回のbackup pathはDBへ接続しない。
 
+最終review修正後もSakura profile 20件、`make ops-quality`、lint / format / typecheck、backend 1,375件は成功した。frontend全体の初回実行では今回未変更の`ProjectMilestones.test.tsx`の非同期表示待ちが1件失敗したが、該当file 5件とfrontend全82 files / 468件の直後の再実行は成功した。失敗をskip、timeout延長、coverage除外では処理していない。
+
 ## テストしたfailure semantics
 
 - secondary disabled時は既存backup動作を維持する。
