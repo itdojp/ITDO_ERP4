@@ -235,7 +235,7 @@ validate_s3_profile() {
   fi
 }
 
-validate_secondary_profile() {
+validate_secondary_topology() {
   case "$BACKUP_SECONDARY_PROVIDER" in
     none) return 0 ;;
     gdrive) ;;
@@ -244,6 +244,13 @@ validate_secondary_profile() {
   if [[ "$S3_PROVIDER" != "sakura" || -z "${S3_BUCKET:-}" ]]; then
     echo 'Google Drive secondary requires a successful Sakura primary profile' >&2
     return 1
+  fi
+}
+
+validate_secondary_profile() {
+  validate_secondary_topology || return 1
+  if [[ "$BACKUP_SECONDARY_PROVIDER" == "none" ]]; then
+    return 0
   fi
   if [[ "$BACKUP_RETENTION_CLASS" == "hourly" ]]; then
     return 0
@@ -850,6 +857,7 @@ backup() {
   require_cmd pg_dump
   require_cmd pg_dumpall
   require_cmd node
+  validate_secondary_topology || exit 1
   if [[ -n "${S3_BUCKET:-}" || -n "$S3_PROVIDER" ]]; then
     validate_s3_profile
     if [[ "$S3_PROVIDER" == "sakura" ]]; then

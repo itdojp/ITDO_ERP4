@@ -1016,6 +1016,50 @@ test("Google Drive secondary runs only after a verified Sakura primary bundle", 
   });
 });
 
+test("backup rejects a configured secondary without a Sakura primary before creating artifacts", () => {
+  for (const scenario of [
+    {
+      provider: "gdrive",
+      expected: /requires a successful Sakura primary profile/,
+    },
+    {
+      provider: "unsupported",
+      expected: /must be none or gdrive/,
+    },
+  ]) {
+    withScratch(
+      `backup-secondary-without-primary-${scenario.provider}-`,
+      (dir) => {
+        const bin = installFakeRemoteBackupTools(dir);
+        const secondary = installFakeGoogleDriveSecondary(dir);
+        const backupDir = path.join(dir, "backups");
+        const result = run("bash", ["scripts/backup-prod.sh", "backup"], {
+          ...secondary,
+          PATH: `${bin}:${process.env.PATH}`,
+          ERP4_TMP_DIR: path.join(dir, "scratch"),
+          BACKUP_DIR: backupDir,
+          BACKUP_PREFIX: "erp4",
+          BACKUP_TIMESTAMP: "20260722-040506",
+          BACKUP_RETENTION_CLASS: "daily",
+          ENVIRONMENT: "prod",
+          COMMIT_SHA: "deadbeefcafe",
+          DB_HOST: "database.internal.invalid",
+          DB_USER: "erp4",
+          DB_PASSWORD: "password-placeholder",
+          DB_NAME: "erp4",
+          BACKUP_SECONDARY_PROVIDER: scenario.provider,
+        });
+
+        assert.notEqual(result.status, 0);
+        assert.match(result.stderr, scenario.expected);
+        assert.doesNotMatch(result.stderr, /partial_failure/);
+        assert.equal(existsSync(backupDir), false);
+        assert.equal(existsSync(secondary.FAKE_GDRIVE_SECONDARY_LOG), false);
+      },
+    );
+  }
+});
+
 test("Sakura accepts artifact filenames derived from a 128-character backup ID", () => {
   withScratch("backup-s3-long-name-", (dir) => {
     const env = fakeEnv(dir);
