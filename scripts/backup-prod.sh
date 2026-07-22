@@ -10,6 +10,8 @@ ENVIRONMENT="${ENVIRONMENT:-prod}"
 S3_PREFIX="${S3_PREFIX:-erp4/${ENVIRONMENT}}"
 S3_PROVIDER="${S3_PROVIDER:-}"
 BACKUP_RETENTION_CLASS="${BACKUP_RETENTION_CLASS:-daily}"
+BACKUP_SECONDARY_PROVIDER="${BACKUP_SECONDARY_PROVIDER:-none}"
+BACKUP_GDRIVE_CLI="${BACKUP_GDRIVE_CLI:-$ROOT_DIR/scripts/backup-gdrive-secondary.sh}"
 COMMIT_SHA="${COMMIT_SHA:-$(git -C "$ROOT_DIR" rev-parse --verify HEAD 2>/dev/null || printf unknown)}"
 S3_VERIFY_DOWNLOAD="${S3_VERIFY_DOWNLOAD:-0}"
 DB_PORT="${DB_PORT:-5432}"
@@ -27,6 +29,7 @@ Optional env:
   SSE_KMS_KEY_ID, SSE_S3, GPG_RECIPIENT, GPG_HOME, GPG_REMOVE_PLAINTEXT
   ASSET_DIR, KEEP_DAYS, SCHEMA_VERSION, APP_VERSION, COMMIT_SHA
   BACKUP_RETENTION_CLASS=hourly|daily|weekly|monthly, S3_VERIFY_DOWNLOAD=0|1
+  BACKUP_SECONDARY_PROVIDER=none|gdrive, BACKUP_GDRIVE_* (secondary用)
   BACKUP_FILE, BACKUP_GLOBALS_FILE, BACKUP_ASSETS_FILE (upload/restore 用)
   BACKUP_MANIFEST_FILE (check 用)
   REMOTE_HOST, REMOTE_USER, REMOTE_PORT, REMOTE_DIR
@@ -61,6 +64,7 @@ require_env() {
 }
 
 PGPASSFILE_CREATED=""
+BACKUP_GDRIVE_REQUEST_FILE_CREATED=""
 
 cleanup_pgpass() {
   if [[ -n "$PGPASSFILE_CREATED" ]]; then
@@ -68,7 +72,13 @@ cleanup_pgpass() {
   fi
 }
 
-trap cleanup_pgpass EXIT
+cleanup_backup_gdrive_request() {
+  if [[ -n "$BACKUP_GDRIVE_REQUEST_FILE_CREATED" ]]; then
+    rm -f -- "$BACKUP_GDRIVE_REQUEST_FILE_CREATED"
+  fi
+}
+
+trap 'cleanup_pgpass; cleanup_backup_gdrive_request' EXIT
 
 pg_env() {
   export PGHOST="$DB_HOST"
@@ -223,6 +233,62 @@ validate_s3_profile() {
       exit 1
     }
   fi
+}
+
+validate_secondary_profile() {
+  case "$BACKUP_SECONDARY_PROVIDER" in
+    none) return 0 ;;
+    gdrive) ;;
+    *) echo 'BACKUP_SECONDARY_PROVIDER must be none or gdrive' >&2; exit 1 ;;
+  esac
+  if [[ "$S3_PROVIDER" != "sakura" || -z "${S3_BUCKET:-}" ]]; then
+    echo 'Google Drive secondary requires a successful Sakura primary profile' >&2
+    exit 1
+  fi
+  if [[ "$BACKUP_RETENTION_CLASS" == "hourly" ]]; then
+    return 0
+  fi
+  require_cmd node
+  if [[ ! -x "$BACKUP_GDRIVE_CLI" || -L "$BACKUP_GDRIVE_CLI" ]]; then
+    echo 'backup Google Drive CLI is unavailable' >&2
+    exit 1
+  fi
+  "$BACKUP_GDRIVE_CLI" check-config >/dev/null
+}
+
+copy_bundle_to_secondary() {
+  if [[ "$BACKUP_SECONDARY_PROVIDER" != "gdrive" ]]; then
+    return 0
+  fi
+  if [[ "$BACKUP_RETENTION_CLASS" == "hourly" ]]; then
+    log 'Google Drive secondary skipped for hourly retention class'
+    return 0
+  fi
+  local scratch_root request_file
+  local -a artifacts=("$@")
+  scratch_root="${ERP4_TMP_DIR:-$ROOT_DIR/.codex-local/tmp}"
+  mkdir -p "$scratch_root"
+  chmod 700 "$scratch_root"
+  request_file=$(mktemp "$scratch_root/backup-gdrive-request.XXXXXX")
+  BACKUP_GDRIVE_REQUEST_FILE_CREATED="$request_file"
+  chmod 600 "$request_file"
+  node - "$request_file" "${artifacts[@]}" <<'NODE'
+const { writeFileSync } = require('node:fs');
+const [output, ...artifacts] = process.argv.slice(2);
+writeFileSync(output, `${JSON.stringify({ artifacts }, null, 2)}\n`, {
+  encoding: 'utf8',
+  mode: 0o600,
+});
+NODE
+  log 'copying verified Sakura bundle to Google Drive secondary'
+  if ! "$BACKUP_GDRIVE_CLI" upload --request-file "$request_file"; then
+    rm -f -- "$request_file"
+    BACKUP_GDRIVE_REQUEST_FILE_CREATED=""
+    echo '{"status":"partial_failure","primary":"success","secondary":"failed"}' >&2
+    return 1
+  fi
+  rm -f -- "$request_file"
+  BACKUP_GDRIVE_REQUEST_FILE_CREATED=""
 }
 
 remote_enabled() {
@@ -782,6 +848,7 @@ backup() {
       }
     fi
   fi
+  validate_secondary_profile
   pg_env
   if [[ "$S3_PROVIDER" == "sakura" ]]; then
     require_cmd psql
@@ -863,6 +930,11 @@ backup() {
     fi
     log "uploading metadata to S3"
     upload_artifact "$meta_file" "$meta_upload" metadata "$base"
+    local -a secondary_artifacts=("$db_upload" "$globals_upload" "$meta_upload")
+    if [[ -n "$assets_upload" ]]; then
+      secondary_artifacts+=("$assets_upload")
+    fi
+    copy_bundle_to_secondary "${secondary_artifacts[@]}"
   fi
 
   if remote_enabled; then
@@ -957,6 +1029,7 @@ upload_existing() {
   validate_safe_token BACKUP_ID "$backup_id"
   validate_sakura_backup_id "$backup_id"
   validate_s3_profile
+  validate_secondary_profile
 
   if [[ "$S3_PROVIDER" == "sakura" ]]; then
     [[ "$backup_id" == "$(basename "$bundle_base")" ]] || {
@@ -1009,6 +1082,11 @@ upload_existing() {
     log "uploading metadata to S3"
     upload_artifact "$meta_file" "$meta_upload" metadata "$backup_id"
   fi
+  local -a secondary_artifacts=("$db_upload" "$globals_upload" "$meta_upload")
+  if [[ -n "$assets_upload" ]]; then
+    secondary_artifacts+=("$assets_upload")
+  fi
+  copy_bundle_to_secondary "${secondary_artifacts[@]}"
   remove_plaintext_after_copy "$db_file" "$db_upload"
   remove_plaintext_after_copy "$globals_file" "$globals_upload"
   [[ -n "$assets_upload" ]] && remove_plaintext_after_copy "$assets_file" "$assets_upload"

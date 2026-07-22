@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -315,6 +316,101 @@ function fakeEnv(dir) {
   };
 }
 
+function installFakeGoogleDriveSecondary(dir, failUpload = false) {
+  const script = path.join(dir, "fake-backup-gdrive-secondary.sh");
+  const log = path.join(dir, "gdrive-secondary.log");
+  writeFileSync(
+    script,
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf '%q ' "$@" >>"$FAKE_GDRIVE_SECONDARY_LOG"
+printf '\n' >>"$FAKE_GDRIVE_SECONDARY_LOG"
+if [[ "\${1:-}" == upload ]]; then
+  cp -- "\${3}" "$FAKE_GDRIVE_SECONDARY_LOG.request"
+  if [[ "\${FAKE_GDRIVE_SECONDARY_FAIL:-0}" == 1 ]]; then
+    printf '%s\n' "\${FAKE_GDRIVE_SECONDARY_ERROR:-google_drive_retryable}" >&2
+    exit 42
+  fi
+  printf '{"status":"success","objectCount":6}\n'
+fi
+`,
+  );
+  chmodSync(script, 0o755);
+  return {
+    BACKUP_GDRIVE_CLI: script,
+    FAKE_GDRIVE_SECONDARY_LOG: log,
+    FAKE_GDRIVE_SECONDARY_FAIL: failUpload ? "1" : "0",
+    FAKE_GDRIVE_SECONDARY_ERROR: "google_drive_retryable",
+  };
+}
+
+function secondaryUploadFixture(dir, timestamp = "20260722-010203") {
+  const backupDir = path.join(dir, "backups");
+  mkdirSync(backupDir);
+  const commit = "deadbeefcafe";
+  const bundle = `erp4-${timestamp}-${commit}`;
+  const database = path.join(backupDir, `${bundle}-db.dump`);
+  const globals = path.join(backupDir, `${bundle}-globals.sql`);
+  const metadata = path.join(backupDir, `${bundle}-meta.json`);
+  writeFileSync(database, "database-placeholder");
+  writeFileSync(globals, "globals-placeholder");
+  writeFileSync(metadata, '{"sanitized":true}\n');
+  return { backupDir, bundle, commit, database, globals };
+}
+
+function runSecondaryUploadScenario(
+  dir,
+  {
+    failPrimary = false,
+    failSecondary = false,
+    retentionClass = "daily",
+    secondaryError = "google_drive_retryable",
+  } = {},
+) {
+  const env = fakeEnv(dir);
+  const gpgBin = installFakeGpg(dir);
+  const secondary = installFakeGoogleDriveSecondary(dir, failSecondary);
+  const fixture = secondaryUploadFixture(dir);
+  const result = run("bash", ["scripts/backup-prod.sh", "upload"], {
+    ...env,
+    ...secondary,
+    FAKE_GDRIVE_SECONDARY_ERROR: secondaryError,
+    PATH: `${gpgBin}:${env.PATH}`,
+    S3_PROVIDER: "sakura",
+    S3_ENDPOINT_URL: "https://s3.example.invalid",
+    S3_BUCKET: "bucket-placeholder",
+    S3_PREFIX: "erp4/prod",
+    S3_VERIFY_DOWNLOAD: "0",
+    BACKUP_RETENTION_CLASS: retentionClass,
+    BACKUP_DIR: fixture.backupDir,
+    BACKUP_FILE: fixture.database,
+    BACKUP_GLOBALS_FILE: fixture.globals,
+    BACKUP_ID: fixture.bundle,
+    COMMIT_SHA: fixture.commit,
+    ENVIRONMENT: "prod",
+    DB_NAME: "erp4",
+    DB_VERSION: "17.5",
+    SCHEMA_VERSION: "20260722000000_example",
+    APP_VERSION: "1.0.0-test",
+    GPG_RECIPIENT: "test-recipient",
+    BACKUP_SECONDARY_PROVIDER: "gdrive",
+    BACKUP_GDRIVE_CLIENT_ID: "sensitive-client-placeholder",
+    BACKUP_GDRIVE_CLIENT_SECRET: "sensitive-secret-placeholder",
+    BACKUP_GDRIVE_REFRESH_TOKEN: "sensitive-refresh-placeholder",
+    BACKUP_GDRIVE_SHARED_DRIVE_ID: "sensitive-drive-placeholder",
+    BACKUP_GDRIVE_FOLDER_ID: "sensitive-folder-placeholder",
+    FAKE_BAD_CHECKSUM: failPrimary ? "1" : "0",
+  });
+  return { ...fixture, ...secondary, env, result };
+}
+
+function secondaryRequestFiles(scenario) {
+  if (!existsSync(scenario.env.ERP4_TMP_DIR)) return [];
+  return readdirSync(scenario.env.ERP4_TMP_DIR).filter((name) =>
+    name.startsWith("backup-gdrive-request."),
+  );
+}
+
 test("Sakura readiness requires HTTPS endpoint and rejects unknown provider", () => {
   withScratch("backup-s3-config-", (dir) => {
     const env = fakeEnv(dir);
@@ -327,17 +423,13 @@ test("Sakura readiness requires HTTPS endpoint and rejects unknown provider", ()
     assert.notEqual(unknown.status, 0);
     assert.match(unknown.stderr, /S3_PROVIDER must be one of/);
 
-    const insecureAws = run(
-      "bash",
-      ["scripts/check-backup-s3-readiness.sh"],
-      {
-        ...env,
-        S3_PROVIDER: "aws",
-        S3_EXECUTION_MODE: "fake",
-        S3_ENDPOINT_URL: "http://aws-compatible.example.invalid",
-        S3_BUCKET: "bucket-placeholder",
-      },
-    );
+    const insecureAws = run("bash", ["scripts/check-backup-s3-readiness.sh"], {
+      ...env,
+      S3_PROVIDER: "aws",
+      S3_EXECUTION_MODE: "fake",
+      S3_ENDPOINT_URL: "http://aws-compatible.example.invalid",
+      S3_BUCKET: "bucket-placeholder",
+    });
     assert.notEqual(insecureAws.status, 0);
     assert.match(insecureAws.stderr, /credential-free HTTPS origin/);
 
@@ -660,10 +752,7 @@ test("Sakura upload requires encrypted files and uploads unique manifests", () =
       ["scripts/backup-prod.sh", "check"],
       {
         ...encryptedEnv,
-        BACKUP_FILE: path.join(
-          downloadDir,
-          `${path.basename(database)}.gpg`,
-        ),
+        BACKUP_FILE: path.join(downloadDir, `${path.basename(database)}.gpg`),
         BACKUP_MANIFEST_FILE: invalidManifest,
       },
     );
@@ -765,6 +854,88 @@ test("Sakura upload requires encrypted files and uploads unique manifests", () =
     });
     assert.notEqual(rejected.status, 0);
     assert.match(rejected.stderr, /not a valid OpenPGP message/);
+  });
+});
+
+test("Google Drive secondary runs only after a verified Sakura primary bundle", () => {
+  withScratch("backup-gdrive-secondary-success-", (dir) => {
+    const scenario = runSecondaryUploadScenario(dir);
+    assert.equal(
+      scenario.result.status,
+      0,
+      `${scenario.result.stderr}\n${scenario.result.stdout}`,
+    );
+    const calls = readFileSync(scenario.FAKE_GDRIVE_SECONDARY_LOG, "utf8");
+    assert.match(calls, /^check-config/m);
+    assert.match(calls, /^upload --request-file /m);
+    const request = JSON.parse(
+      readFileSync(`${scenario.FAKE_GDRIVE_SECONDARY_LOG}.request`, "utf8"),
+    );
+    assert.equal(request.artifacts.length, 3);
+    assert.equal(
+      request.artifacts.every((file) => file.endsWith(".gpg")),
+      true,
+    );
+    assert.doesNotMatch(
+      calls,
+      /sensitive-client|sensitive-secret|sensitive-refresh|sensitive-drive|sensitive-folder/,
+    );
+    assert.doesNotMatch(
+      `${scenario.result.stdout}\n${scenario.result.stderr}`,
+      /sensitive-|bucket-placeholder|s3\.example\.invalid/,
+    );
+    assert.deepEqual(secondaryRequestFiles(scenario), []);
+  });
+
+  for (const secondaryError of [
+    "google_drive_auth_expired",
+    "google_drive_quota",
+    "google_drive_retryable",
+    "google_drive_timeout",
+  ]) {
+    withScratch(`backup-gdrive-secondary-${secondaryError}-`, (dir) => {
+      const scenario = runSecondaryUploadScenario(dir, {
+        failSecondary: true,
+        secondaryError,
+      });
+      assert.notEqual(scenario.result.status, 0);
+      assert.match(scenario.result.stderr, new RegExp(secondaryError));
+      assert.match(
+        scenario.result.stderr,
+        /"status":"partial_failure","primary":"success","secondary":"failed"/,
+      );
+      assert.match(
+        readFileSync(scenario.env.FAKE_AWS_LOG, "utf8"),
+        /head-object/,
+      );
+      assert.match(
+        readFileSync(scenario.FAKE_GDRIVE_SECONDARY_LOG, "utf8"),
+        /^upload --request-file /m,
+      );
+      assert.deepEqual(secondaryRequestFiles(scenario), []);
+    });
+  }
+
+  withScratch("backup-gdrive-primary-failure-", (dir) => {
+    const scenario = runSecondaryUploadScenario(dir, { failPrimary: true });
+    assert.notEqual(scenario.result.status, 0);
+    const calls = readFileSync(scenario.FAKE_GDRIVE_SECONDARY_LOG, "utf8");
+    assert.match(calls, /^check-config/m);
+    assert.doesNotMatch(calls, /^upload /m);
+    assert.doesNotMatch(scenario.result.stderr, /partial_failure/);
+  });
+
+  withScratch("backup-gdrive-hourly-skip-", (dir) => {
+    const scenario = runSecondaryUploadScenario(dir, {
+      retentionClass: "hourly",
+    });
+    assert.equal(
+      scenario.result.status,
+      0,
+      `${scenario.result.stderr}\n${scenario.result.stdout}`,
+    );
+    assert.match(scenario.result.stdout, /secondary skipped for hourly/);
+    assert.equal(existsSync(scenario.FAKE_GDRIVE_SECONDARY_LOG), false);
   });
 });
 
@@ -893,8 +1064,7 @@ test("restore refuses to overwrite decrypted database, globals, or assets", () =
         DB_USER: "erp4",
         DB_PASSWORD: "sensitive-password-placeholder",
         DB_NAME: "isolated_restore",
-        BACKUP_FILE:
-          artifact === "database" ? `${database}.gpg` : database,
+        BACKUP_FILE: artifact === "database" ? `${database}.gpg` : database,
         BACKUP_GLOBALS_FILE:
           artifact === "globals" ? `${globals}.gpg` : globals,
         ...(artifact === "assets"
@@ -1148,7 +1318,10 @@ test("S3 upload refuses an implicit provider profile", () => {
       COMMIT_SHA: "deadbeefcafe",
     });
     assert.notEqual(unsafeName.status, 0);
-    assert.match(unsafeName.stderr, /BACKUP_ID contains unsupported characters/);
+    assert.match(
+      unsafeName.stderr,
+      /BACKUP_ID contains unsupported characters/,
+    );
   });
 });
 
