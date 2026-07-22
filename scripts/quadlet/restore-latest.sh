@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKUP_DIR="${QUADLET_BACKUP_DIR:-$HOME/.local/share/erp4/quadlet-backups}"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
+SYSTEMD_USER_TARGET_DIR="${SYSTEMD_USER_TARGET_DIR:-$HOME/.config/systemd/user}"
 OVERWRITE=0
 LIST_ONLY=0
 SKIP_DAEMON_RELOAD=0
@@ -18,6 +19,8 @@ Usage: $(basename "$0") [options]
   -h, --help             Show this help message and exit
   --backup-dir DIR       Directory that contains backup archives
   --target-dir DIR       Restore target directory (default: ~/.config/containers/systemd)
+  --systemd-user-target-dir DIR
+                         Register restored native units in DIR
   --overwrite            Allow restoring over existing files
   --list                 List entries from the latest archive and exit
   --skip-daemon-reload   Skip systemctl --user daemon-reload after restoring unit files
@@ -40,6 +43,11 @@ while [[ $# -gt 0 ]]; do
     --target-dir)
       [[ $# -ge 2 ]] || fail 'missing argument for --target-dir'
       TARGET_DIR="$2"
+      shift 2
+      ;;
+    --systemd-user-target-dir)
+      [[ $# -ge 2 ]] || fail 'missing argument for --systemd-user-target-dir'
+      SYSTEMD_USER_TARGET_DIR="$2"
       shift 2
       ;;
     --overwrite)
@@ -84,6 +92,7 @@ fi
 restore_args=(
   --archive "$latest_archive"
   --target-dir "$TARGET_DIR"
+  --systemd-user-target-dir "$SYSTEMD_USER_TARGET_DIR"
 )
 
 if [[ "$OVERWRITE" -eq 1 ]]; then

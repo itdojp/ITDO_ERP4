@@ -2,11 +2,33 @@
 set -euo pipefail
 
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
+SYSTEMD_USER_TARGET_DIR="${SYSTEMD_USER_TARGET_DIR:-$HOME/.config/systemd/user}"
 ARCHIVE=""
 OVERWRITE=0
 LIST_ONLY=0
 SKIP_DAEMON_RELOAD=0
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
+TARGET_MARKER_PREFIX='# X-ERP4-QuadletTarget='
+LEGACY_TARGET='%h/.config/containers/systemd'
+LEGACY_SHELL_TARGET='$HOME/.config/containers/systemd'
+NATIVE_UNITS=(
+  erp4-migrate.service
+  erp4-config-backup.service
+  erp4-config-backup.timer
+  erp4-db-backup.service
+  erp4-db-backup.timer
+  erp4-config-prune.service
+  erp4-config-prune.timer
+  erp4-storage-readiness.service
+  erp4-storage-readiness.timer
+)
+PATH_DEPENDENT_NATIVE_UNITS=(
+  erp4-migrate.service
+  erp4-config-backup.service
+  erp4-db-backup.service
+  erp4-config-prune.service
+  erp4-storage-readiness.service
+)
 
 usage() {
   cat <<USAGE
@@ -14,6 +36,8 @@ Usage: $(basename "$0") [options]
   -h, --help             Show this help message and exit
   --archive FILE         Backup archive created by backup-config.sh
   --target-dir DIR       Restore target directory (default: ~/.config/containers/systemd)
+  --systemd-user-target-dir DIR
+                         Register restored native units in DIR
   --overwrite            Allow restoring over existing files
   --list                 List archive contents and exit
   --skip-daemon-reload   Skip systemctl --user daemon-reload after restoring unit files
@@ -37,6 +61,118 @@ run_daemon_reload() {
   return 1
 }
 
+is_managed_native_unit() {
+  local candidate="$1"
+  local name
+  for name in "${NATIVE_UNITS[@]}"; do
+    [[ "$candidate" == "$name" ]] && return 0
+  done
+  return 1
+}
+
+is_path_dependent_native_unit() {
+  local candidate="$1"
+  local name
+  for name in "${PATH_DEPENDENT_NATIVE_UNITS[@]}"; do
+    [[ "$candidate" == "$name" ]] && return 0
+  done
+  return 1
+}
+
+validate_native_target_path() {
+  local path="$1"
+  [[ "$path" =~ ^/[A-Za-z0-9._/+:,-]+$ ]] || \
+    fail "native unit contains an unsafe Quadlet target path: $path"
+}
+
+preflight_native_unit_targets() {
+  local name content marker old_target occurrence_count
+  local -a markers=()
+  for name in "${restored_native_units[@]}"; do
+    is_path_dependent_native_unit "$name" || continue
+    content="$(tar -xOzf "$ARCHIVE" "$name")" || fail "could not read native unit from archive: $name"
+    markers=()
+    mapfile -t markers < <(grep -F "$TARGET_MARKER_PREFIX" <<<"$content" || true)
+    if [[ ${#markers[@]} -gt 1 ]]; then
+      fail "native unit contains multiple Quadlet target markers: $name"
+    fi
+    if [[ ${#markers[@]} -eq 1 ]]; then
+      marker="${markers[0]}"
+      [[ "$marker" == "$TARGET_MARKER_PREFIX"* ]] || fail "invalid Quadlet target marker: $name"
+      old_target="${marker#"$TARGET_MARKER_PREFIX"}"
+      validate_native_target_path "$old_target"
+    elif grep -Fq "$LEGACY_TARGET" <<<"$content"; then
+      old_target="$LEGACY_TARGET"
+    else
+      fail "native unit does not declare its Quadlet target path: $name"
+    fi
+    occurrence_count="$({ grep -Fo "$old_target" <<<"$content" || true; } | wc -l)"
+    [[ "$occurrence_count" -ge 2 || "$old_target" == "$LEGACY_TARGET" && "$occurrence_count" -ge 1 ]] || \
+      fail "native unit Quadlet target marker is not used by the unit: $name"
+    restored_native_unit_old_targets["$name"]="$old_target"
+  done
+}
+
+render_restored_native_unit_targets() {
+  local name source old_target temp_file line
+  for name in "${!restored_native_unit_old_targets[@]}"; do
+    source="$TARGET_DIR/$name"
+    old_target="${restored_native_unit_old_targets[$name]}"
+    temp_file="$(mktemp "$TARGET_DIR/.${name}.tmp.XXXXXX")" || fail "could not create temporary restored unit: $name"
+    if ! {
+      printf '%s%s\n' "$TARGET_MARKER_PREFIX" "$TARGET_DIR"
+      while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ "$line" == "$TARGET_MARKER_PREFIX"* ]] && continue
+        line="${line//"$old_target"/"$TARGET_DIR"}"
+        line="${line//"$LEGACY_SHELL_TARGET"/"$TARGET_DIR"}"
+        printf '%s\n' "$line"
+      done <"$source"
+    } >"$temp_file" || ! chmod 0644 "$temp_file" || ! mv -fT -- "$temp_file" "$source"; then
+      rm -f -- "$temp_file"
+      fail "could not render restored native unit target: $name"
+    fi
+  done
+}
+
+ensure_private_directory() {
+  local path="$1"
+  if [[ ! -d "$path" ]]; then
+    mkdir -p -- "$path"
+    chmod 0700 -- "$path"
+  fi
+}
+
+preflight_native_unit_links() {
+  local name source destination current_target
+  for name in "${restored_native_units[@]}"; do
+    source="$TARGET_DIR/$name"
+    destination="$SYSTEMD_USER_TARGET_DIR/$name"
+    [[ "$source" != "$destination" ]] || continue
+    if [[ -L "$destination" ]]; then
+      current_target="$(readlink "$destination")"
+      [[ "$current_target" == "$source" ]] || \
+        fail "native systemd unit symlink points outside the restore target: $destination -> $current_target"
+    elif [[ -e "$destination" ]]; then
+      fail "native systemd unit already exists and will not be overwritten: $destination"
+    fi
+  done
+}
+
+register_native_unit_links() {
+  local name source destination
+  [[ ${#restored_native_units[@]} -gt 0 ]] || return 0
+  ensure_private_directory "$SYSTEMD_USER_TARGET_DIR"
+  for name in "${restored_native_units[@]}"; do
+    source="$TARGET_DIR/$name"
+    destination="$SYSTEMD_USER_TARGET_DIR/$name"
+    [[ -f "$source" && ! -L "$source" ]] || fail "restored native unit is not a regular file: $source"
+    [[ "$source" != "$destination" ]] || continue
+    if [[ ! -L "$destination" ]]; then
+      ln -s -- "$source" "$destination"
+    fi
+  done
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --archive)
@@ -47,6 +183,11 @@ while [[ $# -gt 0 ]]; do
     --target-dir)
       [[ $# -ge 2 ]] || fail 'missing argument for --target-dir'
       TARGET_DIR="$2"
+      shift 2
+      ;;
+    --systemd-user-target-dir)
+      [[ $# -ge 2 ]] || fail 'missing argument for --systemd-user-target-dir'
+      SYSTEMD_USER_TARGET_DIR="$2"
       shift 2
       ;;
     --overwrite)
@@ -71,6 +212,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+command -v realpath >/dev/null 2>&1 || fail 'required command not found: realpath'
+[[ -n "$TARGET_DIR" ]] || fail 'target directory must not be empty'
+[[ -n "$SYSTEMD_USER_TARGET_DIR" ]] || fail 'systemd user target directory must not be empty'
+TARGET_DIR="$(realpath -m -- "$TARGET_DIR")"
+SYSTEMD_USER_TARGET_DIR="$(realpath -m -- "$SYSTEMD_USER_TARGET_DIR")"
+validate_native_target_path "$TARGET_DIR"
+
 [[ -n "$ARCHIVE" ]] || fail '--archive is required'
 [[ -f "$ARCHIVE" ]] || fail "archive not found: $ARCHIVE"
 command -v tar >/dev/null 2>&1 || fail 'required command not found: tar'
@@ -87,6 +235,8 @@ mapfile -t entry_details <<<"$entry_details_output"
 [[ ${#entry_details[@]} -eq ${#entries[@]} ]] || fail "archive metadata could not be verified: $ARCHIVE"
 
 requires_daemon_reload=0
+restored_native_units=()
+declare -A restored_native_unit_old_targets=()
 for i in "${!entries[@]}"; do
   entry="${entries[$i]}"
   detail="${entry_details[$i]}"
@@ -95,8 +245,11 @@ for i in "${!entries[@]}"; do
   [[ "$entry" != *'/'* ]] || fail "archive contains nested paths: $entry"
   [[ "$entry" != '.' && "$entry" != '..' ]] || fail "archive contains an invalid entry: $entry"
   [[ "${detail:0:1}" == "-" ]] || fail "archive contains a non-regular entry: $entry"
-  if [[ "$entry" =~ \.(container|service|volume|network)$ ]]; then
+  if [[ "$entry" =~ \.(container|service|timer|volume|network)$ ]]; then
     requires_daemon_reload=1
+  fi
+  if is_managed_native_unit "$entry"; then
+    restored_native_units+=("$entry")
   fi
 done
 
@@ -106,7 +259,8 @@ if [[ "$LIST_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
-mkdir -p -m 700 "$TARGET_DIR"
+preflight_native_unit_targets
+preflight_native_unit_links
 
 if [[ "$OVERWRITE" -eq 0 ]]; then
   collisions=()
@@ -126,7 +280,10 @@ if [[ "$SKIP_DAEMON_RELOAD" -eq 0 && "$requires_daemon_reload" -eq 1 ]]; then
   command -v "$SYSTEMCTL" >/dev/null 2>&1 || fail "required command not found: $SYSTEMCTL"
 fi
 
+ensure_private_directory "$TARGET_DIR"
 tar -C "$TARGET_DIR" --no-same-owner --no-same-permissions -xzf "$ARCHIVE"
+render_restored_native_unit_targets
+register_native_unit_links
 
 if [[ "$SKIP_DAEMON_RELOAD" -eq 0 && "$requires_daemon_reload" -eq 1 ]]; then
   run_daemon_reload

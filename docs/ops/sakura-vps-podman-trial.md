@@ -133,11 +133,16 @@ ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" ./scripts/quadlet/build-images
 
 ## 4. Quadlet 配置
 
+profileを先に固定する。非公開試験は `private-smoke`、HTTPS試験は `https-trial`、従来の本番相当構成は `production` を使う。
+
 ```bash
-./scripts/quadlet/install-user-units.sh
+PROFILE=private-smoke
+ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" \
+  ./scripts/quadlet/install-user-units.sh --profile "$PROFILE"
 ```
 
 `install-user-units.sh` は `deploy/quadlet/*.container` / `*.service` 内の `REPLACE_WITH_COMMIT_SHA` を `ERP4_IMAGE_TAG`（未指定時は現在の Git commit 短縮 SHA）で展開して配置します。`build-images.sh` と同じ tag を使うため、必要に応じて同じ `ERP4_IMAGE_TAG` を指定してください。
+`private-smoke` では非公開PostgreSQL overlayを選択してCaddyを配置しません。既存のCaddy artifactがある場合、installerはエラー終了し、running serviceの停止やartifactの削除は行いません。profile切替時は事前にbackupを取得し、`disable-stack.sh --include-proxy` とRunbookに沿った明示的な退避・削除を行ってください。
 
 配置先:
 
@@ -148,6 +153,8 @@ ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" ./scripts/quadlet/build-images
 - `~/.config/containers/systemd/*.timer`
 - `~/.config/containers/systemd/erp4-postgres.env`
 - `~/.config/containers/systemd/erp4-backend.env`
+
+`.service` / `.timer` は設定バックアップとの互換性のため上記ディレクトリにも保持しますが、Quadlet generatorの対象ではありません。installerはsystemd user managerが読み込めるよう、同じnative unitへの管理対象symlinkを `~/.config/systemd/user/` に登録します。既存の通常ファイルまたは別の参照先を持つsymlinkと競合した場合は上書きせず停止します。検証用に配置先を分離する場合は `SYSTEMD_USER_TARGET_DIR` または `--systemd-user-target-dir` を明示してください。install/restore/uninstall helperは、相対指定されたQuadlet targetとsystemd user targetを現在の作業ディレクトリ基準の絶対pathへ正規化してからmanaged linkを操作します。
 
 `erp4-postgres.env` の例:
 
@@ -194,7 +201,7 @@ REPORT_STORAGE_DIR=/var/lib/erp4/reports
 runtime env を編集したら、unit 起動前に検証します。
 
 ```bash
-./scripts/quadlet/check-env.sh
+./scripts/quadlet/check-env.sh --profile "$PROFILE"
 ```
 
 任意で backup / prune / DB backup 用の maintenance env を編集します。
@@ -215,13 +222,17 @@ ERP4_DB_BACKUP_SKIP_GLOBALS=0
 通常起動:
 
 ```bash
-./scripts/quadlet/start-stack.sh
+./scripts/quadlet/start-stack.sh --profile "$PROFILE"
 ```
 
-proxy も起動する場合:
+proxyを起動する場合は`private-smoke`のまま実行せず、HTTPS前提を満たした`https-trial`へ切り替えてunit/envを準備します。以下は初回起動前のprofile切替例です。
 
 ```bash
-./scripts/quadlet/start-stack.sh --include-proxy
+PROFILE=https-trial
+ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" \
+  ./scripts/quadlet/install-user-units.sh --profile "$PROFILE"
+./scripts/quadlet/check-env.sh --profile "$PROFILE"
+./scripts/quadlet/start-stack.sh --profile "$PROFILE" --include-proxy
 ```
 
 手動で分ける場合:
@@ -281,7 +292,7 @@ systemctl --user enable --now erp4-config-backup.timer
 systemctl --user list-timers erp4-config-backup.timer
 ```
 
-既定では毎日 03:15 に `erp4-config-backup.service` が実行され、`backup-and-check.sh --include-units` が呼ばれます。`ERP4_BACKUP_INCLUDE_PROXY=1` のときだけ proxy 設定も backup に含めます。backup 対象には `erp4-maintenance.env` も含まれ、`--include-units` を付けた実行では `erp4-config-backup.service` / `erp4-config-backup.timer` / `erp4-db-backup.service` / `erp4-db-backup.timer` / `erp4-config-prune.service` / `erp4-config-prune.timer` も archive に含まれます。
+既定では毎日 03:15 に `erp4-config-backup.service` が実行され、`backup-and-check.sh --include-units` が呼ばれます。`ERP4_BACKUP_INCLUDE_PROXY=1` のときだけ proxy 設定も backup に含めます。backup 対象には `erp4-maintenance.env` / `erp4-storage-readiness.env` も含まれ、`--include-units` を付けた実行ではconfig backup、DB backup、config prune、storage readinessの各service/timerもarchiveに含まれます。
 
 定期 DB backup を有効化する場合:
 
@@ -343,8 +354,8 @@ backup / prune を手動で 1 回実行する場合:
 再起動する場合:
 
 ```bash
-./scripts/quadlet/restart-stack.sh
-./scripts/quadlet/restart-stack.sh --include-proxy
+./scripts/quadlet/restart-stack.sh --profile "$PROFILE"
+./scripts/quadlet/restart-stack.sh --profile "$PROFILE" --include-proxy
 ```
 
 `restart-stack.sh` は `stop-stack.sh` と `start-stack.sh` を直列実行します。`--include-proxy` を付けると `erp4-caddy.service` も再起動対象に含まれます。さらに `--skip-stack-check` を指定していない場合のみ、post-start 確認として `status-stack.sh --include-proxy` まで実行します。`--skip-env-check` と `--skip-stack-check` は `start-stack.sh` に透過的に渡されるため、`--skip-stack-check` 指定時は proxy を含む post-start の状態確認も省略されます。
@@ -366,11 +377,13 @@ Quadlet の unit 定義ファイル自体を取り除く場合:
 ./scripts/quadlet/uninstall-stack.sh --include-proxy --purge-config
 ```
 
-`uninstall-stack.sh` は `disable-stack.sh` を先に実行したうえで、`~/.config/containers/systemd/` 配下の Quadlet unit 定義を削除し、最後に `systemctl --user daemon-reload` で user manager の定義キャッシュを更新します。既定では `erp4-postgres.env` / `erp4-backend.env` / `erp4-caddy.env` / `erp4-caddy.Caddyfile` / `erp4-frontend-build.env` は保持します。secret やドメイン設定、frontend build 用 env も消したい場合だけ `--purge-config` を使ってください。Podman volume やイメージ、アプリケーションデータ自体は削除しません。
+`uninstall-stack.sh` は `disable-stack.sh` を先に実行したうえで、installerが登録したmigrate、backup、prune、storage readinessのnative service/timerを停止・無効化します。その後、`~/.config/containers/systemd/` 配下の管理対象unit定義、PostgreSQL unit state、`~/.config/systemd/user/` 配下の管理対象symlinkを削除し、最後に `systemctl --user daemon-reload` でuser managerの定義キャッシュを更新します。別の参照先を持つsymlinkや通常ファイルは停止・削除しません。既定では `erp4-postgres.env` / `erp4-backend.env` / `erp4-frontend-build.env` / `erp4-maintenance.env` / `erp4-storage-readiness.env` と、proxy用の `erp4-caddy.env` / `erp4-caddy.Caddyfile` を保持します。これらのsecret、保守設定、ドメイン設定、frontend build用envも消したい場合だけ `--purge-config` を使ってください。Podman volumeやイメージ、アプリケーションデータ自体は削除しません。
+
+`install-user-units.sh --target-dir` はnative service内部の`EnvironmentFile`、migrationの`--env-file`、backupの`QUADLET_TARGET_DIR`へ、正規化済みの同じ絶対pathを埋め込みます。unit構文へ安全に埋め込めない文字を含むtarget pathは部分install前に拒否します。`--include-units` backup内のpath依存serviceには配置先markerを保持し、`restore-config.sh`はarchive展開前にmarkerを検証したうえで、新しいrestore targetへ全参照を再配置します。これにより非既定targetへrestore/rollbackしても、native lifecycleが既定の`~/.config/containers/systemd/`を参照しません。
 
 ## 5.1 設定バックアップ
 
-stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の env/config を tar.gz で退避できます。既定では backend/frontend/postgres 用の env を対象にし、`--include-proxy` で Caddy 設定、`--include-units` で Quadlet 定義も含めます。既定の出力先は `~/.local/share/erp4/quadlet-backups/` です。
+stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の env/config を tar.gz で退避できます。既定ではbackend、frontend build、PostgreSQL、maintenance、storage readiness用のenvを対象にし、`--include-proxy` でCaddy設定、`--include-units` でQuadlet定義も含めます。maintenanceとstorage readinessのenvにはbackup保存先、保持設定、provider/readiness設定などの機微情報が含まれ得るため、archive全体をsecretとして扱います。既定の出力先は `~/.local/share/erp4/quadlet-backups/` です。
 
 ```bash
 ./scripts/quadlet/backup-config.sh
@@ -380,9 +393,9 @@ stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の 
 ./scripts/quadlet/backup-and-check.sh --include-proxy --include-units --list --print-archive
 ```
 
-`backup-and-check.sh` は `backup-config.sh` で archive を生成した直後に、同じ archive を `check-backup.sh` で検証します。生成される tar.gz には DB 接続情報や JWT secret などの機微情報が含まれる可能性があるため、保存先は第三者から見えない場所を選んでください。`backup-config.sh` は出力先ディレクトリを `0700`、archive を `0600` に寄せますが、外部へコピーする場合も同等の権限制御を前提にしてください。
+`backup-and-check.sh` は `backup-config.sh` で archive を生成した直後に、同じ archive を `check-backup.sh` で検証します。既定link modeのunitは、`deploy/quadlet/` 配下を参照するinstaller管理symlinkだけをdereferenceし、archive内ではregular fileとして保存します。env/config symlinkや管理対象外を指すunit symlinkはfail-closedで拒否します。`--include-units` はstorage readinessのservice/timerも含み、復元元repositoryがなくてもunit定義を復元できます。生成されるtar.gzにはDB接続情報やJWT secretなどの機微情報が含まれる可能性があるため、保存先は第三者から見えない場所を選んでください。`backup-config.sh` は出力先ディレクトリを `0700`、archiveを `0600` に寄せますが、外部へコピーする場合も同等の権限制御を前提にしてください。
 
-復元する場合は、archive 内容を確認したうえで `restore-config.sh` を使います。既存ファイルがある場合は既定で停止するため、上書きが必要な場合だけ `--overwrite` を付けてください。unit 定義を含む archive を戻すときは、既定で `systemctl --user daemon-reload` まで実行します。
+復元する場合は、archive 内容を確認したうえで `restore-config.sh` を使います。既存ファイルがある場合は既定で停止するため、上書きが必要な場合だけ `--overwrite` を付けてください。unit 定義を含む archive を戻すときは、migrate、backup、prune、storage readinessのnative service/timerを `SYSTEMD_USER_TARGET_DIR`（既定 `~/.config/systemd/user/`）へ管理対象symlinkとして再登録してから、`systemctl --user daemon-reload` を実行します。既存の通常ファイルまたは別の参照先を持つsymlinkとは競合前に停止し、部分復元しません。検証用に配置先を分離する場合は `--systemd-user-target-dir` を指定してください。`--skip-daemon-reload`はreloadだけを省略し、symlink登録は省略しません。
 
 ```bash
 ./scripts/quadlet/restore-config.sh --archive ~/.local/share/erp4/quadlet-backups/erp4-quadlet-config-YYYYMMDD-HHMMSS.tar.gz --list
@@ -391,9 +404,11 @@ stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の 
 ./scripts/quadlet/restore-latest.sh --list --print-archive
 ./scripts/quadlet/restore-latest.sh --print-archive
 ./scripts/quadlet/restore-latest.sh --overwrite --print-archive
-./scripts/quadlet/rollback-latest.sh --print-archive --skip-restart
-./scripts/quadlet/rollback-latest.sh --include-proxy --skip-env-check
+./scripts/quadlet/rollback-latest.sh --profile "$PROFILE" --print-archive --skip-restart
+./scripts/quadlet/rollback-latest.sh --profile "$PROFILE" --include-proxy --skip-env-check
 ```
+
+検証用に native systemd user unit の配置先を既定以外へ分離している場合は、`restore-latest.sh` / `rollback-latest.sh` にも `--systemd-user-target-dir <dir>` を付けて、復元時のmanaged symlink再登録先を install/uninstall と一致させてください。
 
 バックアップ archive が増えた場合は、`prune-backups.sh` で保持数または保持日数に合わせて削除できます。`--keep-count` と `--keep-days` は併用でき、その場合はいずれかの条件を満たす archive を保持します。削除対象を先に確認したい場合は `--dry-run` を使ってください。
 
@@ -435,12 +450,12 @@ git fetch origin
 git checkout main
 git pull --ff-only
 # 次のいずれか 1 つを選んで実行
-./scripts/quadlet/update-stack.sh
-./scripts/quadlet/update-stack.sh --backup-before-update
-./scripts/quadlet/update-stack.sh --backup-before-update --include-proxy
+./scripts/quadlet/update-stack.sh --profile "$PROFILE"
+./scripts/quadlet/update-stack.sh --profile "$PROFILE" --backup-before-update
+./scripts/quadlet/update-stack.sh --profile "$PROFILE" --backup-before-update --include-proxy
 ```
 
-`update-stack.sh` は必要に応じて `--backup-before-update` で `backup-and-check.sh --include-units` を先行実行し、その後 `build-images.sh` を実行して `erp4-migrate.service` / `erp4-backend.service` / `erp4-frontend.service` を順に再起動します。`--include-proxy` を付けると backup 対象にも proxy 設定を含め、`erp4-caddy.service` も再起動します。post-update 確認は `check-stack.sh` を実行し、`--include-proxy` 指定時は追加で `status-stack.sh --include-proxy` を実行して proxy を含む稼働状況を確認します。`--skip-build` と `--skip-stack-check` を付けると、イメージ再ビルドや post-update 確認を個別に省略できます。`BACKUP_AND_CHECK` / `BUILD_IMAGES` / `CHECK_STACK` / `STATUS_STACK` / `SYSTEMCTL` を環境変数で差し替えると、ローカル検証や運用フローの置き換えがしやすくなります。
+`update-stack.sh` は必要に応じて `--backup-before-update` で `backup-and-check.sh --include-units` を先行実行し、その後 `build-images.sh` とprofile-awareなunit installを実行して、`erp4-migrate.service` / `erp4-backend.service` / `erp4-frontend.service` を順に再起動します。`start-stack.sh` / `update-stack.sh` は最後に正常起動したPostgreSQL unitのcontent hashをowner-onlyのregular file `erp4-postgres-unit.sha256` へ原子的に記録します。symlinkやdirectoryなどregular file以外の既存state pathはlifecycle操作前に拒否します。更新時のdesired hashが記録値と異なる場合だけ `erp4-postgres.service` も先に再起動し、`pg_isready` 成功後に記録値を更新してmigrationへ進みます。これによりproduction/https-trialとprivate-smokeの切替だけでなく、既定link-modeで同じsource pathの内容が変わった場合も旧定義を残しません。state fileが未作成の既存環境では初回update時に安全側で1回再起動します。このstate fileはsecretや復元入力ではないためbackup archiveへ含めず、start/restart/rollback後に現在のunitから再生成します。`--include-proxy` を付けるとbackup対象にもproxy設定を含め、`erp4-caddy.service` も再起動します。post-update確認は `check-stack.sh` を実行し、`--include-proxy` 指定時は追加で `status-stack.sh --include-proxy` を実行してproxyを含む稼働状況を確認します。`--skip-build` と `--skip-stack-check` を付けると、イメージ再ビルドやpost-update確認を個別に省略できます。`BACKUP_AND_CHECK` / `BUILD_IMAGES` / `INSTALL_UNITS` / `CHECK_STACK` / `STATUS_STACK` / `SYSTEMCTL` / `PODMAN` を環境変数で差し替えると、ローカル検証や運用フローの置き換えがしやすくなります。
 
 DB migration を伴う更新では、`erp4-migrate.service` 完了を確認してから backend を再起動します。
 

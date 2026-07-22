@@ -18,6 +18,7 @@ SKIP_BUILD_IMAGES=0
 SKIP_START=0
 SKIP_GIT_UPDATE=0
 UPDATE_EXISTING=0
+PROFILE="${SAKURA_VPS_PROFILE:-production}"
 
 usage() {
   cat <<USAGE
@@ -36,6 +37,7 @@ Options:
   --branch NAME                   Git branch (default: $BRANCH)
   --target-dir DIR                Quadlet target directory (default: $TARGET_DIR)
   --frontend-build-env FILE       Frontend build env file
+  --profile NAME                  Use production, private-smoke, or https-trial
   --include-proxy                 Include Caddy/proxy validation and start/update
   --update-existing               Use scripts/quadlet/update-stack.sh instead of start-stack.sh
   --skip-git-update               Do not run git fetch/checkout/pull
@@ -57,7 +59,7 @@ check_no_placeholders() {
 
 run_check() {
   printf '# ERP4 Sakura VPS deploy check (%s)\n' "$(ops_timestamp)"
-  [[ -d "$REPO_DIR/.git" ]] || ops_fail "repo-dir is not a git checkout: $REPO_DIR"
+  git -C "$REPO_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 || ops_fail "repo-dir is not a git checkout: $REPO_DIR"
   ops_info "repo HEAD: $(git -C "$REPO_DIR" rev-parse --short HEAD)"
   git -C "$REPO_DIR" status --short --branch
 
@@ -74,7 +76,7 @@ run_check() {
     ops_warn "maintenance env not found yet: $TARGET_DIR/erp4-maintenance.env"
   fi
 
-  "$REPO_DIR/scripts/quadlet/check-env.sh" --target-dir "$TARGET_DIR" --frontend-build-env "$FRONTEND_BUILD_ENV"
+  "$REPO_DIR/scripts/quadlet/check-env.sh" --profile "$PROFILE" --target-dir "$TARGET_DIR" --frontend-build-env "$FRONTEND_BUILD_ENV"
   if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
     "$REPO_DIR/scripts/quadlet/check-proxy.sh" --target-dir "$TARGET_DIR"
     "$REPO_DIR/scripts/quadlet/check-host-prereqs.sh"
@@ -93,27 +95,27 @@ run_deploy() {
     ops_run "$MODE" npm ci --prefix "$REPO_DIR/packages/frontend"
   fi
 
-  ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$REPO_DIR/scripts/quadlet/check-env.sh" --target-dir "$TARGET_DIR" --skip-runtime --frontend-build-env "$FRONTEND_BUILD_ENV"
+  ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$REPO_DIR/scripts/quadlet/check-env.sh" --profile "$PROFILE" --target-dir "$TARGET_DIR" --skip-runtime --frontend-build-env "$FRONTEND_BUILD_ENV"
   if [[ "$SKIP_BUILD_IMAGES" -eq 0 ]]; then
     ops_run "$MODE" env FRONTEND_BUILD_ENV_FILE="$FRONTEND_BUILD_ENV" "$REPO_DIR/scripts/quadlet/build-images.sh"
   fi
 
   if [[ "$SKIP_START" -eq 0 ]]; then
-    ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$REPO_DIR/scripts/quadlet/install-user-units.sh"
     local stack_cmd
     if [[ "$UPDATE_EXISTING" -eq 1 ]]; then
       stack_cmd="$REPO_DIR/scripts/quadlet/update-stack.sh"
       if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
-        ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$stack_cmd" --include-proxy --skip-build
+        ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$stack_cmd" --profile "$PROFILE" --include-proxy --skip-build
       else
-        ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$stack_cmd" --skip-build
+        ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$stack_cmd" --profile "$PROFILE" --skip-build
       fi
     else
       stack_cmd="$REPO_DIR/scripts/quadlet/start-stack.sh"
+      ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$REPO_DIR/scripts/quadlet/install-user-units.sh" --profile "$PROFILE"
       if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
-        ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$stack_cmd" --include-proxy
+        ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$stack_cmd" --profile "$PROFILE" --include-proxy
       else
-        ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$stack_cmd"
+        ops_run "$MODE" env QUADLET_TARGET_DIR="$TARGET_DIR" "$stack_cmd" --profile "$PROFILE"
       fi
     fi
   fi
@@ -159,6 +161,11 @@ while [[ $# -gt 0 ]]; do
       FRONTEND_BUILD_ENV="$2"
       shift 2
       ;;
+    --profile)
+      ops_require_arg "$1" "${2:-}"
+      PROFILE="$2"
+      shift 2
+      ;;
     --include-proxy)
       INCLUDE_PROXY=1
       shift
@@ -192,6 +199,17 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+case "$PROFILE" in
+  production|private-smoke|https-trial) ;;
+  *) ops_fail "unknown profile: $PROFILE" ;;
+esac
+if [[ "$PROFILE" == "private-smoke" && "$INCLUDE_PROXY" -eq 1 ]]; then
+  ops_fail 'private-smoke must not include proxy'
+fi
+if [[ "$PROFILE" == "https-trial" && "$INCLUDE_PROXY" -eq 0 ]]; then
+  ops_fail 'https-trial requires --include-proxy'
+fi
 
 case "$MODE" in
   check)

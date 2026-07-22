@@ -2,11 +2,17 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-CHECK_ENV="$ROOT_DIR/scripts/quadlet/check-env.sh"
-CHECK_PROXY="$ROOT_DIR/scripts/quadlet/check-proxy.sh"
-CHECK_STACK="$ROOT_DIR/scripts/quadlet/check-stack.sh"
-STATUS_STACK="$ROOT_DIR/scripts/quadlet/status-stack.sh"
+# shellcheck source=lib/unit-state.sh
+source "$ROOT_DIR/scripts/quadlet/lib/unit-state.sh"
+CHECK_ENV="${CHECK_ENV:-$ROOT_DIR/scripts/quadlet/check-env.sh}"
+CHECK_PROXY="${CHECK_PROXY:-$ROOT_DIR/scripts/quadlet/check-proxy.sh}"
+CHECK_STACK="${CHECK_STACK:-$ROOT_DIR/scripts/quadlet/check-stack.sh}"
+STATUS_STACK="${STATUS_STACK:-$ROOT_DIR/scripts/quadlet/status-stack.sh}"
+SYSTEMCTL="${SYSTEMCTL:-systemctl}"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
+POSTGRES_UNIT="$TARGET_DIR/erp4-postgres.container"
+POSTGRES_UNIT_STATE="$TARGET_DIR/erp4-postgres-unit.sha256"
+PROFILE="${SAKURA_VPS_PROFILE:-production}"
 SKIP_ENV_CHECK=0
 SKIP_STACK_CHECK=0
 INCLUDE_PROXY=0
@@ -17,6 +23,7 @@ Usage: $(basename "$0") [options]
   --skip-env-check        Skip environment validation performed by check-env.sh
   --skip-build-env-check  Deprecated alias for --skip-env-check
   --skip-stack-check      Skip post-start validation performed by check-stack.sh
+  --profile NAME          Use production, private-smoke, or https-trial validation
   --include-proxy         Enable/start erp4-caddy.service; validate proxy config unless --skip-env-check is set
 USAGE
 }
@@ -28,7 +35,7 @@ fail() {
 
 run_systemctl_user() {
   local output
-  if output="$(systemctl --user "$@" 2>&1)"; then
+  if output="$("$SYSTEMCTL" --user "$@" 2>&1)"; then
     return 0
   fi
   if grep -Fq 'Failed to connect to bus' <<<"$output"; then
@@ -36,6 +43,13 @@ run_systemctl_user() {
   fi
   printf '%s\n' "$output" >&2
   return 1
+}
+
+record_postgres_unit_state() {
+  local digest
+  digest="$(erp4_unit_content_sha256 "$POSTGRES_UNIT")" || fail "PostgreSQL unit not found: $POSTGRES_UNIT"
+  erp4_write_unit_state "$POSTGRES_UNIT_STATE" "$digest" || \
+    fail "could not record PostgreSQL unit state: $POSTGRES_UNIT_STATE"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -47,6 +61,11 @@ while [[ $# -gt 0 ]]; do
     --skip-stack-check)
       SKIP_STACK_CHECK=1
       shift
+      ;;
+    --profile)
+      [[ $# -ge 2 ]] || fail 'missing argument for --profile'
+      PROFILE="$2"
+      shift 2
       ;;
     --include-proxy)
       INCLUDE_PROXY=1
@@ -62,7 +81,21 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-command -v systemctl >/dev/null 2>&1 || fail 'required command not found: systemctl'
+case "$PROFILE" in
+  production|private-smoke|https-trial) ;;
+  *) fail "unknown profile: $PROFILE" ;;
+esac
+if [[ "$PROFILE" == "private-smoke" && "$INCLUDE_PROXY" -eq 1 ]]; then
+  fail 'private-smoke must not include proxy'
+fi
+if [[ "$PROFILE" == "https-trial" && "$INCLUDE_PROXY" -eq 0 ]]; then
+  fail 'https-trial requires --include-proxy'
+fi
+
+command -v "$SYSTEMCTL" >/dev/null 2>&1 || fail "required command not found: $SYSTEMCTL"
+[[ ! -L "$POSTGRES_UNIT_STATE" ]] || fail "PostgreSQL unit state must not be a symlink: $POSTGRES_UNIT_STATE"
+[[ ! -e "$POSTGRES_UNIT_STATE" || -f "$POSTGRES_UNIT_STATE" ]] || \
+  fail "PostgreSQL unit state must be a regular file: $POSTGRES_UNIT_STATE"
 if [[ "$INCLUDE_PROXY" -eq 1 && "$SKIP_STACK_CHECK" -eq 0 ]]; then
   [[ -x "$STATUS_STACK" ]] || fail "status stack script is not executable: $STATUS_STACK"
 fi
@@ -71,7 +104,7 @@ if [[ "$INCLUDE_PROXY" -eq 1 && "$SKIP_ENV_CHECK" -eq 0 ]]; then
 fi
 
 if [[ "$SKIP_ENV_CHECK" -eq 0 ]]; then
-  "$CHECK_ENV" --target-dir "$TARGET_DIR"
+  "$CHECK_ENV" --profile "$PROFILE" --target-dir "$TARGET_DIR"
   if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
     "$CHECK_PROXY" --target-dir "$TARGET_DIR"
   fi
@@ -83,6 +116,7 @@ run_systemctl_user enable --now \
   erp4-migrate.service \
   erp4-backend.service \
   erp4-frontend.service
+record_postgres_unit_state
 
 if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
   run_systemctl_user enable --now erp4-caddy.service

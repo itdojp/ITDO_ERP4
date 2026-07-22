@@ -3,6 +3,11 @@
 ## Profile selection
 
 - `private-smoke` / `https-trial` のどちらで実施したかを記録し、[sakura-vps-trial-profiles](sakura-vps-trial-profiles.md) の禁止設定に反していないことを確認する。
+- 以降の例では `PROFILE=private-smoke` または `PROFILE=https-trial` を最初に固定し、install / start / restart / update / readiness / evidence のすべてに同じ値を渡す。
+
+```bash
+PROFILE=private-smoke
+```
 
 ## 目的
 
@@ -39,7 +44,7 @@ cd /opt/itdo/ITDO_ERP4
 ### 2. build-time env 検証
 
 ```bash
-./scripts/quadlet/check-env.sh --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
+./scripts/quadlet/check-env.sh --profile "$PROFILE" --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
 ```
 
 ### 3. イメージ build
@@ -58,10 +63,12 @@ cd /opt/itdo/ITDO_ERP4
 ### 4. Quadlet unit 配置
 
 ```bash
-./scripts/quadlet/install-user-units.sh
+ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" \
+  ./scripts/quadlet/install-user-units.sh --profile "$PROFILE"
 ```
 
 `install-user-units.sh` は backend / frontend / migrate の local image tag を `ERP4_IMAGE_TAG`（未指定時は現在の Git commit 短縮 SHA）で展開します。`build-images.sh` に `ERP4_IMAGE_TAG` を指定した場合は、unit 配置時にも同じ値を指定します。
+`private-smoke` では PostgreSQL の非公開overlayを選択し、Caddy artifactを配置しません。既存Caddy設定を検出した場合は無断削除せず停止するため、profile切り替え時は先に設定backupと明示的なproxy無効化を行います。
 
 確認対象:
 
@@ -70,15 +77,17 @@ cd /opt/itdo/ITDO_ERP4
 - `~/.config/containers/systemd/erp4-frontend.container`
 - 必要時:
   - `~/.config/containers/systemd/erp4-caddy.container`
-  - `~/.config/containers/systemd/erp4-config-backup.timer`
-  - `~/.config/containers/systemd/erp4-db-backup.timer`
+  - `~/.config/systemd/user/erp4-config-backup.timer`
+  - `~/.config/systemd/user/erp4-db-backup.timer`
+
+native `.service` / `.timer` は `~/.config/containers/systemd/` 側の管理対象ファイルを参照するsymlinkとして `~/.config/systemd/user/` に登録される。path依存のnative serviceはinstall時に選択した絶対`QUADLET_TARGET_DIR`を埋め込み、unit内部の`EnvironmentFile`、migrationの`--env-file`、backup処理のtargetを同じ配置先へ揃える。通常ファイルまたは別の参照先との競合時はinstallerが上書きせず停止する。
 
 ### 5. runtime env / proxy 設定の編集と検証
 
 `install-user-units.sh` 実行後に、`~/.config/containers/systemd/` 配下の runtime env と必要時の proxy 設定を編集してから検証する。
 
 ```bash
-./scripts/quadlet/check-env.sh
+./scripts/quadlet/check-env.sh --profile "$PROFILE"
 ```
 
 公開ドメイン確認まで含める場合:
@@ -92,13 +101,13 @@ cd /opt/itdo/ITDO_ERP4
 通常:
 
 ```bash
-./scripts/quadlet/start-stack.sh
+./scripts/quadlet/start-stack.sh --profile "$PROFILE"
 ```
 
 proxy も起動する場合:
 
 ```bash
-./scripts/quadlet/start-stack.sh --include-proxy
+./scripts/quadlet/start-stack.sh --profile "$PROFILE" --include-proxy
 ```
 
 ### 7. 受入確認
@@ -106,13 +115,13 @@ proxy も起動する場合:
 通常:
 
 ```bash
-./scripts/quadlet/check-trial-readiness.sh
+./scripts/quadlet/check-trial-readiness.sh --profile "$PROFILE"
 ```
 
 proxy / 公開ドメイン仮確認を含める場合:
 
 ```bash
-./scripts/quadlet/check-trial-readiness.sh --include-proxy --resolve-ip <VPS_IP>
+./scripts/quadlet/check-trial-readiness.sh --profile "$PROFILE" --include-proxy --resolve-ip <VPS_IP>
 ```
 
 補足:
@@ -125,13 +134,13 @@ proxy / 公開ドメイン仮確認を含める場合:
 通常:
 
 ```bash
-./scripts/quadlet/collect-trial-evidence.sh --lines 100
+./scripts/quadlet/collect-trial-evidence.sh --profile "$PROFILE" --lines 100
 ```
 
 proxy を含める場合:
 
 ```bash
-./scripts/quadlet/collect-trial-evidence.sh --include-proxy --resolve-ip <VPS_IP>
+./scripts/quadlet/collect-trial-evidence.sh --profile "$PROFILE" --include-proxy --resolve-ip <VPS_IP>
 ```
 
 記録ファイルのたたき台を生成する場合:
@@ -192,7 +201,7 @@ proxy を含める場合:
 既存設定へ戻す必要がある場合:
 
 ```bash
-./scripts/quadlet/rollback-latest.sh --skip-stack-check
+./scripts/quadlet/rollback-latest.sh --profile "$PROFILE" --skip-stack-check
 ```
 
 設定だけ戻す場合:

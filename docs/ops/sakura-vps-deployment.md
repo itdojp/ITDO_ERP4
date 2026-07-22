@@ -272,10 +272,13 @@ Google OIDC の backend redirect フローだけを使う場合、`VITE_GOOGLE_C
 ```bash
 ./scripts/quadlet/check-env.sh --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
 ./scripts/quadlet/build-images.sh
-./scripts/quadlet/install-user-units.sh
+./scripts/quadlet/install-user-units.sh --profile production
 ```
 
+非公開の導入リハーサルでは、上記の `production` を `private-smoke` に置き換える。profileはinstallだけでなくcheck/start/restart/updateにも同じ値を渡す。`private-smoke` installerはCaddyを配置せず、既存Caddy artifactを検出した場合は安全のため停止する。
+
 runtime env は `~/.config/containers/systemd/` 配下で管理する。
+Quadlet sourceも同ディレクトリへ配置し、native `.service` / `.timer` はinstallerが `~/.config/systemd/user/` へ管理対象symlinkとして登録する。Quadlet generatorはnative unitを生成しないため、手動配置時に両者を混同しない。
 
 重要:
 
@@ -290,7 +293,7 @@ runtime env は `~/.config/containers/systemd/` 配下で管理する。
 確認:
 
 ```bash
-./scripts/quadlet/check-env.sh
+./scripts/quadlet/check-env.sh --profile production
 ./scripts/quadlet/check-proxy.sh
 ```
 
@@ -313,15 +316,15 @@ sudo sysctl --system
 proxyなしの内部確認:
 
 ```bash
-./scripts/quadlet/start-stack.sh
-./scripts/quadlet/check-trial-readiness.sh
+./scripts/quadlet/start-stack.sh --profile private-smoke
+./scripts/quadlet/check-trial-readiness.sh --profile private-smoke
 ```
 
 HTTPS proxy込み:
 
 ```bash
-./scripts/quadlet/start-stack.sh --include-proxy
-./scripts/quadlet/check-trial-readiness.sh --include-proxy --resolve-ip <VPS_IP>
+./scripts/quadlet/start-stack.sh --profile https-trial --include-proxy
+./scripts/quadlet/check-trial-readiness.sh --profile https-trial --include-proxy --resolve-ip <VPS_IP>
 ```
 
 DNS反映後:

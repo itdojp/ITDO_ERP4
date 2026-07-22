@@ -134,8 +134,13 @@ test('Quadlet scripts build and install commit-derived application image tags', 
 
   assert.match(
     installUnits,
-    /sed "s\/REPLACE_WITH_COMMIT_SHA\/\$\{ERP4_IMAGE_TAG\}\/g"/,
+    /-e "s\|REPLACE_WITH_COMMIT_SHA\|\$\{ERP4_IMAGE_TAG\}\|g"/,
   );
+  assert.match(
+    installUnits,
+    /-e "s\|\/REPLACE_WITH_QUADLET_TARGET_DIR\|\$\{TARGET_DIR\}\|g"/,
+  );
+  assert.match(installUnits, /mv -fT -- "\$temp_file" "\$dst"/);
   assert.match(updateStack, /INSTALL_UNITS=/);
   assert.match(updateStack, /run_install_units/);
 });

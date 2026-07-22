@@ -5,10 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-# X-ERP4-QuadletTarget=/REPLACE_WITH_QUADLET_TARGET_DIR
-EnvironmentFile=/REPLACE_WITH_QUADLET_TARGET_DIR/erp4-maintenance.env
-EnvironmentFile=-/REPLACE_WITH_QUADLET_TARGET_DIR/erp4-backend.env
-EnvironmentFile=/REPLACE_WITH_QUADLET_TARGET_DIR/erp4-storage-readiness.env
+EnvironmentFile=%h/.config/containers/systemd/erp4-maintenance.env
+EnvironmentFile=-%h/.config/containers/systemd/erp4-backend.env
+EnvironmentFile=%h/.config/containers/systemd/erp4-storage-readiness.env
 ExecStart=/usr/bin/bash -c 'set -euo pipefail; cd "$ERP4_REPO_DIR"; ./scripts/storage-readiness.sh --format json'
 SyslogIdentifier=erp4-storage-readiness
 UMask=0077

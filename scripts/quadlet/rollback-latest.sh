@@ -6,12 +6,14 @@ RESTORE_LATEST="${RESTORE_LATEST:-$SCRIPT_DIR/restore-latest.sh}"
 RESTART_STACK="${RESTART_STACK:-$SCRIPT_DIR/restart-stack.sh}"
 BACKUP_DIR="${QUADLET_BACKUP_DIR:-$HOME/.local/share/erp4/quadlet-backups}"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
+SYSTEMD_USER_TARGET_DIR="${SYSTEMD_USER_TARGET_DIR:-$HOME/.config/systemd/user}"
 INCLUDE_PROXY=0
 PRINT_ARCHIVE=0
 SKIP_RESTART=0
 SKIP_DAEMON_RELOAD=0
 SKIP_ENV_CHECK=0
 SKIP_STACK_CHECK=0
+PROFILE="${SAKURA_VPS_PROFILE:-production}"
 
 usage() {
   cat <<USAGE
@@ -19,7 +21,10 @@ Usage: $(basename "$0") [options]
   -h, --help             Show this help message and exit
   --backup-dir DIR       Directory that contains backup archives
   --target-dir DIR       Restore target directory (default: ~/.config/containers/systemd)
+  --systemd-user-target-dir DIR
+                         Pass through to restore-latest.sh
   --include-proxy        Restart erp4-caddy.service after restore
+  --profile NAME         Use production, private-smoke, or https-trial when restarting
   --print-archive        Print the selected archive path before restore
   --skip-daemon-reload   Pass through to restore-latest.sh
   --skip-restart         Restore config only; do not restart the stack
@@ -46,9 +51,19 @@ while [[ $# -gt 0 ]]; do
       TARGET_DIR="$2"
       shift 2
       ;;
+    --systemd-user-target-dir)
+      [[ $# -ge 2 ]] || fail 'missing argument for --systemd-user-target-dir'
+      SYSTEMD_USER_TARGET_DIR="$2"
+      shift 2
+      ;;
     --include-proxy)
       INCLUDE_PROXY=1
       shift
+      ;;
+    --profile)
+      [[ $# -ge 2 ]] || fail 'missing argument for --profile'
+      PROFILE="$2"
+      shift 2
       ;;
     --print-archive)
       PRINT_ARCHIVE=1
@@ -80,11 +95,29 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+case "$PROFILE" in
+  production|private-smoke|https-trial) ;;
+  *) fail "unknown profile: $PROFILE" ;;
+esac
+if [[ "$PROFILE" == "private-smoke" && "$INCLUDE_PROXY" -eq 1 ]]; then
+  fail 'private-smoke must not include proxy'
+fi
+if [[ "$PROFILE" == "https-trial" && "$INCLUDE_PROXY" -eq 0 ]]; then
+  fail 'https-trial requires --include-proxy'
+fi
+
+command -v realpath >/dev/null 2>&1 || fail 'required command not found: realpath'
+[[ -n "$TARGET_DIR" ]] || fail 'target directory must not be empty'
+[[ -n "$SYSTEMD_USER_TARGET_DIR" ]] || fail 'systemd user target directory must not be empty'
+TARGET_DIR="$(realpath -m -- "$TARGET_DIR")"
+SYSTEMD_USER_TARGET_DIR="$(realpath -m -- "$SYSTEMD_USER_TARGET_DIR")"
+
 [[ -x "$RESTORE_LATEST" ]] || fail "restore command is not executable: $RESTORE_LATEST"
 
 restore_args=(
   --backup-dir "$BACKUP_DIR"
   --target-dir "$TARGET_DIR"
+  --systemd-user-target-dir "$SYSTEMD_USER_TARGET_DIR"
   --overwrite
 )
 if [[ "$PRINT_ARCHIVE" -eq 1 ]]; then
@@ -103,7 +136,7 @@ fi
 
 [[ -x "$RESTART_STACK" ]] || fail "restart command is not executable: $RESTART_STACK"
 
-restart_args=()
+restart_args=(--profile "$PROFILE")
 if [[ "$INCLUDE_PROXY" -eq 1 ]]; then
   restart_args+=(--include-proxy)
 fi
@@ -114,6 +147,6 @@ if [[ "$SKIP_STACK_CHECK" -eq 1 ]]; then
   restart_args+=(--skip-stack-check)
 fi
 
-"$RESTART_STACK" "${restart_args[@]}"
+QUADLET_TARGET_DIR="$TARGET_DIR" "$RESTART_STACK" "${restart_args[@]}"
 
 printf 'OK: latest backup restored and Quadlet stack restarted\n'
