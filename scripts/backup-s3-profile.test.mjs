@@ -1060,6 +1060,34 @@ test("backup rejects a configured secondary without a Sakura primary before crea
   }
 });
 
+test("upload rejects a Google Drive secondary with a non-Sakura primary before S3 writes", () => {
+  withScratch("upload-secondary-with-aws-primary-", (dir) => {
+    const env = fakeEnv(dir);
+    const secondary = installFakeGoogleDriveSecondary(dir);
+    const fixture = secondaryUploadFixture(dir);
+    const result = run("bash", ["scripts/backup-prod.sh", "upload"], {
+      ...env,
+      ...secondary,
+      S3_PROVIDER: "aws",
+      S3_ENDPOINT_URL: "https://s3.example.invalid",
+      S3_BUCKET: "bucket-placeholder",
+      S3_PREFIX: "erp4/prod",
+      BACKUP_DIR: fixture.backupDir,
+      BACKUP_FILE: fixture.database,
+      BACKUP_GLOBALS_FILE: fixture.globals,
+      BACKUP_ID: fixture.bundle,
+      COMMIT_SHA: fixture.commit,
+      BACKUP_SECONDARY_PROVIDER: "gdrive",
+    });
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /requires a successful Sakura primary profile/);
+    assert.doesNotMatch(result.stderr, /partial_failure/);
+    assert.equal(existsSync(env.FAKE_AWS_LOG), false);
+    assert.equal(existsSync(secondary.FAKE_GDRIVE_SECONDARY_LOG), false);
+  });
+});
+
 test("Sakura accepts artifact filenames derived from a 128-character backup ID", () => {
   withScratch("backup-s3-long-name-", (dir) => {
     const env = fakeEnv(dir);

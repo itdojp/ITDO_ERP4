@@ -1029,6 +1029,7 @@ upload_existing() {
     echo "S3_BUCKET is required for upload" >&2
     exit 1
   fi
+  validate_secondary_topology || exit 1
   require_cmd aws
   require_cmd node
   mkdir -p "$BACKUP_DIR"
