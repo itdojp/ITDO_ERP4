@@ -1,260 +1,321 @@
-# バックアップ/リストア手順（草案）
+# バックアップ/リストア要件
 
 ## 対象範囲
 
-- PostgreSQL データベース（必須）
-- PDF ファイル（PDF_PROVIDER=local の場合）
-- 環境設定/シークレット（別管理）
+- PostgreSQL database dump（必須）
+- PostgreSQL globals（role / permission、必須）
+- backup metadata（必須）
+- local providerで保持するPDF・添付等のassets（存在する場合）
+- 復元に必要な設定とsecretの参照情報（secret本体は別管理）
 
-## バックアップ方針（案）
+## 採用構成
 
-- DB: 日次の論理バックアップ（`pg_dump`）
-- 重要テーブルは週次でフルバックアップ
-- ロール/権限は `pg_dumpall --globals-only`
+Epic #1975では次を本番候補とする。
 
-## バックアップ手順（例）
+- 主DB backup: さくらのS3-compatible object storage
+- client-side encryption: OpenPGP（Sakura profileでは必須）
+- database backupの二次copy: Google Drive（#1979）
+- application file: Google Drive（#1976 / #1977）
+- 実bucket、credential、restore DBを用いる実証: #544
+- copy-only migration / cutover / rollback rehearsal: #1981
 
-1. `pg_dump` でスキーマ + データを取得
-2. 世代管理（例: 7日分）で保存
-3. リストア検証用に別DBへ復元
+AWS S3 / SSE-KMS profileは既存利用者の互換経路として維持する。provider差分はS3_PROVIDER=aws|sakuraで明示し、endpointやAPI応答から暗黙判定しない。custom endpointを指定する場合はprovider共通でcredentialを含まないHTTPS originを要求する。
 
-### Podman（PoC）での例
+S3 credentialはrepository sampleへ保存しない。AWS CLI標準credential chainを使い、Sakura専用の最小権限profileをowner-onlyのcredentials fileまたは承認済みprocess-level secret injectionから供給する。日常backup writerのput / get / list / head権限と、readiness probe / retention applyのdelete権限を分離する。AWS CLI debug output、署名付きrequest、credential valueをrepository evidenceへ含めない。
 
-- バックアップ（SQL）
-  - `podman exec -e PGPASSWORD=postgres erp4-pg-poc sh -c "pg_dump -U postgres -d postgres" > /tmp/erp4-backup.sql`
-- バックアップ（globals）
-  - `podman exec -e PGPASSWORD=postgres erp4-pg-poc sh -c "pg_dumpall --globals-only -U postgres" > /tmp/erp4-globals.sql`
-- リストア（SQL）
-  - `cat /tmp/erp4-backup.sql | podman exec -e PGPASSWORD=postgres -i erp4-pg-poc psql -U postgres -d postgres`
-- スクリプト（推奨）
-  - `./scripts/podman-poc.sh backup`
-  - `RESTORE_CONFIRM=1 ./scripts/podman-poc.sh restore`
-  - オプション: `BACKUP_DIR`, `BACKUP_FILE`, `BACKUP_GLOBALS_FILE`, `BACKUP_PREFIX`
-  - `SKIP_GLOBALS=1`（既存ロールがある場合のglobals適用スキップ）
-  - `RESTORE_CLEAN=1`（PodmanのPoC用: restore前に public スキーマを再作成）
-  - 備考: `BACKUP_FILE`/`BACKUP_GLOBALS_FILE` は任意パス指定なので、信頼できる入力のみ使用する
+2026-07-22時点の公式仕様では、さくらのAmazon S3-compatible APIはList Objects、bucket location / versioning / ACL、HEAD / GET / PUT / DELETE Object等を列挙している。一方、全Amazon S3 APIの互換性は保証されない。実装は列挙済みAPIだけを共通checkに使用し、AWS Public Access Block / KMS等はSakuraへ推測適用しない。
 
-## リストア手順（例）
+- [さくらのオブジェクトストレージ API](https://manual.sakura.ad.jp/cloud/objectstorage/api.html)
+- [さくらのオブジェクトストレージ FAQ](https://manual.sakura.ad.jp/cloud/objectstorage/faq.html)
+- [さくらのオブジェクト暗号化](https://manual.sakura.ad.jp/cloud/objectstorage/encryption.html)
 
-1. 空の DB を作成
-2. `psql` でバックアップを投入
-3. 接続/主要 API のスモーク確認
+## 復旧目標
 
-### Podman（PoC）での例
+- 通常RPO: 最大24時間
+- 重要データRPO: 最大1時間（取得scheduleで担保する）
+- 通常RTO: 4時間以内
+- 重要データRTO: 2時間以内
+- 検知・対応開始: 30分以内を目標（RTO外）
 
-- 必要に応じて `./scripts/podman-poc.sh start` でDBを起動
-- リストア後は `./scripts/podman-poc.sh check` で件数/金額の整合を確認
-- `RESTORE_CONFIRM=1` を付けた場合のみ restore が実行される
+実scheduleは#544の本番値決定で確定し、backup freshness監視は#1980で扱う。
 
-### 本番向けスクリプト（AWS/S3 例）
+## backup artifact契約
 
-- バックアップ（DB/グローバル/メタデータ/任意で添付）
-  - `./scripts/backup-prod.sh backup`
-- S3 へアップロード（既存ローカルバックアップを転送）
-  - `S3_BUCKET=erp4-backups SSE_KMS_KEY_ID=alias/erp4-backup ./scripts/backup-prod.sh upload`
-- S3 から取得してリストア
-  - `S3_BUCKET=erp4-backups ./scripts/backup-prod.sh download`
-  - `RESTORE_CONFIRM=1 ./scripts/backup-prod.sh restore`
+### bundle
 
-### 検証環境（ローカル + 別ホスト退避 + 暗号化）
+1回のbackupは同一backup IDを持つbundleとして扱う。
 
-- GPG で暗号化し、別ホストへ転送
-  - `GPG_RECIPIENT=backup@example.com REMOTE_HOST=backup-host REMOTE_DIR=/var/backups/erp4 ./scripts/backup-prod.sh backup`
-- 別ホストから最新を取得してリストア
-  - `REMOTE_HOST=backup-host REMOTE_DIR=/var/backups/erp4 ./scripts/backup-prod.sh download`
-  - `RESTORE_CONFIRM=1 ASSET_DIR=/var/erp4-assets ./scripts/backup-prod.sh restore`
+必須:
 
-注意:
+- database: pg_dump -Fc
+- globals: pg_dumpall --globals-only
+- metadata: environment、timestamp、version情報
 
-- `REMOTE_HOST` を指定した場合は `REMOTE_DIR` が必須
-- `REMOTE_KEEP_DAYS` を指定すると別ホスト側も世代削除を実行
-- GPGで暗号化した場合は復号用の鍵がローカルに必要（`GPG_HOME` を必要に応じて指定）
-- `REMOTE_DIR` は安全な文字（英数字/`._/=-`）のみを許容
-- `BACKUP_PREFIX` は安全な文字（英数字/`._-`）のみを許容
-- globals は既存ロールがある環境だと restore が失敗するため、空DBで実行するか `SKIP_GLOBALS=1` を指定
-- 既存スキーマがある状態で restore すると型/テーブル重複で失敗するため、空DBで実行するか `RESTORE_CLEAN=1` を指定
-- `SKIP_GLOBALS` を指定しない場合は globals ファイル必須（欠損時は restore を失敗させる）
+任意:
 
-必要な環境変数（抜粋）
+- assets: ASSET_DIRが設定され、対象が存在する場合
 
-- `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME`
-- `S3_BUCKET`/`S3_PREFIX`/`S3_REGION`/`S3_ENDPOINT_URL`
-- `SSE_KMS_KEY_ID` または `SSE_S3`（例: `AES256`）
-- `KMS_ENDPOINT_URL`（S3互換環境でKMSエンドポイントが別の場合）
-- `ASSET_DIR`（PDF/添付をローカル保存している場合のルート）
-- `GPG_RECIPIENT`（二重暗号化が必要な場合）
-- `BACKUP_FILE`/`BACKUP_GLOBALS_FILE`/`BACKUP_ASSETS_FILE`（特定バックアップを upload/restore する場合）
-- `REMOTE_HOST`/`REMOTE_DIR`/`REMOTE_PORT`/`REMOTE_SSH_KEY`（別ホスト退避）
-- `SKIP_GLOBALS=1`（restore時に globals の適用をスキップ）
-- `RESTORE_CLEAN=1`（PodmanのPoC用: restore前に public スキーマを再作成）
-- 参考テンプレート: `docs/requirements/backup-restore.env.example`
+Sakura profileのbackup IDは次の情報を含む。
 
-## 保持期間/世代管理（決定）
-
-- 日次: 14日分
-- 週次: 8週分
-- 月次: 12か月分
-- 重要リリース前後は手動スナップショットを追加
-- 保管先は本番とは別リージョン/別アカウントに1世代以上保持
-
-### RPO/RTO 目標（決定）
-
-- RPO: 通常データは最大24時間分の損失を許容（原則: 日次バックアップ）
-- RPO: 重要データは最大6時間分の損失を許容（運用で6時間ごとのバックアップを前提）
-- RTO: 通常データは4時間以内に復旧（DB + PDF/添付 + 主要設定）
-- RTO: 重要データは2時間以内に復旧
-  - 検知と対応開始の目標は30分以内（RTOには含めない）
-
-## 暗号化/保管先（決定）
-
-- 保管先: オブジェクトストレージ（S3互換など）
-- 暗号化: KMSによるサーバーサイド暗号化を必須
-- 追加保護が必要な場合は `pg_dump` 生成物をGPGで二重暗号化
-- 復号キーの権限は管理部/経営の二重管理
-
-## 本番運用（決定）
-
-- 実行タイミング: 深夜帯の日次（例: 02:00 JST）
-- 取得形式: `pg_dump -Fc`（DB）+ `pg_dumpall --globals-only`（ロール/権限）
-- 保存先: `s3://erp4-backups/erp4/<env>/{db,globals,assets,meta}/`（暫定。`<env>` は `prod` / `staging` など環境名に合わせて `S3_PREFIX` と一致させる）
-- 暗号化: SSE-KMS（例: `alias/erp4-backup`）を必須。GPGは別ホスト退避時のみ任意
-- アップロード: メタデータに `env`, `generated_at`, `schema_version` を付与
-- 権限: 書き込み専用ロールと読み取り専用ロールを分離
-- 保持期間は S3 Lifecycle で管理（ローカル削除とは別）
-
-### S3準備チェックリスト（未確定項目の整理）
-
-- バケット名: `s3://erp4-backups`（暫定）
-- リージョン: `ap-northeast-1`（暫定）
-- KMS: `alias/erp4-backup`（暫定、管理アカウント/キー管理者の決定が必要）
-- Versioning/Lifecycle: 保持期間に合わせたルールを設定
-- IAM権限: 書き込み専用/読み取り専用のロール分離
-- バケットポリシー: 退避先のアクセス制限（IP制限やVPCエンドポイント）
-- 決定シート: `docs/ops/backup-s3-decision-checklist.md` を更新し、確定値と責任分界を明文化する
-
-#### S3 事前検証コマンド
-
-- `scripts/check-backup-s3-readiness.sh` で設定値とS3状態を検証できる
-  - 実行端末に `aws` CLI が必要
-  - 入力値バリデーション:
-    - `STRICT`: `0|1`（既定: `1`）
-    - `CHECK_WRITE`: `0|1`（既定: `0`）
-    - `EXPECT_SSE`: `aws:kms|AES256|any`
-  - 例（読み取り中心の検証）:
-    - `S3_BUCKET=erp4-backups S3_REGION=ap-northeast-1 EXPECT_SSE=aws:kms SSE_KMS_KEY_ID=alias/erp4-backup make backup-s3-readiness-check`
-  - 例（書き込み権限も検証）:
-    - `S3_BUCKET=erp4-backups S3_REGION=ap-northeast-1 EXPECT_SSE=aws:kms SSE_KMS_KEY_ID=alias/erp4-backup CHECK_WRITE=1 make backup-s3-readiness-check`
-  - KMSの接続先がS3と異なる環境は `KMS_ENDPOINT_URL` を指定する。
-  - `STRICT=1`（既定）では警告も失敗扱い。確認目的のみなら `STRICT=0` を指定。
-  - 出力の末尾に機械可読行を出力する:
-    - 例: `[backup-s3-preflight] SUMMARY status=warn warning_count=2 error_count=0 strict=0 check_write=1`
-    - `status`: `pass|warn|fail`
-- 実行結果は `scripts/record-backup-s3-readiness.sh` で `docs/test-results/` に記録できる
-  - 既存ログを記録する:
-    - `LOG_FILE=tmp/backup-s3-readiness/backup-s3-readiness-YYYYMMDD-HHMMSS.log make backup-s3-readiness-record`
-  - 検証実行と記録を一度に行う:
-    - `RUN_CHECK=1 S3_BUCKET=erp4-backups S3_REGION=ap-northeast-1 EXPECT_SSE=aws:kms SSE_KMS_KEY_ID=alias/erp4-backup make backup-s3-readiness-record`
-  - 失敗時にコマンドを非0終了させる:
-    - `RUN_CHECK=1 FAIL_ON_CHECK=1 ... make backup-s3-readiness-record`
-  - 記録時の入力制約:
-    - `DATE_STAMP`: `YYYY-MM-DD` かつ実在日付のみ
-    - `RUN_LABEL`: `^[A-Za-z0-9][A-Za-z0-9._-]*$`
-  - 記録レポートには `summarySource` を出力する（`summary-line` / `legacy-log-scan`）。
-    - `summary-line`: `[backup-s3-preflight] SUMMARY ...` 行を解析した結果
-    - `legacy-log-scan`: 旧形式ログの文言解析結果
-  - 日付検証は GNU/BSD 両方の `date` 実装に対応（Linux/macOS の混在環境で実行可能）。
-
-#### S3 実 backup/restore 証跡コマンド
-
-#544 / #1875 の Go 判定では、S3 readiness だけでは不足する。以下をすべて実施し、`scripts/record-backup-s3-restore.sh` で `docs/test-results/` に記録する。
-
-- `backup`: DB / globals / assets（該当時）を取得する
-- `upload`: S3へアップロードする
-- `download`: S3から検証環境へ取得する
-- `restore`: 検証DB/検証環境へ復元する
-- `integrity`: 主要件数、金額、参照整合性、必要ファイルの一致を確認する
-
-```bash
-TARGET_ENVIRONMENT=prod \
-OPERATOR=alice \
-RESTORE_STATUS=pass \
-S3_BUCKET=erp4-backups \
-S3_REGION=ap-northeast-1 \
-S3_PREFIX=erp4/prod \
-ENCRYPTION_MODE=SSE-KMS \
-KMS_KEY_ID=alias/erp4-backup \
-DECISION_RECORD_FILE=docs/ops/backup-s3-decision-checklist.md \
-READINESS_RECORD_FILE=docs/test-results/YYYY-MM-DD-backup-s3-readiness-rN.md \
-BACKUP_LOG_FILE=tmp/backup-prod/backup.log \
-UPLOAD_LOG_FILE=tmp/backup-prod/upload.log \
-DOWNLOAD_LOG_FILE=tmp/backup-prod/download.log \
-RESTORE_LOG_FILE=tmp/backup-prod/restore.log \
-INTEGRITY_REPORT_JSON=tmp/backup-prod/post-restore-integrity.json \
-make backup-s3-restore-record
+```text
+<safe-prefix>-<YYYYMMDD>-<HHMMSS>-<commit-sha>
 ```
 
-`RESTORE_STATUS=pass` では、未確定の decision field、指定値と decision record の不一致、`CHECK_WRITE=1` を含まない readiness 記録、backup/upload/download/restore ログ不足、復元後整合性 JSON の不一致を script が拒否する。
-`ENCRYPTION_MODE=SSE-S3` の場合も、decision record の `kmsKeyIdOrAlias` は `n/a` と明示する。
+timestampはUTC、commit SHAは7〜64桁の16進数とする。archiveはimmutableとし、同じobject keyが存在する場合は上書きしない。
 
-## S3/OSS 移行の開始条件（叩き台）
+### object key
 
-- バケット/KMS/権限分離の準備が完了している
-- リストア検証が成功し、手順がドキュメント化されている
-- 監査ログ/復元承認の運用ルールが確定している
-  - 切替後1週間はローカル/別ホストの並行保持を行う（暫定）
+```text
+<S3_PREFIX>/<retention-class>/<UTC date path>/<backup-id>/<artifact-kind>/<artifact-name>
+<S3_PREFIX>/<retention-class>/<UTC date path>/<backup-id>/<artifact-kind>/<artifact-name>.manifest.json
+```
 
-## 運用フロー/責任分界（案）
+date path:
 
-- インフラ担当: バケット/KMS/IAM/ライフサイクルの管理
-- 運用担当: バックアップ実行/リストア検証の実施と記録
-- 管理部: 復元の実行承認、監査ログの確認
-- 経営: 復元の最終承認（重大障害時）
+- hourly: YYYY/MM/DD
+- daily: YYYY/MM
+- weekly: YYYY
+- monthly: YYYY
 
-## 暫定運用（S3未整備の間）
+artifact kind:
 
-- ローカル保存 + 別ホスト退避 + GPG 暗号化
-- 退避先は rsync/scp で同期（`REMOTE_HOST`/`REMOTE_DIR`）
-- 別ホスト側の保持期間は `REMOTE_KEEP_DAYS` で管理（未指定の場合は手動）
-- S3移行後は1週間の並行保持を行い、問題なければローカル/別ホスト運用を廃止
+- database
+- globals
+- metadata
+- assets（任意）
 
-## リストア検証（案）
+AWS profileは既存のdb / globals / assets key layoutを維持する。
 
-### 定期リストア検証（暫定）
+### manifest
 
-- 頻度: 月次（第1営業日）
-- 手順:
-  1. 退避先から最新を取得（S3 または REMOTE_HOST）
-  2. 検証DBへリストア（`RESTORE_CONFIRM=1`）
-  3. `/health` と主要APIのスモーク確認
-  4. `./scripts/podman-poc.sh check` で件数/金額の整合確認
-  5. 結果を `docs/test-results/` に記録
-- 失敗時は原因と対応を記録し、次回の手順を更新
+各artifactに一意のJSON manifestを生成する。schemaはerp4.backup.manifest.v1とし、最低限次を持つ。
 
-## PDF/添付の扱い（案）
+- backup ID
+- generatedAt（UTC）
+- environment
+- retention class
+- artifact type / filename / source filename
+- original size / encrypted artifact size
+- encrypted artifact SHA-256
+- encryption algorithm
+- database name / DB version / schema version
+- application version / commit SHA
 
-- `PDF_PROVIDER=local` の場合は保存ディレクトリをバックアップ対象に含める
-- ストレージに移行する場合はオブジェクトストレージのライフサイクルポリシーを併用
-- 復元時は DB と PDF の世代を揃える（復元時刻の一致を記録）
-- 暫定運用: S3未整備の間はローカル保存 + 別ホスト退避 + GPG 暗号化で運用する
+downloadとcheckではartifact size、SHA-256、filename、必要に応じてbundle contextを検証する。manifestは独立署名していないため、bucket write権限者からのmetadata改ざん耐性はprovider側の権限分離・versioning・監査logで補う。
 
-### PDF/添付のS3/OSS移行手順（叩き台）
+## 暗号化要件
 
-1. バケット準備（Versioning/Lifecycle/KMS/権限分離）
-2. 保存/参照のストレージレイヤーを追加（ローカル以外を選べる実装）
-3. 既存ローカル資産をOSSへ移行（件数/サイズ/ハッシュで整合確認）
-4. 参照方法を確定（署名URL or アプリ経由の配信）
-5. 移行後のバックアップはバケット運用へ移行（ローカル退避の段階的廃止）
-6. 切替後の監査・復元手順を更新し、次回検証に反映
+### Sakura profile
 
-## 検証チェックリスト
+- S3送信前にOpenPGP public-key encryptionを必須とする。
+- .gpg拡張子だけを信用せず、GnuPG packet解析でpublic-key encrypted packetとencrypted data packetを確認する。
+- GPG_RECIPIENTがない場合はuploadを拒否する。
+- 復号private key、passphrase、recipientの実識別子をrepository、Issue、PR、logへ記載しない。
+- server-side encryptionの有無だけに機密性を依存しない。
 
-- 主要テーブルの件数が一致
-- 最新データが復元されている
-- バッチ実行が再開できる
+GPG_REMOVE_PLAINTEXT=1はverified upload完了後にだけlocal plaintextを削除する。失敗調査・再実行時は0として保持し、operatorがcleanup時点を判断する。復号済みrestore scratchも#544のisolated rehearsal後に明示的にcleanupする。
 
-## TODO
+### AWS profile
 
-- 本番環境の保持期間/暗号化方針の確定【決定済み】
-- PDF/添付のバックアップ方式を最終決定【決定済み: ローカル+別ホスト退避】
-- `docs/ops/backup-s3-decision-checklist.md` を埋めて bucket/region/KMS/IAM/lifecycle の確定値を反映
-- S3/OSS 移行の時期を決定（未定）
+既存のSSE-KMS / SSE-S3設定を維持する。SSE_KMS_KEY_ID、SSE_S3、KMS_ENDPOINT_URLはAWS profile専用であり、Sakura profileでは必須にしない。
+
+## 設定契約
+
+テンプレートはdocs/requirements/backup-restore.env.exampleを使用する。
+
+共通必須:
+
+- S3_PROVIDER=aws|sakura
+- S3_BUCKET
+- S3_PREFIX
+- BACKUP_RETENTION_CLASS=hourly|daily|weekly|monthly
+- ENVIRONMENT
+- COMMIT_SHA
+
+Sakura追加必須:
+
+- credentialを含まないHTTPS originのS3_ENDPOINT_URL
+- GPG_RECIPIENT
+- DB_VERSION
+- SCHEMA_VERSION
+- APP_VERSION
+
+endpointはuserinfo、query、fragment、非HTTPSを拒否する。prefix、backup ID、filenameはpath traversalとunsafe segmentを拒否する。
+
+## 標準コマンド
+
+private env fileはrepository外、current owner、mode 600、non-symlinkで作成し、shellへ値を表示しない。
+
+```bash
+set -a
+. "$PRIVATE_BACKUP_ENV_FILE"
+set +a
+```
+
+repo-side profile test:
+
+```bash
+make backup-s3-profile-test
+```
+
+新規backup（`S3_BUCKET`設定時は同一コマンド内でuploadまで実行）/ verified download / manifest check:
+
+```bash
+make backup-s3-backup
+make backup-s3-download
+BACKUP_FILE="$PRIVATE_BACKUP_DIR/<artifact>" \
+BACKUP_MANIFEST_FILE="$PRIVATE_BACKUP_DIR/<artifact>.manifest.json" \
+make backup-s3-check
+```
+
+既存のlocal bundleだけを後からuploadする場合は、`make backup-s3-backup`の代わりに
+対象artifactを`BACKUP_FILE` / `BACKUP_GLOBALS_FILE`で指定して
+`make backup-s3-upload`を使用する。同じimmutable keyへ`backup`直後に再uploadしない。
+
+S3_VERIFY_DOWNLOAD=1ではupload直後にremote objectをprivate scratchへdownloadし、同じmanifestでSHA-256を再検証する。
+
+さくら公式仕様ではwrite時のprovider側整合性checkはMD5とそれ以外で挙動が異なるため、#544のSakura実証ではS3_VERIFY_DOWNLOAD=1を必須とし、download後のmanifest SHA-256を最終判定にする。
+
+## readiness
+
+checkerは共通検査とprovider固有検査を分離する。
+
+共通:
+
+- endpoint / profile validation
+- bucket access
+- list
+- optional write / head / get / delete round-trip
+- size / checksum
+- secretを含まないsummary
+
+AWS:
+
+- region
+- versioning
+- bucket encryption
+- lifecycle
+- Public Access Block
+- KMS
+
+Sakura:
+
+- bucket location、versioning、bucket ACLは公式に列挙されたS3-compatible APIで確認する。
+- AWS固有管理APIを呼ばない。
+- provider管理APIを確認できない検査はnot_applicableと理由を出す。
+- versioningのcontrol-plane表示、public access、access control、provider retentionはowner-onlyのS3_OPERATOR_EVIDENCE_FILEを要求する。
+- real evidenceではCHECK_WRITE=1、S3_EXECUTION_MODE=real、S3_REAL_RUN_CONFIRM=1を必須とする。
+
+```bash
+S3_EXECUTION_MODE=real \
+S3_REAL_RUN_CONFIRM=1 \
+CHECK_WRITE=1 \
+RUN_CHECK=1 \
+FAIL_ON_CHECK=1 \
+make backup-s3-readiness-record
+```
+
+fake runまたは既存logの取込みはrepo-side検証に限り、summaryStatus: blockedとして記録する。#544の実環境passにはdirect-check、real、writeProbe=1、realRunConfirmed=1が必要である。
+
+## retention
+
+保持window:
+
+- hourly: 48時間
+- daily: 30日
+- weekly: 12週
+- monthly: 13か月
+
+4 classの最低保持世代数は環境ごとのoperator decisionであり、暗黙defaultを持たない。RETENTION_MIN_HOURLY / DAILY / WEEKLY / MONTHLYをすべてpositive integerで明示する。
+
+dry-run planはremote inventoryを解析し、次をJSONとMarkdownへ出す。
+
+- complete bundle
+- incomplete upload / orphan manifest
+- invalid / unsafe key
+- cutoffより古いbundle
+- minimum generationsで保護されるbundle
+- delete bundle / object list
+- inventory SHA-256
+- provider / target fingerprint
+- applyAllowed
+
+invalid keyまたはincomplete bundleがあればapplyAllowed=falseとし、削除を拒否する。
+
+```bash
+PLAN_JSON="$PRIVATE_PLAN_DIR/retention-plan.json" \
+PLAN_MARKDOWN="$PRIVATE_PLAN_DIR/retention-plan.md" \
+make backup-s3-prune-plan
+```
+
+applyは自動では実行しない。別 invocationで次をすべて要求する。
+
+- reviewed planのSHA-256
+- PRUNE_CONFIRM=1
+- RETENTION_EXCLUSIVE_LOCK_CONFIRM=1
+- current ownerかつmode 600以下のplan
+- remote inventory不変
+- provider / target / prefix / minimums一致
+
+provider側versioningで残るold object versionはrepository pruneでは物理削除しない。provider lifecycleと復旧要件をoperator evidenceで確認する。
+
+readiness write probeはPUT応答のversion IDを取得し、versioning有効時はそのsynthetic versionだけを削除する。version IDを取得できない場合は自動でdelete markerを追加せず停止し、private inventoryでoperator cleanupを要求する。
+
+## partial failureと再開
+
+uploadはartifact、manifestの順にimmutable objectとして送る。remote existence checkとPUTは単一atomic操作ではないため、1環境1 writerを運用前提とし、同じbackup IDの並行uploadを禁止する。途中失敗時はorphanが残る可能性があり、自動削除や上書きretryは行わない。
+
+再開前:
+
+1. sanitized inventoryでartifact / manifest pairを確認する。
+2. retention planでincomplete bundleとして検知されることを確認する。
+3. credential、key、raw endpointを公開せず、operator承認のprivate手順でorphanを隔離または削除する。
+4. 新しいUTC timestamp / backup IDでbundleを再生成する。
+
+downloadはprivate scratchへartifactとmanifestを取得し、SHA-256、OpenPGP packet、remote keyとmanifestのenvironment / retention class / UTC date / bundle / artifact type / commit SHA contextを検証する。必須metadataが欠けたbundleを拒否し、検証成功後にのみBACKUP_DIRへ公開する。既存destinationは上書きしない。
+
+## restore
+
+restoreは破壊的操作であり、明示的人間承認、isolated DB、RESTORE_CONFIRM=1が必要である。本Issueのrepo-side作業では実restoreを行わない。
+
+PoC:
+
+```bash
+./scripts/podman-poc.sh backup
+RESTORE_CONFIRM=1 ./scripts/podman-poc.sh restore
+./scripts/podman-poc.sh check
+```
+
+本番候補の#544では次を実証する。
+
+1. real provider readinessとwrite/delete probe
+2. backup
+3. encrypted upload
+4. verified download
+5. isolated DBへのrestore
+6. 件数、金額、参照整合性、必要file一致
+7. plaintext / decrypted scratch cleanup
+8. rollback経路
+
+pass証跡は対象commit SHAとversionを固定し、private target identifierとraw logをGitHubへ載せない。未実施または入力不足はblockedとして#544をopenのままにする。
+
+## 既存remote-host経路
+
+REMOTE_HOST / REMOTE_DIRによる別host退避は移行・検証用の既存経路として維持する。新規backupでは各artifactと`<artifact>.manifest.json`を対で転送する。downloadはdatabase、globals、必須metadata、任意assetsが同じbackup IDであること、manifest contextとSHA-256、暗号化artifactのOpenPGP packetをprivate scratchで検証してから公開する。manifest欠落、世代混在、既存destinationへの上書きは拒否する。Sakura cutover後の廃止時期は#1981で決め、copy-only期間を経ずにsourceを削除しない。
+
+## セキュリティ上の禁止事項
+
+- production credentialをfixtureへ含めない。
+- access key、secret key、private endpoint、bucket実識別子、GPG private keyをlogやGitHubへ出さない。
+- real prune apply、restore、provider policy変更を自動実行しない。
+- fake upload/download/restoreを実環境成功として記録しない。
+- backup sourceやsource fileを人間承認なしに削除しない。
+
+## 関連文書
+
+- operator Runbook: docs/ops/backup-restore.md
+- decision checklist: docs/ops/backup-s3-decision-checklist.md
+- readiness template: docs/test-results/backup-s3-readiness-template.md
+- restore template: docs/test-results/backup-s3-restore-template.md
+- DR plan: docs/ops/dr-plan.md
+- Sakura deployment: docs/ops/sakura-vps-deployment.md

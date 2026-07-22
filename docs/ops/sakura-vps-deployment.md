@@ -339,17 +339,20 @@ Google OIDC / Drive を使う場合:
 
 ## 9. backup / restore / rollback
 
-導入当日に最低限確認する。backup timer を有効化する前に、`~/.config/containers/systemd/erp4-maintenance.env` の placeholder を実値へ置き換え、backup 出力先を作成・保護する。
+### 9.1 local backup preflight
+
+導入当日はtimerを有効化する前にmaintenance envとlocal保存先を確認する。共有WSL2ではsystemd/timerを有効化せず、専用VPSまたはdedicated rehearsal環境で行う。
 
 ```bash
 vi ~/.config/containers/systemd/erp4-maintenance.env
-grep -n 'REPLACE_ME' ~/.config/containers/systemd/erp4-maintenance.env && echo 'replace placeholders before enabling timers' && exit 1 || true
+grep -n 'REPLACE_ME' ~/.config/containers/systemd/erp4-maintenance.env   && echo 'replace placeholders before enabling timers' && exit 1 || true
 mkdir -p ~/.local/share/erp4/quadlet-backups ~/.local/share/erp4/db-backups
-chmod 700 ~/.local/share/erp4 ~/.local/share/erp4/quadlet-backups ~/.local/share/erp4/db-backups
+chmod 700 ~/.local/share/erp4   ~/.local/share/erp4/quadlet-backups   ~/.local/share/erp4/db-backups
 ./scripts/quadlet/check-env.sh
+./scripts/quadlet/backup-db-and-check.sh --max-age-hours 24 --print-prefix
 ```
 
-そのうえで timer を有効化し、手動 backup を 1 回実行する。
+timer有効化はproduction changeであり、人間承認後にだけ実行する。
 
 ```bash
 systemctl --user enable --now erp4-config-backup.timer
@@ -358,19 +361,47 @@ systemctl --user list-timers 'erp4-*'
 ./scripts/quadlet/run-maintenance-now.sh --include-units
 ```
 
-DB restore の詳細は [quadlet-db-backup-restore](quadlet-db-backup-restore.md) と [backup-restore](backup-restore.md) を参照する。
+### 9.2 Sakura object storage preflight
+
+docs/requirements/backup-restore.env.exampleをrepository外へcopyし、mode 600で本番値を設定する。secret、private endpoint、実bucket名、GPG識別子をIssue/PR/docs/logへ記載しない。
+
+repo-side fake profile test:
+
+```bash
+make backup-s3-profile-test
+```
+
+#544のreal readinessは、credential、target、operator evidence、人間承認が揃った場合のみ実行する。
+
+```bash
+S3_EXECUTION_MODE=real S3_REAL_RUN_CONFIRM=1 CHECK_WRITE=1 RUN_CHECK=1 FAIL_ON_CHECK=1 make backup-s3-readiness-record
+```
+
+SakuraではOpenPGP client-side encryptionが必須である。versioning、公開遮断、access control、provider retentionはprivateなS3_OPERATOR_EVIDENCE_FILEで確認する。AWS固有APIが使えない項目を推測でpassにしない。
+
+offsite backupの標準手順、partial upload、retention、isolated restoreは[backup-restore](backup-restore.md)を参照する。
+
+### 9.3 restore / rollback
+
+実restoreはisolated DBと明示的人間承認なしに実行しない。導入Go判定にはbackupだけでなく、#544でのverified download、restore、件数・金額・参照・file整合性が必要である。
+
+DB restoreの詳細:
+
+- [quadlet-db-backup-restore](quadlet-db-backup-restore.md)
+- [backup-restore](backup-restore.md)
 
 更新時のrollback候補:
 
-- 前回 commit に戻す。
-- 前回 image を再build/再起動する。
-- Quadlet config backup を `restore-latest.sh` で戻す。
-- DB migrationを伴う場合は、restore rehearsal 済みのbackupから戻せることを確認してから実行する。
+- 前回commitへ戻す。
+- digestを固定した前回imageを再build / 再起動する。
+- Quadlet config backupをrestore-latest.shで戻す。
+- DB migrationを伴う場合は、restore rehearsal済みbackupから戻せることを確認してから実行する。
 
 破壊的操作:
 
-- `scripts/podman-poc.sh reset` は試験DB初期化を伴う。導入済みVPSでは通常使わない。
-- OS再インストールは全データ消去を伴う。backup/restore可否を確認してから実施する。
+- scripts/podman-poc.sh resetは試験DB初期化を伴う。導入済みVPSでは通常使わない。
+- retention apply、DB restore、service restart、VPS reboot、timer有効化は明示的人間承認を必要とする。
+- OS再インストールは全データ消去を伴う。backup / restore可否を確認してから実施する。
 
 ## 10. 監視/障害対応
 
@@ -396,13 +427,18 @@ journalctl --user -u erp4-caddy.service -n 100 --no-pager
 
 ```text
 Date:
-Operator:
-VPS name/IP:
-Domain:
+Operator role:
+Environment label (non-secret):
+Target fingerprint:
 Commit SHA:
-Google Cloud project:
+Google Cloud config reference:
 OIDC enabled: yes/no
 Drive enabled: yes/no
+Backup provider: sakura|aws
+OpenPGP client encryption: pass/fail/blocked
+S3 real readiness: pass/fail/blocked
+S3 write/delete probe: pass/fail/blocked
+Isolated restore evidence: pass/fail/blocked
 check-env: pass/fail
 check-proxy: pass/fail/n/a
 check-trial-readiness: pass/fail
@@ -420,7 +456,7 @@ Go 条件:
 - frontend が公開URLで応答する。
 - HTTPS証明書が有効である。
 - OIDC/Driveを使う場合は各疎通確認が成功している。
-- backup取得先と復元手順が確認済みである。
+- backup取得先、client-side暗号化、verified download、isolated restore手順が確認済みである。
 - secret がIssue/PR/docs/logへ漏れていない。
 
 No-Go 条件:

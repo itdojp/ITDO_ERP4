@@ -17,10 +17,30 @@ trap cleanup EXIT
 
 mapfile -t OPS_SHELL_FILES < <(find scripts/ops -type f -name '*.sh' | sort)
 mapfile -t OPS_ENTRYPOINTS < <(find scripts/ops -maxdepth 1 -type f -name '*.sh' | sort)
+BACKUP_SHELL_FILES=(
+  scripts/backup-prod.sh
+  scripts/backup-s3-retention.sh
+  scripts/check-backup-s3-readiness.sh
+  scripts/record-backup-s3-readiness.sh
+  scripts/record-backup-s3-restore.sh
+)
+BACKUP_NODE_FILES=(
+  scripts/backup-s3-manifest.mjs
+  scripts/backup-s3-retention.mjs
+  scripts/backup-s3-profile.test.mjs
+)
 
 printf '==> Checking ops shell script syntax\n'
 for file in "${OPS_SHELL_FILES[@]}"; do
   bash -n "$file"
+  printf 'syntax ok: %s\n' "$file"
+done
+for file in "${BACKUP_SHELL_FILES[@]}"; do
+  bash -n "$file"
+  printf 'syntax ok: %s\n' "$file"
+done
+for file in "${BACKUP_NODE_FILES[@]}"; do
+  node --check "$file"
   printf 'syntax ok: %s\n' "$file"
 done
 
@@ -59,6 +79,15 @@ require_env_key() {
   fi
 }
 
+require_env_key_declared() {
+  local file="$1"
+  local key="$2"
+  if ! grep -Eq "^${key}=" "$file"; then
+    printf 'missing declared sample env key: %s in %s\n' "$key" "$file" >&2
+    return 1
+  fi
+}
+
 printf '==> Checking sample env keys and secret-like values\n'
 gcp_env="docs/ops/examples/gcp-preflight.env.example"
 vps_env="docs/ops/examples/vps-ops.env.example"
@@ -87,10 +116,40 @@ for key in \
   require_env_key "$vps_env" "$key"
 done
 
+backup_env="docs/requirements/backup-restore.env.example"
+for key in \
+  ENVIRONMENT \
+  COMMIT_SHA \
+  DB_VERSION \
+  SCHEMA_VERSION \
+  APP_VERSION \
+  BACKUP_RETENTION_CLASS \
+  GPG_RECIPIENT \
+  GPG_REMOVE_PLAINTEXT \
+  S3_PROVIDER \
+  S3_ENDPOINT_URL \
+  S3_BUCKET \
+  S3_PREFIX \
+  S3_REGION \
+  S3_VERIFY_DOWNLOAD \
+  S3_EXECUTION_MODE \
+  S3_REAL_RUN_CONFIRM \
+  CHECK_WRITE \
+  S3_OPERATOR_EVIDENCE_FILE \
+  RETENTION_MIN_HOURLY \
+  RETENTION_MIN_DAILY \
+  RETENTION_MIN_WEEKLY \
+  RETENTION_MIN_MONTHLY \
+  PRUNE_CONFIRM \
+  RETENTION_EXCLUSIVE_LOCK_CONFIRM \
+  RETENTION_PLAN_SHA256; do
+  require_env_key_declared "$backup_env" "$key"
+done
+
 private_key_pattern='-----''BEGIN (RSA|EC|OPENSSH) PRIVATE KEY-----|-----''BEGIN PRIVATE KEY-----|-----''BEGIN PGP PRIVATE KEY BLOCK-----'
 secret_pattern="(${private_key_pattern}|AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|GOCSPX-[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{80,}|xox[baprs]-[A-Za-z0-9-]{10,}|https://hooks\.slack\.com/services/[A-Za-z0-9/_-]{20,}|ya29\.[0-9A-Za-z._-]{20,})"
 secret_matches="$SMOKE_DIR/secret-like-matches.txt"
-if grep -RInE "$secret_pattern" docs/ops/examples/*.env.example > "$secret_matches"; then
+if grep -HnE "$secret_pattern" docs/ops/examples/*.env.example "$backup_env" > "$secret_matches"; then
   printf 'Sample env file contains a value that looks like a real secret. Locations only are shown to avoid reprinting the value.\n' >&2
   awk -F: 'NF >= 2 { print $1 ":" $2 }' "$secret_matches" >&2
   printf 'Replace the value with a placeholder or secret resource name.\n' >&2
