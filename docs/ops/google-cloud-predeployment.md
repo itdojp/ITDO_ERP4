@@ -139,7 +139,7 @@ ERP4 側への対応:
 | frontend origin     | `AUTH_FRONTEND_ORIGIN`, `ALLOWED_ORIGINS` |
 | backend origin      | `VITE_API_BASE`                           |
 
-## 4. Google Drive 添付設定
+## 4. Google Driveストレージ設定
 
 ### 4-1. scope 方針
 
@@ -151,13 +151,22 @@ ERP4 側への対応:
 - `drive` scope が必要かは preflight と組織ポリシーに基づき個別判断する。既存 Shared Drive folder を使うことだけを理由に必須とは断定しない。
 - domain-wide delegation は追加しない。
 
-保存先は次のいずれかとし、Drive ID と folder ID を別の設定として管理する。
+保存先は次のいずれかとし、Drive ID と folder ID を別の設定として管理する。productionではChat、PDF、Evidence archive、Reportを専用subfolderへ分離する。
 
-| 構成                                           | `ERP4_GDRIVE_SHARED_DRIVE_ID` | `CHAT_ATTACHMENT_GDRIVE_FOLDER_ID` |
-| ---------------------------------------------- | ----------------------------- | ---------------------------------- |
-| Shared Drive 専用 subfolder（production 推奨） | Shared Drive ID               | 専用 subfolder ID                  |
-| Shared Drive 直下                              | Shared Drive ID               | 対象ルート folder ID               |
-| My Drive 専用 folder                           | 未設定                        | 専用 folder ID                     |
+| 構成                                        | `ERP4_GDRIVE_SHARED_DRIVE_ID` | context別folder ID  |
+| ------------------------------------------- | ----------------------------- | ------------------- |
+| Shared Drive専用subfolder（production推奨） | Shared Drive ID               | 専用subfolder ID    |
+| Shared Drive直下                            | Shared Drive ID               | 対象ルートfolder ID |
+| My Drive専用folder                          | 未設定                        | 専用folder ID       |
+
+context別のfolder env:
+
+| context          | folder env                          |
+| ---------------- | ----------------------------------- |
+| Chat attachment  | `CHAT_ATTACHMENT_GDRIVE_FOLDER_ID`  |
+| PDF              | `PDF_GDRIVE_FOLDER_ID`              |
+| Evidence archive | `EVIDENCE_ARCHIVE_GDRIVE_FOLDER_ID` |
+| Report output    | `REPORT_GDRIVE_FOLDER_ID`           |
 
 ### 4-2. OAuth client / refresh token
 
@@ -176,14 +185,16 @@ ERP4 側への対応:
 
 ERP4 側への対応:
 
-| Google 側           | ERP4 env                              |
-| ------------------- | ------------------------------------- |
-| OAuth client ID     | `ERP4_GDRIVE_CLIENT_ID`               |
-| OAuth client secret | `ERP4_GDRIVE_CLIENT_SECRET`           |
-| refresh token       | `ERP4_GDRIVE_REFRESH_TOKEN`           |
-| Shared Drive ID     | `ERP4_GDRIVE_SHARED_DRIVE_ID`（任意） |
-| folder ID           | `CHAT_ATTACHMENT_GDRIVE_FOLDER_ID`    |
-| provider switch     | `CHAT_ATTACHMENT_PROVIDER=gdrive`     |
+| Google 側           | ERP4 env                                  |
+| ------------------- | ----------------------------------------- |
+| OAuth client ID     | `ERP4_GDRIVE_CLIENT_ID`                   |
+| OAuth client secret | `ERP4_GDRIVE_CLIENT_SECRET`               |
+| refresh token       | `ERP4_GDRIVE_REFRESH_TOKEN`               |
+| Shared Drive ID     | `ERP4_GDRIVE_SHARED_DRIVE_ID`（任意）     |
+| folder ID           | 上記context別`*_GDRIVE_FOLDER_ID`         |
+| provider switch     | Chatのみ`CHAT_ATTACHMENT_PROVIDER=gdrive` |
+
+このfoundation PRではPDF、Evidence archive、Reportのfolder preflightとstorage portまでを提供する。これら3 contextのruntime provider切替は#1977の後続runtime integration PRで実装・検証するまで設定しない。未実装の`PDF_PROVIDER=gdrive`、`EVIDENCE_ARCHIVE_PROVIDER=gdrive`、`REPORT_PROVIDER=gdrive`を本番envへ追加してはならない。
 
 旧 `CHAT_ATTACHMENT_GDRIVE_CLIENT_ID` / `CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET` / `CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN` は deprecated な後方互換 fallback とする。共通キーを1つでも設定した場合は完全な `ERP4_GDRIVE_*` 3点setを必須とし、field単位の混在は拒否する。共通setが未設定の場合だけ完全な旧setへfallbackし、両方が完全な場合は共通setを優先する。ログにはcredential値を出さない。
 
@@ -202,11 +213,25 @@ chmod 600 .codex-local/secure/gdrive.env
 
 wrapper は compiled backend CLI を使う。未buildのcheckoutでは、repository標準手順で backend dependencies / Prisma Client を準備した後、先に `npm run build --prefix packages/backend` を実行する。
 
+`--target`は`chat|pdf|evidence|report`を受け付ける。非Chat targetは完全な`ERP4_GDRIVE_*` credentialだけを使用し、旧Chat aliasへfallbackしない。各folderを別のprotected outputへprovisionし、出力されたenv keyを承認済みruntime secretへ画面表示なしで転記する。
+
 ```bash
 ./scripts/ops/gcp-drive-check.sh \
   --env-file .codex-local/secure/gdrive.env \
+  --target chat \
   --provision-folder \
   --folder-id-output-file .codex-local/secure/chat-gdrive-folder.env \
+  --mode read
+```
+
+PDF folderの例（Evidence/Reportも`--target`を変更して同様に実行）:
+
+```bash
+./scripts/ops/gcp-drive-check.sh \
+  --env-file .codex-local/secure/gdrive.env \
+  --target pdf \
+  --provision-folder \
+  --folder-id-output-file .codex-local/secure/pdf-gdrive-folder.env \
   --mode read
 ```
 
@@ -225,13 +250,13 @@ wrapper は compiled backend CLI を使う。未buildのcheckoutでは、reposit
 保存先を設定した保護済み env file で read / write operator preflight を行う。
 
 ```bash
-./scripts/ops/gcp-drive-check.sh --env-file .codex-local/secure/gdrive.env --mode read
-./scripts/ops/gcp-drive-check.sh --env-file .codex-local/secure/gdrive.env --mode write
+./scripts/ops/gcp-drive-check.sh --env-file .codex-local/secure/gdrive.env --target pdf --mode read
+./scripts/ops/gcp-drive-check.sh --env-file .codex-local/secure/gdrive.env --target pdf --mode write
 ```
 
 `scripts/ops/gcp-drive-check.sh` を標準手順とし、配下の TypeScript スクリプトを直接実行しない。`--mode write` はテストファイルを作成して trash する。証跡には成功/失敗と時刻だけを残し、credential 値、folder ID、Drive ID は残さない。
 
-fake API を使う unit test は設定解決、API parameter、再試行、エラー処理を検証するもので、実 Google Drive の membership / scope / folder 権限を検証しない。#1976 の実 Google Drive 検証は未実施のため、production 切り替え前に operator preflight を完了する。
+fake API を使う unit test は設定解決、API parameter、再試行、エラー処理を検証するもので、実 Google Drive の membership / scope / folder 権限を検証しない。各contextのproduction切り替え前に対象folderのoperator preflightを完了する。
 
 ### 4-4. API/データ運用方針
 

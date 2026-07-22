@@ -92,6 +92,28 @@ export function resolveGoogleDriveCredentials(
   };
 }
 
+export function resolveGoogleDriveCommonCredentials(
+  env: NodeJS.ProcessEnv = process.env,
+): GoogleDriveCredentialConfig {
+  const values: Partial<Record<CredentialProperty, string>> = {};
+  for (const key of CREDENTIAL_KEYS) {
+    const value = normalized(env[key.common]);
+    if (value) values[key.property] = value;
+  }
+  const missing = CREDENTIAL_KEYS.filter((key) => !values[key.property]).map(
+    (key) => key.common,
+  );
+  if (missing.length > 0) {
+    throw new GoogleDriveConfigurationError(missing);
+  }
+  return {
+    clientId: values.clientId as string,
+    clientSecret: values.clientSecret as string,
+    refreshToken: values.refreshToken as string,
+    deprecatedAliasesPresent: [],
+  };
+}
+
 function parseInteger(
   env: NodeJS.ProcessEnv,
   key: string,

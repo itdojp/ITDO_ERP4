@@ -6,14 +6,14 @@
 
 ## スクリプト一覧
 
-| スクリプト                            | 目的                                                                                             | 既定の安全性                                                                            |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| `scripts/ops/sakura-vps-preflight.sh` | VPSのOS/arch/必須コマンド/メモリ/ディスク/port（80/443/3001/4173/8080/55432）/rootless前提を診断 | `--check` のみ。読み取り専用                                                            |
-| `scripts/ops/sakura-vps-bootstrap.sh` | apt package、repo配置先、backup dir、linger、rootless low port設定を補助                         | 既定は `--check`。変更は `--apply` 明示時のみ                                           |
-| `scripts/ops/sakura-vps-deploy.sh`    | git更新、`npm ci`、Quadlet build/install/start/updateを補助                                      | 既定は `--check`。実行は `--apply` 明示時のみ                                           |
-| `scripts/ops/sakura-vps-verify.sh`    | Quadlet env/stack/HTTPS/Drive疎通を証跡化                                                        | 読み取り中心。Drive write test は `--gdrive-mode write` 明示時のみ                      |
-| `scripts/ops/gcp-preflight.sh`        | gcloud account/project/API/billing/secret metadata/WIFを確認                                     | 既定は `--check`。API有効化は `--apply --confirm-project` 明示時のみ                    |
-| `scripts/ops/gcp-drive-check.sh`      | Chat 添付用 Google Drive の folder provision / read-write operator preflight を行う標準 wrapper  | credential / folder ID / Drive ID は表示しない。write test は `--mode write` 明示時のみ |
+| スクリプト                            | 目的                                                                                             | 既定の安全性                                                                                               |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `scripts/ops/sakura-vps-preflight.sh` | VPSのOS/arch/必須コマンド/メモリ/ディスク/port（80/443/3001/4173/8080/55432）/rootless前提を診断 | `--check` のみ。読み取り専用                                                                               |
+| `scripts/ops/sakura-vps-bootstrap.sh` | apt package、repo配置先、backup dir、linger、rootless low port設定を補助                         | 既定は `--check`。変更は `--apply` 明示時のみ                                                              |
+| `scripts/ops/sakura-vps-deploy.sh`    | git更新、`npm ci`、Quadlet build/install/start/updateを補助                                      | 既定は `--check`。実行は `--apply` 明示時のみ                                                              |
+| `scripts/ops/sakura-vps-verify.sh`    | Quadlet env/stack/HTTPS/Drive疎通を証跡化                                                        | 読み取り中心。Drive write test は `--gdrive-mode write` 明示時のみ                                         |
+| `scripts/ops/gcp-preflight.sh`        | gcloud account/project/API/billing/secret metadata/WIFを確認                                     | 既定は `--check`。API有効化は `--apply --confirm-project` 明示時のみ                                       |
+| `scripts/ops/gcp-drive-check.sh`      | context別 Google Drive folder provision / read-write operator preflightを行う標準wrapper         | credential / folder ID / Drive ID は表示しない。`--target <context>`、write testは`--mode write`明示時のみ |
 
 ## さくらVPS: 推奨実行順
 
@@ -155,7 +155,7 @@ Google Drive 連携を採用している場合は read test を加える。
 
 ### 4. Drive folder / read-write check
 
-#1976 の Google Drive 対象は Chat 添付だけです。PDF / Evidence Pack / Report は #1977 で扱います。production は Shared Drive の専用 subfolder を推奨しますが、Shared Drive 直下または My Drive の専用 folder も構成できます。`ERP4_GDRIVE_SHARED_DRIVE_ID` は Shared Drive ID、`CHAT_ATTACHMENT_GDRIVE_FOLDER_ID` は実際の保存先 folder ID として分離します。
+#1977ではPDF / Evidence archive / Report用のcontext別folderを追加します。productionはShared Driveの専用subfolderを推奨しますが、Shared Drive直下またはMy Driveの専用folderも構成できます。`ERP4_GDRIVE_SHARED_DRIVE_ID`はShared Drive ID、各`*_GDRIVE_FOLDER_ID`は実際の保存先folder IDとして分離します。
 
 wrapper は compiled backend CLI を使います。未buildのcheckoutでは、repository標準手順で backend dependencies / Prisma Client を準備した後、先に `npm run build --prefix packages/backend` を実行します。
 

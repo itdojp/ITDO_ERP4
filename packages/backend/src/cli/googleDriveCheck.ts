@@ -1,5 +1,6 @@
 import {
   GoogleDriveConfigurationError,
+  resolveGoogleDriveCommonCredentials,
   resolveGoogleDriveCredentials,
   resolveGoogleDriveSharedDriveId,
   resolveGoogleDriveTuningConfig,
@@ -28,10 +29,13 @@ function resolveMode(): GoogleDriveCheckMode {
 }
 
 async function main() {
-  const credentials = resolveGoogleDriveCredentials(process.env);
+  const genericFolderId = process.env.ERP4_GDRIVE_TARGET_FOLDER_ID?.trim();
+  const credentials = genericFolderId
+    ? resolveGoogleDriveCommonCredentials(process.env)
+    : resolveGoogleDriveCredentials(process.env);
   await runGoogleDriveCheck({
     drive: createGoogleDriveApi(credentials),
-    folderId: requireEnv('CHAT_ATTACHMENT_GDRIVE_FOLDER_ID'),
+    folderId: genericFolderId ?? requireEnv('CHAT_ATTACHMENT_GDRIVE_FOLDER_ID'),
     mode: resolveMode(),
     sharedDriveId: resolveGoogleDriveSharedDriveId(process.env),
     tuning: resolveGoogleDriveTuningConfig(process.env),

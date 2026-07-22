@@ -5,6 +5,7 @@ import {
   formatGoogleDriveLegacyEnvWarning,
   GOOGLE_DRIVE_TUNING_DEFAULTS,
   GoogleDriveConfigurationError,
+  resolveGoogleDriveCommonCredentials,
   resolveGoogleDriveCredentials,
   resolveGoogleDriveSharedDriveId,
   resolveGoogleDriveTuningConfig,
@@ -42,6 +43,28 @@ test('Google Drive credentials keep legacy Chat aliases compatible', () => {
   assert.deepEqual(
     config.deprecatedAliasesPresent.sort(),
     Object.keys(legacyCredentials).sort(),
+  );
+});
+
+test('non-Chat Google Drive credentials require the common ERP4 keys', () => {
+  assert.deepEqual(resolveGoogleDriveCommonCredentials(commonCredentials), {
+    clientId: 'common-client',
+    clientSecret: 'common-secret',
+    refreshToken: 'common-refresh',
+    deprecatedAliasesPresent: [],
+  });
+  assert.throws(
+    () => resolveGoogleDriveCommonCredentials(legacyCredentials),
+    (error) => {
+      assert.ok(error instanceof GoogleDriveConfigurationError);
+      assert.deepEqual(error.keys, [
+        'ERP4_GDRIVE_CLIENT_ID',
+        'ERP4_GDRIVE_CLIENT_SECRET',
+        'ERP4_GDRIVE_REFRESH_TOKEN',
+      ]);
+      assert.doesNotMatch(JSON.stringify(error), /legacy-/);
+      return true;
+    },
   );
 });
 

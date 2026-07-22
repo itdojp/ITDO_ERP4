@@ -104,7 +104,23 @@
       "src/cli/googleDriveProvisionService.ts",
       "src/infrastructure/storage/googleDriveConfig.ts",
       "src/infrastructure/storage/googleDriveObjectStore.ts",
+      "src/infrastructure/storage/localArtifactDirectory.ts",
       "src/infrastructure/storage/objectStore.ts"
+    ]
+  },
+  "storage": {
+    "summary": "coverage/storage/coverage-summary.json",
+    "thresholds": {
+      "statements": 89,
+      "branches": 73.9,
+      "functions": 100,
+      "lines": 89
+    },
+    "files": [
+      "src/adapters/storage/artifactStorageAdapter.ts",
+      "src/application/storage/artifactMigrationService.ts",
+      "src/cli/storageArtifactMigration.ts",
+      "src/infrastructure/storage/localArtifactDirectory.ts"
     ]
   },
   "projects": {

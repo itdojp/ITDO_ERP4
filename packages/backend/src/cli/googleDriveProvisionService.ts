@@ -20,9 +20,28 @@ async function writeState(output: FileHandle, content: string) {
   await output.sync();
 }
 
+export const GOOGLE_DRIVE_FOLDER_ENV_KEYS = [
+  'CHAT_ATTACHMENT_GDRIVE_FOLDER_ID',
+  'PDF_GDRIVE_FOLDER_ID',
+  'EVIDENCE_ARCHIVE_GDRIVE_FOLDER_ID',
+  'REPORT_GDRIVE_FOLDER_ID',
+] as const;
+
+export type GoogleDriveFolderEnvKey =
+  (typeof GOOGLE_DRIVE_FOLDER_ENV_KEYS)[number];
+
+function resolveOutputKey(value?: string): GoogleDriveFolderEnvKey {
+  const key = value ?? 'CHAT_ATTACHMENT_GDRIVE_FOLDER_ID';
+  if (!GOOGLE_DRIVE_FOLDER_ENV_KEYS.includes(key as GoogleDriveFolderEnvKey)) {
+    throw new GoogleDriveConfigurationError(['GDRIVE_FOLDER_ID_OUTPUT_KEY']);
+  }
+  return key as GoogleDriveFolderEnvKey;
+}
+
 export async function reconcileGoogleDriveProvision(options: {
   drive: GoogleDriveApi;
   outputFile: string;
+  outputKey?: GoogleDriveFolderEnvKey;
   sharedDriveId?: string;
   tuning: GoogleDriveTuningConfig;
   log?: (message: string) => void;
@@ -49,6 +68,17 @@ export async function reconcileGoogleDriveProvision(options: {
     )?.[1];
     if (!marker) {
       throw new GoogleDriveConfigurationError(['ERP4_GDRIVE_PROVISION_MARKER']);
+    }
+    const persistedOutputKey = state.match(
+      /^ERP4_GDRIVE_PROVISION_OUTPUT_KEY=([A-Z0-9_]+)$/m,
+    )?.[1];
+    const outputKey = resolveOutputKey(options.outputKey ?? persistedOutputKey);
+    if (
+      options.outputKey &&
+      persistedOutputKey &&
+      options.outputKey !== persistedOutputKey
+    ) {
+      throw new GoogleDriveConfigurationError(['GDRIVE_FOLDER_ID_OUTPUT_KEY']);
     }
     const params: Record<string, unknown> = {
       q: `appProperties has { key='erp4ProvisionMarker' and value='${marker}' } and trashed=false`,
@@ -80,7 +110,8 @@ export async function reconcileGoogleDriveProvision(options: {
     }
     await writeState(
       output,
-      `CHAT_ATTACHMENT_GDRIVE_FOLDER_ID=${ids[0]}\n` +
+      `${outputKey}=${ids[0]}\n` +
+        `ERP4_GDRIVE_PROVISION_OUTPUT_KEY=${outputKey}\n` +
         `ERP4_GDRIVE_PROVISION_MARKER=${marker}\n` +
         'ERP4_GDRIVE_PROVISION_STATE=COMPLETE\n',
     );
@@ -94,6 +125,7 @@ export async function provisionGoogleDriveFolder(options: {
   drive: GoogleDriveApi;
   folderName: string;
   outputFile: string;
+  outputKey?: GoogleDriveFolderEnvKey;
   sharedDriveId?: string;
   tuning: GoogleDriveTuningConfig;
   marker?: string;
@@ -101,6 +133,7 @@ export async function provisionGoogleDriveFolder(options: {
 }) {
   const log = options.log ?? console.log;
   const provisionMarker = options.marker ?? randomUUID();
+  const outputKey = resolveOutputKey(options.outputKey);
   const output = await open(options.outputFile, 'wx', 0o600);
   let outputClosed = false;
   let remoteCreateStarted = false;
@@ -109,7 +142,9 @@ export async function provisionGoogleDriveFolder(options: {
   try {
     await writeState(
       output,
-      `ERP4_GDRIVE_PROVISION_MARKER=${provisionMarker}\nERP4_GDRIVE_PROVISION_STATE=CREATE_STARTED\n`,
+      `ERP4_GDRIVE_PROVISION_OUTPUT_KEY=${outputKey}\n` +
+        `ERP4_GDRIVE_PROVISION_MARKER=${provisionMarker}\n` +
+        'ERP4_GDRIVE_PROVISION_STATE=CREATE_STARTED\n',
     );
 
     remoteCreateStarted = true;
@@ -142,7 +177,8 @@ export async function provisionGoogleDriveFolder(options: {
 
     await writeState(
       output,
-      `CHAT_ATTACHMENT_GDRIVE_FOLDER_ID=${remoteFolderId}\n` +
+      `${outputKey}=${remoteFolderId}\n` +
+        `ERP4_GDRIVE_PROVISION_OUTPUT_KEY=${outputKey}\n` +
         `ERP4_GDRIVE_PROVISION_MARKER=${provisionMarker}\n` +
         'ERP4_GDRIVE_PROVISION_STATE=COMPLETE\n',
     );

@@ -42,6 +42,12 @@
 - [migration](migration.md)
   - 詳細: [docs/requirements/migration-runbook.md](../requirements/migration-runbook.md)
 
+### ストレージ移行
+
+- PDF・Evidence・Report copy-only移行: [storage-artifact-migration](storage-artifact-migration.md)
+  - 契約: [storage-artifacts-google-drive](../requirements/storage-artifacts-google-drive.md)
+  - 証跡テンプレート: [storage-artifact-migration-template](../test-results/storage-artifact-migration-template.md)
+
 ### 添付AVスキャン
 
 - [antivirus](antivirus.md)
