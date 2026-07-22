@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "erp4.restore.evidence.v1",
+  "environment": "REPLACE_WITH_ENVIRONMENT_LABEL",
+  "backupId": "REPLACE_WITH_PRIVATE_BACKUP_ID",
+  "completedAt": "2000-01-01T00:00:00.000Z",
+  "result": "blocked",
+  "checks": {
+    "counts": false,
+    "amounts": false,
+    "references": false,
+    "files": false
+  }
+}

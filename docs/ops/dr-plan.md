@@ -107,6 +107,8 @@ credential失効、folder membership不一致、object欠落、checksum不一致
 - `docs/test-results/dr-restore-template.md` をコピーし、`docs/test-results/YYYY-MM-DD-dr-restore-rN.md` または `docs/test-results/YYYY-MM-DD-dr-restore-<RUN_LABEL>.md` として保存する
 - 補助: `scripts/record-dr-restore.sh` で最新 `tmp/erp4-dr-verify-*.log` から記録ファイルを生成できる
 - 過去30日以内の成功記録は リリース判定の restore verification 証跡として参照してよい
+- 統合readinessへ渡すprivate JSONは[restore evidence example](examples/restore-evidence.json.example)のschemaを使用し、mode 600、current owner、non-symlinkでrepository外へ保管する。environment / backup IDは比較専用で、sanitized recordへ転記しない
+- `make storage-readiness`の`restore_evidence=pass`は証跡のfreshnessと一致を示すだけであり、実restore自体のraw evidenceを代替しない
 
 ## 関連
 
@@ -114,3 +116,4 @@ credential失効、folder membership不一致、object欠落、checksum不一致
 - S3-compatible storage設定決定: `docs/ops/backup-s3-decision-checklist.md`
 - Google Drive secondary copy: `docs/ops/backup-restore.md#46-google-drive-secondary-copy`
 - 障害対応: `docs/ops/incident-response.md`
+- Storage／backup統合readiness: `docs/ops/storage-readiness.md`

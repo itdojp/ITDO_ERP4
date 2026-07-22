@@ -32,6 +32,7 @@
 ### バックアップ/リストア
 
 - [backup-restore](backup-restore.md)
+  - Storage／backup統合readiness: [storage-readiness](storage-readiness.md)
   - Quadlet DB backup/restore 補助: [quadlet-db-backup-restore](quadlet-db-backup-restore.md)
   - DR計画（RTO/RPO/復元演習）: [dr-plan](dr-plan.md)
   - 詳細: [docs/requirements/backup-restore.md](../requirements/backup-restore.md)
@@ -58,6 +59,7 @@
 ### 監視/障害対応
 
 - health/readiness/ログ: [observability](observability.md)
+- Google Drive容量、backup freshness/retention/integrity、restore証跡: [storage-readiness](storage-readiness.md)
 - SLI/SLO（暫定）: [slo](slo.md)
 - アラート設計: [alerting](alerting.md)
   - 発火条件、暫定 SEV、通知テンプレートの入口

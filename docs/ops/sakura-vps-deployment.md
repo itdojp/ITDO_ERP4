@@ -422,6 +422,17 @@ journalctl --user -u erp4-backend.service -n 100 --no-pager
 journalctl --user -u erp4-caddy.service -n 100 --no-pager
 ```
 
+storage / backupの統合readinessは、private envと手動read-only checkを確認した後だけ、人間承認によりtimerを有効化する。導入、exit code、journal、disable/rollbackは[storage-readiness](storage-readiness.md)に従う。
+
+```bash
+make build
+make storage-readiness
+systemctl --user enable --now erp4-storage-readiness.timer
+systemctl --user list-timers erp4-storage-readiness.timer --all
+```
+
+repo-side導入作業や共有WSL2ではtimerをenable/startしない。監視timerはrestoreやretention applyを実行しない。
+
 関連Runbook:
 
 - [observability](observability.md)
@@ -490,6 +501,7 @@ No-Go 条件:
 - 試験稼働 Go/No-Go: [sakura-vps-trial-checklist](sakura-vps-trial-checklist.md)
 - Secrets/アクセス権限: [secrets-and-access](secrets-and-access.md)
 - Backup/restore: [backup-restore](backup-restore.md)
+- Storage／backup統合readiness: [storage-readiness](storage-readiness.md)
 - Quadlet DB backup/restore: [quadlet-db-backup-restore](quadlet-db-backup-restore.md)
 
 ## 参考（2026-05-10 確認）

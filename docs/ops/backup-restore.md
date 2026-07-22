@@ -17,6 +17,7 @@
 - docs/requirements/backup-restore.md
 - decision: docs/ops/backup-s3-decision-checklist.md
 - DR: docs/ops/dr-plan.md
+- 統合監視: docs/ops/storage-readiness.md
 
 ## 禁止事項
 
@@ -384,7 +385,20 @@ templates:
 
 passにはdirect real readiness、write probe、backup/upload/download/restore log、整合性JSONが必要である。raw logとtarget identifierをrepositoryへcommitせず、private evidenceへのreferenceとsanitized summaryだけを残す。
 
-## 8. Quadlet local backup
+## 8. Storage／backup統合readiness
+
+application用Google Drive、VPS local、Sakura primary、Drive secondary、restore evidenceを1コマンドで確認する。
+
+```bash
+make build
+make storage-readiness
+```
+
+read-onlyが既定であり、統合checkはrestore、prune apply、provider object削除を行わない。Drive write/trash probeは人間承認後の明示的な`--write-probe`だけで実行する。既定閾値、exit code、private env、timer、evidence、status別再開手順は[storage-readiness](storage-readiness.md)を参照する。
+
+定期Sakura checkはmanifestとS3 HEAD metadataのSHA-256を照合するが、毎時のciphertext全download/re-hashは行わない。full byte検証はverified upload/downloadと隔離restoreで実施する。
+
+## 9. Quadlet local backup
 
 rootless Podman / Quadletのlocal DB backup:
 
@@ -410,7 +424,7 @@ RESTORE_CONFIRM=1 \
 
 共有WSL2 hostではservice restart、systemd有効化、Podman volume削除を行わない。live Sakura rehearsalは専用VPSまたはdedicated disposable WSL2で行う。
 
-## 9. 停止条件と再開
+## 10. 停止条件と再開
 
 停止:
 

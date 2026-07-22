@@ -19,6 +19,7 @@ OPS_DOC_TARGETS=(
   docs/ops/sakura-vps-deployment.md
   docs/ops/sakura-vps-env-checklist.md
   docs/ops/sakura-vps-trial-profiles.md
+  docs/ops/storage-readiness.md
   docs/ops/ops-automation.md
   docs/ops/codex-ops-workflows.md
   docs/ops/continuity-handoff.md
@@ -27,7 +28,9 @@ OPS_DOC_TARGETS=(
   docs/requirements/backup-restore.md
   docs/test-results/backup-s3-readiness-template.md
   docs/test-results/backup-s3-restore-template.md
+  docs/test-results/storage-readiness-template.md
   docs/ops/examples/codex-risk-report.schema.json
+  docs/ops/examples/restore-evidence.json.example
 )
 
 printf '==> Checking ops documentation target files exist\n'
@@ -55,7 +58,8 @@ for (const file of process.argv.slice(1)) {
   JSON.parse(fs.readFileSync(file, "utf8"));
   console.log(`valid JSON: ${file}`);
 }
-' docs/ops/examples/codex-risk-report.schema.json
+' docs/ops/examples/codex-risk-report.schema.json \
+  docs/ops/examples/restore-evidence.json.example
 
 printf '==> Checking relative Markdown links in ops documentation targets\n'
 node - "${OPS_DOC_TARGETS[@]}" <<'NODE'
