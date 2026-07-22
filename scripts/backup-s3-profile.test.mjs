@@ -216,7 +216,14 @@ else
   [[ "$operation" == cp ]] || exit 1
   source="\${args[$((command_index + 2))]}"; destination="\${args[$((command_index + 3))]}"
   if [[ "$source" == s3://* ]]; then
-    key="\${source#s3://*/}"; safe="$(safe_key "$key")"; cp "$FAKE_S3_ROOT/$safe" "$destination"
+    key="\${source#s3://*/}"
+    if [[ "\${FAKE_FAIL_MANIFEST_DOWNLOAD:-0}" == 1 && "$key" == *.manifest.json ]]; then
+      exit 43
+    fi
+    safe="$(safe_key "$key")"; cp "$FAKE_S3_ROOT/$safe" "$destination"
+    if [[ "\${FAKE_CORRUPT_MANIFEST_DOWNLOAD:-0}" == 1 && "$key" == *.manifest.json ]]; then
+      printf '\ncorrupted-remote-manifest\n' >>"$destination"
+    fi
   else
     key="\${destination#s3://*/}"; safe="$(safe_key "$key")"; cp "$source" "$FAKE_S3_ROOT/$safe"
     metadata="$(value_after --metadata)"; printf '%s' "\${metadata#sha256=}" >"$FAKE_S3_ROOT/$safe.sha"
@@ -362,6 +369,8 @@ function runSecondaryUploadScenario(
   dir,
   {
     failPrimary = false,
+    corruptRemoteManifest = false,
+    failRemoteManifestDownload = false,
     failSecondary = false,
     retentionClass = "daily",
     secondaryError = "google_drive_retryable",
@@ -400,6 +409,8 @@ function runSecondaryUploadScenario(
     BACKUP_GDRIVE_SHARED_DRIVE_ID: "sensitive-drive-placeholder",
     BACKUP_GDRIVE_FOLDER_ID: "sensitive-folder-placeholder",
     FAKE_BAD_CHECKSUM: failPrimary ? "1" : "0",
+    FAKE_CORRUPT_MANIFEST_DOWNLOAD: corruptRemoteManifest ? "1" : "0",
+    FAKE_FAIL_MANIFEST_DOWNLOAD: failRemoteManifestDownload ? "1" : "0",
   });
   return { ...fixture, ...secondary, env, result };
 }
@@ -885,6 +896,16 @@ test("Google Drive secondary runs only after a verified Sakura primary bundle", 
       /sensitive-|bucket-placeholder|s3\.example\.invalid/,
     );
     assert.deepEqual(secondaryRequestFiles(scenario), []);
+    const primaryCalls = readFileSync(scenario.env.FAKE_AWS_LOG, "utf8");
+    assert.equal(
+      primaryCalls
+        .split("\n")
+        .filter(
+          (line) =>
+            line.includes("s3 cp s3://") && line.includes(".manifest.json"),
+        ).length,
+      3,
+    );
   });
 
   for (const secondaryError of [
@@ -923,6 +944,32 @@ test("Google Drive secondary runs only after a verified Sakura primary bundle", 
     assert.match(calls, /^check-config/m);
     assert.doesNotMatch(calls, /^upload /m);
     assert.doesNotMatch(scenario.result.stderr, /partial_failure/);
+  });
+
+  withScratch("backup-gdrive-primary-manifest-mismatch-", (dir) => {
+    const scenario = runSecondaryUploadScenario(dir, {
+      corruptRemoteManifest: true,
+    });
+    assert.notEqual(scenario.result.status, 0);
+    assert.match(scenario.result.stderr, /remote manifest mismatch/);
+    const calls = readFileSync(scenario.FAKE_GDRIVE_SECONDARY_LOG, "utf8");
+    assert.match(calls, /^check-config/m);
+    assert.doesNotMatch(calls, /^upload /m);
+    assert.doesNotMatch(scenario.result.stderr, /partial_failure/);
+    assert.deepEqual(secondaryRequestFiles(scenario), []);
+  });
+
+  withScratch("backup-gdrive-primary-manifest-download-failure-", (dir) => {
+    const scenario = runSecondaryUploadScenario(dir, {
+      failRemoteManifestDownload: true,
+    });
+    assert.notEqual(scenario.result.status, 0);
+    assert.match(scenario.result.stderr, /remote manifest download failed/);
+    const calls = readFileSync(scenario.FAKE_GDRIVE_SECONDARY_LOG, "utf8");
+    assert.match(calls, /^check-config/m);
+    assert.doesNotMatch(calls, /^upload /m);
+    assert.doesNotMatch(scenario.result.stderr, /partial_failure/);
+    assert.deepEqual(secondaryRequestFiles(scenario), []);
   });
 
   withScratch("backup-gdrive-hourly-skip-", (dir) => {

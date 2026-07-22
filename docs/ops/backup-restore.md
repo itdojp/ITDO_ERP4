@@ -183,7 +183,7 @@ make backup-s3-upload
 
 Sakuraではdatabase、globals、metadataが同じbundleに属する必要がある。pre-encrypted artifactは既存manifest sidecarを要求する。同一remote keyが存在すれば上書きせず停止する。remote existence checkとPUTはS3 API上の単一atomic操作ではないため、production backup runnerは1環境1 writerとし、複数hostから同じbackup IDを同時uploadしない。
 
-S3_VERIFY_DOWNLOAD=1の場合、upload後にartifactとremote manifestの両方をprivate scratchへ再downloadする。remote manifestが送信元manifestとbyte一致し、artifactのSHA-256とOpenPGP packetが一致する場合だけ成功とする。
+S3_VERIFY_DOWNLOAD=1の場合、upload後にartifactとremote manifestの両方をprivate scratchへ再downloadする。remote manifestが送信元manifestとbyte一致し、artifactのSHA-256とOpenPGP packetが一致する場合だけ成功とする。`BACKUP_SECONDARY_PROVIDER=gdrive`では`S3_VERIFY_DOWNLOAD=0`でも各remote manifestを再downloadしてbyte一致を必須とし、1件でも欠落・不一致ならprimary failureとしてDriveを呼ばない。
 
 ### 4.3 download
 
@@ -212,7 +212,7 @@ remote-host経路はSakura移行中のcopy-only sourceであり、Sakura object 
 責任分界:
 
 - Sakura S3-compatible object storageがprimaryであり、Driveだけのbackup成功状態は作らない。
-- `backup-prod.sh backup|upload`はprimary bundleを全件検証した後だけsecondary CLIを呼ぶ。
+- `backup-prod.sh backup|upload`はprimary artifactのHEAD検証と、全remote manifestの再download・byte一致を完了した後だけsecondary CLIを呼ぶ。`S3_VERIFY_DOWNLOAD=1`ではartifact本体も再downloadする。
 - hourlyはVPS localとSakuraだけに保持し、Driveへ送らない。
 - Driveへ送るのはOpenPGP暗号化済み`.gpg` artifactと対応manifestだけである。
 - secondary failureはsanitized `partial_failure`をstderrへ残してnon-zero終了する。primary objectは自動削除しない。

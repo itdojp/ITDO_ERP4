@@ -611,7 +611,12 @@ upload_artifact() {
     exit 1
   fi
 
-  if [[ "$S3_VERIFY_DOWNLOAD" == "1" ]]; then
+  local verify_full_download=0 verify_remote_manifest=0
+  [[ "$S3_VERIFY_DOWNLOAD" == "1" ]] && verify_full_download=1
+  if [[ "$BACKUP_SECONDARY_PROVIDER" == "gdrive" && "$BACKUP_RETENTION_CLASS" != "hourly" ]]; then
+    verify_remote_manifest=1
+  fi
+  if [[ "$verify_full_download" == "1" || "$verify_remote_manifest" == "1" ]]; then
     local scratch_root verify_dir verify_file verify_manifest
     scratch_root="${ERP4_TMP_DIR:-$ROOT_DIR/.codex-local/tmp}"
     mkdir -p "$scratch_root"
@@ -619,13 +624,19 @@ upload_artifact() {
     verify_dir=$(mktemp -d "$scratch_root/backup-download-verify.XXXXXX")
     verify_file="$verify_dir/$(basename "$artifact_file")"
     verify_manifest="${verify_file}.manifest.json"
-    if ! s3_copy_quiet 'S3 verification artifact download failed' \
-         "s3://${S3_BUCKET}/${artifact_key}" "$verify_file" ||
-       ! s3_copy_quiet 'S3 verification manifest download failed' \
+    if [[ "$verify_full_download" == "1" ]] &&
+       ! s3_copy_quiet 'S3 verification artifact download failed' \
+         "s3://${S3_BUCKET}/${artifact_key}" "$verify_file"; then
+      rm -f -- "$verify_file" "$verify_manifest"
+      rmdir -- "$verify_dir"
+      echo 'S3 upload verification failed: remote artifact download failed' >&2
+      exit 1
+    fi
+    if ! s3_copy_quiet 'S3 verification manifest download failed' \
          "s3://${S3_BUCKET}/${manifest_key}" "$verify_manifest"; then
       rm -f -- "$verify_file" "$verify_manifest"
       rmdir -- "$verify_dir"
-      echo 'S3 upload verification failed: remote artifact/manifest download failed' >&2
+      echo 'S3 upload verification failed: remote manifest download failed' >&2
       exit 1
     fi
     cmp -s "$manifest_file" "$verify_manifest" || {
@@ -634,16 +645,18 @@ upload_artifact() {
       echo 'S3 upload verification failed: remote manifest mismatch' >&2
       exit 1
     }
-    node "$ROOT_DIR/scripts/backup-s3-manifest.mjs" verify \
-      --artifact "$verify_file" --manifest "$verify_manifest" >/dev/null || {
+    if [[ "$verify_full_download" == "1" ]]; then
+      node "$ROOT_DIR/scripts/backup-s3-manifest.mjs" verify \
+        --artifact "$verify_file" --manifest "$verify_manifest" >/dev/null || {
+          rm -f -- "$verify_file" "$verify_manifest"
+          rmdir -- "$verify_dir"
+          exit 1
+        }
+      if [[ "$S3_PROVIDER" == "sakura" ]] && ! assert_openpgp_encrypted "$verify_file"; then
         rm -f -- "$verify_file" "$verify_manifest"
         rmdir -- "$verify_dir"
         exit 1
-      }
-    if [[ "$S3_PROVIDER" == "sakura" ]] && ! assert_openpgp_encrypted "$verify_file"; then
-      rm -f -- "$verify_file" "$verify_manifest"
-      rmdir -- "$verify_dir"
-      exit 1
+      fi
     fi
     rm -f -- "$verify_file" "$verify_manifest"
     rmdir -- "$verify_dir"

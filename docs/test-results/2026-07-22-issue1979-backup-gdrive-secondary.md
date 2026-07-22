@@ -14,7 +14,7 @@ fakeとlocal filesystemだけを使用したrepo-side検証である。実Google
 
 ## 実装境界
 
-- Sakura S3-compatible profileをprimaryとし、primary bundle全件のupload・検証後だけsecondaryを実行する。
+- Sakura S3-compatible profileをprimaryとし、primary bundle全件のupload・検証後だけsecondaryを実行する。secondary有効時は`S3_VERIFY_DOWNLOAD=0`でも全remote manifestを再downloadして送信元とのbyte一致を必須とする。
 - `BACKUP_GDRIVE_*`専用credential setを必須とし、`ERP4_GDRIVE_*` / Chat credentialへfallbackしない。
 - Shared Driveとbackup専用folderを必須とし、個人My Driveを自動採用しない。
 - `.gpg` artifact、OpenPGP packet、manifest、bundle context、ciphertext size / SHA-256を検証し、平文と不完全bundleをremote write前に拒否する。
@@ -51,6 +51,7 @@ backend full test中に、DB未起動による既存の非致命`P1001` audit wa
 
 - secondary disabled時は既存backup動作を維持する。
 - Sakura primary checksum failure時はsecondary uploadを呼ばない。
+- Sakura remote manifestのdownload失敗・byte不一致時はprimary failureとし、secondary uploadを呼ばない。
 - primary成功後のsecondary auth失効、quota、retryable 429 / 5xx相当、timeoutをsanitized `partial_failure`かつnon-zeroとして残す。
 - hourlyはsecondary credential check / uploadを行わない。
 - plaintext、OpenPGPでないartifact、不完全bundle、manifest checksum不一致をremote write前に拒否する。

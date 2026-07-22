@@ -182,7 +182,7 @@ make backup-s3-check
 
 S3_VERIFY_DOWNLOAD=1ではupload直後にremote objectをprivate scratchへdownloadし、同じmanifestでSHA-256を再検証する。
 
-`BACKUP_SECONDARY_PROVIDER=gdrive`では、Sakura primaryの全artifact / manifest uploadとsize/checksum検証が完了した後だけ同じ暗号化bundleをDriveへcopyする。`.gpg`拡張子、OpenPGP packet、manifest context、ciphertext SHA-256 / MD5 / sizeを再検証し、平文・0-byte・世代混在を拒否する。secondary failureはprimaryを未成功に戻さず、job全体を`partial_failure`かつnon-zeroにする。primary failure時はsecondaryを呼ばない。
+`BACKUP_SECONDARY_PROVIDER=gdrive`では、Sakura primaryの全artifact / manifest uploadとsize/checksum検証が完了した後だけ同じ暗号化bundleをDriveへcopyする。`S3_VERIFY_DOWNLOAD=0`でも、各remote manifestをprivate scratchへ再downloadして送信元とbyte一致することを必須とする。`S3_VERIFY_DOWNLOAD=1`ではartifact本体も再downloadして検証する。`.gpg`拡張子、OpenPGP packet、manifest context、ciphertext SHA-256 / MD5 / sizeを再検証し、平文・0-byte・世代混在を拒否する。secondary failureはprimaryを未成功に戻さず、job全体を`partial_failure`かつnon-zeroにする。primary failure時はsecondaryを呼ばない。
 
 Drive objectは既存のUTC timestampを含むimmutable artifact名で保存し、private appPropertiesでhash化backup ID、retention class、artifact type、role、ciphertext SHA-256、object SHA-256 / MD5を管理する。Drive revisionや同名上書きを世代管理に使わない。local stateはmode 600でDrive file IDを保持するが、通常summary、Issue、PR、証跡へfile/folder IDやDrive URLを出さない。
 
