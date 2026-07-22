@@ -52,7 +52,7 @@ expand-only migrationで次を追跡する。
 4. 一致した場合だけ`providerKey`を保存して`ready`へ遷移する。
 5. 失敗時はsecretやprovider identifierを含まないfailure codeで`failed`へ遷移する。
 
-同一context/provider/idempotency keyはDBで一意とする。`ready`はmetadata一致時だけ再利用し、`pending`の並行要求は二重uploadせず`artifact_store_in_progress`で失敗させる。`failed`は1要求だけが再取得できる。Google Drive側のprivate `appProperties`には、生のidempotency keyではなくSHA-256 digestを保存する。
+同一context/provider/idempotency keyはDBで一意とする。`ready`はmetadata一致時だけ再利用する。`pending`の再要求では、新規uploadを開始せず、localの同一UUID fileまたはGoogle Driveのhashed idempotency metadataをread-onlyで照合する。完成済みobjectを内容まで再検証できた場合だけ、upload完了後・DB更新前に中断したrowを`ready`へ回復する。objectが未確認なら、並行要求として`artifact_store_in_progress`で失敗させる。`failed`は1要求だけが再取得できる。Google Drive側のprivate `appProperties`には、生のidempotency keyではなくSHA-256 digestを保存する。状態更新はcompare-and-swapとし、回復済みの`ready`を元upload処理の失敗処理で上書きしない。
 
 ## local providerの安全条件
 

@@ -11,6 +11,13 @@ export type ObjectStorePutInput = {
   sizeBytes: number;
 };
 
+export type ObjectStoreIdempotencyLookupInput = Pick<
+  ObjectStorePutInput,
+  'sha256' | 'sizeBytes'
+> & {
+  idempotencyKey: string;
+};
+
 export type ObjectStoreChecksum = {
   md5?: string;
   sha1?: string;
@@ -33,6 +40,9 @@ export type ObjectStoreGetResult = {
 };
 
 export type ObjectStore = {
+  findByIdempotencyKey(
+    input: ObjectStoreIdempotencyLookupInput,
+  ): Promise<ObjectStoreMetadata | null>;
   put(input: ObjectStorePutInput): Promise<ObjectStoreMetadata>;
   get(key: string): Promise<ObjectStoreGetResult>;
   stat(key: string): Promise<ObjectStoreMetadata>;

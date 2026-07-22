@@ -108,7 +108,7 @@ PASS条件:
 - DBの対象`StorageArtifact`が`ready`
 - 同じcommandの再実行で同じartifact IDを再利用し、Drive上に重複を作らない
 
-失敗時はruntime providerを切り替えない。`failed` rowのsanitized failure codeを確認し、OAuth/folder/quota/readinessを解消して同じcommandを再実行する。remote object作成後に検証が失敗した場合も自動trashしない。Drive IDを公開せず、保護されたoperator inventoryで既存objectを照合する。
+失敗時はruntime providerを切り替えない。`failed` rowのsanitized failure codeを確認し、OAuth/folder/quota/readinessを解消して同じcommandを再実行する。upload完了後・DBの`ready`更新前に中断した`pending` rowは、再実行時にhashed idempotency metadataでDrive objectをread-only照合し、内容を再検証できた場合だけ同じrowを`ready`へ回復する。objectが確認できない`pending` rowでは新規uploadを開始せず、`artifact_store_in_progress`で停止する。remote object作成後に検証が失敗した場合も自動trashしない。Drive IDを公開せず、保護されたoperator inventoryで既存objectを照合する。
 
 ## cutoverとrollback
 

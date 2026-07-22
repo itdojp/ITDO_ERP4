@@ -112,6 +112,30 @@ function input(body = Buffer.from('artifact-content')) {
   };
 }
 
+function addPendingRow(db, value, provider = 'gdrive') {
+  const row = {
+    id: randomUUID(),
+    context: 'pdf',
+    provider,
+    providerKey: null,
+    status: 'pending',
+    idempotencyKey: value.idempotencyKey,
+    originalName: value.originalName,
+    contentType: value.contentType,
+    sizeBytes: BigInt(value.sizeBytes),
+    sha256: value.sha256,
+    ownerType: null,
+    ownerId: null,
+    failureCode: null,
+    createdAt: new Date(),
+    createdBy: null,
+    updatedAt: new Date(),
+    deletedAt: null,
+  };
+  db.rows.push(row);
+  return row;
+}
+
 async function createScratchDir() {
   const scratchRoot = path.resolve(
     process.cwd(),
@@ -398,41 +422,335 @@ test('idempotent ready rows are reused and conflicting metadata fails closed', a
   }
 });
 
-test('pending idempotent rows prevent a concurrent duplicate upload', async () => {
+test('local writes without an idempotency key remain independent', async () => {
+  const localDir = await createScratchDir();
+  const db = createArtifactDb();
+  try {
+    const adapter = createArtifactStorageAdapter({
+      context: 'pdf',
+      db,
+      env: {},
+      folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
+      localDir,
+      provider: 'local',
+    });
+    const value = { ...input(), idempotencyKey: undefined };
+
+    const first = await adapter.store(value);
+    const second = await adapter.store(value);
+    assert.notEqual(first.artifactId, second.artifactId);
+    assert.equal(db.rows.length, 2);
+    assert.equal(
+      db.rows.every((row) => row.status === 'ready'),
+      true,
+    );
+  } finally {
+    await rm(localDir, { recursive: true, force: true });
+  }
+});
+
+test('pending idempotent rows without a completed object prevent a duplicate upload', async () => {
   const db = createArtifactDb();
   const value = input();
-  db.rows.push({
-    id: randomUUID(),
-    context: 'pdf',
-    provider: 'gdrive',
-    providerKey: null,
-    status: 'pending',
-    idempotencyKey: value.idempotencyKey,
-    originalName: value.originalName,
-    contentType: value.contentType,
-    sizeBytes: BigInt(value.sizeBytes),
-    sha256: value.sha256,
-    ownerType: null,
-    ownerId: null,
-    failureCode: null,
-    createdAt: new Date(),
-    createdBy: null,
-    updatedAt: new Date(),
-    deletedAt: null,
-  });
+  addPendingRow(db, value);
+  let lookups = 0;
   const adapter = createArtifactStorageAdapter({
     context: 'pdf',
     db,
-    env: {},
+    env: {
+      PDF_GDRIVE_FOLDER_ID: 'folder-placeholder',
+      ERP4_GDRIVE_CLIENT_ID: 'common-client',
+      ERP4_GDRIVE_CLIENT_SECRET: 'common-secret',
+      ERP4_GDRIVE_REFRESH_TOKEN: 'common-refresh',
+    },
     folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
     localDir: 'unused-local-directory',
-    objectStoreFactory: () => assert.fail('factory must not be called'),
+    objectStoreFactory: () => ({
+      findByIdempotencyKey: async (lookup) => {
+        lookups += 1;
+        assert.equal(lookup.idempotencyKey, value.idempotencyKey);
+        return null;
+      },
+      put: async () => assert.fail('put must not be called'),
+      get: async () => assert.fail('get must not be called'),
+      stat: async () => assert.fail('stat must not be called'),
+      trash: async () => assert.fail('trash must not be called'),
+    }),
     provider: 'gdrive',
   });
 
   await assert.rejects(() => adapter.store(value), {
     message: 'artifact_store_in_progress',
   });
+  assert.equal(lookups, 1);
+  assert.equal(db.rows[0].status, 'pending');
+});
+
+test('pending Drive row recovers a verified idempotent object without reupload', async () => {
+  const db = createArtifactDb();
+  const value = input(Buffer.from('interrupted-drive-upload'));
+  const pending = addPendingRow(db, value);
+  const calls = [];
+  const adapter = createArtifactStorageAdapter({
+    context: 'pdf',
+    db,
+    env: {
+      PDF_GDRIVE_FOLDER_ID: 'folder-placeholder',
+      ERP4_GDRIVE_CLIENT_ID: 'common-client',
+      ERP4_GDRIVE_CLIENT_SECRET: 'common-secret',
+      ERP4_GDRIVE_REFRESH_TOKEN: 'common-refresh',
+    },
+    folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
+    localDir: 'unused-local-directory',
+    objectStoreFactory: () => ({
+      findByIdempotencyKey: async (lookup) => {
+        calls.push('lookup');
+        assert.deepEqual(lookup, {
+          idempotencyKey: value.idempotencyKey,
+          sha256: value.sha256,
+          sizeBytes: value.sizeBytes,
+        });
+        return {
+          key: 'drive-file-placeholder',
+          checksum: { sha256: value.sha256 },
+          contentType: value.contentType,
+          createdAt: null,
+          modifiedAt: null,
+          originalName: value.storageName,
+          sizeBytes: value.sizeBytes,
+          trashed: false,
+        };
+      },
+      put: async () => assert.fail('put must not be called'),
+      get: async (key) => {
+        calls.push(`get:${key}`);
+        return { stream: Readable.from(value.body) };
+      },
+      stat: async () => assert.fail('stat must not be called'),
+      trash: async () => assert.fail('trash must not be called'),
+    }),
+    provider: 'gdrive',
+  });
+
+  const stored = await adapter.store(value);
+  assert.equal(stored.artifactId, pending.id);
+  assert.equal(stored.provider, 'gdrive');
+  assert.equal(Object.hasOwn(stored, 'providerKey'), false);
+  assert.equal(pending.status, 'ready');
+  assert.equal(pending.providerKey, 'drive-file-placeholder');
+  assert.deepEqual(calls, ['lookup', 'get:drive-file-placeholder']);
+});
+
+test('pending Drive row rejects mismatched recovery metadata without reupload', async () => {
+  const db = createArtifactDb();
+  const value = input(Buffer.from('mismatched-drive-upload'));
+  const pending = addPendingRow(db, value);
+  const adapter = createArtifactStorageAdapter({
+    context: 'pdf',
+    db,
+    env: {
+      PDF_GDRIVE_FOLDER_ID: 'folder-placeholder',
+      ERP4_GDRIVE_CLIENT_ID: 'common-client',
+      ERP4_GDRIVE_CLIENT_SECRET: 'common-secret',
+      ERP4_GDRIVE_REFRESH_TOKEN: 'common-refresh',
+    },
+    folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
+    localDir: 'unused-local-directory',
+    objectStoreFactory: () => ({
+      findByIdempotencyKey: async () => ({
+        key: 'drive-file-placeholder',
+        checksum: { sha256: value.sha256 },
+        contentType: value.contentType,
+        createdAt: null,
+        modifiedAt: null,
+        originalName: value.storageName,
+        sizeBytes: value.sizeBytes,
+        trashed: true,
+      }),
+      put: async () => assert.fail('put must not be called'),
+      get: async () => assert.fail('get must not be called'),
+      stat: async () => assert.fail('stat must not be called'),
+      trash: async () => assert.fail('trash must not be called'),
+    }),
+    provider: 'gdrive',
+  });
+
+  await assert.rejects(() => adapter.store(value), {
+    message: 'artifact_remote_verification_failed',
+  });
+  assert.equal(pending.status, 'pending');
+  assert.equal(pending.providerKey, null);
+});
+
+test('unique-create race recovers the completed Drive object without reupload', async () => {
+  const db = createArtifactDb();
+  const value = input(Buffer.from('raced-drive-upload'));
+  addPendingRow(db, value);
+  const findUnique = db.storageArtifact.findUnique;
+  let findCount = 0;
+  db.storageArtifact.findUnique = async (args) => {
+    findCount += 1;
+    if (findCount === 1) return null;
+    return findUnique(args);
+  };
+  db.storageArtifact.create = async () => {
+    throw Object.assign(new Error('unique constraint'), { code: 'P2002' });
+  };
+  let putCalled = false;
+  const adapter = createArtifactStorageAdapter({
+    context: 'pdf',
+    db,
+    env: {
+      PDF_GDRIVE_FOLDER_ID: 'folder-placeholder',
+      ERP4_GDRIVE_CLIENT_ID: 'common-client',
+      ERP4_GDRIVE_CLIENT_SECRET: 'common-secret',
+      ERP4_GDRIVE_REFRESH_TOKEN: 'common-refresh',
+    },
+    folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
+    localDir: 'unused-local-directory',
+    objectStoreFactory: () => ({
+      findByIdempotencyKey: async () => ({
+        key: 'drive-file-placeholder',
+        checksum: { sha256: value.sha256 },
+        contentType: value.contentType,
+        createdAt: null,
+        modifiedAt: null,
+        originalName: value.storageName,
+        sizeBytes: value.sizeBytes,
+        trashed: false,
+      }),
+      put: async () => {
+        putCalled = true;
+        assert.fail('put must not be called');
+      },
+      get: async () => ({ stream: Readable.from(value.body) }),
+      stat: async () => assert.fail('stat must not be called'),
+      trash: async () => assert.fail('trash must not be called'),
+    }),
+    provider: 'gdrive',
+  });
+
+  const stored = await adapter.store(value);
+  assert.equal(stored.artifactId, db.rows[0].id);
+  assert.equal(db.rows[0].status, 'ready');
+  assert.equal(putCalled, false);
+  assert.equal(findCount, 2);
+});
+
+test('pending local row recovers a completed UUID file without rewriting it', async () => {
+  const localDir = await createScratchDir();
+  const db = createArtifactDb();
+  const value = input(Buffer.from('interrupted-local-write'));
+  const pending = addPendingRow(db, value, 'local');
+  try {
+    await writeFile(path.join(localDir, pending.id), value.body, {
+      mode: 0o600,
+    });
+    const adapter = createArtifactStorageAdapter({
+      context: 'pdf',
+      db,
+      env: {},
+      folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
+      localDir,
+      provider: 'local',
+    });
+
+    const stored = await adapter.store(value);
+    assert.equal(stored.artifactId, pending.id);
+    assert.equal(stored.provider, 'local');
+    assert.equal(pending.status, 'ready');
+    assert.equal(pending.providerKey, pending.id);
+    assert.deepEqual(
+      await readFile(path.join(localDir, pending.id)),
+      value.body,
+    );
+  } finally {
+    await rm(localDir, { recursive: true, force: true });
+  }
+});
+
+test('pending local row without a completed file remains in progress', async () => {
+  const localDir = await createScratchDir();
+  const db = createArtifactDb();
+  const value = input(Buffer.from('unfinished-local-write'));
+  const pending = addPendingRow(db, value, 'local');
+  try {
+    const adapter = createArtifactStorageAdapter({
+      context: 'pdf',
+      db,
+      env: {},
+      folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
+      localDir,
+      provider: 'local',
+    });
+
+    await assert.rejects(() => adapter.store(value), {
+      message: 'artifact_store_in_progress',
+    });
+    assert.equal(pending.status, 'pending');
+    assert.equal(pending.providerKey, null);
+  } finally {
+    await rm(localDir, { recursive: true, force: true });
+  }
+});
+
+test('pending local row with partial content is not finalized or rewritten', async () => {
+  const localDir = await createScratchDir();
+  const db = createArtifactDb();
+  const value = input(Buffer.from('expected-complete-local-write'));
+  const pending = addPendingRow(db, value, 'local');
+  const partial = Buffer.from('partial');
+  try {
+    await writeFile(path.join(localDir, pending.id), partial, { mode: 0o600 });
+    const adapter = createArtifactStorageAdapter({
+      context: 'pdf',
+      db,
+      env: {},
+      folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
+      localDir,
+      provider: 'local',
+    });
+
+    await assert.rejects(() => adapter.store(value), {
+      message: 'artifact_store_in_progress',
+    });
+    assert.equal(pending.status, 'pending');
+    assert.equal(pending.providerKey, null);
+    assert.deepEqual(await readFile(path.join(localDir, pending.id)), partial);
+  } finally {
+    await rm(localDir, { recursive: true, force: true });
+  }
+});
+
+test('ready compare-and-swap race reuses the concurrently completed row', async () => {
+  const localDir = await createScratchDir();
+  const db = createArtifactDb();
+  const updateMany = db.storageArtifact.updateMany;
+  db.storageArtifact.updateMany = async (args) => {
+    if (args.where.status === 'pending' && args.data.status === 'ready') {
+      const row = db.rows.find((candidate) => candidate.id === args.where.id);
+      Object.assign(row, args.data);
+      return { count: 0 };
+    }
+    return updateMany(args);
+  };
+  try {
+    const adapter = createArtifactStorageAdapter({
+      context: 'pdf',
+      db,
+      env: {},
+      folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
+      localDir,
+      provider: 'local',
+    });
+
+    const stored = await adapter.store(input());
+    assert.equal(stored.artifactId, db.rows[0].id);
+    assert.equal(db.rows[0].status, 'ready');
+    assert.equal(db.rows[0].providerKey, db.rows[0].id);
+  } finally {
+    await rm(localDir, { recursive: true, force: true });
+  }
 });
 
 test('failed rows can be claimed for an idempotent retry', async () => {

@@ -4,6 +4,7 @@ import googleapis from 'googleapis';
 
 import type {
   ObjectStore,
+  ObjectStoreIdempotencyLookupInput,
   ObjectStoreMetadata,
   ObjectStorePutInput,
 } from './objectStore.js';
@@ -494,8 +495,7 @@ export class GoogleDriveObjectStore implements ObjectStore {
     await this.targetCheck;
   }
 
-  private async findIdempotentObject(input: ObjectStorePutInput) {
-    if (!input.idempotencyKey) return null;
+  private async findIdempotentObject(input: ObjectStoreIdempotencyLookupInput) {
     const digest = hashIdempotencyKey(input.idempotencyKey);
     const response = await this.execute('upload', () =>
       this.drive.files.list(
@@ -545,9 +545,20 @@ export class GoogleDriveObjectStore implements ObjectStore {
     return metadata;
   }
 
+  async findByIdempotencyKey(input: ObjectStoreIdempotencyLookupInput) {
+    await this.ensureStorageTarget();
+    return this.findIdempotentObject(input);
+  }
+
   async put(input: ObjectStorePutInput) {
     await this.ensureStorageTarget();
-    const existing = await this.findIdempotentObject(input);
+    const existing = input.idempotencyKey
+      ? await this.findIdempotentObject({
+          idempotencyKey: input.idempotencyKey,
+          sha256: input.sha256,
+          sizeBytes: input.sizeBytes,
+        })
+      : null;
     if (existing) return existing;
     // A fresh files.create retry can duplicate an object when the first request's
     // outcome is ambiguous. Large payloads use one resumable session, but this

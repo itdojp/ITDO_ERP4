@@ -11,7 +11,7 @@ import {
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient, StorageArtifact } from '@prisma/client';
 
 import type {
   ArtifactStoragePort,
@@ -244,6 +244,40 @@ async function writeLocalArtifact(
   return providerKey;
 }
 
+async function findCompletedLocalArtifact(
+  localDir: string,
+  providerKey: string,
+  input: Pick<StoreArtifactInput, 'sha256' | 'sizeBytes'>,
+) {
+  const root = await assertSafeLocalDirectory(localDir);
+  const filePath = path.join(root, providerKey);
+  let handle: FileHandle;
+  try {
+    handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (error) {
+    const code =
+      error && typeof error === 'object' && 'code' in error
+        ? String(error.code)
+        : '';
+    if (code === 'ENOENT') return null;
+    throw new Error('artifact_local_file_unsafe');
+  }
+  try {
+    await verifyLocalHandle(handle, input);
+    return providerKey;
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === 'artifact_local_verification_failed'
+    ) {
+      return null;
+    }
+    throw error;
+  } finally {
+    await handle.close();
+  }
+}
+
 function failureCode(error: unknown) {
   if (error instanceof GoogleDriveObjectStoreError) {
     return `gdrive_${error.code}`;
@@ -288,6 +322,81 @@ export function createArtifactStorageAdapter(
     return objectStore;
   };
 
+  const findIdempotentRow = (input: StoreArtifactInput) => {
+    if (!input.idempotencyKey) return Promise.resolve(null);
+    return db.storageArtifact.findUnique({
+      where: {
+        context_provider_idempotencyKey: {
+          context: options.context,
+          provider: options.provider,
+          idempotencyKey: input.idempotencyKey,
+        },
+      },
+    });
+  };
+
+  const markReady = async (
+    row: StorageArtifact,
+    input: StoreArtifactInput,
+    providerKey: string,
+  ) => {
+    const completed = await db.storageArtifact.updateMany({
+      where: { id: row.id, status: 'pending' },
+      data: {
+        providerKey,
+        status: 'ready',
+        failureCode: null,
+      },
+    });
+    if (completed.count === 1) {
+      return toSafeResult(row);
+    }
+    const current = await findIdempotentRow(input);
+    if (current) {
+      assertMatchingArtifact(current, input);
+      if (current.status === 'ready' && current.providerKey === providerKey) {
+        return toSafeResult(current);
+      }
+    }
+    throw new Error('artifact_store_in_progress');
+  };
+
+  const recoverPending = async (
+    row: StorageArtifact,
+    input: StoreArtifactInput,
+  ) => {
+    if (!input.idempotencyKey) return null;
+    let providerKey: string | null;
+    if (options.provider === 'local') {
+      providerKey = await findCompletedLocalArtifact(
+        options.localDir,
+        row.id,
+        input,
+      );
+    } else {
+      const store = getObjectStore();
+      const existing = await store.findByIdempotencyKey({
+        idempotencyKey: input.idempotencyKey,
+        sha256: input.sha256,
+        sizeBytes: input.sizeBytes,
+      });
+      if (
+        existing &&
+        (existing.trashed ||
+          existing.checksum.sha256 !== input.sha256 ||
+          existing.sizeBytes !== input.sizeBytes)
+      ) {
+        throw new Error('artifact_remote_verification_failed');
+      }
+      providerKey = existing?.key ?? null;
+      if (providerKey) {
+        await verifyObjectContent(store, providerKey, input);
+      }
+    }
+    if (!providerKey) return null;
+    return markReady(row, input, providerKey);
+  };
+
   return {
     async store(input) {
       validateStoreInput(input);
@@ -307,6 +416,8 @@ export function createArtifactStorageAdapter(
           return toSafeResult(row);
         }
         if (row.status === 'pending') {
+          const recovered = await recoverPending(row, input);
+          if (recovered) return recovered;
           throw new Error('artifact_store_in_progress');
         }
         const claimed = await db.storageArtifact.updateMany({
@@ -346,6 +457,10 @@ export function createArtifactStorageAdapter(
           if (raced.status === 'ready' && raced.providerKey) {
             return toSafeResult(raced);
           }
+          if (raced.status === 'pending') {
+            const recovered = await recoverPending(raced, input);
+            if (recovered) return recovered;
+          }
           throw new Error('artifact_store_in_progress');
         }
       }
@@ -377,19 +492,11 @@ export function createArtifactStorageAdapter(
           providerKey = stored.key;
           await verifyObjectContent(store, providerKey, input);
         }
-        const ready = await db.storageArtifact.update({
-          where: { id: row.id },
-          data: {
-            providerKey,
-            status: 'ready',
-            failureCode: null,
-          },
-        });
-        return toSafeResult(ready);
+        return markReady(row, input, providerKey);
       } catch (error) {
         await db.storageArtifact
-          .update({
-            where: { id: row.id },
+          .updateMany({
+            where: { id: row.id, status: 'pending' },
             data: { status: 'failed', failureCode: failureCode(error) },
           })
           .catch(() => undefined);
