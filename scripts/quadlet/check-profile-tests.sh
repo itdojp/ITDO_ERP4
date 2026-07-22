@@ -23,6 +23,7 @@ START_STACK="$ROOT_DIR/scripts/quadlet/start-stack.sh"
 RESTART_STACK="$ROOT_DIR/scripts/quadlet/restart-stack.sh"
 UPDATE_STACK="$ROOT_DIR/scripts/quadlet/update-stack.sh"
 ROLLBACK_LATEST="$ROOT_DIR/scripts/quadlet/rollback-latest.sh"
+LEGACY_NATIVE_UNIT_FIXTURES="$ROOT_DIR/scripts/quadlet/test-fixtures/markerless-native-units-92ca4385"
 
 fail() {
   printf 'ERROR: %s\n' "$*" >&2
@@ -61,6 +62,59 @@ run_failure() {
     fail "expected diagnostic not found for $label: $pattern"
   fi
   printf '%s\n' "$out"
+}
+
+verify_native_unit_semantics() {
+  local label="$1"
+  local source_dir="$2"
+  local verify_dir="$WORK_DIR/systemd-verify-${label//[^A-Za-z0-9_.-]/_}"
+  local unit_path="$verify_dir"
+  local systemd_dir output status name
+  local -a native_services=(
+    erp4-config-backup.service
+    erp4-config-prune.service
+    erp4-db-backup.service
+    erp4-migrate.service
+    erp4-storage-readiness.service
+  )
+  local -a verify_paths=()
+
+  command -v systemd-analyze >/dev/null 2>&1 || fail 'required command not found: systemd-analyze'
+  mkdir -p "$verify_dir"
+  for name in "${native_services[@]}"; do
+    cp -- "$source_dir/$name" "$verify_dir/$name"
+    verify_paths+=("$verify_dir/$name")
+  done
+  for name in erp4-postgres.service erp4-backend.service; do
+    cat >"$verify_dir/$name" <<EOF_STUB_SERVICE
+[Unit]
+Description=Static verification stub for $name
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/true
+EOF_STUB_SERVICE
+  done
+  for systemd_dir in \
+    /etc/systemd/user \
+    /run/systemd/user \
+    /usr/local/lib/systemd/user \
+    /usr/lib/systemd/user \
+    /lib/systemd/user \
+    /usr/lib/systemd/system \
+    /lib/systemd/system; do
+    [[ -d "$systemd_dir" ]] && unit_path+=":$systemd_dir"
+  done
+
+  printf 'success: %s\n' "$label"
+  set +e
+  output="$(SYSTEMD_UNIT_PATH="$unit_path" systemd-analyze verify "${verify_paths[@]}" 2>&1)"
+  status=$?
+  set -e
+  if [[ "$status" -ne 0 || -n "$output" ]]; then
+    printf '%s\n' "$output" >&2
+    fail "systemd-analyze reported a native unit semantic error: $label"
+  fi
 }
 
 write_postgres_env() {
@@ -289,6 +343,8 @@ run_success 'default link-mode installer prepares backup fixture' \
 [[ -f "$link_backup_quadlet_dir/erp4-config-backup.service" && \
   ! -L "$link_backup_quadlet_dir/erp4-config-backup.service" ]] || \
   fail 'default installer mode did not render the path-dependent native unit as a regular file'
+verify_native_unit_semantics 'installed native services pass systemd semantic verification' \
+  "$link_backup_quadlet_dir"
 link_backup_archive="$(
   "$BACKUP_CONFIG" \
     --target-dir "$link_backup_quadlet_dir" \
@@ -362,6 +418,8 @@ for path_dependent_unit in \
     fail "restore retained a stale Quadlet target in native unit: $path_dependent_unit"
   fi
 done
+verify_native_unit_semantics 'restored native services pass systemd semantic verification' \
+  "$link_restore_dir"
 
 legacy_unit_stage="$WORK_DIR/legacy-unit-stage"
 legacy_unit_archive="$WORK_DIR/legacy-unit-archive.tar.gz"
@@ -376,11 +434,15 @@ legacy_path_dependent_units=(
   erp4-storage-readiness.service
 )
 for path_dependent_unit in "${legacy_path_dependent_units[@]}"; do
-  sed \
-    -e '/^# X-ERP4-QuadletTarget=/d' \
-    -e "s|$link_backup_quadlet_dir|%h/.config/containers/systemd|g" \
-    "$link_backup_quadlet_dir/$path_dependent_unit" >"$legacy_unit_stage/$path_dependent_unit"
+  cp -- "$LEGACY_NATIVE_UNIT_FIXTURES/$path_dependent_unit" \
+    "$legacy_unit_stage/$path_dependent_unit"
 done
+grep -Fq 'EnvironmentFile=%h/.config/containers/systemd/erp4-maintenance.env' \
+  "$legacy_unit_stage/erp4-config-backup.service" || \
+  fail 'markerless fixture does not retain the pre-marker EnvironmentFile syntax'
+grep -Fq 'QUADLET_TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"' \
+  "$legacy_unit_stage/erp4-config-backup.service" || \
+  fail 'markerless fixture does not retain the pre-marker shell fallback syntax'
 tar -C "$legacy_unit_stage" -czf "$legacy_unit_archive" "${legacy_path_dependent_units[@]}"
 run_success 'restore relocates markerless legacy native units' \
   env SYSTEMCTL=true "$RESTORE_CONFIG" --archive "$legacy_unit_archive" \
@@ -393,6 +455,8 @@ for path_dependent_unit in "${legacy_path_dependent_units[@]}"; do
     fail "legacy restore retained a default Quadlet target: $path_dependent_unit"
   fi
 done
+verify_native_unit_semantics 'markerless legacy restore passes systemd semantic verification' \
+  "$legacy_restore_dir"
 
 link_restore_skip_dir="$WORK_DIR/link-backup-restore-skip-reload"
 link_restore_skip_systemd_dir="$WORK_DIR/link-backup-restore-skip-reload-systemd"
