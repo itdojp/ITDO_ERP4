@@ -104,11 +104,15 @@ function validMetric(key, value) {
     return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
   }
   if (key === "usagePercent") {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+      return false;
+    }
+    const scaled = value * 100;
+    const nearestBasisPoint = Math.round(scaled);
+    const tolerance = Number.EPSILON * Math.max(1, Math.abs(scaled)) * 4;
     return (
-      typeof value === "number" &&
-      Number.isFinite(value) &&
-      value >= 0 &&
-      Number.isSafeInteger(value * 100)
+      Number.isSafeInteger(nearestBasisPoint) &&
+      Math.abs(scaled - nearestBasisPoint) <= tolerance
     );
   }
   return (

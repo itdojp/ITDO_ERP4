@@ -163,7 +163,12 @@ async function probeDriveContext(options: {
       tuning,
       log: () => undefined,
     });
-    const quota = await readGoogleDriveQuota({ drive, tuning });
+    let quota: DriveReadinessObservation['quota'];
+    try {
+      quota = await readGoogleDriveQuota({ drive, tuning });
+    } catch {
+      quota = { state: 'unknown' };
+    }
     return {
       configured: true,
       folderAccessible: true,

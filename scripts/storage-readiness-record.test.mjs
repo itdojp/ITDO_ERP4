@@ -109,6 +109,15 @@ test("recorder accepts only allowlisted sanitized fields", () => {
     () => validateSanitizedReport(nonCanonicalTime),
     /report_schema_invalid/,
   );
+  const twoDecimalUsage = structuredClone(input);
+  twoDecimalUsage.components[0].metrics.usagePercent = 0.07;
+  assert.equal(validateSanitizedReport(twoDecimalUsage), twoDecimalUsage);
+  const overPreciseUsage = structuredClone(input);
+  overPreciseUsage.components[0].metrics.usagePercent = 0.071;
+  assert.throws(
+    () => validateSanitizedReport(overPreciseUsage),
+    /report_metric_invalid/,
+  );
 });
 
 test("recorder CLI writes once and refuses overwrite", async () => {

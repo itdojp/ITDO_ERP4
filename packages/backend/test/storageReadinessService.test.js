@@ -197,6 +197,42 @@ test('one orchestration command returns all components pass without write access
   assert.doesNotMatch(JSON.stringify(report), /sensitive-|private\//);
 });
 
+test('quota lookup failure preserves successful folder checks as quota unknown', async () => {
+  const calls = [];
+  const privateMessage = 'sensitive-quota-provider-detail';
+  const testDependencies = dependencies(calls);
+  testDependencies.createDriveApi = () => {
+    const drive = makeDrive(calls);
+    drive.about.get = async (params, requestOptions) => {
+      calls.push({ method: 'about.get', params, requestOptions });
+      throw new Error(privateMessage);
+    };
+    return drive;
+  };
+  const report = await runStorageReadiness({
+    dependencies: testDependencies,
+    env,
+  });
+  const driveComponents = report.components.filter((component) =>
+    component.component.startsWith('app_gdrive_'),
+  );
+  assert.equal(report.overall.status, 'unknown');
+  assert.equal(report.overall.exitCode, 3);
+  assert.equal(driveComponents.length, 4);
+  assert.equal(
+    driveComponents.every(
+      (component) =>
+        component.status === 'unknown' &&
+        component.reasons.includes('drive_quota_unknown') &&
+        component.metrics.folderAccessible === true &&
+        component.metrics.quota === 'unknown',
+    ),
+    true,
+  );
+  assert.equal(calls.filter((call) => call.method === 'about.get').length, 4);
+  assert.doesNotMatch(JSON.stringify(report), new RegExp(privateMessage));
+});
+
 test('write probe is explicit and trashes one probe per configured app folder', async () => {
   const calls = [];
   const report = await runStorageReadiness({
