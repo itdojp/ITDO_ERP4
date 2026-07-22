@@ -694,6 +694,33 @@ test('pending local row without a completed file remains in progress', async () 
   }
 });
 
+test('pending local recovery does not create a missing storage directory', async () => {
+  const scratchDir = await createScratchDir();
+  const localDir = path.join(scratchDir, 'missing-storage');
+  const db = createArtifactDb();
+  const value = input(Buffer.from('missing-local-storage'));
+  const pending = addPendingRow(db, value, 'local');
+  try {
+    const adapter = createArtifactStorageAdapter({
+      context: 'pdf',
+      db,
+      env: {},
+      folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
+      localDir,
+      provider: 'local',
+    });
+
+    await assert.rejects(() => adapter.store(value), {
+      message: 'artifact_store_in_progress',
+    });
+    await assert.rejects(() => lstat(localDir), { code: 'ENOENT' });
+    assert.equal(pending.status, 'pending');
+    assert.equal(pending.providerKey, null);
+  } finally {
+    await rm(scratchDir, { recursive: true, force: true });
+  }
+});
+
 test('pending local row with partial content is not finalized or rewritten', async () => {
   const localDir = await createScratchDir();
   const db = createArtifactDb();

@@ -123,10 +123,9 @@ function assertMatchingArtifact(
   }
 }
 
-async function assertSafeLocalDirectory(localDir: string) {
+async function findSafeLocalDirectory(localDir: string) {
   try {
     const resolved = path.resolve(localDir);
-    await mkdir(resolved, { recursive: true, mode: 0o700 });
     const info = await lstat(resolved);
     if (
       !info.isDirectory() ||
@@ -138,11 +137,28 @@ async function assertSafeLocalDirectory(localDir: string) {
     }
     return resolved;
   } catch (error) {
+    const code =
+      error && typeof error === 'object' && 'code' in error
+        ? String(error.code)
+        : '';
+    if (code === 'ENOENT') return null;
     if (error instanceof Error && /^artifact_[a-z0-9_]+$/.test(error.message)) {
       throw error;
     }
     throw new Error('artifact_local_directory_unsafe');
   }
+}
+
+async function assertSafeLocalDirectory(localDir: string) {
+  const resolved = path.resolve(localDir);
+  try {
+    await mkdir(resolved, { recursive: true, mode: 0o700 });
+  } catch {
+    throw new Error('artifact_local_directory_unsafe');
+  }
+  const safeDirectory = await findSafeLocalDirectory(resolved);
+  if (!safeDirectory) throw new Error('artifact_local_directory_unsafe');
+  return safeDirectory;
 }
 
 async function verifyLocalHandle(
@@ -249,7 +265,8 @@ async function findCompletedLocalArtifact(
   providerKey: string,
   input: Pick<StoreArtifactInput, 'sha256' | 'sizeBytes'>,
 ) {
-  const root = await assertSafeLocalDirectory(localDir);
+  const root = await findSafeLocalDirectory(localDir);
+  if (!root) return null;
   const filePath = path.join(root, providerKey);
   let handle: FileHandle;
   try {
