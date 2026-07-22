@@ -126,6 +126,33 @@ test('S3 source paginates, bounds manifest reads and returns SHA metadata', asyn
   ]);
 });
 
+test('S3 source aborts inventory once the readiness cap is exceeded', async () => {
+  let listCalls = 0;
+  const client = {
+    async send(command) {
+      if (command.constructor.name !== 'ListObjectsV2Command') {
+        assert.fail('unexpected command');
+      }
+      listCalls += 1;
+      return {
+        Contents: Array.from({ length: 20_001 }, (_, index) => ({
+          Key: `erp4/prod/${String(index).padStart(5, '0')}.gpg`,
+          Size: 10,
+        })),
+        IsTruncated: true,
+        NextContinuationToken: 'should-not-be-used',
+      };
+    },
+  };
+  const source = createS3BackupObjectSource({
+    bucket: 'bucket-placeholder',
+    client,
+    prefix: 'erp4/prod',
+  });
+  await assert.rejects(source.list(), /backup_inventory_too_large/);
+  assert.equal(listCalls, 1);
+});
+
 test('Sakura source requires a credential-free HTTPS origin', () => {
   assert.throws(() =>
     resolveSakuraBackupObjectSource({ S3_PROVIDER: 'unexpected-provider' }),

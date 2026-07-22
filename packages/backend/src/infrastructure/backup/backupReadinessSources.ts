@@ -20,6 +20,7 @@ const SAFE_PREFIX = /^[A-Za-z0-9]([A-Za-z0-9._/-]*[A-Za-z0-9])?$/;
 const SAFE_FILENAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 const DEFAULT_S3_TIMEOUT_MS = 30_000;
+const MAX_S3_INVENTORY_ENTRIES = 20_000;
 
 export class BackupReadinessSourceConfigurationError extends Error {
   constructor() {
@@ -244,6 +245,9 @@ export function createS3BackupObjectSource(options: {
             key: toRelativeKey(object.Key),
             sizeBytes: Number(object.Size),
           });
+          if (result.length > MAX_S3_INVENTORY_ENTRIES) {
+            throw new Error('backup_inventory_too_large');
+          }
         }
         if (!response.IsTruncated) break;
         const next = response.NextContinuationToken;
