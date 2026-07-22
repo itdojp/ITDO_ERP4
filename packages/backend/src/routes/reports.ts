@@ -19,6 +19,10 @@ import { sendCsv, toCsv } from '../utils/csv.js';
 
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
+type ReportRouteDependencies = {
+  generatePdf?: typeof generatePdf;
+};
+
 function validateFormat(format: string | undefined, reply: any) {
   if (!format) return true;
   if (!['csv', 'pdf'].includes(format)) {
@@ -43,10 +47,19 @@ async function sendPdf(
   reportName: string,
   layout: string | undefined,
   payload: Record<string, unknown>,
+  generate: typeof generatePdf,
 ) {
   const templateId = buildTemplateId(reportName, layout);
-  const { url } = await generatePdf(templateId, payload, reportName);
-  return reply.send({ format: 'pdf', templateId, url });
+  const pdf = await generate(templateId, payload, reportName);
+  if ((!pdf.filePath && !pdf.artifactId) || !pdf.filename) {
+    return reply.status(500).send({
+      error: {
+        code: 'PDF_GENERATION_FAILED',
+        message: 'Failed to generate PDF',
+      },
+    });
+  }
+  return reply.send({ format: 'pdf', templateId, url: pdf.url });
 }
 
 function toNullableCsvNumber(value: number | null | undefined) {
@@ -218,7 +231,11 @@ function buildManagementAccountingSummaryCsv(
   return toCsv(headers, rows);
 }
 
-export async function registerReportRoutes(app: FastifyInstance) {
+export async function registerReportRoutes(
+  app: FastifyInstance,
+  dependencies: ReportRouteDependencies = {},
+) {
+  const generate = dependencies.generatePdf ?? generatePdf;
   app.get(
     '/reports/project-effort/:projectId',
     { preHandler: requireRole(['admin', 'mgmt']) },
@@ -272,7 +289,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         return sendCsv(reply, `project-${projectId}-effort.csv`, csv);
       }
       if (format === 'pdf') {
-        return sendPdf(reply, 'project-effort', layout, res);
+        return sendPdf(reply, 'project-effort', layout, res, generate);
       }
       return res;
     },
@@ -801,7 +818,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         return sendCsv(reply, `project-${projectId}-profit.csv`, csv);
       }
       if (format === 'pdf') {
-        return sendPdf(reply, 'project-profit', layout, res);
+        return sendPdf(reply, 'project-profit', layout, res, generate);
       }
       return res;
     },
@@ -885,7 +902,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         return sendCsv(reply, `project-${projectId}-profit-by-user.csv`, csv);
       }
       if (format === 'pdf') {
-        return sendPdf(reply, 'project-profit-by-user', layout, res);
+        return sendPdf(reply, 'project-profit-by-user', layout, res, generate);
       }
       return res;
     },
@@ -982,7 +999,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         return sendCsv(reply, `project-${projectId}-profit-by-group.csv`, csv);
       }
       if (format === 'pdf') {
-        return sendPdf(reply, 'project-profit-by-group', layout, res);
+        return sendPdf(reply, 'project-profit-by-group', layout, res, generate);
       }
       return res;
     },
@@ -1032,7 +1049,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         return sendCsv(reply, 'group-effort-report.csv', csv);
       }
       if (format === 'pdf') {
-        return sendPdf(reply, 'group-effort', layout, { items: res });
+        return sendPdf(reply, 'group-effort', layout, { items: res }, generate);
       }
       return { items: res };
     },
@@ -1086,7 +1103,13 @@ export async function registerReportRoutes(app: FastifyInstance) {
         );
       }
       if (format === 'pdf') {
-        return sendPdf(reply, 'management-accounting-summary', layout, summary);
+        return sendPdf(
+          reply,
+          'management-accounting-summary',
+          layout,
+          summary,
+          generate,
+        );
       }
       return summary;
     },
@@ -1129,7 +1152,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         return sendCsv(reply, `overtime-${userId}.csv`, csv);
       }
       if (format === 'pdf') {
-        return sendPdf(reply, 'overtime', layout, res);
+        return sendPdf(reply, 'overtime', layout, res, generate);
       }
       return res;
     },
@@ -1193,7 +1216,7 @@ export async function registerReportRoutes(app: FastifyInstance) {
         return sendCsv(reply, 'delivery-due-report.csv', csv);
       }
       if (format === 'pdf') {
-        return sendPdf(reply, 'delivery-due', layout, { items: res });
+        return sendPdf(reply, 'delivery-due', layout, { items: res }, generate);
       }
       return { items: res };
     },

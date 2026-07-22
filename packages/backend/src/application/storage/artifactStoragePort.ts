@@ -39,7 +39,12 @@ export type OpenedArtifact = {
   stream: Readable;
 };
 
+export type OpenArtifactScope = {
+  ownerId: string;
+  ownerType: string;
+};
+
 export type ArtifactStoragePort = {
-  open(artifactId: string): Promise<OpenedArtifact>;
+  open(artifactId: string, scope?: OpenArtifactScope): Promise<OpenedArtifact>;
   store(input: StoreArtifactInput): Promise<StoredArtifact>;
 };

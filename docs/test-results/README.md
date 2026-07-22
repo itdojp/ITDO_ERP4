@@ -43,6 +43,7 @@
 ### 2026-07-22
 
 - [Issue #1977 Storage artifact foundation verification](2026-07-22-issue1977-storage-artifact-foundation.md)
+- [Issue #1977 Storage context runtime integration verification](2026-07-22-issue1977-storage-context-integration.md)
 - [Issue #1979 Google Drive backup secondary repo-side検証](2026-07-22-issue1979-backup-gdrive-secondary.md)
 
 ### 2026-07-14

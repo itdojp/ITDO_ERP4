@@ -315,6 +315,8 @@ RESTORE_CONFIRM=1 ./scripts/podman-poc.sh restore
 
 pass証跡は対象commit SHAとversionを固定し、private target identifierとraw logをGitHubへ載せない。未実施または入力不足はblockedとして#544をopenのままにする。
 
+application artifactは、PostgreSQL backupに含まれる`StorageArtifact` metadataとobject本体を分けて検証する。gdrive recordはcontext別folderへのread preflightとERP4認可済みendpointからのsize / SHA-256一致を確認し、Drive URLやprovider keyを証跡へ出さない。local recordは復元したasset volumeと従来readerで取得できることを確認する。実Driveでのcopy / cutover / rollback / 復元確認は#1981で実施し、repository fakeを実環境成功として扱わない。
+
 ## 既存remote-host経路
 
 REMOTE_HOST / REMOTE_DIRによる別host退避は移行・検証用の既存経路として維持する。新規backupでは各artifactと`<artifact>.manifest.json`を対で転送する。downloadはdatabase、globals、必須metadata、任意assetsが同じbackup IDであること、manifest contextとSHA-256、暗号化artifactのOpenPGP packetをprivate scratchで検証してから公開する。manifest欠落、世代混在、既存destinationへの上書きは拒否する。Sakura cutover後の廃止時期は#1981で決め、copy-only期間を経ずにsourceを削除しない。

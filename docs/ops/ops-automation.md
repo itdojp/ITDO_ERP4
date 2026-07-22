@@ -155,7 +155,7 @@ Google Drive 連携を採用している場合は read test を加える。
 
 ### 4. Drive folder / read-write check
 
-#1977ではPDF / Evidence archive / Report用のcontext別folderを追加します。productionはShared Driveの専用subfolderを推奨しますが、Shared Drive直下またはMy Driveの専用folderも構成できます。`ERP4_GDRIVE_SHARED_DRIVE_ID`はShared Drive ID、各`*_GDRIVE_FOLDER_ID`は実際の保存先folder IDとして分離します。
+#1977ではPDF / Evidence archive / Report用のcontext別folderとruntime providerを追加しています。productionはShared Driveの専用subfolderを推奨しますが、Shared Drive直下またはMy Driveの専用folderも構成できます。`ERP4_GDRIVE_SHARED_DRIVE_ID`はShared Drive ID、各`*_GDRIVE_FOLDER_ID`は実際の保存先folder IDとして分離します。
 
 wrapper は compiled backend CLI を使います。未buildのcheckoutでは、repository標準手順で backend dependencies / Prisma Client を準備した後、先に `npm run build --prefix packages/backend` を実行します。
 
@@ -212,6 +212,9 @@ ERP4_GDRIVE_REFRESH_TOKEN=<oauth-refresh-token>
 # Set only for Shared Drive. Keep the Drive ID separate from the folder ID.
 ERP4_GDRIVE_SHARED_DRIVE_ID=<optional-shared-drive-id>
 CHAT_ATTACHMENT_GDRIVE_FOLDER_ID=<chat-storage-folder-id>
+PDF_GDRIVE_FOLDER_ID=<pdf-storage-folder-id>
+EVIDENCE_ARCHIVE_GDRIVE_FOLDER_ID=<evidence-storage-folder-id>
+REPORT_GDRIVE_FOLDER_ID=<report-storage-folder-id>
 ERP4_GDRIVE_TIMEOUT_MS=30000
 ERP4_GDRIVE_MAX_RETRIES=3
 ERP4_GDRIVE_RETRY_BASE_DELAY_MS=250
@@ -220,7 +223,7 @@ ERP4_GDRIVE_RESUMABLE_UPLOAD_THRESHOLD_BYTES=5242880
 
 新規設定は共通 credential キー `ERP4_GDRIVE_CLIENT_ID` / `ERP4_GDRIVE_CLIENT_SECRET` / `ERP4_GDRIVE_REFRESH_TOKEN` を完全なsetで使います。共通キーを1つでも設定した場合は旧キーとのfield単位の混在を拒否し、共通setがすべて未設定の場合だけ完全な旧 `CHAT_ATTACHMENT_GDRIVE_*` setへfallbackします。両方が完全な場合は共通setが優先されます。wrapper は旧キーの使用を値なしで警告します。
 
-実 Google Drive に対する read / write は operator preflight です。fake API を使う unit test は API parameter・再試行・エラー処理の検証であり、実ユーザ membership / scope / folder 権限の確認を代替しません。#1976 の実 Google Drive 検証は未実施のため、production の `CHAT_ATTACHMENT_PROVIDER=gdrive` 切り替えは read / write 結果を確認する人間の承認対象です。
+実 Google Drive に対する read / write は operator preflight です。fake API を使う unit test は API parameter・再試行・エラー処理の検証であり、実ユーザ membership / scope / folder 権限の確認を代替しません。production の各`*_PROVIDER=gdrive`切り替えは、対象contextごとのread/write結果とcopy-only照合を確認する#1981の人間承認対象です。
 
 ## 安全設計
 

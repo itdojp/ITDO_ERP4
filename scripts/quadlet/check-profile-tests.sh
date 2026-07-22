@@ -81,6 +81,7 @@ EVIDENCE_ARCHIVE_PROVIDER=local
 EVIDENCE_ARCHIVE_LOCAL_DIR=/var/lib/erp4/evidence-archives
 CHAT_ATTACHMENT_PROVIDER=local
 CHAT_ATTACHMENT_LOCAL_DIR=/var/lib/erp4/chat-attachments
+REPORT_PROVIDER=local
 REPORT_STORAGE_DIR=/var/lib/erp4/reports
 ENV
 }
@@ -110,6 +111,7 @@ EVIDENCE_ARCHIVE_PROVIDER=local
 EVIDENCE_ARCHIVE_LOCAL_DIR=/var/lib/erp4/evidence-archives
 CHAT_ATTACHMENT_PROVIDER=local
 CHAT_ATTACHMENT_LOCAL_DIR=/var/lib/erp4/chat-attachments
+REPORT_PROVIDER=local
 REPORT_STORAGE_DIR=/var/lib/erp4/reports
 ENV
 }
@@ -251,6 +253,32 @@ cp -a "$production_gdrive_dir" "$production_gdrive_tuning_dir"
 sed -i 's/^ERP4_GDRIVE_TIMEOUT_MS=.*/ERP4_GDRIVE_TIMEOUT_MS=0/' "$production_gdrive_tuning_dir/erp4-backend.env"
 run_failure 'production rejects invalid Google Drive tuning' 'ERP4_GDRIVE_TIMEOUT_MS >= 1' \
   "$CHECK_ENV" --profile production --target-dir "$production_gdrive_tuning_dir" --frontend-build-env "$https_frontend"
+
+production_report_gdrive_dir="$WORK_DIR/production-report-gdrive"
+cp -a "$production_gdrive_dir" "$production_report_gdrive_dir"
+sed -i \
+  -e 's/^CHAT_ATTACHMENT_PROVIDER=.*/CHAT_ATTACHMENT_PROVIDER=local/' \
+  -e 's/^REPORT_PROVIDER=.*/REPORT_PROVIDER=gdrive/' \
+  "$production_report_gdrive_dir/erp4-backend.env"
+printf '%s\n' 'REPORT_GDRIVE_FOLDER_ID=placeholder-report-folder' >>"$production_report_gdrive_dir/erp4-backend.env"
+run_success 'production accepts non-Chat Google Drive with common credentials' \
+  "$CHECK_ENV" --profile production --target-dir "$production_report_gdrive_dir" --frontend-build-env "$https_frontend"
+
+production_report_legacy_dir="$WORK_DIR/production-report-gdrive-legacy"
+cp -a "$production_report_gdrive_dir" "$production_report_legacy_dir"
+sed -i \
+  -e 's/^ERP4_GDRIVE_CLIENT_ID=/CHAT_ATTACHMENT_GDRIVE_CLIENT_ID=/' \
+  -e 's/^ERP4_GDRIVE_CLIENT_SECRET=/CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET=/' \
+  -e 's/^ERP4_GDRIVE_REFRESH_TOKEN=/CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN=/' \
+  "$production_report_legacy_dir/erp4-backend.env"
+run_failure 'production rejects legacy-only credentials for non-Chat Google Drive' 'missing required key: ERP4_GDRIVE_CLIENT_ID' \
+  "$CHECK_ENV" --profile production --target-dir "$production_report_legacy_dir" --frontend-build-env "$https_frontend"
+
+production_report_missing_folder_dir="$WORK_DIR/production-report-gdrive-missing-folder"
+cp -a "$production_report_gdrive_dir" "$production_report_missing_folder_dir"
+sed -i '/^REPORT_GDRIVE_FOLDER_ID=/d' "$production_report_missing_folder_dir/erp4-backend.env"
+run_failure 'production rejects missing report Google Drive folder' 'missing required key: REPORT_GDRIVE_FOLDER_ID' \
+  "$CHECK_ENV" --profile production --target-dir "$production_report_missing_folder_dir" --frontend-build-env "$https_frontend"
 
 http_redirect_dir="$WORK_DIR/https-http-redirect"
 cp -a "$https_dir" "$http_redirect_dir"

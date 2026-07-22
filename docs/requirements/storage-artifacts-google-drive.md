@@ -4,7 +4,7 @@
 
 Issue #1977でPDF、Evidence archive、Report生成物をlocalまたはGoogle Driveへ保存するための共通契約を定義する。Chat添付のAPI・監査・`providerKey`互換性は変更しない。実データのcopy/cutoverは#1981で行う。
 
-本foundationで確定する範囲は、共通artifact lifecycle、context別port、Google Drive object storeの再実行安全性、copy-only helperである。各業務service・認可済みdownload endpointへの接続とruntime provider有効化は#1977の最終PRで行う。したがって、foundationだけを適用した環境でruntime providerを`gdrive`へ切り替えてはならない。
+#1977では、共通artifact lifecycle、context別port、Google Drive object storeの再実行安全性、copy-only helperに加え、各業務service・認可済みdownload endpointへのruntime接続を提供する。repository側の対応完了はproduction cutoverの承認を意味しない。実credential、folder preflight、copy-only照合、rollback windowを確認する#1981までproduction providerを切り替えない。
 
 ## contextと設定契約
 
@@ -60,10 +60,26 @@ expand-only migrationで次を追跡する。
 - 保存先directoryとfileのsymlinkを拒否し、directoryは実行user所有かつgroup/other permissionなし（通常`0700`）、fileは実行user所有かつ`0600`を要求する。
 - local file I/OはLinuxの`/proc/self/fd`を介して検証済みdirectory file descriptorへ固定し、directory path差し替えを検出してfail closedとする。
 - 新規fileはexclusive create、mode `0600`とする。
-- 保存直後とopen前にsize・SHA-256を検証する。
+- 保存直後に取得内容のsize・SHA-256を検証する。open時はprovider metadataだけでなく、取得した実バイト列をsize上限付きで最後まで再計算し、検証済み内容だけを呼び出し側へ返す。
 - current providerを切り替えた後もrow単位のproviderで既存local recordを解決する。
 
-既存`pdfUrl`、Evidence object key、Report payloadの後方互換readerは#1977最終PRで維持する。これらへDrive file IDを格納しない。
+既存`/pdf-files/<filename>`、Evidenceのlocal/S3 object key、ReportのCSV/`filePath` payload readerを維持する。これらへDrive file IDを格納しない。
+
+## context別runtime契約
+
+- PDFは`PDF_PROVIDER=local|external`で従来どおりlocal fileを生成する。`gdrive`ではBufferを共通adapterへ保存し、`/pdf-files/artifacts/<artifact UUID>`だけを`pdfUrl`へ格納する。document送信時は同じBufferをSMTP/SendGrid attachmentへ渡し、local fileを暗黙生成しない。
+- Evidence archiveは`local|s3`の既存content/metadata sidecar契約を維持する。`gdrive`ではcontentとmetadataを別contextのartifactとして保存し、approval instanceをownerに設定する。download時は既存のapproval閲覧判定とartifact ownerを再検証する。
+- Reportは`REPORT_PROVIDER=local`で既存CSV/PDF payloadとlocal path readerを維持する。`gdrive`ではdelivery row作成前に出力を1回だけ保存し、artifact UUIDをpayloadへ固定する。再送は同じartifactをopenし、再生成・再uploadしない。
+- dry-runはproviderに関係なくartifact upload、local output write、PDF render、delivery row作成を行わない。
+- gdriveの保存失敗時は業務成功statusへ遷移せず、local/S3へ暗黙fallbackしない。
+
+認可済みdownload endpointは次のとおり。provider key、folder ID、Drive URLは応答・監査metadataへ出さない。
+
+| context  | endpoint                                                     | 認可                                     |
+| -------- | ------------------------------------------------------------ | ---------------------------------------- |
+| PDF      | `/pdf-files/artifacts/:artifactId`                           | `admin` / `mgmt`                         |
+| Evidence | `/approval-instances/:id/evidence-pack/archives/:artifactId` | role + approval閲覧判定 + artifact owner |
+| Report   | `/report-outputs/:artifactId`                                | `admin` / `mgmt`                         |
 
 ## Google Drive errorとretry
 

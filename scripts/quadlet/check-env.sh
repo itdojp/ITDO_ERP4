@@ -114,6 +114,27 @@ require_gdrive_credentials() {
   fi
 }
 
+require_common_gdrive_credentials() {
+  local file="$1"
+  local key
+  for key in ERP4_GDRIVE_CLIENT_ID ERP4_GDRIVE_CLIENT_SECRET ERP4_GDRIVE_REFRESH_TOKEN; do
+    require_env_key "$file" "$key"
+  done
+}
+
+validate_storage_providers() {
+  local pdf evidence report
+  pdf="$(read_env_value "$BACKEND_ENV" PDF_PROVIDER)"
+  evidence="$(read_env_value "$BACKEND_ENV" EVIDENCE_ARCHIVE_PROVIDER)"
+  report="$(read_env_value "$BACKEND_ENV" REPORT_PROVIDER)"
+  pdf="${pdf,,}"
+  evidence="${evidence,,}"
+  report="${report,,}"
+  case "$pdf" in local|external|gdrive) ;; *) fail "$BACKEND_ENV requires PDF_PROVIDER=local, external, or gdrive" ;; esac
+  case "$evidence" in local|s3|gdrive) ;; *) fail "$BACKEND_ENV requires EVIDENCE_ARCHIVE_PROVIDER=local, s3, or gdrive" ;; esac
+  case "$report" in local|gdrive) ;; *) fail "$BACKEND_ENV requires REPORT_PROVIDER=local or gdrive" ;; esac
+}
+
 validate_optional_integer() {
   local file="$1"
   local key="$2"
@@ -250,9 +271,10 @@ require_common_runtime_env() {
     require_env_key "$POSTGRES_ENV" "$key"
   done
 
-  for key in DATABASE_URL PORT NODE_ENV AUTH_MODE ALLOWED_ORIGINS MAIL_TRANSPORT PDF_PROVIDER PDF_STORAGE_DIR PDF_BASE_URL EVIDENCE_ARCHIVE_PROVIDER EVIDENCE_ARCHIVE_LOCAL_DIR CHAT_ATTACHMENT_PROVIDER CHAT_ATTACHMENT_LOCAL_DIR REPORT_STORAGE_DIR; do
+  for key in DATABASE_URL PORT NODE_ENV AUTH_MODE ALLOWED_ORIGINS MAIL_TRANSPORT PDF_PROVIDER PDF_STORAGE_DIR PDF_BASE_URL EVIDENCE_ARCHIVE_PROVIDER EVIDENCE_ARCHIVE_LOCAL_DIR CHAT_ATTACHMENT_PROVIDER CHAT_ATTACHMENT_LOCAL_DIR REPORT_PROVIDER REPORT_STORAGE_DIR; do
     require_env_key "$BACKEND_ENV" "$key"
   done
+  validate_storage_providers
 }
 
 check_production_profile() {
@@ -286,6 +308,33 @@ check_production_profile() {
     validate_optional_integer "$BACKEND_ENV" ERP4_GDRIVE_RESUMABLE_UPLOAD_THRESHOLD_BYTES 1
   fi
 
+  local pdf_provider evidence_provider report_provider uses_non_chat_gdrive=0
+  pdf_provider="$(read_env_value "$BACKEND_ENV" PDF_PROVIDER)"
+  evidence_provider="$(read_env_value "$BACKEND_ENV" EVIDENCE_ARCHIVE_PROVIDER)"
+  report_provider="$(read_env_value "$BACKEND_ENV" REPORT_PROVIDER)"
+  pdf_provider="${pdf_provider,,}"
+  evidence_provider="${evidence_provider,,}"
+  report_provider="${report_provider,,}"
+  if [[ "$pdf_provider" == "gdrive" ]]; then
+    require_env_key "$BACKEND_ENV" PDF_GDRIVE_FOLDER_ID
+    uses_non_chat_gdrive=1
+  fi
+  if [[ "$evidence_provider" == "gdrive" ]]; then
+    require_env_key "$BACKEND_ENV" EVIDENCE_ARCHIVE_GDRIVE_FOLDER_ID
+    uses_non_chat_gdrive=1
+  fi
+  if [[ "$report_provider" == "gdrive" ]]; then
+    require_env_key "$BACKEND_ENV" REPORT_GDRIVE_FOLDER_ID
+    uses_non_chat_gdrive=1
+  fi
+  if [[ "$uses_non_chat_gdrive" -eq 1 ]]; then
+    require_common_gdrive_credentials "$BACKEND_ENV"
+    validate_optional_integer "$BACKEND_ENV" ERP4_GDRIVE_TIMEOUT_MS 1 300000
+    validate_optional_integer "$BACKEND_ENV" ERP4_GDRIVE_MAX_RETRIES 0 10
+    validate_optional_integer "$BACKEND_ENV" ERP4_GDRIVE_RETRY_BASE_DELAY_MS 1 60000
+    validate_optional_integer "$BACKEND_ENV" ERP4_GDRIVE_RESUMABLE_UPLOAD_THRESHOLD_BYTES 1
+  fi
+
   check_http_cookie_flag
 }
 
@@ -295,6 +344,7 @@ check_private_smoke_profile() {
   require_env_lower_value "$BACKEND_ENV" PDF_PROVIDER local
   require_env_lower_value "$BACKEND_ENV" EVIDENCE_ARCHIVE_PROVIDER local
   require_env_lower_value "$BACKEND_ENV" CHAT_ATTACHMENT_PROVIDER local
+  require_env_lower_value "$BACKEND_ENV" REPORT_PROVIDER local
 
   local auth_mode node_env header_fallback
   auth_mode="$(read_env_value "$BACKEND_ENV" AUTH_MODE)"
@@ -328,6 +378,7 @@ check_https_trial_profile() {
   require_env_lower_value "$BACKEND_ENV" PDF_PROVIDER local
   require_env_lower_value "$BACKEND_ENV" EVIDENCE_ARCHIVE_PROVIDER local
   require_env_lower_value "$BACKEND_ENV" CHAT_ATTACHMENT_PROVIDER local
+  require_env_lower_value "$BACKEND_ENV" REPORT_PROVIDER local
 
   for key in JWT_ISSUER JWT_AUDIENCE GOOGLE_OIDC_CLIENT_SECRET GOOGLE_OIDC_REDIRECT_URI AUTH_FRONTEND_ORIGIN AUTH_SESSION_COOKIE_SECURE; do
     require_env_key "$BACKEND_ENV" "$key"

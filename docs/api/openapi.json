@@ -1657,6 +1657,7 @@
                         },
                         "provider": {
                           "enum": [
+                            "gdrive",
                             "local",
                             "s3"
                           ],
@@ -1789,6 +1790,33 @@
                 }
               }
             },
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/approval-instances/{id}/evidence-pack/archives/{artifactId}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "artifactId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
             "description": "Default Response"
           }
         }
@@ -14182,6 +14210,25 @@
         }
       }
     },
+    "/pdf-files/artifacts/{artifactId}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifactId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/pdf-templates": {
       "get": {
         "responses": {
@@ -16758,6 +16805,25 @@
             "in": "query",
             "name": "offset",
             "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/report-outputs/{artifactId}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "artifactId",
+            "required": true,
             "schema": {
               "type": "string"
             }

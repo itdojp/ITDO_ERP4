@@ -13,8 +13,9 @@
 
 ### 追加（環境により）
 
-- 添付ファイル（チャット添付等）
-  - Google Drive providerへの移行は#1976 / #1977、copy-only cutoverは#1981で扱う
+- application artifact（Chat添付、PDF、Evidence archive、Report生成物）
+  - Google Drive providerへのrepository-side対応は#1976 / #1977、copy-only cutoverは#1981で扱う
+  - local providerの既存recordはprovider切替後もlocal volumeから復元できる状態を維持する
 - 設定/シークレット
   - `DATABASE_URL`、JWT/認証設定、Push通知鍵（VAPID）、メール設定、暗号鍵（GPG等）
 
@@ -79,6 +80,18 @@ Sakura backupの復元では、real readiness、verified download、manifest SHA
 5. 件数・金額・参照・application file整合、RTO/RPO、plaintext cleanupを確認する。
 
 Google DriveはSakura primaryの代替成功条件ではない。secondaryがfreshでもprimary失敗を隠さず、`partial_failure`として復旧・監視対象にする。Driveからのdownload成功もDB restore成功とは別の証跡であり、#544の隔離restoreを完了するまでreal restore passと記録しない。
+
+### application artifactの復旧確認
+
+PostgreSQLの`StorageArtifact` metadataだけを復元しても、Google Drive object本体の復旧確認にはならない。#1981のcutover後は、DB復元確認に続けて次を行う。
+
+1. 復旧環境へ完全な`ERP4_GDRIVE_*` credential setとcontext別folder IDをsecret storeから注入する。実値は証跡へ転記しない。
+2. `gcp-drive-check.sh`を`pdf`、`evidence`、`report`の各有効contextに対してread modeで実行する。
+3. 権限を持つERP4 userで、PDF・Evidence archive・Reportの認可済みartifact endpointからsanitized test recordを取得する。
+4. endpointがDrive URLやprovider keyを返さず、DB metadataのsize / SHA-256と取得streamが一致することを確認する。
+5. local providerの既存recordは、復元したlocal asset volumeと従来endpointから引き続き取得できることを確認する。
+
+credential失効、folder membership不一致、object欠落、checksum不一致は復旧未完了として扱い、`healthz`成功だけでDRをPASSにしない。実Google Driveでの検証はfake testで代替せず、#1981の承認済み復元演習へ記録する。
 
 ## 復元演習（定期）
 

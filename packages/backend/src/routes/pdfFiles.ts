@@ -7,8 +7,20 @@ import {
   resolvePdfStorageDir,
 } from '../services/pdf.js';
 import { requireRole } from '../services/rbac.js';
+import { createPdfArtifactStorageAdapter } from '../adapters/storage/contextArtifactStorageAdapters.js';
+import type { PdfStoragePort } from '../application/pdf/pdfStoragePort.js';
 
-export async function registerPdfFileRoutes(app: FastifyInstance) {
+type PdfFileRouteDependencies = {
+  createStorage?: () => PdfStoragePort;
+};
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export async function registerPdfFileRoutes(
+  app: FastifyInstance,
+  dependencies: PdfFileRouteDependencies = {},
+) {
   app.get(
     '/pdf-files',
     { preHandler: requireRole(['admin', 'mgmt']) },
@@ -77,6 +89,55 @@ export async function registerPdfFileRoutes(app: FastifyInstance) {
         limit,
         offset,
       };
+    },
+  );
+
+  app.get(
+    '/pdf-files/artifacts/:artifactId',
+    { preHandler: requireRole(['admin', 'mgmt']) },
+    async (req, reply) => {
+      const { artifactId } = req.params as { artifactId: string };
+      if (!UUID_PATTERN.test(artifactId)) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_ARTIFACT_ID',
+            message: 'Invalid artifact ID',
+          },
+        });
+      }
+      try {
+        const storage =
+          dependencies.createStorage?.() ??
+          createPdfArtifactStorageAdapter({ provider: 'gdrive' });
+        const opened = await storage.open(artifactId);
+        const safeFilename = opened.artifact.originalName.replace(
+          /["\\\r\n]/g,
+          '_',
+        );
+        reply.header(
+          'Content-Disposition',
+          `inline; filename="${safeFilename}"`,
+        );
+        reply.type(opened.artifact.contentType || 'application/pdf');
+        opened.stream.on('error', (err) => {
+          opened.stream.destroy();
+          if (req.log && typeof req.log.error === 'function') {
+            req.log.error(
+              { err: err instanceof Error ? err.message : 'stream_failed' },
+              'Error while streaming PDF artifact',
+            );
+          }
+          if (!reply.raw.headersSent) {
+            reply.status(500).send({ error: 'internal_error' });
+          }
+        });
+        return reply.send(opened.stream);
+      } catch (error) {
+        if (error instanceof Error && error.message === 'artifact_not_found') {
+          return reply.status(404).send({ error: 'not_found' });
+        }
+        return reply.status(500).send({ error: 'internal_error' });
+      }
     },
   );
 

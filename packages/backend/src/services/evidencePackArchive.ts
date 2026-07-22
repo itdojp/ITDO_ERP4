@@ -3,10 +3,12 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { createEvidenceArtifactStorageAdapter } from '../adapters/storage/contextArtifactStorageAdapters.js';
+import type { EvidenceArchiveStoragePort } from '../application/evidence/evidenceArchiveStoragePort.js';
 
 export type EvidencePackArchiveFormat = 'json' | 'pdf';
 
-type EvidencePackArchiveProvider = 'local' | 's3';
+type EvidencePackArchiveProvider = 'gdrive' | 'local' | 's3';
 type EvidenceArchiveSse = 'AES256' | 'aws:kms';
 type EvidencePackArchiveS3Config = {
   bucket: string;
@@ -41,6 +43,12 @@ export type EvidencePackArchiveResult = {
   archivedAt: string;
 };
 
+type EvidencePackArchiveDependencies = {
+  createContentStorage?: () => EvidenceArchiveStoragePort;
+  createMetadataStorage?: () => EvidenceArchiveStoragePort;
+  now?: () => Date;
+};
+
 function normalizeString(value: string | undefined) {
   const normalized = (value ?? '').trim();
   return normalized.length > 0 ? normalized : undefined;
@@ -66,7 +74,7 @@ function resolveProvider(): EvidencePackArchiveProvider {
   const value = (process.env.EVIDENCE_ARCHIVE_PROVIDER || 'local')
     .trim()
     .toLowerCase();
-  if (value === 's3') return 's3';
+  if (value === 'gdrive' || value === 's3') return value;
   return 'local';
 }
 
@@ -210,8 +218,9 @@ function getS3Runtime() {
 
 export async function archiveEvidencePack(
   input: EvidencePackArchiveInput,
+  dependencies: EvidencePackArchiveDependencies = {},
 ): Promise<EvidencePackArchiveResult> {
-  const archivedAt = new Date();
+  const archivedAt = dependencies.now?.() ?? new Date();
   const objectKey = buildObjectKey({
     approvalInstanceId: input.approvalInstanceId,
     snapshotVersion: input.snapshotVersion,
@@ -239,6 +248,67 @@ export async function archiveEvidencePack(
       metadataKey,
       archiveUri: `file://${contentPath}`,
       checksumSha256: metadataPayload.contentSha256,
+      sizeBytes: input.content.length,
+      archivedAt: archivedAt.toISOString(),
+    };
+  }
+
+  if (provider === 'gdrive') {
+    const checksumSha256 = metadataPayload.contentSha256;
+    const contentStorage =
+      dependencies.createContentStorage?.() ??
+      createEvidenceArtifactStorageAdapter({ provider: 'gdrive' });
+    const metadataStorage =
+      dependencies.createMetadataStorage?.() ??
+      createEvidenceArtifactStorageAdapter({
+        provider: 'gdrive',
+        metadata: true,
+      });
+    const idempotencyBase = [
+      'evidence',
+      input.approvalInstanceId,
+      input.snapshotId,
+      String(input.snapshotVersion),
+      input.format,
+      input.mask ? 'masked' : 'unmasked',
+      input.digest,
+      checksumSha256,
+    ].join(':');
+    const contentArtifact = await contentStorage.store({
+      body: input.content,
+      contentType: input.contentType,
+      createdBy: input.archivedBy,
+      idempotencyKey: idempotencyBase,
+      originalName: `evidence-v${input.snapshotVersion}-${checksumSha256.slice(0, 16)}.${input.format}`,
+      ownerId: input.approvalInstanceId,
+      ownerType: 'approval_instance',
+      sha256: checksumSha256,
+      sizeBytes: input.content.length,
+      storageName: `${checksumSha256}.${input.format}`,
+    });
+    const metadataBuffer = Buffer.from(metadataBody, 'utf8');
+    const metadataSha256 = createHash('sha256')
+      .update(metadataBuffer)
+      .digest('hex');
+    const metadataArtifact = await metadataStorage.store({
+      body: metadataBuffer,
+      contentType: 'application/json; charset=utf-8',
+      createdBy: input.archivedBy,
+      idempotencyKey: `${idempotencyBase}:metadata:${metadataSha256}`,
+      originalName: `evidence-v${input.snapshotVersion}-${checksumSha256.slice(0, 16)}.metadata.json`,
+      ownerId: input.approvalInstanceId,
+      ownerType: 'approval_instance',
+      sha256: metadataSha256,
+      sizeBytes: metadataBuffer.length,
+      storageName: `${checksumSha256}.metadata.json`,
+    });
+
+    return {
+      provider,
+      objectKey: contentArtifact.artifactId,
+      metadataKey: metadataArtifact.artifactId,
+      archiveUri: `/approval-instances/${encodeURIComponent(input.approvalInstanceId)}/evidence-pack/archives/${contentArtifact.artifactId}`,
+      checksumSha256,
       sizeBytes: input.content.length,
       archivedAt: archivedAt.toISOString(),
     };

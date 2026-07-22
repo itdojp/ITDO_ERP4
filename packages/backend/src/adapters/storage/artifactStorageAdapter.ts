@@ -1,5 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type { FileHandle } from 'node:fs/promises';
+import { mkdtemp, rmdir, type FileHandle } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 import type { PrismaClient, StorageArtifact } from '@prisma/client';
@@ -34,6 +37,7 @@ type ArtifactDb = Pick<PrismaClient, 'storageArtifact'>;
 type ArtifactStorageAdapterOptions = {
   context: StorageArtifactContext;
   db?: ArtifactDb;
+  downloadTempRoot?: string;
   env?: NodeJS.ProcessEnv;
   folderEnvKey: string;
   localDir: string;
@@ -146,10 +150,120 @@ async function verifyObjectContent(
   for await (const chunk of stream) {
     const buffer = Buffer.from(chunk);
     sizeBytes += buffer.length;
+    if (sizeBytes > input.sizeBytes) {
+      stream.destroy();
+      throw new Error('artifact_remote_verification_failed');
+    }
     hash.update(buffer);
   }
   if (sizeBytes !== input.sizeBytes || hash.digest('hex') !== input.sha256) {
     throw new Error('artifact_remote_verification_failed');
+  }
+}
+
+async function writeChunk(handle: FileHandle, chunk: Buffer) {
+  let offset = 0;
+  while (offset < chunk.length) {
+    const { bytesWritten } = await handle.write(
+      chunk,
+      offset,
+      chunk.length - offset,
+      null,
+    );
+    if (bytesWritten <= 0) throw new Error('artifact_remote_staging_failed');
+    offset += bytesWritten;
+  }
+}
+
+async function stageVerifiedObjectContent(
+  store: ObjectStore,
+  providerKey: string,
+  input: Pick<StoreArtifactInput, 'sha256' | 'sizeBytes'>,
+  tempRoot: string,
+) {
+  let directory: Awaited<ReturnType<typeof openLocalArtifactDirectory>> = null;
+  let output: FileHandle | undefined;
+  let staged: FileHandle | undefined;
+  let stagingDir: string | undefined;
+  let stream: Readable | undefined;
+  const stagingName = 'content';
+  try {
+    const root = await openLocalArtifactDirectory(tempRoot, { create: true });
+    if (!root) throw new Error('artifact_remote_staging_failed');
+    try {
+      await root.assertBound();
+      stagingDir = await mkdtemp(
+        path.join(path.resolve(tempRoot), 'erp4-artifact-download-'),
+      );
+      await root.assertBound();
+    } finally {
+      await root.close().catch(() => undefined);
+    }
+
+    directory = await openLocalArtifactDirectory(stagingDir, {
+      create: false,
+    });
+    if (!directory) throw new Error('artifact_remote_staging_failed');
+    output = await directory.openWriteExclusive(stagingName);
+    ({ stream } = await store.get(providerKey));
+
+    const hash = createHash('sha256');
+    let sizeBytes = 0;
+    for await (const chunk of stream) {
+      const buffer = Buffer.from(chunk);
+      sizeBytes += buffer.length;
+      if (sizeBytes > input.sizeBytes) {
+        stream.destroy();
+        throw new Error('artifact_remote_verification_failed');
+      }
+      hash.update(buffer);
+      await writeChunk(output, buffer);
+    }
+    if (sizeBytes !== input.sizeBytes || hash.digest('hex') !== input.sha256) {
+      throw new Error('artifact_remote_verification_failed');
+    }
+
+    await output.close();
+    output = undefined;
+    staged = await directory.openRead(stagingName);
+    await assertSafeLocalFileHandle(staged);
+    await directory.assertBound();
+
+    // Unlink the verified staging file before handing its open descriptor to
+    // the caller. This avoids heap buffering and leaves no named artifact or
+    // provider identifier in the temporary directory.
+    await directory.unlink(stagingName);
+    await directory.close();
+    directory = null;
+    await rmdir(stagingDir);
+    stagingDir = undefined;
+
+    const verifiedStream = staged.createReadStream({
+      autoClose: true,
+      start: 0,
+    });
+    staged = undefined;
+    return verifiedStream;
+  } catch (error) {
+    stream?.destroy();
+    if (
+      error instanceof GoogleDriveObjectStoreError ||
+      (error instanceof Error &&
+        /^artifact_(remote_verification|remote_staging)_failed$/.test(
+          error.message,
+        ))
+    ) {
+      throw error;
+    }
+    throw new Error('artifact_remote_staging_failed');
+  } finally {
+    await output?.close().catch(() => undefined);
+    await staged?.close().catch(() => undefined);
+    if (directory) {
+      await directory.unlink(stagingName).catch(() => undefined);
+      await directory.close().catch(() => undefined);
+    }
+    if (stagingDir) await rmdir(stagingDir).catch(() => undefined);
   }
 }
 
@@ -474,13 +588,25 @@ export function createArtifactStorageAdapter(
       }
     },
 
-    async open(artifactId) {
+    async open(artifactId, scope) {
+      if (
+        scope &&
+        (!scope.ownerType.trim() ||
+          !scope.ownerId.trim() ||
+          scope.ownerType.length > 100 ||
+          scope.ownerId.length > 255)
+      ) {
+        throw new Error('artifact_owner_scope_invalid');
+      }
       const row = await db.storageArtifact.findFirst({
         where: {
           id: artifactId,
           context: options.context,
           status: 'ready',
           deletedAt: null,
+          ...(scope
+            ? { ownerType: scope.ownerType, ownerId: scope.ownerId }
+            : {}),
         },
       });
       if (!row?.providerKey) throw new Error('artifact_not_found');
@@ -488,16 +614,23 @@ export function createArtifactStorageAdapter(
         throw new Error('artifact_provider_invalid');
       }
       if (row.provider === 'gdrive') {
+        const artifact = toSafeResult(row);
         const metadata = await getObjectStore().stat(row.providerKey);
         if (
           metadata.trashed ||
-          metadata.sizeBytes !== Number(row.sizeBytes) ||
+          metadata.sizeBytes !== artifact.sizeBytes ||
           metadata.checksum.sha256 !== row.sha256
         ) {
           throw new Error('artifact_remote_verification_failed');
         }
-        const opened = await getObjectStore().get(row.providerKey);
-        return { artifact: toSafeResult(row), stream: opened.stream };
+        const stream = await stageVerifiedObjectContent(
+          getObjectStore(),
+          row.providerKey,
+          artifact,
+          options.downloadTempRoot ??
+            path.join(tmpdir(), 'erp4-artifact-downloads'),
+        );
+        return { artifact, stream };
       }
       if (!UUID_PATTERN.test(row.providerKey)) {
         throw new Error('artifact_provider_key_invalid');
