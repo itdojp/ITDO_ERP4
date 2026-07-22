@@ -186,3 +186,29 @@ test('evidence artifact download reapplies approval access and owner scope', asy
     ownerType: 'approval_instance',
   });
 });
+
+test('evidence artifact download rejects non-UUID artifactId with 400', async () => {
+  let openCalls = 0;
+  await withApp(
+    (app) =>
+      registerEvidenceSnapshotRoutes(app, {
+        createArchiveStorage: () => ({
+          open: async () => {
+            openCalls += 1;
+            return openedArtifact();
+          },
+        }),
+      }),
+    { userId: 'admin-placeholder', roles: ['admin'] },
+    async (app) => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/approval-instances/approval-placeholder/evidence-pack/archives/not-a-uuid',
+      });
+      assert.equal(response.statusCode, 400, response.body);
+      const body = JSON.parse(response.body);
+      assert.equal(body.error.code, 'INVALID_ARTIFACT_ID');
+    },
+  );
+  assert.equal(openCalls, 0);
+});

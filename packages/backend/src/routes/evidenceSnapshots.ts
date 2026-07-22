@@ -322,6 +322,9 @@ function normalizeLimit(value: unknown) {
   return Math.max(1, Math.min(100, Math.floor(parsed)));
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function sanitizeAttachmentFilename(value: string) {
   return value.replace(/["\\\r\n]/g, '_');
 }
@@ -994,6 +997,11 @@ export async function registerEvidenceSnapshotRoutes(
         id: string;
         artifactId: string;
       };
+      if (!UUID_PATTERN.test(artifactId)) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_ARTIFACT_ID', message: 'Invalid artifact ID' },
+        });
+      }
       const approval = await prisma.approvalInstance.findUnique({
         where: { id },
         select: {
