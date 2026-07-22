@@ -6,14 +6,14 @@
 
 ## スクリプト一覧
 
-| スクリプト                            | 目的                                                                                             | 既定の安全性                                                         |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
-| `scripts/ops/sakura-vps-preflight.sh` | VPSのOS/arch/必須コマンド/メモリ/ディスク/port（80/443/3001/4173/8080/55432）/rootless前提を診断 | `--check` のみ。読み取り専用                                         |
-| `scripts/ops/sakura-vps-bootstrap.sh` | apt package、repo配置先、backup dir、linger、rootless low port設定を補助                         | 既定は `--check`。変更は `--apply` 明示時のみ                        |
-| `scripts/ops/sakura-vps-deploy.sh`    | git更新、`npm ci`、Quadlet build/install/start/updateを補助                                      | 既定は `--check`。実行は `--apply` 明示時のみ                        |
-| `scripts/ops/sakura-vps-verify.sh`    | Quadlet env/stack/HTTPS/Drive疎通を証跡化                                                        | 読み取り中心。Drive write test は `--gdrive-mode write` 明示時のみ   |
-| `scripts/ops/gcp-preflight.sh`        | gcloud account/project/API/billing/secret metadata/WIFを確認                                     | 既定は `--check`。API有効化は `--apply --confirm-project` 明示時のみ |
-| `scripts/ops/gcp-drive-check.sh`      | 既存 `check-chat-gdrive.ts` / `provision-chat-gdrive-folder.ts` の安全な wrapper                 | secret値は表示しない。write test は `--mode write` 明示時のみ        |
+| スクリプト                            | 目的                                                                                             | 既定の安全性                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `scripts/ops/sakura-vps-preflight.sh` | VPSのOS/arch/必須コマンド/メモリ/ディスク/port（80/443/3001/4173/8080/55432）/rootless前提を診断 | `--check` のみ。読み取り専用                                                            |
+| `scripts/ops/sakura-vps-bootstrap.sh` | apt package、repo配置先、backup dir、linger、rootless low port設定を補助                         | 既定は `--check`。変更は `--apply` 明示時のみ                                           |
+| `scripts/ops/sakura-vps-deploy.sh`    | git更新、`npm ci`、Quadlet build/install/start/updateを補助                                      | 既定は `--check`。実行は `--apply` 明示時のみ                                           |
+| `scripts/ops/sakura-vps-verify.sh`    | Quadlet env/stack/HTTPS/Drive疎通を証跡化                                                        | 読み取り中心。Drive write test は `--gdrive-mode write` 明示時のみ                      |
+| `scripts/ops/gcp-preflight.sh`        | gcloud account/project/API/billing/secret metadata/WIFを確認                                     | 既定は `--check`。API有効化は `--apply --confirm-project` 明示時のみ                    |
+| `scripts/ops/gcp-drive-check.sh`      | Chat 添付用 Google Drive の folder provision / read-write operator preflight を行う標準 wrapper  | credential / folder ID / Drive ID は表示しない。write test は `--mode write` 明示時のみ |
 
 ## さくらVPS: 推奨実行順
 
@@ -155,43 +155,84 @@ Google Drive 連携を採用している場合は read test を加える。
 
 ### 4. Drive folder / read-write check
 
-初回 folder 作成:
+#1976 の Google Drive 対象は Chat 添付だけです。PDF / Evidence Pack / Report は #1977 で扱います。production は Shared Drive の専用 subfolder を推奨しますが、Shared Drive 直下または My Drive の専用 folder も構成できます。`ERP4_GDRIVE_SHARED_DRIVE_ID` は Shared Drive ID、`CHAT_ATTACHMENT_GDRIVE_FOLDER_ID` は実際の保存先 folder ID として分離します。
+
+wrapper は compiled backend CLI を使います。未buildのcheckoutでは、repository標準手順で backend dependencies / Prisma Client を準備した後、先に `npm run build --prefix packages/backend` を実行します。
+
+初回 folder 作成では、folder ID の保護された出力先を必ず指定する:
+
+```bash
+install -d -m 700 .codex-local/secure
+umask 077
+touch .codex-local/secure/gdrive.env
+chmod 600 .codex-local/secure/gdrive.env
+```
+
+`.codex-local/secure/gdrive.env` に credential と必要に応じて Shared Drive ID を editor / secret injection で設定し、値を画面表示しない。その後に provision を実行する。
 
 ```bash
 ./scripts/ops/gcp-drive-check.sh \
-  --env-file ./.env.gdrive \
+  --env-file .codex-local/secure/gdrive.env \
   --provision-folder \
+  --folder-id-output-file .codex-local/secure/chat-gdrive-folder.env \
+  --mode read
+```
+
+`--folder-id-output-file` は `--provision-folder` と同時に必須です。既存ファイルは上書きせず、新規ファイルを mode `0600` で作成します。folder ID を stdout や Markdown 証跡へ出さず、承認済みの secret 保管先/runtime env（上記の保護済み env file を含む）へ画面出力なしで転記します。単独の read / write を実行する前に、この転記を完了します。
+
+remote create の結果が不明で出力に `CREATE_STARTED` が残った場合は、そのファイルを削除せず次の read-only reconciliation を実行する。一致が1件の場合だけ `COMPLETE` へ更新し、0件または複数件ではremote createを繰り返さず停止する。
+
+```bash
+./scripts/ops/gcp-drive-check.sh \
+  --env-file .codex-local/secure/gdrive.env \
+  --reconcile-provision \
+  --folder-id-output-file .codex-local/secure/chat-gdrive-folder.env \
   --mode read
 ```
 
 read test:
 
 ```bash
-./scripts/ops/gcp-drive-check.sh --env-file ./.env.gdrive --mode read
+./scripts/ops/gcp-drive-check.sh --env-file .codex-local/secure/gdrive.env --mode read
 ```
 
 write test:
 
 ```bash
-./scripts/ops/gcp-drive-check.sh --env-file ./.env.gdrive --mode write
+./scripts/ops/gcp-drive-check.sh --env-file .codex-local/secure/gdrive.env --mode write
 ```
 
-`.env.gdrive` には以下の値を置く。wrapper はこのうち許可された key だけを読み取り、任意の shell command としては実行しない。file mode は `chmod 600` を推奨する。
+`.codex-local/secure/gdrive.env` には以下の値を置く。wrapper はこのうち許可された key だけを読み取り、任意の shell command としては実行しない。file mode `0600`、current user 所有、通常 file（symlink 不可）を必須とし、満たさない場合は処理を開始しない。
 
 ```dotenv
-CHAT_ATTACHMENT_GDRIVE_CLIENT_ID=...
-CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET=...
-CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN=...
-CHAT_ATTACHMENT_GDRIVE_FOLDER_ID=...
+# Values are placeholders. Inject actual values from the approved secret store.
+ERP4_GDRIVE_CLIENT_ID=<oauth-client-id>
+ERP4_GDRIVE_CLIENT_SECRET=<oauth-client-secret>
+ERP4_GDRIVE_REFRESH_TOKEN=<oauth-refresh-token>
+# Set only for Shared Drive. Keep the Drive ID separate from the folder ID.
+ERP4_GDRIVE_SHARED_DRIVE_ID=<optional-shared-drive-id>
+CHAT_ATTACHMENT_GDRIVE_FOLDER_ID=<chat-storage-folder-id>
+ERP4_GDRIVE_TIMEOUT_MS=30000
+ERP4_GDRIVE_MAX_RETRIES=3
+ERP4_GDRIVE_RETRY_BASE_DELAY_MS=250
+ERP4_GDRIVE_RESUMABLE_UPLOAD_THRESHOLD_BYTES=5242880
 ```
+
+新規設定は共通 credential キー `ERP4_GDRIVE_CLIENT_ID` / `ERP4_GDRIVE_CLIENT_SECRET` / `ERP4_GDRIVE_REFRESH_TOKEN` を完全なsetで使います。共通キーを1つでも設定した場合は旧キーとのfield単位の混在を拒否し、共通setがすべて未設定の場合だけ完全な旧 `CHAT_ATTACHMENT_GDRIVE_*` setへfallbackします。両方が完全な場合は共通setが優先されます。wrapper は旧キーの使用を値なしで警告します。
+
+実 Google Drive に対する read / write は operator preflight です。fake API を使う unit test は API parameter・再試行・エラー処理の検証であり、実ユーザ membership / scope / folder 権限の確認を代替しません。#1976 の実 Google Drive 検証は未実施のため、production の `CHAT_ATTACHMENT_PROVIDER=gdrive` 切り替えは read / write 結果を確認する人間の承認対象です。
 
 ## 安全設計
 
 - destructive command（DB reset、OS再インストール、secret destroy）は含めない。
 - `--apply` なしで Google Cloud API 有効化やVPS変更は行わない。
 - secret値、refresh token、client secret、DB password は stdout/stderr へ出さない。
-- env file の file mode が緩い場合は warning を出す。
+- Google Drive の folder ID / Drive ID は stdout、Issue、PR、Markdown 証跡へ出さない。
+- env file が mode `0600`、current user 所有、通常 file（symlink 不可）でなければ fail closed とする。
 - Drive write test は明示フラグ時のみ実行する。
+- `files.create` の結果が不明な場合は重複防止のため fresh create をアプリ再試行しない。read / stat / trash は retryable な失敗だけを設定上限まで再試行し、削除は既定で trash とする。
+- Google Drive 呼び出しは `supportsAllDrives` を使い、`includeItemsFromAllDrives` / `corpora=drive` / `driveId` は list に限定する。5MiB 以上の upload は Drive API resumable session を使い、create 時は `ignoreDefaultVisibility=true` とする。
+- Drive URLや直接共有権限を返さず、domain-wide delegation を追加しない。preflight は folder permissions を全 page 検査し、domain / anyone / group / 複数 user がある保存先を No-Go とする。
 - rootless 80/443 用 sysctl は `--set-unprivileged-port-start` 明示時のみ変更する。
 
 ## 品質チェック

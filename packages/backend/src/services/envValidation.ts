@@ -1,3 +1,9 @@
+import {
+  GoogleDriveConfigurationError,
+  resolveGoogleDriveCredentials,
+  resolveGoogleDriveTuningConfig,
+} from '../infrastructure/storage/googleDriveConfig.js';
+
 type ValidationIssue = {
   key: string;
   message: string;
@@ -355,21 +361,30 @@ export function assertValidBackendEnv() {
     );
   }
   if (attachmentProvider === 'gdrive') {
-    assertRequired(
-      issues,
-      'CHAT_ATTACHMENT_GDRIVE_CLIENT_ID',
-      process.env.CHAT_ATTACHMENT_GDRIVE_CLIENT_ID,
-    );
-    assertRequired(
-      issues,
-      'CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET',
-      process.env.CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET,
-    );
-    assertRequired(
-      issues,
-      'CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN',
-      process.env.CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN,
-    );
+    try {
+      resolveGoogleDriveCredentials(process.env);
+    } catch (error) {
+      if (!(error instanceof GoogleDriveConfigurationError)) throw error;
+      for (const key of error.keys) {
+        addIssue(
+          issues,
+          key,
+          'ERP4_GDRIVE_* または対応する CHAT_ATTACHMENT_GDRIVE_* 互換キーが必須です',
+        );
+      }
+    }
+    try {
+      resolveGoogleDriveTuningConfig(process.env);
+    } catch (error) {
+      if (!(error instanceof GoogleDriveConfigurationError)) throw error;
+      for (const key of error.keys) {
+        addIssue(
+          issues,
+          key,
+          '0以上または1以上の整数という各設定条件を満たしてください',
+        );
+      }
+    }
     assertRequired(
       issues,
       'CHAT_ATTACHMENT_GDRIVE_FOLDER_ID',

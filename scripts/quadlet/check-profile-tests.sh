@@ -204,6 +204,54 @@ write_frontend_env "$https_frontend" 'https://trial-api.example.com'
 run_success 'https-trial minimal env' \
   "$CHECK_ENV" --profile https-trial --target-dir "$https_dir" --frontend-build-env "$https_frontend"
 
+production_gdrive_dir="$WORK_DIR/production-gdrive"
+cp -a "$https_dir" "$production_gdrive_dir"
+cat >>"$production_gdrive_dir/erp4-backend.env" <<'ENV'
+ERP4_GDRIVE_CLIENT_ID=placeholder-common-client
+ERP4_GDRIVE_CLIENT_SECRET=placeholder-common-secret
+ERP4_GDRIVE_REFRESH_TOKEN=placeholder-common-refresh
+ERP4_GDRIVE_SHARED_DRIVE_ID=placeholder-shared-drive
+ERP4_GDRIVE_TIMEOUT_MS=30000
+ERP4_GDRIVE_MAX_RETRIES=3
+ERP4_GDRIVE_RETRY_BASE_DELAY_MS=250
+ERP4_GDRIVE_RESUMABLE_UPLOAD_THRESHOLD_BYTES=5242880
+CHAT_ATTACHMENT_GDRIVE_FOLDER_ID=placeholder-folder
+ENV
+sed -i \
+  -e 's/^SAKURA_VPS_PROFILE=.*/SAKURA_VPS_PROFILE=production/' \
+  -e 's/^CHAT_ATTACHMENT_PROVIDER=.*/CHAT_ATTACHMENT_PROVIDER=gdrive/' \
+  "$production_gdrive_dir/erp4-backend.env"
+run_success 'production accepts common Google Drive credentials' \
+  "$CHECK_ENV" --profile production --target-dir "$production_gdrive_dir" --frontend-build-env "$https_frontend"
+
+production_gdrive_missing_dir="$WORK_DIR/production-gdrive-missing"
+cp -a "$production_gdrive_dir" "$production_gdrive_missing_dir"
+sed -i '/^ERP4_GDRIVE_CLIENT_SECRET=/d' "$production_gdrive_missing_dir/erp4-backend.env"
+run_failure 'production rejects missing Google Drive credential pair' 'complete ERP4_GDRIVE_.*ERP4_GDRIVE_CLIENT_SECRET' \
+  "$CHECK_ENV" --profile production --target-dir "$production_gdrive_missing_dir" --frontend-build-env "$https_frontend"
+
+production_gdrive_legacy_dir="$WORK_DIR/production-gdrive-legacy"
+cp -a "$production_gdrive_dir" "$production_gdrive_legacy_dir"
+sed -i \
+  -e 's/^ERP4_GDRIVE_CLIENT_ID=/CHAT_ATTACHMENT_GDRIVE_CLIENT_ID=/' \
+  -e 's/^ERP4_GDRIVE_CLIENT_SECRET=/CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET=/' \
+  -e 's/^ERP4_GDRIVE_REFRESH_TOKEN=/CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN=/' \
+  "$production_gdrive_legacy_dir/erp4-backend.env"
+run_success 'production keeps legacy Google Drive credentials compatible' \
+  "$CHECK_ENV" --profile production --target-dir "$production_gdrive_legacy_dir" --frontend-build-env "$https_frontend"
+
+production_gdrive_mixed_dir="$WORK_DIR/production-gdrive-mixed"
+cp -a "$production_gdrive_legacy_dir" "$production_gdrive_mixed_dir"
+sed -i 's/^CHAT_ATTACHMENT_GDRIVE_CLIENT_ID=/ERP4_GDRIVE_CLIENT_ID=/' "$production_gdrive_mixed_dir/erp4-backend.env"
+run_failure 'production rejects mixed partial Google Drive credential sets' 'complete ERP4_GDRIVE_.*ERP4_GDRIVE_CLIENT_SECRET' \
+  "$CHECK_ENV" --profile production --target-dir "$production_gdrive_mixed_dir" --frontend-build-env "$https_frontend"
+
+production_gdrive_tuning_dir="$WORK_DIR/production-gdrive-tuning"
+cp -a "$production_gdrive_dir" "$production_gdrive_tuning_dir"
+sed -i 's/^ERP4_GDRIVE_TIMEOUT_MS=.*/ERP4_GDRIVE_TIMEOUT_MS=0/' "$production_gdrive_tuning_dir/erp4-backend.env"
+run_failure 'production rejects invalid Google Drive tuning' 'ERP4_GDRIVE_TIMEOUT_MS >= 1' \
+  "$CHECK_ENV" --profile production --target-dir "$production_gdrive_tuning_dir" --frontend-build-env "$https_frontend"
+
 http_redirect_dir="$WORK_DIR/https-http-redirect"
 cp -a "$https_dir" "$http_redirect_dir"
 python3 - "$http_redirect_dir/erp4-backend.env" <<'PY'

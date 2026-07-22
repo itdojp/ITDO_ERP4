@@ -195,14 +195,24 @@ run_controlled_check() {
   return "$status"
 }
 
-gdrive_env="$SMOKE_DIR/gdrive-ci.env"
-cat > "$gdrive_env" <<'ENV'
+gdrive_legacy_env="$SMOKE_DIR/gdrive-legacy-ci.env"
+cat > "$gdrive_legacy_env" <<'ENV'
 CHAT_ATTACHMENT_GDRIVE_CLIENT_ID=placeholder-client-id
 CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET=placeholder-client-secret
 CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN=placeholder-refresh-token
 CHAT_ATTACHMENT_GDRIVE_FOLDER_ID=placeholder-folder-id
 ENV
-chmod 600 "$gdrive_env"
+chmod 600 "$gdrive_legacy_env"
+
+gdrive_common_env="$SMOKE_DIR/gdrive-common-ci.env"
+cat > "$gdrive_common_env" <<'ENV'
+ERP4_GDRIVE_CLIENT_ID=placeholder-common-client-id
+ERP4_GDRIVE_CLIENT_SECRET=placeholder-common-client-secret
+ERP4_GDRIVE_REFRESH_TOKEN=placeholder-common-refresh-token
+ERP4_GDRIVE_SHARED_DRIVE_ID=placeholder-shared-drive-id
+CHAT_ATTACHMENT_GDRIVE_FOLDER_ID=placeholder-folder-id
+ENV
+chmod 600 "$gdrive_common_env"
 
 mkdir -p "$SMOKE_DIR/quadlet"
 cp deploy/quadlet/env/erp4-postgres.env.example "$SMOKE_DIR/quadlet/erp4-postgres.env"
@@ -212,8 +222,29 @@ chmod 600 "$SMOKE_DIR/quadlet/erp4-postgres.env" "$SMOKE_DIR/quadlet/erp4-backen
 
 run_controlled_check 'gcp-preflight missing-gcloud or unauthenticated safe check' '(gcloud is not installed|Summary: failures=[1-9][0-9]*)' \
   scripts/ops/gcp-preflight.sh --check --project erp4-ci-smoke --allow-missing-gcloud --markdown-summary "$SMOKE_DIR/gcp-preflight.md"
-run_smoke 'gcp-drive dry-run with placeholder env' \
-  scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_env" --mode read --markdown-summary "$SMOKE_DIR/gdrive.md"
+run_smoke 'gcp-drive legacy alias dry-run with placeholder env' \
+  scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_legacy_env" --mode read --markdown-summary "$SMOKE_DIR/gdrive-legacy.md"
+run_smoke 'gcp-drive common credential dry-run with placeholder env' \
+  scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_common_env" --mode read --markdown-summary "$SMOKE_DIR/gdrive-common.md"
+gdrive_permissive_env="$SMOKE_DIR/gdrive-permissive-ci.env"
+cp "$gdrive_common_env" "$gdrive_permissive_env"
+chmod 644 "$gdrive_permissive_env"
+run_controlled_check 'gcp-drive rejects permissive credential file mode' 'should not be readable' \
+  scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_permissive_env" --mode read
+gdrive_symlink_env="$SMOKE_DIR/gdrive-symlink-ci.env"
+ln -s "$gdrive_common_env" "$gdrive_symlink_env"
+run_controlled_check 'gcp-drive rejects credential file symlink' 'must not be a symbolic link' \
+  scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_symlink_env" --mode read
+run_controlled_check 'gcp-drive provision requires protected output file' 'folder-id-output-file' \
+  scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_common_env" --mode read --provision-folder
+gdrive_reconcile_state="$SMOKE_DIR/gdrive-provision-state.env"
+cat >"$gdrive_reconcile_state" <<'ENV'
+ERP4_GDRIVE_PROVISION_MARKER=00000000-0000-4000-8000-000000000000
+ERP4_GDRIVE_PROVISION_STATE=CREATE_STARTED
+ENV
+chmod 600 "$gdrive_reconcile_state"
+run_smoke 'gcp-drive provision reconciliation dry-run' \
+  scripts/ops/gcp-drive-check.sh --dry-run --env-file "$gdrive_common_env" --mode read --reconcile-provision --folder-id-output-file "$gdrive_reconcile_state"
 run_smoke 'sakura bootstrap dry-run' \
   scripts/ops/sakura-vps-bootstrap.sh --dry-run --deploy-user deploy --repo-parent "$SMOKE_DIR/repo-parent" --repo-dir "$SMOKE_DIR/repo-parent/ITDO_ERP4" --skip-apt --skip-linger
 run_smoke 'sakura deploy dry-run with all mutating phases skipped' \

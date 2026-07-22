@@ -337,6 +337,92 @@ test('envValidation: RATE_LIMIT_DOC_SEND_MAX validates positive integer', () => 
   assert.match(result.stderr, /RATE_LIMIT_DOC_SEND_MAX/);
 });
 
+test('envValidation: Google Drive accepts common ERP4 credentials', () => {
+  const result = runEnvValidation({
+    CHAT_ATTACHMENT_PROVIDER: 'gdrive',
+    CHAT_ATTACHMENT_GDRIVE_FOLDER_ID: 'folder-placeholder',
+    ERP4_GDRIVE_CLIENT_ID: 'common-client-placeholder',
+    ERP4_GDRIVE_CLIENT_SECRET: 'common-secret-placeholder',
+    ERP4_GDRIVE_REFRESH_TOKEN: 'common-refresh-placeholder',
+  });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, 'OK');
+});
+
+test('envValidation: Google Drive accepts legacy Chat credential aliases', () => {
+  const result = runEnvValidation({
+    CHAT_ATTACHMENT_PROVIDER: 'gdrive',
+    CHAT_ATTACHMENT_GDRIVE_FOLDER_ID: 'folder-placeholder',
+    CHAT_ATTACHMENT_GDRIVE_CLIENT_ID: 'legacy-client-placeholder',
+    CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET: 'legacy-secret-placeholder',
+    CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN: 'legacy-refresh-placeholder',
+  });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, 'OK');
+});
+
+test('envValidation: common and legacy Google Drive credentials can coexist', () => {
+  const result = runEnvValidation({
+    CHAT_ATTACHMENT_PROVIDER: 'gdrive',
+    CHAT_ATTACHMENT_GDRIVE_FOLDER_ID: 'folder-placeholder',
+    ERP4_GDRIVE_CLIENT_ID: 'sensitive-common-client',
+    ERP4_GDRIVE_CLIENT_SECRET: 'sensitive-common-secret',
+    ERP4_GDRIVE_REFRESH_TOKEN: 'sensitive-common-refresh',
+    CHAT_ATTACHMENT_GDRIVE_CLIENT_ID: 'sensitive-legacy-client',
+    CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET: 'sensitive-legacy-secret',
+    CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN: 'sensitive-legacy-refresh',
+  });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, 'OK');
+  assert.doesNotMatch(result.stderr, /sensitive-/);
+});
+
+test('envValidation: Google Drive rejects partial common credentials instead of mixing sets', () => {
+  const result = runEnvValidation({
+    CHAT_ATTACHMENT_PROVIDER: 'gdrive',
+    CHAT_ATTACHMENT_GDRIVE_FOLDER_ID: 'folder-placeholder',
+    ERP4_GDRIVE_CLIENT_ID: 'common-client-placeholder',
+    CHAT_ATTACHMENT_GDRIVE_CLIENT_ID: 'legacy-client-placeholder',
+    CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET: 'legacy-secret-placeholder',
+    CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN: 'legacy-refresh-placeholder',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /ERP4_GDRIVE_CLIENT_SECRET/);
+  assert.match(result.stderr, /ERP4_GDRIVE_REFRESH_TOKEN/);
+  assert.doesNotMatch(result.stderr, /placeholder/);
+});
+
+test('envValidation: missing Google Drive credentials report standard key names only', () => {
+  const result = runEnvValidation({
+    CHAT_ATTACHMENT_PROVIDER: 'gdrive',
+    CHAT_ATTACHMENT_GDRIVE_FOLDER_ID: 'folder-placeholder',
+    ERP4_GDRIVE_CLIENT_ID: 'sensitive-client-value',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /ERP4_GDRIVE_CLIENT_SECRET/);
+  assert.match(result.stderr, /ERP4_GDRIVE_REFRESH_TOKEN/);
+  assert.doesNotMatch(result.stderr, /sensitive-client-value/);
+});
+
+test('envValidation: Google Drive tuning rejects invalid integer settings', () => {
+  const result = runEnvValidation({
+    CHAT_ATTACHMENT_PROVIDER: 'gdrive',
+    CHAT_ATTACHMENT_GDRIVE_FOLDER_ID: 'folder-placeholder',
+    ERP4_GDRIVE_CLIENT_ID: 'client-placeholder',
+    ERP4_GDRIVE_CLIENT_SECRET: 'secret-placeholder',
+    ERP4_GDRIVE_REFRESH_TOKEN: 'refresh-placeholder',
+    ERP4_GDRIVE_TIMEOUT_MS: '0',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /ERP4_GDRIVE_TIMEOUT_MS/);
+});
+
 test('envValidation: production external PDF requires host allowlist matching endpoint', () => {
   const result = runEnvValidation({
     NODE_ENV: 'production',

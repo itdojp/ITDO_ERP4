@@ -333,8 +333,9 @@ Google OIDC / Drive を使う場合:
 
 - `/auth/google/start` から Google 認証へ遷移する。
 - callback後にERP4へ戻る。
-- `scripts/check-chat-gdrive.ts` の read/write が成功する。
-- wrapper として `./scripts/ops/gcp-drive-check.sh --mode read` / `--mode write` を使える。
+- 標準 wrapper `./scripts/ops/gcp-drive-check.sh --env-file <mode-0600-env> --mode read` が成功する。
+- write probe は対象環境と実行者を確認し、人間が承認した場合だけ `--mode write` で実行する。作成したprobeは完全削除せずtrashする。
+- credential / folder ID / Drive ID はstdoutや証跡へ出さず、共通 `ERP4_GDRIVE_*` credentialとChat固有 `CHAT_ATTACHMENT_GDRIVE_FOLDER_ID`を保護済みenvで渡す。
 - 失敗時は [google-cloud-predeployment](google-cloud-predeployment.md) のトラブルシュートへ戻る。
 
 ## 9. backup / restore / rollback

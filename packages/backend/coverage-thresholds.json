@@ -82,7 +82,6 @@
       "src/services/chatAckReminders.ts",
       "src/services/chatAckTemplates.ts",
       "src/services/chatAttachmentScan.ts",
-      "src/services/chatAttachments.ts",
       "src/services/chatExternalLlm.ts",
       "src/services/chatMentionCandidates.ts",
       "src/services/chatMentionRecipients.ts",
@@ -93,10 +92,19 @@
       "src/services/chatRoomMembership.ts",
       "src/services/chatRoomProvisioning.ts",
       "src/services/personalGaChatRoom.ts",
+      "src/adapters/storage/chatAttachmentStorageAdapter.ts",
       "src/application/chat/chatAttachmentUseCases.ts",
+      "src/application/chat/chatAttachmentStoragePort.ts",
       "src/application/chat/chatNotificationEffects.ts",
       "src/application/chat/chatNotificationPort.ts",
-      "src/adapters/notifications/chatNotificationAdapter.ts"
+      "src/adapters/notifications/chatNotificationAdapter.ts",
+      "src/cli/googleDriveCheck.ts",
+      "src/cli/googleDriveCheckService.ts",
+      "src/cli/googleDriveProvisionFolder.ts",
+      "src/cli/googleDriveProvisionService.ts",
+      "src/infrastructure/storage/googleDriveConfig.ts",
+      "src/infrastructure/storage/googleDriveObjectStore.ts",
+      "src/infrastructure/storage/objectStore.ts"
     ]
   },
   "projects": {

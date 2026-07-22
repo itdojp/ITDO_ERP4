@@ -6,7 +6,7 @@ import {
   getChatAttachmentScanProvider,
   scanChatAttachment,
 } from '../../services/chatAttachmentScan.js';
-import { storeAttachment } from '../../services/chatAttachments.js';
+import type { ChatAttachmentStoragePort } from './chatAttachmentStoragePort.js';
 
 type ChatAttachmentMessage = {
   id: string;
@@ -50,6 +50,7 @@ function projectIdForRoom(
 
 export async function uploadChatAttachment(
   input: UploadChatAttachmentInput,
+  dependencies: { attachmentStorage: ChatAttachmentStoragePort },
 ): Promise<UploadChatAttachmentResult> {
   const scanProvider = getChatAttachmentScanProvider();
   const scanStartedAt = Date.now();
@@ -104,7 +105,7 @@ export async function uploadChatAttachment(
     return { ok: false, reason: 'virus_detected' };
   }
 
-  const stored = await storeAttachment({
+  const stored = await dependencies.attachmentStorage.store({
     buffer: input.buffer,
     originalName: input.filename,
     mimeType: input.mimeType,
