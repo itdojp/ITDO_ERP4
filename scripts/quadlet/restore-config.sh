@@ -2,11 +2,23 @@
 set -euo pipefail
 
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
+SYSTEMD_USER_TARGET_DIR="${SYSTEMD_USER_TARGET_DIR:-$HOME/.config/systemd/user}"
 ARCHIVE=""
 OVERWRITE=0
 LIST_ONLY=0
 SKIP_DAEMON_RELOAD=0
 SYSTEMCTL="${SYSTEMCTL:-systemctl}"
+NATIVE_UNITS=(
+  erp4-migrate.service
+  erp4-config-backup.service
+  erp4-config-backup.timer
+  erp4-db-backup.service
+  erp4-db-backup.timer
+  erp4-config-prune.service
+  erp4-config-prune.timer
+  erp4-storage-readiness.service
+  erp4-storage-readiness.timer
+)
 
 usage() {
   cat <<USAGE
@@ -14,6 +26,8 @@ Usage: $(basename "$0") [options]
   -h, --help             Show this help message and exit
   --archive FILE         Backup archive created by backup-config.sh
   --target-dir DIR       Restore target directory (default: ~/.config/containers/systemd)
+  --systemd-user-target-dir DIR
+                         Register restored native units in DIR
   --overwrite            Allow restoring over existing files
   --list                 List archive contents and exit
   --skip-daemon-reload   Skip systemctl --user daemon-reload after restoring unit files
@@ -37,6 +51,54 @@ run_daemon_reload() {
   return 1
 }
 
+is_managed_native_unit() {
+  local candidate="$1"
+  local name
+  for name in "${NATIVE_UNITS[@]}"; do
+    [[ "$candidate" == "$name" ]] && return 0
+  done
+  return 1
+}
+
+ensure_private_directory() {
+  local path="$1"
+  if [[ ! -d "$path" ]]; then
+    mkdir -p -- "$path"
+    chmod 0700 -- "$path"
+  fi
+}
+
+preflight_native_unit_links() {
+  local name source destination current_target
+  for name in "${restored_native_units[@]}"; do
+    source="$TARGET_DIR/$name"
+    destination="$SYSTEMD_USER_TARGET_DIR/$name"
+    [[ "$source" != "$destination" ]] || continue
+    if [[ -L "$destination" ]]; then
+      current_target="$(readlink "$destination")"
+      [[ "$current_target" == "$source" ]] || \
+        fail "native systemd unit symlink points outside the restore target: $destination -> $current_target"
+    elif [[ -e "$destination" ]]; then
+      fail "native systemd unit already exists and will not be overwritten: $destination"
+    fi
+  done
+}
+
+register_native_unit_links() {
+  local name source destination
+  [[ ${#restored_native_units[@]} -gt 0 ]] || return 0
+  ensure_private_directory "$SYSTEMD_USER_TARGET_DIR"
+  for name in "${restored_native_units[@]}"; do
+    source="$TARGET_DIR/$name"
+    destination="$SYSTEMD_USER_TARGET_DIR/$name"
+    [[ -f "$source" && ! -L "$source" ]] || fail "restored native unit is not a regular file: $source"
+    [[ "$source" != "$destination" ]] || continue
+    if [[ ! -L "$destination" ]]; then
+      ln -s -- "$source" "$destination"
+    fi
+  done
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --archive)
@@ -47,6 +109,11 @@ while [[ $# -gt 0 ]]; do
     --target-dir)
       [[ $# -ge 2 ]] || fail 'missing argument for --target-dir'
       TARGET_DIR="$2"
+      shift 2
+      ;;
+    --systemd-user-target-dir)
+      [[ $# -ge 2 ]] || fail 'missing argument for --systemd-user-target-dir'
+      SYSTEMD_USER_TARGET_DIR="$2"
       shift 2
       ;;
     --overwrite)
@@ -87,6 +154,7 @@ mapfile -t entry_details <<<"$entry_details_output"
 [[ ${#entry_details[@]} -eq ${#entries[@]} ]] || fail "archive metadata could not be verified: $ARCHIVE"
 
 requires_daemon_reload=0
+restored_native_units=()
 for i in "${!entries[@]}"; do
   entry="${entries[$i]}"
   detail="${entry_details[$i]}"
@@ -98,6 +166,9 @@ for i in "${!entries[@]}"; do
   if [[ "$entry" =~ \.(container|service|timer|volume|network)$ ]]; then
     requires_daemon_reload=1
   fi
+  if is_managed_native_unit "$entry"; then
+    restored_native_units+=("$entry")
+  fi
 done
 
 if [[ "$LIST_ONLY" -eq 1 ]]; then
@@ -106,7 +177,7 @@ if [[ "$LIST_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
-mkdir -p -m 700 "$TARGET_DIR"
+preflight_native_unit_links
 
 if [[ "$OVERWRITE" -eq 0 ]]; then
   collisions=()
@@ -126,7 +197,9 @@ if [[ "$SKIP_DAEMON_RELOAD" -eq 0 && "$requires_daemon_reload" -eq 1 ]]; then
   command -v "$SYSTEMCTL" >/dev/null 2>&1 || fail "required command not found: $SYSTEMCTL"
 fi
 
+ensure_private_directory "$TARGET_DIR"
 tar -C "$TARGET_DIR" --no-same-owner --no-same-permissions -xzf "$ARCHIVE"
+register_native_unit_links
 
 if [[ "$SKIP_DAEMON_RELOAD" -eq 0 && "$requires_daemon_reload" -eq 1 ]]; then
   run_daemon_reload

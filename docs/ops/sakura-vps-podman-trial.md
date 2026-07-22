@@ -142,7 +142,7 @@ ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" \
 ```
 
 `install-user-units.sh` は `deploy/quadlet/*.container` / `*.service` 内の `REPLACE_WITH_COMMIT_SHA` を `ERP4_IMAGE_TAG`（未指定時は現在の Git commit 短縮 SHA）で展開して配置します。`build-images.sh` と同じ tag を使うため、必要に応じて同じ `ERP4_IMAGE_TAG` を指定してください。
-`private-smoke` では非公開PostgreSQL overlayを選択してCaddyを配置しません。既存のCaddy artifactがある場合は無断削除せず停止します。
+`private-smoke` では非公開PostgreSQL overlayを選択してCaddyを配置しません。既存のCaddy artifactがある場合、installerはエラー終了し、running serviceの停止やartifactの削除は行いません。profile切替時は事前にbackupを取得し、`disable-stack.sh --include-proxy` とRunbookに沿った明示的な退避・削除を行ってください。
 
 配置先:
 
@@ -225,9 +225,13 @@ ERP4_DB_BACKUP_SKIP_GLOBALS=0
 ./scripts/quadlet/start-stack.sh --profile "$PROFILE"
 ```
 
-proxy も起動する場合:
+proxyを起動する場合は`private-smoke`のまま実行せず、HTTPS前提を満たした`https-trial`へ切り替えてunit/envを準備します。以下は初回起動前のprofile切替例です。
 
 ```bash
+PROFILE=https-trial
+ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" \
+  ./scripts/quadlet/install-user-units.sh --profile "$PROFILE"
+./scripts/quadlet/check-env.sh --profile "$PROFILE"
 ./scripts/quadlet/start-stack.sh --profile "$PROFILE" --include-proxy
 ```
 
@@ -389,7 +393,7 @@ stack の更新や uninstall 前に、`~/.config/containers/systemd/` 配下の 
 
 `backup-and-check.sh` は `backup-config.sh` で archive を生成した直後に、同じ archive を `check-backup.sh` で検証します。既定link modeのunitは、`deploy/quadlet/` 配下を参照するinstaller管理symlinkだけをdereferenceし、archive内ではregular fileとして保存します。env/config symlinkや管理対象外を指すunit symlinkはfail-closedで拒否します。`--include-units` はstorage readinessのservice/timerも含み、復元元repositoryがなくてもunit定義を復元できます。生成されるtar.gzにはDB接続情報やJWT secretなどの機微情報が含まれる可能性があるため、保存先は第三者から見えない場所を選んでください。`backup-config.sh` は出力先ディレクトリを `0700`、archiveを `0600` に寄せますが、外部へコピーする場合も同等の権限制御を前提にしてください。
 
-復元する場合は、archive 内容を確認したうえで `restore-config.sh` を使います。既存ファイルがある場合は既定で停止するため、上書きが必要な場合だけ `--overwrite` を付けてください。unit 定義を含む archive を戻すときは、既定で `systemctl --user daemon-reload` まで実行します。
+復元する場合は、archive 内容を確認したうえで `restore-config.sh` を使います。既存ファイルがある場合は既定で停止するため、上書きが必要な場合だけ `--overwrite` を付けてください。unit 定義を含む archive を戻すときは、migrate、backup、prune、storage readinessのnative service/timerを `SYSTEMD_USER_TARGET_DIR`（既定 `~/.config/systemd/user/`）へ管理対象symlinkとして再登録してから、`systemctl --user daemon-reload` を実行します。既存の通常ファイルまたは別の参照先を持つsymlinkとは競合前に停止し、部分復元しません。検証用に配置先を分離する場合は `--systemd-user-target-dir` を指定してください。`--skip-daemon-reload`はreloadだけを省略し、symlink登録は省略しません。
 
 ```bash
 ./scripts/quadlet/restore-config.sh --archive ~/.local/share/erp4/quadlet-backups/erp4-quadlet-config-YYYYMMDD-HHMMSS.tar.gz --list

@@ -54,7 +54,7 @@ run_daemon_reload() {
 remove_file_if_exists() {
   local path="$1"
   if [[ -e "$path" || -L "$path" ]]; then
-    rm -f "$path"
+    rm -f -- "$path"
     printf 'removed %s\n' "$path"
   fi
 }
@@ -70,7 +70,7 @@ remove_managed_native_link() {
     local current_target
     current_target="$(readlink "$path")"
     if [[ "$current_target" == "$expected" ]]; then
-      rm -f "$path"
+      rm -f -- "$path"
       printf 'removed %s\n' "$path"
     else
       printf 'WARN: preserved unmanaged native systemd unit symlink %s -> %s\n' "$path" "$current_target" >&2

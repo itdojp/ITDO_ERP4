@@ -241,6 +241,9 @@ link_backup_quadlet_dir="$WORK_DIR/link-backup-quadlet"
 link_backup_systemd_dir="$WORK_DIR/link-backup-systemd"
 link_backup_output_dir="$WORK_DIR/link-backup-output"
 link_restore_dir="$WORK_DIR/link-backup-restore"
+link_restore_systemd_dir="$WORK_DIR/link-backup-restore-systemd"
+link_restore_systemctl_log="$WORK_DIR/link-backup-restore-systemctl.log"
+fake_link_restore_systemctl="$WORK_DIR/fake-link-restore-systemctl.sh"
 run_success 'default link-mode installer prepares backup fixture' \
   env SYSTEMCTL=true QUADLET_TARGET_DIR="$link_backup_quadlet_dir" \
   SYSTEMD_USER_TARGET_DIR="$link_backup_systemd_dir" ERP4_IMAGE_TAG=test-profile \
@@ -266,12 +269,64 @@ for backed_up_name in \
   tar -tzf "$link_backup_archive" | grep -Fxq "$backed_up_name" || \
     fail "default link-mode backup omitted storage readiness artifact: $backed_up_name"
 done
+cat >"$fake_link_restore_systemctl" <<EOF_FAKE_LINK_RESTORE_SYSTEMCTL
+#!/usr/bin/env bash
+for name in \
+  erp4-migrate.service \
+  erp4-config-backup.service \
+  erp4-config-backup.timer \
+  erp4-db-backup.service \
+  erp4-db-backup.timer \
+  erp4-config-prune.service \
+  erp4-config-prune.timer \
+  erp4-storage-readiness.service \
+  erp4-storage-readiness.timer; do
+  [[ -L "$link_restore_systemd_dir/\$name" ]] || exit 1
+done
+printf '%s\n' "\$*" >"$link_restore_systemctl_log"
+EOF_FAKE_LINK_RESTORE_SYSTEMCTL
+chmod +x "$fake_link_restore_systemctl"
 run_success 'default link-mode unit backup restores independently of source links' \
-  "$RESTORE_CONFIG" --archive "$link_backup_archive" --target-dir "$link_restore_dir" --skip-daemon-reload
-for restored_name in erp4-storage-readiness.service erp4-storage-readiness.timer; do
+  env SYSTEMCTL="$fake_link_restore_systemctl" "$RESTORE_CONFIG" \
+  --archive "$link_backup_archive" --target-dir "$link_restore_dir" \
+  --systemd-user-target-dir "$link_restore_systemd_dir"
+grep -Fxq -- '--user daemon-reload' "$link_restore_systemctl_log" || \
+  fail 'restore did not reload systemd after registering native units'
+for restored_name in \
+  erp4-migrate.service \
+  erp4-config-backup.service \
+  erp4-config-backup.timer \
+  erp4-db-backup.service \
+  erp4-db-backup.timer \
+  erp4-config-prune.service \
+  erp4-config-prune.timer \
+  erp4-storage-readiness.service \
+  erp4-storage-readiness.timer; do
   [[ -f "$link_restore_dir/$restored_name" && ! -L "$link_restore_dir/$restored_name" ]] || \
     fail "restored native unit is not a regular file: $restored_name"
+  [[ -L "$link_restore_systemd_dir/$restored_name" ]] || \
+    fail "restore did not register native systemd unit: $restored_name"
+  [[ "$(readlink "$link_restore_systemd_dir/$restored_name")" == "$link_restore_dir/$restored_name" ]] || \
+    fail "restored native systemd unit points outside the restore target: $restored_name"
 done
+
+link_restore_skip_dir="$WORK_DIR/link-backup-restore-skip-reload"
+link_restore_skip_systemd_dir="$WORK_DIR/link-backup-restore-skip-reload-systemd"
+run_success 'restore skip-daemon-reload still registers native systemd units' \
+  env SYSTEMCTL=/usr/bin/false "$RESTORE_CONFIG" --archive "$link_backup_archive" \
+  --target-dir "$link_restore_skip_dir" --systemd-user-target-dir "$link_restore_skip_systemd_dir" \
+  --skip-daemon-reload
+[[ -L "$link_restore_skip_systemd_dir/erp4-migrate.service" ]] || \
+  fail 'restore --skip-daemon-reload skipped native systemd unit registration'
+
+restore_collision_dir="$WORK_DIR/link-backup-restore-collision"
+restore_collision_systemd_dir="$WORK_DIR/link-backup-restore-collision-systemd"
+mkdir -p "$restore_collision_systemd_dir"
+: >"$restore_collision_systemd_dir/erp4-migrate.service"
+run_failure 'restore rejects unmanaged native systemd unit collision before extraction' 'will not be overwritten' \
+  "$RESTORE_CONFIG" --archive "$link_backup_archive" --target-dir "$restore_collision_dir" \
+  --systemd-user-target-dir "$restore_collision_systemd_dir" --skip-daemon-reload
+[[ ! -e "$restore_collision_dir" ]] || fail 'native unit collision left a partial restore target'
 
 unsafe_backup_dir="$WORK_DIR/unsafe-backup-source"
 mkdir -p "$unsafe_backup_dir"
@@ -466,6 +521,7 @@ mkdir -p "$link_update_target"
 cp "$ROOT_DIR/deploy/quadlet/profiles/private-smoke/erp4-postgres.container" "$link_update_source"
 ln -s "$link_update_source" "$link_update_target/erp4-postgres.container"
 sha256sum "$link_update_source" | awk '{print $1}' >"$link_update_target/erp4-postgres-unit.sha256"
+chmod 0600 "$link_update_target/erp4-postgres-unit.sha256"
 cat >"$fake_link_update_install" <<EOF_FAKE_LINK_UPDATE_INSTALL
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >"$profile_args_file"
