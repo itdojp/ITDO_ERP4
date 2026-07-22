@@ -7,7 +7,7 @@
 - blockedReason: 実Google Drive credential、承認済みShared Drive folder、実Sakura primary、隔離restore DBを本検証では使用していない
 - issueScope: 暗号化済みSakura backup bundleのGoogle Drive二次copy
 - branch: `feat/1979-backup-gdrive-secondary`
-- baseCommit: `21b6738cd667b1be9f1dfcc4e2f8c89f9a47df88`
+- baseCommit: `e267dab03c74cc4c046584c45289baefdd0259b3`
 - executionDate: 2026-07-22 JST
 
 fakeとlocal filesystemだけを使用したrepo-side検証である。実Google Workspace、実さくらオブジェクトストレージ、実DB restore、retention apply、trashは実行していない。この記録を実環境成功証跡として扱わない。
@@ -29,25 +29,25 @@ fakeとlocal filesystemだけを使用したrepo-side検証である。実Google
 
 | 検証                                | 結果 | 詳細                                                               |
 | ----------------------------------- | ---- | ------------------------------------------------------------------ |
-| Google Drive / backup focused tests | PASS | 44 tests                                                           |
-| focused coverage                    | PASS | statements 86.59%、branches 79.67%、functions 95.18%、lines 86.59% |
+| Google Drive / backup focused tests | PASS | 48 tests                                                           |
+| focused coverage                    | PASS | statements 90.10%、branches 80.55%、functions 94.18%、lines 90.10% |
 | Sakura backup profile tests         | PASS | 20 tests                                                           |
 | `make ops-quality`                  | PASS | docs、shell syntax / guard、Quadlet profile、backup profileを含む  |
 | `make lint`                         | PASS | backend / frontend                                                 |
 | `make format-check`                 | PASS | backend / frontend                                                 |
 | `make typecheck`                    | PASS | backend / frontend                                                 |
 | `make build`                        | PASS | backend / frontend                                                 |
-| `make test`                         | PASS | backend 1,375 tests、frontend 82 files / 468 tests                 |
-| dependency boundary                 | PASS | 248 modules / 956 dependencies、違反0                              |
-| bounded-context coverage            | PASS | source 235、未分類 / stale / duplicate / ambiguous 0               |
-| docs image links                    | PASS | 115 links / 333 Markdown files                                     |
+| `make test`                         | PASS | backend 1,415 tests、frontend 82 files / 468 tests                 |
+| dependency boundary                 | PASS | 257 modules / 985 dependencies、違反0                              |
+| bounded-context coverage            | PASS | source 243、未分類 / stale / duplicate / ambiguous 0               |
+| docs image links                    | PASS | 115 links / 338 Markdown files                                     |
 | test-results index                  | PASS | unit 2 tests、index up-to-date                                     |
 | `make audit`                        | PASS | backend / frontend high以上0件                                     |
 | `git diff --check`                  | PASS | whitespace errorなし                                               |
 
-backend full test中に、DB未起動による既存の非致命`P1001` audit warningが出力されたが、suiteは1,375件すべて成功した。今回のbackup pathはDBへ接続しない。
+backend full test中に、DB未起動による既存の非致命`P1001` audit warningが出力されたが、suiteは1,415件すべて成功した。今回のbackup pathはDBへ接続しない。
 
-最終review修正後もSakura profile 20件、`make ops-quality`、lint / format / typecheck、backend 1,375件は成功した。frontend全体の初回実行では今回未変更の`ProjectMilestones.test.tsx`の非同期表示待ちが1件失敗したが、該当file 5件とfrontend全82 files / 468件の直後の再実行は成功した。失敗をskip、timeout延長、coverage除外では処理していない。
+最終review修正後もSakura profile 20件、`make ops-quality`、lint / format / typecheck、backend 1,415件は成功した。PR #1990 merge後の `origin/main` を統合し、共通adapterのidempotencyとbackup向けappProperties/list/resumable resumeを合成した後、Storage coverage 32件、backup focused 48件、Sakura profile 20件、backend 1,415件、frontend 468件を再実行して成功した。frontend全体の初回実行では今回未変更の`ProjectMilestones.test.tsx`の非同期表示待ちが1件失敗したが、該当file 5件とfrontend全82 files / 468件の直後の再実行は成功した。失敗をskip、timeout延長、coverage除外では処理していない。
 
 ## テストしたfailure semantics
 
