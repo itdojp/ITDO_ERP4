@@ -14,7 +14,7 @@
 - Evidence content / metadataを別artifactとして保存し、approval閲覧権限とowner scopeをdownload時に再検証
 - Report出力をdelivery作成前に1回だけ保存し、retryは同じartifactをopenして再生成・再uploadしない
 - PDF / Evidence / Reportの認可済みdownload endpointを追加し、Drive URL、folder ID、provider keyを応答・監査metadataへ露出しない
-- Drive downloadはmetadata一致だけで成功扱いにせず、取得した実バイト列のsize・SHA-256を検証してから各endpointへ返す
+- Drive downloadはmetadata一致だけで成功扱いにせず、取得streamをowner-only一時領域へチャンク単位で書き込み、実バイト列のsize・SHA-256を検証してから各endpointへ返す。ヒープへの全量保持は行わない
 - gdrive障害時のlocal / S3暗黙fallbackを禁止し、Report artifact取得のretryable / permanent failureを既存delivery状態へ反映
 - `PDF_PROVIDER`、`EVIDENCE_ARCHIVE_PROVIDER`、`REPORT_PROVIDER`とcontext別folderをbackend / Quadletでfail-closed検証
 - local provider、external PDF、Evidence S3、既存local record readerを後方互換経路として維持
@@ -26,6 +26,7 @@
 - gdrive object名はUUIDまたはSHA-256由来とし、個人名・メールアドレス・顧客名を使用しない。
 - `REPORT_PROVIDER=local`と`PDF_PROVIDER=gdrive`を同時に設定しても、Report PDFはPDF用Drive contextへ誤保存しない。
 - 直接Report PDF APIはartifact/local保存が失敗したstub結果を成功応答に変換しない。
+- Drive downloadの検証済み一時ファイルは応答streamを返す前にunlinkし、開放済みfile descriptorだけを配信に使用する。正常時・checksum不一致時とも名前付き一時ファイルを残さない。
 - Prisma schema / migrationはfoundation PR #1990から追加変更していない。
 
 ## Local verification
@@ -34,7 +35,8 @@
 | ----------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------- |
 | focused storage / PDF / Evidence / Report / env tests             | PASS   | 10 files / 128 tests（UUID検証とDrive download実バイト列検証を含む）             |
 | post-main combined #1977 / #1979 focused tests                    | PASS   | 14 files / 176 tests（共通object storeとbackup secondaryの結合回帰を含む）       |
-| `npm run coverage:storage:check --prefix packages/backend`        | PASS   | 33 tests。statements/lines 91.09%、branches 75.91%、functions 100%。閾値変更なし |
+| post-review combined #1977 / #1979 focused tests                  | PASS   | 14 files / 190 tests（backend 13 files / 168、S3 profile 22）                    |
+| `npm run coverage:storage:check --prefix packages/backend`        | PASS   | 33 tests。statements/lines 91.73%、branches 75.00%、functions 100%。閾値変更なし |
 | `make lint`                                                       | PASS   | backend / frontend                                                               |
 | `make format-check`                                               | PASS   | backend / frontend                                                               |
 | `make typecheck`                                                  | PASS   | backend / frontend                                                               |
@@ -45,7 +47,7 @@
 | `npm run arch:bounded-context --prefix packages/backend`          | PASS   | 278 modules / 1,189 dependencies、違反なし                                       |
 | `npm run arch:bounded-context:coverage --prefix packages/backend` | PASS   | source 243、target 211、unclassified / stale / duplicate / ambiguous 0           |
 | OpenAPI exportと`docs/api/openapi.json`のdiff                     | PASS   | Evidence provider enumと3つのartifact download endpointを同期                    |
-| `./scripts/secret-scan.sh`                                        | PASS   | tracked files 1,797、match 0                                                     |
+| `./scripts/secret-scan.sh`                                        | PASS   | tracked files 1,806、match 0                                                     |
 | `git diff --check`                                                | PASS   | whitespace errorなし                                                             |
 
 `make test`中、local PostgreSQLを起動していない既存のvendor invoice監査testで非致命的なPrisma `P1001` warningが出力されたが、test suiteは全件成功した。
@@ -55,6 +57,7 @@
 - fixtureはsynthetic placeholderだけを使用した。
 - credential、refresh token、実folder / Shared Drive ID、Drive file ID、Drive URL、個人情報をrepository証跡へ記録していない。
 - error応答とlogは正規化済みerror codeだけを公開し、provider detailを返さない。
+- Drive downloadの一時directory/fileは実行user所有かつowner-onlyに限定し、provider keyやartifact名を一時filenameへ使用しない。
 - source local file削除、Drive trash / 完全削除、production provider切替、DB restoreを実行していない。
 
 ## 未実施

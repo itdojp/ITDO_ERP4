@@ -6,6 +6,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rename,
   rm,
   writeFile,
@@ -385,6 +386,7 @@ test('local storage rejects a group-readable directory', async () => {
 });
 
 test('Google Drive artifact uses only common credentials and verifies stat before download', async () => {
+  const downloadTempRoot = await createScratchDir();
   const db = createArtifactDb();
   let factoryOptions;
   let putInput;
@@ -427,6 +429,7 @@ test('Google Drive artifact uses only common credentials and verifies stat befor
   const adapter = createArtifactStorageAdapter({
     context: 'pdf',
     db,
+    downloadTempRoot,
     env: {
       PDF_GDRIVE_FOLDER_ID: 'folder-placeholder',
       ERP4_GDRIVE_CLIENT_ID: 'common-client',
@@ -445,67 +448,84 @@ test('Google Drive artifact uses only common credentials and verifies stat befor
     provider: 'gdrive',
   });
 
-  const stored = await adapter.store(input(body));
-  assert.equal(stored.provider, 'gdrive');
-  assert.equal(Object.hasOwn(stored, 'providerKey'), false);
-  assert.equal(db.rows[0].providerKey, 'drive-file-placeholder');
-  assert.equal(factoryOptions.credentials.clientId, 'common-client');
-  assert.equal(factoryOptions.credentials.clientSecret, 'common-secret');
-  assert.equal(factoryOptions.credentials.refreshToken, 'common-refresh');
-  assert.equal(putInput.idempotencyKey, input(body).idempotencyKey);
-  assert.equal(putInput.originalName, 'pdf-artifact-placeholder.pdf');
+  try {
+    const stored = await adapter.store(input(body));
+    assert.equal(stored.provider, 'gdrive');
+    assert.equal(Object.hasOwn(stored, 'providerKey'), false);
+    assert.equal(db.rows[0].providerKey, 'drive-file-placeholder');
+    assert.equal(factoryOptions.credentials.clientId, 'common-client');
+    assert.equal(factoryOptions.credentials.clientSecret, 'common-secret');
+    assert.equal(factoryOptions.credentials.refreshToken, 'common-refresh');
+    assert.equal(putInput.idempotencyKey, input(body).idempotencyKey);
+    assert.equal(putInput.originalName, 'pdf-artifact-placeholder.pdf');
 
-  const opened = await adapter.open(stored.artifactId);
-  assert.deepEqual(await readAll(opened.stream), body);
-  assert.deepEqual(calls, [
-    'put',
-    'get:drive-file-placeholder',
-    'stat:drive-file-placeholder',
-    'get:drive-file-placeholder',
-  ]);
+    const opened = await adapter.open(stored.artifactId);
+    assert.deepEqual(await readdir(downloadTempRoot), []);
+    assert.deepEqual(await readAll(opened.stream), body);
+    assert.deepEqual(calls, [
+      'put',
+      'get:drive-file-placeholder',
+      'stat:drive-file-placeholder',
+      'get:drive-file-placeholder',
+    ]);
+  } finally {
+    await rm(downloadTempRoot, { recursive: true, force: true });
+  }
 });
 
-test('Google Drive open rejects downloaded bytes that differ from verified metadata', async () => {
+test('Google Drive open rejects checksum-mismatched or oversized downloaded bytes', async () => {
   const expected = Buffer.from('expected-content');
   const corrupted = Buffer.from('corrupt-content!');
   assert.equal(corrupted.length, expected.length);
-  const value = input(expected);
-  const db = createArtifactDb();
-  const ready = addPendingRow(db, value);
-  ready.providerKey = 'drive-file-placeholder';
-  ready.status = 'ready';
-  const adapter = createArtifactStorageAdapter({
-    context: 'pdf',
-    db,
-    env: {
-      PDF_GDRIVE_FOLDER_ID: 'folder-placeholder',
-      ERP4_GDRIVE_CLIENT_ID: 'common-client',
-      ERP4_GDRIVE_CLIENT_SECRET: 'common-secret',
-      ERP4_GDRIVE_REFRESH_TOKEN: 'common-refresh',
-    },
-    folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
-    localDir: 'unused-local-directory',
-    objectStoreFactory: () => ({
-      get: async () => ({ stream: Readable.from(corrupted) }),
-      put: async () => assert.fail('put must not be called'),
-      stat: async () => ({
-        key: ready.providerKey,
-        checksum: { sha256: value.sha256 },
-        contentType: value.contentType,
-        createdAt: null,
-        modifiedAt: null,
-        originalName: value.originalName,
-        sizeBytes: value.sizeBytes,
-        trashed: false,
+  for (const downloaded of [
+    corrupted,
+    Buffer.concat([expected, Buffer.from('unexpected-extra-bytes')]),
+  ]) {
+    const downloadTempRoot = await createScratchDir();
+    const value = input(expected);
+    const db = createArtifactDb();
+    const ready = addPendingRow(db, value);
+    ready.providerKey = 'drive-file-placeholder';
+    ready.status = 'ready';
+    const adapter = createArtifactStorageAdapter({
+      context: 'pdf',
+      db,
+      downloadTempRoot,
+      env: {
+        PDF_GDRIVE_FOLDER_ID: 'folder-placeholder',
+        ERP4_GDRIVE_CLIENT_ID: 'common-client',
+        ERP4_GDRIVE_CLIENT_SECRET: 'common-secret',
+        ERP4_GDRIVE_REFRESH_TOKEN: 'common-refresh',
+      },
+      folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
+      localDir: 'unused-local-directory',
+      objectStoreFactory: () => ({
+        get: async () => ({ stream: Readable.from(downloaded) }),
+        put: async () => assert.fail('put must not be called'),
+        stat: async () => ({
+          key: ready.providerKey,
+          checksum: { sha256: value.sha256 },
+          contentType: value.contentType,
+          createdAt: null,
+          modifiedAt: null,
+          originalName: value.originalName,
+          sizeBytes: value.sizeBytes,
+          trashed: false,
+        }),
+        trash: async () => assert.fail('trash must not be called'),
       }),
-      trash: async () => assert.fail('trash must not be called'),
-    }),
-    provider: 'gdrive',
-  });
+      provider: 'gdrive',
+    });
 
-  await assert.rejects(() => adapter.open(ready.id), {
-    message: 'artifact_remote_verification_failed',
-  });
+    try {
+      await assert.rejects(() => adapter.open(ready.id), {
+        message: 'artifact_remote_verification_failed',
+      });
+      assert.deepEqual(await readdir(downloadTempRoot), []);
+    } finally {
+      await rm(downloadTempRoot, { recursive: true, force: true });
+    }
+  }
 });
 
 test('legacy-only Google credentials fail closed and record a sanitized failure code', async () => {
