@@ -37,6 +37,11 @@
 - [Release Backup Evidence Template](release-backup-evidence-template.md)
 - [Release Candidate Readiness Evidence Template](release-readiness-template.md)
 - [さくらVPS 試験稼働記録テンプレート](sakura-vps-trial-template.md)
+- [Storage artifact migration evidence template](storage-artifact-migration-template.md)
+
+### 2026-07-22
+
+- [Issue #1977 Storage artifact foundation verification](2026-07-22-issue1977-storage-artifact-foundation.md)
 
 ### 2026-07-14
 
