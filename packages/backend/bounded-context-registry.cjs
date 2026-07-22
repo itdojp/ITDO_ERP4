@@ -107,6 +107,7 @@ const layers = [
     rationale:
       'HTTP aggregation, cross-context read models, reports, dispatch/event entry points, or glue code that coordinates bounded contexts without defining a bounded context itself.',
     patterns: [
+      '^src/application/backup/.+\\.ts$',
       '^src/application/dailyReports/.+\\.ts$',
       '^src/application/expenses/.+\\.ts$',
       '^src/application/identity/.+\\.ts$',
@@ -148,6 +149,7 @@ const layers = [
       '^src/adapters/notifications/.+\\.ts$',
       '^src/adapters/storage/.+\\.ts$',
       '^src/cli/googleDrive(Check|CheckService|ProvisionFolder|ProvisionService)\\.ts$',
+      '^src/infrastructure/backup/.+\\.ts$',
       '^src/infrastructure/storage/.+\\.ts$',
       '^src/routes/(pdfFiles|pdfTemplates|templateSettings)\\.ts$',
       '^src/services/(audit|db|envValidation|notifier|pdf|pdfTemplates|readiness|safeHttpClient|webPush)\\.ts$',
