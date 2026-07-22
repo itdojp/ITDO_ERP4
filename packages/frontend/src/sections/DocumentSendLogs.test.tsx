@@ -320,21 +320,25 @@ describe('DocumentSendLogs', () => {
       expect(api).toHaveBeenCalledWith('/document-send-logs/log-1/events');
     });
 
-    expect(
-      screen.getAllByText('vendor_invoice / invoice-1').length,
-    ).toBeGreaterThan(0);
-    const summary = screen.getByRole('region', {
-      name: '送信ログ監査サマリー',
+    await waitFor(() => {
+      expect(
+        screen.getAllByText('vendor_invoice / invoice-1').length,
+      ).toBeGreaterThan(0);
+      const summary = screen.getByRole('region', {
+        name: '送信ログ監査サマリー',
+      });
+      expect(within(summary).getAllByText('取得済み').length).toBeGreaterThan(
+        0,
+      );
+      expect(within(summary).getByText('1件のイベント')).toBeInTheDocument();
+      expect(
+        within(summary).getByText('vendor_invoice / invoice-1'),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText('a@example.com, b@example.com'),
+      ).toBeInTheDocument();
+      expect(screen.getByText('bounce')).toBeInTheDocument();
     });
-    expect(within(summary).getAllByText('取得済み').length).toBeGreaterThan(0);
-    expect(within(summary).getByText('1件のイベント')).toBeInTheDocument();
-    expect(
-      within(summary).getByText('vendor_invoice / invoice-1'),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText('a@example.com, b@example.com'),
-    ).toBeInTheDocument();
-    expect(screen.getByText('bounce')).toBeInTheDocument();
 
     fireEvent.click(
       screen.getByRole('button', { name: '監査ログで開く:log-1' }),

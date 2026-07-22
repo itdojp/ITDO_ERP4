@@ -7,6 +7,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 
 MODE="read"
+TARGET="chat"
 DRY_RUN=0
 ENV_FILE=""
 PROVISION_FOLDER=0
@@ -23,9 +24,11 @@ wrapper. --mode write creates and trashes a test file through the compiled backe
 
 Options:
   --mode read|write           Drive check mode (default: read)
+  --target chat|pdf|evidence|report
+                              Context folder to check/provision (default: chat)
   --dry-run                   Print the command without executing it
   --env-file FILE             Read env vars from a regular caller-owned mode 600 file
-  --provision-folder          Run scripts/provision-chat-gdrive-folder.ts first
+  --provision-folder          Provision the selected target folder first
   --reconcile-provision       Reconcile a prior CREATE_STARTED protected output
   --folder-id-output-file FILE
                               Required with provision/reconcile; receives mode 600 env output
@@ -42,6 +45,9 @@ load_env_file() {
     CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN
     CHAT_ATTACHMENT_GDRIVE_FOLDER_ID
     CHAT_ATTACHMENT_GDRIVE_FOLDER_NAME
+    PDF_GDRIVE_FOLDER_ID
+    EVIDENCE_ARCHIVE_GDRIVE_FOLDER_ID
+    REPORT_GDRIVE_FOLDER_ID
     ERP4_GDRIVE_CLIENT_ID
     ERP4_GDRIVE_CLIENT_SECRET
     ERP4_GDRIVE_REFRESH_TOKEN
@@ -82,7 +88,17 @@ require_credential_set() {
     [[ -n "${value// }" ]] && legacy_count=$((legacy_count + 1))
   done
 
-  if [[ "$common_count" -gt 0 ]]; then
+  if [[ "$TARGET" != "chat" ]]; then
+    for key in "${common_keys[@]}"; do
+      value="${!key:-}"
+      if [[ -z "${value// }" ]]; then
+        ops_error "missing required env: $key (non-Chat targets do not use legacy fallback)"
+        missing=1
+      else
+        ops_info "$key is set"
+      fi
+    done
+  elif [[ "$common_count" -gt 0 ]]; then
     for key in "${common_keys[@]}"; do
       value="${!key:-}"
       if [[ -z "${value// }" ]]; then
@@ -121,12 +137,12 @@ require_envs() {
     missing=1
   fi
   if [[ "$PROVISION_FOLDER" -eq 0 ]]; then
-    value="${CHAT_ATTACHMENT_GDRIVE_FOLDER_ID:-}"
+    value="${!TARGET_ENV_KEY:-}"
     if [[ -z "${value// }" ]]; then
-      ops_error 'missing required env: CHAT_ATTACHMENT_GDRIVE_FOLDER_ID'
+      ops_error "missing required env: $TARGET_ENV_KEY"
       missing=1
     else
-      ops_info "CHAT_ATTACHMENT_GDRIVE_FOLDER_ID is set"
+      ops_info "$TARGET_ENV_KEY is set"
     fi
   fi
   [[ "$missing" -eq 0 ]] || exit 1
@@ -138,6 +154,7 @@ write_summary() {
     printf '# ERP4 Google Drive check\n\n'
     printf -- '- Date: `%s`\n' "$(ops_timestamp)"
     printf -- '- Mode: `%s`\n' "$MODE"
+    printf -- '- Target: `%s`\n' "$TARGET"
     printf -- '- Provision folder: `%s`\n' "$PROVISION_FOLDER"
     printf -- '- Reconcile provision: `%s`\n' "$RECONCILE_PROVISION"
     printf -- '- Env file used: `%s`\n' "${ENV_FILE:-no}"
@@ -164,6 +181,11 @@ while [[ $# -gt 0 ]]; do
     --mode)
       ops_require_arg "$1" "${2:-}"
       MODE="$2"
+      shift 2
+      ;;
+    --target)
+      ops_require_arg "$1" "${2:-}"
+      TARGET="$2"
       shift 2
       ;;
     --dry-run)
@@ -207,10 +229,32 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$MODE" in read|write) ;; *) ops_fail '--mode must be read or write' ;; esac
+case "$TARGET" in
+  chat)
+    TARGET_ENV_KEY=CHAT_ATTACHMENT_GDRIVE_FOLDER_ID
+    TARGET_FOLDER_NAME='ERP4 Chat Attachments'
+    ;;
+  pdf)
+    TARGET_ENV_KEY=PDF_GDRIVE_FOLDER_ID
+    TARGET_FOLDER_NAME='ERP4 PDF Artifacts'
+    ;;
+  evidence)
+    TARGET_ENV_KEY=EVIDENCE_ARCHIVE_GDRIVE_FOLDER_ID
+    TARGET_FOLDER_NAME='ERP4 Evidence Archives'
+    ;;
+  report)
+    TARGET_ENV_KEY=REPORT_GDRIVE_FOLDER_ID
+    TARGET_FOLDER_NAME='ERP4 Report Outputs'
+    ;;
+  *) ops_fail '--target must be chat, pdf, evidence, or report' ;;
+esac
+unset ERP4_GDRIVE_TARGET_FOLDER_ID GDRIVE_FOLDER_ID_OUTPUT_KEY ERP4_GDRIVE_TARGET_FOLDER_NAME
 load_env_file
 require_envs
 if [[ "$PROVISION_FOLDER" -eq 1 ]]; then
   export GDRIVE_FOLDER_ID_OUTPUT_FILE="$FOLDER_ID_OUTPUT_FILE"
+  export GDRIVE_FOLDER_ID_OUTPUT_KEY="$TARGET_ENV_KEY"
+  export ERP4_GDRIVE_TARGET_FOLDER_NAME="$TARGET_FOLDER_NAME"
   if [[ "$RECONCILE_PROVISION" -eq 1 ]]; then
     export GDRIVE_PROVISION_MODE=reconcile
   else
@@ -219,10 +263,16 @@ if [[ "$PROVISION_FOLDER" -eq 1 ]]; then
   run_backend_cli googleDriveProvisionFolder
   if [[ "$DRY_RUN" -eq 0 ]]; then
     ops_check_private_file_mode "$FOLDER_ID_OUTPUT_FILE" || exit 1
-    CHAT_ATTACHMENT_GDRIVE_FOLDER_ID="$(ops_read_env_value "$FOLDER_ID_OUTPUT_FILE" CHAT_ATTACHMENT_GDRIVE_FOLDER_ID)"
-    [[ -n "$CHAT_ATTACHMENT_GDRIVE_FOLDER_ID" ]] || ops_fail 'provision output is missing CHAT_ATTACHMENT_GDRIVE_FOLDER_ID'
-    export CHAT_ATTACHMENT_GDRIVE_FOLDER_ID
+    target_folder_id="$(ops_read_env_value "$FOLDER_ID_OUTPUT_FILE" "$TARGET_ENV_KEY")"
+    [[ -n "$target_folder_id" ]] || ops_fail "provision output is missing $TARGET_ENV_KEY"
+    if [[ "$TARGET" == "chat" ]]; then
+      export CHAT_ATTACHMENT_GDRIVE_FOLDER_ID="$target_folder_id"
+    else
+      export ERP4_GDRIVE_TARGET_FOLDER_ID="$target_folder_id"
+    fi
   fi
+elif [[ "$TARGET" != "chat" ]]; then
+  export ERP4_GDRIVE_TARGET_FOLDER_ID="${!TARGET_ENV_KEY}"
 fi
 export GDRIVE_CHECK_MODE="$MODE"
 run_backend_cli googleDriveCheck

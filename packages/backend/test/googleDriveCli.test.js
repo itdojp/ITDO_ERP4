@@ -141,6 +141,34 @@ test('Google Drive provision writes protected state and safe create parameters',
   }
 });
 
+test('Google Drive provision writes an allowlisted non-Chat folder key', async () => {
+  const scratchRoot = resolve(process.cwd(), '../..', '.codex-local', 'tmp');
+  await mkdir(scratchRoot, { recursive: true });
+  const scratch = await mkdtemp(join(scratchRoot, 'gdrive-provision-pdf-'));
+  const outputFile = join(scratch, 'folder.env');
+  try {
+    await provisionGoogleDriveFolder({
+      drive: makeProvisionDrive(),
+      folderName: 'ERP4 PDF Artifacts',
+      outputFile,
+      outputKey: 'PDF_GDRIVE_FOLDER_ID',
+      tuning,
+      marker: '00000000-0000-4000-8000-000000000010',
+      log: () => {},
+    });
+
+    const state = await readFile(outputFile, 'utf8');
+    assert.match(state, /^PDF_GDRIVE_FOLDER_ID=/m);
+    assert.match(
+      state,
+      /^ERP4_GDRIVE_PROVISION_OUTPUT_KEY=PDF_GDRIVE_FOLDER_ID$/m,
+    );
+    assert.doesNotMatch(state, /^CHAT_ATTACHMENT_GDRIVE_FOLDER_ID=/m);
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+});
+
 test('Google Drive provision preserves marker state after an ambiguous create failure', async () => {
   const scratchRoot = resolve(process.cwd(), '../..', '.codex-local', 'tmp');
   await mkdir(scratchRoot, { recursive: true });

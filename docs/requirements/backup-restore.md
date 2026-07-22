@@ -21,6 +21,8 @@ Epic #1975では次を本番候補とする。
 
 AWS S3 / SSE-KMS profileは既存利用者の互換経路として維持する。provider差分はS3_PROVIDER=aws|sakuraで明示し、endpointやAPI応答から暗黙判定しない。custom endpointを指定する場合はprovider共通でcredentialを含まないHTTPS originを要求する。
 
+PDF・Evidence archive・Reportについては、local providerの間だけlocal asset backupへ含める。Google Driveへcopyしただけではbackup対象から除外せず、#1981のcutover承認後にprovider単位で対象を切り替える。`StorageArtifact` metadataはPostgreSQL backupに含まれ、Drive object本体の復旧可能性はOAuth、folder membership、容量、provider freshnessを別途確認する。Drive objectをDB backupへ重複格納しない。
+
 S3 credentialはrepository sampleへ保存しない。AWS CLI標準credential chainを使い、Sakura専用の最小権限profileをowner-onlyのcredentials fileまたは承認済みprocess-level secret injectionから供給する。日常backup writerのput / get / list / head権限と、readiness probe / retention applyのdelete権限を分離する。AWS CLI debug output、署名付きrequest、credential valueをrepository evidenceへ含めない。
 
 2026-07-22時点の公式仕様では、さくらのAmazon S3-compatible APIはList Objects、bucket location / versioning / ACL、HEAD / GET / PUT / DELETE Object等を列挙している。一方、全Amazon S3 APIの互換性は保証されない。実装は列挙済みAPIだけを共通checkに使用し、AWS Public Access Block / KMS等はSakuraへ推測適用しない。

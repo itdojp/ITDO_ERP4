@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto';
 import { PassThrough, Readable } from 'stream';
 import googleapis from 'googleapis';
 
 import type {
   ObjectStore,
   ObjectStoreBody,
+  ObjectStoreIdempotencyLookupInput,
   ObjectStoreListInput,
   ObjectStoreMetadata,
   ObjectStorePutInput,
@@ -499,6 +501,7 @@ function validateAppProperties(
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(values ?? {})) {
     if (
+      key === 'erp4IdempotencyKey' ||
       key === 'erp4Sha256' ||
       !/^erp4[A-Za-z0-9]{1,60}$/.test(key) ||
       !/^[A-Za-z0-9._:+-]{1,124}$/.test(value)
@@ -512,6 +515,10 @@ function validateAppProperties(
     result[key] = value;
   }
   return result;
+}
+
+function hashIdempotencyKey(value: string) {
+  return createHash('sha256').update(value).digest('hex');
 }
 
 export class GoogleDriveObjectStore implements ObjectStore {
@@ -622,11 +629,77 @@ export class GoogleDriveObjectStore implements ObjectStore {
     await this.targetCheck;
   }
 
+  private async findIdempotentObject(input: ObjectStoreIdempotencyLookupInput) {
+    const digest = hashIdempotencyKey(input.idempotencyKey);
+    const response = await this.execute('upload', () =>
+      this.drive.files.list(
+        {
+          q:
+            `'${escapeDriveQueryLiteral(this.options.folderId)}' in parents and ` +
+            `trashed=false and appProperties has { key='erp4IdempotencyKey' and value='${digest}' }`,
+          fields:
+            'nextPageToken,incompleteSearch,files(id,name,originalFilename,mimeType,size,md5Checksum,sha1Checksum,sha256Checksum,appProperties,trashed,driveId,parents,createdTime,modifiedTime)',
+          pageSize: 2,
+          spaces: 'drive',
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true,
+          ...(this.options.sharedDriveId
+            ? {
+                corpora: 'drive',
+                driveId: this.options.sharedDriveId,
+              }
+            : { corpora: 'user' }),
+        },
+        { retry: false, timeout: this.options.timeoutMs },
+      ),
+    );
+    const data = response.data as DriveListData;
+    const files = data.files ?? [];
+    if (data.incompleteSearch || data.nextPageToken || files.length > 1) {
+      throw new GoogleDriveObjectStoreError({
+        code: 'permanent',
+        operation: 'upload',
+        retryable: false,
+      });
+    }
+    const file = files[0];
+    if (!file) return null;
+    this.assertScopedFile(file, 'upload');
+    const metadata = mapMetadata(file, 'upload');
+    if (
+      metadata.checksum.sha256 !== input.sha256 ||
+      metadata.sizeBytes !== input.sizeBytes
+    ) {
+      throw new GoogleDriveObjectStoreError({
+        code: 'permanent',
+        operation: 'upload',
+        retryable: false,
+      });
+    }
+    return metadata;
+  }
+
+  async findByIdempotencyKey(input: ObjectStoreIdempotencyLookupInput) {
+    await this.ensureStorageTarget();
+    return this.findIdempotentObject(input);
+  }
+
   async put(input: ObjectStorePutInput) {
     await this.ensureStorageTarget();
+    const existing = input.idempotencyKey
+      ? await this.findIdempotentObject({
+          idempotencyKey: input.idempotencyKey,
+          sha256: input.sha256,
+          sizeBytes: input.sizeBytes,
+        })
+      : null;
+    if (existing) return existing;
     const appProperties = {
       ...validateAppProperties(input.appProperties, 'upload'),
       erp4Sha256: input.sha256,
+      ...(input.idempotencyKey
+        ? { erp4IdempotencyKey: hashIdempotencyKey(input.idempotencyKey) }
+        : {}),
     };
     // A fresh files.create retry can duplicate an object when the first request's
     // outcome is ambiguous. Large payloads use one resumable session, but this

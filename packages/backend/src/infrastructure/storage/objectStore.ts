@@ -5,10 +5,18 @@ export type ObjectStoreBody = Buffer | ((start?: number) => Readable);
 export type ObjectStorePutInput = {
   body: ObjectStoreBody;
   contentType: string | null;
+  idempotencyKey?: string;
   originalName: string;
   sha256: string;
   sizeBytes: number;
   appProperties?: Record<string, string>;
+};
+
+export type ObjectStoreIdempotencyLookupInput = Pick<
+  ObjectStorePutInput,
+  'sha256' | 'sizeBytes'
+> & {
+  idempotencyKey: string;
 };
 
 export type ObjectStoreChecksum = {
@@ -43,6 +51,9 @@ export type ObjectStoreGetResult = {
 };
 
 export type ObjectStore = {
+  findByIdempotencyKey(
+    input: ObjectStoreIdempotencyLookupInput,
+  ): Promise<ObjectStoreMetadata | null>;
   put(input: ObjectStorePutInput): Promise<ObjectStoreMetadata>;
   get(key: string): Promise<ObjectStoreGetResult>;
   list(input?: ObjectStoreListInput): Promise<ObjectStoreListResult>;

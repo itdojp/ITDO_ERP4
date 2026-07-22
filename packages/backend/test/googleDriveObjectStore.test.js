@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import test from 'node:test';
 
@@ -37,6 +38,7 @@ function makeDrive(overrides = {}) {
                 parents: ['folder-placeholder'],
               },
       }),
+      list: async () => ({ data: { files: [] } }),
       update: async () => ({ data: { id: 'updated-placeholder' } }),
       ...overrides,
     },
@@ -130,6 +132,180 @@ test('put selects resumable transport at the configured threshold', async () => 
   assert.equal(call.options.retry, false);
   assert.equal(call.options.timeout, 1234);
   assert.equal(call.body.toString(), 'large');
+});
+
+test('idempotent put reuses one scoped object with matching hash and size', async () => {
+  const calls = [];
+  const idempotencyKey = 'pdf:migration:source-placeholder';
+  const digest = createHash('sha256').update(idempotencyKey).digest('hex');
+  const store = new GoogleDriveObjectStore(
+    makeDrive({
+      list: async (params, options) => {
+        calls.push({ params, options });
+        return {
+          data: {
+            files: [
+              {
+                id: 'existing-placeholder',
+                name: 'pdf-a.pdf',
+                size: '4',
+                appProperties: {
+                  erp4Sha256: 'sha-placeholder',
+                  erp4IdempotencyKey: digest,
+                },
+                parents: ['folder-placeholder'],
+              },
+            ],
+          },
+        };
+      },
+      create: async () => assert.fail('existing object must be reused'),
+    }),
+    baseOptions,
+  );
+
+  const result = await store.put({
+    body: Buffer.from('data'),
+    contentType: 'application/pdf',
+    idempotencyKey,
+    originalName: 'pdf-a.pdf',
+    sha256: 'sha-placeholder',
+    sizeBytes: 4,
+  });
+
+  assert.equal(result.key, 'existing-placeholder');
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].params.q, /erp4IdempotencyKey/);
+  assert.match(calls[0].params.q, new RegExp(digest));
+  assert.doesNotMatch(calls[0].params.q, /source-placeholder/);
+  assert.equal(calls[0].params.supportsAllDrives, true);
+  assert.equal(calls[0].params.includeItemsFromAllDrives, true);
+  assert.equal(calls[0].params.corpora, 'user');
+  assert.equal(calls[0].params.driveId, undefined);
+  assert.deepEqual(calls[0].options, { retry: false, timeout: 1234 });
+});
+
+test('idempotent put uses Shared Drive corpus and writes only hashed private metadata', async () => {
+  let listCall;
+  let createCall;
+  const idempotencyKey = 'report:migration:source-placeholder';
+  const digest = createHash('sha256').update(idempotencyKey).digest('hex');
+  const store = new GoogleDriveObjectStore(
+    makeDrive({
+      get: async (params) => ({
+        data:
+          params.fileId === 'folder-placeholder'
+            ? {
+                id: 'folder-placeholder',
+                driveId: 'shared-placeholder',
+                mimeType: 'application/vnd.google-apps.folder',
+                trashed: false,
+              }
+            : { id: params.fileId },
+      }),
+      list: async (params, options) => {
+        listCall = { params, options };
+        return { data: { files: [] } };
+      },
+      create: async (params, options) => {
+        createCall = { params, options };
+        return {
+          data: {
+            id: 'new-placeholder',
+            size: '4',
+            appProperties: params.requestBody.appProperties,
+          },
+        };
+      },
+    }),
+    { ...baseOptions, sharedDriveId: 'shared-placeholder' },
+  );
+
+  await store.put({
+    appProperties: { erp4Context: 'report' },
+    body: Buffer.from('data'),
+    contentType: 'text/csv',
+    idempotencyKey,
+    originalName: 'report.csv',
+    sha256: 'sha-placeholder',
+    sizeBytes: 4,
+  });
+
+  assert.equal(listCall.params.corpora, 'drive');
+  assert.equal(listCall.params.driveId, 'shared-placeholder');
+  assert.deepEqual(createCall.params.requestBody.appProperties, {
+    erp4Context: 'report',
+    erp4Sha256: 'sha-placeholder',
+    erp4IdempotencyKey: digest,
+  });
+  assert.doesNotMatch(
+    JSON.stringify(createCall.params.requestBody.appProperties),
+    /source-placeholder/,
+  );
+});
+
+test('put rejects caller overrides for adapter-owned private metadata', async () => {
+  for (const appProperties of [
+    { erp4Sha256: 'caller-value' },
+    { erp4IdempotencyKey: 'caller-value' },
+  ]) {
+    const store = new GoogleDriveObjectStore(
+      makeDrive({
+        create: async () => assert.fail('reserved metadata must be rejected'),
+      }),
+      baseOptions,
+    );
+    await assert.rejects(
+      store.put({
+        appProperties,
+        body: Buffer.from('data'),
+        contentType: null,
+        originalName: 'object.bin',
+        sha256: 'sha-placeholder',
+        sizeBytes: 4,
+      }),
+      (error) =>
+        error instanceof GoogleDriveObjectStoreError &&
+        error.operation === 'upload' &&
+        error.code === 'permanent',
+    );
+  }
+});
+
+test('idempotent put fails closed for ambiguous or mismatched lookup results', async () => {
+  for (const data of [
+    {
+      files: [
+        {
+          id: 'mismatch-placeholder',
+          size: '5',
+          appProperties: { erp4Sha256: 'sha-placeholder' },
+          parents: ['folder-placeholder'],
+        },
+      ],
+    },
+    { files: [], incompleteSearch: true },
+    { files: [], nextPageToken: 'opaque-placeholder' },
+  ]) {
+    const store = new GoogleDriveObjectStore(
+      makeDrive({ list: async () => ({ data }) }),
+      baseOptions,
+    );
+    await assert.rejects(
+      store.put({
+        body: Buffer.from('data'),
+        contentType: null,
+        idempotencyKey: 'opaque-idempotency-key',
+        originalName: 'object.bin',
+        sha256: 'sha-placeholder',
+        sizeBytes: 4,
+      }),
+      (error) =>
+        error instanceof GoogleDriveObjectStoreError &&
+        error.code === 'permanent' &&
+        error.operation === 'upload',
+    );
+  }
 });
 
 test('resumable transport starts a Drive session and uploads to its validated URL', async () => {
