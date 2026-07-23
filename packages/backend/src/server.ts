@@ -4,11 +4,13 @@ import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import crypto from 'node:crypto';
+import { closeBackendResources } from './backendResources.js';
 import authPlugin from './plugins/auth.js';
 import agentRunPlugin from './plugins/agentRuns.js';
 import { registerRoutes } from './routes/index.js';
 import { prisma } from './services/db.js';
 import { assertValidBackendEnv } from './services/envValidation.js';
+import { closeNotifierResources } from './services/notifier.js';
 import {
   getReadinessReport,
   toPublicReadinessReport,
@@ -323,6 +325,17 @@ export async function buildServer(
     requestIdHeader: REQUEST_ID_HEADER,
     genReqId: () => generateRequestId(),
   });
+  let ownedRateLimitRedisClient: RateLimitRedisClient | null = null;
+
+  server.addHook('onClose', async () => {
+    const redisClient = ownedRateLimitRedisClient;
+    ownedRateLimitRedisClient = null;
+    await closeBackendResources({
+      closeNotifier: closeNotifierResources,
+      disconnectPrisma: () => prisma.$disconnect(),
+      rateLimitRedisClient: redisClient,
+    });
+  });
 
   server.addHook('onRequest', async (req) => {
     const incoming = sanitizeRequestId(req.headers[REQUEST_ID_HEADER]);
@@ -428,7 +441,14 @@ export async function buildServer(
       redisClient.on('error', (err) => {
         server.log.warn({ err }, 'rate-limit redis connection error');
       });
-      await redisClient.ping();
+      ownedRateLimitRedisClient = redisClient;
+      try {
+        await redisClient.ping();
+      } catch (err) {
+        ownedRateLimitRedisClient = null;
+        redisClient.disconnect();
+        throw err;
+      }
     }
     await server.register(rateLimit, {
       global: true,
@@ -512,11 +532,18 @@ export async function buildServer(
   return server;
 }
 
-export async function startServer() {
+export async function startServer(): Promise<FastifyInstance> {
   const server = await buildServer();
   const port = Number(process.env.PORT || 3001);
-  server.listen({ port, host: '0.0.0.0' }).catch((err) => {
-    server.log.error(err);
-    process.exit(1);
-  });
+  try {
+    await server.listen({ port, host: '0.0.0.0' });
+    return server;
+  } catch (listenError) {
+    try {
+      await server.close();
+    } catch {
+      throw new Error('backend startup cleanup failed');
+    }
+    throw listenError;
+  }
 }
