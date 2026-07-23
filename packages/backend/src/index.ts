@@ -1,3 +1,3 @@
-import { startServer } from './server.js';
+import { runApplication } from './applicationLifecycle.js';
 
-startServer();
+process.exitCode = await runApplication();
