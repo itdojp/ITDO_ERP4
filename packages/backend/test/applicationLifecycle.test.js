@@ -6,6 +6,7 @@ import {
   BACKEND_SUCCESS_EXIT_CODE,
   runApplication,
 } from '../dist/applicationLifecycle.js';
+import { BackendResourceCleanupError } from '../dist/backendResources.js';
 
 class TestSignalSource extends EventEmitter {
   off(event, listener) {
@@ -190,6 +191,28 @@ test('shutdown failure returns non-zero and does not log the error message', asy
   assert.equal(JSON.stringify(entries).includes(secret), false);
   assert.ok(
     entries.some((entry) => entry.message === 'backend shutdown failed'),
+  );
+});
+
+test('resource cleanup failure logs only the safe failed resource names', async () => {
+  const { entries, run, signalSource } = await startRun({
+    start: async () => ({
+      close: async () => {
+        throw new BackendResourceCleanupError(['notifier', 'prisma']);
+      },
+      log: createLogger().logger,
+    }),
+  });
+
+  signalSource.emit('SIGTERM');
+  assert.equal(await run, BACKEND_FAILURE_EXIT_CODE);
+  assert.ok(
+    entries.some(
+      (entry) =>
+        entry.message === 'backend shutdown failed' &&
+        JSON.stringify(entry.details.failedResources) ===
+          JSON.stringify(['notifier', 'prisma']),
+    ),
   );
 });
 

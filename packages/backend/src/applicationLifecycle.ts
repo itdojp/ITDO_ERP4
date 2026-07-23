@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { BackendResourceCleanupError } from './backendResources.js';
 import { startServer } from './server.js';
 
 export const BACKEND_SHUTDOWN_TIMEOUT_MS = 8000;
@@ -56,6 +57,8 @@ function safeErrorDetails(err: unknown) {
     errorName: err instanceof Error ? err.name : 'UnknownError',
     errorCode:
       codeRaw && SAFE_ERROR_CODE_PATTERN.test(codeRaw) ? codeRaw : undefined,
+    failedResources:
+      err instanceof BackendResourceCleanupError ? err.resources : undefined,
   };
 }
 
