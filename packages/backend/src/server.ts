@@ -25,6 +25,12 @@ type BuildServerOptions = {
   logger?: boolean;
 };
 
+type StartableServer = Pick<FastifyInstance, 'close' | 'listen' | 'log'>;
+
+type ServerBuilder<T extends StartableServer> = (
+  onServerCreated: (server: T) => void,
+) => Promise<T>;
+
 const REQUEST_ID_HEADER = 'x-request-id';
 const REQUEST_ID_SAFE_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 const CACHE_CONTROL_HEADER = 'cache-control';
@@ -315,8 +321,9 @@ function normalizeSunsetHeaderValue(value: string | undefined) {
   return parsed.toUTCString();
 }
 
-export async function buildServer(
+async function buildServerWithOwnership(
   options: BuildServerOptions = {},
+  onServerCreated?: (server: FastifyInstance) => void,
 ): Promise<FastifyInstance> {
   assertValidBackendEnv();
   const server = Fastify({
@@ -325,6 +332,7 @@ export async function buildServer(
     requestIdHeader: REQUEST_ID_HEADER,
     genReqId: () => generateRequestId(),
   });
+  onServerCreated?.(server);
   let ownedRateLimitRedisClient: RateLimitRedisClient | null = null;
 
   server.addHook('onClose', async () => {
@@ -532,18 +540,44 @@ export async function buildServer(
   return server;
 }
 
-export async function startServer(): Promise<FastifyInstance> {
-  const server = await buildServer();
-  const port = Number(process.env.PORT || 3001);
+export async function buildServer(
+  options: BuildServerOptions = {},
+): Promise<FastifyInstance> {
+  return buildServerWithOwnership(options);
+}
+
+export async function startServerWithBuilder<T extends StartableServer>(
+  build: ServerBuilder<T>,
+  port: number,
+): Promise<T> {
+  const ownership: { server: T | null } = { server: null };
   try {
+    const server = await build((createdServer) => {
+      ownership.server = createdServer;
+    });
+    ownership.server = server;
     await server.listen({ port, host: '0.0.0.0' });
     return server;
-  } catch (listenError) {
-    try {
-      await server.close();
-    } catch {
-      throw new Error('backend startup cleanup failed');
+  } catch (startupError) {
+    const server = ownership.server;
+    if (server) {
+      try {
+        await server.close();
+      } catch {
+        server.log.error(
+          { phase: 'startup-cleanup' },
+          'backend startup cleanup failed',
+        );
+      }
     }
-    throw listenError;
+    throw startupError;
   }
+}
+
+export async function startServer(): Promise<FastifyInstance> {
+  const port = Number(process.env.PORT || 3001);
+  return startServerWithBuilder(
+    (onServerCreated) => buildServerWithOwnership({}, onServerCreated),
+    port,
+  );
 }

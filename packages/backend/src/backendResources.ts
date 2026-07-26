@@ -51,7 +51,9 @@ export async function closeBackendResources(
   }
 
   const results = await Promise.allSettled(
-    operations.map((operation) => operation.close()),
+    operations.map((operation) =>
+      Promise.resolve().then(() => operation.close()),
+    ),
   );
   const failedResources = results.flatMap((result, index) =>
     result.status === 'rejected' ? [operations[index].name] : [],

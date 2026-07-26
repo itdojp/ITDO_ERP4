@@ -172,11 +172,10 @@ export async function runApplication(
     logger = serverLifecycleLogger(server);
   } catch (err) {
     if (!finished) {
-      logger.error(
+      forceFailureExit(
         { phase: 'startup', ...safeErrorDetails(err) },
         'backend startup failed',
       );
-      finish(BACKEND_FAILURE_EXIT_CODE);
     }
     return completion;
   }

@@ -220,6 +220,7 @@ test('startup failure returns non-zero and removes signal listeners', async () =
   const secret = 'database-url-secret-value';
   const source = new TestSignalSource();
   const { entries, logger } = createLogger();
+  const forcedExitCodes = [];
   const error = Object.assign(new Error(secret), { code: 'EADDRINUSE' });
 
   const exitCode = await runApplication({
@@ -228,9 +229,11 @@ test('startup failure returns non-zero and removes signal listeners', async () =
     },
     signalSource: source,
     fallbackLogger: logger,
+    forceExit: (code) => forcedExitCodes.push(code),
   });
 
   assert.equal(exitCode, BACKEND_FAILURE_EXIT_CODE);
+  assert.deepEqual(forcedExitCodes, [BACKEND_FAILURE_EXIT_CODE]);
   assert.equal(source.listenerCount('SIGTERM'), 0);
   assert.equal(source.listenerCount('SIGINT'), 0);
   assert.equal(JSON.stringify(entries).includes(secret), false);

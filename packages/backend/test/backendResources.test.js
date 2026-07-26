@@ -23,7 +23,7 @@ test('backend resource cleanup attempts every close and reports only safe resour
   const secret = 'resource-cleanup-secret-value';
   let redisDisconnected = 0;
   const failure = await closeBackendResources({
-    closeNotifier: async () => {
+    closeNotifier: () => {
       throw new Error(secret);
     },
     disconnectPrisma: async () => {
