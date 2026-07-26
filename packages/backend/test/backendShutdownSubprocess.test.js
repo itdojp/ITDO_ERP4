@@ -15,21 +15,6 @@ const LIFECYCLE_FIXTURE = path.join(
 );
 const PROCESS_TIMEOUT_MS = 15_000;
 
-async function reservePort() {
-  const server = net.createServer();
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
-  });
-  const address = server.address();
-  assert.ok(address && typeof address === 'object');
-  const port = address.port;
-  await new Promise((resolve, reject) =>
-    server.close((err) => (err ? reject(err) : resolve())),
-  );
-  return port;
-}
-
 function minimalBackendEnv(port) {
   return {
     PATH: process.env.PATH,
@@ -135,8 +120,7 @@ async function waitForExit(child) {
 
 for (const signal of ['SIGTERM', 'SIGINT']) {
   test(`backend entrypoint exits cleanly after ${signal}`, async (t) => {
-    const port = await reservePort();
-    const tracked = spawnBackend(port);
+    const tracked = spawnBackend(0);
     t.after(() => {
       if (tracked.child.exitCode === null) tracked.child.kill('SIGKILL');
     });

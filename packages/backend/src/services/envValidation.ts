@@ -152,7 +152,9 @@ export function assertValidBackendEnv() {
   }
 
   const portRaw = normalizeString(process.env.PORT);
-  if (portRaw && parsePort(portRaw) === undefined) {
+  const allowsEphemeralTestPort =
+    process.env.NODE_ENV?.trim().toLowerCase() === 'test' && portRaw === '0';
+  if (portRaw && !allowsEphemeralTestPort && parsePort(portRaw) === undefined) {
     addIssue(issues, 'PORT', '1-65535 の整数で指定してください');
   }
 
