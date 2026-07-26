@@ -4,11 +4,13 @@ import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import crypto from 'node:crypto';
+import { closeBackendResources } from './backendResources.js';
 import authPlugin from './plugins/auth.js';
 import agentRunPlugin from './plugins/agentRuns.js';
 import { registerRoutes } from './routes/index.js';
 import { prisma } from './services/db.js';
 import { assertValidBackendEnv } from './services/envValidation.js';
+import { closeNotifierResources } from './services/notifier.js';
 import {
   getReadinessReport,
   toPublicReadinessReport,
@@ -22,6 +24,14 @@ import {
 type BuildServerOptions = {
   logger?: boolean;
 };
+
+type StartableServer = Pick<FastifyInstance, 'close' | 'listen' | 'log'>;
+
+type ServerBuilder<T extends StartableServer> = (
+  onServerCreated: (server: T) => void,
+) => Promise<T>;
+
+export const BACKEND_STARTUP_CLEANUP_TIMEOUT_MS = 5000;
 
 const REQUEST_ID_HEADER = 'x-request-id';
 const REQUEST_ID_SAFE_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
@@ -313,8 +323,9 @@ function normalizeSunsetHeaderValue(value: string | undefined) {
   return parsed.toUTCString();
 }
 
-export async function buildServer(
+async function buildServerWithOwnership(
   options: BuildServerOptions = {},
+  onServerCreated?: (server: FastifyInstance) => void,
 ): Promise<FastifyInstance> {
   assertValidBackendEnv();
   const server = Fastify({
@@ -322,6 +333,18 @@ export async function buildServer(
     bodyLimit: 1024 * 1024,
     requestIdHeader: REQUEST_ID_HEADER,
     genReqId: () => generateRequestId(),
+  });
+  onServerCreated?.(server);
+  let ownedRateLimitRedisClient: RateLimitRedisClient | null = null;
+
+  server.addHook('onClose', async () => {
+    const redisClient = ownedRateLimitRedisClient;
+    ownedRateLimitRedisClient = null;
+    await closeBackendResources({
+      closeNotifier: closeNotifierResources,
+      disconnectPrisma: () => prisma.$disconnect(),
+      rateLimitRedisClient: redisClient,
+    });
   });
 
   server.addHook('onRequest', async (req) => {
@@ -428,7 +451,14 @@ export async function buildServer(
       redisClient.on('error', (err) => {
         server.log.warn({ err }, 'rate-limit redis connection error');
       });
-      await redisClient.ping();
+      ownedRateLimitRedisClient = redisClient;
+      try {
+        await redisClient.ping();
+      } catch (err) {
+        ownedRateLimitRedisClient = null;
+        redisClient.disconnect();
+        throw err;
+      }
     }
     await server.register(rateLimit, {
       global: true,
@@ -512,11 +542,63 @@ export async function buildServer(
   return server;
 }
 
-export async function startServer() {
-  const server = await buildServer();
+export async function buildServer(
+  options: BuildServerOptions = {},
+): Promise<FastifyInstance> {
+  return buildServerWithOwnership(options);
+}
+
+export async function startServerWithBuilder<T extends StartableServer>(
+  build: ServerBuilder<T>,
+  port: number,
+  startupCleanupTimeoutMs = BACKEND_STARTUP_CLEANUP_TIMEOUT_MS,
+): Promise<T> {
+  const ownership: { server: T | null } = { server: null };
+  try {
+    const server = await build((createdServer) => {
+      ownership.server = createdServer;
+    });
+    ownership.server = server;
+    await server.listen({ port, host: '0.0.0.0' });
+    return server;
+  } catch (startupError) {
+    const server = ownership.server;
+    if (server) {
+      let timeout: ReturnType<typeof setTimeout> | null = null;
+      const closeResult = Promise.resolve()
+        .then(() => server.close())
+        .then(
+          () => 'closed' as const,
+          () => 'failed' as const,
+        );
+      const timeoutResult = new Promise<'timed-out'>((resolve) => {
+        timeout = setTimeout(
+          () => resolve('timed-out'),
+          startupCleanupTimeoutMs,
+        );
+      });
+      const result = await Promise.race([closeResult, timeoutResult]);
+      if (timeout) clearTimeout(timeout);
+      if (result === 'failed') {
+        server.log.error(
+          { phase: 'startup-cleanup' },
+          'backend startup cleanup failed',
+        );
+      } else if (result === 'timed-out') {
+        server.log.error(
+          { phase: 'startup-cleanup', timeoutMs: startupCleanupTimeoutMs },
+          'backend startup cleanup timed out',
+        );
+      }
+    }
+    throw startupError;
+  }
+}
+
+export async function startServer(): Promise<FastifyInstance> {
   const port = Number(process.env.PORT || 3001);
-  server.listen({ port, host: '0.0.0.0' }).catch((err) => {
-    server.log.error(err);
-    process.exit(1);
-  });
+  return startServerWithBuilder(
+    (onServerCreated) => buildServerWithOwnership({}, onServerCreated),
+    port,
+  );
 }

@@ -197,6 +197,20 @@ function runDelegatedJwtRequest({
   });
 }
 
+test('envValidation: PORT=0 is allowed only for ephemeral test listeners', () => {
+  const testResult = runEnvValidation({ NODE_ENV: 'test', PORT: '0' });
+  assert.equal(testResult.status, 0);
+  assert.match(testResult.stdout.toString(), /OK/);
+
+  const developmentResult = runEnvValidation({
+    NODE_ENV: 'development',
+    PORT: '0',
+  });
+  assert.notEqual(developmentResult.status, 0);
+  assert.match(developmentResult.stderr.toString(), /PORT/);
+  assert.match(developmentResult.stderr.toString(), /1-65535/);
+});
+
 test('envValidation: production + AUTH_MODE=header is rejected', () => {
   const result = runEnvValidation({
     NODE_ENV: 'production',

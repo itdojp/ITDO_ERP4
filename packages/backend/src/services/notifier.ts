@@ -119,14 +119,56 @@ function buildConfigKey(config: MailTransportConfig) {
   ].join('|');
 }
 
-function resetSmtpCache(error?: string, configKey?: string) {
-  if (cachedTransporter) {
-    cachedTransporter.close();
-  }
+function takeCachedSmtpTransporter(error?: string, configKey?: string) {
+  const transporter = cachedTransporter;
   cachedTransporter = null;
   cachedFrom = null;
   cachedError = error ?? null;
   cachedConfigKey = configKey ?? null;
+  return transporter;
+}
+
+const SAFE_ERROR_CODE_PATTERN = /^[A-Z0-9_]{1,64}$/;
+const SAFE_ERROR_NAMES = new Set([
+  'AggregateError',
+  'Error',
+  'EvalError',
+  'RangeError',
+  'ReferenceError',
+  'SyntaxError',
+  'TypeError',
+  'URIError',
+]);
+
+function toSafeErrorDetails(err: unknown) {
+  const codeRaw =
+    err && typeof err === 'object' && 'code' in err
+      ? String((err as { code?: unknown }).code)
+      : undefined;
+  return {
+    name:
+      err instanceof Error && SAFE_ERROR_NAMES.has(err.name)
+        ? err.name
+        : err instanceof Error
+          ? 'Error'
+          : 'UnknownError',
+    code:
+      codeRaw && SAFE_ERROR_CODE_PATTERN.test(codeRaw) ? codeRaw : undefined,
+  };
+}
+
+function resetSmtpCache(error?: string, configKey?: string) {
+  const transporter = takeCachedSmtpTransporter(error, configKey);
+  try {
+    transporter?.close();
+  } catch (err) {
+    console.error('[smtp close failed]', toSafeErrorDetails(err));
+  }
+}
+
+export async function closeNotifierResources(): Promise<void> {
+  const transporter = takeCachedSmtpTransporter();
+  transporter?.close();
 }
 
 function getSmtpTransport() {
@@ -330,17 +372,6 @@ async function sendEmailSendGrid(
     };
   }
 }
-
-function registerSmtpShutdownHandlers() {
-  if (typeof process === 'undefined' || typeof process.on !== 'function')
-    return;
-  const shutdown = () => resetSmtpCache();
-  const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGQUIT'];
-  signals.forEach((signal) => process.once(signal, shutdown));
-  process.once('beforeExit', shutdown);
-}
-
-registerSmtpShutdownHandlers();
 
 // stub implementations
 export async function sendEmailStub(
