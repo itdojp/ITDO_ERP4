@@ -31,6 +31,8 @@ type ServerBuilder<T extends StartableServer> = (
   onServerCreated: (server: T) => void,
 ) => Promise<T>;
 
+export const BACKEND_STARTUP_CLEANUP_TIMEOUT_MS = 5000;
+
 const REQUEST_ID_HEADER = 'x-request-id';
 const REQUEST_ID_SAFE_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 const CACHE_CONTROL_HEADER = 'cache-control';
@@ -549,6 +551,7 @@ export async function buildServer(
 export async function startServerWithBuilder<T extends StartableServer>(
   build: ServerBuilder<T>,
   port: number,
+  startupCleanupTimeoutMs = BACKEND_STARTUP_CLEANUP_TIMEOUT_MS,
 ): Promise<T> {
   const ownership: { server: T | null } = { server: null };
   try {
@@ -561,12 +564,30 @@ export async function startServerWithBuilder<T extends StartableServer>(
   } catch (startupError) {
     const server = ownership.server;
     if (server) {
-      try {
-        await server.close();
-      } catch {
+      let timeout: ReturnType<typeof setTimeout> | null = null;
+      const closeResult = Promise.resolve()
+        .then(() => server.close())
+        .then(
+          () => 'closed' as const,
+          () => 'failed' as const,
+        );
+      const timeoutResult = new Promise<'timed-out'>((resolve) => {
+        timeout = setTimeout(
+          () => resolve('timed-out'),
+          startupCleanupTimeoutMs,
+        );
+      });
+      const result = await Promise.race([closeResult, timeoutResult]);
+      if (timeout) clearTimeout(timeout);
+      if (result === 'failed') {
         server.log.error(
           { phase: 'startup-cleanup' },
           'backend startup cleanup failed',
+        );
+      } else if (result === 'timed-out') {
+        server.log.error(
+          { phase: 'startup-cleanup', timeoutMs: startupCleanupTimeoutMs },
+          'backend startup cleanup timed out',
         );
       }
     }

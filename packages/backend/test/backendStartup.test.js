@@ -73,3 +73,40 @@ test('listen cleanup failure keeps the original error and logs no error details'
   ]);
   assert.doesNotMatch(JSON.stringify(entries), /secret-value/);
 });
+
+test('startup cleanup timeout preserves the original error and does not hang', async () => {
+  const listenError = Object.assign(new Error('listen-secret-value'), {
+    code: 'EADDRINUSE',
+  });
+  const entries = [];
+  const server = {
+    close: () => new Promise(() => {}),
+    listen: async () => {
+      throw listenError;
+    },
+    log: {
+      error(details, message) {
+        entries.push({ details, message });
+      },
+    },
+  };
+  const startedAt = process.hrtime.bigint();
+
+  const failure = await captureFailure(
+    startServerWithBuilder(async (onServerCreated) => {
+      onServerCreated(server);
+      return server;
+    }, 0, 20),
+  );
+  const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+
+  assert.equal(failure, listenError);
+  assert.ok(durationMs < 1000, `startup cleanup took ${durationMs.toFixed(1)}ms`);
+  assert.deepEqual(entries, [
+    {
+      details: { phase: 'startup-cleanup', timeoutMs: 20 },
+      message: 'backend startup cleanup timed out',
+    },
+  ]);
+  assert.doesNotMatch(JSON.stringify(entries), /secret-value/);
+});

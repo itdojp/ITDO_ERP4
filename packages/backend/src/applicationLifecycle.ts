@@ -31,6 +31,17 @@ type RunApplicationOptions = {
 
 const GRACEFUL_SIGNALS: GracefulSignal[] = ['SIGTERM', 'SIGINT'];
 const SAFE_ERROR_CODE_PATTERN = /^[A-Z0-9_]{1,64}$/;
+const SAFE_ERROR_NAMES = new Set([
+  'AggregateError',
+  'BackendResourceCleanupError',
+  'Error',
+  'EvalError',
+  'RangeError',
+  'ReferenceError',
+  'SyntaxError',
+  'TypeError',
+  'URIError',
+]);
 
 function consoleLifecycleLogger(): LifecycleLogger {
   return {
@@ -54,7 +65,12 @@ function safeErrorDetails(err: unknown) {
       ? String((err as { code?: unknown }).code)
       : undefined;
   return {
-    errorName: err instanceof Error ? err.name : 'UnknownError',
+    errorName:
+      err instanceof Error && SAFE_ERROR_NAMES.has(err.name)
+        ? err.name
+        : err instanceof Error
+          ? 'Error'
+          : 'UnknownError',
     errorCode:
       codeRaw && SAFE_ERROR_CODE_PATTERN.test(codeRaw) ? codeRaw : undefined,
     failedResources:

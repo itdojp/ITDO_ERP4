@@ -32,6 +32,7 @@ npm run test
 - graceful shutdown成功時のexit codeは`0`です。
 - startup/listen失敗、resource cleanup失敗、shutdown開始後のsecond signal、8秒の内部shutdown timeoutはexit code`1`です。
 - startup/listen失敗、shutdown/resource cleanup失敗、second signal、shutdown timeoutでは、Podmanの既定10秒stop timeoutより前に失敗終了させます。通常のfirst signal成功経路では`process.exit()`を使用しません。
+- startup/listen失敗時は、部分構築済みFastifyのcleanupを最大5秒待ち、完了・失敗・timeoutのいずれでも元のstartup errorを保持してexit code`1`で終了します。
 - `SIGQUIT`はgraceful shutdown対象にせず、Node.jsの既定signal動作を維持します。
 - Fastify close時にSMTP transport/cache、Prisma client、backendが生成したrate-limit Redis clientをcloseします。
 

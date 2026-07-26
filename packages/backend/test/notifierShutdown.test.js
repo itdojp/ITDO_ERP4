@@ -114,7 +114,10 @@ test('automatic SMTP cache reset logs only sanitized close failure details', asy
         sendMail: async () => ({ messageId: `message-${createCount}` }),
         close: () => {
           if (createCount === 1) {
-            throw Object.assign(new Error(secret), { code: secret });
+            throw Object.assign(new Error(secret), {
+              name: secret,
+              code: secret,
+            });
           }
         },
       };

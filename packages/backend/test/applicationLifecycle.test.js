@@ -222,6 +222,7 @@ test('startup failure returns non-zero and removes signal listeners', async () =
   const { entries, logger } = createLogger();
   const forcedExitCodes = [];
   const error = Object.assign(new Error(secret), { code: 'EADDRINUSE' });
+  error.name = secret;
 
   const exitCode = await runApplication({
     start: async () => {
@@ -241,6 +242,7 @@ test('startup failure returns non-zero and removes signal listeners', async () =
     entries.some(
       (entry) =>
         entry.message === 'backend startup failed' &&
+        entry.details.errorName === 'Error' &&
         entry.details.errorCode === 'EADDRINUSE',
     ),
   );

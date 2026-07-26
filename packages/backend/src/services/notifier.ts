@@ -129,6 +129,16 @@ function takeCachedSmtpTransporter(error?: string, configKey?: string) {
 }
 
 const SAFE_ERROR_CODE_PATTERN = /^[A-Z0-9_]{1,64}$/;
+const SAFE_ERROR_NAMES = new Set([
+  'AggregateError',
+  'Error',
+  'EvalError',
+  'RangeError',
+  'ReferenceError',
+  'SyntaxError',
+  'TypeError',
+  'URIError',
+]);
 
 function toSafeErrorDetails(err: unknown) {
   const codeRaw =
@@ -136,7 +146,12 @@ function toSafeErrorDetails(err: unknown) {
       ? String((err as { code?: unknown }).code)
       : undefined;
   return {
-    name: err instanceof Error ? err.name : 'UnknownError',
+    name:
+      err instanceof Error && SAFE_ERROR_NAMES.has(err.name)
+        ? err.name
+        : err instanceof Error
+          ? 'Error'
+          : 'UnknownError',
     code:
       codeRaw && SAFE_ERROR_CODE_PATTERN.test(codeRaw) ? codeRaw : undefined,
   };
