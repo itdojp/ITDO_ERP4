@@ -25,6 +25,7 @@ Purpose: provide a single entry point for specifications outside chat features, 
 - Management accounting and executive reporting: `docs/en/requirements/management-accounting-report-requirements.md`
 - Authentication, identity, and access control: `docs/requirements/id-management.md`, `docs/requirements/access-control.md`, `docs/requirements/rbac-matrix.md`
 - Operations (backup, jobs, monitoring): `docs/requirements/backup-restore.md`, `docs/requirements/batch-jobs.md`, `docs/requirements/ops-monitoring.md`
+- Knowledge Hub (external information, AI dialogue, and internal sharing; Japanese source): `docs/requirements/knowledge-hub.md`, `docs/architecture/knowledge-hub-boundary.md`
 - Data migration: `docs/requirements/migration-mapping.md`, `docs/requirements/migration-tool.md`, `docs/requirements/db-migration.md`, `docs/requirements/migration-poc.md`
 - QA and test evidence: `docs/requirements/qa-plan.md`, `docs/manual/manual-test-checklist.md`, `docs/test-results/README.md`
 
