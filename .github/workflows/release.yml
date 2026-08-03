@@ -45,7 +45,7 @@ jobs:
           tar -czf "dist/release/frontend-${TAG}-${SHA}.tgz" -C packages/frontend dist package.json package-lock.json
           sha256sum dist/release/*.tgz dist/release/metadata.json > dist/release/SHA256SUMS
       - name: Attest release artifacts
-        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
         with:
           subject-checksums: dist/release/SHA256SUMS
       - name: Upload artifacts
