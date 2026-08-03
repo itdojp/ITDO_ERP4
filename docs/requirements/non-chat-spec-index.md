@@ -25,6 +25,7 @@
 - 管理会計/経営レポート: `docs/requirements/management-accounting-report-requirements.md`
 - 認証/ID/アクセス制御: `docs/requirements/auth-architecture.md` / `docs/requirements/auth-implementation-breakdown.md` / `docs/requirements/auth-admin-identity-migration.md` / `docs/requirements/auth-audit-log-requirements.md` / `docs/requirements/google-workspace-group-usage-policy.md` / `docs/requirements/id-management.md` / `docs/requirements/access-control.md` / `docs/requirements/rbac-matrix.md`
 - 運用（ストレージ/バックアップ/監視/ジョブ）: `docs/requirements/storage-artifacts-google-drive.md` / `docs/requirements/backup-restore.md` / `docs/requirements/batch-jobs.md` / `docs/requirements/ops-monitoring.md`
+- Knowledge Hub（外部情報、AI 対話、社内共有）: `docs/requirements/knowledge-hub.md` / `docs/architecture/knowledge-hub-boundary.md`
 - データ移行: `docs/requirements/migration-mapping.md` / `docs/requirements/migration-tool.md` / `docs/requirements/db-migration.md` / `docs/requirements/migration-poc.md`
 - QA/テスト: `docs/requirements/qa-plan.md` / `docs/manual/manual-test-checklist.md` / `docs/test-results/README.md`
 
