@@ -2,7 +2,8 @@
 
 - Status: Accepted when the PR closing Issue #2007 is merged
 - Decision date: 2026-08-03
-- Baseline: `origin/main` `96043b518e243238138881b03e1c827d4a4395d4`
+- Initial code audit baseline: `origin/main` `96043b518e243238138881b03e1c827d4a4395d4`
+- Final synchronization/review baseline: `origin/main` `c3d7cf3b55694edefafb48a829b3476408d6409b`
 - Related: #2003, #2007, #1875, #1975, #1981, #1982, #1983, #544
 
 ## Context

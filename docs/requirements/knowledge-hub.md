@@ -2,7 +2,8 @@
 
 - Parent Epic: #2003
 - Workstream: #2007 (01: current-main audit / boundary ADR)
-- Audit baseline: `origin/main` `96043b518e243238138881b03e1c827d4a4395d4`
+- Initial code audit baseline: `origin/main` `96043b518e243238138881b03e1c827d4a4395d4`
+- Final synchronization/review baseline: `origin/main` `c3d7cf3b55694edefafb48a829b3476408d6409b`
 - Audit date: 2026-08-03
 - Architecture decision: [Knowledge Hub 境界 ADR](../architecture/knowledge-hub-boundary.md)
 
