@@ -13,6 +13,12 @@ const migration = readFileSync(
   ),
   'utf8',
 );
+const openapi = JSON.parse(
+  readFileSync(
+    new URL('../../../docs/api/openapi.json', import.meta.url),
+    'utf8',
+  ),
+);
 
 test('knowledge core schema defines explicit scope, status, source, version, and group grants', () => {
   assert.match(
@@ -61,4 +67,23 @@ test('knowledge migration does not mutate existing application tables', () => {
     (match) => match[1],
   );
   assert.deepEqual([...new Set(alteredTables)], ['KnowledgeItemGroupGrant']);
+});
+
+test('knowledge OpenAPI operations document the role-based forbidden response', () => {
+  const operations = [
+    ['/knowledge/items', 'get'],
+    ['/knowledge/items', 'post'],
+    ['/knowledge/items/count', 'get'],
+    ['/knowledge/items/{id}', 'get'],
+    ['/knowledge/items/{id}', 'patch'],
+    ['/knowledge/items/{id}', 'delete'],
+    ['/knowledge/items/{id}/restore', 'post'],
+  ];
+
+  for (const [path, method] of operations) {
+    assert.ok(
+      openapi.paths?.[path]?.[method]?.responses?.['403'],
+      `${method.toUpperCase()} ${path} must document 403`,
+    );
+  }
 });

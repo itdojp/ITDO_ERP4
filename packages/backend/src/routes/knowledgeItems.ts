@@ -98,6 +98,10 @@ const errorResponseSchema = {
   },
 } as const;
 
+const roleProtectedErrorResponses = {
+  403: errorResponseSchema,
+} as const;
+
 const itemIdParamsSchema = {
   type: 'object',
   additionalProperties: false,
@@ -290,6 +294,7 @@ export async function registerKnowledgeItemRoutes(
         tags: ['knowledge'],
         body: createBodySchema,
         response: {
+          ...roleProtectedErrorResponses,
           201: knowledgeItemResponseSchema,
           400: errorResponseSchema,
         },
@@ -313,6 +318,7 @@ export async function registerKnowledgeItemRoutes(
         tags: ['knowledge'],
         querystring: listQuerySchema,
         response: {
+          ...roleProtectedErrorResponses,
           200: {
             type: 'object',
             additionalProperties: false,
@@ -359,6 +365,7 @@ export async function registerKnowledgeItemRoutes(
           },
         },
         response: {
+          ...roleProtectedErrorResponses,
           200: {
             type: 'object',
             additionalProperties: false,
@@ -391,6 +398,7 @@ export async function registerKnowledgeItemRoutes(
         tags: ['knowledge'],
         params: itemIdParamsSchema,
         response: {
+          ...roleProtectedErrorResponses,
           200: knowledgeItemResponseSchema,
           404: errorResponseSchema,
         },
@@ -415,6 +423,7 @@ export async function registerKnowledgeItemRoutes(
         params: itemIdParamsSchema,
         body: updateBodySchema,
         response: {
+          ...roleProtectedErrorResponses,
           200: knowledgeItemResponseSchema,
           400: errorResponseSchema,
           404: errorResponseSchema,
@@ -442,6 +451,7 @@ export async function registerKnowledgeItemRoutes(
         params: itemIdParamsSchema,
         body: deleteBodySchema,
         response: {
+          ...roleProtectedErrorResponses,
           200: knowledgeItemResponseSchema,
           400: errorResponseSchema,
           404: errorResponseSchema,
@@ -474,6 +484,7 @@ export async function registerKnowledgeItemRoutes(
         params: itemIdParamsSchema,
         body: versionBodySchema,
         response: {
+          ...roleProtectedErrorResponses,
           200: knowledgeItemResponseSchema,
           400: errorResponseSchema,
           404: errorResponseSchema,

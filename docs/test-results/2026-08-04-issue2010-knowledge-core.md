@@ -2,7 +2,8 @@
 
 - 実施日: 2026-08-04 JST
 - branch: `feat/2010-knowledge-core-crud`
-- base: `origin/main` `73f79a62ec5ac00ebfd9a12b706b639bbfcc7070`
+- migration / old-app compatibility test base: `origin/main` `73f79a62ec5ac00ebfd9a12b706b639bbfcc7070`
+- final review base after dependency-only PR #2023: `origin/main` `ee34c7905cc2945e8cdf9643b58aa8a6d4eaafb2`
 - 対象: Issue #2010 / Epic #2003 Workstream 02
 - 検証種別: repository-side unit/integration、local ephemeral PostgreSQL。production/target-environment証跡ではない
 
@@ -32,7 +33,7 @@
 
 | Command / check                                                   | Result | Notes                                                                                                                           |
 | ----------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| focused Knowledge tests                                           | PASS   | 21 tests: use case 7、Prisma adapter 6、route 5、schema/migration 3                                                             |
+| focused Knowledge tests                                           | PASS   | 23 tests: use case 7、Prisma adapter 6、route 6、schema/migration/OpenAPI 4                                                     |
 | focused coverage                                                  | PASS   | adapter S/L/F 100%、B 84.74%；use case S/L 91.20%、B 65.21%、F 95.23%；route S/L 97.97%、B 64.28%、F 100%。閾値の追加・低下なし |
 | empty PostgreSQL `prisma migrate deploy` / status                 | PASS   | PostgreSQL 15 pinned digestへ94 migrationsを適用、schema up to date                                                             |
 | old-app compatibility                                             | PASS   | migration後DBへ`origin/main`の旧schema/client/applicationをbuildして接続し、`healthz=200` / `readyz=200`                        |
@@ -42,9 +43,10 @@
 | `npm run format:check --prefix packages/backend`                  | PASS   | Knowledge sourceを含む                                                                                                          |
 | `npm run typecheck --prefix packages/backend`                     | PASS   | strict TypeScript                                                                                                               |
 | `npm run build --prefix packages/backend`                         | PASS   | Prisma Client生成後                                                                                                             |
-| `npm run test --prefix packages/backend`                          | PASS   | 1,521 tests、skip/todo 0                                                                                                        |
+| `npm run test --prefix packages/backend`                          | PASS   | 1,523 tests、skip/todo 0                                                                                                        |
 | `npm run coverage:auth:check --prefix packages/backend`           | PASS   | auth 151 tests。S/L 90.24%、B 70.88%、F 98.66%。既存閾値の低下なし                                                              |
 | frontend lint / format / typecheck / build / test                 | PASS   | 82 files / 468 tests、backend変更による回帰なし                                                                                 |
+| backend / frontend `npm audit --audit-level=high`                 | PASS   | PR #2023取込み後、いずれも0 vulnerabilities                                                                                     |
 | `npm run arch:bounded-context --prefix packages/backend`          | PASS   | 274 modules / 1,050 dependencies、違反なし                                                                                      |
 | `npm run arch:bounded-context:coverage --prefix packages/backend` | PASS   | contexts 11、unclassified/stale/duplicate/ambiguous 0                                                                           |
 | OpenAPI export diff                                               | PASS   | `docs/api/openapi.json`と再生成結果が一致                                                                                       |
@@ -65,6 +67,6 @@
 - production dataを用いたbackup/isolated restore
 - UI実装/E2E（Workstream後続）
 - label/search、snapshot/artifact、Chat share、external LLM
-- `make audit`（依存追加・lockfile変更なし）
+- migration deployとold-app compatibilityの再利用可能CI harness（#2024）
 
 local ephemeral PostgreSQLは検証後に削除し、既存の停止済みPodman container/volume/networkには変更を加えていない。

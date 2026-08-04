@@ -133,6 +133,66 @@ test('knowledge route schema rejects scope changes and unknown fields before the
   assert.equal(calls, 0);
 });
 
+test('knowledge routes reject unsupported roles with the documented 403 contract before service calls', async (t) => {
+  let calls = 0;
+  const denied = async () => {
+    calls += 1;
+    return { ok: true, value: item() };
+  };
+  const app = await buildRouteServer(
+    serviceStub({
+      list: denied,
+      count: denied,
+      detail: denied,
+      create: denied,
+      update: denied,
+      remove: denied,
+      restore: denied,
+    }),
+    { roles: ['auditor'] },
+  );
+  t.after(() => app.close());
+
+  const requests = [
+    { method: 'GET', url: '/knowledge/items' },
+    { method: 'GET', url: '/knowledge/items/count' },
+    { method: 'GET', url: '/knowledge/items/item-1' },
+    {
+      method: 'POST',
+      url: '/knowledge/items',
+      payload: { scope: 'personal', sourceType: 'manual' },
+    },
+    {
+      method: 'PATCH',
+      url: '/knowledge/items/item-1',
+      payload: { expectedVersion: 1 },
+    },
+    {
+      method: 'DELETE',
+      url: '/knowledge/items/item-1',
+      payload: { expectedVersion: 1, reasonCode: 'owner_request' },
+    },
+    {
+      method: 'POST',
+      url: '/knowledge/items/item-1/restore',
+      payload: { expectedVersion: 1 },
+    },
+  ];
+
+  for (const request of requests) {
+    const response = await app.inject(request);
+    assert.equal(response.statusCode, 403, `${request.method} ${request.url}`);
+    assert.deepEqual(response.json(), {
+      error: {
+        code: 'forbidden',
+        message: 'Forbidden',
+        category: 'permission',
+      },
+    });
+  }
+  assert.equal(calls, 0);
+});
+
 test('knowledge detail returns the same not-found contract for hidden and absent ids', async (t) => {
   const app = await buildRouteServer(serviceStub());
   t.after(() => app.close());
