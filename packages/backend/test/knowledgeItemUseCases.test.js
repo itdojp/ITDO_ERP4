@@ -1,0 +1,439 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { createKnowledgeItemService } from '../dist/application/knowledge/knowledgeItemUseCases.js';
+
+const fixedNow = new Date('2026-08-04T09:00:00.000Z');
+
+function actor(userId, { organizationId, groupAccountIds = [] } = {}) {
+  return { userId, organizationId, groupAccountIds };
+}
+
+function auditActor(userId) {
+  return { userId, actorRole: 'user', requestId: 'request-1', source: 'api' };
+}
+
+function createHarness({ failAudit = false } = {}) {
+  const items = new Map();
+  const grants = new Map();
+  const audits = [];
+  const activeGroups = new Set(['group-1', 'group-2']);
+  let sequence = 0;
+
+  const cloneItems = () => structuredClone([...items.entries()]);
+  const restoreItems = (snapshot) => {
+    items.clear();
+    for (const [key, value] of snapshot) items.set(key, value);
+  };
+
+  const visible = (item, requestActor) => {
+    if (item.deletedAt) return false;
+    if (item.ownerUserId === requestActor.userId) return true;
+    if (
+      item.scope !== 'organization' ||
+      !requestActor.organizationId ||
+      item.organizationId !== requestActor.organizationId
+    ) {
+      return false;
+    }
+    const itemGroups = grants.get(item.id) ?? [];
+    return requestActor.groupAccountIds.some(
+      (groupId) => activeGroups.has(groupId) && itemGroups.includes(groupId),
+    );
+  };
+
+  const repository = {
+    listVisible: async (requestActor, query) =>
+      [...items.values()]
+        .filter((item) => visible(item, requestActor))
+        .filter((item) => !query.scope || item.scope === query.scope)
+        .filter((item) => !query.status || item.status === query.status)
+        .slice(query.offset, query.offset + query.limit),
+    countVisible: async (requestActor, filters) =>
+      [...items.values()]
+        .filter((item) => visible(item, requestActor))
+        .filter((item) => !filters.scope || item.scope === filters.scope)
+        .filter((item) => !filters.status || item.status === filters.status)
+        .length,
+    findVisibleById: async (requestActor, itemId) => {
+      const item = items.get(itemId);
+      return item && visible(item, requestActor) ? item : null;
+    },
+    countActiveGroups: async (groupIds) =>
+      groupIds.filter((groupId) => activeGroups.has(groupId)).length,
+    create: async (input) => {
+      sequence += 1;
+      const item = {
+        id: `item-${sequence}`,
+        ownerUserId: input.ownerUserId,
+        scope: input.scope,
+        organizationId: input.organizationId,
+        sourceType: input.sourceType,
+        canonicalUrl: input.canonicalUrl,
+        title: input.title,
+        sourceAuthor: input.sourceAuthor,
+        publishedAt: input.publishedAt,
+        capturedAt: input.capturedAt,
+        saveReason: input.saveReason,
+        shortNote: input.shortNote,
+        unresolvedQuestion: input.unresolvedQuestion,
+        status: input.status,
+        version: 1,
+        deletedAt: null,
+        deletedReason: null,
+        createdAt: fixedNow,
+        createdBy: input.createdBy,
+        updatedAt: fixedNow,
+        updatedBy: input.updatedBy,
+      };
+      items.set(item.id, item);
+      grants.set(item.id, [...input.groupAccountIds]);
+      return item;
+    },
+    findOwnedForMutation: async ({ actor: requestActor, itemId, deleted }) => {
+      const item = items.get(itemId);
+      if (!item || item.ownerUserId !== requestActor.userId) return null;
+      return Boolean(item.deletedAt) === deleted ? item : null;
+    },
+    updateOwnedVersioned: async ({
+      actor: requestActor,
+      itemId,
+      expectedVersion,
+      patch,
+    }) => {
+      const item = items.get(itemId);
+      if (
+        !item ||
+        item.ownerUserId !== requestActor.userId ||
+        item.deletedAt ||
+        item.version !== expectedVersion
+      ) {
+        return null;
+      }
+      const updated = {
+        ...item,
+        ...patch,
+        version: item.version + 1,
+        updatedAt: fixedNow,
+        updatedBy: requestActor.userId,
+      };
+      items.set(itemId, updated);
+      return updated;
+    },
+    deleteOwnedVersioned: async ({
+      actor: requestActor,
+      itemId,
+      expectedVersion,
+      deletedAt,
+      reasonCode,
+    }) => {
+      const item = items.get(itemId);
+      if (
+        !item ||
+        item.ownerUserId !== requestActor.userId ||
+        item.deletedAt ||
+        item.version !== expectedVersion
+      ) {
+        return null;
+      }
+      const updated = {
+        ...item,
+        deletedAt,
+        deletedReason: reasonCode,
+        version: item.version + 1,
+      };
+      items.set(itemId, updated);
+      return updated;
+    },
+    restoreOwnedVersioned: async ({
+      actor: requestActor,
+      itemId,
+      expectedVersion,
+    }) => {
+      const item = items.get(itemId);
+      if (
+        !item ||
+        item.ownerUserId !== requestActor.userId ||
+        !item.deletedAt ||
+        item.version !== expectedVersion
+      ) {
+        return null;
+      }
+      const updated = {
+        ...item,
+        deletedAt: null,
+        deletedReason: null,
+        version: item.version + 1,
+      };
+      items.set(itemId, updated);
+      return updated;
+    },
+  };
+
+  const unitOfWork = {
+    run: async (work) => {
+      const itemSnapshot = cloneItems();
+      const grantSnapshot = structuredClone([...grants.entries()]);
+      const auditLength = audits.length;
+      try {
+        return await work({
+          items: repository,
+          audit: {
+            write: async (entry) => {
+              if (failAudit) throw new Error('audit unavailable');
+              audits.push(entry);
+            },
+          },
+        });
+      } catch (error) {
+        restoreItems(itemSnapshot);
+        grants.clear();
+        for (const [key, value] of grantSnapshot) grants.set(key, value);
+        audits.splice(auditLength);
+        throw error;
+      }
+    },
+  };
+
+  return {
+    items,
+    grants,
+    audits,
+    service: createKnowledgeItemService({
+      reader: repository,
+      unitOfWork,
+      now: () => fixedNow,
+    }),
+  };
+}
+
+async function createPersonal(harness, owner = 'owner-1') {
+  return harness.service.create({
+    actor: actor(owner),
+    auditActor: auditActor(owner),
+    body: { scope: 'personal', sourceType: 'manual', title: 'Private note' },
+  });
+}
+
+test('personal list, detail, and count never expose another owner item, including admin-like actors', async () => {
+  const harness = createHarness();
+  const created = await createPersonal(harness);
+  assert.equal(created.ok, true);
+
+  const outsider = actor('admin-user', {
+    organizationId: 'org-1',
+    groupAccountIds: ['group-1'],
+  });
+  assert.deepEqual(
+    await harness.service.list({
+      actor: outsider,
+      query: { limit: 50, offset: 0 },
+    }),
+    [],
+  );
+  assert.equal(await harness.service.count({ actor: outsider }), 0);
+  const detail = await harness.service.detail({
+    actor: outsider,
+    itemId: created.value.id,
+  });
+  assert.equal(detail.ok, false);
+  assert.equal(detail.statusCode, 404);
+});
+
+test('organization visibility requires matching organization and an explicit active group grant', async () => {
+  const harness = createHarness();
+  const created = await harness.service.create({
+    actor: actor('owner-1', {
+      organizationId: 'org-1',
+      groupAccountIds: ['group-1'],
+    }),
+    auditActor: auditActor('owner-1'),
+    body: {
+      scope: 'organization',
+      organizationGroupIds: ['group-1'],
+      sourceType: 'web',
+      title: 'Organization item',
+    },
+  });
+  assert.equal(created.ok, true);
+
+  const allowed = await harness.service.detail({
+    actor: actor('viewer-1', {
+      organizationId: 'org-1',
+      groupAccountIds: ['group-1'],
+    }),
+    itemId: created.value.id,
+  });
+  assert.equal(allowed.ok, true);
+
+  for (const deniedActor of [
+    actor('viewer-2', {
+      organizationId: 'org-2',
+      groupAccountIds: ['group-1'],
+    }),
+    actor('viewer-3', {
+      organizationId: 'org-1',
+      groupAccountIds: ['group-2'],
+    }),
+    actor('viewer-4', { organizationId: 'org-1' }),
+  ]) {
+    const denied = await harness.service.detail({
+      actor: deniedActor,
+      itemId: created.value.id,
+    });
+    assert.equal(denied.ok, false);
+    assert.equal(denied.statusCode, 404);
+  }
+});
+
+test('organization create rejects missing, foreign, and inactive group grants', async () => {
+  const harness = createHarness();
+  for (const organizationGroupIds of [
+    [],
+    ['group-foreign'],
+    ['group-inactive'],
+  ]) {
+    const result = await harness.service.create({
+      actor: actor('owner-1', {
+        organizationId: 'org-1',
+        groupAccountIds:
+          organizationGroupIds[0] === 'group-inactive'
+            ? ['group-inactive']
+            : ['group-1'],
+      }),
+      auditActor: auditActor('owner-1'),
+      body: {
+        scope: 'organization',
+        organizationGroupIds,
+        sourceType: 'manual',
+      },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.statusCode, 400);
+  }
+  assert.equal(harness.items.size, 0);
+});
+
+test('owner mutations enforce optimistic concurrency and hide items from non-owners', async () => {
+  const harness = createHarness();
+  const created = await createPersonal(harness);
+  assert.equal(created.ok, true);
+
+  const outsiderUpdate = await harness.service.update({
+    actor: actor('other-user'),
+    auditActor: auditActor('other-user'),
+    itemId: created.value.id,
+    body: { expectedVersion: 1, title: 'stolen' },
+  });
+  assert.equal(outsiderUpdate.ok, false);
+  assert.equal(outsiderUpdate.statusCode, 404);
+
+  const updated = await harness.service.update({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: created.value.id,
+    body: { expectedVersion: 1, title: 'updated' },
+  });
+  assert.equal(updated.ok, true);
+  assert.equal(updated.value.version, 2);
+
+  const stale = await harness.service.update({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: created.value.id,
+    body: { expectedVersion: 1, title: 'stale' },
+  });
+  assert.equal(stale.ok, false);
+  assert.equal(stale.statusCode, 409);
+});
+
+test('logical delete hides normal reads and restore is owner/version protected', async () => {
+  const harness = createHarness();
+  const created = await createPersonal(harness);
+  assert.equal(created.ok, true);
+
+  const removed = await harness.service.remove({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: created.value.id,
+    expectedVersion: 1,
+    reasonCode: 'owner_request',
+  });
+  assert.equal(removed.ok, true);
+  assert.equal(removed.value.version, 2);
+  assert.equal(await harness.service.count({ actor: actor('owner-1') }), 0);
+
+  const deniedRestore = await harness.service.restore({
+    actor: actor('other-user'),
+    auditActor: auditActor('other-user'),
+    itemId: created.value.id,
+    expectedVersion: 2,
+  });
+  assert.equal(deniedRestore.ok, false);
+  assert.equal(deniedRestore.statusCode, 404);
+
+  const restored = await harness.service.restore({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: created.value.id,
+    expectedVersion: 2,
+  });
+  assert.equal(restored.ok, true);
+  assert.equal(restored.value.version, 3);
+  assert.equal(await harness.service.count({ actor: actor('owner-1') }), 1);
+  assert.deepEqual(
+    harness.audits.map((entry) => entry.action),
+    [
+      'knowledge_item_created',
+      'knowledge_item_deleted',
+      'knowledge_item_restored',
+    ],
+  );
+});
+
+test('mandatory audit failure rolls back the business write and propagates', async () => {
+  const harness = createHarness({ failAudit: true });
+  await assert.rejects(() => createPersonal(harness), /audit unavailable/);
+  assert.equal(harness.items.size, 0);
+  assert.equal(harness.audits.length, 0);
+});
+
+test('canonical URL normalization removes credentials, fragments, tracking, and secret query values', async () => {
+  const harness = createHarness();
+  const result = await harness.service.create({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    body: {
+      scope: 'personal',
+      sourceType: 'web',
+      canonicalUrl:
+        'https://user:password@Example.com/path?utm_source=test&b=2&a=1#fragment',
+    },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.canonicalUrl, 'https://example.com/path?a=1&b=2');
+  assert.equal(JSON.stringify(harness.audits).includes('password'), false);
+
+  const signedUrl = await harness.service.create({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    body: {
+      scope: 'personal',
+      sourceType: 'web',
+      canonicalUrl:
+        'https://example.com/file?X-Amz-Credential=credential&X-Amz-Signature=signature&GoogleAccessId=account@example.com',
+    },
+  });
+  assert.equal(signedUrl.ok, false);
+  assert.equal(signedUrl.statusCode, 400);
+  assert.equal(harness.items.size, 1);
+
+  const rejected = await harness.service.update({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: result.value.id,
+    body: { expectedVersion: 1, canonicalUrl: 'file:///etc/passwd' },
+  });
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.statusCode, 400);
+});

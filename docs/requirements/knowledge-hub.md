@@ -157,6 +157,20 @@ Knowledge audit metadata は event ごとの typed allowlist から構築し、�
 - 受け入れ: owner 外 list/detail/count 0、optimistic concurrency、logical delete/restore、transaction-aware fail-closed audit port、typed audit metadata allowlist、OpenAPI/schema、既存 chat migration 回帰なし。
 - rollback/test: expand-only migration、旧 image 互換、migration deploy、repository/service/route/ACL negative tests、API schema、backup前提記録。
 
+#### Workstream 02 API / authorization contract
+
+- APIは `POST /knowledge/items`、`GET /knowledge/items`、`GET /knowledge/items/count`、`GET|PATCH|DELETE /knowledge/items/:id`、`POST /knowledge/items/:id/restore` とする。
+- `personal` のread/writeは `ownerUserId = UserContext.userId` をDB predicateへ含め、`admin` / `mgmt` roleだけの通常閲覧を許可しない。
+- `organization` の通常readはowner、またはitemの `organizationId` とactorの `orgId` が一致し、かつactiveなcanonical `GroupAccount.id` の明示grantが一致する場合だけ許可する。org/group context欠落、inactive group、壊れたrelationはdenyする。
+- organization item作成時はactor自身のactive `groupAccountIds` に含まれるgrantを1件以上要求する。WS02のgrantはread-onlyで、update/delete/restoreはownerだけに限定する。
+- scopeとgrantの変更をgeneric PATCHへ含めない。personalからorganizationへの移行、grant管理、共有field選択はWorkstream 07の専用preview/confirm use caseで扱う。
+- update/delete/restoreはpositive integerの `expectedVersion` を必須とし、stale owner requestは`409 version_conflict`、owner外または存在しないIDは同じ`404 not_found` contractとする。
+- logical delete後は通常list/count/detailから除外する。restoreはowner、deleted state、version一致を同じtransaction内で検証する。
+- create/update/delete/restoreは、業務rowとallowlist metadataだけの `AuditLog` を同じPrisma transactionでcommitする。監査失敗時はbusiness writeもrollbackし、既存fail-open `logAudit()` は使用しない。
+- audit metadataはscope、status、version、変更field名とboundedなprincipal/actor/scope provenanceだけを許可し、本文、canonical URL、query、reason text、token ID、secretを含めない。
+- canonical URLはHTTP(S)だけを受け付け、userinfo、fragment、既知tracking parameterを除去する。署名・token・credential・session・OAuth等のcredential-like queryを含むURLは一部だけを保存せずrequest全体を拒否する。
+- Workstream 02はDB metadataだけを追加し、binary snapshot、artifact、provider URL、Chat share、label、AIを扱わない。
+
 ### 03. Label / ANY-ALL-NOT search / saved view
 
 - Depends on: 02

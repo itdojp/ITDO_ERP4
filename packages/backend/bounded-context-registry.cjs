@@ -73,6 +73,14 @@ const contexts = [
     ],
   },
   {
+    name: 'knowledge',
+    displayName: 'Knowledge Hub',
+    patterns: [
+      '^src/application/knowledge/.+\\.ts$',
+      '^src/routes/knowledgeItems\\.ts$',
+    ],
+  },
+  {
     name: 'notifications',
     displayName: 'Notifications',
     patterns: [
@@ -150,6 +158,7 @@ const layers = [
       'Database, audit, readiness, PDF, outbound notification transports, safe HTTP, and environment/runtime adapters used by multiple contexts.',
     patterns: [
       '^src/adapters/notifications/.+\\.ts$',
+      '^src/adapters/knowledge/.+\\.ts$',
       '^src/adapters/storage/.+\\.ts$',
       '^src/cli/(googleDrive(Check|CheckService|ProvisionFolder|ProvisionService)|storageArtifactMigration|storageReadiness(Service)?)\\.ts$',
       '^src/infrastructure/backup/.+\\.ts$',

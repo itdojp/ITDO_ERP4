@@ -158,6 +158,20 @@ checkerはendpoint、bucket、object key、KMS識別子をlogへ出さず、AWS 
 
 ## 4. backup / upload / download / check
 
+### Knowledge Hub core metadata
+
+Knowledge Hub Workstream 02以降は、PostgreSQL bundleに`KnowledgeItem`、`KnowledgeItemGroupGrant`、対応する`AuditLog`が含まれる。WS02単体ではbinary artifactや追加provider objectはない。
+
+isolated restoreの承認済み検証では、内容を出力せず次を確認する。
+
+- Knowledge table、scope/version CHECK、grant FK/indexが存在する
+- item/grant/auditの件数がbackup manifestのprivate期待値と一致する
+- `version < 1`、personalかつorganization IDあり、organizationかつorganization IDなしのrowが0件
+- orphan grantが0件
+- logical delete rowが通常APIのlist/count/detailから見えず、owner/version付きrestore contractを維持する
+
+件数やprincipal識別子をpublic logへ転記せず、sanitized evidenceには検証項目、pass/fail、対象commit/schema versionだけを記録する。application rollbackではexpand-only tableを残し、旧imageへ戻す。migration fileの巻き戻しやtable dropをrollback手順にしない。
+
 ### 4.1 backup
 
 ```bash

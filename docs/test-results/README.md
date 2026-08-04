@@ -41,6 +41,10 @@
 - [Storage artifact migration evidence template](storage-artifact-migration-template.md)
 - [Storage／backup統合readiness 記録テンプレート](storage-readiness-template.md)
 
+### 2026-08-04
+
+- [Issue #2010 Knowledge core schema / authorization / CRUD verification](2026-08-04-issue2010-knowledge-core.md)
+
 ### 2026-07-22
 
 - [Issue #1977 Storage artifact foundation verification](2026-07-22-issue1977-storage-artifact-foundation.md)

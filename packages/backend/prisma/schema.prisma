@@ -121,6 +121,29 @@ enum AccountingJournalStagingStatus {
   superseded
 }
 
+enum KnowledgeItemScope {
+  personal
+  organization
+}
+
+enum KnowledgeItemStatus {
+  inbox
+  reviewing
+  processed
+  archived
+}
+
+enum KnowledgeSourceType {
+  x
+  threads
+  news
+  web
+  pdf
+  image
+  manual
+  other
+}
+
 model Customer {
   id                    String    @id @default(uuid())
   code                  String    @unique
@@ -2156,6 +2179,48 @@ model AuditLog {
   @@index([action, createdAt])
 }
 
+model KnowledgeItem {
+  id                 String                    @id @default(uuid())
+  ownerUserId        String
+  scope              KnowledgeItemScope
+  organizationId     String?
+  sourceType         KnowledgeSourceType
+  canonicalUrl       String?
+  title              String?
+  sourceAuthor       String?
+  publishedAt        DateTime?
+  capturedAt         DateTime                  @default(now())
+  saveReason         String?                   @db.Text
+  shortNote          String?                   @db.Text
+  unresolvedQuestion String?                   @db.Text
+  status             KnowledgeItemStatus       @default(inbox)
+  version            Int                       @default(1)
+  deletedAt          DateTime?
+  deletedReason      String?
+  createdAt          DateTime                  @default(now())
+  createdBy          String?
+  updatedAt          DateTime                  @updatedAt
+  updatedBy          String?
+  groupGrants        KnowledgeItemGroupGrant[]
+
+  @@index([ownerUserId, deletedAt, updatedAt])
+  @@index([organizationId, scope, deletedAt, updatedAt])
+  @@index([scope, status, deletedAt, updatedAt])
+}
+
+model KnowledgeItemGroupGrant {
+  id              String        @id @default(uuid())
+  knowledgeItem   KnowledgeItem @relation(fields: [knowledgeItemId], references: [id], onDelete: Restrict)
+  knowledgeItemId String
+  groupAccount    GroupAccount  @relation(fields: [groupAccountId], references: [id], onDelete: Restrict)
+  groupAccountId  String
+  createdAt       DateTime      @default(now())
+  createdBy       String?
+
+  @@unique([knowledgeItemId, groupAccountId])
+  @@index([groupAccountId, knowledgeItemId])
+}
+
 model ReassignmentLog {
   id            String   @id @default(uuid())
   targetTable   String
@@ -2363,16 +2428,17 @@ model UserGroup {
 }
 
 model GroupAccount {
-  id          String      @id @default(uuid())
-  externalId  String?     @unique
-  displayName String
-  scimMeta    Json?
-  active      Boolean     @default(true)
-  createdAt   DateTime    @default(now())
-  createdBy   String?
-  updatedAt   DateTime    @updatedAt
-  updatedBy   String?
-  memberships UserGroup[]
+  id                  String                    @id @default(uuid())
+  externalId          String?                   @unique
+  displayName         String
+  scimMeta            Json?
+  active              Boolean                   @default(true)
+  createdAt           DateTime                  @default(now())
+  createdBy           String?
+  updatedAt           DateTime                  @updatedAt
+  updatedBy           String?
+  memberships         UserGroup[]
+  knowledgeItemGrants KnowledgeItemGroupGrant[]
 
   @@index([displayName])
 }
