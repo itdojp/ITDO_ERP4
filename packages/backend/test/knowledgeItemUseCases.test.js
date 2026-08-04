@@ -608,6 +608,11 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
   for (const canonicalUrl of [
     'https://target.example/#/callback?token=credential-value',
     'https://target.example/#/callback?privatekey=credential-value',
+    'https://target.example/#/callback?download=1;token=credential-value',
+    'https://target.example/#/callback;privatekey=credential-value',
+    'https://target.example/file?download=1;token=credential-value',
+    'https://target.example/file?download=1%3Bprivatekey%3Dcredential-value',
+    'https://target.example/file?download=1%26token%3Dcredential-value',
   ]) {
     const fragmentCredentialUrl = await harness.service.create({
       actor: actor('owner-1'),
@@ -691,6 +696,16 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     },
   });
   assert.equal(harmlessQueryLikeText.ok, true);
+  const harmlessSemicolonQuery = await harmlessHarness.service.create({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    body: {
+      scope: 'personal',
+      sourceType: 'web',
+      canonicalUrl: 'https://example.com/file?download=1;sort=asc',
+    },
+  });
+  assert.equal(harmlessSemicolonQuery.ok, true);
 
   for (const credentialQuery of [
     'auth_key=credential-value',
@@ -732,6 +747,11 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
   for (const canonicalUrl of [
     'https://target.example/#/callback?token=credential-value',
     'https://target.example/#/callback?privatekey=credential-value',
+    'https://target.example/#/callback?download=1;token=credential-value',
+    'https://target.example/#/callback;privatekey=credential-value',
+    'https://target.example/file?download=1;token=credential-value',
+    'https://target.example/file?download=1%3Bprivatekey%3Dcredential-value',
+    'https://target.example/file?download=1%26token%3Dcredential-value',
   ]) {
     const fragmentRejectedUpdate = await harness.service.update({
       actor: actor('owner-1'),

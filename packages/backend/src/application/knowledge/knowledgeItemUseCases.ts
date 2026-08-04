@@ -157,12 +157,23 @@ const percentEncodedByte = /%([0-9a-f]{2})/gi;
 type NestedUrlParseResult =
   { kind: 'url'; url: URL } | { kind: 'none' } | { kind: 'unsafe' };
 
+function hasCredentialQueryParams(value: string): boolean {
+  const params = new URLSearchParams(value.replace(/;/g, '&'));
+  return [...params.keys()].some(isCredentialQueryName);
+}
+
 function hasCredentialQueryText(value: string): boolean {
   for (const separator of ['?', '#']) {
     const index = value.indexOf(separator);
     if (index < 0) continue;
-    const params = new URLSearchParams(value.slice(index + 1));
-    if ([...params.keys()].some(isCredentialQueryName)) return true;
+    if (hasCredentialQueryParams(value.slice(index + 1))) return true;
+  }
+  const embeddedDelimiterIndex = value.search(/[&;]/);
+  if (
+    embeddedDelimiterIndex >= 0 &&
+    hasCredentialQueryParams(value.slice(embeddedDelimiterIndex + 1))
+  ) {
+    return true;
   }
   return false;
 }
