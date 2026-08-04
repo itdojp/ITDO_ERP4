@@ -605,6 +605,24 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
   }
   assert.equal(harness.items.size, 1);
 
+  for (const canonicalUrl of [
+    'https://target.example/#/callback?token=credential-value',
+    'https://target.example/#/callback?privatekey=credential-value',
+  ]) {
+    const fragmentCredentialUrl = await harness.service.create({
+      actor: actor('owner-1'),
+      auditActor: auditActor('owner-1'),
+      body: {
+        scope: 'personal',
+        sourceType: 'web',
+        canonicalUrl,
+      },
+    });
+    assert.equal(fragmentCredentialUrl.ok, false);
+    assert.equal(fragmentCredentialUrl.statusCode, 400);
+  }
+  assert.equal(harness.items.size, 1);
+
   const nestedCredentialUrl =
     'https://drive.google.com/open?resourcekey=drive-resource-key-value&authuser=0';
   const encodeLayers = (value, count) => {
@@ -653,15 +671,14 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     },
   });
   assert.equal(harmlessDeeplyEncodedQuery.ok, true);
-  const harmlessDeeplyEncodedNestedUrl =
-    await harmlessHarness.service.create({
-      actor: actor('owner-1'),
-      auditActor: auditActor('owner-1'),
-      body: {
-        scope: 'personal',
-        sourceType: 'web',
-        canonicalUrl: `https://example.com/redirect?next=${encodeLayers('https://example.com/safe?x=1', 12)}`,
-      },
+  const harmlessDeeplyEncodedNestedUrl = await harmlessHarness.service.create({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    body: {
+      scope: 'personal',
+      sourceType: 'web',
+      canonicalUrl: `https://example.com/redirect?next=${encodeLayers('https://example.com/safe?x=1', 12)}`,
+    },
   });
   assert.equal(harmlessDeeplyEncodedNestedUrl.ok, true);
   const harmlessQueryLikeText = await harmlessHarness.service.create({
@@ -711,6 +728,19 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     });
     assert.equal(nestedRejectedUpdate.ok, false);
     assert.equal(nestedRejectedUpdate.statusCode, 400);
+  }
+  for (const canonicalUrl of [
+    'https://target.example/#/callback?token=credential-value',
+    'https://target.example/#/callback?privatekey=credential-value',
+  ]) {
+    const fragmentRejectedUpdate = await harness.service.update({
+      actor: actor('owner-1'),
+      auditActor: auditActor('owner-1'),
+      itemId: result.value.id,
+      body: { expectedVersion: 1, canonicalUrl },
+    });
+    assert.equal(fragmentRejectedUpdate.ok, false);
+    assert.equal(fragmentRejectedUpdate.statusCode, 400);
   }
   assert.equal(harness.items.get(result.value.id).version, 1);
   assert.equal(

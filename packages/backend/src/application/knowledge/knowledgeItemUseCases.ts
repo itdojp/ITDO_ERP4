@@ -242,6 +242,7 @@ function normalizeCanonicalUrl(
     if (url.protocol !== 'https:' && url.protocol !== 'http:') {
       return { ok: false };
     }
+    if (hasCredentialFragment(url)) return { ok: false };
     url.username = '';
     url.password = '';
     url.hash = '';
