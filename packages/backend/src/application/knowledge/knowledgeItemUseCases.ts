@@ -92,6 +92,7 @@ function normalizeOptional(value: string | null | undefined) {
 
 const trackingQueryName = /^(?:utm_.+|fbclid|gclid|mc_cid|mc_eid)$/i;
 const credentialQueryTokens = new Set([
+  'assertion',
   'auth',
   'authorization',
   'credential',
@@ -100,12 +101,14 @@ const credentialQueryTokens = new Set([
   'oauth',
   'passwd',
   'password',
+  'proof',
   'secret',
   'session',
   'sig',
   'signature',
   'ticket',
   'token',
+  'verifier',
 ]);
 
 function isCredentialQueryName(name: string): boolean {
@@ -137,9 +140,11 @@ function isCredentialQueryName(name: string): boolean {
     'accesstoken',
     'accesskey',
     'apikey',
+    'assertion',
     'authorization',
     'credential',
     'jwt',
+    'dpop',
     'oauth',
     'password',
     'passwd',
@@ -147,8 +152,12 @@ function isCredentialQueryName(name: string): boolean {
     'session',
     'signature',
     'signedheaders',
+    'samlresponse',
+    'softwarestatement',
     'token',
     'ticket',
+    'verifier',
+    'wresult',
   ].some((marker) => compact.includes(marker));
 }
 
@@ -230,9 +239,16 @@ function parseNestedHttpUrl(value: string): NestedUrlParseResult {
   return { kind: 'unsafe' };
 }
 
-function hasCredentialFragment(url: URL): boolean {
+function hasCredentialFragment(url: URL, depth = 0): boolean {
   if (!url.hash) return false;
-  return hasCredentialQueryText(url.hash);
+  const nested = parseNestedHttpUrl(url.hash);
+  if (nested.kind === 'unsafe') return true;
+  if (nested.kind === 'none') return false;
+  if (nested.url.username || nested.url.password || depth >= 3) return true;
+  return (
+    hasCredentialFragment(nested.url, depth + 1) ||
+    hasCredentialBearingNestedUrl(nested.url, depth + 1)
+  );
 }
 
 function hasCredentialBearingNestedUrl(url: URL, depth = 0): boolean {
@@ -245,7 +261,7 @@ function hasCredentialBearingNestedUrl(url: URL, depth = 0): boolean {
     if (
       nestedUrl.username ||
       nestedUrl.password ||
-      hasCredentialFragment(nestedUrl)
+      hasCredentialFragment(nestedUrl, depth + 1)
     ) {
       return true;
     }

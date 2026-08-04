@@ -610,6 +610,13 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     'private_key=credential-value',
     'AuthKey=credential-value',
     'privatekey=credential-value',
+    'client_assertion=credential-value',
+    'clientAssertion=credential-value',
+    'clientassertion=credential-value',
+    'code_verifier=credential-value',
+    'codeVerifier=credential-value',
+    'codeverifier=credential-value',
+    'dpop=credential-value',
   ]) {
     const credentialUrl = await harness.service.create({
       actor: actor('owner-1'),
@@ -630,11 +637,17 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     'https://target.example/#/callback?privatekey=credential-value',
     'https://target.example/#/callback?download=1;token=credential-value',
     'https://target.example/#/callback;privatekey=credential-value',
+    'https://target.example/#/callback?download=1%26token%3Dcredential-value',
+    'https://target.example/#/callback?download=1%3Bprivatekey%3Dcredential-value',
+    'https://target.example/#/callback?download=1%2526token%253Dcredential-value',
+    'https://target.example/#/callback?download=%ZZ1%2526token%253Dcredential-value',
     'https://target.example/file?download=1;token=credential-value',
     'https://target.example/file?download=1%3Bprivatekey%3Dcredential-value',
     'https://target.example/file?download=1%26token%3Dcredential-value',
     `https://target.example/file?${encodeQueryNameLayers('token', 2)}=credential-value`,
     `https://target.example/file?${encodeQueryNameLayers('privatekey', 12)}=credential-value`,
+    `https://target.example/file?${encodeQueryNameLayers('clientassertion', 4)}=credential-value`,
+    `https://target.example/file?${encodeQueryNameLayers('codeverifier', 4)}=credential-value`,
     `https://target.example/file?download=1;${encodeQueryNameLayers('token', 2)}=credential-value`,
     `https://target.example/#/callback?${encodeQueryNameLayers('privatekey', 2)}=credential-value`,
     `https://target.example/file?%ZZ${encodeQueryNameLayers('token', 2)}=credential-value`,
@@ -669,6 +682,12 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     encodeURIComponent('callback?token=credential-value'),
     encodeURIComponent(
       'https://target.example/#/callback?token=credential-value',
+    ),
+    encodeURIComponent(
+      'https://target.example/#/callback?download=1%26token%3Dcredential-value',
+    ),
+    encodeURIComponent(
+      'https://target.example/#/callback?download=1%3Bprivatekey%3Dcredential-value',
     ),
   ]) {
     const nestedUrl = await harness.service.create({
@@ -736,11 +755,31 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     },
   });
   assert.equal(harmlessDeeplyEncodedQueryName.ok, true);
+  const harmlessEncodedFragmentDelimiter = await harmlessHarness.service.create(
+    {
+      actor: actor('owner-1'),
+      auditActor: auditActor('owner-1'),
+      body: {
+        scope: 'personal',
+        sourceType: 'web',
+        canonicalUrl: 'https://example.com/#/callback?download=1%26sort%3Dasc',
+      },
+    },
+  );
+  assert.equal(harmlessEncodedFragmentDelimiter.ok, true);
+  assert.equal(
+    harmlessEncodedFragmentDelimiter.value.canonicalUrl,
+    'https://example.com/',
+  );
 
   for (const credentialQuery of [
     'auth_key=credential-value',
     'x-sig=credential-value',
     'privateKey=credential-value',
+    'client_assertion=credential-value',
+    'clientassertion=credential-value',
+    'code_verifier=credential-value',
+    'codeverifier=credential-value',
   ]) {
     const rejectedUpdate = await harness.service.update({
       actor: actor('owner-1'),
@@ -761,6 +800,12 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     encodeURIComponent(
       'https://target.example/#/callback?token=credential-value',
     ),
+    encodeURIComponent(
+      'https://target.example/#/callback?download=1%26token%3Dcredential-value',
+    ),
+    encodeURIComponent(
+      'https://target.example/#/callback?download=1%3Bprivatekey%3Dcredential-value',
+    ),
   ]) {
     const nestedRejectedUpdate = await harness.service.update({
       actor: actor('owner-1'),
@@ -779,11 +824,17 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     'https://target.example/#/callback?privatekey=credential-value',
     'https://target.example/#/callback?download=1;token=credential-value',
     'https://target.example/#/callback;privatekey=credential-value',
+    'https://target.example/#/callback?download=1%26token%3Dcredential-value',
+    'https://target.example/#/callback?download=1%3Bprivatekey%3Dcredential-value',
+    'https://target.example/#/callback?download=1%2526token%253Dcredential-value',
+    'https://target.example/#/callback?download=%ZZ1%2526token%253Dcredential-value',
     'https://target.example/file?download=1;token=credential-value',
     'https://target.example/file?download=1%3Bprivatekey%3Dcredential-value',
     'https://target.example/file?download=1%26token%3Dcredential-value',
     `https://target.example/file?${encodeQueryNameLayers('token', 2)}=credential-value`,
     `https://target.example/file?${encodeQueryNameLayers('privatekey', 12)}=credential-value`,
+    `https://target.example/file?${encodeQueryNameLayers('clientassertion', 4)}=credential-value`,
+    `https://target.example/file?${encodeQueryNameLayers('codeverifier', 4)}=credential-value`,
     `https://target.example/file?download=1;${encodeQueryNameLayers('token', 2)}=credential-value`,
     `https://target.example/#/callback?${encodeQueryNameLayers('privatekey', 2)}=credential-value`,
     `https://target.example/file?%ZZ${encodeQueryNameLayers('token', 2)}=credential-value`,
