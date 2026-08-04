@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import {
   isKnowledgeDeletionReasonCode,
+  knowledgeItemInputLimits,
   knowledgeMutableFields,
   type KnowledgeActor,
   type KnowledgeAuditEntry,
@@ -27,6 +28,14 @@ type KnowledgeTransactionHost = {
     work: (transaction: Prisma.TransactionClient) => Promise<T>,
   ): Promise<T>;
 };
+
+function canIncrementKnowledgeVersion(version: number) {
+  return (
+    Number.isInteger(version) &&
+    version >= 1 &&
+    version <= knowledgeItemInputLimits.expectedVersion
+  );
+}
 
 function mapKnowledgeItem(
   row: Prisma.KnowledgeItemGetPayload<Record<string, never>>,
@@ -196,6 +205,7 @@ export class PrismaKnowledgeItemRepository
     expectedVersion: number;
     patch: KnowledgeItemUpdateRecord;
   }) {
+    if (!canIncrementKnowledgeVersion(input.expectedVersion)) return null;
     const result = await this.client.knowledgeItem.updateMany({
       where: {
         id: input.itemId,
@@ -223,6 +233,7 @@ export class PrismaKnowledgeItemRepository
     deletedAt: Date;
     reasonCode: KnowledgeDeletionReasonCode;
   }) {
+    if (!canIncrementKnowledgeVersion(input.expectedVersion)) return null;
     if (!isKnowledgeDeletionReasonCode(input.reasonCode)) {
       throw new Error('knowledge_deletion_reason_code_invalid');
     }
@@ -252,6 +263,7 @@ export class PrismaKnowledgeItemRepository
     itemId: string;
     expectedVersion: number;
   }) {
+    if (!canIncrementKnowledgeVersion(input.expectedVersion)) return null;
     const result = await this.client.knowledgeItem.updateMany({
       where: {
         id: input.itemId,
@@ -289,16 +301,8 @@ function safeKnowledgeAuditRequestId(value: string | undefined) {
     : undefined;
 }
 
-function boundedScopes(values: string[] | undefined) {
-  if (!values) return [];
-  return [
-    ...new Set(
-      values
-        .map((value) => value.trim().slice(0, 100))
-        .filter(Boolean)
-        .slice(0, 64),
-    ),
-  ];
+function safeKnowledgeAuditSource(value: string | undefined) {
+  return value === 'api' || value === 'agent' ? value : undefined;
 }
 
 export class PrismaKnowledgeAuditWriter implements KnowledgeAuditWriter {
@@ -320,32 +324,18 @@ export class PrismaKnowledgeAuditWriter implements KnowledgeAuditWriter {
     const changedFields = entry.metadata.changedFields?.filter((field) =>
       knowledgeMutableFields.includes(field),
     );
-    const principalUserId = bounded(entry.actor.principalUserId, 255);
-    const actorUserId = bounded(entry.actor.actorUserId, 255);
-    const authScopes = boundedScopes(entry.actor.authScopes);
-    const authProvenance: Prisma.InputJsonObject = {
-      ...(principalUserId ? { principalUserId } : {}),
-      ...(actorUserId ? { actorUserId } : {}),
-      ...(authScopes.length > 0 ? { scopes: authScopes } : {}),
-    };
     const metadata: Prisma.InputJsonObject = {
       scope: entry.metadata.scope,
       status: entry.metadata.status,
       version: entry.metadata.version,
       ...(changedFields && changedFields.length > 0 ? { changedFields } : {}),
-      ...(Object.keys(authProvenance).length > 0
-        ? { _auth: authProvenance }
-        : {}),
     };
     await this.client.auditLog.create({
       data: {
         action: entry.action,
         userId: bounded(entry.actor.userId, 255),
-        actorRole: bounded(entry.actor.actorRole, 100),
-        actorGroupId: bounded(entry.actor.actorGroupId, 255),
         requestId: safeKnowledgeAuditRequestId(entry.actor.requestId),
-        ipAddress: bounded(entry.actor.ipAddress, 255),
-        source: bounded(entry.actor.source, 100),
+        source: safeKnowledgeAuditSource(entry.actor.source),
         reasonCode,
         targetTable: 'knowledge_items',
         targetId: entry.targetId,

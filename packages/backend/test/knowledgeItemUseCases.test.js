@@ -1228,7 +1228,7 @@ test('service boundary rejects unbounded read queries and item ids without repos
     0,
   );
 
-  const oversizedVersion = 2147483648;
+  const oversizedVersion = 2147483647;
   for (const mutation of [
     () =>
       harness.service.update({
@@ -1263,7 +1263,7 @@ test('service boundary rejects unbounded read queries and item ids without repos
     actor: actor('owner-1'),
     auditActor: auditActor('owner-1'),
     itemId: created.value.id,
-    body: { expectedVersion: 2147483647, title: 'bounded but stale' },
+    body: { expectedVersion: 2147483646, title: 'bounded but stale' },
   });
   assert.equal(maximumVersion.ok, false);
   assert.equal(maximumVersion.statusCode, 409);

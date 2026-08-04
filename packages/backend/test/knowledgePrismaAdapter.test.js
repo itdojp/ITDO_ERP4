@@ -140,7 +140,10 @@ test('knowledge audit writer is fail-closed and writes only typed allowlisted me
       principalUserId: 'principal-1',
       actorUserId: 'actor-1',
       authScopes: ['knowledge:write', ' knowledge:write ', 'scope-2'],
+      actorRole: 'Bearer must-not-pass-through',
+      actorGroupId: 'Bearer must-not-pass-through',
       requestId: 'request-1',
+      ipAddress: 'Bearer must-not-pass-through',
       userAgent: 'Bearer must-not-pass-through',
       source: 'api',
       secret: 'must-not-pass-through',
@@ -159,11 +162,6 @@ test('knowledge audit writer is fail-closed and writes only typed allowlisted me
     status: 'reviewing',
     version: 2,
     changedFields: ['title', 'status'],
-    _auth: {
-      principalUserId: 'principal-1',
-      actorUserId: 'actor-1',
-      scopes: ['knowledge:write', 'scope-2'],
-    },
   });
   assert.equal(
     JSON.stringify(createInput).includes('must-not-pass-through'),
@@ -178,12 +176,14 @@ test('knowledge audit writer is fail-closed and writes only typed allowlisted me
     actor: {
       userId: 'owner-1',
       requestId: 'Bearer must-not-pass-through',
+      source: 'Bearer must-not-pass-through',
       userAgent: 'Bearer must-not-pass-through',
     },
     targetId: 'item-1',
     metadata: { scope: 'personal', status: 'inbox', version: 1 },
   });
   assert.equal(createInput.data.requestId, undefined);
+  assert.equal(createInput.data.source, undefined);
   assert.equal(createInput.data.userAgent, undefined);
   assert.equal(
     JSON.stringify(createInput).includes('must-not-pass-through'),
@@ -192,12 +192,13 @@ test('knowledge audit writer is fail-closed and writes only typed allowlisted me
 
   await writer.write({
     action: 'knowledge_item_deleted',
-    actor: { userId: 'owner-1' },
+    actor: { userId: 'owner-1', source: 'agent' },
     targetId: 'item-1',
     reasonCode: 'owner_request',
     metadata: { scope: 'personal', status: 'inbox', version: 3 },
   });
   assert.equal(createInput.data.reasonCode, 'owner_request');
+  assert.equal(createInput.data.source, 'agent');
 
   const failingWriter = new PrismaKnowledgeAuditWriter({
     auditLog: {
@@ -445,6 +446,62 @@ test('Prisma mutation adapter returns conflict signal when conditional update lo
     }),
     null,
   );
+});
+
+test('Prisma mutation adapter rejects versions that cannot be incremented before persistence', async () => {
+  let mutationCount = 0;
+  const client = {
+    knowledgeItem: {
+      updateMany: async () => {
+        mutationCount += 1;
+        return { count: 1 };
+      },
+    },
+    groupAccount: {},
+    auditLog: {},
+  };
+  const repository = new PrismaKnowledgeItemRepository(client);
+  const requestActor = { userId: 'owner-1', groupAccountIds: [] };
+  for (const mutation of [
+    () =>
+      repository.updateOwnedVersioned({
+        actor: requestActor,
+        itemId: 'item-1',
+        expectedVersion: 0,
+        patch: { title: 'must not persist' },
+      }),
+    () =>
+      repository.updateOwnedVersioned({
+        actor: requestActor,
+        itemId: 'item-1',
+        expectedVersion: 1.5,
+        patch: { title: 'must not persist' },
+      }),
+    () =>
+      repository.updateOwnedVersioned({
+        actor: requestActor,
+        itemId: 'item-1',
+        expectedVersion: 2147483647,
+        patch: { title: 'must not persist' },
+      }),
+    () =>
+      repository.deleteOwnedVersioned({
+        actor: requestActor,
+        itemId: 'item-1',
+        expectedVersion: 2147483647,
+        deletedAt: new Date('2026-08-04T00:00:00.000Z'),
+        reasonCode: 'owner_request',
+      }),
+    () =>
+      repository.restoreOwnedVersioned({
+        actor: requestActor,
+        itemId: 'item-1',
+        expectedVersion: 2147483647,
+      }),
+  ]) {
+    assert.equal(await mutation(), null);
+  }
+  assert.equal(mutationCount, 0);
 });
 
 test('unit of work binds repository and mandatory audit writer to the same Prisma transaction', async () => {

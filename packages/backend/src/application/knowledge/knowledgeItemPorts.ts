@@ -33,7 +33,8 @@ export const knowledgeItemInputLimits = {
   itemId: 100,
   listLimit: 100,
   listOffset: 10000,
-  expectedVersion: 2147483647,
+  // Mutations increment the PostgreSQL INTEGER version, so reserve its maximum.
+  expectedVersion: 2147483646,
 } as const;
 
 export const knowledgeDeletionReasonCodes = ['owner_request'] as const;
@@ -57,13 +58,7 @@ export type KnowledgeActor = {
 
 export type KnowledgeAuditActor = {
   userId?: string;
-  principalUserId?: string;
-  actorUserId?: string;
-  authScopes?: string[];
-  actorRole?: string;
-  actorGroupId?: string;
   requestId?: string;
-  ipAddress?: string;
   source?: string;
 };
 

@@ -104,14 +104,12 @@ test('knowledge create route maps authenticated org/group context and returns th
     organizationId: 'org-1',
     groupAccountIds: ['group-1'],
   });
-  assert.equal(captured.auditActor.userId, 'owner-1');
-  assert.equal(captured.auditActor.principalUserId, 'principal-1');
-  assert.equal(captured.auditActor.actorUserId, 'owner-1');
-  assert.deepEqual(captured.auditActor.authScopes, ['knowledge:write']);
-  assert.equal(
-    Object.prototype.hasOwnProperty.call(captured.auditActor, 'userAgent'),
-    false,
-  );
+  assert.deepEqual(captured.auditActor, {
+    userId: 'owner-1',
+    requestId: captured.auditActor.requestId,
+    source: 'agent',
+  });
+  assert.match(captured.auditActor.requestId, /^[A-Za-z0-9._-]{1,128}$/);
   assert.equal(response.json().version, 1);
   assert.equal(response.json().capturedAt, '2026-08-04T09:00:00.000Z');
 });
@@ -175,20 +173,20 @@ test('knowledge route schema rejects scope changes and out-of-range versions bef
     {
       method: 'PATCH',
       url: '/knowledge/items/item-1',
-      payload: { expectedVersion: 2147483648, title: 'not written' },
+      payload: { expectedVersion: 2147483647, title: 'not written' },
     },
     {
       method: 'DELETE',
       url: '/knowledge/items/item-1',
       payload: {
-        expectedVersion: 2147483648,
+        expectedVersion: 2147483647,
         reasonCode: 'owner_request',
       },
     },
     {
       method: 'POST',
       url: '/knowledge/items/item-1/restore',
-      payload: { expectedVersion: 2147483648 },
+      payload: { expectedVersion: 2147483647 },
     },
   ]) {
     const invalidVersion = await app.inject(request);
@@ -199,7 +197,7 @@ test('knowledge route schema rejects scope changes and out-of-range versions bef
   const maximumVersion = await app.inject({
     method: 'PATCH',
     url: '/knowledge/items/item-1',
-    payload: { expectedVersion: 2147483647, title: 'bounded' },
+    payload: { expectedVersion: 2147483646, title: 'bounded' },
   });
   assert.equal(maximumVersion.statusCode, 200, maximumVersion.body);
   assert.equal(calls, 1);

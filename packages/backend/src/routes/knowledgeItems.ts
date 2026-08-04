@@ -289,13 +289,7 @@ function auditActorFromRequest(request: FastifyRequest): KnowledgeAuditActor {
   const context = auditContextFromRequest(request);
   return {
     userId: context.userId,
-    principalUserId: context.principalUserId,
-    actorUserId: context.actorUserId,
-    authScopes: context.authScopes,
-    actorRole: context.actorRole,
-    actorGroupId: context.actorGroupId,
     requestId: context.requestId,
-    ipAddress: context.ipAddress,
     source: context.source,
   };
 }
