@@ -152,6 +152,7 @@ function isCredentialQueryName(name: string): boolean {
     'oauth',
     'password',
     'passwd',
+    'proof',
     'secret',
     'session',
     'signature',
