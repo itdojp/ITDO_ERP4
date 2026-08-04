@@ -144,6 +144,10 @@ enum KnowledgeSourceType {
   other
 }
 
+enum KnowledgeDeletionReasonCode {
+  owner_request
+}
+
 model Customer {
   id                    String    @id @default(uuid())
   code                  String    @unique
@@ -2180,7 +2184,7 @@ model AuditLog {
 }
 
 model KnowledgeItem {
-  id                 String                    @id @default(uuid())
+  id                 String                       @id @default(uuid())
   ownerUserId        String
   scope              KnowledgeItemScope
   organizationId     String?
@@ -2189,17 +2193,17 @@ model KnowledgeItem {
   title              String?
   sourceAuthor       String?
   publishedAt        DateTime?
-  capturedAt         DateTime                  @default(now())
-  saveReason         String?                   @db.Text
-  shortNote          String?                   @db.Text
-  unresolvedQuestion String?                   @db.Text
-  status             KnowledgeItemStatus       @default(inbox)
-  version            Int                       @default(1)
+  capturedAt         DateTime                     @default(now())
+  saveReason         String?                      @db.Text
+  shortNote          String?                      @db.Text
+  unresolvedQuestion String?                      @db.Text
+  status             KnowledgeItemStatus          @default(inbox)
+  version            Int                          @default(1)
   deletedAt          DateTime?
-  deletedReason      String?
-  createdAt          DateTime                  @default(now())
+  deletedReason      KnowledgeDeletionReasonCode?
+  createdAt          DateTime                     @default(now())
   createdBy          String?
-  updatedAt          DateTime                  @updatedAt
+  updatedAt          DateTime                     @updatedAt
   updatedBy          String?
   groupGrants        KnowledgeItemGroupGrant[]
 

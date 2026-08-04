@@ -170,6 +170,15 @@ test('knowledge audit writer is fail-closed and writes only typed allowlisted me
   );
   assert.equal(createInput.data.targetTable, 'knowledge_items');
 
+  await writer.write({
+    action: 'knowledge_item_deleted',
+    actor: { userId: 'owner-1' },
+    targetId: 'item-1',
+    reasonCode: 'owner_request',
+    metadata: { scope: 'personal', status: 'inbox', version: 3 },
+  });
+  assert.equal(createInput.data.reasonCode, 'owner_request');
+
   const failingWriter = new PrismaKnowledgeAuditWriter({
     auditLog: {
       create: async () => Promise.reject(new Error('db unavailable')),
@@ -185,6 +194,82 @@ test('knowledge audit writer is fail-closed and writes only typed allowlisted me
       }),
     /db unavailable/,
   );
+});
+
+test('knowledge audit writer rejects invalid or misplaced deletion reasons before persistence', async () => {
+  let createCount = 0;
+  const writer = new PrismaKnowledgeAuditWriter({
+    auditLog: {
+      create: async () => {
+        createCount += 1;
+        return { id: 'audit-1' };
+      },
+    },
+  });
+  const metadata = { scope: 'personal', status: 'inbox', version: 2 };
+  for (const entry of [
+    {
+      action: 'knowledge_item_deleted',
+      actor: { userId: 'owner-1' },
+      targetId: 'item-1',
+      reasonCode: 'free-form credential fragment',
+      metadata,
+    },
+    {
+      action: 'knowledge_item_deleted',
+      actor: { userId: 'owner-1' },
+      targetId: 'item-1',
+      metadata,
+    },
+    {
+      action: 'knowledge_item_updated',
+      actor: { userId: 'owner-1' },
+      targetId: 'item-1',
+      reasonCode: 'owner_request',
+      metadata,
+    },
+  ]) {
+    await assert.rejects(
+      () => writer.write(entry),
+      /knowledge_audit_reason_code_invalid/,
+    );
+  }
+  assert.equal(createCount, 0);
+});
+
+test('Prisma adapter rejects invalid persisted and mutation deletion reasons', async () => {
+  let mutationCount = 0;
+  const client = {
+    knowledgeItem: {
+      findMany: async () => [row({ deletedReason: 'free-form' })],
+      updateMany: async () => {
+        mutationCount += 1;
+        return { count: 1 };
+      },
+      findUnique: async () => row(),
+    },
+    groupAccount: {},
+    auditLog: {},
+  };
+  const repository = new PrismaKnowledgeItemRepository(client);
+  const requestActor = { userId: 'owner-1', groupAccountIds: [] };
+
+  await assert.rejects(
+    () => repository.listVisible(requestActor, { limit: 10, offset: 0 }),
+    /knowledge_deletion_reason_code_invalid/,
+  );
+  await assert.rejects(
+    () =>
+      repository.deleteOwnedVersioned({
+        actor: requestActor,
+        itemId: 'item-1',
+        expectedVersion: 1,
+        deletedAt: new Date(),
+        reasonCode: 'free-form credential fragment',
+      }),
+    /knowledge_deletion_reason_code_invalid/,
+  );
+  assert.equal(mutationCount, 0);
 });
 
 test('Prisma write adapter creates explicit grants and applies owner/version predicates to every mutation', async () => {

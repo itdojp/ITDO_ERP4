@@ -25,6 +25,15 @@ export const knowledgeDeletionReasonCodes = ['owner_request'] as const;
 export type KnowledgeDeletionReasonCode =
   (typeof knowledgeDeletionReasonCodes)[number];
 
+export function isKnowledgeDeletionReasonCode(
+  value: unknown,
+): value is KnowledgeDeletionReasonCode {
+  return (
+    typeof value === 'string' &&
+    knowledgeDeletionReasonCodes.some((reasonCode) => reasonCode === value)
+  );
+}
+
 export type KnowledgeActor = {
   userId: string;
   organizationId?: string;
@@ -61,7 +70,7 @@ export type KnowledgeItem = {
   status: KnowledgeItemStatus;
   version: number;
   deletedAt: Date | null;
-  deletedReason: string | null;
+  deletedReason: KnowledgeDeletionReasonCode | null;
   createdAt: Date;
   createdBy: string | null;
   updatedAt: Date;
@@ -168,13 +177,21 @@ export type KnowledgeAuditMetadata = {
   changedFields?: KnowledgeMutableField[];
 };
 
-export type KnowledgeAuditEntry = {
-  action: KnowledgeAuditAction;
+type KnowledgeAuditEntryBase = {
   actor: KnowledgeAuditActor;
   targetId: string;
-  reasonCode?: KnowledgeDeletionReasonCode;
   metadata: KnowledgeAuditMetadata;
 };
+
+export type KnowledgeAuditEntry =
+  | (KnowledgeAuditEntryBase & {
+      action: 'knowledge_item_deleted';
+      reasonCode: KnowledgeDeletionReasonCode;
+    })
+  | (KnowledgeAuditEntryBase & {
+      action: Exclude<KnowledgeAuditAction, 'knowledge_item_deleted'>;
+      reasonCode?: never;
+    });
 
 export interface KnowledgeAuditWriter {
   write(entry: KnowledgeAuditEntry): Promise<void>;

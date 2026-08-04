@@ -7,6 +7,9 @@ CREATE TYPE "KnowledgeItemStatus" AS ENUM ('inbox', 'reviewing', 'processed', 'a
 -- CreateEnum
 CREATE TYPE "KnowledgeSourceType" AS ENUM ('x', 'threads', 'news', 'web', 'pdf', 'image', 'manual', 'other');
 
+-- CreateEnum
+CREATE TYPE "KnowledgeDeletionReasonCode" AS ENUM ('owner_request');
+
 -- CreateTable
 CREATE TABLE "KnowledgeItem" (
     "id" TEXT NOT NULL,
@@ -25,7 +28,7 @@ CREATE TABLE "KnowledgeItem" (
     "status" "KnowledgeItemStatus" NOT NULL DEFAULT 'inbox',
     "version" INTEGER NOT NULL DEFAULT 1,
     "deletedAt" TIMESTAMP(3),
-    "deletedReason" TEXT,
+    "deletedReason" "KnowledgeDeletionReasonCode",
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdBy" TEXT,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -37,7 +40,12 @@ CREATE TABLE "KnowledgeItem" (
       OR
       ("scope" = 'organization' AND "organizationId" IS NOT NULL AND LENGTH(BTRIM("organizationId")) > 0)
     ),
-    CONSTRAINT "KnowledgeItem_version_check" CHECK ("version" >= 1)
+    CONSTRAINT "KnowledgeItem_version_check" CHECK ("version" >= 1),
+    CONSTRAINT "KnowledgeItem_deletion_state_check" CHECK (
+      ("deletedAt" IS NULL AND "deletedReason" IS NULL)
+      OR
+      ("deletedAt" IS NOT NULL AND "deletedReason" IS NOT NULL)
+    )
 );
 
 -- CreateTable
@@ -49,6 +57,18 @@ CREATE TABLE "KnowledgeItemGroupGrant" (
     "createdBy" TEXT,
 
     CONSTRAINT "KnowledgeItemGroupGrant_pkey" PRIMARY KEY ("id")
+);
+
+-- AddKnowledgeAuditReasonConstraint
+-- AuditLog is shared, so the finite reason-code contract is scoped to the
+-- Knowledge deletion action without changing other audit actions.
+ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_knowledge_delete_reason_check" CHECK (
+  "action" <> 'knowledge_item_deleted'
+  OR
+  (
+    "targetTable" IS NOT DISTINCT FROM 'knowledge_items'
+    AND "reasonCode" IS NOT DISTINCT FROM 'owner_request'
+  )
 );
 
 -- CreateIndex

@@ -580,12 +580,14 @@ async function validateAndEnrichUserContext(req: any, reply: any) {
       respondUnauthorized(req, reply, 'user_inactive');
       return false;
     }
-    const mergedGroupIds = unionStrings(user.groupIds, resolved.groupIds);
-    const derivedRoles = deriveRolesFromGroups(mergedGroupIds);
+    // Once canonical DB context is available, signed/header group claims are
+    // stale hints only. Do not let them reintroduce group-derived privileges.
+    const canonicalGroupIds = unionStrings(undefined, resolved.groupIds);
+    const derivedRoles = deriveRolesFromGroups(canonicalGroupIds);
     const mergedRoles = expandRoles(
       unionStrings(user.roles, ['user', ...derivedRoles]),
     );
-    user.groupIds = mergedGroupIds;
+    user.groupIds = canonicalGroupIds;
     // Organization authorization must use the current DB-backed context.
     // Signed claims can be stale, and header auth is intentionally limited to
     // non-production environments by env validation.

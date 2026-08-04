@@ -27,12 +27,20 @@ test('knowledge core schema defines explicit scope, status, source, version, and
   );
   assert.match(schema, /enum KnowledgeItemStatus\s*{[^}]*inbox[^}]*archived/s);
   assert.match(schema, /enum KnowledgeSourceType\s*{[^}]*manual[^}]*other/s);
+  assert.match(
+    schema,
+    /enum KnowledgeDeletionReasonCode\s*{[^}]*owner_request/s,
+  );
   assert.match(schema, /model KnowledgeItem\s*{[^}]*ownerUserId\s+String/s);
   assert.match(
     schema,
     /model KnowledgeItem\s*{[^}]*version\s+Int\s+@default\(1\)/s,
   );
   assert.match(schema, /model KnowledgeItem\s*{[^}]*deletedAt\s+DateTime\?/s);
+  assert.match(
+    schema,
+    /model KnowledgeItem\s*{[^}]*deletedReason\s+KnowledgeDeletionReasonCode\?/s,
+  );
   assert.match(
     schema,
     /model KnowledgeItemGroupGrant\s*{[^}]*@@unique\(\[knowledgeItemId, groupAccountId\]\)/s,
@@ -55,6 +63,14 @@ test('knowledge migration is additive and enforces scope/version invariants', ()
   assert.match(migration, /KnowledgeItem_version_check.*"version" >= 1/s);
   assert.match(
     migration,
+    /KnowledgeItem_deletion_state_check.*"deletedAt" IS NULL AND "deletedReason" IS NULL.*"deletedAt" IS NOT NULL AND "deletedReason" IS NOT NULL/s,
+  );
+  assert.match(
+    migration,
+    /AuditLog_knowledge_delete_reason_check.*"action" <> 'knowledge_item_deleted'.*"targetTable" IS NOT DISTINCT FROM 'knowledge_items'.*"reasonCode" IS NOT DISTINCT FROM 'owner_request'/s,
+  );
+  assert.match(
+    migration,
     /FOREIGN KEY \("groupAccountId"\) REFERENCES "GroupAccount"\("id"\) ON DELETE RESTRICT/,
   );
   assert.doesNotMatch(migration, /\b(?:DROP|TRUNCATE)\b/i);
@@ -62,11 +78,15 @@ test('knowledge migration is additive and enforces scope/version invariants', ()
   assert.doesNotMatch(migration, /CREATE TABLE "Chat/i);
 });
 
-test('knowledge migration does not mutate existing application tables', () => {
+test('knowledge migration changes no existing application table except the scoped audit guard', () => {
   const alteredTables = [...migration.matchAll(/ALTER TABLE "([^"]+)"/g)].map(
     (match) => match[1],
   );
-  assert.deepEqual([...new Set(alteredTables)], ['KnowledgeItemGroupGrant']);
+  assert.deepEqual(
+    [...new Set(alteredTables)],
+    ['AuditLog', 'KnowledgeItemGroupGrant'],
+  );
+  assert.doesNotMatch(migration, /(?:UPDATE|DELETE FROM)\s+"AuditLog"/i);
 });
 
 test('knowledge OpenAPI operations document the role-based forbidden response', () => {
@@ -94,4 +114,13 @@ test('knowledge OpenAPI operations document the role-based forbidden response', 
   assert.deepEqual(deleteSchema?.properties?.reasonCode?.enum, [
     'owner_request',
   ]);
+
+  const deleteResponseSchema =
+    openapi.paths?.['/knowledge/items/{id}']?.delete?.responses?.['200']
+      ?.content?.['application/json']?.schema;
+  assert.deepEqual(deleteResponseSchema?.properties?.deletedReason, {
+    type: 'string',
+    enum: ['owner_request'],
+    nullable: true,
+  });
 });

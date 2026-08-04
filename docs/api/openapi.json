@@ -13054,6 +13054,9 @@
                             "type": "string"
                           },
                           "deletedReason": {
+                            "enum": [
+                              "owner_request"
+                            ],
                             "nullable": true,
                             "type": "string"
                           },
@@ -13337,6 +13340,9 @@
                       "type": "string"
                     },
                     "deletedReason": {
+                      "enum": [
+                        "owner_request"
+                      ],
                       "nullable": true,
                       "type": "string"
                     },
@@ -13592,6 +13598,9 @@
                       "type": "string"
                     },
                     "deletedReason": {
+                      "enum": [
+                        "owner_request"
+                      ],
                       "nullable": true,
                       "type": "string"
                     },
@@ -13888,6 +13897,9 @@
                       "type": "string"
                     },
                     "deletedReason": {
+                      "enum": [
+                        "owner_request"
+                      ],
                       "nullable": true,
                       "type": "string"
                     },
@@ -14196,6 +14208,9 @@
                       "type": "string"
                     },
                     "deletedReason": {
+                      "enum": [
+                        "owner_request"
+                      ],
                       "nullable": true,
                       "type": "string"
                     },
@@ -14514,6 +14529,9 @@
                       "type": "string"
                     },
                     "deletedReason": {
+                      "enum": [
+                        "owner_request"
+                      ],
                       "nullable": true,
                       "type": "string"
                     },

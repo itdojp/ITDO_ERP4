@@ -1,9 +1,11 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import {
+  isKnowledgeDeletionReasonCode,
   knowledgeMutableFields,
   type KnowledgeActor,
   type KnowledgeAuditEntry,
   type KnowledgeAuditWriter,
+  type KnowledgeDeletionReasonCode,
   type KnowledgeItem,
   type KnowledgeItemCreateRecord,
   type KnowledgeItemReadRepository,
@@ -29,6 +31,12 @@ type KnowledgeTransactionHost = {
 function mapKnowledgeItem(
   row: Prisma.KnowledgeItemGetPayload<Record<string, never>>,
 ): KnowledgeItem {
+  if (
+    row.deletedReason !== null &&
+    !isKnowledgeDeletionReasonCode(row.deletedReason)
+  ) {
+    throw new Error('knowledge_deletion_reason_code_invalid');
+  }
   return {
     id: row.id,
     ownerUserId: row.ownerUserId,
@@ -213,8 +221,11 @@ export class PrismaKnowledgeItemRepository
     itemId: string;
     expectedVersion: number;
     deletedAt: Date;
-    reasonCode: string;
+    reasonCode: KnowledgeDeletionReasonCode;
   }) {
+    if (!isKnowledgeDeletionReasonCode(input.reasonCode)) {
+      throw new Error('knowledge_deletion_reason_code_invalid');
+    }
     const result = await this.client.knowledgeItem.updateMany({
       where: {
         id: input.itemId,
@@ -284,6 +295,18 @@ export class PrismaKnowledgeAuditWriter implements KnowledgeAuditWriter {
   constructor(private readonly client: Pick<KnowledgeDbClient, 'auditLog'>) {}
 
   async write(entry: KnowledgeAuditEntry) {
+    const reasonCode = (() => {
+      if (entry.action === 'knowledge_item_deleted') {
+        if (!isKnowledgeDeletionReasonCode(entry.reasonCode)) {
+          throw new Error('knowledge_audit_reason_code_invalid');
+        }
+        return entry.reasonCode;
+      }
+      if (entry.reasonCode !== undefined) {
+        throw new Error('knowledge_audit_reason_code_invalid');
+      }
+      return undefined;
+    })();
     const changedFields = entry.metadata.changedFields?.filter((field) =>
       knowledgeMutableFields.includes(field),
     );
@@ -314,7 +337,7 @@ export class PrismaKnowledgeAuditWriter implements KnowledgeAuditWriter {
         ipAddress: bounded(entry.actor.ipAddress, 255),
         userAgent: bounded(entry.actor.userAgent, 1024),
         source: bounded(entry.actor.source, 100),
-        reasonCode: bounded(entry.reasonCode, 100),
+        reasonCode,
         targetTable: 'knowledge_items',
         targetId: entry.targetId,
         metadata,

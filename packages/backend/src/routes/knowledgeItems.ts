@@ -29,6 +29,12 @@ const nullableString = {
 const nullableDateTime = {
   anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
 } as const;
+const nullableDeletionReasonCode = {
+  anyOf: [
+    { type: 'string', enum: knowledgeDeletionReasonCodes },
+    { type: 'null' },
+  ],
+} as const;
 
 const knowledgeItemResponseSchema = {
   type: 'object',
@@ -73,7 +79,7 @@ const knowledgeItemResponseSchema = {
     status: { type: 'string', enum: knowledgeItemStatuses },
     version: { type: 'integer', minimum: 1 },
     deletedAt: nullableDateTime,
-    deletedReason: nullableString,
+    deletedReason: nullableDeletionReasonCode,
     createdAt: { type: 'string', format: 'date-time' },
     createdBy: nullableString,
     updatedAt: { type: 'string', format: 'date-time' },

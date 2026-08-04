@@ -125,7 +125,7 @@ storage、AI、Chat 等の外部副作用では DB transaction を開いたま�
 
 Knowledge audit metadata は event ごとの typed allowlist から構築し、保存前に redaction/length bound を適用する。現行 route の任意 metadata pass-through や検索語保存を Knowledge 実装へコピーしない。
 
-Knowledge item の logical delete 理由は自由記述ではなく有限のreason code allowlistとし、Workstream 02では `owner_request` のみを受け付ける。本文、説明文、credentialは`deletedReason`または`AuditLog.reasonCode`へ保存しない。後続reason codeは要件・API schema・負例テストを同時に更新する場合だけ追加する。
+Knowledge item の logical delete 理由は自由記述ではなく有限のreason code allowlistとし、Workstream 02では `owner_request` のみを受け付ける。request、response、application port、Prisma adapter、Knowledge audit writerを同じallowlistへ揃え、`KnowledgeItem.deletedReason`はDB enum、削除状態はCHECK、共用`AuditLog`は`knowledge_item_deleted` actionだけに適用する条件付きCHECKでfail closedにする。本文、説明文、credentialは`deletedReason`または`AuditLog.reasonCode`へ保存しない。後続reason codeは要件・API schema・DB enum/CHECK・負例テストを同時に更新する場合だけ追加する。
 
 ## 6. 費用・運用契約
 
@@ -166,6 +166,7 @@ Knowledge item の logical delete 理由は自由記述ではなく有限のreas
 - `organization` の通常readはowner、またはitemの `organizationId` とactorの `orgId` が一致し、かつactiveなcanonical `GroupAccount.id` の明示grantが一致する場合だけ許可する。org/group context欠落、inactive group、壊れたrelationはdenyする。
 - JWT/sessionのorganizationとcanonical group IDはDB解決成功時にDB正本へ置換し、stale token claimをACLへ使わない。header authはdevelopment/test用のsynthetic trust boundaryであり、productionはenv validationで`AUTH_MODE=jwt_bff`以外を起動拒否する。
 - organization item作成時はactor自身のactive `groupAccountIds` に含まれるgrantを1件以上要求する。WS02のgrantはread-onlyで、update/delete/restoreはownerだけに限定する。
+- DB user contextを解決できた場合、`orgId`、`groupIds`、`groupAccountIds`およびgroup由来roleはDB正本で置換し、signed token/headerのstale group claimをunionしない。独立したrole claimは既存認証契約として保持する。
 - scopeとgrantの変更をgeneric PATCHへ含めない。personalからorganizationへの移行、grant管理、共有field選択はWorkstream 07の専用preview/confirm use caseで扱う。
 - update/delete/restoreはpositive integerの `expectedVersion` を必須とし、stale owner requestは`409 version_conflict`、owner外または存在しないIDは同じ`404 not_found` contractとする。
 - logical delete後は通常list/count/detailから除外する。restoreはowner、deleted state、version一致を同じtransaction内で検証する。

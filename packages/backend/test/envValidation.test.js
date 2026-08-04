@@ -893,13 +893,17 @@ test('auth plugin: delegated write-limited scope passes auth guard for write met
   assert.equal(payload.statusCode, 404);
 });
 
-test('auth plugin: jwt resolves DB context via UserIdentity before externalId fallback', () => {
+test('auth plugin: jwt resolves canonical DB groups and roles via UserIdentity before externalId fallback', () => {
   const result = runDelegatedJwtRequest({
     payload: {
       sub: 'google-sub-001',
       roles: ['user'],
+      group_ids: ['stale-admin-group'],
       org_id: 'stale-token-organization',
       jti: 'tok-identity-ctx',
+    },
+    overrides: {
+      AUTH_GROUP_TO_ROLE_MAP: 'stale-admin-group=admin,general_affairs=mgmt',
     },
     stubDb: true,
     stubIdentity: {
@@ -933,6 +937,8 @@ test('auth plugin: jwt resolves DB context via UserIdentity before externalId fa
   assert.equal(body.user?.orgId, 'org-from-identity');
   assert.deepEqual(body.user?.groupIds, ['general_affairs']);
   assert.deepEqual(body.user?.groupAccountIds, ['group-account-1']);
+  assert.deepEqual(body.user?.roles, ['user', 'mgmt']);
+  assert.equal(body.user?.roles.includes('admin'), false);
   assert.equal(body.user?.userId, 'legacy-external-1');
   assert.equal(body.user?.auth?.principalUserId, 'google-sub-001');
   assert.equal(body.user?.auth?.userAccountId, 'user-account-1');

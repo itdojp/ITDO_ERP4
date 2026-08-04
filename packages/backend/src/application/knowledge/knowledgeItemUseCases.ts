@@ -1,9 +1,8 @@
 import {
-  knowledgeDeletionReasonCodes,
+  isKnowledgeDeletionReasonCode,
   knowledgeMutableFields,
   type KnowledgeActor,
   type KnowledgeAuditActor,
-  type KnowledgeDeletionReasonCode,
   type KnowledgeItem,
   type KnowledgeItemReadRepository,
   type KnowledgeItemScope,
@@ -14,12 +13,6 @@ import {
   type KnowledgeSourceType,
   type KnowledgeUnitOfWork,
 } from './knowledgeItemPorts.js';
-
-function isKnowledgeDeletionReasonCode(
-  value: string,
-): value is KnowledgeDeletionReasonCode {
-  return knowledgeDeletionReasonCodes.some((code) => code === value);
-}
 
 export type KnowledgeApplicationFailure = {
   ok: false;
