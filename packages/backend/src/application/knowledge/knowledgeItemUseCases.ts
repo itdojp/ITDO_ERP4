@@ -157,9 +157,24 @@ const percentEncodedByte = /%([0-9a-f]{2})/gi;
 type NestedUrlParseResult =
   { kind: 'url'; url: URL } | { kind: 'none' } | { kind: 'unsafe' };
 
+function isCredentialQueryNameDeep(name: string): boolean {
+  let candidate = name;
+  const decodeLayerLimit = Math.floor(candidate.length / 2) + 1;
+  for (let decodeCount = 0; decodeCount <= decodeLayerLimit; decodeCount += 1) {
+    if (isCredentialQueryName(candidate)) return true;
+    const decoded = candidate.replace(percentEncodedByte, (_match, byte) =>
+      String.fromCharCode(Number.parseInt(byte, 16)),
+    );
+    if (decoded === candidate) return false;
+    if (decodeCount === decodeLayerLimit) return true;
+    candidate = decoded;
+  }
+  return true;
+}
+
 function hasCredentialQueryParams(value: string): boolean {
   const params = new URLSearchParams(value.replace(/;/g, '&'));
-  return [...params.keys()].some(isCredentialQueryName);
+  return [...params.keys()].some(isCredentialQueryNameDeep);
 }
 
 function hasCredentialQueryText(value: string): boolean {
@@ -222,7 +237,7 @@ function hasCredentialFragment(url: URL): boolean {
 
 function hasCredentialBearingNestedUrl(url: URL, depth = 0): boolean {
   for (const [name, value] of url.searchParams.entries()) {
-    if (isCredentialQueryName(name)) return true;
+    if (isCredentialQueryNameDeep(name)) return true;
     const nested = parseNestedHttpUrl(value);
     if (nested.kind === 'unsafe') return true;
     if (nested.kind === 'none') continue;

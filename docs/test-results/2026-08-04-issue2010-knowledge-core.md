@@ -14,7 +14,7 @@
 - repository port / Prisma adapter / application use case / Fastify CRUD API
 - versionによるoptimistic concurrency、logical delete / restore
 - business rowと`AuditLog`を同じPrisma transactionで確定するfail-closed audit writer
-- canonical URLのuserinfo、安全なfragment、tracking queryを除去する一方、credential-like queryはrequest全体を拒否する。入力長でboundedな多重percent-decoding、malformed prefix、先頭slashのないpath-relative URL、semicolon/decoded delimiter、入れ子およびtop-level hash-router fragment内のcredential query textを検査し、解析上限到達をfail closedとする。正規化後の過大URLも拒否する
+- canonical URLのuserinfo、安全なfragment、tracking queryを除去する一方、credential-like queryはrequest全体を拒否する。入力長でboundedなquery名/値の多重percent-decoding、malformed prefix、先頭slashのないpath-relative URL、semicolon/decoded delimiter、入れ子およびtop-level hash-router fragment内のcredential query textを検査し、解析上限到達をfail closedとする。正規化後の過大URLも拒否する
 - OpenAPI snapshot、backup/restore前提、bounded-context registry
 
 ## Security / privacy contract
@@ -38,7 +38,7 @@
 | ----------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------- |
 | focused Knowledge tests                                           | PASS   | 35 tests: use case 15、Prisma adapter 8、route 8、schema/migration/OpenAPI 4                                                       |
 | auth cache invalidation focused                                   | PASS   | 3 subprocess tests: TTL有効時の手動membership削除、group rename/deactivate。失効後Knowledge list/count/detail/createも確認         |
-| focused coverage                                                  | PASS   | adapter S/L/F 100%、B 87.50%；use case S/L 96.27%、B 86.39%、F 97.14%；route S/L 99.47%、B 77.14%、F 100%。閾値の追加・低下なし    |
+| focused coverage                                                  | PASS   | adapter S/L/F 100%、B 87.50%；use case S/L 96.33%、B 86.46%、F 97.22%；route S/L 99.47%、B 77.14%、F 100%。閾値の追加・低下なし    |
 | empty PostgreSQL `prisma migrate deploy` / status                 | PASS   | PostgreSQL 15 pinned digestへ94 migrationsを適用、schema up to date                                                                |
 | existing shared-audit conflict migration                          | PASS   | base migrations後に衝突fixtureを入れても`NOT VALID`追加成功。既存1件を保持し、新規invalid拒否・allowlisted write許可               |
 | old-app compatibility                                             | PASS   | migration後DBへ`origin/main`（`ee34c790`）の旧schema/client/applicationをbuildして接続し、`healthz=200` / `readyz=200`             |

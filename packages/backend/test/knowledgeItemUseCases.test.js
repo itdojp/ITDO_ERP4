@@ -568,6 +568,26 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
   assert.equal(result.value.canonicalUrl, 'https://example.com/path?a=1&b=2');
   assert.equal(JSON.stringify(harness.audits).includes('password'), false);
 
+  const encodeLayers = (value, count) => {
+    let encoded = value;
+    for (let layer = 0; layer < count; layer += 1) {
+      encoded = encodeURIComponent(encoded);
+    }
+    return encoded;
+  };
+  const encodeQueryNameLayers = (value, count) => {
+    let encoded = [...value]
+      .map(
+        (character) =>
+          `%${character.codePointAt(0).toString(16).padStart(2, '0')}`,
+      )
+      .join('');
+    for (let layer = 1; layer < count; layer += 1) {
+      encoded = encodeURIComponent(encoded);
+    }
+    return encoded;
+  };
+
   const signedUrl = await harness.service.create({
     actor: actor('owner-1'),
     auditActor: auditActor('owner-1'),
@@ -613,6 +633,11 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     'https://target.example/file?download=1;token=credential-value',
     'https://target.example/file?download=1%3Bprivatekey%3Dcredential-value',
     'https://target.example/file?download=1%26token%3Dcredential-value',
+    `https://target.example/file?${encodeQueryNameLayers('token', 2)}=credential-value`,
+    `https://target.example/file?${encodeQueryNameLayers('privatekey', 12)}=credential-value`,
+    `https://target.example/file?download=1;${encodeQueryNameLayers('token', 2)}=credential-value`,
+    `https://target.example/#/callback?${encodeQueryNameLayers('privatekey', 2)}=credential-value`,
+    `https://target.example/file?%ZZ${encodeQueryNameLayers('token', 2)}=credential-value`,
   ]) {
     const fragmentCredentialUrl = await harness.service.create({
       actor: actor('owner-1'),
@@ -630,13 +655,6 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
 
   const nestedCredentialUrl =
     'https://drive.google.com/open?resourcekey=drive-resource-key-value&authuser=0';
-  const encodeLayers = (value, count) => {
-    let encoded = value;
-    for (let layer = 0; layer < count; layer += 1) {
-      encoded = encodeURIComponent(encoded);
-    }
-    return encoded;
-  };
   for (const nestedValue of [
     encodeURIComponent(nestedCredentialUrl),
     encodeURIComponent(nestedCredentialUrl.replace('https://', 'HTTPS://')),
@@ -706,6 +724,16 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     },
   });
   assert.equal(harmlessSemicolonQuery.ok, true);
+  const harmlessDeeplyEncodedQueryName = await harmlessHarness.service.create({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    body: {
+      scope: 'personal',
+      sourceType: 'web',
+      canonicalUrl: `https://example.com/file?${encodeQueryNameLayers('sort', 12)}=asc`,
+    },
+  });
+  assert.equal(harmlessDeeplyEncodedQueryName.ok, true);
 
   for (const credentialQuery of [
     'auth_key=credential-value',
@@ -752,6 +780,11 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     'https://target.example/file?download=1;token=credential-value',
     'https://target.example/file?download=1%3Bprivatekey%3Dcredential-value',
     'https://target.example/file?download=1%26token%3Dcredential-value',
+    `https://target.example/file?${encodeQueryNameLayers('token', 2)}=credential-value`,
+    `https://target.example/file?${encodeQueryNameLayers('privatekey', 12)}=credential-value`,
+    `https://target.example/file?download=1;${encodeQueryNameLayers('token', 2)}=credential-value`,
+    `https://target.example/#/callback?${encodeQueryNameLayers('privatekey', 2)}=credential-value`,
+    `https://target.example/file?%ZZ${encodeQueryNameLayers('token', 2)}=credential-value`,
   ]) {
     const fragmentRejectedUpdate = await harness.service.update({
       actor: actor('owner-1'),
