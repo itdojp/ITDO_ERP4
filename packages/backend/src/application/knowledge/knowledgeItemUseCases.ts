@@ -127,6 +127,10 @@ function isCredentialQueryName(name: string): boolean {
     compact === 'keypairid' ||
     compact === 'privatekey' ||
     compact === 'resourcekey' ||
+    compact === 'samlart' ||
+    compact === 'samlartifact' ||
+    compact === 'samlrequest' ||
+    compact === 'relaystate' ||
     compact === 'policy' ||
     compact === 'expires' ||
     compact === 'auth' ||
@@ -182,8 +186,24 @@ function isCredentialQueryNameDeep(name: string): boolean {
 }
 
 function hasCredentialQueryParams(value: string): boolean {
-  const params = new URLSearchParams(value.replace(/;/g, '&'));
-  return [...params.keys()].some(isCredentialQueryNameDeep);
+  // Query-like values are another nesting layer (for example
+  // `next=client_assertion=...`). Each queued value is strictly shorter than
+  // its parent, so the inspection remains bounded by the input length.
+  const pending = [value.replace(/;/g, '&')];
+  const inspected = new Set<string>();
+  while (pending.length > 0) {
+    const candidate = pending.pop();
+    if (candidate === undefined || inspected.has(candidate)) continue;
+    inspected.add(candidate);
+    const params = new URLSearchParams(candidate);
+    for (const [name, nestedValue] of params.entries()) {
+      if (isCredentialQueryNameDeep(name)) return true;
+      if (nestedValue.includes('=') && nestedValue.length < candidate.length) {
+        pending.push(nestedValue.replace(/;/g, '&'));
+      }
+    }
+  }
+  return false;
 }
 
 function hasCredentialQueryText(value: string): boolean {
@@ -202,6 +222,11 @@ function hasCredentialQueryText(value: string): boolean {
   return false;
 }
 
+function hasCredentialQueryAssignment(value: string): boolean {
+  const assignmentIndex = value.indexOf('=');
+  return assignmentIndex > 0 && hasCredentialQueryParams(value);
+}
+
 function parseNestedHttpUrl(value: string): NestedUrlParseResult {
   let candidate = value.trim();
   // Every successful layer replaces at least one three-character %HH sequence
@@ -209,7 +234,12 @@ function parseNestedHttpUrl(value: string): NestedUrlParseResult {
   // therefore covers every possible layer while remaining input-size bounded.
   const decodeLayerLimit = Math.floor(candidate.length / 2) + 1;
   for (let decodeCount = 0; decodeCount <= decodeLayerLimit; decodeCount += 1) {
-    if (hasCredentialQueryText(candidate)) return { kind: 'unsafe' };
+    if (
+      hasCredentialQueryAssignment(candidate) ||
+      hasCredentialQueryText(candidate)
+    ) {
+      return { kind: 'unsafe' };
+    }
     const lowerCandidate = candidate.toLowerCase();
     const absoluteUrlIndex = lowerCandidate.search(/https?:\/\//);
     const parseCandidate =
