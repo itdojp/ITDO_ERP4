@@ -13547,8 +13547,9 @@
                     "type": "integer"
                   },
                   "reasonCode": {
-                    "maxLength": 100,
-                    "minLength": 1,
+                    "enum": [
+                      "owner_request"
+                    ],
                     "type": "string"
                   }
                 },

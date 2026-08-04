@@ -21,6 +21,10 @@ export const knowledgeSourceTypes = [
 ] as const;
 export type KnowledgeSourceType = (typeof knowledgeSourceTypes)[number];
 
+export const knowledgeDeletionReasonCodes = ['owner_request'] as const;
+export type KnowledgeDeletionReasonCode =
+  (typeof knowledgeDeletionReasonCodes)[number];
+
 export type KnowledgeActor = {
   userId: string;
   organizationId?: string;
@@ -142,7 +146,7 @@ export interface KnowledgeItemWriteRepository {
     itemId: string;
     expectedVersion: number;
     deletedAt: Date;
-    reasonCode: string;
+    reasonCode: KnowledgeDeletionReasonCode;
   }): Promise<KnowledgeItem | null>;
   restoreOwnedVersioned(input: {
     actor: KnowledgeActor;
@@ -168,7 +172,7 @@ export type KnowledgeAuditEntry = {
   action: KnowledgeAuditAction;
   actor: KnowledgeAuditActor;
   targetId: string;
-  reasonCode?: string;
+  reasonCode?: KnowledgeDeletionReasonCode;
   metadata: KnowledgeAuditMetadata;
 };
 

@@ -5,6 +5,7 @@ import {
   type KnowledgeItemService,
 } from '../application/knowledge/knowledgeItemUseCases.js';
 import {
+  knowledgeDeletionReasonCodes,
   knowledgeItemScopes,
   knowledgeItemStatuses,
   knowledgeSourceTypes,
@@ -176,7 +177,7 @@ const deleteBodySchema = {
   required: ['expectedVersion', 'reasonCode'],
   properties: {
     expectedVersion: { type: 'integer', minimum: 1 },
-    reasonCode: { type: 'string', minLength: 1, maxLength: 100 },
+    reasonCode: { type: 'string', enum: knowledgeDeletionReasonCodes },
   },
 } as const;
 

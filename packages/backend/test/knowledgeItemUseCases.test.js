@@ -391,6 +391,28 @@ test('logical delete hides normal reads and restore is owner/version protected',
   );
 });
 
+test('logical delete rejects arbitrary reason text before item or audit mutation', async () => {
+  const harness = createHarness();
+  const created = await createPersonal(harness);
+  assert.equal(created.ok, true);
+
+  const rejected = await harness.service.remove({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: created.value.id,
+    expectedVersion: 1,
+    reasonCode: 'pasted credential or free-form explanation',
+  });
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.statusCode, 400);
+  assert.equal(harness.items.get(created.value.id).deletedAt, null);
+  assert.equal(harness.items.get(created.value.id).version, 1);
+  assert.deepEqual(
+    harness.audits.map((entry) => entry.action),
+    ['knowledge_item_created'],
+  );
+});
+
 test('mandatory audit failure rolls back the business write and propagates', async () => {
   const harness = createHarness({ failAudit: true });
   await assert.rejects(() => createPersonal(harness), /audit unavailable/);

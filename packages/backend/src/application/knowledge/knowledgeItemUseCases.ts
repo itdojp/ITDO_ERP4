@@ -1,7 +1,9 @@
 import {
+  knowledgeDeletionReasonCodes,
   knowledgeMutableFields,
   type KnowledgeActor,
   type KnowledgeAuditActor,
+  type KnowledgeDeletionReasonCode,
   type KnowledgeItem,
   type KnowledgeItemReadRepository,
   type KnowledgeItemScope,
@@ -12,6 +14,12 @@ import {
   type KnowledgeSourceType,
   type KnowledgeUnitOfWork,
 } from './knowledgeItemPorts.js';
+
+function isKnowledgeDeletionReasonCode(
+  value: string,
+): value is KnowledgeDeletionReasonCode {
+  return knowledgeDeletionReasonCodes.some((code) => code === value);
+}
 
 export type KnowledgeApplicationFailure = {
   ok: false;
@@ -420,7 +428,9 @@ export function createKnowledgeItemService(dependencies: {
       const versionError = validateExpectedVersion(input.expectedVersion);
       if (versionError) return versionError;
       const reasonCode = input.reasonCode.trim();
-      if (!reasonCode) return invalid('reasonCode is required');
+      if (!isKnowledgeDeletionReasonCode(reasonCode)) {
+        return invalid('reasonCode must be a defined deletion reason code');
+      }
       return dependencies.unitOfWork.run(async (transaction) => {
         const current = await transaction.items.findOwnedForMutation({
           actor: input.actor,

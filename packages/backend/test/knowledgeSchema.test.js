@@ -86,4 +86,12 @@ test('knowledge OpenAPI operations document the role-based forbidden response', 
       `${method.toUpperCase()} ${path} must document 403`,
     );
   }
+
+  const deleteSchema =
+    openapi.paths?.['/knowledge/items/{id}']?.delete?.requestBody?.content?.[
+      'application/json'
+    ]?.schema;
+  assert.deepEqual(deleteSchema?.properties?.reasonCode?.enum, [
+    'owner_request',
+  ]);
 });

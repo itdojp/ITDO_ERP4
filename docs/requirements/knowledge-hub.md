@@ -125,6 +125,8 @@ storage、AI、Chat 等の外部副作用では DB transaction を開いたま�
 
 Knowledge audit metadata は event ごとの typed allowlist から構築し、保存前に redaction/length bound を適用する。現行 route の任意 metadata pass-through や検索語保存を Knowledge 実装へコピーしない。
 
+Knowledge item の logical delete 理由は自由記述ではなく有限のreason code allowlistとし、Workstream 02では `owner_request` のみを受け付ける。本文、説明文、credentialは`deletedReason`または`AuditLog.reasonCode`へ保存しない。後続reason codeは要件・API schema・負例テストを同時に更新する場合だけ追加する。
+
 ## 6. 費用・運用契約
 
 ### 6.1 責任

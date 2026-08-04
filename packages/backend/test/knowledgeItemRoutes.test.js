@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import test from 'node:test';
 
 import { registerKnowledgeItemRoutes } from '../dist/routes/knowledgeItems.js';
+import { mapErrorToResponse } from '../dist/services/errors.js';
 
 function item(overrides = {}) {
   return {
@@ -33,6 +34,10 @@ function item(overrides = {}) {
 
 async function buildRouteServer(service, user = {}) {
   const app = Fastify();
+  app.setErrorHandler((error, _request, reply) => {
+    const mapped = mapErrorToResponse(error, { env: 'test' });
+    return reply.status(mapped.statusCode).send(mapped.body);
+  });
   app.addHook('onRequest', async (request) => {
     request.user = {
       userId: 'owner-1',
@@ -151,6 +156,30 @@ test('knowledge route schema rejects scope changes and unknown fields before the
     },
   });
   assert.equal(response.statusCode, 400);
+  assert.equal(calls, 0);
+});
+
+test('knowledge delete route rejects arbitrary reason text before the service', async (t) => {
+  let calls = 0;
+  const app = await buildRouteServer(
+    serviceStub({
+      remove: async () => {
+        calls += 1;
+        return { ok: true, value: item() };
+      },
+    }),
+  );
+  t.after(() => app.close());
+
+  const response = await app.inject({
+    method: 'DELETE',
+    url: '/knowledge/items/item-1',
+    payload: {
+      expectedVersion: 1,
+      reasonCode: 'pasted credential or free-form explanation',
+    },
+  });
+  assert.equal(response.statusCode, 400, response.body);
   assert.equal(calls, 0);
 });
 
