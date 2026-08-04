@@ -168,11 +168,11 @@ Knowledge item の logical delete 理由は自由記述ではなく有限のreas
 - organization item作成時はactor自身のactive `groupAccountIds` に含まれるgrantを1件以上要求する。WS02のgrantはread-onlyで、update/delete/restoreはownerだけに限定する。
 - JWT/sessionでDB user contextを解決できた場合、`orgId`、`groupIds`、`groupAccountIds`およびgroup由来roleはDB正本で置換し、signed tokenのstale group claimをunionしない。独立したrole claimは既存認証契約として保持する。development/test専用header authはsynthetic contextをそのまま信頼し、DB canonical化を行わない。
 - scopeとgrantの変更をgeneric PATCHへ含めない。personalからorganizationへの移行、grant管理、共有field選択はWorkstream 07の専用preview/confirm use caseで扱う。
-- update/delete/restoreはpositive integerの `expectedVersion` を必須とし、stale owner requestは`409 version_conflict`、owner外または存在しないIDは同じ`404 not_found` contractとする。
+- update/delete/restoreはPostgreSQL `Int`範囲内のpositive integer（1〜2,147,483,647）の `expectedVersion` を必須とし、stale owner requestは`409 version_conflict`、owner外または存在しないIDは同じ`404 not_found` contractとする。
 - logical delete後は通常list/count/detailから除外する。restoreはowner、deleted state、version一致を同じtransaction内で検証する。
 - create/update/delete/restoreは、業務rowとallowlist metadataだけの `AuditLog` を同じPrisma transactionでcommitする。監査失敗時はbusiness writeもrollbackし、既存fail-open `logAudit()` は使用しない。
 - audit metadataはscope、status、version、変更field名とboundedなprincipal/actor/scope provenanceだけを許可し、本文、canonical URL、query、reason text、token ID、secretを含めない。
-- canonical URLはHTTP(S)だけを受け付け、userinfo、fragment、既知tracking parameterを除去する。署名・token・credential・session・OAuth等のcredential-like queryを含むURLは一部だけを保存せずrequest全体を拒否する。query名はseparatorとcamel-case境界でもtoken化し、`auth_key`、`x_sig`、`privateKey`等の別名化で回避できないことを負例で固定する。query値に埋め込まれたHTTP(S)/relative URLは、入力長から導出した有限回数ですべての多重percent-encoding層を解析する。malformed prefixでURL parserを迂回してもcredential-like query textを拒否し、解析上限へ到達する防御経路はfail closedとする。
+- canonical URLはHTTP(S)だけを受け付け、userinfo、fragment、既知tracking parameterを除去する。署名・token・credential・session・OAuth等のcredential-like queryを含むURLは一部だけを保存せずrequest全体を拒否する。query名はseparatorとcamel-case境界でもtoken化し、`auth_key`、`x_sig`、`privateKey`、`privatekey`等の別名化で回避できないことを負例で固定する。query値に埋め込まれたHTTP(S)/relative URLは、入力長から導出した有限回数ですべての多重percent-encoding層を解析する。先頭slashのないpath-relative参照、hash-router fragment内query、malformed prefixでURL parserを迂回してもcredential-like query textを拒否し、解析上限へ到達する防御経路はfail closedとする。
 - Workstream 02はDB metadataだけを追加し、binary snapshot、artifact、provider URL、Chat share、label、AIを扱わない。
 
 ### 03. Label / ANY-ALL-NOT search / saved view

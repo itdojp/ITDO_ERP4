@@ -142,14 +142,17 @@ test('knowledge route normalizes malformed authenticated context to a fail-close
   });
 });
 
-test('knowledge route schema rejects scope changes and unknown fields before the service', async (t) => {
+test('knowledge route schema rejects scope changes and out-of-range versions before the service', async (t) => {
   let calls = 0;
+  const called = async () => {
+    calls += 1;
+    return { ok: true, value: item() };
+  };
   const app = await buildRouteServer(
     serviceStub({
-      update: async () => {
-        calls += 1;
-        return { ok: true, value: item() };
-      },
+      update: called,
+      remove: called,
+      restore: called,
     }),
   );
   t.after(() => app.close());
@@ -164,7 +167,39 @@ test('knowledge route schema rejects scope changes and unknown fields before the
     },
   });
   assert.equal(response.statusCode, 400);
+
+  for (const request of [
+    {
+      method: 'PATCH',
+      url: '/knowledge/items/item-1',
+      payload: { expectedVersion: 2147483648, title: 'not written' },
+    },
+    {
+      method: 'DELETE',
+      url: '/knowledge/items/item-1',
+      payload: {
+        expectedVersion: 2147483648,
+        reasonCode: 'owner_request',
+      },
+    },
+    {
+      method: 'POST',
+      url: '/knowledge/items/item-1/restore',
+      payload: { expectedVersion: 2147483648 },
+    },
+  ]) {
+    const invalidVersion = await app.inject(request);
+    assert.equal(invalidVersion.statusCode, 400, invalidVersion.body);
+  }
   assert.equal(calls, 0);
+
+  const maximumVersion = await app.inject({
+    method: 'PATCH',
+    url: '/knowledge/items/item-1',
+    payload: { expectedVersion: 2147483647, title: 'bounded' },
+  });
+  assert.equal(maximumVersion.statusCode, 200, maximumVersion.body);
+  assert.equal(calls, 1);
 });
 
 test('knowledge delete route rejects arbitrary reason text before the service', async (t) => {

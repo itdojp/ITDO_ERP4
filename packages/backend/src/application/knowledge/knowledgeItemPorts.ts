@@ -33,6 +33,7 @@ export const knowledgeItemInputLimits = {
   itemId: 100,
   listLimit: 100,
   listOffset: 10000,
+  expectedVersion: 2147483647,
 } as const;
 
 export const knowledgeDeletionReasonCodes = ['owner_request'] as const;

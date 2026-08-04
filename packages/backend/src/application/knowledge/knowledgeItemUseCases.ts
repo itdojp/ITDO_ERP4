@@ -122,6 +122,7 @@ function isCredentialQueryName(name: string): boolean {
     compact === 'awsaccesskeyid' ||
     compact === 'key' ||
     compact === 'keypairid' ||
+    compact === 'privatekey' ||
     compact === 'resourcekey' ||
     compact === 'policy' ||
     compact === 'expires' ||
@@ -152,7 +153,6 @@ function isCredentialQueryName(name: string): boolean {
 }
 
 const percentEncodedByte = /%([0-9a-f]{2})/gi;
-const malformedPercentEncoding = /%(?![0-9a-f]{2})/i;
 
 type NestedUrlParseResult =
   { kind: 'url'; url: URL } | { kind: 'none' } | { kind: 'unsafe' };
@@ -174,12 +174,7 @@ function parseNestedHttpUrl(value: string): NestedUrlParseResult {
   // therefore covers every possible layer while remaining input-size bounded.
   const decodeLayerLimit = Math.floor(candidate.length / 2) + 1;
   for (let decodeCount = 0; decodeCount <= decodeLayerLimit; decodeCount += 1) {
-    if (
-      malformedPercentEncoding.test(candidate) &&
-      hasCredentialQueryText(candidate)
-    ) {
-      return { kind: 'unsafe' };
-    }
+    if (hasCredentialQueryText(candidate)) return { kind: 'unsafe' };
     const lowerCandidate = candidate.toLowerCase();
     const absoluteUrlIndex = lowerCandidate.search(/https?:\/\//);
     const parseCandidate =
@@ -211,9 +206,7 @@ function parseNestedHttpUrl(value: string): NestedUrlParseResult {
 
 function hasCredentialFragment(url: URL): boolean {
   if (!url.hash) return false;
-  const fragment = url.hash.slice(1);
-  const fragmentParams = new URLSearchParams(fragment);
-  return [...fragmentParams.keys()].some(isCredentialQueryName);
+  return hasCredentialQueryText(url.hash);
 }
 
 function hasCredentialBearingNestedUrl(url: URL, depth = 0): boolean {
@@ -326,8 +319,14 @@ function uniqueStrings(values: string[] | undefined): string[] {
 function validateExpectedVersion(
   value: number,
 ): KnowledgeApplicationFailure | null {
-  if (!Number.isInteger(value) || value < 1) {
-    return invalid('expectedVersion must be a positive integer');
+  if (
+    !Number.isInteger(value) ||
+    value < 1 ||
+    value > knowledgeItemInputLimits.expectedVersion
+  ) {
+    return invalid(
+      `expectedVersion must be an integer between 1 and ${knowledgeItemInputLimits.expectedVersion}`,
+    );
   }
   return null;
 }

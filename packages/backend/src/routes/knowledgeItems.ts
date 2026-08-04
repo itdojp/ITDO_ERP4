@@ -198,7 +198,11 @@ const updateBodySchema = {
   additionalProperties: false,
   required: ['expectedVersion'],
   properties: {
-    expectedVersion: { type: 'integer', minimum: 1 },
+    expectedVersion: {
+      type: 'integer',
+      minimum: 1,
+      maximum: knowledgeItemInputLimits.expectedVersion,
+    },
     ...commonMutableProperties,
   },
 } as const;
@@ -207,7 +211,13 @@ const versionBodySchema = {
   type: 'object',
   additionalProperties: false,
   required: ['expectedVersion'],
-  properties: { expectedVersion: { type: 'integer', minimum: 1 } },
+  properties: {
+    expectedVersion: {
+      type: 'integer',
+      minimum: 1,
+      maximum: knowledgeItemInputLimits.expectedVersion,
+    },
+  },
 } as const;
 
 const deleteBodySchema = {
@@ -215,7 +225,11 @@ const deleteBodySchema = {
   additionalProperties: false,
   required: ['expectedVersion', 'reasonCode'],
   properties: {
-    expectedVersion: { type: 'integer', minimum: 1 },
+    expectedVersion: {
+      type: 'integer',
+      minimum: 1,
+      maximum: knowledgeItemInputLimits.expectedVersion,
+    },
     reasonCode: { type: 'string', enum: knowledgeDeletionReasonCodes },
   },
 } as const;

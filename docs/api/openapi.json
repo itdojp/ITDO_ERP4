@@ -13549,6 +13549,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "expectedVersion": {
+                    "maximum": 2147483647,
                     "minimum": 1,
                     "type": "integer"
                   },
@@ -14114,6 +14115,7 @@
                     "type": "string"
                   },
                   "expectedVersion": {
+                    "maximum": 2147483647,
                     "minimum": 1,
                     "type": "integer"
                   },
@@ -14487,6 +14489,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "expectedVersion": {
+                    "maximum": 2147483647,
                     "minimum": 1,
                     "type": "integer"
                   }

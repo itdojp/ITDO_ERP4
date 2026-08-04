@@ -589,6 +589,7 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     'x_sig=credential-value',
     'private_key=credential-value',
     'AuthKey=credential-value',
+    'privatekey=credential-value',
   ]) {
     const credentialUrl = await harness.service.create({
       actor: actor('owner-1'),
@@ -622,6 +623,10 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     encodeLayers(nestedCredentialUrl, 12),
     `%ZZ${encodeLayers(nestedCredentialUrl, 2)}`,
     encodeURIComponent('/open?resourcekey=drive-resource-key-value'),
+    encodeURIComponent('callback?token=credential-value'),
+    encodeURIComponent(
+      'https://target.example/#/callback?token=credential-value',
+    ),
   ]) {
     const nestedUrl = await harness.service.create({
       actor: actor('owner-1'),
@@ -665,7 +670,7 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     body: {
       scope: 'personal',
       sourceType: 'web',
-      canonicalUrl: `https://example.com/search?q=${encodeURIComponent('What?state=done')}`,
+      canonicalUrl: `https://example.com/search?q=${encodeURIComponent('What?sort=done')}`,
     },
   });
   assert.equal(harmlessQueryLikeText.ok, true);
@@ -690,6 +695,10 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
   for (const nestedValue of [
     encodeLayers(nestedCredentialUrl, 4),
     `%ZZ${encodeLayers(nestedCredentialUrl, 2)}`,
+    encodeURIComponent('callback?token=credential-value'),
+    encodeURIComponent(
+      'https://target.example/#/callback?token=credential-value',
+    ),
   ]) {
     const nestedRejectedUpdate = await harness.service.update({
       actor: actor('owner-1'),
@@ -950,6 +959,46 @@ test('service boundary rejects unbounded read queries and item ids without repos
     }),
     0,
   );
+
+  const oversizedVersion = 2147483648;
+  for (const mutation of [
+    () =>
+      harness.service.update({
+        actor: actor('owner-1'),
+        auditActor: auditActor('owner-1'),
+        itemId: created.value.id,
+        body: { expectedVersion: oversizedVersion, title: 'must not update' },
+      }),
+    () =>
+      harness.service.remove({
+        actor: actor('owner-1'),
+        auditActor: auditActor('owner-1'),
+        itemId: created.value.id,
+        expectedVersion: oversizedVersion,
+        reasonCode: 'owner_request',
+      }),
+    () =>
+      harness.service.restore({
+        actor: actor('owner-1'),
+        auditActor: auditActor('owner-1'),
+        itemId: created.value.id,
+        expectedVersion: oversizedVersion,
+      }),
+  ]) {
+    const result = await mutation();
+    assert.equal(result.ok, false);
+    assert.equal(result.statusCode, 400);
+  }
+  assert.equal(harness.items.get(created.value.id).version, 1);
+
+  const maximumVersion = await harness.service.update({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: created.value.id,
+    body: { expectedVersion: 2147483647, title: 'bounded but stale' },
+  });
+  assert.equal(maximumVersion.ok, false);
+  assert.equal(maximumVersion.statusCode, 409);
 
   const originalId = created.value.id;
   const oversizedId = 'i'.repeat(101);
