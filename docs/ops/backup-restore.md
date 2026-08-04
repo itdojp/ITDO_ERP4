@@ -168,7 +168,7 @@ Workstream 03 PR1以降は、同じPostgreSQL bundleに`KnowledgeLabel`、`Knowl
 
 - 全label/saved-view tableとenum、partial unique index、FK/CHECKが存在する
 - 各active labelにself closure path（depth 0）が1件あり、non-self pathはdepth 1以上、depth 8超過とorphan pathが0件
-- personal labelのorganization IDあり、organization labelのorganization IDなし、blank owner、version 1未満が0件
+- ownership契約に反するrowが0件（personal labelで`organizationId IS NOT NULL`、organization labelで`organizationId IS NULL`、blank owner、version 1未満）
 - orphan alias/item-label/group-grant/saved-view-filterが0件であり、item-labelのAI以外のconfidenceがNULLである
 - item/grant/label/path/assignment/saved-view/audit件数がprivate backup manifestの期待値と一致する
 - 旧Workstream 02 imageへapplication rollbackしても既存Knowledge item CRUD、healthz、readyzを維持する
