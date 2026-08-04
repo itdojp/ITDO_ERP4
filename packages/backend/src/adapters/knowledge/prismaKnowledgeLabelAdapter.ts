@@ -226,6 +226,8 @@ function mapAssignment(
     assignmentSource: row.assignmentSource,
     assignedBy: row.assignedBy,
     confidenceBasisPoints: row.confidenceBasisPoints,
+    detachedAt: row.detachedAt,
+    detachedBy: row.detachedBy,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -931,12 +933,11 @@ export class PrismaKnowledgeItemLabelRepository implements KnowledgeItemLabelWri
     if (!canIncrementVersion(input.expectedVersion)) {
       return { ok: false as const, reason: 'version_conflict' as const };
     }
-    const existing = await this.client.knowledgeItemLabel.findUnique({
+    const existing = await this.client.knowledgeItemLabel.findFirst({
       where: {
-        knowledgeItemId_labelId: {
-          knowledgeItemId: input.itemId,
-          labelId: input.labelId,
-        },
+        knowledgeItemId: input.itemId,
+        labelId: input.labelId,
+        detachedAt: null,
       },
     });
     if (existing) return { ok: false as const, reason: 'duplicate' as const };
@@ -979,13 +980,13 @@ export class PrismaKnowledgeItemLabelRepository implements KnowledgeItemLabelWri
     if (!canIncrementVersion(input.expectedVersion)) {
       return { ok: false as const, reason: 'version_conflict' as const };
     }
-    const assignment = await this.client.knowledgeItemLabel.findUnique({
+    const assignment = await this.client.knowledgeItemLabel.findFirst({
       where: {
-        knowledgeItemId_labelId: {
-          knowledgeItemId: input.itemId,
-          labelId: input.labelId,
-        },
+        knowledgeItemId: input.itemId,
+        labelId: input.labelId,
+        detachedAt: null,
       },
+      orderBy: { id: 'asc' },
     });
     if (!assignment) {
       return {
@@ -1008,18 +1009,17 @@ export class PrismaKnowledgeItemLabelRepository implements KnowledgeItemLabelWri
     if (updated.count !== 1) {
       return { ok: false as const, reason: 'version_conflict' as const };
     }
-    await this.client.knowledgeItemLabel.delete({
-      where: {
-        knowledgeItemId_labelId: {
-          knowledgeItemId: input.itemId,
-          labelId: input.labelId,
-        },
+    const detached = await this.client.knowledgeItemLabel.update({
+      where: { id: assignment.id },
+      data: {
+        detachedAt: new Date(),
+        detachedBy: input.actor.userId,
       },
     });
     return {
       ok: true as const,
       value: {
-        assignment: mapAssignment(assignment),
+        assignment: mapAssignment(detached),
         itemVersion: input.expectedVersion + 1,
       },
     };

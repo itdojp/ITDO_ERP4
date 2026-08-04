@@ -107,6 +107,8 @@ CREATE TABLE "KnowledgeItemLabel" (
     "assignmentSource" "KnowledgeLabelAssignmentSource" NOT NULL,
     "assignedBy" TEXT NOT NULL,
     "confidenceBasisPoints" INTEGER,
+    "detachedAt" TIMESTAMP(3),
+    "detachedBy" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -120,6 +122,19 @@ CREATE TABLE "KnowledgeItemLabel" (
       (
         "assignmentSource" = 'ai_suggestion'
         AND "confidenceBasisPoints" BETWEEN 0 AND 10000
+      )
+    ),
+    CONSTRAINT "KnowledgeItemLabel_detached_state_check" CHECK (
+      (
+        "detachedAt" IS NULL
+        AND "detachedBy" IS NULL
+      )
+      OR
+      (
+        "detachedAt" IS NOT NULL
+        AND "detachedBy" IS NOT NULL
+        AND LENGTH(BTRIM("detachedBy")) > 0
+        AND "detachedBy" = BTRIM("detachedBy")
       )
     )
 );
@@ -221,13 +236,13 @@ CREATE UNIQUE INDEX "KnowledgeLabelPath_ancestorId_descendantId_key" ON "Knowled
 CREATE INDEX "KnowledgeLabelPath_descendantId_depth_ancestorId_idx" ON "KnowledgeLabelPath"("descendantId", "depth", "ancestorId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "KnowledgeItemLabel_knowledgeItemId_labelId_key" ON "KnowledgeItemLabel"("knowledgeItemId", "labelId");
+CREATE UNIQUE INDEX "KnowledgeItemLabel_active_knowledgeItemId_labelId_key" ON "KnowledgeItemLabel"("knowledgeItemId", "labelId") WHERE "detachedAt" IS NULL;
 
 -- CreateIndex
-CREATE INDEX "KnowledgeItemLabel_knowledgeItemId_updatedAt_id_idx" ON "KnowledgeItemLabel"("knowledgeItemId", "updatedAt", "id");
+CREATE INDEX "KnowledgeItemLabel_knowledgeItemId_detachedAt_updatedAt_id_idx" ON "KnowledgeItemLabel"("knowledgeItemId", "detachedAt", "updatedAt", "id");
 
 -- CreateIndex
-CREATE INDEX "KnowledgeItemLabel_labelId_updatedAt_id_idx" ON "KnowledgeItemLabel"("labelId", "updatedAt", "id");
+CREATE INDEX "KnowledgeItemLabel_labelId_detachedAt_updatedAt_id_idx" ON "KnowledgeItemLabel"("labelId", "detachedAt", "updatedAt", "id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "KnowledgeLabelGroupGrant_labelId_groupAccountId_key" ON "KnowledgeLabelGroupGrant"("labelId", "groupAccountId");

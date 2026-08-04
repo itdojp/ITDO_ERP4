@@ -76,6 +76,8 @@ export type KnowledgeItemLabelAssignment = {
   assignmentSource: KnowledgeLabelAssignmentSource;
   assignedBy: string;
   confidenceBasisPoints: number | null;
+  detachedAt: Date | null;
+  detachedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
 };

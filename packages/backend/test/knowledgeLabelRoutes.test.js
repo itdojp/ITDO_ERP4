@@ -58,6 +58,8 @@ function assignment() {
     assignmentSource: 'manual',
     assignedBy: 'owner-1',
     confidenceBasisPoints: null,
+    detachedAt: null,
+    detachedBy: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -93,7 +95,14 @@ function serviceStub(overrides = {}) {
     }),
     detach: async () => ({
       ok: true,
-      value: { assignment: assignment(), itemVersion: 2 },
+      value: {
+        assignment: {
+          ...assignment(),
+          detachedAt: now,
+          detachedBy: 'owner-1',
+        },
+        itemVersion: 2,
+      },
     }),
     ...overrides,
   };
@@ -441,4 +450,15 @@ test('list/alias/grant/assignment responses use documented ISO and capability co
   });
   assert.equal(attached.statusCode, 201, attached.body);
   assert.equal(attached.json().assignment.createdAt, now.toISOString());
+  assert.equal(attached.json().assignment.detachedAt, null);
+  assert.equal(attached.json().assignment.detachedBy, null);
+
+  const detached = await app.inject({
+    method: 'DELETE',
+    url: '/knowledge/items/item-1/labels/label-1',
+    payload: { expectedVersion: 1 },
+  });
+  assert.equal(detached.statusCode, 200, detached.body);
+  assert.equal(detached.json().assignment.detachedAt, now.toISOString());
+  assert.equal(detached.json().assignment.detachedBy, 'owner-1');
 });

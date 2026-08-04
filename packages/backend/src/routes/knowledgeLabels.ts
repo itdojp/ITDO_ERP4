@@ -147,6 +147,8 @@ const assignmentResponseSchema = {
     'assignmentSource',
     'assignedBy',
     'confidenceBasisPoints',
+    'detachedAt',
+    'detachedBy',
     'createdAt',
     'updatedAt',
   ],
@@ -168,6 +170,8 @@ const assignmentResponseSchema = {
         { type: 'null' },
       ],
     },
+    detachedAt: nullableDateTime,
+    detachedBy: nullableString,
     createdAt: { type: 'string', format: 'date-time' },
     updatedAt: { type: 'string', format: 'date-time' },
   },
@@ -352,6 +356,7 @@ function toGrantResponse(grant: KnowledgeLabelGroupGrant) {
 function toAssignmentResponse(assignment: KnowledgeItemLabelAssignment) {
   return {
     ...assignment,
+    detachedAt: assignment.detachedAt?.toISOString() ?? null,
     createdAt: assignment.createdAt.toISOString(),
     updatedAt: assignment.updatedAt.toISOString(),
   };

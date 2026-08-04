@@ -14540,6 +14540,15 @@
                           "format": "date-time",
                           "type": "string"
                         },
+                        "detachedAt": {
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "detachedBy": {
+                          "nullable": true,
+                          "type": "string"
+                        },
                         "itemId": {
                           "type": "string"
                         },
@@ -14557,6 +14566,8 @@
                         "assignmentSource",
                         "assignedBy",
                         "confidenceBasisPoints",
+                        "detachedAt",
+                        "detachedBy",
                         "createdAt",
                         "updatedAt"
                       ],
@@ -14799,6 +14810,15 @@
                           "format": "date-time",
                           "type": "string"
                         },
+                        "detachedAt": {
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "detachedBy": {
+                          "nullable": true,
+                          "type": "string"
+                        },
                         "itemId": {
                           "type": "string"
                         },
@@ -14816,6 +14836,8 @@
                         "assignmentSource",
                         "assignedBy",
                         "confidenceBasisPoints",
+                        "detachedAt",
+                        "detachedBy",
                         "createdAt",
                         "updatedAt"
                       ],

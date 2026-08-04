@@ -11,7 +11,7 @@
 
 - expand-onlyのlabel/alias/closure-path/item-label/`use|manage` group-grant/saved-view/filter schemaとmigration
 - personal owner-only、organization一致 + active明示grantのlabel visibility/use、ownerまたは`manage`によるmaster mutation
-- label CRUD、alias追加/削除、closure-path reparent、grant全置換、item attach/detach
+- label CRUD、alias追加/削除、closure-path reparent、grant全置換、item attach/logical detach/re-attach
 - item owner/versionとlabel useを同じserializable transactionで評価するassignment境界
 - business writeとallowlist `AuditLog`を同じtransactionで確定するfail-closed監査
 - label masterの一定audit targetと、raw label ID/name/alias/filterを共有監査へ保存しないprivacy境界
@@ -28,24 +28,25 @@ PR2へ残す範囲はANY/ALL/NOT検索、descendant filter、ACL済みcount/face
 - reparentはsubtree/pathをlockし、self path、cycle、domain、最大depth 8、broken pathをtransaction内で検証する。
 - label master audit targetは`knowledge_labels` / `label_master`の一定markerとする。label ID/name/slug/alias、grant principal、検索語/filter bodyは共有監査metadataへ保存しない。
 - item-label監査は認可済みitemだけをtargetにし、label IDをmetadataへ保存しない。監査失敗はbusiness mutationもrollbackする。
+- item-label detachはassignment rowを物理削除せず、`detachedAt` / `detachedBy`で来歴を保持する。active assignmentだけをpartial unique indexで一意化し、同じlabelの再attachでは新しいactive rowを作る。
 - production identifier、provider URL、Drive/S3 credential、外部接続は使用していない。
 
 ## Focused verification
 
-| Command / check                               | Result | Evidence                                                                                                                           |
-| --------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Prisma Client generate / schema validate      | PASS   | 7 model / enum / relation / CHECK / index contractを検証                                                                           |
-| backend TypeScript typecheck / build          | PASS   | strict TypeScript、OpenAPI再生成に使用                                                                                             |
-| focused Knowledge item + label tests          | PASS   | 54 tests、fail/skip/todo 0。schema/migration/OpenAPI/harness 13、adapter 10、route 6、use case 12、既存Knowledge item route 13     |
-| PostgreSQL 15 integration                     | PASS   | fixed digest、tmpfs、loopback ephemeral port。`labels=14`、`paths=51`、`assignments=1`、`labelAudits=21`、`maxDepth=8`             |
-| migration deploy / status                     | PASS   | 空DBへ全migration適用後、schema up to date                                                                                         |
-| hierarchy/ACL transaction checks              | PASS   | cycle、cross-domain、depth 8許可/depth 9拒否、personal/org ACL、use vs manage、attach/detach、grant revoke、audit failure rollback |
-| concurrency / lock non-enumeration            | PASS   | 同一slug同時確保、逆向きreparent、同時attach/detachを競合正規化。権限外label/item requestは既存row lockを待たず同じnot-found       |
-| DB CHECK negative checks                      | PASS   | assignment confidence contract、scope/owner/org、closure self/depth、version/normalization                                         |
-| audit privacy check                           | PASS   | label master target一定、raw label ID不在、失敗監査時rollback                                                                      |
-| integration shell syntax / safety source test | PASS   | pinned image、tmpfs、ephemeral container、volume/system resetなし                                                                  |
-| focused source coverage                       | PASS   | statements 65.53%、branches 66.44%、functions 69.13%、lines 65.53%、28 tests、fail/skip/todo 0                                     |
-| `git diff --check`                            | PASS   | tracked/new 23 filesをstagingしたfinal candidateでwhitespace error 0                                                               |
+| Command / check                               | Result | Evidence                                                                                                                                             |
+| --------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prisma Client generate / schema validate      | PASS   | 7 model / enum / relation / CHECK / index contractを検証                                                                                             |
+| backend TypeScript typecheck / build          | PASS   | strict TypeScript、OpenAPI再生成に使用                                                                                                               |
+| focused Knowledge item + label tests          | PASS   | 55 tests、fail/skip/todo 0。schema/migration/OpenAPI/harness 13、adapter 11、route 6、use case 12、既存Knowledge item route 13                       |
+| PostgreSQL 15 integration                     | PASS   | fixed digest、tmpfs、loopback ephemeral port。`labels=14`、`paths=51`、`assignments=3`（active 2 / detached 1）、`labelAudits=22`、`maxDepth=8`      |
+| migration deploy / status                     | PASS   | 空DBへ全migration適用後、schema up to date                                                                                                           |
+| hierarchy/ACL transaction checks              | PASS   | cycle、cross-domain、depth 8許可/depth 9拒否、personal/org ACL、use vs manage、attach/logical detach/re-attach、grant revoke、audit failure rollback |
+| concurrency / lock non-enumeration            | PASS   | 同一slug同時確保、逆向きreparent、同時attach/detachを競合正規化。権限外label/item requestは既存row lockを待たず同じnot-found                         |
+| DB CHECK negative checks                      | PASS   | assignment confidence/detach provenance contract、active assignment partial unique、scope/owner/org、closure self/depth、version/normalization       |
+| audit privacy check                           | PASS   | label master target一定、raw label ID不在、失敗監査時rollback                                                                                        |
+| integration shell syntax / safety source test | PASS   | pinned image、tmpfs、ephemeral container、volume/system resetなし                                                                                    |
+| focused source coverage                       | PASS   | statements 68.13%、branches 66.45%、functions 72.83%、lines 68.13%、29 tests、fail/skip/todo 0                                                       |
+| `git diff --check`                            | PASS   | tracked/new 23 filesをstagingしたfinal candidateでwhitespace error 0                                                                                 |
 
 ### PostgreSQL integration summary
 
@@ -54,8 +55,10 @@ PR2へ残す範囲はANY/ALL/NOT検索、descendant filter、ACL済みcount/face
   "result": "PASS",
   "labels": 14,
   "paths": 51,
-  "assignments": 1,
-  "labelAudits": 21,
+  "assignments": 3,
+  "activeAssignments": 2,
+  "detachedAssignments": 1,
+  "labelAudits": 22,
   "maxDepth": 8
 }
 ```
@@ -82,21 +85,23 @@ tracked harness `./scripts/test-knowledge-label-old-app.sh`を使い、次の順
 
 exact old artifactは`git archive`でrepository内の`.codex-local/tmp/`へ展開し、ephemeral containerとscratch treeは検証後に削除した。`/tmp`、追加worktree、persistent Podman volume/network、`rm -rf`、`git reset/clean`は使用していない。検証後にmatching container/scratch directoryが0件であることを確認した。既存repository/worktreeの未コミット変更は変更・破棄していない。
 
+logical detach対応後にも同じexact old-app harnessを再実行し、旧94 migrationsから新95 migrationsへのexpand-only適用、既存WS02 row保持、旧application CRUD、`healthz`、`readyz`が引き続きPASSであることを確認した。
+
 ## Repository-wide quality gates
 
 | Gate                                              | Result  | Notes                                                                                             |
 | ------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------- |
-| backend lint / format / typecheck / build         | PASS    | 全てexit 0                                                                                        |
-| backend full test                                 | PASS    | 1,602 tests、fail/skip/todo 0                                                                     |
+| backend lint / format / typecheck / build         | PASS    | logical detach対応後のfinal candidateで全てexit 0                                                 |
+| backend full test                                 | PASS    | 1,603 tests、fail/skip/todo 0                                                                     |
 | bounded-context architecture / coverage           | PASS    | dependency-cruiser 279 modules / 1,069 dependencies、source 264 / target 221、未分類・重複・違反0 |
 | frontend lint / format / typecheck / build / test | PASS    | 82 files / 468 tests、fail 0                                                                      |
 | `make ops-quality`                                | PASS    | ops docs/scripts、Quadlet/profile、backup/storage-readiness testsを含む                           |
 | backend/frontend audit                            | PASS    | 両packageとも0 vulnerabilities、dependency変更なし                                                |
 | docs index / image links                          | PASS    | index生成test/check、115 image links / 346 markdown files                                         |
 | OpenAPI export consistency / diff                 | PASS    | source再生成snapshotとbyte-identical、`openapi-diff` breaking change 0                            |
-| changed-diff secret scan                          | PASS    | 23 changed/new filesでprivate key、AWS/GitHub/Google token、Bearer JWTのhigh-confidence pattern 0 |
-| exact-head GitHub Actions / CodeQL / Link Check   | PENDING | Draft PR作成後に確認                                                                              |
-| independent correctness/security/Copilot review   | PENDING | exact head、unresolved thread 0を要求                                                             |
+| repository secret scan                            | PASS    | tracked 1,873 filesでallowlist適用後のhigh-confidence pattern 0                                   |
+| exact-head GitHub Actions / CodeQL / Link Check   | PENDING | push後の新しいexact headで再確認                                                                  |
+| independent correctness/security/Copilot review   | PENDING | 新しいexact head、unresolved thread 0を要求                                                       |
 
 ## Migration / rollback
 
@@ -104,7 +109,7 @@ exact old artifactは`git archive`でrepository内の`.codex-local/tmp/`へ展�
 - `KnowledgeItem`と`GroupAccount`にはPrisma relation fieldだけを追加し、対応tableのDDLを変更しない。
 - old appが拡張後DBでCRUD/health/readinessを維持することを上記exact artifactで確認した。
 - application rollbackでは新label/saved-view tableとenumを保持したままWorkstream 02 imageへ戻す。migration逆適用、table drop、row物理削除は行わない。
-- PR1の全metadata/grant/path/assignment/auditは既存PostgreSQL backup bundleの対象となる。binary/provider objectは追加しない。
+- PR1の全metadata/grant/path/active assignment/detached assignment provenance/auditは既存PostgreSQL backup bundleの対象となる。binary/provider objectは追加しない。
 
 ## 未実施・非対象
 

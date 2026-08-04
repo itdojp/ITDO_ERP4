@@ -290,6 +290,66 @@ test('label audit writer allowlists metadata and never stores a raw label identi
   );
 });
 
+test('detach logically retires the active assignment and preserves its provenance row', async () => {
+  const createdAt = new Date('2026-08-05T00:00:00.000Z');
+  const active = {
+    id: 'assignment-1',
+    knowledgeItemId: 'item-1',
+    labelId: 'label-1',
+    assignmentSource: 'ai_suggestion',
+    assignedBy: 'owner-1',
+    confidenceBasisPoints: 7500,
+    detachedAt: null,
+    detachedBy: null,
+    createdAt,
+    updatedAt: createdAt,
+  };
+  let findArgs;
+  let updateArgs;
+  const repository = new PrismaKnowledgeItemLabelRepository({
+    knowledgeItemLabel: {
+      findFirst: async (args) => {
+        findArgs = args;
+        return active;
+      },
+      update: async (args) => {
+        updateArgs = args;
+        return {
+          ...active,
+          ...args.data,
+          updatedAt: args.data.detachedAt,
+        };
+      },
+    },
+    knowledgeItem: {
+      updateMany: async () => ({ count: 1 }),
+    },
+  });
+
+  const result = await repository.detachVersioned({
+    actor: { userId: 'owner-1', groupAccountIds: [] },
+    itemId: 'item-1',
+    labelId: 'label-1',
+    expectedVersion: 1,
+  });
+
+  assert.deepEqual(findArgs.where, {
+    knowledgeItemId: 'item-1',
+    labelId: 'label-1',
+    detachedAt: null,
+  });
+  assert.deepEqual(updateArgs.where, { id: 'assignment-1' });
+  assert.equal(updateArgs.data.detachedBy, 'owner-1');
+  assert.ok(updateArgs.data.detachedAt instanceof Date);
+  assert.equal(result.ok, true);
+  assert.equal(result.value.itemVersion, 2);
+  assert.equal(result.value.assignment.assignmentSource, 'ai_suggestion');
+  assert.equal(result.value.assignment.assignedBy, 'owner-1');
+  assert.equal(result.value.assignment.confidenceBasisPoints, 7500);
+  assert.equal(result.value.assignment.detachedAt, updateArgs.data.detachedAt);
+  assert.equal(result.value.assignment.detachedBy, 'owner-1');
+});
+
 test('label unit of work binds repositories and audit to one serializable transaction', async () => {
   const transaction = {
     knowledgeLabel: {},

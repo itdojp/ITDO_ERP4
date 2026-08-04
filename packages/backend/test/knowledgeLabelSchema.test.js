@@ -107,7 +107,9 @@ test('assignment, grants, and saved views use typed scalar and normalized relati
   assert.match(itemLabel, /assignmentSource\s+KnowledgeLabelAssignmentSource/);
   assert.match(itemLabel, /assignedBy\s+String/);
   assert.match(itemLabel, /confidenceBasisPoints\s+Int\?/);
-  assert.match(itemLabel, /@@unique\(\[knowledgeItemId, labelId\]\)/);
+  assert.match(itemLabel, /detachedAt\s+DateTime\?/);
+  assert.match(itemLabel, /detachedBy\s+String\?/);
+  assert.doesNotMatch(itemLabel, /@@unique\(\[knowledgeItemId, labelId\]\)/);
 
   const grant = schemaBlock('model', 'KnowledgeLabelGroupGrant');
   assert.match(grant, /capability\s+KnowledgeLabelGrantCapability/);
@@ -192,9 +194,8 @@ test('schema and migration define stable search indexes and active slug uniquene
     '@@index([normalizedAlias, updatedAt, id])',
     '@@unique([ancestorId, descendantId])',
     '@@index([descendantId, depth, ancestorId])',
-    '@@unique([knowledgeItemId, labelId])',
-    '@@index([knowledgeItemId, updatedAt, id])',
-    '@@index([labelId, updatedAt, id])',
+    '@@index([knowledgeItemId, detachedAt, updatedAt, id])',
+    '@@index([labelId, detachedAt, updatedAt, id])',
     '@@unique([labelId, groupAccountId])',
     '@@index([groupAccountId, active, updatedAt, id])',
     '@@unique([savedViewId, labelId])',
@@ -212,9 +213,9 @@ test('schema and migration define stable search indexes and active slug uniquene
     'KnowledgeLabelAlias_normalizedAlias_updatedAt_id_idx',
     'KnowledgeLabelPath_ancestorId_descendantId_key',
     'KnowledgeLabelPath_descendantId_depth_ancestorId_idx',
-    'KnowledgeItemLabel_knowledgeItemId_labelId_key',
-    'KnowledgeItemLabel_knowledgeItemId_updatedAt_id_idx',
-    'KnowledgeItemLabel_labelId_updatedAt_id_idx',
+    'KnowledgeItemLabel_active_knowledgeItemId_labelId_key',
+    'KnowledgeItemLabel_knowledgeItemId_detachedAt_updatedAt_id_idx',
+    'KnowledgeItemLabel_labelId_detachedAt_updatedAt_id_idx',
     'KnowledgeLabelGroupGrant_labelId_groupAccountId_key',
     'KnowledgeLabelGroupGrant_groupAccountId_active_updatedAt_id_idx',
     'KnowledgeSavedView_ownerUserId_deletedAt_updatedAt_id_idx',
@@ -232,6 +233,10 @@ test('schema and migration define stable search indexes and active slug uniquene
   assert.match(
     migration,
     /CREATE UNIQUE INDEX "KnowledgeLabel_active_organization_organizationId_slug_key" ON "KnowledgeLabel"\("organizationId", "slug"\) WHERE "deletedAt" IS NULL AND "scope" = 'organization'/,
+  );
+  assert.match(
+    migration,
+    /CREATE UNIQUE INDEX "KnowledgeItemLabel_active_knowledgeItemId_labelId_key" ON "KnowledgeItemLabel"\("knowledgeItemId", "labelId"\) WHERE "detachedAt" IS NULL/,
   );
 });
 
@@ -270,6 +275,10 @@ test('migration CHECK constraints enforce ownership, normalization, versions, co
   assert.match(
     migration,
     /KnowledgeItemLabel_confidenceBasisPoints_check[\s\S]*?"confidenceBasisPoints" IS NULL[\s\S]*?"assignmentSource" = 'ai_suggestion'[\s\S]*?"confidenceBasisPoints" BETWEEN 0 AND 10000/,
+  );
+  assert.match(
+    migration,
+    /KnowledgeItemLabel_detached_state_check[\s\S]*?"detachedAt" IS NULL[\s\S]*?"detachedBy" IS NULL[\s\S]*?"detachedAt" IS NOT NULL[\s\S]*?"detachedBy" IS NOT NULL[\s\S]*?BTRIM\("detachedBy"\)/,
   );
   assert.match(
     migration,
@@ -429,6 +438,17 @@ test('OpenAPI keeps public assignment provenance manual-only and exposes typed r
   ]);
   assert.equal(assignment.properties.confidenceBasisPoints.minimum, 0);
   assert.equal(assignment.properties.confidenceBasisPoints.maximum, 10000);
+  assert.ok(assignment.required.includes('detachedAt'));
+  assert.ok(assignment.required.includes('detachedBy'));
+  assert.deepEqual(assignment.properties.detachedAt, {
+    type: 'string',
+    format: 'date-time',
+    nullable: true,
+  });
+  assert.deepEqual(assignment.properties.detachedBy, {
+    type: 'string',
+    nullable: true,
+  });
 });
 
 test('OpenAPI preserves label scope, optimistic version, and use/manage grant contracts', () => {

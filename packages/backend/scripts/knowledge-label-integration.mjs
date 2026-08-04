@@ -541,12 +541,45 @@ try {
     'detach personal label',
   );
   assert.equal(detached.itemVersion, 3);
-  assert.equal(
-    await prisma.knowledgeItemLabel.count({
-      where: { knowledgeItemId: personalItem.id },
+  assert.ok(detached.assignment.detachedAt instanceof Date);
+  assert.equal(detached.assignment.detachedBy, owner.userId);
+  const detachedRows = await prisma.knowledgeItemLabel.findMany({
+    where: { knowledgeItemId: personalItem.id, labelId: personalRoot.id },
+    orderBy: { createdAt: 'asc' },
+  });
+  assert.equal(detachedRows.length, 1);
+  assert.equal(detachedRows[0].assignmentSource, 'manual');
+  assert.equal(detachedRows[0].assignedBy, owner.userId);
+  assert.ok(detachedRows[0].detachedAt instanceof Date);
+  assert.equal(detachedRows[0].detachedBy, owner.userId);
+
+  const reattached = expectOk(
+    await labelService.attach({
+      actor: owner,
+      auditActor,
+      itemId: personalItem.id,
+      body: { expectedVersion: 3, labelId: personalRoot.id },
     }),
-    0,
+    'reattach personal label',
   );
+  assert.equal(reattached.itemVersion, 4);
+  assert.equal(reattached.assignment.detachedAt, null);
+  assert.equal(reattached.assignment.detachedBy, null);
+  const assignmentHistory = await prisma.knowledgeItemLabel.findMany({
+    where: { knowledgeItemId: personalItem.id, labelId: personalRoot.id },
+    orderBy: { createdAt: 'asc' },
+  });
+  assert.equal(assignmentHistory.length, 2);
+  assert.equal(
+    assignmentHistory.filter((row) => row.detachedAt === null).length,
+    1,
+  );
+  assert.equal(
+    assignmentHistory.filter((row) => row.detachedAt !== null).length,
+    1,
+  );
+  assert.equal(assignmentHistory[0].assignmentSource, 'manual');
+  assert.equal(assignmentHistory[0].assignedBy, owner.userId);
 
   const organizationItem = expectOk(
     await itemService.create({
@@ -689,6 +722,12 @@ try {
       labels: await prisma.knowledgeLabel.count(),
       paths: await prisma.knowledgeLabelPath.count(),
       assignments: await prisma.knowledgeItemLabel.count(),
+      activeAssignments: await prisma.knowledgeItemLabel.count({
+        where: { detachedAt: null },
+      }),
+      detachedAssignments: await prisma.knowledgeItemLabel.count({
+        where: { detachedAt: { not: null } },
+      }),
       labelAudits: labelAudits.length,
       maxDepth: Math.max(
         ...(

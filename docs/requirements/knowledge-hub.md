@@ -194,7 +194,7 @@ PR1のDB正本は次の7 relationであり、label ID arrayやsaved-view filter 
 - `KnowledgeLabel`: stable owner、`personal|organization` scope、organization、display name、slug、parent、version、logical delete
 - `KnowledgeLabelAlias`: 表示aliasとNFKC/case正規化値
 - `KnowledgeLabelPath`: self rowを含むclosure path
-- `KnowledgeItemLabel`: item-label relation、assignment source、assigner、AI confidence
+- `KnowledgeItemLabel`: item-label relation、assignment source、assigner、AI confidence、logical detachの時刻/実行者。detach後のprovenance rowを保持し、active relationだけをpartial unique indexで一意にする
 - `KnowledgeLabelGroupGrant`: canonical `GroupAccount.id`単位のactive `use|manage`
 - `KnowledgeSavedView`: owner、source/status/date/scope filter、schema/version、logical delete
 - `KnowledgeSavedViewLabelFilter`: saved view、label、`any|all|not`、descendant option

@@ -53,6 +53,8 @@ function assignment(overrides = {}) {
     assignmentSource: 'manual',
     assignedBy: 'owner-1',
     confidenceBasisPoints: null,
+    detachedAt: null,
+    detachedBy: null,
     createdAt: fixedNow,
     updatedAt: fixedNow,
     ...overrides,
@@ -163,7 +165,13 @@ function createHarness(overrides = {}) {
       calls.detach += 1;
       return {
         ok: true,
-        value: { assignment: assignment(), itemVersion: 2 },
+        value: {
+          assignment: assignment({
+            detachedAt: fixedNow,
+            detachedBy: 'owner-1',
+          }),
+          itemVersion: 2,
+        },
       };
     },
   };

@@ -2309,12 +2309,13 @@ model KnowledgeItemLabel {
   assignmentSource      KnowledgeLabelAssignmentSource
   assignedBy            String
   confidenceBasisPoints Int?
+  detachedAt            DateTime?
+  detachedBy            String?
   createdAt             DateTime                       @default(now())
   updatedAt             DateTime                       @updatedAt
 
-  @@unique([knowledgeItemId, labelId])
-  @@index([knowledgeItemId, updatedAt, id])
-  @@index([labelId, updatedAt, id])
+  @@index([knowledgeItemId, detachedAt, updatedAt, id])
+  @@index([labelId, detachedAt, updatedAt, id])
 }
 
 model KnowledgeLabelGroupGrant {
