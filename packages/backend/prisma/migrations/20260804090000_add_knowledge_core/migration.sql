@@ -61,7 +61,9 @@ CREATE TABLE "KnowledgeItemGroupGrant" (
 
 -- AddKnowledgeAuditReasonConstraint
 -- AuditLog is shared, so the finite reason-code contract is scoped to the
--- Knowledge deletion action without changing other audit actions.
+-- Knowledge deletion action without changing other audit actions. NOT VALID
+-- avoids scanning or rejecting pre-existing shared audit rows during this
+-- expand migration while PostgreSQL still enforces the CHECK for new writes.
 ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_knowledge_delete_reason_check" CHECK (
   "action" <> 'knowledge_item_deleted'
   OR
@@ -69,7 +71,7 @@ ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_knowledge_delete_reason_check" C
     "targetTable" IS NOT DISTINCT FROM 'knowledge_items'
     AND "reasonCode" IS NOT DISTINCT FROM 'owner_request'
   )
-);
+) NOT VALID;
 
 -- CreateIndex
 CREATE INDEX "KnowledgeItem_ownerUserId_deletedAt_updatedAt_idx" ON "KnowledgeItem"("ownerUserId", "deletedAt", "updatedAt");

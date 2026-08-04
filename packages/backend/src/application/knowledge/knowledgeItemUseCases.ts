@@ -87,8 +87,30 @@ function normalizeOptional(value: string | null | undefined) {
 }
 
 const trackingQueryName = /^(?:utm_.+|fbclid|gclid|mc_cid|mc_eid)$/i;
+const credentialQueryTokens = new Set([
+  'auth',
+  'authorization',
+  'credential',
+  'jwt',
+  'key',
+  'oauth',
+  'passwd',
+  'password',
+  'secret',
+  'session',
+  'sig',
+  'signature',
+  'ticket',
+  'token',
+]);
 
 function isCredentialQueryName(name: string): boolean {
+  const tokens = name
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  if (tokens.some((token) => credentialQueryTokens.has(token))) return true;
   const compact = name.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (compact.startsWith('xamz') || compact.startsWith('xgoog')) return true;
   if (

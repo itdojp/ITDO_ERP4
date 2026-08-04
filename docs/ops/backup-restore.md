@@ -162,9 +162,26 @@ checkerはendpoint、bucket、object key、KMS識別子をlogへ出さず、AWS 
 
 Knowledge Hub Workstream 02以降は、PostgreSQL bundleに`KnowledgeItem`、`KnowledgeItemGroupGrant`、対応する`AuditLog`が含まれる。WS02単体ではbinary artifactや追加provider objectはない。
 
+共用`AuditLog`の`AuditLog_knowledge_delete_reason_check`はexpand migration時に`NOT VALID`で追加する。これによりmigrationは既存共有rowを走査・拒否せず、新規writeには有限reason contractを直ちに適用する。target deploy後のconstraint validationは、private DB sessionで次の件数だけを確認し、0件の場合に限ってメンテナンス時間内に実施する。
+
+```sql
+SELECT count(*) AS incompatible_knowledge_delete_audits
+FROM "AuditLog"
+WHERE "action" = 'knowledge_item_deleted'
+  AND (
+    "targetTable" IS DISTINCT FROM 'knowledge_items'
+    OR "reasonCode" IS DISTINCT FROM 'owner_request'
+  );
+
+ALTER TABLE "AuditLog"
+  VALIDATE CONSTRAINT "AuditLog_knowledge_delete_reason_check";
+```
+
+件数が0でなければ既存監査rowを自動更新・削除せず停止する。識別子やraw rowを公開証跡へ出さず、予約action衝突の由来と保持要件を確認して別migrationを設計する。`VALIDATE CONSTRAINT`は共有tableを走査するため、productionでは件数・lock影響を事前評価する。
+
 isolated restoreの承認済み検証では、内容を出力せず次を確認する。
 
-- Knowledge table、scope/version CHECK、grant FK/indexが存在する
+- Knowledge table、scope/version CHECK、grant FK/indexが存在する。audit CHECKはtarget環境のvalidation実施状態も確認する
 - item/grant/auditの件数がbackup manifestのprivate期待値と一致する
 - `version < 1`、personalかつorganization IDあり、organizationかつorganization IDなしのrowが0件
 - orphan grantが0件

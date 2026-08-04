@@ -13,7 +13,7 @@ function auditActor(userId) {
   return { userId, actorRole: 'user', requestId: 'request-1', source: 'api' };
 }
 
-function createHarness({ failAudit = false } = {}) {
+function createHarness({ failAuditAction } = {}) {
   const items = new Map();
   const grants = new Map();
   const audits = [];
@@ -180,7 +180,9 @@ function createHarness({ failAudit = false } = {}) {
           items: repository,
           audit: {
             write: async (entry) => {
-              if (failAudit) throw new Error('audit unavailable');
+              if (entry.action === failAuditAction) {
+                throw new Error('audit unavailable');
+              }
               audits.push(entry);
             },
           },
@@ -266,6 +268,19 @@ test('organization visibility requires matching organization and an explicit act
   });
   assert.equal(allowed.ok, true);
 
+  const allowedActor = actor('viewer-1', {
+    organizationId: 'org-1',
+    groupAccountIds: ['group-1'],
+  });
+  assert.deepEqual(
+    await harness.service.list({
+      actor: allowedActor,
+      query: { limit: 50, offset: 0 },
+    }),
+    [created.value],
+  );
+  assert.equal(await harness.service.count({ actor: allowedActor }), 1);
+
   for (const deniedActor of [
     actor('viewer-2', {
       organizationId: 'org-2',
@@ -283,6 +298,14 @@ test('organization visibility requires matching organization and an explicit act
     });
     assert.equal(denied.ok, false);
     assert.equal(denied.statusCode, 404);
+    assert.deepEqual(
+      await harness.service.list({
+        actor: deniedActor,
+        query: { limit: 50, offset: 0 },
+      }),
+      [],
+    );
+    assert.equal(await harness.service.count({ actor: deniedActor }), 0);
   }
 });
 
@@ -327,6 +350,22 @@ test('owner mutations enforce optimistic concurrency and hide items from non-own
   });
   assert.equal(outsiderUpdate.ok, false);
   assert.equal(outsiderUpdate.statusCode, 404);
+
+  const outsiderDelete = await harness.service.remove({
+    actor: actor('other-user'),
+    auditActor: auditActor('other-user'),
+    itemId: created.value.id,
+    expectedVersion: 1,
+    reasonCode: 'owner_request',
+  });
+  assert.equal(outsiderDelete.ok, false);
+  assert.equal(outsiderDelete.statusCode, 404);
+  assert.equal(harness.items.get(created.value.id).version, 1);
+  assert.equal(harness.items.get(created.value.id).deletedAt, null);
+  assert.deepEqual(
+    harness.audits.map((entry) => entry.action),
+    ['knowledge_item_created'],
+  );
 
   const updated = await harness.service.update({
     actor: actor('owner-1'),
@@ -414,10 +453,79 @@ test('logical delete rejects arbitrary reason text before item or audit mutation
 });
 
 test('mandatory audit failure rolls back the business write and propagates', async () => {
-  const harness = createHarness({ failAudit: true });
+  const harness = createHarness({
+    failAuditAction: 'knowledge_item_created',
+  });
   await assert.rejects(() => createPersonal(harness), /audit unavailable/);
   assert.equal(harness.items.size, 0);
   assert.equal(harness.audits.length, 0);
+});
+
+test('mandatory audit failure rolls back every owner mutation', async () => {
+  for (const action of [
+    'knowledge_item_updated',
+    'knowledge_item_deleted',
+    'knowledge_item_restored',
+  ]) {
+    const harness = createHarness({ failAuditAction: action });
+    const created = await createPersonal(harness);
+    assert.equal(created.ok, true);
+
+    if (action === 'knowledge_item_updated') {
+      await assert.rejects(
+        () =>
+          harness.service.update({
+            actor: actor('owner-1'),
+            auditActor: auditActor('owner-1'),
+            itemId: created.value.id,
+            body: { expectedVersion: 1, title: 'must rollback' },
+          }),
+        /audit unavailable/,
+      );
+      assert.equal(harness.items.get(created.value.id).title, 'Private note');
+      assert.equal(harness.items.get(created.value.id).version, 1);
+    } else if (action === 'knowledge_item_deleted') {
+      await assert.rejects(
+        () =>
+          harness.service.remove({
+            actor: actor('owner-1'),
+            auditActor: auditActor('owner-1'),
+            itemId: created.value.id,
+            expectedVersion: 1,
+            reasonCode: 'owner_request',
+          }),
+        /audit unavailable/,
+      );
+      assert.equal(harness.items.get(created.value.id).deletedAt, null);
+      assert.equal(harness.items.get(created.value.id).version, 1);
+    } else {
+      const removed = await harness.service.remove({
+        actor: actor('owner-1'),
+        auditActor: auditActor('owner-1'),
+        itemId: created.value.id,
+        expectedVersion: 1,
+        reasonCode: 'owner_request',
+      });
+      assert.equal(removed.ok, true);
+      await assert.rejects(
+        () =>
+          harness.service.restore({
+            actor: actor('owner-1'),
+            auditActor: auditActor('owner-1'),
+            itemId: created.value.id,
+            expectedVersion: 2,
+          }),
+        /audit unavailable/,
+      );
+      assert.notEqual(harness.items.get(created.value.id).deletedAt, null);
+      assert.equal(harness.items.get(created.value.id).version, 2);
+    }
+
+    assert.equal(
+      harness.audits.some((entry) => entry.action === action),
+      false,
+    );
+  }
 });
 
 test('canonical URL normalization removes credentials, fragments, tracking, and secret query values', async () => {
@@ -453,6 +561,10 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
   for (const credentialQuery of [
     'key=google-api-key-value',
     'resourcekey=drive-resource-key-value',
+    'auth_key=credential-value',
+    'x_sig=credential-value',
+    'private_key=credential-value',
+    'AuthKey=credential-value',
   ]) {
     const credentialUrl = await harness.service.create({
       actor: actor('owner-1'),
@@ -467,6 +579,29 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     assert.equal(credentialUrl.statusCode, 400);
   }
   assert.equal(harness.items.size, 1);
+
+  for (const credentialQuery of [
+    'auth_key=credential-value',
+    'x-sig=credential-value',
+    'privateKey=credential-value',
+  ]) {
+    const rejectedUpdate = await harness.service.update({
+      actor: actor('owner-1'),
+      auditActor: auditActor('owner-1'),
+      itemId: result.value.id,
+      body: {
+        expectedVersion: 1,
+        canonicalUrl: `https://example.com/file?${credentialQuery}`,
+      },
+    });
+    assert.equal(rejectedUpdate.ok, false);
+    assert.equal(rejectedUpdate.statusCode, 400);
+  }
+  assert.equal(harness.items.get(result.value.id).version, 1);
+  assert.equal(
+    harness.items.get(result.value.id).canonicalUrl,
+    'https://example.com/path?a=1&b=2',
+  );
 
   const rejected = await harness.service.update({
     actor: actor('owner-1'),

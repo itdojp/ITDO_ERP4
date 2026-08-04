@@ -211,12 +211,16 @@ function toResponse(item: KnowledgeItem) {
 
 function actorFromRequest(request: FastifyRequest): KnowledgeActor {
   const userId = request.user?.userId;
+  const orgId = request.user?.orgId;
+  const groupAccountIds = request.user?.groupAccountIds;
   return {
     userId: typeof userId === 'string' ? userId.trim() : '',
-    organizationId: request.user?.orgId?.trim() || undefined,
+    organizationId:
+      typeof orgId === 'string' ? orgId.trim() || undefined : undefined,
     groupAccountIds: [
       ...new Set(
-        (request.user?.groupAccountIds ?? [])
+        (Array.isArray(groupAccountIds) ? groupAccountIds : [])
+          .filter((value): value is string => typeof value === 'string')
           .map((value) => value.trim())
           .filter(Boolean),
       ),

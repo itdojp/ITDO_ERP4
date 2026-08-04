@@ -113,7 +113,7 @@ test('knowledge create route maps authenticated org/group context and returns th
   assert.equal(response.json().capturedAt, '2026-08-04T09:00:00.000Z');
 });
 
-test('knowledge route normalizes a malformed authenticated user id to an empty fail-closed actor', async (t) => {
+test('knowledge route normalizes malformed authenticated context to a fail-closed actor', async (t) => {
   let capturedActor;
   const app = await buildRouteServer(
     serviceStub({
@@ -122,7 +122,11 @@ test('knowledge route normalizes a malformed authenticated user id to an empty f
         return [];
       },
     }),
-    { userId: 42 },
+    {
+      userId: 42,
+      orgId: 42,
+      groupAccountIds: [42, ' group-1 ', null, ''],
+    },
   );
   t.after(() => app.close());
 
@@ -131,7 +135,11 @@ test('knowledge route normalizes a malformed authenticated user id to an empty f
     url: '/knowledge/items',
   });
   assert.equal(response.statusCode, 200, response.body);
-  assert.equal(capturedActor.userId, '');
+  assert.deepEqual(capturedActor, {
+    userId: '',
+    organizationId: undefined,
+    groupAccountIds: ['group-1'],
+  });
 });
 
 test('knowledge route schema rejects scope changes and unknown fields before the service', async (t) => {

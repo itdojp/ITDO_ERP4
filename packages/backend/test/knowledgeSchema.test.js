@@ -67,7 +67,7 @@ test('knowledge migration is additive and enforces scope/version invariants', ()
   );
   assert.match(
     migration,
-    /AuditLog_knowledge_delete_reason_check.*"action" <> 'knowledge_item_deleted'.*"targetTable" IS NOT DISTINCT FROM 'knowledge_items'.*"reasonCode" IS NOT DISTINCT FROM 'owner_request'/s,
+    /AuditLog_knowledge_delete_reason_check.*"action" <> 'knowledge_item_deleted'.*"targetTable" IS NOT DISTINCT FROM 'knowledge_items'.*"reasonCode" IS NOT DISTINCT FROM 'owner_request'.*NOT VALID/s,
   );
   assert.match(
     migration,

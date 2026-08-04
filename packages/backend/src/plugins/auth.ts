@@ -580,8 +580,9 @@ async function validateAndEnrichUserContext(req: any, reply: any) {
       respondUnauthorized(req, reply, 'user_inactive');
       return false;
     }
-    // Once canonical DB context is available, signed/header group claims are
-    // stale hints only. Do not let them reintroduce group-derived privileges.
+    // Once canonical DB context is available for JWT/session auth, signed
+    // group claims are stale hints only. Do not let them reintroduce
+    // group-derived privileges. Synthetic header auth does not call this path.
     const canonicalGroupIds = unionStrings(undefined, resolved.groupIds);
     const derivedRoles = deriveRolesFromGroups(canonicalGroupIds);
     const mergedRoles = expandRoles(
