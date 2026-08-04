@@ -340,6 +340,7 @@ type UserDbContext =
       blocked: false;
       userAccountId: string;
       identityId?: string;
+      identityExpiresAt?: number;
       legacyUserId: string;
       orgId?: string;
       groupIds: string[];
@@ -358,7 +359,11 @@ function mapResolvedUserContext(
       group: { id: string; displayName: string; active: boolean };
     }>;
   },
-  options: { userAccountId: string; identityId?: string },
+  options: {
+    userAccountId: string;
+    identityId?: string;
+    identityExpiresAt?: number;
+  },
 ): UserDbContext {
   if (!user.active || user.deletedAt) {
     return { blocked: true as const };
@@ -381,6 +386,7 @@ function mapResolvedUserContext(
     blocked: false as const,
     userAccountId: options.userAccountId,
     identityId: options.identityId,
+    identityExpiresAt: options.identityExpiresAt,
     legacyUserId,
     orgId: user.organization ?? undefined,
     groupIds,
@@ -388,19 +394,27 @@ function mapResolvedUserContext(
   };
 }
 
+function identityEffectiveUntilMs(identity: {
+  effectiveUntil?: Date | string | null;
+}) {
+  const effectiveUntilRaw = identity.effectiveUntil;
+  if (!effectiveUntilRaw) return undefined;
+  const effectiveUntil =
+    effectiveUntilRaw instanceof Date
+      ? effectiveUntilRaw
+      : new Date(effectiveUntilRaw);
+  const effectiveUntilMs = effectiveUntil.getTime();
+  return Number.isNaN(effectiveUntilMs) ? undefined : effectiveUntilMs;
+}
+
 function isIdentityCurrentlyUsable(identity: {
   status: string;
   effectiveUntil?: Date | string | null;
 }) {
   if (identity.status !== 'active') return false;
-  const effectiveUntilRaw = identity.effectiveUntil;
-  if (!effectiveUntilRaw) return true;
-  const effectiveUntil =
-    effectiveUntilRaw instanceof Date
-      ? effectiveUntilRaw
-      : new Date(effectiveUntilRaw);
-  if (Number.isNaN(effectiveUntil.getTime())) return false;
-  if (effectiveUntil.getTime() <= Date.now()) {
+  const effectiveUntilMs = identityEffectiveUntilMs(identity);
+  if (identity.effectiveUntil && effectiveUntilMs === undefined) return false;
+  if (effectiveUntilMs !== undefined && effectiveUntilMs <= Date.now()) {
     return false;
   }
   return true;
@@ -450,6 +464,7 @@ async function resolveUserGroupsFromDb(
     return mapResolvedUserContext(identity.userAccount, {
       userAccountId: identity.userAccountId,
       identityId: identity.id,
+      identityExpiresAt: identityEffectiveUntilMs(identity),
     });
   }
 
@@ -480,6 +495,7 @@ async function resolveUserGroupsFromDb(
         return mapResolvedUserContext(identity.userAccount, {
           userAccountId: identity.userAccountId,
           identityId: identity.id,
+          identityExpiresAt: identityEffectiveUntilMs(identity),
         });
       }
     }
@@ -544,7 +560,15 @@ async function resolveUserDbContext(user: UserContext): Promise<UserDbContext> {
     return cached.value;
   }
   const value = await resolveUserGroupsFromDb(user);
-  userDbContextCache.set(cacheKey, { expiresAt: now + ttlMs, value });
+  const identityExpiresAt =
+    value && !value.blocked ? value.identityExpiresAt : undefined;
+  userDbContextCache.set(cacheKey, {
+    expiresAt:
+      identityExpiresAt === undefined
+        ? now + ttlMs
+        : Math.min(now + ttlMs, identityExpiresAt),
+    value,
+  });
   return value;
 }
 

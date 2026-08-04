@@ -200,6 +200,100 @@ function runManualGroupMutationScenario(scenario) {
   });
 }
 
+function runIdentityCacheExpiryScenario() {
+  const script = String.raw`
+    import { SignJWT, exportSPKI, generateKeyPair } from 'jose';
+
+    process.env.DATABASE_URL = process.env.DATABASE_URL || '${MIN_DATABASE_URL}';
+    process.env.AUTH_MODE = 'jwt';
+    process.env.JWT_ISSUER = 'test-issuer';
+    process.env.JWT_AUDIENCE = 'test-audience';
+    process.env.AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS = '300';
+    process.env.ACTION_POLICY_ENFORCEMENT_PRESET = 'phase2_core';
+    process.env.ACTION_POLICY_REQUIRED_ACTIONS = '';
+    process.env.APPROVAL_EVIDENCE_REQUIRED_ACTIONS = '';
+
+    let currentTime = Date.now();
+    const identityExpiresAt = currentTime + 1_000;
+    Date.now = () => currentTime;
+
+    const { privateKey, publicKey } = await generateKeyPair('RS256');
+    process.env.JWT_PUBLIC_KEY = await exportSPKI(publicKey);
+    const token = await new SignJWT({ sub: 'principal-user', roles: ['user'] })
+      .setProtectedHeader({ alg: 'RS256' })
+      .setIssuer(process.env.JWT_ISSUER)
+      .setAudience(process.env.JWT_AUDIENCE)
+      .setIssuedAt()
+      .setExpirationTime('10m')
+      .sign(privateKey);
+
+    let identityLookups = 0;
+    const { prisma } = await import('./dist/services/db.js');
+    prisma.userIdentity.findFirst = async () => {
+      identityLookups += 1;
+      return {
+        id: 'identity-expiring',
+        status: 'active',
+        effectiveUntil: new Date(identityExpiresAt),
+        userAccountId: 'ua-expiring',
+        userAccount: {
+          id: 'ua-expiring',
+          externalId: 'principal-user',
+          userName: 'legacy-user',
+          active: true,
+          deletedAt: null,
+          organization: 'org-1',
+          memberships: [],
+        },
+      };
+    };
+    prisma.userAccount.findUnique = async () => null;
+    prisma.projectMember.findMany = async () => [];
+    prisma.knowledgeItem.findMany = async () => [];
+
+    const { buildServer } = await import('./dist/server.js');
+    const server = await buildServer({ logger: false });
+    const headers = { authorization: 'Bearer ' + token };
+    try {
+      const beforeExpiry = await server.inject({
+        method: 'GET',
+        url: '/knowledge/items',
+        headers,
+      });
+      currentTime = identityExpiresAt - 1;
+      const cachedBeforeExpiry = await server.inject({
+        method: 'GET',
+        url: '/knowledge/items',
+        headers,
+      });
+      currentTime = identityExpiresAt + 1;
+      const afterExpiry = await server.inject({
+        method: 'GET',
+        url: '/knowledge/items',
+        headers,
+      });
+      process.stdout.write(JSON.stringify({
+        beforeStatus: beforeExpiry.statusCode,
+        cachedBeforeStatus: cachedBeforeExpiry.statusCode,
+        afterStatus: afterExpiry.statusCode,
+        afterBody: JSON.parse(afterExpiry.body || '{}'),
+        identityLookups,
+      }));
+    } finally {
+      await server.close();
+    }
+  `;
+
+  return spawnSync(process.execPath, ['-e', script], {
+    cwd: BACKEND_DIR,
+    env: {
+      ...process.env,
+      DATABASE_URL: MIN_DATABASE_URL,
+    },
+    encoding: 'utf8',
+  });
+}
+
 test('manual membership removal invalidates cached authorization before TTL expiry', () => {
   const result = runManualGroupMutationScenario('membership');
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -236,3 +330,14 @@ for (const scenario of ['rename', 'deactivate']) {
     );
   });
 }
+
+test('identity effectiveUntil bounds the positive DB context cache TTL', () => {
+  const result = runIdentityCacheExpiryScenario();
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout || '{}');
+  assert.equal(payload.beforeStatus, 200);
+  assert.equal(payload.cachedBeforeStatus, 200);
+  assert.equal(payload.afterStatus, 401);
+  assert.equal(payload.afterBody.error?.details?.reason, 'user_inactive');
+  assert.equal(payload.identityLookups, 2);
+});
