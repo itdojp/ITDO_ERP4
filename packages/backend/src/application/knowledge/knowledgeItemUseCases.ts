@@ -151,9 +151,19 @@ function isCredentialQueryName(name: string): boolean {
   ].some((marker) => compact.includes(marker));
 }
 
-function parseNestedHttpUrl(value: string): URL | null {
+const nestedUrlDecodeLimit = 8;
+const percentEncodedByte = /%([0-9a-f]{2})/gi;
+
+type NestedUrlParseResult =
+  { kind: 'url'; url: URL } | { kind: 'none' } | { kind: 'ambiguous' };
+
+function parseNestedHttpUrl(value: string): NestedUrlParseResult {
   let candidate = value.trim();
-  for (let decodeCount = 0; decodeCount <= 2; decodeCount += 1) {
+  for (
+    let decodeCount = 0;
+    decodeCount <= nestedUrlDecodeLimit;
+    decodeCount += 1
+  ) {
     const lowerCandidate = candidate.toLowerCase();
     if (
       lowerCandidate.startsWith('http://') ||
@@ -165,21 +175,25 @@ function parseNestedHttpUrl(value: string): URL | null {
       try {
         const parsed = new URL(candidate, 'https://nested.invalid');
         if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
-          return parsed;
+          return { kind: 'url', url: parsed };
         }
       } catch {
         // Try one more percent-decoding layer below.
       }
     }
-    try {
-      const decoded = decodeURIComponent(candidate);
-      if (decoded === candidate) break;
-      candidate = decoded;
-    } catch {
-      break;
+    const decoded = candidate.replace(percentEncodedByte, (_match, byte) =>
+      String.fromCharCode(Number.parseInt(byte, 16)),
+    );
+    if (decoded === candidate) return { kind: 'none' };
+    if (decodeCount === nestedUrlDecodeLimit) {
+      // Deeply encoded values are ambiguous by design. Reject them instead of
+      // allowing an attacker to move a credential-bearing URL past the
+      // bounded decoding budget.
+      return { kind: 'ambiguous' };
     }
+    candidate = decoded.trim();
   }
-  return null;
+  return { kind: 'none' };
 }
 
 function hasCredentialFragment(url: URL): boolean {
@@ -192,8 +206,10 @@ function hasCredentialFragment(url: URL): boolean {
 function hasCredentialBearingNestedUrl(url: URL, depth = 0): boolean {
   for (const [name, value] of url.searchParams.entries()) {
     if (isCredentialQueryName(name)) return true;
-    const nestedUrl = parseNestedHttpUrl(value);
-    if (!nestedUrl) continue;
+    const nested = parseNestedHttpUrl(value);
+    if (nested.kind === 'ambiguous') return true;
+    if (nested.kind === 'none') continue;
+    const nestedUrl = nested.url;
     if (
       nestedUrl.username ||
       nestedUrl.password ||

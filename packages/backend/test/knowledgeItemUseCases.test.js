@@ -606,10 +606,20 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
 
   const nestedCredentialUrl =
     'https://drive.google.com/open?resourcekey=drive-resource-key-value&authuser=0';
+  const encodeLayers = (value, count) => {
+    let encoded = value;
+    for (let layer = 0; layer < count; layer += 1) {
+      encoded = encodeURIComponent(encoded);
+    }
+    return encoded;
+  };
   for (const nestedValue of [
     encodeURIComponent(nestedCredentialUrl),
     encodeURIComponent(nestedCredentialUrl.replace('https://', 'HTTPS://')),
     encodeURIComponent(encodeURIComponent(nestedCredentialUrl)),
+    encodeLayers(` ${nestedCredentialUrl}`, 2),
+    encodeLayers(nestedCredentialUrl, 4),
+    encodeLayers(nestedCredentialUrl, 12),
     encodeURIComponent('/open?resourcekey=drive-resource-key-value'),
   ]) {
     const nestedUrl = await harness.service.create({
@@ -649,7 +659,7 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     itemId: result.value.id,
     body: {
       expectedVersion: 1,
-      canonicalUrl: `https://example.com/redirect?next=${encodeURIComponent(nestedCredentialUrl)}`,
+      canonicalUrl: `https://example.com/redirect?next=${encodeLayers(nestedCredentialUrl, 4)}`,
     },
   });
   assert.equal(nestedRejectedUpdate.ok, false);
