@@ -337,6 +337,27 @@ test('organization create rejects missing, foreign, and inactive group grants', 
   assert.equal(harness.items.size, 0);
 });
 
+test('personal create rejects organization group grants without writes or audit', async () => {
+  const harness = createHarness();
+  const result = await harness.service.create({
+    actor: actor('owner-1', {
+      organizationId: 'org-1',
+      groupAccountIds: ['group-1'],
+    }),
+    auditActor: auditActor('owner-1'),
+    body: {
+      scope: 'personal',
+      organizationGroupIds: ['group-1'],
+      sourceType: 'manual',
+    },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.statusCode, 400);
+  assert.equal(harness.items.size, 0);
+  assert.deepEqual(harness.audits, []);
+});
+
 test('owner mutations enforce optimistic concurrency and hide items from non-owners', async () => {
   const harness = createHarness();
   const created = await createPersonal(harness);

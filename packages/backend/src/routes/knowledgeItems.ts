@@ -287,10 +287,14 @@ function actorFromRequest(request: FastifyRequest): KnowledgeActor {
 
 function knowledgeActorUserId(request: FastifyRequest) {
   const auth = request.user?.auth;
+  const hasCanonicalIdentity =
+    typeof auth?.identityId === 'string' && auth.identityId.trim().length > 0;
   const candidate =
     auth?.providerType === 'header'
       ? request.user?.userId
-      : auth?.userAccountId;
+      : hasCanonicalIdentity
+        ? auth?.userAccountId
+        : undefined;
   return typeof candidate === 'string' ? candidate.trim() : '';
 }
 

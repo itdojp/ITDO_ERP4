@@ -114,6 +114,38 @@ test('knowledge create route maps authenticated org/group context and returns th
   assert.equal(response.json().capturedAt, '2026-08-04T09:00:00.000Z');
 });
 
+test('knowledge create route preserves personal group grants for service rejection', async (t) => {
+  let capturedBody;
+  const app = await buildRouteServer(
+    serviceStub({
+      create: async ({ body }) => {
+        capturedBody = body;
+        return {
+          ok: false,
+          statusCode: 400,
+          code: 'invalid_request',
+          message: 'personal scope cannot include organization group grants',
+        };
+      },
+    }),
+  );
+  t.after(() => app.close());
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/knowledge/items',
+    payload: {
+      scope: 'personal',
+      sourceType: 'manual',
+      organizationGroupIds: ['group-1'],
+    },
+  });
+
+  assert.equal(response.statusCode, 400, response.body);
+  assert.equal(response.json().error?.code, 'invalid_request');
+  assert.deepEqual(capturedBody.organizationGroupIds, ['group-1']);
+});
+
 test('knowledge ownership uses the stable canonical account id when the legacy identifier changes', async (t) => {
   const capturedActors = [];
   const auth = {
@@ -121,7 +153,9 @@ test('knowledge ownership uses the stable canonical account id when the legacy i
     actorUserId: 'legacy-before',
     scopes: ['knowledge:write'],
     delegated: false,
+    providerType: 'google_oidc',
     userAccountId: 'account-stable-1',
+    identityId: 'identity-stable-1',
   };
   const user = { userId: 'legacy-before', auth };
   const app = await buildRouteServer(
@@ -189,6 +223,8 @@ test('knowledge routes reject non-header actors without a canonical account id',
   const app = await buildRouteServer(
     serviceStub({
       list: called,
+      count: called,
+      detail: called,
       create: called,
       update: called,
       remove: called,
@@ -209,6 +245,8 @@ test('knowledge routes reject non-header actors without a canonical account id',
 
   for (const request of [
     { method: 'GET', url: '/knowledge/items' },
+    { method: 'GET', url: '/knowledge/items/count' },
+    { method: 'GET', url: '/knowledge/items/item-1' },
     {
       method: 'POST',
       url: '/knowledge/items',
@@ -260,6 +298,7 @@ test('knowledge routes reject empty or malformed canonical account ids', async (
           delegated: false,
           providerType: 'google_oidc',
           userAccountId,
+          identityId: 'identity-1',
         },
       },
     );
