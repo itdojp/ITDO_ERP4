@@ -581,20 +581,17 @@ async function validateAndEnrichUserContext(req: any, reply: any) {
       return false;
     }
     const mergedGroupIds = unionStrings(user.groupIds, resolved.groupIds);
-    const mergedGroupAccountIds = unionStrings(
-      user.groupAccountIds,
-      resolved.groupAccountIds,
-    );
     const derivedRoles = deriveRolesFromGroups(mergedGroupIds);
     const mergedRoles = expandRoles(
       unionStrings(user.roles, ['user', ...derivedRoles]),
     );
     user.groupIds = mergedGroupIds;
-    user.groupAccountIds = mergedGroupAccountIds;
+    // Organization authorization must use the current DB-backed context.
+    // Signed claims can be stale, and header auth is intentionally limited to
+    // non-production environments by env validation.
+    user.groupAccountIds = resolved.groupAccountIds;
     user.roles = mergedRoles;
-    if (!user.orgId && resolved.orgId) {
-      user.orgId = resolved.orgId;
-    }
+    user.orgId = resolved.orgId;
     if (user.auth && resolved.userAccountId && !user.auth.userAccountId) {
       user.auth.userAccountId = resolved.userAccountId;
     }

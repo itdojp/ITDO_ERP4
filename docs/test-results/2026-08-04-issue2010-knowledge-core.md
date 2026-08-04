@@ -21,6 +21,8 @@
 - `admin` / `mgmt` roleだけでpersonal itemを通常閲覧しない
 - list/detail/countは同一DB visibility predicateを使い、owner外IDは0 / `not_found`
 - organization readはorg ID一致とactive group grant一致を両方要求する
+- DB user context解決時はsigned tokenのstale organization claimをDB正本で置換し、DBにorganizationがなければclaimを消去する
+- header authはdevelopment/testのsynthetic trust boundaryに限定し、production標準起動はenv validationで`jwt_bff`以外を拒否する
 - organization grant変更とscope変更をgeneric PATCHへ含めない
 - update/delete/restoreはowner + expected version一致を要求する
 - audit metadataはscope/status/version/変更field名とboundedなprincipal/actor/scope provenanceだけを保存し、本文、URL、token ID、secretを保存しない
@@ -28,25 +30,26 @@
 
 ## Verification
 
-| Command / check                                                   | Result | Notes                                                                                                                        |
-| ----------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| focused Knowledge tests                                           | PASS   | 21 tests: use case 7、Prisma adapter 6、route 5、schema/migration 3                                                          |
+| Command / check                                                   | Result | Notes                                                                                                                           |
+| ----------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| focused Knowledge tests                                           | PASS   | 21 tests: use case 7、Prisma adapter 6、route 5、schema/migration 3                                                             |
 | focused coverage                                                  | PASS   | adapter S/L/F 100%、B 84.74%；use case S/L 91.20%、B 65.21%、F 95.23%；route S/L 97.97%、B 64.28%、F 100%。閾値の追加・低下なし |
-| empty PostgreSQL `prisma migrate deploy` / status                 | PASS   | PostgreSQL 15 pinned digestへ94 migrationsを適用、schema up to date                                                          |
-| old-app compatibility                                             | PASS   | migration後DBへ`origin/main`の旧schema/client/applicationをbuildして接続し、`healthz=200` / `readyz=200`                     |
-| local Prisma integration                                          | PASS   | personal/org ACL、URL正規化、version conflict、delete/restore、5 audit events、scope/version DB CHECK                        |
-| `prisma validate`                                                 | PASS   | schema/migration整合                                                                                                         |
-| `npm run lint --prefix packages/backend`                          | PASS   | Knowledge sourceを含む                                                                                                       |
-| `npm run format:check --prefix packages/backend`                  | PASS   | Knowledge sourceを含む                                                                                                       |
-| `npm run typecheck --prefix packages/backend`                     | PASS   | strict TypeScript                                                                                                            |
-| `npm run build --prefix packages/backend`                         | PASS   | Prisma Client生成後                                                                                                          |
-| `npm run test --prefix packages/backend`                          | PASS   | 1,520 tests、skip/todo 0                                                                                                     |
-| frontend lint / format / typecheck / build / test                 | PASS   | 82 files / 468 tests、backend変更による回帰なし                                                                              |
-| `npm run arch:bounded-context --prefix packages/backend`          | PASS   | 274 modules / 1,050 dependencies、違反なし                                                                                   |
-| `npm run arch:bounded-context:coverage --prefix packages/backend` | PASS   | contexts 11、unclassified/stale/duplicate/ambiguous 0                                                                        |
-| OpenAPI export diff                                               | PASS   | `docs/api/openapi.json`と再生成結果が一致                                                                                    |
-| `make ops-quality`                                                | PASS   | backup Runbook変更に対するdocs/scripts/Quadlet/S3/readiness checks                                                           |
-| `git diff --check`                                                | PASS   | whitespace errorなし                                                                                                         |
+| empty PostgreSQL `prisma migrate deploy` / status                 | PASS   | PostgreSQL 15 pinned digestへ94 migrationsを適用、schema up to date                                                             |
+| old-app compatibility                                             | PASS   | migration後DBへ`origin/main`の旧schema/client/applicationをbuildして接続し、`healthz=200` / `readyz=200`                        |
+| local Prisma integration                                          | PASS   | personal/org ACL、URL正規化、version conflict、delete/restore、5 audit events、scope/version DB CHECK                           |
+| `prisma validate`                                                 | PASS   | schema/migration整合                                                                                                            |
+| `npm run lint --prefix packages/backend`                          | PASS   | Knowledge sourceを含む                                                                                                          |
+| `npm run format:check --prefix packages/backend`                  | PASS   | Knowledge sourceを含む                                                                                                          |
+| `npm run typecheck --prefix packages/backend`                     | PASS   | strict TypeScript                                                                                                               |
+| `npm run build --prefix packages/backend`                         | PASS   | Prisma Client生成後                                                                                                             |
+| `npm run test --prefix packages/backend`                          | PASS   | 1,521 tests、skip/todo 0                                                                                                        |
+| `npm run coverage:auth:check --prefix packages/backend`           | PASS   | auth 151 tests。S/L 90.24%、B 70.88%、F 98.66%。既存閾値の低下なし                                                              |
+| frontend lint / format / typecheck / build / test                 | PASS   | 82 files / 468 tests、backend変更による回帰なし                                                                                 |
+| `npm run arch:bounded-context --prefix packages/backend`          | PASS   | 274 modules / 1,050 dependencies、違反なし                                                                                      |
+| `npm run arch:bounded-context:coverage --prefix packages/backend` | PASS   | contexts 11、unclassified/stale/duplicate/ambiguous 0                                                                           |
+| OpenAPI export diff                                               | PASS   | `docs/api/openapi.json`と再生成結果が一致                                                                                       |
+| `make ops-quality`                                                | PASS   | backup Runbook変更に対するdocs/scripts/Quadlet/S3/readiness checks                                                              |
+| `git diff --check`                                                | PASS   | whitespace errorなし                                                                                                            |
 
 ## Migration / rollback
 

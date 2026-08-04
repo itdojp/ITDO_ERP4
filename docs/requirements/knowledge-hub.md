@@ -162,6 +162,7 @@ Knowledge audit metadata は event ごとの typed allowlist から構築し、�
 - APIは `POST /knowledge/items`、`GET /knowledge/items`、`GET /knowledge/items/count`、`GET|PATCH|DELETE /knowledge/items/:id`、`POST /knowledge/items/:id/restore` とする。
 - `personal` のread/writeは `ownerUserId = UserContext.userId` をDB predicateへ含め、`admin` / `mgmt` roleだけの通常閲覧を許可しない。
 - `organization` の通常readはowner、またはitemの `organizationId` とactorの `orgId` が一致し、かつactiveなcanonical `GroupAccount.id` の明示grantが一致する場合だけ許可する。org/group context欠落、inactive group、壊れたrelationはdenyする。
+- JWT/sessionのorganizationとcanonical group IDはDB解決成功時にDB正本へ置換し、stale token claimをACLへ使わない。header authはdevelopment/test用のsynthetic trust boundaryであり、productionはenv validationで`AUTH_MODE=jwt_bff`以外を起動拒否する。
 - organization item作成時はactor自身のactive `groupAccountIds` に含まれるgrantを1件以上要求する。WS02のgrantはread-onlyで、update/delete/restoreはownerだけに限定する。
 - scopeとgrantの変更をgeneric PATCHへ含めない。personalからorganizationへの移行、grant管理、共有field選択はWorkstream 07の専用preview/confirm use caseで扱う。
 - update/delete/restoreはpositive integerの `expectedVersion` を必須とし、stale owner requestは`409 version_conflict`、owner外または存在しないIDは同じ`404 not_found` contractとする。

@@ -898,6 +898,7 @@ test('auth plugin: jwt resolves DB context via UserIdentity before externalId fa
     payload: {
       sub: 'google-sub-001',
       roles: ['user'],
+      org_id: 'stale-token-organization',
       jti: 'tok-identity-ctx',
     },
     stubDb: true,
@@ -936,6 +937,39 @@ test('auth plugin: jwt resolves DB context via UserIdentity before externalId fa
   assert.equal(body.user?.auth?.principalUserId, 'google-sub-001');
   assert.equal(body.user?.auth?.userAccountId, 'user-account-1');
   assert.equal(body.user?.auth?.identityId, 'identity-1');
+});
+
+test('auth plugin: DB context clears stale JWT organization when account has none', () => {
+  const result = runDelegatedJwtRequest({
+    payload: {
+      sub: 'google-sub-no-org',
+      roles: ['user'],
+      org_id: 'stale-token-organization',
+      jti: 'tok-identity-no-org',
+    },
+    stubDb: true,
+    stubIdentity: {
+      id: 'identity-no-org',
+      status: 'active',
+      userAccountId: 'user-account-no-org',
+      userAccount: {
+        id: 'user-account-no-org',
+        userName: 'legacy-user-no-org',
+        externalId: 'legacy-external-no-org',
+        active: true,
+        deletedAt: null,
+        organization: null,
+        memberships: [],
+      },
+    },
+  });
+
+  assert.equal(result.status, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.statusCode, 200);
+  const body = JSON.parse(payload.body);
+  assert.equal(body.user?.orgId, undefined);
+  assert.deepEqual(body.user?.groupAccountIds, []);
 });
 
 test('auth plugin: jwt uses linked legacy user key for project lookup when UserIdentity resolves', () => {
