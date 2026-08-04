@@ -558,6 +558,51 @@ test('attach validates source/confidence and unknown fields without reaching per
   }
 });
 
+test('attach maps an existing active assignment to a specific invalid request', async () => {
+  const harness = createHarness({
+    itemLabels: {
+      attachVersioned: async () => ({ ok: false, reason: 'duplicate' }),
+    },
+  });
+  const result = await harness.service.attach({
+    actor: actor(),
+    auditActor: {},
+    itemId: 'item-1',
+    body: { expectedVersion: 1, labelId: 'label-1' },
+  });
+
+  assert.deepEqual(result, {
+    ok: false,
+    statusCode: 400,
+    code: 'invalid_request',
+    message: 'label is already attached',
+  });
+  assert.equal(harness.audits.length, 0);
+
+  const exhausted = createKnowledgeLabelService({
+    reader: {
+      listVisible: async () => [],
+      findVisibleById: async () => null,
+      listVisibleAliases: async () => null,
+      listManageableGrants: async () => null,
+    },
+    unitOfWork: {
+      run: async () => {
+        throw new KnowledgeLabelTransactionConflictError('duplicate');
+      },
+    },
+  });
+  assert.deepEqual(
+    await exhausted.attach({
+      actor: actor(),
+      auditActor: {},
+      itemId: 'item-1',
+      body: { expectedVersion: 1, labelId: 'label-1' },
+    }),
+    result,
+  );
+});
+
 test('detach missing assignment is generic not_found and audit failure is propagated', async () => {
   const missing = createHarness({
     itemLabels: {

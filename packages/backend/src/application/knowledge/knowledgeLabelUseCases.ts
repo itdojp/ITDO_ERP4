@@ -287,13 +287,14 @@ export function createKnowledgeLabelService(dependencies: {
     work: (
       transaction: KnowledgeLabelTransaction,
     ) => Promise<KnowledgeLabelApplicationResult<T>>,
+    duplicateFailure: () => KnowledgeLabelApplicationFailure = labelConflict,
   ): Promise<KnowledgeLabelApplicationResult<T>> {
     try {
       return await dependencies.unitOfWork.run(work);
     } catch (error) {
       if (error instanceof KnowledgeLabelTransactionConflictError) {
         return error.conflict === 'duplicate'
-          ? labelConflict()
+          ? duplicateFailure()
           : versionConflict();
       }
       throw error;
@@ -851,48 +852,55 @@ export function createKnowledgeLabelService(dependencies: {
           'confidenceBasisPoints is only valid for AI suggestions',
         );
       }
-      return runMutation(async (transaction) => {
-        const item = await transaction.itemLabels.findOwnedItemForMutation({
-          actor: input.actor,
-          itemId: input.itemId,
-        });
-        if (!item) return notFound();
-        if (item.version !== input.body.expectedVersion) {
-          return versionConflict();
-        }
-        const label = await transaction.labels.findUsableById(
-          input.actor,
-          input.body.labelId,
-        );
-        if (!label || !sameDomain(item, label)) return notFound();
-        const attached = await transaction.itemLabels.attachVersioned({
-          actor: input.actor,
-          itemId: item.id,
-          labelId: label.id,
-          expectedVersion: input.body.expectedVersion,
-          assignmentSource,
-          confidenceBasisPoints,
-        });
-        if (!attached.ok) return mutationFailure(attached.reason);
-        if (!attached.value.assignment)
-          return invalid('label was not attached');
-        await transaction.audit.write({
-          action: 'knowledge_item_label_attached',
-          actor: actorAudit(input.actor, input.auditActor),
-          target: {
-            kind: 'knowledge_item',
+      return runMutation(
+        async (transaction) => {
+          const item = await transaction.itemLabels.findOwnedItemForMutation({
+            actor: input.actor,
+            itemId: input.itemId,
+          });
+          if (!item) return notFound();
+          if (item.version !== input.body.expectedVersion) {
+            return versionConflict();
+          }
+          const label = await transaction.labels.findUsableById(
+            input.actor,
+            input.body.labelId,
+          );
+          if (!label || !sameDomain(item, label)) return notFound();
+          const attached = await transaction.itemLabels.attachVersioned({
+            actor: input.actor,
             itemId: item.id,
-            scope: item.scope,
-            status: item.status,
-            version: attached.value.itemVersion,
+            labelId: label.id,
+            expectedVersion: input.body.expectedVersion,
             assignmentSource,
-          },
-        });
-        return ok({
-          assignment: attached.value.assignment,
-          itemVersion: attached.value.itemVersion,
-        });
-      });
+            confidenceBasisPoints,
+          });
+          if (!attached.ok) {
+            return attached.reason === 'duplicate'
+              ? invalid('label is already attached')
+              : mutationFailure(attached.reason);
+          }
+          if (!attached.value.assignment)
+            return invalid('label was not attached');
+          await transaction.audit.write({
+            action: 'knowledge_item_label_attached',
+            actor: actorAudit(input.actor, input.auditActor),
+            target: {
+              kind: 'knowledge_item',
+              itemId: item.id,
+              scope: item.scope,
+              status: item.status,
+              version: attached.value.itemVersion,
+              assignmentSource,
+            },
+          });
+          return ok({
+            assignment: attached.value.assignment,
+            itemVersion: attached.value.itemVersion,
+          });
+        },
+        () => invalid('label is already attached'),
+      );
     },
 
     async detach(input: {

@@ -246,6 +246,7 @@ public attach APIは利用者操作の`manual` assignmentだけを作る。`assi
 PR2へ残す範囲:
 
 - canonical ANY/ALL/NOTと`includeDescendants`
+- item検索、total、facet、suggestionのassignment集合は必ず`KnowledgeItemLabel.detachedAt IS NULL`のactive relationだけから導出し、logical detach済みprovenanceを現行label usageへ含めない
 - source/status/published/captured/scope filter
 - ACL predicateを同一queryへ含めるcount/facet/suggestion
 - query-cost guard、query/scope-bound signed cursor、stable pagination

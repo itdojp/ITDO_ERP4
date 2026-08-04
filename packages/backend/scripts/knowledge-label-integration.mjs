@@ -580,6 +580,20 @@ try {
   );
   assert.equal(assignmentHistory[0].assignmentSource, 'manual');
   assert.equal(assignmentHistory[0].assignedBy, owner.userId);
+  await assert.rejects(
+    () =>
+      prisma.knowledgeItemLabel.create({
+        data: {
+          knowledgeItemId: personalItem.id,
+          labelId: personalRoot.id,
+          assignmentSource: 'manual',
+          assignedBy: owner.userId,
+          confidenceBasisPoints: null,
+        },
+      }),
+    (error) => error?.code === 'P2002',
+    'partial unique index rejects a second active assignment',
+  );
 
   const organizationItem = expectOk(
     await itemService.create({
