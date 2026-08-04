@@ -729,6 +729,12 @@ try {
       .filter((entry) => entry.targetTable === 'knowledge_labels')
       .every((entry) => entry.targetId === 'label_master'),
   );
+  const detachAudit = labelAudits.find(
+    (entry) =>
+      entry.action === 'knowledge_item_label_detached' &&
+      entry.targetId === personalItem.id,
+  );
+  assert.equal(detachAudit?.metadata?.assignmentSource, 'manual');
 
   console.log(
     JSON.stringify({

@@ -954,6 +954,7 @@ export function createKnowledgeLabelService(dependencies: {
             scope: item.scope,
             status: item.status,
             version: detached.value.itemVersion,
+            assignmentSource: detached.value.assignment.assignmentSource,
           },
         });
         return ok({

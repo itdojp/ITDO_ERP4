@@ -635,6 +635,50 @@ test('detach missing assignment is generic not_found and audit failure is propag
   );
 });
 
+test('detach audit preserves bounded assignment source without exposing the label id', async () => {
+  const harness = createHarness({
+    itemLabels: {
+      detachVersioned: async () => ({
+        ok: true,
+        value: {
+          assignment: assignment({
+            assignmentSource: 'ai_suggestion',
+            confidenceBasisPoints: 7000,
+            detachedAt: fixedNow,
+            detachedBy: 'owner-1',
+          }),
+          itemVersion: 2,
+        },
+      }),
+    },
+  });
+
+  const result = await harness.service.detach({
+    actor: actor(),
+    auditActor: { requestId: 'request-1', source: 'api' },
+    itemId: 'item-1',
+    labelId: 'label-1',
+    expectedVersion: 1,
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(harness.audits, [
+    {
+      action: 'knowledge_item_label_detached',
+      actor: { userId: 'owner-1', requestId: 'request-1', source: 'api' },
+      target: {
+        kind: 'knowledge_item',
+        itemId: 'item-1',
+        scope: 'personal',
+        status: 'inbox',
+        version: 2,
+        assignmentSource: 'ai_suggestion',
+      },
+    },
+  ]);
+  assert.equal(JSON.stringify(harness.audits).includes('label-1'), false);
+});
+
 test('transaction conflict exhaustion is normalized to stable 409 application results', async () => {
   const reader = {
     listVisible: async () => [],
