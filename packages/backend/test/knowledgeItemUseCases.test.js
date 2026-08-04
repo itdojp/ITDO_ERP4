@@ -452,6 +452,30 @@ test('logical delete rejects arbitrary reason text before item or audit mutation
   );
 });
 
+test('logical delete rejects malformed reason types without throwing or mutating', async () => {
+  for (const reasonCode of [42, null, undefined, { code: 'owner_request' }]) {
+    const harness = createHarness();
+    const created = await createPersonal(harness);
+    assert.equal(created.ok, true);
+
+    const rejected = await harness.service.remove({
+      actor: actor('owner-1'),
+      auditActor: auditActor('owner-1'),
+      itemId: created.value.id,
+      expectedVersion: 1,
+      reasonCode,
+    });
+    assert.equal(rejected.ok, false);
+    assert.equal(rejected.statusCode, 400);
+    assert.equal(harness.items.get(created.value.id).deletedAt, null);
+    assert.equal(harness.items.get(created.value.id).version, 1);
+    assert.deepEqual(
+      harness.audits.map((entry) => entry.action),
+      ['knowledge_item_created'],
+    );
+  }
+});
+
 test('mandatory audit failure rolls back the business write and propagates', async () => {
   const harness = createHarness({
     failAuditAction: 'knowledge_item_created',
@@ -641,6 +665,56 @@ test('create and update reject present but invalid date-time values before write
     { publishedAt: undefined },
     { capturedAt: undefined },
     { capturedAt: null },
+  ]) {
+    const result = await harness.service.update({
+      actor: actor('owner-1'),
+      auditActor: auditActor('owner-1'),
+      itemId: created.value.id,
+      body: { expectedVersion: 1, ...patch },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.statusCode, 400);
+  }
+  assert.equal(harness.items.get(created.value.id).version, 1);
+  assert.deepEqual(
+    harness.audits.map((entry) => entry.action),
+    ['knowledge_item_created'],
+  );
+});
+
+test('service boundary rejects malformed create and update values before writes', async () => {
+  const harness = createHarness();
+
+  for (const body of [
+    { scope: 'invalid', sourceType: 'manual' },
+    { scope: 'personal', sourceType: 'invalid' },
+    { scope: 'personal', sourceType: 'manual', title: 42 },
+    {
+      scope: 'organization',
+      sourceType: 'manual',
+      organizationGroupIds: [42],
+    },
+  ]) {
+    const result = await harness.service.create({
+      actor: actor('owner-1'),
+      auditActor: auditActor('owner-1'),
+      body,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.statusCode, 400);
+  }
+  assert.equal(harness.items.size, 0);
+
+  const created = await createPersonal(harness);
+  assert.equal(created.ok, true);
+  for (const patch of [
+    { title: undefined },
+    { title: 42 },
+    { canonicalUrl: 42 },
+    { publishedAt: 42 },
+    { capturedAt: 42 },
+    { sourceType: 'invalid' },
+    { status: 'invalid' },
   ]) {
     const result = await harness.service.update({
       actor: actor('owner-1'),

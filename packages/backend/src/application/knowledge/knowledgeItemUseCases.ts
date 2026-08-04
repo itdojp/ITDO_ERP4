@@ -1,6 +1,9 @@
 import {
   isKnowledgeDeletionReasonCode,
+  knowledgeItemScopes,
+  knowledgeItemStatuses,
   knowledgeMutableFields,
+  knowledgeSourceTypes,
   type KnowledgeActor,
   type KnowledgeAuditActor,
   type KnowledgeItem,
@@ -200,7 +203,97 @@ function validateExpectedVersion(
 }
 
 function hasPrincipal(actor: KnowledgeActor): boolean {
-  return actor.userId.trim().length > 0;
+  return typeof actor?.userId === 'string' && actor.userId.trim().length > 0;
+}
+
+const nullableStringMutableFields = [
+  'canonicalUrl',
+  'title',
+  'sourceAuthor',
+  'saveReason',
+  'shortNote',
+  'unresolvedQuestion',
+] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isAllowedString<T extends readonly string[]>(
+  allowed: T,
+  value: unknown,
+): value is T[number] {
+  return (
+    typeof value === 'string' &&
+    allowed.some((candidate) => candidate === value)
+  );
+}
+
+function validateMutableRuntimeInput(
+  value: unknown,
+): KnowledgeApplicationFailure | null {
+  if (!isRecord(value)) return invalid('body must be an object');
+
+  for (const field of knowledgeMutableFields) {
+    if (field in value && value[field] === undefined) {
+      return invalid(`${field} must not be undefined`);
+    }
+  }
+  for (const field of nullableStringMutableFields) {
+    const fieldValue = value[field];
+    if (
+      field in value &&
+      fieldValue !== null &&
+      typeof fieldValue !== 'string'
+    ) {
+      return invalid(`${field} must be a string or null`);
+    }
+  }
+  if (
+    'publishedAt' in value &&
+    value.publishedAt !== null &&
+    typeof value.publishedAt !== 'string'
+  ) {
+    return invalid('publishedAt must be a string or null');
+  }
+  if ('capturedAt' in value && typeof value.capturedAt !== 'string') {
+    return invalid('capturedAt must be a string');
+  }
+  if (
+    'sourceType' in value &&
+    !isAllowedString(knowledgeSourceTypes, value.sourceType)
+  ) {
+    return invalid('sourceType must be a defined source type');
+  }
+  if (
+    'status' in value &&
+    !isAllowedString(knowledgeItemStatuses, value.status)
+  ) {
+    return invalid('status must be a defined knowledge status');
+  }
+  return null;
+}
+
+function validateCreateRuntimeInput(
+  value: unknown,
+): KnowledgeApplicationFailure | null {
+  const mutableError = validateMutableRuntimeInput(value);
+  if (mutableError) return mutableError;
+  if (!isRecord(value)) return invalid('body must be an object');
+  if (!isAllowedString(knowledgeItemScopes, value.scope)) {
+    return invalid('scope must be a defined knowledge scope');
+  }
+  if (!isAllowedString(knowledgeSourceTypes, value.sourceType)) {
+    return invalid('sourceType must be a defined source type');
+  }
+  if (
+    'organizationGroupIds' in value &&
+    (!Array.isArray(value.organizationGroupIds) ||
+      value.organizationGroupIds.some((groupId) => typeof groupId !== 'string'))
+  ) {
+    return invalid('organizationGroupIds must be an array of strings');
+  }
+  return null;
 }
 
 function createPatch(input: UpdateKnowledgeItemInput): {
@@ -208,9 +301,6 @@ function createPatch(input: UpdateKnowledgeItemInput): {
   changedFields: KnowledgeMutableField[];
 } {
   const patch: KnowledgeItemUpdateRecord = {};
-  const changedFields = knowledgeMutableFields.filter(
-    (field) => field in input,
-  );
   if ('sourceType' in input && input.sourceType !== undefined) {
     patch.sourceType = input.sourceType;
   }
@@ -241,6 +331,9 @@ function createPatch(input: UpdateKnowledgeItemInput): {
   if ('status' in input && input.status !== undefined) {
     patch.status = input.status;
   }
+  const changedFields = knowledgeMutableFields.filter((field) =>
+    Object.prototype.hasOwnProperty.call(patch, field),
+  );
   return { patch, changedFields };
 }
 
@@ -294,16 +387,27 @@ export function createKnowledgeItemService(dependencies: {
       body: CreateKnowledgeItemInput;
     }): Promise<KnowledgeApplicationResult<KnowledgeItem>> {
       if (!hasPrincipal(input.actor)) return invalid('actor is required');
+      const bodyError = validateCreateRuntimeInput(input.body);
+      if (bodyError) return bodyError;
       const groupAccountIds = uniqueStrings(input.body.organizationGroupIds);
       let organizationId: string | null = null;
       if (input.body.scope === 'organization') {
-        organizationId = input.actor.organizationId?.trim() || null;
+        organizationId =
+          typeof input.actor.organizationId === 'string'
+            ? input.actor.organizationId.trim() || null
+            : null;
         if (!organizationId || groupAccountIds.length === 0) {
           return invalid(
             'organization scope requires organization context and at least one group grant',
           );
         }
-        const actorGroups = new Set(input.actor.groupAccountIds);
+        const actorGroups = new Set(
+          Array.isArray(input.actor.groupAccountIds)
+            ? input.actor.groupAccountIds.filter(
+                (groupId): groupId is string => typeof groupId === 'string',
+              )
+            : [],
+        );
         if (groupAccountIds.some((groupId) => !actorGroups.has(groupId))) {
           return invalid('organization group grants must belong to the actor');
         }
@@ -377,6 +481,8 @@ export function createKnowledgeItemService(dependencies: {
       body: UpdateKnowledgeItemInput;
     }): Promise<KnowledgeApplicationResult<KnowledgeItem>> {
       if (!hasPrincipal(input.actor)) return notFound();
+      const bodyError = validateMutableRuntimeInput(input.body);
+      if (bodyError) return bodyError;
       const versionError = validateExpectedVersion(input.body.expectedVersion);
       if (versionError) return versionError;
       if (
@@ -442,6 +548,9 @@ export function createKnowledgeItemService(dependencies: {
       if (!hasPrincipal(input.actor)) return notFound();
       const versionError = validateExpectedVersion(input.expectedVersion);
       if (versionError) return versionError;
+      if (typeof input.reasonCode !== 'string') {
+        return invalid('reasonCode must be a defined deletion reason code');
+      }
       const reasonCode = input.reasonCode.trim();
       if (!isKnowledgeDeletionReasonCode(reasonCode)) {
         return invalid('reasonCode must be a defined deletion reason code');
