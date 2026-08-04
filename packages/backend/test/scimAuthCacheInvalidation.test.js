@@ -53,6 +53,14 @@ function runCacheInvalidationScenario(scenario) {
       createdAt: now,
       updatedAt: now,
     };
+    let notifyAuditStarted;
+    let releaseDelayedAudit;
+    const auditStarted = new Promise((resolve) => {
+      notifyAuditStarted = resolve;
+    });
+    const delayedAuditRelease = new Promise((resolve) => {
+      releaseDelayedAudit = resolve;
+    });
 
     const { privateKey, publicKey } = await generateKeyPair('RS256');
     process.env.JWT_PUBLIC_KEY = await exportSPKI(publicKey);
@@ -127,6 +135,20 @@ function runCacheInvalidationScenario(scenario) {
         active: typeof data.active === 'boolean' ? data.active : group.active,
         updatedAt: new Date('2026-06-24T00:01:00.000Z'),
       };
+      account = {
+        ...account,
+        memberships: account.memberships.map((membership) => ({
+          ...membership,
+          group:
+            membership.group.id === group.id
+              ? {
+                  ...membership.group,
+                  displayName: group.displayName,
+                  active: group.active,
+                }
+              : membership.group,
+        })),
+      };
       return group;
     };
     prisma.userGroup.deleteMany = async () => {
@@ -151,7 +173,16 @@ function runCacheInvalidationScenario(scenario) {
       }
       return { count: 0 };
     };
-    prisma.auditLog.create = async () => ({ id: 'audit-1' });
+    prisma.auditLog.create = async ({ data }) => {
+      if (
+        scenario === 'groupDeleteAuditDelay' &&
+        data?.action === 'scim_group_disable'
+      ) {
+        notifyAuditStarted();
+        await delayedAuditRelease;
+      }
+      return { id: 'audit-1' };
+    };
     prisma.$transaction = async (arg) => {
       if (Array.isArray(arg)) return Promise.all(arg);
       if (scenario !== 'userDeleteSideEffectFailure') return arg(prisma);
@@ -187,6 +218,7 @@ function runCacheInvalidationScenario(scenario) {
       const firstBody = JSON.parse(first.body || '{}');
 
       let scim;
+      let concurrent;
       if (
         scenario === 'userDelete' ||
         scenario === 'userDeleteSideEffectFailure'
@@ -196,6 +228,20 @@ function runCacheInvalidationScenario(scenario) {
           url: '/scim/v2/Users/ua-1',
           headers: { authorization: 'Bearer scim-test-token' },
         });
+      } else if (scenario === 'groupDeleteAuditDelay') {
+        const pendingScim = server.inject({
+          method: 'DELETE',
+          url: '/scim/v2/Groups/group-admin',
+          headers: { authorization: 'Bearer scim-test-token' },
+        });
+        await auditStarted;
+        concurrent = await server.inject({
+          method: 'GET',
+          url: '/me',
+          headers: { authorization: 'Bearer ' + token },
+        });
+        releaseDelayedAudit();
+        scim = await pendingScim;
       } else if (scenario === 'groupMembership') {
         scim = await server.inject({
           method: 'PUT',
@@ -248,10 +294,15 @@ function runCacheInvalidationScenario(scenario) {
         firstRoles: firstBody.user?.roles,
         scimStatus: scim.statusCode,
         accountActive: account.active,
+        concurrentStatus: concurrent?.statusCode,
+        concurrentBody: concurrent
+          ? JSON.parse(concurrent.body || '{}')
+          : undefined,
         secondStatus: second.statusCode,
         secondBody: JSON.parse(second.body || '{}'),
       }));
     } finally {
+      releaseDelayedAudit();
       await server.close();
     }
   `;
@@ -297,6 +348,20 @@ test('SCIM group membership changes clear cached role-bearing auth context befor
   assert.equal(payload.firstStatus, 200);
   assert.equal(payload.firstRoles.includes('admin'), true);
   assert.equal(payload.scimStatus, 200);
+  assert.equal(payload.secondStatus, 200);
+  assert.equal(payload.secondBody.user?.roles.includes('admin'), false);
+});
+
+test('SCIM group revoke clears cached roles before awaiting the outer audit', () => {
+  const result = runCacheInvalidationScenario('groupDeleteAuditDelay');
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout || '{}');
+  assert.equal(payload.firstStatus, 200);
+  assert.equal(payload.firstRoles.includes('admin'), true);
+  assert.equal(payload.scimStatus, 204);
+  assert.equal(payload.concurrentStatus, 200);
+  assert.equal(payload.concurrentBody.user?.roles.includes('admin'), false);
+  assert.deepEqual(payload.concurrentBody.user?.groupAccountIds, []);
   assert.equal(payload.secondStatus, 200);
   assert.equal(payload.secondBody.user?.roles.includes('admin'), false);
 });

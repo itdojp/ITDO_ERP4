@@ -612,6 +612,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
       }
       throw err;
     }
+    invalidateScimAuthContextCache();
     await logAudit({
       action: 'scim_user_create',
       targetTable: 'UserAccount',
@@ -632,7 +633,6 @@ export async function registerScimRoutes(app: FastifyInstance) {
         ...auditContextFromRequest(req, { source: 'scim' }),
       });
     }
-    invalidateScimAuthContextCache();
     return reply.code(201).send(buildUserResource(created));
   });
 
@@ -715,6 +715,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
       }
       throw err;
     }
+    invalidateScimAuthContextCache();
     await logAudit({
       action: 'scim_user_update',
       targetTable: 'UserAccount',
@@ -722,7 +723,6 @@ export async function registerScimRoutes(app: FastifyInstance) {
       metadata: { externalId: updated.externalId, userName: updated.userName },
       ...auditContextFromRequest(req, { source: 'scim' }),
     });
-    invalidateScimAuthContextCache();
     return buildUserResource(updated);
   });
 
@@ -852,6 +852,7 @@ export async function registerScimRoutes(app: FastifyInstance) {
         });
         return next;
       });
+      invalidateScimAuthContextCache();
       await logAudit({
         action: 'scim_user_patch',
         targetTable: 'UserAccount',
@@ -862,7 +863,6 @@ export async function registerScimRoutes(app: FastifyInstance) {
         },
         ...auditContextFromRequest(req, { source: 'scim' }),
       });
-      invalidateScimAuthContextCache();
       return buildUserResource(updated);
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError) {
@@ -1039,7 +1039,12 @@ export async function registerScimRoutes(app: FastifyInstance) {
       }
       throw err;
     }
-    await syncGroupMembers(created.id, memberIds);
+    invalidateScimAuthContextCache();
+    try {
+      await syncGroupMembers(created.id, memberIds);
+    } finally {
+      invalidateScimAuthContextCache();
+    }
     const group = await prisma.groupAccount.findUnique({
       where: { id: created.id },
       include: {
@@ -1054,7 +1059,6 @@ export async function registerScimRoutes(app: FastifyInstance) {
       targetId: created.id,
       ...auditContextFromRequest(req, { source: 'scim' }),
     });
-    invalidateScimAuthContextCache();
     return reply.code(201).send(
       buildGroupResource({
         ...created,
@@ -1125,7 +1129,12 @@ export async function registerScimRoutes(app: FastifyInstance) {
       }
       throw err;
     }
-    await syncGroupMembers(updated.id, memberIds);
+    invalidateScimAuthContextCache();
+    try {
+      await syncGroupMembers(updated.id, memberIds);
+    } finally {
+      invalidateScimAuthContextCache();
+    }
     const group = await prisma.groupAccount.findUnique({
       where: { id: updated.id },
       include: {
@@ -1140,7 +1149,6 @@ export async function registerScimRoutes(app: FastifyInstance) {
       targetId: updated.id,
       ...auditContextFromRequest(req, { source: 'scim' }),
     });
-    invalidateScimAuthContextCache();
     return buildGroupResource({
       ...updated,
       members:
@@ -1248,8 +1256,11 @@ export async function registerScimRoutes(app: FastifyInstance) {
         const value = op.value as ScimGroupPayload;
         try {
           const memberIds = await resolveMembersPayload(value?.members);
-          await syncGroupMembers(id, memberIds);
-          invalidateScimAuthContextCache();
+          try {
+            await syncGroupMembers(id, memberIds);
+          } finally {
+            invalidateScimAuthContextCache();
+          }
         } catch (err) {
           const scimErr = extractScimError(err);
           if (scimErr) {
@@ -1304,7 +1315,6 @@ export async function registerScimRoutes(app: FastifyInstance) {
       targetId: group.id,
       ...auditContextFromRequest(req, { source: 'scim' }),
     });
-    invalidateScimAuthContextCache();
     return buildGroupResource({
       ...group,
       members: group.memberships.map((member) => ({
@@ -1322,13 +1332,13 @@ export async function registerScimRoutes(app: FastifyInstance) {
         where: { id },
         data: { active: false },
       });
+      invalidateScimAuthContextCache();
       await logAudit({
         action: 'scim_group_disable',
         targetTable: 'GroupAccount',
         targetId: updated.id,
         ...auditContextFromRequest(req, { source: 'scim' }),
       });
-      invalidateScimAuthContextCache();
       return reply.code(204).send();
     } catch (err) {
       if (

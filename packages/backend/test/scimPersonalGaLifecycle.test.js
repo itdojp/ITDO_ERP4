@@ -341,6 +341,12 @@ test('DELETE /scim/v2/Users/:id deactivates personal GA room membership and logs
         return { count: 1 };
       },
     },
+    auditLog: {
+      create: async (args) => {
+        auditLogs.push(args.data);
+        return { id: `audit-${auditLogs.length}` };
+      },
+    },
   };
   await withPrismaStubs(
     {
@@ -349,7 +355,9 @@ test('DELETE /scim/v2/Users/:id deactivates personal GA room membership and logs
         throw new Error('global userAccount.update should not be called');
       },
       'chatRoomMember.updateMany': async () => {
-        throw new Error('global chatRoomMember.updateMany should not be called');
+        throw new Error(
+          'global chatRoomMember.updateMany should not be called',
+        );
       },
       'auditLog.create': async (args) => {
         auditLogs.push(args.data);
@@ -377,6 +385,67 @@ test('DELETE /scim/v2/Users/:id deactivates personal GA room membership and logs
   const actions = auditLogs.map((entry) => entry.action);
   assert.equal(actions.includes('personal_ga_room_member_deactivated'), true);
   assert.equal(actions.includes('scim_user_deactivate'), true);
+});
+
+test('DELETE /scim/v2/Users/:id does not persist side-effect audit when transaction commit fails', async () => {
+  let transactionAuditAttempts = 0;
+  const stagedAuditLogs = [];
+  const globalAuditLogs = [];
+  const transactionClient = {
+    userAccount: {
+      update: async () =>
+        buildScimUser({
+          active: false,
+          deletedAt: new Date('2026-03-04T00:00:00.000Z'),
+        }),
+    },
+    chatRoomMember: {
+      updateMany: async () => ({ count: 1 }),
+    },
+    auditLog: {
+      create: async (args) => {
+        transactionAuditAttempts += 1;
+        stagedAuditLogs.push(args.data);
+        return { id: `staged-audit-${transactionAuditAttempts}` };
+      },
+    },
+  };
+
+  await withPrismaStubs(
+    {
+      $transaction: async (handler) => {
+        await handler(transactionClient);
+        stagedAuditLogs.length = 0;
+        throw new Error('simulated transaction commit failure');
+      },
+      'userAccount.update': async () => {
+        throw new Error('global userAccount.update should not be called');
+      },
+      'chatRoomMember.updateMany': async () => {
+        throw new Error(
+          'global chatRoomMember.updateMany should not be called',
+        );
+      },
+      'auditLog.create': async (args) => {
+        globalAuditLogs.push(args.data);
+        return { id: `global-audit-${globalAuditLogs.length}` };
+      },
+    },
+    async () => {
+      await withServer(async (server) => {
+        const res = await server.inject({
+          method: 'DELETE',
+          url: '/scim/v2/Users/ua-1',
+          headers: scimHeaders(),
+        });
+        assert.equal(res.statusCode, 500, res.body);
+      });
+    },
+  );
+
+  assert.equal(transactionAuditAttempts, 1);
+  assert.deepEqual(stagedAuditLogs, []);
+  assert.deepEqual(globalAuditLogs, []);
 });
 
 test('PATCH /scim/v2/Users/:id remove active deactivates personal GA member', async () => {
