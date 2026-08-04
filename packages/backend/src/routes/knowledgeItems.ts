@@ -114,7 +114,13 @@ const itemIdParamsSchema = {
   type: 'object',
   additionalProperties: false,
   required: ['id'],
-  properties: { id: { type: 'string', minLength: 1, maxLength: 100 } },
+  properties: {
+    id: {
+      type: 'string',
+      minLength: 1,
+      maxLength: knowledgeItemInputLimits.itemId,
+    },
+  },
 } as const;
 
 const commonMutableProperties = {
@@ -218,8 +224,18 @@ const listQuerySchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    limit: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
-    offset: { type: 'integer', minimum: 0, maximum: 10000, default: 0 },
+    limit: {
+      type: 'integer',
+      minimum: 1,
+      maximum: knowledgeItemInputLimits.listLimit,
+      default: 50,
+    },
+    offset: {
+      type: 'integer',
+      minimum: 0,
+      maximum: knowledgeItemInputLimits.listOffset,
+      default: 0,
+    },
     scope: { type: 'string', enum: knowledgeItemScopes },
     status: { type: 'string', enum: knowledgeItemStatuses },
   },

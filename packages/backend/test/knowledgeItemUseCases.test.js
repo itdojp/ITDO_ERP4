@@ -604,6 +604,28 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
   }
   assert.equal(harness.items.size, 1);
 
+  const nestedCredentialUrl =
+    'https://drive.google.com/open?resourcekey=drive-resource-key-value&authuser=0';
+  for (const nestedValue of [
+    encodeURIComponent(nestedCredentialUrl),
+    encodeURIComponent(nestedCredentialUrl.replace('https://', 'HTTPS://')),
+    encodeURIComponent(encodeURIComponent(nestedCredentialUrl)),
+    encodeURIComponent('/open?resourcekey=drive-resource-key-value'),
+  ]) {
+    const nestedUrl = await harness.service.create({
+      actor: actor('owner-1'),
+      auditActor: auditActor('owner-1'),
+      body: {
+        scope: 'personal',
+        sourceType: 'web',
+        canonicalUrl: `https://example.com/redirect?next=${nestedValue}`,
+      },
+    });
+    assert.equal(nestedUrl.ok, false);
+    assert.equal(nestedUrl.statusCode, 400);
+  }
+  assert.equal(harness.items.size, 1);
+
   for (const credentialQuery of [
     'auth_key=credential-value',
     'x-sig=credential-value',
@@ -621,6 +643,17 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     assert.equal(rejectedUpdate.ok, false);
     assert.equal(rejectedUpdate.statusCode, 400);
   }
+  const nestedRejectedUpdate = await harness.service.update({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: result.value.id,
+    body: {
+      expectedVersion: 1,
+      canonicalUrl: `https://example.com/redirect?next=${encodeURIComponent(nestedCredentialUrl)}`,
+    },
+  });
+  assert.equal(nestedRejectedUpdate.ok, false);
+  assert.equal(nestedRejectedUpdate.statusCode, 400);
   assert.equal(harness.items.get(result.value.id).version, 1);
   assert.equal(
     harness.items.get(result.value.id).canonicalUrl,
@@ -643,6 +676,17 @@ test('create and update reject present but invalid date-time values before write
   for (const body of [
     { scope: 'personal', sourceType: 'manual', publishedAt: '' },
     { scope: 'personal', sourceType: 'manual', capturedAt: '' },
+    { scope: 'personal', sourceType: 'manual', publishedAt: '2026-08-04' },
+    {
+      scope: 'personal',
+      sourceType: 'manual',
+      publishedAt: 'August 4, 2026',
+    },
+    {
+      scope: 'personal',
+      sourceType: 'manual',
+      capturedAt: '2026-02-30T00:00:00Z',
+    },
     { scope: 'personal', sourceType: 'manual', publishedAt: undefined },
     { scope: 'personal', sourceType: 'manual', capturedAt: undefined },
     { scope: 'personal', sourceType: 'manual', capturedAt: null },
@@ -662,6 +706,9 @@ test('create and update reject present but invalid date-time values before write
   for (const patch of [
     { publishedAt: '' },
     { capturedAt: '' },
+    { publishedAt: '2026-08-04' },
+    { publishedAt: 'August 4, 2026' },
+    { capturedAt: '2026-02-30T00:00:00Z' },
     { publishedAt: undefined },
     { capturedAt: undefined },
     { capturedAt: null },
@@ -679,6 +726,26 @@ test('create and update reject present but invalid date-time values before write
   assert.deepEqual(
     harness.audits.map((entry) => entry.action),
     ['knowledge_item_created'],
+  );
+
+  const validDateTime = await harness.service.update({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: created.value.id,
+    body: {
+      expectedVersion: 1,
+      publishedAt: '2026-08-04T12:34:56.789+09:00',
+      capturedAt: '2026-08-04T03:34:56Z',
+    },
+  });
+  assert.equal(validDateTime.ok, true);
+  assert.equal(
+    validDateTime.value.publishedAt.toISOString(),
+    '2026-08-04T03:34:56.789Z',
+  );
+  assert.equal(
+    validDateTime.value.capturedAt.toISOString(),
+    '2026-08-04T03:34:56.000Z',
   );
 });
 
@@ -736,6 +803,7 @@ test('service boundary enforces mutable string size limits before writes', async
   const harness = createHarness();
   const oversizedValues = [
     { canonicalUrl: `https://example.com/${'a'.repeat(4096)}` },
+    { canonicalUrl: `https://example.com/${'😀'.repeat(4000)}` },
     { title: 'a'.repeat(501) },
     { sourceAuthor: 'a'.repeat(501) },
     { saveReason: 'a'.repeat(4001) },
@@ -785,6 +853,7 @@ test('service boundary enforces organization group collection limits before writ
     ['g'.repeat(101)],
     ['   '],
     ['group-1', 'group-1'],
+    ['group-1', ' group-1 '],
   ]) {
     const result = await harness.service.create({
       actor: actor('owner-1', { organizationId: 'org-1' }),
@@ -801,4 +870,73 @@ test('service boundary enforces organization group collection limits before writ
 
   assert.equal(harness.items.size, 0);
   assert.deepEqual(harness.audits, []);
+});
+
+test('service boundary rejects unbounded read queries and item ids without repository mutation', async () => {
+  const harness = createHarness();
+  const created = await createPersonal(harness);
+  assert.equal(created.ok, true);
+
+  for (const query of [
+    { limit: 0, offset: 0 },
+    { limit: 101, offset: 0 },
+    { limit: 1.5, offset: 0 },
+    { limit: 50, offset: -1 },
+    { limit: 50, offset: 10001 },
+    { limit: 50, offset: 0, scope: 'invalid' },
+    { limit: 50, offset: 0, status: 'invalid' },
+    { limit: 50, offset: 0, unexpected: true },
+  ]) {
+    const items = await harness.service.list({
+      actor: actor('owner-1'),
+      query,
+    });
+    assert.deepEqual(items, []);
+  }
+
+  assert.equal(
+    await harness.service.count({
+      actor: actor('owner-1'),
+      scope: 'invalid',
+    }),
+    0,
+  );
+
+  const originalId = created.value.id;
+  const oversizedId = 'i'.repeat(101);
+  harness.items.delete(originalId);
+  created.value.id = oversizedId;
+  harness.items.set(oversizedId, created.value);
+
+  const detail = await harness.service.detail({
+    actor: actor('owner-1'),
+    itemId: oversizedId,
+  });
+  assert.equal(detail.ok, false);
+  assert.equal(detail.statusCode, 404);
+
+  const update = await harness.service.update({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: oversizedId,
+    body: { expectedVersion: 1, title: 'must not update' },
+  });
+  assert.equal(update.ok, false);
+  assert.equal(update.statusCode, 404);
+
+  const remove = await harness.service.remove({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: oversizedId,
+    expectedVersion: 1,
+    reasonCode: 'owner_request',
+  });
+  assert.equal(remove.ok, false);
+  assert.equal(remove.statusCode, 404);
+  assert.equal(harness.items.get(oversizedId).version, 1);
+  assert.equal(harness.items.get(oversizedId).deletedAt, null);
+  assert.deepEqual(
+    harness.audits.map((entry) => entry.action),
+    ['knowledge_item_created'],
+  );
 });

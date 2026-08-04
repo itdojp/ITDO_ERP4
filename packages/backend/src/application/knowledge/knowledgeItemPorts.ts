@@ -30,6 +30,9 @@ export const knowledgeItemInputLimits = {
   unresolvedQuestion: 4000,
   organizationGroupIds: 100,
   organizationGroupId: 100,
+  itemId: 100,
+  listLimit: 100,
+  listOffset: 10000,
 } as const;
 
 export const knowledgeDeletionReasonCodes = ['owner_request'] as const;

@@ -151,6 +151,63 @@ function isCredentialQueryName(name: string): boolean {
   ].some((marker) => compact.includes(marker));
 }
 
+function parseNestedHttpUrl(value: string): URL | null {
+  let candidate = value.trim();
+  for (let decodeCount = 0; decodeCount <= 2; decodeCount += 1) {
+    const lowerCandidate = candidate.toLowerCase();
+    if (
+      lowerCandidate.startsWith('http://') ||
+      lowerCandidate.startsWith('https://') ||
+      candidate.startsWith('//') ||
+      candidate.startsWith('/') ||
+      candidate.startsWith('?')
+    ) {
+      try {
+        const parsed = new URL(candidate, 'https://nested.invalid');
+        if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+          return parsed;
+        }
+      } catch {
+        // Try one more percent-decoding layer below.
+      }
+    }
+    try {
+      const decoded = decodeURIComponent(candidate);
+      if (decoded === candidate) break;
+      candidate = decoded;
+    } catch {
+      break;
+    }
+  }
+  return null;
+}
+
+function hasCredentialFragment(url: URL): boolean {
+  if (!url.hash) return false;
+  const fragment = url.hash.slice(1);
+  const fragmentParams = new URLSearchParams(fragment);
+  return [...fragmentParams.keys()].some(isCredentialQueryName);
+}
+
+function hasCredentialBearingNestedUrl(url: URL, depth = 0): boolean {
+  for (const [name, value] of url.searchParams.entries()) {
+    if (isCredentialQueryName(name)) return true;
+    const nestedUrl = parseNestedHttpUrl(value);
+    if (!nestedUrl) continue;
+    if (
+      nestedUrl.username ||
+      nestedUrl.password ||
+      hasCredentialFragment(nestedUrl)
+    ) {
+      return true;
+    }
+    if (depth >= 3 || hasCredentialBearingNestedUrl(nestedUrl, depth + 1)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function normalizeCanonicalUrl(
   value: string | null | undefined,
 ): { ok: true; value: string | null | undefined } | { ok: false } {
@@ -166,17 +223,35 @@ function normalizeCanonicalUrl(
     url.username = '';
     url.password = '';
     url.hash = '';
+    if (hasCredentialBearingNestedUrl(url)) return { ok: false };
     for (const name of [...url.searchParams.keys()]) {
-      if (isCredentialQueryName(name)) return { ok: false };
       if (trackingQueryName.test(name)) {
         url.searchParams.delete(name);
       }
     }
     url.searchParams.sort();
-    return { ok: true, value: url.toString() };
+    const serialized = url.toString();
+    if (
+      exceedsCodePointLimit(serialized, knowledgeItemInputLimits.canonicalUrl)
+    ) {
+      return { ok: false };
+    }
+    return { ok: true, value: serialized };
   } catch {
     return { ok: false };
   }
+}
+
+const rfc3339DateTime =
+  /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:[Zz]|([+-])(\d{2}):(\d{2}))$/;
+
+function isLeapYear(year: number): boolean {
+  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+}
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) return isLeapYear(year) ? 29 : 28;
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
 }
 
 function parseOptionalDate(
@@ -184,6 +259,31 @@ function parseOptionalDate(
 ): Date | null | undefined {
   if (value === undefined) return undefined;
   if (value === null) return null;
+  const match = rfc3339DateTime.exec(value);
+  if (!match) return undefined;
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText] =
+    match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const offsetHour = Number(match[8] ?? 0);
+  const offsetMinute = Number(match[9] ?? 0);
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > daysInMonth(year, month) ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHour > 23 ||
+    offsetMinute > 59
+  ) {
+    return undefined;
+  }
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
@@ -205,6 +305,37 @@ function validateExpectedVersion(
 
 function hasPrincipal(actor: KnowledgeActor): boolean {
   return typeof actor?.userId === 'string' && actor.userId.trim().length > 0;
+}
+
+function isValidItemId(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.trim().length > 0 &&
+    !exceedsCodePointLimit(value, knowledgeItemInputLimits.itemId)
+  );
+}
+
+function isValidListQuery(value: unknown): value is KnowledgeListQuery {
+  if (!isRecord(value)) return false;
+  if (
+    Object.keys(value).some(
+      (key) => !['limit', 'offset', 'scope', 'status'].includes(key),
+    )
+  ) {
+    return false;
+  }
+  return (
+    Number.isInteger(value.limit) &&
+    Number(value.limit) >= 1 &&
+    Number(value.limit) <= knowledgeItemInputLimits.listLimit &&
+    Number.isInteger(value.offset) &&
+    Number(value.offset) >= 0 &&
+    Number(value.offset) <= knowledgeItemInputLimits.listOffset &&
+    (value.scope === undefined ||
+      isAllowedString(knowledgeItemScopes, value.scope)) &&
+    (value.status === undefined ||
+      isAllowedString(knowledgeItemStatuses, value.status))
+  );
 }
 
 const nullableStringMutableFields = [
@@ -329,8 +460,8 @@ function validateCreateRuntimeInput(
             knowledgeItemInputLimits.organizationGroupId,
           ),
       ) ||
-      new Set(value.organizationGroupIds).size !==
-        value.organizationGroupIds.length)
+      new Set(value.organizationGroupIds.map((groupId) => groupId.trim()))
+        .size !== value.organizationGroupIds.length)
   ) {
     return invalid(
       `organizationGroupIds must contain at most ${knowledgeItemInputLimits.organizationGroupIds} unique, non-empty strings of at most ${knowledgeItemInputLimits.organizationGroupId} characters`,
@@ -396,7 +527,9 @@ export function createKnowledgeItemService(dependencies: {
       actor: KnowledgeActor;
       query: KnowledgeListQuery;
     }): Promise<KnowledgeItem[]> {
-      if (!hasPrincipal(input.actor)) return [];
+      if (!hasPrincipal(input.actor) || !isValidListQuery(input.query)) {
+        return [];
+      }
       return dependencies.reader.listVisible(input.actor, input.query);
     },
 
@@ -406,6 +539,14 @@ export function createKnowledgeItemService(dependencies: {
       status?: KnowledgeItemStatus;
     }): Promise<number> {
       if (!hasPrincipal(input.actor)) return 0;
+      if (
+        (input.scope !== undefined &&
+          !isAllowedString(knowledgeItemScopes, input.scope)) ||
+        (input.status !== undefined &&
+          !isAllowedString(knowledgeItemStatuses, input.status))
+      ) {
+        return 0;
+      }
       return dependencies.reader.countVisible(input.actor, {
         scope: input.scope,
         status: input.status,
@@ -416,7 +557,9 @@ export function createKnowledgeItemService(dependencies: {
       actor: KnowledgeActor;
       itemId: string;
     }): Promise<KnowledgeApplicationResult<KnowledgeItem>> {
-      if (!hasPrincipal(input.actor)) return notFound();
+      if (!hasPrincipal(input.actor) || !isValidItemId(input.itemId)) {
+        return notFound();
+      }
       const item = await dependencies.reader.findVisibleById(
         input.actor,
         input.itemId,
@@ -523,7 +666,9 @@ export function createKnowledgeItemService(dependencies: {
       itemId: string;
       body: UpdateKnowledgeItemInput;
     }): Promise<KnowledgeApplicationResult<KnowledgeItem>> {
-      if (!hasPrincipal(input.actor)) return notFound();
+      if (!hasPrincipal(input.actor) || !isValidItemId(input.itemId)) {
+        return notFound();
+      }
       const bodyError = validateMutableRuntimeInput(input.body);
       if (bodyError) return bodyError;
       const versionError = validateExpectedVersion(input.body.expectedVersion);
@@ -588,7 +733,9 @@ export function createKnowledgeItemService(dependencies: {
       expectedVersion: number;
       reasonCode: string;
     }): Promise<KnowledgeApplicationResult<KnowledgeItem>> {
-      if (!hasPrincipal(input.actor)) return notFound();
+      if (!hasPrincipal(input.actor) || !isValidItemId(input.itemId)) {
+        return notFound();
+      }
       const versionError = validateExpectedVersion(input.expectedVersion);
       if (versionError) return versionError;
       if (typeof input.reasonCode !== 'string') {
@@ -635,7 +782,9 @@ export function createKnowledgeItemService(dependencies: {
       itemId: string;
       expectedVersion: number;
     }): Promise<KnowledgeApplicationResult<KnowledgeItem>> {
-      if (!hasPrincipal(input.actor)) return notFound();
+      if (!hasPrincipal(input.actor) || !isValidItemId(input.itemId)) {
+        return notFound();
+      }
       const versionError = validateExpectedVersion(input.expectedVersion);
       if (versionError) return versionError;
       return dependencies.unitOfWork.run(async (transaction) => {
