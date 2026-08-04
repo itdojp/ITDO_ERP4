@@ -162,12 +162,13 @@ Knowledge item の logical delete 理由は自由記述ではなく有限のreas
 #### Workstream 02 API / authorization contract
 
 - APIは `POST /knowledge/items`、`GET /knowledge/items`、`GET /knowledge/items/count`、`GET|PATCH|DELETE /knowledge/items/:id`、`POST /knowledge/items/:id/restore` とする。
-- `personal` のread/writeはowner subjectをDB predicateへ含め、`admin` / `mgmt` roleだけの通常閲覧を許可しない。JWT/sessionのDB canonical contextでは可変な`externalId` / `userName`ではなくstableな`UserAccount.id`を`ownerUserId`へ保存・照合する。development/test専用header authだけはsynthetic `UserContext.userId`へfallbackする。
+- `personal` のread/writeはowner subjectをDB predicateへ含め、`admin` / `mgmt` roleだけの通常閲覧を許可しない。JWT/sessionのDB canonical contextでは可変な`externalId` / `userName`ではなくstableな`UserAccount.id`を`ownerUserId`へ保存・照合する。development/test専用header authだけはsynthetic `UserContext.userId`へfallbackする。non-header authでcanonical `UserAccount.id`を解決できない場合はKnowledge route全体を`403 forbidden`（`canonical_account_required`）でfail closedとし、JWT subjectやlegacy keyへfallbackしない。
 - `organization` の通常readはowner、またはitemの `organizationId` とactorの `orgId` が一致し、かつactiveなcanonical `GroupAccount.id` の明示grantが一致する場合だけ許可する。org/group context欠落、inactive group、壊れたrelationはdenyする。
 - JWT/sessionのorganizationとcanonical group IDはDB解決成功時にDB正本へ置換し、stale token claimをACLへ使わない。header authはdevelopment/test用のsynthetic trust boundaryであり、productionはenv validationで`AUTH_MODE=jwt_bff`以外を起動拒否する。
 - organization item作成時はactor自身のactive `groupAccountIds` に含まれるgrantを1件以上要求する。WS02のgrantはread-onlyで、update/delete/restoreはownerだけに限定する。
 - JWT/sessionでDB user contextを解決できた場合、`orgId`、`groupIds`、`groupAccountIds`およびgroup由来roleはDB正本で置換し、signed tokenのstale group claimをunionしない。独立したrole claimは既存認証契約として保持する。development/test専用header authはsynthetic contextをそのまま信頼し、DB canonical化を行わない。
 - scopeとgrantの変更をgeneric PATCHへ含めない。personalからorganizationへの移行、grant管理、共有field選択はWorkstream 07の専用preview/confirm use caseで扱う。
+- create/update/delete/restoreのrequest bodyは、Fastify/Ajvが未知fieldを除去する前の`preValidation`境界で明示allowlistと照合し、owner/audit field等の未知fieldが1件でもあればrequest全体を`400 invalid_request`で拒否する。application service直呼びでも同じく未知fieldを拒否し、許可fieldだけを部分適用しない。
 - update/delete/restoreは、increment後もPostgreSQL `INTEGER`範囲内となるpositive integer（1〜2,147,483,646）の `expectedVersion` を必須とする。2,147,483,647はoverflowを防ぐためmutation前に`400 invalid_request`で拒否する。stale owner requestは`409 version_conflict`、owner外または存在しないIDは同じ`404 not_found` contractとする。
 - updateは正規化後の実値を現行rowと比較し、同一値だけのPATCHは`400 invalid_request`としてversionとauditを進めない。実変更と同一値が混在するPATCHは実変更fieldだけを更新し、`changedFields`へ記録する。
 - logical delete後は通常list/count/detailから除外する。restoreはowner、deleted state、version一致を同じtransaction内で検証する。

@@ -50,6 +50,7 @@ async function buildRouteServer(service, user = {}) {
         actorUserId: 'owner-1',
         scopes: ['knowledge:write'],
         delegated: true,
+        providerType: 'header',
       },
       ...user,
     };
@@ -150,7 +151,7 @@ test('knowledge ownership uses the stable canonical account id when the legacy i
   );
 });
 
-test('knowledge route normalizes malformed authenticated context to a fail-closed actor', async (t) => {
+test('knowledge route normalizes malformed organization context without widening access', async (t) => {
   let capturedActor;
   const app = await buildRouteServer(
     serviceStub({
@@ -160,7 +161,7 @@ test('knowledge route normalizes malformed authenticated context to a fail-close
       },
     }),
     {
-      userId: 42,
+      userId: ' owner-1 ',
       orgId: 42,
       groupAccountIds: [42, ' group-1 ', null, ''],
     },
@@ -173,10 +174,162 @@ test('knowledge route normalizes malformed authenticated context to a fail-close
   });
   assert.equal(response.statusCode, 200, response.body);
   assert.deepEqual(capturedActor, {
-    userId: '',
+    userId: 'owner-1',
     organizationId: undefined,
     groupAccountIds: ['group-1'],
   });
+});
+
+test('knowledge routes reject non-header actors without a canonical account id', async (t) => {
+  let calls = 0;
+  const called = async () => {
+    calls += 1;
+    return { ok: true, value: item() };
+  };
+  const app = await buildRouteServer(
+    serviceStub({
+      list: called,
+      create: called,
+      update: called,
+      remove: called,
+      restore: called,
+    }),
+    {
+      userId: 'raw-jwt-subject',
+      auth: {
+        principalUserId: 'raw-jwt-subject',
+        actorUserId: 'raw-jwt-subject',
+        scopes: ['knowledge:write'],
+        delegated: false,
+        providerType: 'google_oidc',
+      },
+    },
+  );
+  t.after(() => app.close());
+
+  for (const request of [
+    { method: 'GET', url: '/knowledge/items' },
+    {
+      method: 'POST',
+      url: '/knowledge/items',
+      payload: { scope: 'personal', sourceType: 'manual' },
+    },
+    {
+      method: 'PATCH',
+      url: '/knowledge/items/item-1',
+      payload: { expectedVersion: 1, title: 'not written' },
+    },
+    {
+      method: 'DELETE',
+      url: '/knowledge/items/item-1',
+      payload: { expectedVersion: 1, reasonCode: 'owner_request' },
+    },
+    {
+      method: 'POST',
+      url: '/knowledge/items/item-1/restore',
+      payload: { expectedVersion: 1 },
+    },
+  ]) {
+    const response = await app.inject(request);
+    assert.equal(response.statusCode, 403, `${request.method} ${request.url}`);
+    assert.equal(response.json().error?.code, 'forbidden');
+    assert.equal(
+      response.json().error?.details?.reason,
+      'canonical_account_required',
+    );
+  }
+  assert.equal(calls, 0);
+});
+
+test('knowledge routes reject empty or malformed canonical account ids', async (t) => {
+  for (const userAccountId of [undefined, '', '   ', 42]) {
+    let calls = 0;
+    const app = await buildRouteServer(
+      serviceStub({
+        create: async () => {
+          calls += 1;
+          return { ok: true, value: item() };
+        },
+      }),
+      {
+        userId: 'raw-jwt-subject',
+        auth: {
+          principalUserId: 'raw-jwt-subject',
+          actorUserId: 'raw-jwt-subject',
+          scopes: ['knowledge:write'],
+          delegated: false,
+          providerType: 'google_oidc',
+          userAccountId,
+        },
+      },
+    );
+    t.after(() => app.close());
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/knowledge/items',
+      payload: { scope: 'personal', sourceType: 'manual' },
+    });
+    assert.equal(response.statusCode, 403, String(userAccountId));
+    assert.equal(calls, 0);
+  }
+});
+
+test('knowledge mutation routes reject raw unknown fields before Ajv can remove them', async (t) => {
+  let calls = 0;
+  const called = async () => {
+    calls += 1;
+    return { ok: true, value: item() };
+  };
+  const app = await buildRouteServer(
+    serviceStub({
+      create: called,
+      update: called,
+      remove: called,
+      restore: called,
+    }),
+  );
+  t.after(() => app.close());
+
+  for (const request of [
+    {
+      method: 'POST',
+      url: '/knowledge/items',
+      payload: {
+        scope: 'personal',
+        sourceType: 'manual',
+        ownerUserId: 'spoofed-owner',
+      },
+    },
+    {
+      method: 'PATCH',
+      url: '/knowledge/items/item-1',
+      payload: {
+        expectedVersion: 1,
+        title: 'not written',
+        ownerUserId: 'spoofed-owner',
+      },
+    },
+    {
+      method: 'DELETE',
+      url: '/knowledge/items/item-1',
+      payload: {
+        expectedVersion: 1,
+        reasonCode: 'owner_request',
+        deletedBy: 'spoofed-actor',
+      },
+    },
+    {
+      method: 'POST',
+      url: '/knowledge/items/item-1/restore',
+      payload: { expectedVersion: 1, restoredBy: 'spoofed-actor' },
+    },
+  ]) {
+    const response = await app.inject(request);
+    assert.equal(response.statusCode, 400, `${request.method} ${request.url}`);
+    assert.equal(response.json().error?.code, 'invalid_request');
+  }
+  assert.equal(calls, 0);
 });
 
 test('knowledge route schema rejects scope changes and out-of-range versions before the service', async (t) => {

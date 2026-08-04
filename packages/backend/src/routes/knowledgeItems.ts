@@ -267,7 +267,7 @@ function toResponse(item: KnowledgeItem) {
 }
 
 function actorFromRequest(request: FastifyRequest): KnowledgeActor {
-  const userId = request.user?.auth?.userAccountId ?? request.user?.userId;
+  const userId = knowledgeActorUserId(request);
   const orgId = request.user?.orgId;
   const groupAccountIds = request.user?.groupAccountIds;
   return {
@@ -283,6 +283,28 @@ function actorFromRequest(request: FastifyRequest): KnowledgeActor {
       ),
     ],
   };
+}
+
+function knowledgeActorUserId(request: FastifyRequest) {
+  const auth = request.user?.auth;
+  const candidate =
+    auth?.providerType === 'header'
+      ? request.user?.userId
+      : auth?.userAccountId;
+  return typeof candidate === 'string' ? candidate.trim() : '';
+}
+
+async function requireCanonicalKnowledgeActor(
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  if (knowledgeActorUserId(request)) return;
+  return reply.code(403).send(
+    createApiErrorResponse('forbidden', 'Forbidden', {
+      category: 'permission',
+      details: { reason: 'canonical_account_required' },
+    }),
+  );
 }
 
 function auditActorFromRequest(
@@ -316,26 +338,59 @@ function sendResult(
   );
 }
 
-async function rejectScopeMutation(
-  request: FastifyRequest,
-  reply: FastifyReply,
+function rejectUnknownBodyFields(
+  allowedFields: readonly string[],
+  options: { rejectScopeMutation?: boolean } = {},
 ) {
-  const body =
-    request.body && typeof request.body === 'object'
-      ? (request.body as Record<string, unknown>)
-      : {};
-  if ('scope' in body || 'organizationGroupIds' in body) {
-    return reply
-      .code(400)
-      .send(
-        createApiErrorResponse(
-          'invalid_request',
-          'scope and organization grants require a dedicated share workflow',
-          { category: 'validation' },
-        ),
-      );
-  }
+  const allowed = new Set(allowedFields);
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    const body =
+      request.body &&
+      typeof request.body === 'object' &&
+      !Array.isArray(request.body)
+        ? (request.body as Record<string, unknown>)
+        : {};
+    if (
+      options.rejectScopeMutation &&
+      ('scope' in body || 'organizationGroupIds' in body)
+    ) {
+      return reply
+        .code(400)
+        .send(
+          createApiErrorResponse(
+            'invalid_request',
+            'scope and organization grants require a dedicated share workflow',
+            { category: 'validation' },
+          ),
+        );
+    }
+    if (Object.keys(body).some((field) => !allowed.has(field))) {
+      return reply
+        .code(400)
+        .send(
+          createApiErrorResponse(
+            'invalid_request',
+            'body contains an unsupported field',
+            { category: 'validation' },
+          ),
+        );
+    }
+  };
 }
+
+const rejectUnknownCreateBodyFields = rejectUnknownBodyFields(
+  Object.keys(createBodySchema.properties),
+);
+const rejectUnknownUpdateBodyFields = rejectUnknownBodyFields(
+  Object.keys(updateBodySchema.properties),
+  { rejectScopeMutation: true },
+);
+const rejectUnknownDeleteBodyFields = rejectUnknownBodyFields(
+  Object.keys(deleteBodySchema.properties),
+);
+const rejectUnknownRestoreBodyFields = rejectUnknownBodyFields(
+  Object.keys(versionBodySchema.properties),
+);
 
 export async function registerKnowledgeItemRoutes(
   app: FastifyInstance,
@@ -347,12 +402,16 @@ export async function registerKnowledgeItemRoutes(
       reader: prismaKnowledgeItemRepository,
       unitOfWork: prismaKnowledgeUnitOfWork,
     });
-  const preHandler = requireRole(allowedRoles);
+  const preHandler = [
+    requireCanonicalKnowledgeActor,
+    requireRole(allowedRoles),
+  ];
 
   app.post(
     '/knowledge/items',
     {
       preHandler,
+      preValidation: rejectUnknownCreateBodyFields,
       schema: {
         tags: ['knowledge'],
         body: createBodySchema,
@@ -480,7 +539,7 @@ export async function registerKnowledgeItemRoutes(
     '/knowledge/items/:id',
     {
       preHandler,
-      preValidation: rejectScopeMutation,
+      preValidation: rejectUnknownUpdateBodyFields,
       schema: {
         tags: ['knowledge'],
         params: itemIdParamsSchema,
@@ -509,6 +568,7 @@ export async function registerKnowledgeItemRoutes(
     '/knowledge/items/:id',
     {
       preHandler,
+      preValidation: rejectUnknownDeleteBodyFields,
       schema: {
         tags: ['knowledge'],
         params: itemIdParamsSchema,
@@ -542,6 +602,7 @@ export async function registerKnowledgeItemRoutes(
     '/knowledge/items/:id/restore',
     {
       preHandler,
+      preValidation: rejectUnknownRestoreBodyFields,
       schema: {
         tags: ['knowledge'],
         params: itemIdParamsSchema,

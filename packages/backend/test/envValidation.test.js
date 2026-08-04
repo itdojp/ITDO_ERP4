@@ -873,6 +873,26 @@ test('auth plugin: delegated read-only scope allows GET /project-360', () => {
   assert.equal(body.approvals?.pendingTotal, 1);
 });
 
+test('auth plugin: jwt without a canonical account cannot access Knowledge routes', () => {
+  const result = runDelegatedJwtRequest({
+    payload: {
+      sub: 'unprovisioned-google-subject',
+      roles: ['user'],
+      jti: 'tok-unprovisioned-knowledge',
+    },
+    method: 'GET',
+    url: '/knowledge/items',
+    stubDb: true,
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.statusCode, 403);
+  const body = JSON.parse(payload.body);
+  assert.equal(body.error?.code, 'forbidden');
+  assert.equal(body.error?.details?.reason, 'canonical_account_required');
+});
+
 test('auth plugin: delegated write-limited scope passes auth guard for write method', () => {
   const result = runDelegatedJwtRequest({
     payload: {
