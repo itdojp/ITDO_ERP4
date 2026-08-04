@@ -151,29 +151,47 @@ function isCredentialQueryName(name: string): boolean {
   ].some((marker) => compact.includes(marker));
 }
 
-const nestedUrlDecodeLimit = 8;
 const percentEncodedByte = /%([0-9a-f]{2})/gi;
+const malformedPercentEncoding = /%(?![0-9a-f]{2})/i;
 
 type NestedUrlParseResult =
-  { kind: 'url'; url: URL } | { kind: 'none' } | { kind: 'ambiguous' };
+  { kind: 'url'; url: URL } | { kind: 'none' } | { kind: 'unsafe' };
+
+function hasCredentialQueryText(value: string): boolean {
+  for (const separator of ['?', '#']) {
+    const index = value.indexOf(separator);
+    if (index < 0) continue;
+    const params = new URLSearchParams(value.slice(index + 1));
+    if ([...params.keys()].some(isCredentialQueryName)) return true;
+  }
+  return false;
+}
 
 function parseNestedHttpUrl(value: string): NestedUrlParseResult {
   let candidate = value.trim();
-  for (
-    let decodeCount = 0;
-    decodeCount <= nestedUrlDecodeLimit;
-    decodeCount += 1
-  ) {
-    const lowerCandidate = candidate.toLowerCase();
+  // Every successful layer replaces at least one three-character %HH sequence
+  // with one byte, reducing the value by at least two characters. This bound
+  // therefore covers every possible layer while remaining input-size bounded.
+  const decodeLayerLimit = Math.floor(candidate.length / 2) + 1;
+  for (let decodeCount = 0; decodeCount <= decodeLayerLimit; decodeCount += 1) {
     if (
-      lowerCandidate.startsWith('http://') ||
-      lowerCandidate.startsWith('https://') ||
-      candidate.startsWith('//') ||
-      candidate.startsWith('/') ||
-      candidate.startsWith('?')
+      malformedPercentEncoding.test(candidate) &&
+      hasCredentialQueryText(candidate)
+    ) {
+      return { kind: 'unsafe' };
+    }
+    const lowerCandidate = candidate.toLowerCase();
+    const absoluteUrlIndex = lowerCandidate.search(/https?:\/\//);
+    const parseCandidate =
+      absoluteUrlIndex >= 0 ? candidate.slice(absoluteUrlIndex) : candidate;
+    if (
+      absoluteUrlIndex >= 0 ||
+      parseCandidate.startsWith('//') ||
+      parseCandidate.startsWith('/') ||
+      parseCandidate.startsWith('?')
     ) {
       try {
-        const parsed = new URL(candidate, 'https://nested.invalid');
+        const parsed = new URL(parseCandidate, 'https://nested.invalid');
         if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
           return { kind: 'url', url: parsed };
         }
@@ -185,15 +203,10 @@ function parseNestedHttpUrl(value: string): NestedUrlParseResult {
       String.fromCharCode(Number.parseInt(byte, 16)),
     );
     if (decoded === candidate) return { kind: 'none' };
-    if (decodeCount === nestedUrlDecodeLimit) {
-      // Deeply encoded values are ambiguous by design. Reject them instead of
-      // allowing an attacker to move a credential-bearing URL past the
-      // bounded decoding budget.
-      return { kind: 'ambiguous' };
-    }
+    if (decodeCount === decodeLayerLimit) return { kind: 'unsafe' };
     candidate = decoded.trim();
   }
-  return { kind: 'none' };
+  return { kind: 'unsafe' };
 }
 
 function hasCredentialFragment(url: URL): boolean {
@@ -207,7 +220,7 @@ function hasCredentialBearingNestedUrl(url: URL, depth = 0): boolean {
   for (const [name, value] of url.searchParams.entries()) {
     if (isCredentialQueryName(name)) return true;
     const nested = parseNestedHttpUrl(value);
-    if (nested.kind === 'ambiguous') return true;
+    if (nested.kind === 'unsafe') return true;
     if (nested.kind === 'none') continue;
     const nestedUrl = nested.url;
     if (

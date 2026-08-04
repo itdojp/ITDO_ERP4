@@ -14,7 +14,7 @@
 - repository port / Prisma adapter / application use case / Fastify CRUD API
 - versionによるoptimistic concurrency、logical delete / restore
 - business rowと`AuditLog`を同じPrisma transactionで確定するfail-closed audit writer
-- canonical URLのcredential、fragment、tracking/secret query除去。多重percent-encodingをboundedに解析し、上限到達時はfail closedとして、埋め込みURLのcredential queryと正規化後の過大URLも拒否
+- canonical URLのcredential、fragment、tracking/secret query除去。入力長でboundedな多重percent-decoding、malformed prefix内のcredential query text検査、上限到達時のfail closedにより、埋め込みURLのcredential queryと正規化後の過大URLも拒否
 - OpenAPI snapshot、backup/restore前提、bounded-context registry
 
 ## Security / privacy contract
@@ -38,7 +38,7 @@
 | ----------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------- |
 | focused Knowledge tests                                           | PASS   | 35 tests: use case 15、Prisma adapter 8、route 8、schema/migration/OpenAPI 4                                                       |
 | auth cache invalidation focused                                   | PASS   | 3 subprocess tests: TTL有効時の手動membership削除、group rename/deactivate。失効後Knowledge list/count/detail/createも確認         |
-| focused coverage                                                  | PASS   | adapter S/L/F 100%、B 87.50%；use case S/L 95.68%、B 84.40%、F 96.96%；route S/L 98.21%、B 75.75%、F 100%。閾値の追加・低下なし    |
+| focused coverage                                                  | PASS   | adapter S/L/F 100%、B 87.50%；use case S/L 95.74%、B 84.64%、F 97.05%；route S/L 98.21%、B 75.75%、F 100%。閾値の追加・低下なし    |
 | empty PostgreSQL `prisma migrate deploy` / status                 | PASS   | PostgreSQL 15 pinned digestへ94 migrationsを適用、schema up to date                                                                |
 | existing shared-audit conflict migration                          | PASS   | base migrations後に衝突fixtureを入れても`NOT VALID`追加成功。既存1件を保持し、新規invalid拒否・allowlisted write許可               |
 | old-app compatibility                                             | PASS   | migration後DBへ`origin/main`（`ee34c790`）の旧schema/client/applicationをbuildして接続し、`healthz=200` / `readyz=200`             |

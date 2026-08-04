@@ -620,6 +620,7 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     encodeLayers(` ${nestedCredentialUrl}`, 2),
     encodeLayers(nestedCredentialUrl, 4),
     encodeLayers(nestedCredentialUrl, 12),
+    `%ZZ${encodeLayers(nestedCredentialUrl, 2)}`,
     encodeURIComponent('/open?resourcekey=drive-resource-key-value'),
   ]) {
     const nestedUrl = await harness.service.create({
@@ -635,6 +636,39 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     assert.equal(nestedUrl.statusCode, 400);
   }
   assert.equal(harness.items.size, 1);
+
+  const harmlessHarness = createHarness();
+  const harmlessDeeplyEncodedQuery = await harmlessHarness.service.create({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    body: {
+      scope: 'personal',
+      sourceType: 'web',
+      canonicalUrl: `https://example.com/redirect?next=${encodeLayers('plain text', 12)}`,
+    },
+  });
+  assert.equal(harmlessDeeplyEncodedQuery.ok, true);
+  const harmlessDeeplyEncodedNestedUrl =
+    await harmlessHarness.service.create({
+      actor: actor('owner-1'),
+      auditActor: auditActor('owner-1'),
+      body: {
+        scope: 'personal',
+        sourceType: 'web',
+        canonicalUrl: `https://example.com/redirect?next=${encodeLayers('https://example.com/safe?x=1', 12)}`,
+      },
+  });
+  assert.equal(harmlessDeeplyEncodedNestedUrl.ok, true);
+  const harmlessQueryLikeText = await harmlessHarness.service.create({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    body: {
+      scope: 'personal',
+      sourceType: 'web',
+      canonicalUrl: `https://example.com/search?q=${encodeURIComponent('What?state=done')}`,
+    },
+  });
+  assert.equal(harmlessQueryLikeText.ok, true);
 
   for (const credentialQuery of [
     'auth_key=credential-value',
@@ -653,17 +687,22 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     assert.equal(rejectedUpdate.ok, false);
     assert.equal(rejectedUpdate.statusCode, 400);
   }
-  const nestedRejectedUpdate = await harness.service.update({
-    actor: actor('owner-1'),
-    auditActor: auditActor('owner-1'),
-    itemId: result.value.id,
-    body: {
-      expectedVersion: 1,
-      canonicalUrl: `https://example.com/redirect?next=${encodeLayers(nestedCredentialUrl, 4)}`,
-    },
-  });
-  assert.equal(nestedRejectedUpdate.ok, false);
-  assert.equal(nestedRejectedUpdate.statusCode, 400);
+  for (const nestedValue of [
+    encodeLayers(nestedCredentialUrl, 4),
+    `%ZZ${encodeLayers(nestedCredentialUrl, 2)}`,
+  ]) {
+    const nestedRejectedUpdate = await harness.service.update({
+      actor: actor('owner-1'),
+      auditActor: auditActor('owner-1'),
+      itemId: result.value.id,
+      body: {
+        expectedVersion: 1,
+        canonicalUrl: `https://example.com/redirect?next=${nestedValue}`,
+      },
+    });
+    assert.equal(nestedRejectedUpdate.ok, false);
+    assert.equal(nestedRejectedUpdate.statusCode, 400);
+  }
   assert.equal(harness.items.get(result.value.id).version, 1);
   assert.equal(
     harness.items.get(result.value.id).canonicalUrl,
