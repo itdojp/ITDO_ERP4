@@ -279,6 +279,16 @@ function bounded(value: string | undefined, maximum: number) {
   return value.slice(0, maximum);
 }
 
+const knowledgeAuditRequestIdPattern = /^[A-Za-z0-9._-]{1,128}$/;
+
+function safeKnowledgeAuditRequestId(value: string | undefined) {
+  if (!value) return undefined;
+  const normalized = value.trim();
+  return knowledgeAuditRequestIdPattern.test(normalized)
+    ? normalized
+    : undefined;
+}
+
 function boundedScopes(values: string[] | undefined) {
   if (!values) return [];
   return [
@@ -333,9 +343,8 @@ export class PrismaKnowledgeAuditWriter implements KnowledgeAuditWriter {
         userId: bounded(entry.actor.userId, 255),
         actorRole: bounded(entry.actor.actorRole, 100),
         actorGroupId: bounded(entry.actor.actorGroupId, 255),
-        requestId: bounded(entry.actor.requestId, 255),
+        requestId: safeKnowledgeAuditRequestId(entry.actor.requestId),
         ipAddress: bounded(entry.actor.ipAddress, 255),
-        userAgent: bounded(entry.actor.userAgent, 1024),
         source: bounded(entry.actor.source, 100),
         reasonCode,
         targetTable: 'knowledge_items',

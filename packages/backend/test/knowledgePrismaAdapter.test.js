@@ -141,6 +141,7 @@ test('knowledge audit writer is fail-closed and writes only typed allowlisted me
       actorUserId: 'actor-1',
       authScopes: ['knowledge:write', ' knowledge:write ', 'scope-2'],
       requestId: 'request-1',
+      userAgent: 'Bearer must-not-pass-through',
       source: 'api',
       secret: 'must-not-pass-through',
     },
@@ -168,7 +169,26 @@ test('knowledge audit writer is fail-closed and writes only typed allowlisted me
     JSON.stringify(createInput).includes('must-not-pass-through'),
     false,
   );
+  assert.equal(createInput.data.requestId, 'request-1');
+  assert.equal(createInput.data.userAgent, undefined);
   assert.equal(createInput.data.targetTable, 'knowledge_items');
+
+  await writer.write({
+    action: 'knowledge_item_created',
+    actor: {
+      userId: 'owner-1',
+      requestId: 'Bearer must-not-pass-through',
+      userAgent: 'Bearer must-not-pass-through',
+    },
+    targetId: 'item-1',
+    metadata: { scope: 'personal', status: 'inbox', version: 1 },
+  });
+  assert.equal(createInput.data.requestId, undefined);
+  assert.equal(createInput.data.userAgent, undefined);
+  assert.equal(
+    JSON.stringify(createInput).includes('must-not-pass-through'),
+    false,
+  );
 
   await writer.write({
     action: 'knowledge_item_deleted',

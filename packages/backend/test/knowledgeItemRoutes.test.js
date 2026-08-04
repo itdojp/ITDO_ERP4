@@ -108,7 +108,10 @@ test('knowledge create route maps authenticated org/group context and returns th
   assert.equal(captured.auditActor.principalUserId, 'principal-1');
   assert.equal(captured.auditActor.actorUserId, 'owner-1');
   assert.deepEqual(captured.auditActor.authScopes, ['knowledge:write']);
-  assert.equal(captured.auditActor.userAgent, 'knowledge-route-test');
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(captured.auditActor, 'userAgent'),
+    false,
+  );
   assert.equal(response.json().version, 1);
   assert.equal(response.json().capturedAt, '2026-08-04T09:00:00.000Z');
 });

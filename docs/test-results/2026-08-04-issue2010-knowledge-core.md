@@ -28,7 +28,7 @@
 - organization grant変更とscope変更をgeneric PATCHへ含めない
 - update/delete/restoreはowner + expected version一致を要求する
 - application service境界でもmutable fieldのruntime型・enum・明示的`undefined`、RFC 3339 date-time、routeと同じ文字数/organization grant集合/list/item ID/DB `Int` expectedVersion上限、および削除理由型を検証する。routeを迂回した過大payload・locale依存日時・trim後重複grant・Prisma range error・`TypeError`を防止する。正規化後の同一値だけを含むPATCHは`400 invalid_request`としてversion/auditを進めず、実変更との混在時は実変更fieldだけを更新・監査する
-- audit metadataはscope/status/version/変更field名とboundedなprincipal/actor/scope provenanceだけを保存し、本文、URL、token ID、secretを保存しない
+- audit metadataはscope/status/version/変更field名とboundedなprincipal/actor/scope provenanceだけを保存し、本文、URL、token ID、secretを保存しない。request IDは安全文字・128文字上限をadapter境界でも再検証し、利用者指定の自由文であるUser-AgentはKnowledge audit port/DBへ渡さない
 - logical deleteの`reasonCode`はrequest/response schema、application port/service、具象Prisma adapter、Knowledge audit writer、DB enum/CHECKの各境界で有限allowlist（`owner_request`）へ限定し、serviceを迂回しても任意文やcredentialをbusiness row / auditへ保存しない
 - provider URL、Drive/S3 credential、production identifierは使用していない
 
@@ -38,7 +38,7 @@
 | ----------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | focused Knowledge tests                                           | PASS   | 36 tests: use case 16、Prisma adapter 8、route 8、schema/migration/OpenAPI 4。use case内でcredential root 16種 × encoding 4種 × 配置3種の192-case embedded-value matrixをcreate/update双方へ適用 |
 | auth cache invalidation focused                                   | PASS   | 3 subprocess tests: TTL有効時の手動membership削除、group rename/deactivate。失効後Knowledge list/count/detail/createも確認                                                                       |
-| focused coverage                                                  | PASS   | adapter S/L/F 100%、B 87.67%；use case S/L 96.66%、B 88.15%、F 97.43%；route S/L 99.36%、B 77.77%、F 100%。閾値の追加・低下なし                                                                  |
+| focused coverage                                                  | PASS   | adapter S/L/F 100%、B 88.31%；use case S/L 96.97%、B 88.12%、F 97.43%；route S/L 99.47%、B 77.14%、F 100%。閾値の追加・低下なし                                                                  |
 | empty PostgreSQL `prisma migrate deploy` / status                 | PASS   | PostgreSQL 15 pinned digestへ94 migrationsを適用、schema up to date                                                                                                                              |
 | existing shared-audit conflict migration                          | PASS   | base migrations後に衝突fixtureを入れても`NOT VALID`追加成功。既存1件を保持し、新規invalid拒否・allowlisted write許可                                                                             |
 | old-app compatibility                                             | PASS   | migration後DBへ`origin/main`（`ee34c790`）の旧schema/client/applicationをbuildして接続し、`healthz=200` / `readyz=200`                                                                           |

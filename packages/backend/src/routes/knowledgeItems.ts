@@ -296,7 +296,6 @@ function auditActorFromRequest(request: FastifyRequest): KnowledgeAuditActor {
     actorGroupId: context.actorGroupId,
     requestId: context.requestId,
     ipAddress: context.ipAddress,
-    userAgent: context.userAgent,
     source: context.source,
   };
 }

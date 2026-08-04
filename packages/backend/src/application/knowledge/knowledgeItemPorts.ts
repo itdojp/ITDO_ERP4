@@ -64,7 +64,6 @@ export type KnowledgeAuditActor = {
   actorGroupId?: string;
   requestId?: string;
   ipAddress?: string;
-  userAgent?: string;
   source?: string;
 };
 
