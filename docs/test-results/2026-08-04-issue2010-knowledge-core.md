@@ -33,8 +33,8 @@
 
 | Command / check                                                   | Result | Notes                                                                                                                           |
 | ----------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| focused Knowledge tests                                           | PASS   | 23 tests: use case 7、Prisma adapter 6、route 6、schema/migration/OpenAPI 4                                                     |
-| focused coverage                                                  | PASS   | adapter S/L/F 100%、B 84.74%；use case S/L 91.20%、B 65.21%、F 95.23%；route S/L 97.97%、B 64.28%、F 100%。閾値の追加・低下なし |
+| focused Knowledge tests                                           | PASS   | 25 tests: use case 8、Prisma adapter 6、route 7、schema/migration/OpenAPI 4                                                     |
+| focused coverage                                                  | PASS   | adapter S/L/F 100%、B 84.74%；use case S/L 94.10%、B 73.61%、F 95.23%；route S/L 98.02%、B 73.33%、F 100%。閾値の追加・低下なし |
 | empty PostgreSQL `prisma migrate deploy` / status                 | PASS   | PostgreSQL 15 pinned digestへ94 migrationsを適用、schema up to date                                                             |
 | old-app compatibility                                             | PASS   | migration後DBへ`origin/main`の旧schema/client/applicationをbuildして接続し、`healthz=200` / `readyz=200`                        |
 | local Prisma integration                                          | PASS   | personal/org ACL、URL正規化、version conflict、delete/restore、5 audit events、scope/version DB CHECK                           |
@@ -43,7 +43,7 @@
 | `npm run format:check --prefix packages/backend`                  | PASS   | Knowledge sourceを含む                                                                                                          |
 | `npm run typecheck --prefix packages/backend`                     | PASS   | strict TypeScript                                                                                                               |
 | `npm run build --prefix packages/backend`                         | PASS   | Prisma Client生成後                                                                                                             |
-| `npm run test --prefix packages/backend`                          | PASS   | 1,523 tests、skip/todo 0                                                                                                        |
+| `npm run test --prefix packages/backend`                          | PASS   | 1,525 tests、skip/todo 0                                                                                                        |
 | `npm run coverage:auth:check --prefix packages/backend`           | PASS   | auth 151 tests。S/L 90.24%、B 70.88%、F 98.66%。既存閾値の低下なし                                                              |
 | frontend lint / format / typecheck / build / test                 | PASS   | 82 files / 468 tests、backend変更による回帰なし                                                                                 |
 | backend / frontend `npm audit --audit-level=high`                 | PASS   | PR #2023取込み後、いずれも0 vulnerabilities                                                                                     |

@@ -203,8 +203,9 @@ function toResponse(item: KnowledgeItem) {
 }
 
 function actorFromRequest(request: FastifyRequest): KnowledgeActor {
+  const userId = request.user?.userId;
   return {
-    userId: request.user?.userId.trim() ?? '',
+    userId: typeof userId === 'string' ? userId.trim() : '',
     organizationId: request.user?.orgId?.trim() || undefined,
     groupAccountIds: [
       ...new Set(

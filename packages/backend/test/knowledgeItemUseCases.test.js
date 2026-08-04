@@ -428,6 +428,24 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
   assert.equal(signedUrl.statusCode, 400);
   assert.equal(harness.items.size, 1);
 
+  for (const credentialQuery of [
+    'key=google-api-key-value',
+    'resourcekey=drive-resource-key-value',
+  ]) {
+    const credentialUrl = await harness.service.create({
+      actor: actor('owner-1'),
+      auditActor: auditActor('owner-1'),
+      body: {
+        scope: 'personal',
+        sourceType: 'web',
+        canonicalUrl: `https://drive.google.com/open?${credentialQuery}`,
+      },
+    });
+    assert.equal(credentialUrl.ok, false);
+    assert.equal(credentialUrl.statusCode, 400);
+  }
+  assert.equal(harness.items.size, 1);
+
   const rejected = await harness.service.update({
     actor: actor('owner-1'),
     auditActor: auditActor('owner-1'),
@@ -436,4 +454,49 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
   });
   assert.equal(rejected.ok, false);
   assert.equal(rejected.statusCode, 400);
+});
+
+test('create and update reject present but invalid date-time values before writes', async () => {
+  const harness = createHarness();
+
+  for (const body of [
+    { scope: 'personal', sourceType: 'manual', publishedAt: '' },
+    { scope: 'personal', sourceType: 'manual', capturedAt: '' },
+    { scope: 'personal', sourceType: 'manual', publishedAt: undefined },
+    { scope: 'personal', sourceType: 'manual', capturedAt: undefined },
+    { scope: 'personal', sourceType: 'manual', capturedAt: null },
+  ]) {
+    const result = await harness.service.create({
+      actor: actor('owner-1'),
+      auditActor: auditActor('owner-1'),
+      body,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.statusCode, 400);
+  }
+  assert.equal(harness.items.size, 0);
+
+  const created = await createPersonal(harness);
+  assert.equal(created.ok, true);
+  for (const patch of [
+    { publishedAt: '' },
+    { capturedAt: '' },
+    { publishedAt: undefined },
+    { capturedAt: undefined },
+    { capturedAt: null },
+  ]) {
+    const result = await harness.service.update({
+      actor: actor('owner-1'),
+      auditActor: auditActor('owner-1'),
+      itemId: created.value.id,
+      body: { expectedVersion: 1, ...patch },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.statusCode, 400);
+  }
+  assert.equal(harness.items.get(created.value.id).version, 1);
+  assert.deepEqual(
+    harness.audits.map((entry) => entry.action),
+    ['knowledge_item_created'],
+  );
 });

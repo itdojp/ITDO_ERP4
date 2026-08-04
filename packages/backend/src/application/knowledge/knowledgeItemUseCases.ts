@@ -93,7 +93,9 @@ function isCredentialQueryName(name: string): boolean {
   if (
     compact === 'googleaccessid' ||
     compact === 'awsaccesskeyid' ||
+    compact === 'key' ||
     compact === 'keypairid' ||
+    compact === 'resourcekey' ||
     compact === 'policy' ||
     compact === 'expires' ||
     compact === 'auth' ||
@@ -289,12 +291,13 @@ export function createKnowledgeItemService(dependencies: {
       }
 
       const publishedAt = parseOptionalDate(input.body.publishedAt);
-      if (input.body.publishedAt && publishedAt === undefined) {
+      if ('publishedAt' in input.body && publishedAt === undefined) {
         return invalid('publishedAt must be a valid date-time');
       }
-      const capturedAt = input.body.capturedAt
-        ? parseOptionalDate(input.body.capturedAt)
-        : now();
+      const capturedAt =
+        'capturedAt' in input.body
+          ? parseOptionalDate(input.body.capturedAt)
+          : now();
       if (!(capturedAt instanceof Date)) {
         return invalid('capturedAt must be a valid date-time');
       }
@@ -354,14 +357,14 @@ export function createKnowledgeItemService(dependencies: {
       const versionError = validateExpectedVersion(input.body.expectedVersion);
       if (versionError) return versionError;
       if (
-        input.body.publishedAt &&
+        'publishedAt' in input.body &&
         parseOptionalDate(input.body.publishedAt) === undefined
       ) {
         return invalid('publishedAt must be a valid date-time');
       }
       if (
-        input.body.capturedAt &&
-        parseOptionalDate(input.body.capturedAt) === undefined
+        'capturedAt' in input.body &&
+        !(parseOptionalDate(input.body.capturedAt) instanceof Date)
       ) {
         return invalid('capturedAt must be a valid date-time');
       }
