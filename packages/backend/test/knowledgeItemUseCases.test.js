@@ -386,6 +386,21 @@ test('owner mutations enforce optimistic concurrency and hide items from non-own
   assert.equal(stale.statusCode, 409);
 });
 
+test('mandatory audit actor is derived from the authorized business actor', async () => {
+  const harness = createHarness();
+  const created = await harness.service.create({
+    actor: actor('authorized-owner'),
+    auditActor: auditActor('spoofed-audit-user'),
+    body: { scope: 'personal', sourceType: 'manual' },
+  });
+  assert.equal(created.ok, true);
+  assert.equal(harness.audits[0].actor.userId, 'authorized-owner');
+  assert.equal(
+    JSON.stringify(harness.audits).includes('spoofed-audit-user'),
+    false,
+  );
+});
+
 test('owner update rejects normalized no-op fields without version or audit changes', async () => {
   const harness = createHarness();
   const created = await createPersonal(harness);
@@ -642,6 +657,8 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     'code_verifier',
     'clientproof',
     'dpop',
+    'pwd',
+    'passphrase',
     'SAMLRequest',
     'SAMLart',
     'RelayState',
@@ -697,6 +714,8 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     'clientProof=credential-value',
     'clientproof=credential-value',
     'dpop=credential-value',
+    'pwd=credential-value',
+    'passphrase=credential-value',
     'SAMLRequest=credential-value',
     'SAMLart=credential-value',
     'SAMLArtifact=credential-value',
@@ -711,7 +730,7 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
         canonicalUrl: `https://drive.google.com/open?${credentialQuery}`,
       },
     });
-    assert.equal(credentialUrl.ok, false);
+    assert.equal(credentialUrl.ok, false, credentialQuery);
     assert.equal(credentialUrl.statusCode, 400);
   }
   assert.equal(harness.items.size, 1);
@@ -894,6 +913,8 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     'client_proof=credential-value',
     'clientProof=credential-value',
     'clientproof=credential-value',
+    'pwd=credential-value',
+    'passphrase=credential-value',
     'SAMLRequest=credential-value',
     'SAMLart=credential-value',
     'SAMLArtifact=credential-value',
@@ -908,7 +929,7 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
         canonicalUrl: `https://example.com/file?${credentialQuery}`,
       },
     });
-    assert.equal(rejectedUpdate.ok, false);
+    assert.equal(rejectedUpdate.ok, false, credentialQuery);
     assert.equal(rejectedUpdate.statusCode, 400);
   }
   for (const nestedValue of [
@@ -1087,6 +1108,7 @@ test('service boundary rejects malformed create and update values before writes'
       sourceType: 'manual',
       organizationGroupIds: [42],
     },
+    { scope: 'personal', sourceType: 'manual', unexpected: true },
   ]) {
     const result = await harness.service.create({
       actor: actor('owner-1'),
@@ -1108,6 +1130,12 @@ test('service boundary rejects malformed create and update values before writes'
     { capturedAt: 42 },
     { sourceType: 'invalid' },
     { status: 'invalid' },
+    { title: 'must not update', scope: 'organization' },
+    {
+      title: 'must not update',
+      organizationGroupIds: ['group-1'],
+    },
+    { title: 'must not update', unexpected: true },
   ]) {
     const result = await harness.service.update({
       actor: actor('owner-1'),
@@ -1119,6 +1147,7 @@ test('service boundary rejects malformed create and update values before writes'
     assert.equal(result.statusCode, 400);
   }
   assert.equal(harness.items.get(created.value.id).version, 1);
+  assert.equal(harness.items.get(created.value.id).title, 'Private note');
   assert.deepEqual(
     harness.audits.map((entry) => entry.action),
     ['knowledge_item_created'],
@@ -1305,4 +1334,102 @@ test('service boundary rejects unbounded read queries and item ids without repos
     harness.audits.map((entry) => entry.action),
     ['knowledge_item_created'],
   );
+});
+
+test('version ceiling is terminal for update, delete, and restore without overflow', async () => {
+  const maximumExpectedVersion = 2147483646;
+  const terminalVersion = 2147483647;
+
+  const updateHarness = createHarness();
+  const updateCreated = await createPersonal(updateHarness);
+  updateHarness.items.get(updateCreated.value.id).version =
+    maximumExpectedVersion;
+  const terminalUpdate = await updateHarness.service.update({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: updateCreated.value.id,
+    body: { expectedVersion: maximumExpectedVersion, title: 'terminal' },
+  });
+  assert.equal(terminalUpdate.ok, true);
+  assert.equal(terminalUpdate.value.version, terminalVersion);
+  const auditCountAfterUpdate = updateHarness.audits.length;
+  const rejectedUpdate = await updateHarness.service.update({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: updateCreated.value.id,
+    body: { expectedVersion: terminalVersion, title: 'overflow' },
+  });
+  assert.equal(rejectedUpdate.ok, false);
+  assert.equal(rejectedUpdate.statusCode, 400);
+  assert.equal(
+    updateHarness.items.get(updateCreated.value.id).version,
+    terminalVersion,
+  );
+  assert.equal(updateHarness.audits.length, auditCountAfterUpdate);
+
+  const deleteHarness = createHarness();
+  const deleteCreated = await createPersonal(deleteHarness);
+  deleteHarness.items.get(deleteCreated.value.id).version =
+    maximumExpectedVersion;
+  const terminalDelete = await deleteHarness.service.remove({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: deleteCreated.value.id,
+    expectedVersion: maximumExpectedVersion,
+    reasonCode: 'owner_request',
+  });
+  assert.equal(terminalDelete.ok, true);
+  assert.equal(terminalDelete.value.version, terminalVersion);
+  const auditCountAfterDelete = deleteHarness.audits.length;
+  const rejectedRestore = await deleteHarness.service.restore({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: deleteCreated.value.id,
+    expectedVersion: terminalVersion,
+  });
+  assert.equal(rejectedRestore.ok, false);
+  assert.equal(rejectedRestore.statusCode, 400);
+  assert.equal(
+    deleteHarness.items.get(deleteCreated.value.id).version,
+    terminalVersion,
+  );
+  assert.notEqual(
+    deleteHarness.items.get(deleteCreated.value.id).deletedAt,
+    null,
+  );
+  assert.equal(deleteHarness.audits.length, auditCountAfterDelete);
+
+  const restoreHarness = createHarness();
+  const restoreCreated = await createPersonal(restoreHarness);
+  const restoreItem = restoreHarness.items.get(restoreCreated.value.id);
+  restoreItem.version = maximumExpectedVersion;
+  restoreItem.deletedAt = fixedNow;
+  restoreItem.deletedReason = 'owner_request';
+  const terminalRestore = await restoreHarness.service.restore({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: restoreCreated.value.id,
+    expectedVersion: maximumExpectedVersion,
+  });
+  assert.equal(terminalRestore.ok, true);
+  assert.equal(terminalRestore.value.version, terminalVersion);
+  const auditCountAfterRestore = restoreHarness.audits.length;
+  const rejectedDelete = await restoreHarness.service.remove({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: restoreCreated.value.id,
+    expectedVersion: terminalVersion,
+    reasonCode: 'owner_request',
+  });
+  assert.equal(rejectedDelete.ok, false);
+  assert.equal(rejectedDelete.statusCode, 400);
+  assert.equal(
+    restoreHarness.items.get(restoreCreated.value.id).version,
+    terminalVersion,
+  );
+  assert.equal(
+    restoreHarness.items.get(restoreCreated.value.id).deletedAt,
+    null,
+  );
+  assert.equal(restoreHarness.audits.length, auditCountAfterRestore);
 });

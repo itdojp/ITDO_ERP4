@@ -7,6 +7,7 @@ import {
   knowledgeSourceTypes,
   type KnowledgeActor,
   type KnowledgeAuditActor,
+  type KnowledgeAuditActorContext,
   type KnowledgeItem,
   type KnowledgeItemReadRepository,
   type KnowledgeItemScope,
@@ -99,8 +100,10 @@ const credentialQueryTokens = new Set([
   'jwt',
   'key',
   'oauth',
+  'passphrase',
   'passwd',
   'password',
+  'pwd',
   'proof',
   'secret',
   'session',
@@ -150,8 +153,10 @@ function isCredentialQueryName(name: string): boolean {
     'jwt',
     'dpop',
     'oauth',
+    'passphrase',
     'password',
     'passwd',
+    'pwd',
     'proof',
     'secret',
     'session',
@@ -409,6 +414,17 @@ function hasPrincipal(actor: KnowledgeActor): boolean {
   return typeof actor?.userId === 'string' && actor.userId.trim().length > 0;
 }
 
+function knowledgeAuditActor(
+  actor: KnowledgeActor,
+  context: KnowledgeAuditActorContext,
+): KnowledgeAuditActor {
+  return {
+    userId: actor.userId,
+    requestId: context.requestId,
+    source: context.source,
+  };
+}
+
 function isValidItemId(value: unknown): value is string {
   return (
     typeof value === 'string' &&
@@ -536,9 +552,32 @@ function validateMutableRuntimeInput(
   return null;
 }
 
+const createInputFields = new Set<string>([
+  'scope',
+  'organizationGroupIds',
+  ...knowledgeMutableFields,
+]);
+const updateInputFields = new Set<string>([
+  'expectedVersion',
+  ...knowledgeMutableFields,
+]);
+
+function validateInputFields(
+  value: unknown,
+  allowedFields: ReadonlySet<string>,
+): KnowledgeApplicationFailure | null {
+  if (!isRecord(value)) return invalid('body must be an object');
+  if (Object.keys(value).some((field) => !allowedFields.has(field))) {
+    return invalid('body contains an unsupported field');
+  }
+  return null;
+}
+
 function validateCreateRuntimeInput(
   value: unknown,
 ): KnowledgeApplicationFailure | null {
+  const fieldError = validateInputFields(value, createInputFields);
+  if (fieldError) return fieldError;
   const mutableError = validateMutableRuntimeInput(value);
   if (mutableError) return mutableError;
   if (!isRecord(value)) return invalid('body must be an object');
@@ -570,6 +609,14 @@ function validateCreateRuntimeInput(
     );
   }
   return null;
+}
+
+function validateUpdateRuntimeInput(
+  value: unknown,
+): KnowledgeApplicationFailure | null {
+  const fieldError = validateInputFields(value, updateInputFields);
+  if (fieldError) return fieldError;
+  return validateMutableRuntimeInput(value);
 }
 
 function createPatch(input: UpdateKnowledgeItemInput): {
@@ -707,7 +754,7 @@ export function createKnowledgeItemService(dependencies: {
 
     async create(input: {
       actor: KnowledgeActor;
-      auditActor: KnowledgeAuditActor;
+      auditActor: KnowledgeAuditActorContext;
       body: CreateKnowledgeItemInput;
     }): Promise<KnowledgeApplicationResult<KnowledgeItem>> {
       if (!hasPrincipal(input.actor)) return invalid('actor is required');
@@ -786,7 +833,7 @@ export function createKnowledgeItemService(dependencies: {
         });
         await transaction.audit.write({
           action: 'knowledge_item_created',
-          actor: input.auditActor,
+          actor: knowledgeAuditActor(input.actor, input.auditActor),
           targetId: item.id,
           metadata: {
             scope: item.scope,
@@ -800,14 +847,14 @@ export function createKnowledgeItemService(dependencies: {
 
     async update(input: {
       actor: KnowledgeActor;
-      auditActor: KnowledgeAuditActor;
+      auditActor: KnowledgeAuditActorContext;
       itemId: string;
       body: UpdateKnowledgeItemInput;
     }): Promise<KnowledgeApplicationResult<KnowledgeItem>> {
       if (!hasPrincipal(input.actor) || !isValidItemId(input.itemId)) {
         return notFound();
       }
-      const bodyError = validateMutableRuntimeInput(input.body);
+      const bodyError = validateUpdateRuntimeInput(input.body);
       if (bodyError) return bodyError;
       const versionError = validateExpectedVersion(input.body.expectedVersion);
       if (versionError) return versionError;
@@ -855,7 +902,7 @@ export function createKnowledgeItemService(dependencies: {
         if (!item) return conflict();
         await transaction.audit.write({
           action: 'knowledge_item_updated',
-          actor: input.auditActor,
+          actor: knowledgeAuditActor(input.actor, input.auditActor),
           targetId: item.id,
           metadata: {
             scope: item.scope,
@@ -870,7 +917,7 @@ export function createKnowledgeItemService(dependencies: {
 
     async remove(input: {
       actor: KnowledgeActor;
-      auditActor: KnowledgeAuditActor;
+      auditActor: KnowledgeAuditActorContext;
       itemId: string;
       expectedVersion: number;
       reasonCode: string;
@@ -905,7 +952,7 @@ export function createKnowledgeItemService(dependencies: {
         if (!item) return conflict();
         await transaction.audit.write({
           action: 'knowledge_item_deleted',
-          actor: input.auditActor,
+          actor: knowledgeAuditActor(input.actor, input.auditActor),
           targetId: item.id,
           reasonCode,
           metadata: {
@@ -920,7 +967,7 @@ export function createKnowledgeItemService(dependencies: {
 
     async restore(input: {
       actor: KnowledgeActor;
-      auditActor: KnowledgeAuditActor;
+      auditActor: KnowledgeAuditActorContext;
       itemId: string;
       expectedVersion: number;
     }): Promise<KnowledgeApplicationResult<KnowledgeItem>> {
@@ -945,7 +992,7 @@ export function createKnowledgeItemService(dependencies: {
         if (!item) return conflict();
         await transaction.audit.write({
           action: 'knowledge_item_restored',
-          actor: input.auditActor,
+          actor: knowledgeAuditActor(input.actor, input.auditActor),
           targetId: item.id,
           metadata: {
             scope: item.scope,

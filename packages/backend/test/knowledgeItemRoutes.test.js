@@ -105,13 +105,49 @@ test('knowledge create route maps authenticated org/group context and returns th
     groupAccountIds: ['group-1'],
   });
   assert.deepEqual(captured.auditActor, {
-    userId: 'owner-1',
     requestId: captured.auditActor.requestId,
     source: 'agent',
   });
   assert.match(captured.auditActor.requestId, /^[A-Za-z0-9._-]{1,128}$/);
   assert.equal(response.json().version, 1);
   assert.equal(response.json().capturedAt, '2026-08-04T09:00:00.000Z');
+});
+
+test('knowledge ownership uses the stable canonical account id when the legacy identifier changes', async (t) => {
+  const capturedActors = [];
+  const auth = {
+    principalUserId: 'principal-1',
+    actorUserId: 'legacy-before',
+    scopes: ['knowledge:write'],
+    delegated: false,
+    userAccountId: 'account-stable-1',
+  };
+  const user = { userId: 'legacy-before', auth };
+  const app = await buildRouteServer(
+    serviceStub({
+      list: async ({ actor }) => {
+        capturedActors.push(actor);
+        return [];
+      },
+    }),
+    user,
+  );
+  t.after(() => app.close());
+
+  assert.equal(
+    (await app.inject({ method: 'GET', url: '/knowledge/items' })).statusCode,
+    200,
+  );
+  user.userId = 'legacy-after';
+  auth.actorUserId = 'legacy-after';
+  assert.equal(
+    (await app.inject({ method: 'GET', url: '/knowledge/items' })).statusCode,
+    200,
+  );
+  assert.deepEqual(
+    capturedActors.map((actor) => actor.userId),
+    ['account-stable-1', 'account-stable-1'],
+  );
 });
 
 test('knowledge route normalizes malformed authenticated context to a fail-closed actor', async (t) => {

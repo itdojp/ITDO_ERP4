@@ -11,7 +11,7 @@ import {
   knowledgeItemStatuses,
   knowledgeSourceTypes,
   type KnowledgeActor,
-  type KnowledgeAuditActor,
+  type KnowledgeAuditActorContext,
   type KnowledgeItem,
 } from '../application/knowledge/knowledgeItemPorts.js';
 import {
@@ -267,7 +267,7 @@ function toResponse(item: KnowledgeItem) {
 }
 
 function actorFromRequest(request: FastifyRequest): KnowledgeActor {
-  const userId = request.user?.userId;
+  const userId = request.user?.auth?.userAccountId ?? request.user?.userId;
   const orgId = request.user?.orgId;
   const groupAccountIds = request.user?.groupAccountIds;
   return {
@@ -285,10 +285,11 @@ function actorFromRequest(request: FastifyRequest): KnowledgeActor {
   };
 }
 
-function auditActorFromRequest(request: FastifyRequest): KnowledgeAuditActor {
+function auditActorFromRequest(
+  request: FastifyRequest,
+): KnowledgeAuditActorContext {
   const context = auditContextFromRequest(request);
   return {
-    userId: context.userId,
     requestId: context.requestId,
     source: context.source,
   };

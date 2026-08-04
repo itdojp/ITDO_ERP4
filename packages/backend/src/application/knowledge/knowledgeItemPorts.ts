@@ -56,10 +56,13 @@ export type KnowledgeActor = {
   groupAccountIds: string[];
 };
 
-export type KnowledgeAuditActor = {
-  userId?: string;
+export type KnowledgeAuditActorContext = {
   requestId?: string;
   source?: string;
+};
+
+export type KnowledgeAuditActor = KnowledgeAuditActorContext & {
+  userId: string;
 };
 
 export type KnowledgeItem = {
