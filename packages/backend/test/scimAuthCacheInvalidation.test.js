@@ -53,8 +53,10 @@ function runCacheInvalidationScenario(scenario) {
       createdAt: now,
       updatedAt: now,
     };
+    let createdGroup = null;
     let notifyAuditStarted;
     let releaseDelayedAudit;
+    const auditActions = [];
     const auditStarted = new Promise((resolve) => {
       notifyAuditStarted = resolve;
     });
@@ -126,6 +128,17 @@ function runCacheInvalidationScenario(scenario) {
         })),
       },
     ];
+    prisma.groupAccount.create = async ({ data }) => {
+      createdGroup = {
+        id: 'group-created',
+        externalId: data.externalId ?? null,
+        displayName: data.displayName,
+        active: true,
+        createdAt: now,
+        updatedAt: now,
+      };
+      return createdGroup;
+    };
     prisma.groupAccount.update = async ({ data }) => {
       group = {
         ...group,
@@ -157,6 +170,13 @@ function runCacheInvalidationScenario(scenario) {
       return { count };
     };
     prisma.userGroup.createMany = async ({ data }) => {
+      if (
+        scenario === 'groupCreateWriteFailure' ||
+        scenario === 'groupPutWriteFailure' ||
+        scenario === 'groupPatchWriteFailure'
+      ) {
+        throw new Error('simulated group membership write failure');
+      }
       const rows = Array.isArray(data) ? data : [];
       account = {
         ...account,
@@ -174,6 +194,7 @@ function runCacheInvalidationScenario(scenario) {
       return { count: 0 };
     };
     prisma.auditLog.create = async ({ data }) => {
+      auditActions.push(data?.action);
       if (
         scenario === 'groupDeleteAuditDelay' &&
         data?.action === 'scim_group_disable'
@@ -185,12 +206,23 @@ function runCacheInvalidationScenario(scenario) {
     };
     prisma.$transaction = async (arg) => {
       if (Array.isArray(arg)) return Promise.all(arg);
-      if (scenario !== 'userDeleteSideEffectFailure') return arg(prisma);
-      const snapshot = account;
+      if (
+        scenario !== 'userDeleteSideEffectFailure' &&
+        scenario !== 'groupCreateWriteFailure' &&
+        scenario !== 'groupPutWriteFailure' &&
+        scenario !== 'groupPatchWriteFailure'
+      ) {
+        return arg(prisma);
+      }
+      const accountSnapshot = account;
+      const groupSnapshot = group;
+      const createdGroupSnapshot = createdGroup;
       try {
         return await arg(prisma);
       } catch (error) {
-        account = snapshot;
+        account = accountSnapshot;
+        group = groupSnapshot;
+        createdGroup = createdGroupSnapshot;
         throw error;
       }
     };
@@ -273,6 +305,49 @@ function runCacheInvalidationScenario(scenario) {
             ],
           },
         });
+      } else if (scenario === 'groupCreateWriteFailure') {
+        scim = await server.inject({
+          method: 'POST',
+          url: '/scim/v2/Groups',
+          headers: { authorization: 'Bearer scim-test-token' },
+          payload: {
+            displayName: 'Created Admins',
+            externalId: 'group-created-ext',
+            members: [{ value: 'ua-1' }],
+          },
+        });
+      } else if (scenario === 'groupPutWriteFailure') {
+        scim = await server.inject({
+          method: 'PUT',
+          url: '/scim/v2/Groups/group-admin',
+          headers: { authorization: 'Bearer scim-test-token' },
+          payload: {
+            displayName: 'Renamed Admins',
+            externalId: 'group-admin-ext',
+            members: [{ value: 'ua-1' }],
+          },
+        });
+      } else if (scenario === 'groupPatchWriteFailure') {
+        scim = await server.inject({
+          method: 'PATCH',
+          url: '/scim/v2/Groups/group-admin',
+          headers: { authorization: 'Bearer scim-test-token' },
+          payload: {
+            Operations: [
+              { op: 'replace', path: 'displayName', value: 'Renamed Admins' },
+              {
+                op: 'remove',
+                path: 'members',
+                value: { members: [{ value: 'ua-1' }] },
+              },
+              {
+                op: 'add',
+                path: 'members',
+                value: { members: [{ value: 'ua-1' }] },
+              },
+            ],
+          },
+        });
       } else {
         scim = await server.inject({
           method: 'PATCH',
@@ -294,6 +369,9 @@ function runCacheInvalidationScenario(scenario) {
         firstRoles: firstBody.user?.roles,
         scimStatus: scim.statusCode,
         accountActive: account.active,
+        groupDisplayName: group.displayName,
+        createdGroupId: createdGroup?.id,
+        auditActions,
         concurrentStatus: concurrent?.statusCode,
         concurrentBody: concurrent
           ? JSON.parse(concurrent.body || '{}')
@@ -366,7 +444,7 @@ test('SCIM group revoke clears cached roles before awaiting the outer audit', ()
   assert.equal(payload.secondBody.user?.roles.includes('admin'), false);
 });
 
-test('SCIM group PATCH membership changes clear cached role context before a later operation returns 400', () => {
+test('SCIM group PATCH validates all members before applying any membership change', () => {
   const result = runCacheInvalidationScenario('groupPatchPartialFailure');
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const payload = JSON.parse(result.stdout || '{}');
@@ -374,7 +452,51 @@ test('SCIM group PATCH membership changes clear cached role context before a lat
   assert.equal(payload.firstRoles.includes('admin'), true);
   assert.equal(payload.scimStatus, 400);
   assert.equal(payload.secondStatus, 200);
-  assert.equal(payload.secondBody.user?.roles.includes('admin'), false);
+  assert.equal(payload.secondBody.user?.roles.includes('admin'), true);
+  assert.deepEqual(payload.secondBody.user?.groupAccountIds, ['group-admin']);
+  assert.equal(payload.auditActions.includes('scim_group_patch'), false);
+});
+
+test('SCIM group creation rolls back the group when its membership write fails', () => {
+  const result = runCacheInvalidationScenario('groupCreateWriteFailure');
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout || '{}');
+  assert.equal(payload.firstStatus, 200);
+  assert.equal(payload.firstRoles.includes('admin'), true);
+  assert.equal(payload.scimStatus, 500);
+  assert.equal(payload.createdGroupId, undefined);
+  assert.equal(payload.secondStatus, 200);
+  assert.equal(payload.secondBody.user?.roles.includes('admin'), true);
+  assert.deepEqual(payload.secondBody.user?.groupAccountIds, ['group-admin']);
+  assert.equal(payload.auditActions.includes('scim_group_create'), false);
+});
+
+test('SCIM group PUT rolls back metadata and memberships when a membership write fails', () => {
+  const result = runCacheInvalidationScenario('groupPutWriteFailure');
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout || '{}');
+  assert.equal(payload.firstStatus, 200);
+  assert.equal(payload.firstRoles.includes('admin'), true);
+  assert.equal(payload.scimStatus, 500);
+  assert.equal(payload.groupDisplayName, 'Admins');
+  assert.equal(payload.secondStatus, 200);
+  assert.equal(payload.secondBody.user?.roles.includes('admin'), true);
+  assert.deepEqual(payload.secondBody.user?.groupAccountIds, ['group-admin']);
+  assert.equal(payload.auditActions.includes('scim_group_update'), false);
+});
+
+test('SCIM group PATCH rolls back metadata and all membership operations when a write fails', () => {
+  const result = runCacheInvalidationScenario('groupPatchWriteFailure');
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout || '{}');
+  assert.equal(payload.firstStatus, 200);
+  assert.equal(payload.firstRoles.includes('admin'), true);
+  assert.equal(payload.scimStatus, 500);
+  assert.equal(payload.groupDisplayName, 'Admins');
+  assert.equal(payload.secondStatus, 200);
+  assert.equal(payload.secondBody.user?.roles.includes('admin'), true);
+  assert.deepEqual(payload.secondBody.user?.groupAccountIds, ['group-admin']);
+  assert.equal(payload.auditActions.includes('scim_group_patch'), false);
 });
 
 test('SCIM user DELETE rolls back account deactivation when the personal GA side effect fails', () => {
