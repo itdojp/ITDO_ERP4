@@ -21,6 +21,17 @@ export const knowledgeSourceTypes = [
 ] as const;
 export type KnowledgeSourceType = (typeof knowledgeSourceTypes)[number];
 
+export const knowledgeItemInputLimits = {
+  canonicalUrl: 4096,
+  title: 500,
+  sourceAuthor: 500,
+  saveReason: 4000,
+  shortNote: 10000,
+  unresolvedQuestion: 4000,
+  organizationGroupIds: 100,
+  organizationGroupId: 100,
+} as const;
+
 export const knowledgeDeletionReasonCodes = ['owner_request'] as const;
 export type KnowledgeDeletionReasonCode =
   (typeof knowledgeDeletionReasonCodes)[number];

@@ -162,7 +162,7 @@ checkerはendpoint、bucket、object key、KMS識別子をlogへ出さず、AWS 
 
 Knowledge Hub Workstream 02以降は、PostgreSQL bundleに`KnowledgeItem`、`KnowledgeItemGroupGrant`、対応する`AuditLog`が含まれる。WS02単体ではbinary artifactや追加provider objectはない。
 
-共用`AuditLog`の`AuditLog_knowledge_delete_reason_check`はexpand migration時に`NOT VALID`で追加する。これによりmigrationは既存共有rowを走査・拒否せず、新規writeには有限reason contractを直ちに適用する。target deploy後のconstraint validationは、private DB sessionで次の件数だけを確認し、0件の場合に限ってメンテナンス時間内に実施する。
+共用`AuditLog`の`AuditLog_knowledge_delete_reason_check`はexpand migration時に`NOT VALID`で追加する。これによりmigrationは既存共有rowを走査・拒否せず、新規writeには有限reason contractを直ちに適用する。target deploy後は、private DB sessionで最初に次のread-only preflightだけを実行する。
 
 ```sql
 SELECT count(*) AS incompatible_knowledge_delete_audits
@@ -172,12 +172,31 @@ WHERE "action" = 'knowledge_item_deleted'
     "targetTable" IS DISTINCT FROM 'knowledge_items'
     OR "reasonCode" IS DISTINCT FROM 'owner_request'
   );
+```
+
+件数が0でなければ既存監査rowを自動更新・削除せず停止する。識別子やraw rowを公開証跡へ出さず、予約action衝突の由来と保持要件を確認して別migrationを設計する。
+
+件数が0でも、ここではvalidationを自動実行しない。共有tableの走査時間、lock待機影響、監視・中止担当、実行時間帯を確認し、対象環境の変更承認を別途得る。承認後のメンテナンス時間に、承認されたtimeout値を用いてpreflightとは別の呼び出しで実行する。次は`lock_timeout`を5秒、`statement_timeout`を15分とする例であり、対象環境の承認値が異なる場合は置き換える。
+
+```sql
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '15min';
 
 ALTER TABLE "AuditLog"
   VALIDATE CONSTRAINT "AuditLog_knowledge_delete_reason_check";
+COMMIT;
 ```
 
-件数が0でなければ既存監査rowを自動更新・削除せず停止する。識別子やraw rowを公開証跡へ出さず、予約action衝突の由来と保持要件を確認して別migrationを設計する。`VALIDATE CONSTRAINT`は共有tableを走査するため、productionでは件数・lock影響を事前評価する。
+timeout、operator cancel、SQL errorのいずれかが発生した場合は、そのsessionで`ROLLBACK;`を実行してtransaction終了を確認する。`VALIDATE CONSTRAINT`はtransactionalであるため、COMMIT前に中止された場合はconstraintを`NOT VALID`のまま保持し、新規writeに対する既存のconstraint enforcementを継続する。自動再試行せず、lock待機と走査時間を再評価して再承認を得る。完了後はraw rowを出力せず、次でvalidation状態だけを確認する。
+
+```sql
+SELECT convalidated
+FROM pg_constraint
+WHERE conname = 'AuditLog_knowledge_delete_reason_check';
+```
+
+`convalidated = true`だけを成功とし、falseまたは0 rowなら未完了として停止する。application rollbackではconstraintを削除しない。validation未完了で`NOT VALID`のままでも、新規writeの保護は維持される。
 
 isolated restoreの承認済み検証では、内容を出力せず次を確認する。
 

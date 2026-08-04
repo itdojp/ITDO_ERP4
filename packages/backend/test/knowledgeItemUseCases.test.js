@@ -731,3 +731,74 @@ test('service boundary rejects malformed create and update values before writes'
     ['knowledge_item_created'],
   );
 });
+
+test('service boundary enforces mutable string size limits before writes', async () => {
+  const harness = createHarness();
+  const oversizedValues = [
+    { canonicalUrl: `https://example.com/${'a'.repeat(4096)}` },
+    { title: 'a'.repeat(501) },
+    { sourceAuthor: 'a'.repeat(501) },
+    { saveReason: 'a'.repeat(4001) },
+    { shortNote: 'a'.repeat(10001) },
+    { unresolvedQuestion: 'a'.repeat(4001) },
+  ];
+
+  for (const oversizedValue of oversizedValues) {
+    const result = await harness.service.create({
+      actor: actor('owner-1'),
+      auditActor: auditActor('owner-1'),
+      body: {
+        scope: 'personal',
+        sourceType: 'manual',
+        ...oversizedValue,
+      },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.statusCode, 400);
+  }
+  assert.equal(harness.items.size, 0);
+
+  const created = await createPersonal(harness);
+  assert.equal(created.ok, true);
+  for (const oversizedValue of oversizedValues) {
+    const result = await harness.service.update({
+      actor: actor('owner-1'),
+      auditActor: auditActor('owner-1'),
+      itemId: created.value.id,
+      body: { expectedVersion: 1, ...oversizedValue },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.statusCode, 400);
+  }
+  assert.equal(harness.items.get(created.value.id).version, 1);
+  assert.deepEqual(
+    harness.audits.map((entry) => entry.action),
+    ['knowledge_item_created'],
+  );
+});
+
+test('service boundary enforces organization group collection limits before writes', async () => {
+  const harness = createHarness();
+
+  for (const organizationGroupIds of [
+    Array.from({ length: 101 }, (_, index) => `group-${index}`),
+    ['g'.repeat(101)],
+    ['   '],
+    ['group-1', 'group-1'],
+  ]) {
+    const result = await harness.service.create({
+      actor: actor('owner-1', { organizationId: 'org-1' }),
+      auditActor: auditActor('owner-1'),
+      body: {
+        scope: 'organization',
+        sourceType: 'manual',
+        organizationGroupIds,
+      },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.statusCode, 400);
+  }
+
+  assert.equal(harness.items.size, 0);
+  assert.deepEqual(harness.audits, []);
+});

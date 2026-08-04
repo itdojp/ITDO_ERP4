@@ -1,5 +1,6 @@
 import {
   isKnowledgeDeletionReasonCode,
+  knowledgeItemInputLimits,
   knowledgeItemScopes,
   knowledgeItemStatuses,
   knowledgeMutableFields,
@@ -215,6 +216,26 @@ const nullableStringMutableFields = [
   'unresolvedQuestion',
 ] as const;
 
+const mutableStringMaxLengths: Record<
+  (typeof nullableStringMutableFields)[number],
+  number
+> = {
+  canonicalUrl: knowledgeItemInputLimits.canonicalUrl,
+  title: knowledgeItemInputLimits.title,
+  sourceAuthor: knowledgeItemInputLimits.sourceAuthor,
+  saveReason: knowledgeItemInputLimits.saveReason,
+  shortNote: knowledgeItemInputLimits.shortNote,
+  unresolvedQuestion: knowledgeItemInputLimits.unresolvedQuestion,
+};
+
+function exceedsCodePointLimit(value: string, maximum: number): boolean {
+  const codePoints = value[Symbol.iterator]();
+  for (let length = 0; length <= maximum; length += 1) {
+    if (codePoints.next().done) return false;
+  }
+  return true;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -247,6 +268,14 @@ function validateMutableRuntimeInput(
       typeof fieldValue !== 'string'
     ) {
       return invalid(`${field} must be a string or null`);
+    }
+    if (
+      typeof fieldValue === 'string' &&
+      exceedsCodePointLimit(fieldValue, mutableStringMaxLengths[field])
+    ) {
+      return invalid(
+        `${field} must be at most ${mutableStringMaxLengths[field]} characters`,
+      );
     }
   }
   if (
@@ -289,9 +318,23 @@ function validateCreateRuntimeInput(
   if (
     'organizationGroupIds' in value &&
     (!Array.isArray(value.organizationGroupIds) ||
-      value.organizationGroupIds.some((groupId) => typeof groupId !== 'string'))
+      value.organizationGroupIds.length >
+        knowledgeItemInputLimits.organizationGroupIds ||
+      value.organizationGroupIds.some(
+        (groupId) =>
+          typeof groupId !== 'string' ||
+          groupId.trim().length === 0 ||
+          exceedsCodePointLimit(
+            groupId,
+            knowledgeItemInputLimits.organizationGroupId,
+          ),
+      ) ||
+      new Set(value.organizationGroupIds).size !==
+        value.organizationGroupIds.length)
   ) {
-    return invalid('organizationGroupIds must be an array of strings');
+    return invalid(
+      `organizationGroupIds must contain at most ${knowledgeItemInputLimits.organizationGroupIds} unique, non-empty strings of at most ${knowledgeItemInputLimits.organizationGroupId} characters`,
+    );
   }
   return null;
 }

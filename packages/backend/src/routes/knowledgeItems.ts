@@ -6,6 +6,7 @@ import {
 } from '../application/knowledge/knowledgeItemUseCases.js';
 import {
   knowledgeDeletionReasonCodes,
+  knowledgeItemInputLimits,
   knowledgeItemScopes,
   knowledgeItemStatuses,
   knowledgeSourceTypes,
@@ -120,26 +121,48 @@ const commonMutableProperties = {
   sourceType: { type: 'string', enum: knowledgeSourceTypes },
   canonicalUrl: {
     anyOf: [
-      { type: 'string', maxLength: 4096, format: 'uri' },
+      {
+        type: 'string',
+        maxLength: knowledgeItemInputLimits.canonicalUrl,
+        format: 'uri',
+      },
       { type: 'null' },
     ],
   },
   title: {
-    anyOf: [{ type: 'string', maxLength: 500 }, { type: 'null' }],
+    anyOf: [
+      { type: 'string', maxLength: knowledgeItemInputLimits.title },
+      { type: 'null' },
+    ],
   },
   sourceAuthor: {
-    anyOf: [{ type: 'string', maxLength: 500 }, { type: 'null' }],
+    anyOf: [
+      { type: 'string', maxLength: knowledgeItemInputLimits.sourceAuthor },
+      { type: 'null' },
+    ],
   },
   publishedAt: nullableDateTime,
   capturedAt: { type: 'string', format: 'date-time' },
   saveReason: {
-    anyOf: [{ type: 'string', maxLength: 4000 }, { type: 'null' }],
+    anyOf: [
+      { type: 'string', maxLength: knowledgeItemInputLimits.saveReason },
+      { type: 'null' },
+    ],
   },
   shortNote: {
-    anyOf: [{ type: 'string', maxLength: 10000 }, { type: 'null' }],
+    anyOf: [
+      { type: 'string', maxLength: knowledgeItemInputLimits.shortNote },
+      { type: 'null' },
+    ],
   },
   unresolvedQuestion: {
-    anyOf: [{ type: 'string', maxLength: 4000 }, { type: 'null' }],
+    anyOf: [
+      {
+        type: 'string',
+        maxLength: knowledgeItemInputLimits.unresolvedQuestion,
+      },
+      { type: 'null' },
+    ],
   },
   status: { type: 'string', enum: knowledgeItemStatuses },
 } as const;
@@ -152,9 +175,13 @@ const createBodySchema = {
     scope: { type: 'string', enum: knowledgeItemScopes },
     organizationGroupIds: {
       type: 'array',
-      maxItems: 100,
+      maxItems: knowledgeItemInputLimits.organizationGroupIds,
       uniqueItems: true,
-      items: { type: 'string', minLength: 1, maxLength: 100 },
+      items: {
+        type: 'string',
+        minLength: 1,
+        maxLength: knowledgeItemInputLimits.organizationGroupId,
+      },
     },
     ...commonMutableProperties,
   },
