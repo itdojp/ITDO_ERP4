@@ -125,7 +125,7 @@
   - DB照会に失敗した場合はログイン不可（401）
   - 補足: 現状は PoC のため、ユーザ/グループ投入は SCIM エンドポイントまたはSQLで行う（同期の本番化は後続）
   - グループ→ロールのマッピングは環境変数で上書き可能: `AUTH_GROUP_TO_ROLE_MAP="groupA=role1,groupB=role2"`（未指定時は既定マップを使用）
-  - DB照会の負荷が問題になる場合はキャッシュを有効化できる: `AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS`（秒、0で無効。無効がデフォルト）。identity-backed contextのcache期限は設定TTLと`UserIdentity.effectiveUntil`の早い方とし、identity失効後は再照会して401で拒否する。SCIMおよび手動group更新・membership変更は成功直後にprocess-local cacheを全消去する。複数backend instanceで正のTTLを使うには分散invalidationが必要であり、それを実装するまでは各instanceで0を維持する
+  - DB照会の負荷が問題になる場合はキャッシュを有効化できる: `AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS`（秒、0で無効。無効がデフォルト）。identity-backed contextのcache期限は設定TTLと`UserIdentity.effectiveUntil`の早い方とし、identity失効後は再照会して401で拒否する。session認証のcache keyはprovider subjectだけで共有せず、canonical `UserIdentity.id`と`UserAccount.id`で分離し、同じprovider subjectへ紐づく別identity/sessionの正・負contextを再利用しない。SCIMおよび手動group更新・membership変更は成功直後にprocess-local cacheを全消去し、identity/credentialの対象更新は同じprovider subjectに属するsession/JWT cacheを一括無効化する。複数backend instanceで正のTTLを使うには分散invalidationが必要であり、それを実装するまでは各instanceで0を維持する
 
 ### Google OIDC（例）
 

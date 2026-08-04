@@ -515,6 +515,7 @@ async function resolveUserGroupsFromDb(
 
 type CachedUserDbContext = {
   expiresAt: number;
+  invalidationKey: string;
   value: UserDbContext;
 };
 
@@ -523,8 +524,14 @@ const userDbContextCache = new Map<string, CachedUserDbContext>();
 export function invalidateUserDbContextCache(
   user: Pick<UserContext, 'userId' | 'auth'>,
 ) {
-  const cacheKey = buildUserDbContextCacheKey(user as UserContext);
-  userDbContextCache.delete(cacheKey);
+  const invalidationKey = buildUserDbContextInvalidationKey(
+    user as UserContext,
+  );
+  for (const [cacheKey, cached] of userDbContextCache) {
+    if (cached.invalidationKey === invalidationKey) {
+      userDbContextCache.delete(cacheKey);
+    }
+  }
 }
 
 export function clearUserDbContextCache() {
@@ -540,12 +547,24 @@ function resolveDbCacheTtlMs() {
   );
 }
 
-function buildUserDbContextCacheKey(user: UserContext) {
-  return [
+function buildUserDbContextInvalidationKey(user: UserContext) {
+  return JSON.stringify([
     user.auth?.providerType ?? 'legacy',
     user.auth?.issuer ?? '',
     user.userId,
-  ].join('\u0001');
+  ]);
+}
+
+function buildUserDbContextCacheKey(user: UserContext) {
+  const identityScope = user.auth?.sessionBased
+    ? ['session', user.auth.identityId ?? '', user.auth.userAccountId ?? '']
+    : ['subject'];
+  return JSON.stringify([
+    user.auth?.providerType ?? 'legacy',
+    user.auth?.issuer ?? '',
+    user.userId,
+    ...identityScope,
+  ]);
 }
 
 async function resolveUserDbContext(user: UserContext): Promise<UserDbContext> {
@@ -567,6 +586,7 @@ async function resolveUserDbContext(user: UserContext): Promise<UserDbContext> {
       identityExpiresAt === undefined
         ? now + ttlMs
         : Math.min(now + ttlMs, identityExpiresAt),
+    invalidationKey: buildUserDbContextInvalidationKey(user),
     value,
   });
   return value;

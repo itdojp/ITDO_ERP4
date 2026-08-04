@@ -294,6 +294,197 @@ function runIdentityCacheExpiryScenario() {
   });
 }
 
+function runSessionIdentityCacheIsolationScenario() {
+  const script = String.raw`
+    process.env.DATABASE_URL = process.env.DATABASE_URL || '${MIN_DATABASE_URL}';
+    process.env.AUTH_MODE = 'jwt_bff';
+    process.env.AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS = '300';
+    process.env.JWT_ISSUER = 'https://accounts.google.com';
+    process.env.JWT_AUDIENCE = 'client-id.apps.googleusercontent.com';
+    process.env.JWT_PUBLIC_KEY =
+      '-----BEGIN PUBLIC KEY-----\\nTEST-ONLY\\n-----END PUBLIC KEY-----';
+    process.env.GOOGLE_OIDC_CLIENT_ID = 'client-id.apps.googleusercontent.com';
+    process.env.GOOGLE_OIDC_CLIENT_SECRET = 'test-only-client-secret';
+    process.env.GOOGLE_OIDC_REDIRECT_URI = 'http://localhost:3001/auth/google/callback';
+    process.env.AUTH_FRONTEND_ORIGIN = 'http://localhost:4173';
+    process.env.AUTH_SESSION_COOKIE_SECURE = 'false';
+    process.env.ACTION_POLICY_ENFORCEMENT_PRESET = 'phase2_core';
+    process.env.ACTION_POLICY_REQUIRED_ACTIONS = '';
+    process.env.APPROVAL_EVIDENCE_REQUIRED_ACTIONS = '';
+
+    let currentTime = Date.now();
+    Date.now = () => currentTime;
+    const expiringIdentityAt = currentTime + 1_000;
+    const { createHash } = await import('node:crypto');
+    const sessionFixtures = [
+      {
+        token: 'positive-active-token',
+        id: 'positive-active-session',
+        providerSubject: 'shared-positive-subject',
+        userIdentityId: 'positive-active-identity',
+        userAccountId: 'positive-active-account',
+      },
+      {
+        token: 'positive-disabled-token',
+        id: 'positive-disabled-session',
+        providerSubject: 'shared-positive-subject',
+        userIdentityId: 'positive-disabled-identity',
+        userAccountId: 'positive-disabled-account',
+      },
+      {
+        token: 'negative-disabled-token',
+        id: 'negative-disabled-session',
+        providerSubject: 'shared-negative-subject',
+        userIdentityId: 'negative-disabled-identity',
+        userAccountId: 'negative-disabled-account',
+      },
+      {
+        token: 'negative-active-token',
+        id: 'negative-active-session',
+        providerSubject: 'shared-negative-subject',
+        userIdentityId: 'negative-active-identity',
+        userAccountId: 'negative-active-account',
+      },
+      {
+        token: 'expiring-active-token',
+        id: 'expiring-active-session',
+        providerSubject: 'expiring-subject',
+        userIdentityId: 'expiring-active-identity',
+        userAccountId: 'expiring-active-account',
+      },
+    ].map((fixture) => ({
+      ...fixture,
+      providerType: 'google_oidc',
+      issuer: 'https://accounts.google.com',
+      expiresAt: new Date(Date.now() + 60_000),
+      idleExpiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null,
+    }));
+    const tokenHash = (token) =>
+      createHash('sha256').update(token).digest('hex');
+    const sessionsByHash = new Map(
+      sessionFixtures.map((fixture) => [tokenHash(fixture.token), fixture]),
+    );
+    const sessionsById = new Map(
+      sessionFixtures.map((fixture) => [fixture.id, fixture]),
+    );
+    const identityLookups = new Map();
+    const identityStatuses = new Map(
+      sessionFixtures.map((fixture) => [
+        fixture.userIdentityId,
+        fixture.userIdentityId.endsWith('active-identity')
+          ? 'active'
+          : 'disabled',
+      ]),
+    );
+
+    const { prisma } = await import('./dist/services/db.js');
+    prisma.authSession.findUnique = async ({ where }) =>
+      sessionsByHash.get(where.sessionTokenHash) ?? null;
+    prisma.authSession.update = async ({ where, data }) => ({
+      ...sessionsById.get(where.id),
+      ...data,
+    });
+    prisma.userIdentity.findUnique = async ({ where }) => {
+      identityLookups.set(
+        where.id,
+        (identityLookups.get(where.id) ?? 0) + 1,
+      );
+      const active = identityStatuses.get(where.id) === 'active';
+      const accountId = where.id.replace('-identity', '-account');
+      return {
+        id: where.id,
+        status: active ? 'active' : 'disabled',
+        effectiveUntil:
+          where.id === 'expiring-active-identity'
+            ? new Date(expiringIdentityAt)
+            : null,
+        userAccountId: accountId,
+        userAccount: active
+          ? {
+              id: accountId,
+              externalId: null,
+              userName: accountId,
+              active: true,
+              deletedAt: null,
+              organization: 'org-1',
+              memberships: [],
+            }
+          : null,
+      };
+    };
+    prisma.projectMember.findMany = async () => [];
+    prisma.knowledgeItem.findMany = async () => [];
+
+    const { buildServer } = await import('./dist/server.js');
+    const server = await buildServer({ logger: false });
+    const request = (token) => server.inject({
+      method: 'GET',
+      url: '/knowledge/items',
+      headers: { cookie: 'erp4_session=' + token },
+    });
+    try {
+      const positiveActive = await request('positive-active-token');
+      const positiveDisabled = await request('positive-disabled-token');
+      const negativeDisabled = await request('negative-disabled-token');
+      const negativeActive = await request('negative-active-token');
+      identityStatuses.set('positive-active-identity', 'disabled');
+      const { invalidateUserDbContextCache } = await import(
+        './dist/plugins/auth.js'
+      );
+      invalidateUserDbContextCache({
+        userId: 'shared-positive-subject',
+        auth: {
+          principalUserId: 'shared-positive-subject',
+          actorUserId: 'shared-positive-subject',
+          scopes: [],
+          delegated: false,
+          providerType: 'google_oidc',
+          issuer: 'https://accounts.google.com',
+        },
+      });
+      const invalidatedPositive = await request('positive-active-token');
+      const expiringBefore = await request('expiring-active-token');
+      currentTime = expiringIdentityAt - 1;
+      const expiringCached = await request('expiring-active-token');
+      currentTime = expiringIdentityAt + 1;
+      const expiringAfter = await request('expiring-active-token');
+      process.stdout.write(JSON.stringify({
+        statuses: {
+          positiveActive: positiveActive.statusCode,
+          positiveDisabled: positiveDisabled.statusCode,
+          negativeDisabled: negativeDisabled.statusCode,
+          negativeActive: negativeActive.statusCode,
+          invalidatedPositive: invalidatedPositive.statusCode,
+          expiringBefore: expiringBefore.statusCode,
+          expiringCached: expiringCached.statusCode,
+          expiringAfter: expiringAfter.statusCode,
+        },
+        reasons: {
+          positiveDisabled:
+            JSON.parse(positiveDisabled.body || '{}').error?.details?.reason,
+          negativeDisabled:
+            JSON.parse(negativeDisabled.body || '{}').error?.details?.reason,
+          expiringAfter:
+            JSON.parse(expiringAfter.body || '{}').error?.details?.reason,
+        },
+        identityLookups: Object.fromEntries(identityLookups),
+      }));
+    } finally {
+      await server.close();
+    }
+  `;
+
+  return spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: BACKEND_DIR,
+    env: {
+      ...process.env,
+      DATABASE_URL: MIN_DATABASE_URL,
+    },
+    encoding: 'utf8',
+  });
+}
+
 test('manual membership removal invalidates cached authorization before TTL expiry', () => {
   const result = runManualGroupMutationScenario('membership');
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -340,4 +531,32 @@ test('identity effectiveUntil bounds the positive DB context cache TTL', () => {
   assert.equal(payload.afterStatus, 401);
   assert.equal(payload.afterBody.error?.details?.reason, 'user_inactive');
   assert.equal(payload.identityLookups, 2);
+});
+
+test('session DB context cache is isolated by canonical identity and account', () => {
+  const result = runSessionIdentityCacheIsolationScenario();
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout || '{}');
+  assert.deepEqual(payload.statuses, {
+    positiveActive: 200,
+    positiveDisabled: 401,
+    negativeDisabled: 401,
+    negativeActive: 200,
+    invalidatedPositive: 401,
+    expiringBefore: 200,
+    expiringCached: 200,
+    expiringAfter: 401,
+  });
+  assert.deepEqual(payload.reasons, {
+    positiveDisabled: 'user_inactive',
+    negativeDisabled: 'user_inactive',
+    expiringAfter: 'user_inactive',
+  });
+  assert.deepEqual(payload.identityLookups, {
+    'positive-active-identity': 2,
+    'positive-disabled-identity': 1,
+    'negative-disabled-identity': 1,
+    'negative-active-identity': 1,
+    'expiring-active-identity': 2,
+  });
 });
