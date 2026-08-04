@@ -165,7 +165,7 @@ function isCredentialQueryNameDeep(name: string): boolean {
     const decoded = candidate.replace(percentEncodedByte, (_match, byte) =>
       String.fromCharCode(Number.parseInt(byte, 16)),
     );
-    if (decoded === candidate) return false;
+    if (decoded === candidate) return candidate.includes('%');
     if (decodeCount === decodeLayerLimit) return true;
     candidate = decoded;
   }

@@ -638,6 +638,8 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     `https://target.example/file?download=1;${encodeQueryNameLayers('token', 2)}=credential-value`,
     `https://target.example/#/callback?${encodeQueryNameLayers('privatekey', 2)}=credential-value`,
     `https://target.example/file?%ZZ${encodeQueryNameLayers('token', 2)}=credential-value`,
+    `https://target.example/file?%ZZ${encodeQueryNameLayers('privatekey', 2)}=credential-value`,
+    `https://target.example/file?%ZZ${encodeQueryNameLayers('GoogleAccessId', 2)}=credential-value`,
   ]) {
     const fragmentCredentialUrl = await harness.service.create({
       actor: actor('owner-1'),
@@ -785,6 +787,8 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     `https://target.example/file?download=1;${encodeQueryNameLayers('token', 2)}=credential-value`,
     `https://target.example/#/callback?${encodeQueryNameLayers('privatekey', 2)}=credential-value`,
     `https://target.example/file?%ZZ${encodeQueryNameLayers('token', 2)}=credential-value`,
+    `https://target.example/file?%ZZ${encodeQueryNameLayers('privatekey', 2)}=credential-value`,
+    `https://target.example/file?%ZZ${encodeQueryNameLayers('GoogleAccessId', 2)}=credential-value`,
   ]) {
     const fragmentRejectedUpdate = await harness.service.update({
       actor: actor('owner-1'),
