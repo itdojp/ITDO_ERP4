@@ -386,6 +386,47 @@ test('owner mutations enforce optimistic concurrency and hide items from non-own
   assert.equal(stale.statusCode, 409);
 });
 
+test('owner update rejects normalized no-op fields without version or audit changes', async () => {
+  const harness = createHarness();
+  const created = await createPersonal(harness);
+  assert.equal(created.ok, true);
+  assert.equal(harness.audits.length, 1);
+
+  const noOp = await harness.service.update({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: created.value.id,
+    body: {
+      expectedVersion: 1,
+      sourceType: 'manual',
+      title: ' Private note ',
+      capturedAt: fixedNow.toISOString(),
+      status: 'inbox',
+    },
+  });
+  assert.equal(noOp.ok, false);
+  assert.equal(noOp.statusCode, 400);
+  assert.equal(noOp.code, 'invalid_request');
+  assert.equal(harness.items.get(created.value.id).version, 1);
+  assert.equal(harness.audits.length, 1);
+
+  const partiallyChanged = await harness.service.update({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    itemId: created.value.id,
+    body: {
+      expectedVersion: 1,
+      title: 'Private note',
+      capturedAt: fixedNow.toISOString(),
+      shortNote: 'New note',
+    },
+  });
+  assert.equal(partiallyChanged.ok, true);
+  assert.equal(partiallyChanged.value.version, 2);
+  assert.equal(harness.audits.length, 2);
+  assert.deepEqual(harness.audits[1].metadata.changedFields, ['shortNote']);
+});
+
 test('logical delete hides normal reads and restore is owner/version protected', async () => {
   const harness = createHarness();
   const created = await createPersonal(harness);
@@ -589,6 +630,11 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
   };
   const embeddedCredentialValueUrls = [
     'token',
+    'key',
+    'policy',
+    'expires',
+    'state',
+    'code',
     'privatekey',
     'resourcekey',
     'GoogleAccessId',
@@ -631,6 +677,10 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
 
   for (const credentialQuery of [
     'key=google-api-key-value',
+    'policy=signed-policy-value',
+    'expires=1700000000',
+    'state=oauth-state-value',
+    'code=authorization-code-value',
     'resourcekey=drive-resource-key-value',
     'auth_key=credential-value',
     'x_sig=credential-value',
@@ -829,6 +879,11 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
   assert.equal(harmlessEmbeddedAssignment.ok, true);
 
   for (const credentialQuery of [
+    'key=google-api-key-value',
+    'policy=signed-policy-value',
+    'expires=1700000000',
+    'state=oauth-state-value',
+    'code=authorization-code-value',
     'auth_key=credential-value',
     'x-sig=credential-value',
     'privateKey=credential-value',

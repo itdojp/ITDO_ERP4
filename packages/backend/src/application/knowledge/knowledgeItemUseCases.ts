@@ -613,6 +613,42 @@ function createPatch(input: UpdateKnowledgeItemInput): {
   return { patch, changedFields };
 }
 
+function mutableValuesEqual(
+  current: KnowledgeItem,
+  patch: KnowledgeItemUpdateRecord,
+  field: KnowledgeMutableField,
+): boolean {
+  const currentValue = current[field];
+  const nextValue = patch[field];
+  if (currentValue instanceof Date || nextValue instanceof Date) {
+    return (
+      currentValue instanceof Date &&
+      nextValue instanceof Date &&
+      currentValue.getTime() === nextValue.getTime()
+    );
+  }
+  return currentValue === nextValue;
+}
+
+function filterUnchangedPatch(
+  current: KnowledgeItem,
+  patch: KnowledgeItemUpdateRecord,
+  providedFields: KnowledgeMutableField[],
+): {
+  patch: KnowledgeItemUpdateRecord;
+  changedFields: KnowledgeMutableField[];
+} {
+  const changedFields = providedFields.filter(
+    (field) => !mutableValuesEqual(current, patch, field),
+  );
+  return {
+    patch: Object.fromEntries(
+      changedFields.map((field) => [field, patch[field]]),
+    ) as KnowledgeItemUpdateRecord,
+    changedFields,
+  };
+}
+
 export type KnowledgeItemService = ReturnType<
   typeof createKnowledgeItemService
 >;
@@ -793,8 +829,8 @@ export function createKnowledgeItemService(dependencies: {
           return invalid('canonicalUrl must be an HTTP(S) URL');
         }
       }
-      const { patch, changedFields } = createPatch(input.body);
-      if (changedFields.length === 0) {
+      const { patch, changedFields: providedFields } = createPatch(input.body);
+      if (providedFields.length === 0) {
         return invalid('at least one mutable field is required');
       }
 
@@ -806,11 +842,15 @@ export function createKnowledgeItemService(dependencies: {
         });
         if (!current) return notFound();
         if (current.version !== input.body.expectedVersion) return conflict();
+        const actual = filterUnchangedPatch(current, patch, providedFields);
+        if (actual.changedFields.length === 0) {
+          return invalid('at least one mutable field must change');
+        }
         const item = await transaction.items.updateOwnedVersioned({
           actor: input.actor,
           itemId: input.itemId,
           expectedVersion: input.body.expectedVersion,
-          patch,
+          patch: actual.patch,
         });
         if (!item) return conflict();
         await transaction.audit.write({
@@ -821,7 +861,7 @@ export function createKnowledgeItemService(dependencies: {
             scope: item.scope,
             status: item.status,
             version: item.version,
-            changedFields,
+            changedFields: actual.changedFields,
           },
         });
         return ok(item);

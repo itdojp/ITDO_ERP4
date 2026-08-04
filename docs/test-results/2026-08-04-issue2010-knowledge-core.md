@@ -14,7 +14,7 @@
 - repository port / Prisma adapter / application use case / Fastify CRUD API
 - versionによるoptimistic concurrency、logical delete / restore
 - business rowと`AuditLog`を同じPrisma transactionで確定するfail-closed audit writer
-- canonical URLのuserinfo、安全なfragment、tracking queryを除去する一方、credential-like queryはrequest全体を拒否する。OAuth assertion/verifier/proof系とSAML request/artifact/relay-state系を含むquery名を検査し、query値も入力長でboundedに多重percent-decodeして、先頭のcredential-like `name=value`を安全なouter query名の配下でも拒否する。malformed prefix、先頭slashのないpath-relative URL、semicolon/encoded delimiter、入れ子およびtop-level hash-router fragment内のcredential query textを同じdecoderで検査する。解析上限到達はfail closedとし、正規化後の過大URLも拒否する
+- canonical URLのuserinfo、安全なfragment、tracking queryを除去する一方、credential-like queryはrequest全体を拒否する。署名URLの`key` / `policy` / `expires`、OAuthの`state` / `code`は値が一見無害でもfail-closedで拒否する。OAuth assertion/verifier/proof系とSAML request/artifact/relay-state系を含むquery名を検査し、query値も入力長でboundedに多重percent-decodeして、先頭のcredential-like `name=value`を安全なouter query名の配下でも拒否する。malformed prefix、先頭slashのないpath-relative URL、semicolon/encoded delimiter、入れ子およびtop-level hash-router fragment内のcredential query textを同じdecoderで検査する。解析上限到達はfail closedとし、正規化後の過大URLも拒否する
 - OpenAPI snapshot、backup/restore前提、bounded-context registry
 
 ## Security / privacy contract
@@ -27,7 +27,7 @@
 - TTL付きDB auth context cacheはSCIMと手動group/membership mutationで成功直後に全消去し、membership失効後のorganization read/createとgroup由来roleを同一processで再利用しない。分散invalidation未実装の複数backend instanceではTTL 0を要求する
 - organization grant変更とscope変更をgeneric PATCHへ含めない
 - update/delete/restoreはowner + expected version一致を要求する
-- application service境界でもmutable fieldのruntime型・enum・明示的`undefined`、RFC 3339 date-time、routeと同じ文字数/organization grant集合/list/item ID/DB `Int` expectedVersion上限、および削除理由型を検証する。routeを迂回した過大payload・locale依存日時・trim後重複grant・no-op updateによるversion/audit進行・Prisma range error・`TypeError`を防止する
+- application service境界でもmutable fieldのruntime型・enum・明示的`undefined`、RFC 3339 date-time、routeと同じ文字数/organization grant集合/list/item ID/DB `Int` expectedVersion上限、および削除理由型を検証する。routeを迂回した過大payload・locale依存日時・trim後重複grant・Prisma range error・`TypeError`を防止する。正規化後の同一値だけを含むPATCHは`400 invalid_request`としてversion/auditを進めず、実変更との混在時は実変更fieldだけを更新・監査する
 - audit metadataはscope/status/version/変更field名とboundedなprincipal/actor/scope provenanceだけを保存し、本文、URL、token ID、secretを保存しない
 - logical deleteの`reasonCode`はrequest/response schema、application port/service、具象Prisma adapter、Knowledge audit writer、DB enum/CHECKの各境界で有限allowlist（`owner_request`）へ限定し、serviceを迂回しても任意文やcredentialをbusiness row / auditへ保存しない
 - provider URL、Drive/S3 credential、production identifierは使用していない
@@ -36,9 +36,9 @@
 
 | Command / check                                                   | Result | Notes                                                                                                                                                                                            |
 | ----------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| focused Knowledge tests                                           | PASS   | 35 tests: use case 15、Prisma adapter 8、route 8、schema/migration/OpenAPI 4。use case内でcredential root 11種 × encoding 4種 × 配置3種の132-case embedded-value matrixをcreate/update双方へ適用 |
+| focused Knowledge tests                                           | PASS   | 36 tests: use case 16、Prisma adapter 8、route 8、schema/migration/OpenAPI 4。use case内でcredential root 16種 × encoding 4種 × 配置3種の192-case embedded-value matrixをcreate/update双方へ適用 |
 | auth cache invalidation focused                                   | PASS   | 3 subprocess tests: TTL有効時の手動membership削除、group rename/deactivate。失効後Knowledge list/count/detail/createも確認                                                                       |
-| focused coverage                                                  | PASS   | adapter S/L/F 100%、B 87.67%；use case S/L 95.74%、B 86.36%、F 97.29%；route S/L 99.36%、B 77.77%、F 100%。閾値の追加・低下なし                                                                  |
+| focused coverage                                                  | PASS   | adapter S/L/F 100%、B 87.67%；use case S/L 96.66%、B 88.15%、F 97.43%；route S/L 99.36%、B 77.77%、F 100%。閾値の追加・低下なし                                                                  |
 | empty PostgreSQL `prisma migrate deploy` / status                 | PASS   | PostgreSQL 15 pinned digestへ94 migrationsを適用、schema up to date                                                                                                                              |
 | existing shared-audit conflict migration                          | PASS   | base migrations後に衝突fixtureを入れても`NOT VALID`追加成功。既存1件を保持し、新規invalid拒否・allowlisted write許可                                                                             |
 | old-app compatibility                                             | PASS   | migration後DBへ`origin/main`（`ee34c790`）の旧schema/client/applicationをbuildして接続し、`healthz=200` / `readyz=200`                                                                           |
@@ -48,7 +48,7 @@
 | `npm run format:check --prefix packages/backend`                  | PASS   | Knowledge sourceを含む                                                                                                                                                                           |
 | `npm run typecheck --prefix packages/backend`                     | PASS   | strict TypeScript                                                                                                                                                                                |
 | `npm run build --prefix packages/backend`                         | PASS   | Prisma Client生成後                                                                                                                                                                              |
-| `npm run test --prefix packages/backend`                          | PASS   | 1,538 tests、skip/todo 0                                                                                                                                                                         |
+| `npm run test --prefix packages/backend`                          | PASS   | 1,539 tests、skip/todo 0                                                                                                                                                                         |
 | `npm run coverage:auth:check --prefix packages/backend`           | PASS   | auth 151 tests。S/L 90.24%、B 71.03%、F 98.66%。既存閾値の低下なし                                                                                                                               |
 | frontend lint / format / typecheck / build / test                 | PASS   | 82 files / 468 tests、backend変更による回帰なし                                                                                                                                                  |
 | backend / frontend `npm audit --audit-level=high`                 | PASS   | PR #2023取込み後、いずれも0 vulnerabilities                                                                                                                                                      |
