@@ -103,6 +103,7 @@ test('identity side effects: SCIM identifier change ensures new personal room, d
   const ensureCalls = [];
   const deactivateCalls = [];
   const auditCalls = [];
+  const auditClients = [];
   const tx = { txName: 'scim-tx' };
 
   await syncScimPersonalGaRoomMembership(
@@ -121,8 +122,9 @@ test('identity side effects: SCIM identifier change ensures new personal room, d
         deactivateCalls.push(input);
         return { roomId: 'pga_room_1', updatedCount: 1 };
       },
-      logAudit: async (entry) => {
+      logAudit: async (entry, client) => {
         auditCalls.push(entry);
+        auditClients.push(client);
       },
     },
   );
@@ -152,6 +154,7 @@ test('identity side effects: SCIM identifier change ensures new personal room, d
       'personal_ga_room_member_deactivated',
     ],
   );
+  assert.deepEqual(auditClients, [tx, tx]);
   assert.deepEqual(auditCalls[0]?.metadata, {
     userAccountId: 'ua-1',
     userId: 'employee-2',
@@ -195,20 +198,24 @@ test('identity side effects: SCIM reactivation uses chat adapter failure as fail
 test('identity side effects: SCIM delete deactivation keeps legacy audit metadata shape without reason', async () => {
   const deactivateCalls = [];
   const auditCalls = [];
+  const auditClients = [];
+  const tx = { txName: 'scim-delete-tx' };
 
   const result = await deactivateScimPersonalGaRoomForUser(
     {
       auditContext,
       user: scimUser(),
       reason: 'scim_user_deactivated',
+      client: tx,
     },
     {
       deactivatePersonalGaRoomMember: async (input) => {
         deactivateCalls.push(input);
         return { roomId: 'pga_room_1', updatedCount: 1 };
       },
-      logAudit: async (entry) => {
+      logAudit: async (entry, client) => {
         auditCalls.push(entry);
+        auditClients.push(client);
       },
     },
   );
@@ -224,10 +231,11 @@ test('identity side effects: SCIM delete deactivation keeps legacy audit metadat
       userId: 'employee-1',
       updatedBy: 'employee-1',
       reason: 'scim_user_deactivated',
-      client: undefined,
+      client: tx,
     },
   ]);
   assert.equal(auditCalls.length, 1);
+  assert.deepEqual(auditClients, [tx]);
   assert.equal(auditCalls[0]?.action, 'personal_ga_room_member_deactivated');
   assert.equal(auditCalls[0]?.targetId, 'pga_room_1:employee-1');
   assert.deepEqual(auditCalls[0]?.metadata, {

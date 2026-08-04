@@ -104,6 +104,7 @@ function runDelegatedJwtRequest({
   stubDb = false,
   stubAgent360 = false,
   stubIdentity = null,
+  stubLegacyAccount = null,
   expectProjectLookupUserId = null,
 }) {
   const script = `
@@ -123,15 +124,30 @@ function runDelegatedJwtRequest({
     process.env.AUTH_MODE = process.env.AUTH_MODE || 'jwt';
     process.env.JWT_PUBLIC_KEY = process.env.JWT_PUBLIC_KEY || publicKeyPem;
 
+    let legacyAccountReturned = false;
     if (process.env.TEST_STUB_DB === '1') {
       const { prisma } = await import('./dist/services/db.js');
       const stubIdentity = process.env.TEST_STUB_IDENTITY
         ? JSON.parse(process.env.TEST_STUB_IDENTITY)
         : null;
+      const stubLegacyAccount = process.env.TEST_STUB_LEGACY_ACCOUNT
+        ? JSON.parse(process.env.TEST_STUB_LEGACY_ACCOUNT)
+        : null;
       const expectedProjectLookupUserId =
         process.env.TEST_EXPECT_PROJECT_LOOKUP_USER_ID || '';
       prisma.userIdentity.findFirst = async () => stubIdentity;
-      prisma.userAccount.findUnique = async () => null;
+      prisma.userAccount.findUnique = async (args) => {
+        if (!stubLegacyAccount) return null;
+        const lookup = args?.where?.userName ?? args?.where?.externalId;
+        if (
+          lookup !== stubLegacyAccount.userName &&
+          lookup !== stubLegacyAccount.externalId
+        ) {
+          return null;
+        }
+        legacyAccountReturned = true;
+        return stubLegacyAccount;
+      };
       prisma.projectMember.findMany = async (args) => {
         if (expectedProjectLookupUserId) {
           assert.equal(args?.where?.userId, expectedProjectLookupUserId);
@@ -177,7 +193,11 @@ function runDelegatedJwtRequest({
         url,
         headers: { authorization: 'Bearer ' + token },
       });
-      process.stdout.write(JSON.stringify({ statusCode: res.statusCode, body: res.body }));
+      process.stdout.write(JSON.stringify({
+        statusCode: res.statusCode,
+        body: res.body,
+        legacyAccountReturned,
+      }));
     } finally {
       await server.close();
     }
@@ -193,6 +213,9 @@ function runDelegatedJwtRequest({
     TEST_STUB_DB: stubDb ? '1' : '0',
     TEST_STUB_AGENT360: stubAgent360 ? '1' : '0',
     TEST_STUB_IDENTITY: stubIdentity ? JSON.stringify(stubIdentity) : '',
+    TEST_STUB_LEGACY_ACCOUNT: stubLegacyAccount
+      ? JSON.stringify(stubLegacyAccount)
+      : '',
     TEST_EXPECT_PROJECT_LOOKUP_USER_ID: expectProjectLookupUserId || '',
   });
 }
@@ -873,6 +896,56 @@ test('auth plugin: delegated read-only scope allows GET /project-360', () => {
   assert.equal(body.approvals?.pendingTotal, 1);
 });
 
+test('auth plugin: jwt without a canonical account cannot access Knowledge routes', () => {
+  const result = runDelegatedJwtRequest({
+    payload: {
+      sub: 'unprovisioned-google-subject',
+      roles: ['user'],
+      jti: 'tok-unprovisioned-knowledge',
+    },
+    method: 'GET',
+    url: '/knowledge/items',
+    stubDb: true,
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.statusCode, 403);
+  const body = JSON.parse(payload.body);
+  assert.equal(body.error?.code, 'forbidden');
+  assert.equal(body.error?.details?.reason, 'canonical_account_required');
+});
+
+test('auth plugin: jwt legacy account collision cannot qualify as a Knowledge canonical actor', () => {
+  const result = runDelegatedJwtRequest({
+    payload: {
+      sub: 'legacy-collision',
+      roles: ['user'],
+      jti: 'tok-legacy-collision-knowledge',
+    },
+    method: 'GET',
+    url: '/knowledge/items',
+    stubDb: true,
+    stubLegacyAccount: {
+      id: 'legacy-account-1',
+      userName: 'legacy-collision',
+      externalId: null,
+      active: true,
+      deletedAt: null,
+      organization: null,
+      memberships: [],
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.legacyAccountReturned, true);
+  assert.equal(payload.statusCode, 403);
+  const body = JSON.parse(payload.body);
+  assert.equal(body.error?.code, 'forbidden');
+  assert.equal(body.error?.details?.reason, 'canonical_account_required');
+});
+
 test('auth plugin: delegated write-limited scope passes auth guard for write method', () => {
   const result = runDelegatedJwtRequest({
     payload: {
@@ -893,12 +966,17 @@ test('auth plugin: delegated write-limited scope passes auth guard for write met
   assert.equal(payload.statusCode, 404);
 });
 
-test('auth plugin: jwt resolves DB context via UserIdentity before externalId fallback', () => {
+test('auth plugin: jwt resolves canonical DB groups and roles via UserIdentity before externalId fallback', () => {
   const result = runDelegatedJwtRequest({
     payload: {
       sub: 'google-sub-001',
       roles: ['user'],
+      group_ids: ['stale-admin-group'],
+      org_id: 'stale-token-organization',
       jti: 'tok-identity-ctx',
+    },
+    overrides: {
+      AUTH_GROUP_TO_ROLE_MAP: 'stale-admin-group=admin,general_affairs=mgmt',
     },
     stubDb: true,
     stubIdentity: {
@@ -932,10 +1010,45 @@ test('auth plugin: jwt resolves DB context via UserIdentity before externalId fa
   assert.equal(body.user?.orgId, 'org-from-identity');
   assert.deepEqual(body.user?.groupIds, ['general_affairs']);
   assert.deepEqual(body.user?.groupAccountIds, ['group-account-1']);
+  assert.deepEqual(body.user?.roles, ['user', 'mgmt']);
+  assert.equal(body.user?.roles.includes('admin'), false);
   assert.equal(body.user?.userId, 'legacy-external-1');
   assert.equal(body.user?.auth?.principalUserId, 'google-sub-001');
   assert.equal(body.user?.auth?.userAccountId, 'user-account-1');
   assert.equal(body.user?.auth?.identityId, 'identity-1');
+});
+
+test('auth plugin: DB context clears stale JWT organization when account has none', () => {
+  const result = runDelegatedJwtRequest({
+    payload: {
+      sub: 'google-sub-no-org',
+      roles: ['user'],
+      org_id: 'stale-token-organization',
+      jti: 'tok-identity-no-org',
+    },
+    stubDb: true,
+    stubIdentity: {
+      id: 'identity-no-org',
+      status: 'active',
+      userAccountId: 'user-account-no-org',
+      userAccount: {
+        id: 'user-account-no-org',
+        userName: 'legacy-user-no-org',
+        externalId: 'legacy-external-no-org',
+        active: true,
+        deletedAt: null,
+        organization: null,
+        memberships: [],
+      },
+    },
+  });
+
+  assert.equal(result.status, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.statusCode, 200);
+  const body = JSON.parse(payload.body);
+  assert.equal(body.user?.orgId, undefined);
+  assert.deepEqual(body.user?.groupAccountIds, []);
 });
 
 test('auth plugin: jwt uses linked legacy user key for project lookup when UserIdentity resolves', () => {

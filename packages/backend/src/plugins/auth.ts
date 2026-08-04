@@ -340,6 +340,7 @@ type UserDbContext =
       blocked: false;
       userAccountId: string;
       identityId?: string;
+      identityExpiresAt?: number;
       legacyUserId: string;
       orgId?: string;
       groupIds: string[];
@@ -358,7 +359,11 @@ function mapResolvedUserContext(
       group: { id: string; displayName: string; active: boolean };
     }>;
   },
-  options: { userAccountId: string; identityId?: string },
+  options: {
+    userAccountId: string;
+    identityId?: string;
+    identityExpiresAt?: number;
+  },
 ): UserDbContext {
   if (!user.active || user.deletedAt) {
     return { blocked: true as const };
@@ -381,6 +386,7 @@ function mapResolvedUserContext(
     blocked: false as const,
     userAccountId: options.userAccountId,
     identityId: options.identityId,
+    identityExpiresAt: options.identityExpiresAt,
     legacyUserId,
     orgId: user.organization ?? undefined,
     groupIds,
@@ -388,19 +394,27 @@ function mapResolvedUserContext(
   };
 }
 
+function identityEffectiveUntilMs(identity: {
+  effectiveUntil?: Date | string | null;
+}) {
+  const effectiveUntilRaw = identity.effectiveUntil;
+  if (!effectiveUntilRaw) return undefined;
+  const effectiveUntil =
+    effectiveUntilRaw instanceof Date
+      ? effectiveUntilRaw
+      : new Date(effectiveUntilRaw);
+  const effectiveUntilMs = effectiveUntil.getTime();
+  return Number.isNaN(effectiveUntilMs) ? undefined : effectiveUntilMs;
+}
+
 function isIdentityCurrentlyUsable(identity: {
   status: string;
   effectiveUntil?: Date | string | null;
 }) {
   if (identity.status !== 'active') return false;
-  const effectiveUntilRaw = identity.effectiveUntil;
-  if (!effectiveUntilRaw) return true;
-  const effectiveUntil =
-    effectiveUntilRaw instanceof Date
-      ? effectiveUntilRaw
-      : new Date(effectiveUntilRaw);
-  if (Number.isNaN(effectiveUntil.getTime())) return false;
-  if (effectiveUntil.getTime() <= Date.now()) {
+  const effectiveUntilMs = identityEffectiveUntilMs(identity);
+  if (identity.effectiveUntil && effectiveUntilMs === undefined) return false;
+  if (effectiveUntilMs !== undefined && effectiveUntilMs <= Date.now()) {
     return false;
   }
   return true;
@@ -450,6 +464,7 @@ async function resolveUserGroupsFromDb(
     return mapResolvedUserContext(identity.userAccount, {
       userAccountId: identity.userAccountId,
       identityId: identity.id,
+      identityExpiresAt: identityEffectiveUntilMs(identity),
     });
   }
 
@@ -480,6 +495,7 @@ async function resolveUserGroupsFromDb(
         return mapResolvedUserContext(identity.userAccount, {
           userAccountId: identity.userAccountId,
           identityId: identity.id,
+          identityExpiresAt: identityEffectiveUntilMs(identity),
         });
       }
     }
@@ -499,19 +515,35 @@ async function resolveUserGroupsFromDb(
 
 type CachedUserDbContext = {
   expiresAt: number;
+  invalidationKey: string;
   value: UserDbContext;
 };
 
 const userDbContextCache = new Map<string, CachedUserDbContext>();
+// A global epoch conservatively suppresses every in-flight cache write when
+// authorization state is invalidated; existing unrelated entries remain intact.
+let userDbContextCacheWriteEpoch = Symbol('user-db-context-cache-write');
+
+function advanceUserDbContextCacheWriteEpoch() {
+  userDbContextCacheWriteEpoch = Symbol('user-db-context-cache-write');
+}
 
 export function invalidateUserDbContextCache(
   user: Pick<UserContext, 'userId' | 'auth'>,
 ) {
-  const cacheKey = buildUserDbContextCacheKey(user as UserContext);
-  userDbContextCache.delete(cacheKey);
+  advanceUserDbContextCacheWriteEpoch();
+  const invalidationKey = buildUserDbContextInvalidationKey(
+    user as UserContext,
+  );
+  for (const [cacheKey, cached] of userDbContextCache) {
+    if (cached.invalidationKey === invalidationKey) {
+      userDbContextCache.delete(cacheKey);
+    }
+  }
 }
 
 export function clearUserDbContextCache() {
+  advanceUserDbContextCacheWriteEpoch();
   userDbContextCache.clear();
 }
 
@@ -524,12 +556,24 @@ function resolveDbCacheTtlMs() {
   );
 }
 
-function buildUserDbContextCacheKey(user: UserContext) {
-  return [
+function buildUserDbContextInvalidationKey(user: UserContext) {
+  return JSON.stringify([
     user.auth?.providerType ?? 'legacy',
     user.auth?.issuer ?? '',
     user.userId,
-  ].join('\u0001');
+  ]);
+}
+
+function buildUserDbContextCacheKey(user: UserContext) {
+  const identityScope = user.auth?.sessionBased
+    ? ['session', user.auth.identityId ?? '', user.auth.userAccountId ?? '']
+    : ['subject'];
+  return JSON.stringify([
+    user.auth?.providerType ?? 'legacy',
+    user.auth?.issuer ?? '',
+    user.userId,
+    ...identityScope,
+  ]);
 }
 
 async function resolveUserDbContext(user: UserContext): Promise<UserDbContext> {
@@ -543,8 +587,21 @@ async function resolveUserDbContext(user: UserContext): Promise<UserDbContext> {
   if (cached && cached.expiresAt > now) {
     return cached.value;
   }
+  const writeEpoch = userDbContextCacheWriteEpoch;
   const value = await resolveUserGroupsFromDb(user);
-  userDbContextCache.set(cacheKey, { expiresAt: now + ttlMs, value });
+  if (writeEpoch !== userDbContextCacheWriteEpoch) {
+    return value;
+  }
+  const identityExpiresAt =
+    value && !value.blocked ? value.identityExpiresAt : undefined;
+  userDbContextCache.set(cacheKey, {
+    expiresAt:
+      identityExpiresAt === undefined
+        ? now + ttlMs
+        : Math.min(now + ttlMs, identityExpiresAt),
+    invalidationKey: buildUserDbContextInvalidationKey(user),
+    value,
+  });
   return value;
 }
 
@@ -580,21 +637,21 @@ async function validateAndEnrichUserContext(req: any, reply: any) {
       respondUnauthorized(req, reply, 'user_inactive');
       return false;
     }
-    const mergedGroupIds = unionStrings(user.groupIds, resolved.groupIds);
-    const mergedGroupAccountIds = unionStrings(
-      user.groupAccountIds,
-      resolved.groupAccountIds,
-    );
-    const derivedRoles = deriveRolesFromGroups(mergedGroupIds);
+    // Once canonical DB context is available for JWT/session auth, signed
+    // group claims are stale hints only. Do not let them reintroduce
+    // group-derived privileges. Synthetic header auth does not call this path.
+    const canonicalGroupIds = unionStrings(undefined, resolved.groupIds);
+    const derivedRoles = deriveRolesFromGroups(canonicalGroupIds);
     const mergedRoles = expandRoles(
       unionStrings(user.roles, ['user', ...derivedRoles]),
     );
-    user.groupIds = mergedGroupIds;
-    user.groupAccountIds = mergedGroupAccountIds;
+    user.groupIds = canonicalGroupIds;
+    // Organization authorization must use the current DB-backed context.
+    // Signed claims can be stale, and header auth is intentionally limited to
+    // non-production environments by env validation.
+    user.groupAccountIds = resolved.groupAccountIds;
     user.roles = mergedRoles;
-    if (!user.orgId && resolved.orgId) {
-      user.orgId = resolved.orgId;
-    }
+    user.orgId = resolved.orgId;
     if (user.auth && resolved.userAccountId && !user.auth.userAccountId) {
       user.auth.userAccountId = resolved.userAccountId;
     }

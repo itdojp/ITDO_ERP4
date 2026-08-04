@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
+import { clearUserDbContextCache } from '../plugins/auth.js';
 import { requireRole } from '../services/rbac.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import {
@@ -198,6 +199,7 @@ export async function registerGroupRoutes(app: FastifyInstance) {
           })),
           skipDuplicates: true,
         });
+        clearUserDbContextCache();
       }
       await logAudit({
         action: 'group_created',
@@ -278,6 +280,10 @@ export async function registerGroupRoutes(app: FastifyInstance) {
           updatedBy: actorId,
         },
       });
+      // Group name/active state participates in DB-backed authorization and
+      // role derivation. Clear every process-local entry before responding so
+      // a revoked grant is not reused for the configured TTL.
+      clearUserDbContextCache();
       await logAudit({
         action: 'group_updated',
         targetTable: 'GroupAccount',
@@ -351,6 +357,7 @@ export async function registerGroupRoutes(app: FastifyInstance) {
         skipDuplicates: true,
       });
       const addedCount = createResult.count ?? 0;
+      clearUserDbContextCache();
       await logAudit({
         action: 'group_members_added',
         targetTable: 'UserGroup',
@@ -425,6 +432,7 @@ export async function registerGroupRoutes(app: FastifyInstance) {
         where: { groupId, userId: { in: userAccountIds } },
       });
       const removedCount = deleteResult.count ?? 0;
+      clearUserDbContextCache();
       await logAudit({
         action: 'group_members_removed',
         targetTable: 'UserGroup',

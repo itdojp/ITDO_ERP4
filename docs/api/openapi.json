@@ -12969,6 +12969,1919 @@
         }
       }
     },
+    "/knowledge/items": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "enum": [
+                "personal",
+                "organization"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "inbox",
+                "reviewing",
+                "processed",
+                "archived"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "canonicalUrl": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "capturedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "createdBy": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "deletedAt": {
+                            "format": "date-time",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "deletedReason": {
+                            "enum": [
+                              "owner_request"
+                            ],
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "organizationId": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "ownerUserId": {
+                            "type": "string"
+                          },
+                          "publishedAt": {
+                            "format": "date-time",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "saveReason": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "scope": {
+                            "enum": [
+                              "personal",
+                              "organization"
+                            ],
+                            "type": "string"
+                          },
+                          "shortNote": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "sourceAuthor": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "sourceType": {
+                            "enum": [
+                              "x",
+                              "threads",
+                              "news",
+                              "web",
+                              "pdf",
+                              "image",
+                              "manual",
+                              "other"
+                            ],
+                            "type": "string"
+                          },
+                          "status": {
+                            "enum": [
+                              "inbox",
+                              "reviewing",
+                              "processed",
+                              "archived"
+                            ],
+                            "type": "string"
+                          },
+                          "title": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "unresolvedQuestion": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "updatedBy": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "version": {
+                            "minimum": 1,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "ownerUserId",
+                          "scope",
+                          "organizationId",
+                          "sourceType",
+                          "canonicalUrl",
+                          "title",
+                          "sourceAuthor",
+                          "publishedAt",
+                          "capturedAt",
+                          "saveReason",
+                          "shortNote",
+                          "unresolvedQuestion",
+                          "status",
+                          "version",
+                          "deletedAt",
+                          "deletedReason",
+                          "createdAt",
+                          "createdBy",
+                          "updatedAt",
+                          "updatedBy"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "tags": [
+          "knowledge"
+        ]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "canonicalUrl": {
+                    "format": "uri",
+                    "maxLength": 4096,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "capturedAt": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "organizationGroupIds": {
+                    "items": {
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 100,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "publishedAt": {
+                    "format": "date-time",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "saveReason": {
+                    "maxLength": 4000,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "scope": {
+                    "enum": [
+                      "personal",
+                      "organization"
+                    ],
+                    "type": "string"
+                  },
+                  "shortNote": {
+                    "maxLength": 10000,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "sourceAuthor": {
+                    "maxLength": 500,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "sourceType": {
+                    "enum": [
+                      "x",
+                      "threads",
+                      "news",
+                      "web",
+                      "pdf",
+                      "image",
+                      "manual",
+                      "other"
+                    ],
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "inbox",
+                      "reviewing",
+                      "processed",
+                      "archived"
+                    ],
+                    "type": "string"
+                  },
+                  "title": {
+                    "maxLength": 500,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "unresolvedQuestion": {
+                    "maxLength": 4000,
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "scope",
+                  "sourceType"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "canonicalUrl": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "capturedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "createdBy": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "deletedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "deletedReason": {
+                      "enum": [
+                        "owner_request"
+                      ],
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "organizationId": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "ownerUserId": {
+                      "type": "string"
+                    },
+                    "publishedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "saveReason": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "scope": {
+                      "enum": [
+                        "personal",
+                        "organization"
+                      ],
+                      "type": "string"
+                    },
+                    "shortNote": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "sourceAuthor": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "sourceType": {
+                      "enum": [
+                        "x",
+                        "threads",
+                        "news",
+                        "web",
+                        "pdf",
+                        "image",
+                        "manual",
+                        "other"
+                      ],
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "inbox",
+                        "reviewing",
+                        "processed",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    "title": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "unresolvedQuestion": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedBy": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "version": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "ownerUserId",
+                    "scope",
+                    "organizationId",
+                    "sourceType",
+                    "canonicalUrl",
+                    "title",
+                    "sourceAuthor",
+                    "publishedAt",
+                    "capturedAt",
+                    "saveReason",
+                    "shortNote",
+                    "unresolvedQuestion",
+                    "status",
+                    "version",
+                    "deletedAt",
+                    "deletedReason",
+                    "createdAt",
+                    "createdBy",
+                    "updatedAt",
+                    "updatedBy"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/knowledge/items/{id}": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "expectedVersion": {
+                    "maximum": 2147483646,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "reasonCode": {
+                    "enum": [
+                      "owner_request"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "expectedVersion",
+                  "reasonCode"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "canonicalUrl": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "capturedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "createdBy": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "deletedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "deletedReason": {
+                      "enum": [
+                        "owner_request"
+                      ],
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "organizationId": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "ownerUserId": {
+                      "type": "string"
+                    },
+                    "publishedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "saveReason": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "scope": {
+                      "enum": [
+                        "personal",
+                        "organization"
+                      ],
+                      "type": "string"
+                    },
+                    "shortNote": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "sourceAuthor": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "sourceType": {
+                      "enum": [
+                        "x",
+                        "threads",
+                        "news",
+                        "web",
+                        "pdf",
+                        "image",
+                        "manual",
+                        "other"
+                      ],
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "inbox",
+                        "reviewing",
+                        "processed",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    "title": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "unresolvedQuestion": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedBy": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "version": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "ownerUserId",
+                    "scope",
+                    "organizationId",
+                    "sourceType",
+                    "canonicalUrl",
+                    "title",
+                    "sourceAuthor",
+                    "publishedAt",
+                    "capturedAt",
+                    "saveReason",
+                    "shortNote",
+                    "unresolvedQuestion",
+                    "status",
+                    "version",
+                    "deletedAt",
+                    "deletedReason",
+                    "createdAt",
+                    "createdBy",
+                    "updatedAt",
+                    "updatedBy"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "tags": [
+          "knowledge"
+        ]
+      },
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "canonicalUrl": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "capturedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "createdBy": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "deletedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "deletedReason": {
+                      "enum": [
+                        "owner_request"
+                      ],
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "organizationId": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "ownerUserId": {
+                      "type": "string"
+                    },
+                    "publishedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "saveReason": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "scope": {
+                      "enum": [
+                        "personal",
+                        "organization"
+                      ],
+                      "type": "string"
+                    },
+                    "shortNote": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "sourceAuthor": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "sourceType": {
+                      "enum": [
+                        "x",
+                        "threads",
+                        "news",
+                        "web",
+                        "pdf",
+                        "image",
+                        "manual",
+                        "other"
+                      ],
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "inbox",
+                        "reviewing",
+                        "processed",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    "title": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "unresolvedQuestion": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedBy": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "version": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "ownerUserId",
+                    "scope",
+                    "organizationId",
+                    "sourceType",
+                    "canonicalUrl",
+                    "title",
+                    "sourceAuthor",
+                    "publishedAt",
+                    "capturedAt",
+                    "saveReason",
+                    "shortNote",
+                    "unresolvedQuestion",
+                    "status",
+                    "version",
+                    "deletedAt",
+                    "deletedReason",
+                    "createdAt",
+                    "createdBy",
+                    "updatedAt",
+                    "updatedBy"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "tags": [
+          "knowledge"
+        ]
+      },
+      "patch": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "canonicalUrl": {
+                    "format": "uri",
+                    "maxLength": 4096,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "capturedAt": {
+                    "format": "date-time",
+                    "type": "string"
+                  },
+                  "expectedVersion": {
+                    "maximum": 2147483646,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "publishedAt": {
+                    "format": "date-time",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "saveReason": {
+                    "maxLength": 4000,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "shortNote": {
+                    "maxLength": 10000,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "sourceAuthor": {
+                    "maxLength": 500,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "sourceType": {
+                    "enum": [
+                      "x",
+                      "threads",
+                      "news",
+                      "web",
+                      "pdf",
+                      "image",
+                      "manual",
+                      "other"
+                    ],
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "inbox",
+                      "reviewing",
+                      "processed",
+                      "archived"
+                    ],
+                    "type": "string"
+                  },
+                  "title": {
+                    "maxLength": 500,
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "unresolvedQuestion": {
+                    "maxLength": 4000,
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "expectedVersion"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "canonicalUrl": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "capturedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "createdBy": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "deletedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "deletedReason": {
+                      "enum": [
+                        "owner_request"
+                      ],
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "organizationId": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "ownerUserId": {
+                      "type": "string"
+                    },
+                    "publishedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "saveReason": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "scope": {
+                      "enum": [
+                        "personal",
+                        "organization"
+                      ],
+                      "type": "string"
+                    },
+                    "shortNote": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "sourceAuthor": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "sourceType": {
+                      "enum": [
+                        "x",
+                        "threads",
+                        "news",
+                        "web",
+                        "pdf",
+                        "image",
+                        "manual",
+                        "other"
+                      ],
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "inbox",
+                        "reviewing",
+                        "processed",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    "title": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "unresolvedQuestion": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedBy": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "version": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "ownerUserId",
+                    "scope",
+                    "organizationId",
+                    "sourceType",
+                    "canonicalUrl",
+                    "title",
+                    "sourceAuthor",
+                    "publishedAt",
+                    "capturedAt",
+                    "saveReason",
+                    "shortNote",
+                    "unresolvedQuestion",
+                    "status",
+                    "version",
+                    "deletedAt",
+                    "deletedReason",
+                    "createdAt",
+                    "createdBy",
+                    "updatedAt",
+                    "updatedBy"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/knowledge/items/{id}/restore": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "expectedVersion": {
+                    "maximum": 2147483646,
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "expectedVersion"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "canonicalUrl": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "capturedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "createdBy": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "deletedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "deletedReason": {
+                      "enum": [
+                        "owner_request"
+                      ],
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "organizationId": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "ownerUserId": {
+                      "type": "string"
+                    },
+                    "publishedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "saveReason": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "scope": {
+                      "enum": [
+                        "personal",
+                        "organization"
+                      ],
+                      "type": "string"
+                    },
+                    "shortNote": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "sourceAuthor": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "sourceType": {
+                      "enum": [
+                        "x",
+                        "threads",
+                        "news",
+                        "web",
+                        "pdf",
+                        "image",
+                        "manual",
+                        "other"
+                      ],
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "inbox",
+                        "reviewing",
+                        "processed",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    "title": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "unresolvedQuestion": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "updatedBy": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "version": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "ownerUserId",
+                    "scope",
+                    "organizationId",
+                    "sourceType",
+                    "canonicalUrl",
+                    "title",
+                    "sourceAuthor",
+                    "publishedAt",
+                    "capturedAt",
+                    "saveReason",
+                    "shortNote",
+                    "unresolvedQuestion",
+                    "status",
+                    "version",
+                    "deletedAt",
+                    "deletedReason",
+                    "createdAt",
+                    "createdBy",
+                    "updatedAt",
+                    "updatedBy"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/knowledge/items/count": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "enum": [
+                "personal",
+                "organization"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "inbox",
+                "reviewing",
+                "processed",
+                "archived"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "count": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
     "/leave-calendar/company-holidays": {
       "get": {
         "parameters": [

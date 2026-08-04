@@ -119,11 +119,13 @@ event 名は後続 Issue で repository 命名規則へ合わせるが、少な�
 | logical delete/restore     | target/version、reason code、result                                                          | policy/version conflict                      | deleted body                       |
 | break-glass                | request/grant id、target、approvers、viewer、TTL、access type                                | denial/expiry code                           | reason text の一般表示、content    |
 
-現行 `logAudit()` は失敗を catch して継続するため、Knowledge の必須監査 write にはそのまま使用しない。後続 Issue 02 で、同じ Prisma transaction を受け取り失敗を呼び出し元へ返す `KnowledgeAuditWriter` 相当の port を実装し、業務 row と audit row を同時に commit/rollback する。既存 module の fail-open 契約は変更しない。
+現行 `logAudit()` は失敗を catch して継続するため、Knowledge の必須監査 write にはそのまま使用しない。Issue 02（#2010）で、同じ Prisma transaction を受け取り失敗を呼び出し元へ返す `KnowledgeAuditWriter` 相当の portを実装し、成功する業務rowとaudit rowを同時にcommit/rollbackする。権限拒否、hidden/absent、version conflict、route/schema denialの監査は、外部非漏えいcontract、失敗監査自体のfailure semantics、ID probingによるlog増幅対策を先に固定する必要があるため#2025で実装する。既存moduleのfail-open契約は変更しない。
 
 storage、AI、Chat 等の外部副作用では DB transaction を開いたまま I/O を待たない。副作用前に intent/status と監査 event を transaction で確定し、副作用後の finalization/audit が失敗した場合は success を返さず、`pending|failed` と idempotent reconciliation を残す。break-glass access、export、外部 AI 送信、binary download は実アクセス監査を必須とし、監査不能時に操作を開始または成功応答しない。通常 read の監査方式は対象 Issue で可用性影響とともに明示する。
 
 Knowledge audit metadata は event ごとの typed allowlist から構築し、保存前に redaction/length bound を適用する。現行 route の任意 metadata pass-through や検索語保存を Knowledge 実装へコピーしない。
+
+Knowledge item の logical delete 理由は自由記述ではなく有限のreason code allowlistとし、Workstream 02では `owner_request` のみを受け付ける。request、response、application port、Prisma adapter、Knowledge audit writerを同じallowlistへ揃え、`KnowledgeItem.deletedReason`はDB enum、削除状態はCHECK、共用`AuditLog`は`knowledge_item_deleted` actionだけに適用する条件付きCHECKでfail closedにする。本文、説明文、credentialは`deletedReason`または`AuditLog.reasonCode`へ保存しない。後続reason codeは要件・API schema・DB enum/CHECK・負例テストを同時に更新する場合だけ追加する。
 
 ## 6. 費用・運用契約
 
@@ -156,6 +158,24 @@ Knowledge audit metadata は event ごとの typed allowlist から構築し、�
 - 非対象: label search、binary snapshot、Chat、AI。
 - 受け入れ: owner 外 list/detail/count 0、optimistic concurrency、logical delete/restore、transaction-aware fail-closed audit port、typed audit metadata allowlist、OpenAPI/schema、既存 chat migration 回帰なし。
 - rollback/test: expand-only migration、旧 image 互換、migration deploy、repository/service/route/ACL negative tests、API schema、backup前提記録。
+
+#### Workstream 02 API / authorization contract
+
+- APIは `POST /knowledge/items`、`GET /knowledge/items`、`GET /knowledge/items/count`、`GET|PATCH|DELETE /knowledge/items/:id`、`POST /knowledge/items/:id/restore` とする。
+- `personal` のread/writeはowner subjectをDB predicateへ含め、`admin` / `mgmt` roleだけの通常閲覧を許可しない。JWT/sessionのDB canonical contextでは可変な`externalId` / `userName`ではなくstableな`UserAccount.id`を`ownerUserId`へ保存・照合する。development/test専用header authだけはsynthetic `UserContext.userId`へfallbackする。non-header authはactiveな`UserIdentity`に裏付けられたcanonical `UserAccount.id`と`identityId`を必須とし、解決できない場合はKnowledge route全体を`403 forbidden`（`canonical_account_required`）でfail closedとする。既存API互換の`userName` / `externalId`解決結果やJWT subjectをKnowledge owner/audit主体へfallbackしない。
+- `organization` の通常readはowner、またはitemの `organizationId` とactorの `orgId` が一致し、かつactiveなcanonical `GroupAccount.id` の明示grantが一致する場合だけ許可する。org/group context欠落、inactive group、壊れたrelationはdenyする。
+- JWT/sessionのorganizationとcanonical group IDはDB解決成功時にDB正本へ置換し、stale token claimをACLへ使わない。正のDB context cache TTLを使う場合もidentity-backed entryの期限を`UserIdentity.effectiveUntil`で上限設定し、identity失効後のKnowledge actor再利用を拒否する。session認証のcache keyはcanonical identity/account単位で分離し、同じprovider subjectを持つ別identityの正・負contextを共有しない。DB解決中にsubject/global invalidationが発生した場合は、失効前snapshotをcacheへ書き戻さない。header authはdevelopment/test用のsynthetic trust boundaryであり、productionはenv validationで`AUTH_MODE=jwt_bff`以外を起動拒否する。
+- organization item作成時はactor自身のactive `groupAccountIds` に含まれるgrantを1件以上要求する。WS02のgrantはread-onlyで、update/delete/restoreはownerだけに限定する。
+- JWT/sessionでDB user contextを解決できた場合、`orgId`、`groupIds`、`groupAccountIds`およびgroup由来roleはDB正本で置換し、signed tokenのstale group claimをunionしない。独立したrole claimは既存認証契約として保持する。development/test専用header authはsynthetic contextをそのまま信頼し、DB canonical化を行わない。
+- scopeとgrantの変更をgeneric PATCHへ含めない。personalからorganizationへの移行、grant管理、共有field選択はWorkstream 07の専用preview/confirm use caseで扱う。
+- create/update/delete/restoreのrequest bodyは、Fastify/Ajvが未知fieldを除去する前の`preValidation`境界で明示allowlistと照合し、owner/audit field等の未知fieldが1件でもあればrequest全体を`400 invalid_request`で拒否する。application service直呼びでも同じく未知fieldを拒否し、許可fieldだけを部分適用しない。
+- update/delete/restoreは、increment後もPostgreSQL `INTEGER`範囲内となるpositive integer（1〜2,147,483,646）の `expectedVersion` を必須とする。2,147,483,647はoverflowを防ぐためmutation前に`400 invalid_request`で拒否する。stale owner requestは`409 version_conflict`、owner外または存在しないIDは同じ`404 not_found` contractとする。
+- updateは正規化後の実値を現行rowと比較し、同一値だけのPATCHは`400 invalid_request`としてversionとauditを進めない。実変更と同一値が混在するPATCHは実変更fieldだけを更新し、`changedFields`へ記録する。
+- logical delete後は通常list/count/detailから除外する。restoreはowner、deleted state、version一致を同じtransaction内で検証する。
+- create/update/delete/restoreは、業務rowとallowlist metadataだけの `AuditLog` を同じPrisma transactionでcommitする。監査失敗時はbusiness writeもrollbackし、既存fail-open `logAudit()` は使用しない。
+- audit metadataはscope、status、version、変更field名だけを許可し、本文、canonical URL、query、reason text、token ID、secretを含めない。actor provenanceの`userId`はapplication serviceが認可済みowner subjectから強制導出し、caller指定値を受け付けない。安全文字・128文字上限をadapterでも再検証したrequest ID、有限値`api|agent`のsourceだけを追加保存する。raw role/group display name/scope/IP/User-Agentは利用者・issuer由来の自由文字列を含み得るためKnowledge audit port/DBへ渡さない。
+- canonical URLはHTTP(S)だけを受け付け、userinfo、安全なfragment、既知tracking parameterを除去する。署名URLの`key` / `policy` / `expires`、OAuthの`state` / `code`を含む署名・token・credential・session・OAuth等のcredential-like queryは、値の内容が一見無害でもfail-closed境界としてURL全体を拒否する。query名は入力長から導出した有限回数ですべての多重percent-encoding層をdecodeしたうえで、separatorとcamel-case境界でもtoken化し、`auth_key`、`x_sig`、`privateKey`、`privatekey`、password別名の`pwd` / `passphrase`、OAuthの`client_assertion` / `code_verifier` / proof系、SAMLの`SAMLRequest` / `SAMLart` / `RelayState`等の別名化で回避できないことを負例で固定する。標準の`&`だけでなくsemicolon区切り、およびpercent-decoding後に現れる埋め込み区切りもfail closedで検査する。query値は多重percent-decodeし、先頭からcredential-likeな`name=value`を含む場合は安全なouter query名の配下でも拒否する。query値に埋め込まれたHTTP(S)/relative URLとtop-level hash-router fragmentは同じ有限decoderへ通し、delimiter自体の多重encodingやmalformed prefixを含めて解析する。先頭slashのないpath-relative参照でURL parserを迂回してもcredential-like query textを拒否し、解析上限へ到達する防御経路はfail closedとする。
+- Workstream 02はDB metadataだけを追加し、binary snapshot、artifact、provider URL、Chat share、label、AIを扱わない。
 
 ### 03. Label / ANY-ALL-NOT search / saved view
 

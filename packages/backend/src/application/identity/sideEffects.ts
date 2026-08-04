@@ -54,7 +54,10 @@ type IdentitySideEffectPorts = {
   deactivatePersonalGaRoomMember: (
     input: DeactivatePersonalGaRoomMemberInput,
   ) => Promise<{ roomId: string; updatedCount: number }>;
-  logAudit: (entry: AuditInput) => Promise<unknown>;
+  logAudit: (
+    entry: AuditInput,
+    client?: Prisma.TransactionClient,
+  ) => Promise<unknown>;
 };
 
 export type IdentitySideEffectPortOverrides = Partial<IdentitySideEffectPorts>;
@@ -146,20 +149,23 @@ export async function syncScimPersonalGaRoomMembership(
       createdBy: actor,
       client: options.client,
     });
-    await p.logAudit({
-      action: 'personal_ga_room_member_reactivated',
-      targetTable: 'chat_room_members',
-      targetId: `${ensured.roomId}:${afterChatUserId}`,
-      metadata: {
-        userAccountId: after.id,
-        userId: afterChatUserId,
-        roomId: ensured.roomId,
-        reason: activeChanged
-          ? 'scim_user_reactivated'
-          : 'scim_user_identifier_changed',
+    await p.logAudit(
+      {
+        action: 'personal_ga_room_member_reactivated',
+        targetTable: 'chat_room_members',
+        targetId: `${ensured.roomId}:${afterChatUserId}`,
+        metadata: {
+          userAccountId: after.id,
+          userId: afterChatUserId,
+          roomId: ensured.roomId,
+          reason: activeChanged
+            ? 'scim_user_reactivated'
+            : 'scim_user_identifier_changed',
+        },
+        ...options.auditContext,
       },
-      ...options.auditContext,
-    });
+      options.client,
+    );
 
     if (identifierChanged && beforeChatUserId) {
       const deactivated = await p.deactivatePersonalGaRoomMember({
@@ -170,19 +176,22 @@ export async function syncScimPersonalGaRoomMembership(
         client: options.client,
       });
       if (deactivated.updatedCount > 0) {
-        await p.logAudit({
-          action: 'personal_ga_room_member_deactivated',
-          targetTable: 'chat_room_members',
-          targetId: `${deactivated.roomId}:${beforeChatUserId}`,
-          metadata: {
-            userAccountId: before.id,
-            userId: beforeChatUserId,
-            roomId: deactivated.roomId,
-            reason: 'scim_user_identifier_changed',
-            replacedByUserId: afterChatUserId,
+        await p.logAudit(
+          {
+            action: 'personal_ga_room_member_deactivated',
+            targetTable: 'chat_room_members',
+            targetId: `${deactivated.roomId}:${beforeChatUserId}`,
+            metadata: {
+              userAccountId: before.id,
+              userId: beforeChatUserId,
+              roomId: deactivated.roomId,
+              reason: 'scim_user_identifier_changed',
+              replacedByUserId: afterChatUserId,
+            },
+            ...options.auditContext,
           },
-          ...options.auditContext,
-        });
+          options.client,
+        );
       }
     }
     return;
@@ -200,18 +209,21 @@ export async function syncScimPersonalGaRoomMembership(
       client: options.client,
     });
     if (deactivated.updatedCount > 0) {
-      await p.logAudit({
-        action: 'personal_ga_room_member_deactivated',
-        targetTable: 'chat_room_members',
-        targetId: `${deactivated.roomId}:${targetUserId}`,
-        metadata: {
-          userAccountId: after.id,
-          userId: targetUserId,
-          roomId: deactivated.roomId,
-          reason: 'scim_user_deactivated',
+      await p.logAudit(
+        {
+          action: 'personal_ga_room_member_deactivated',
+          targetTable: 'chat_room_members',
+          targetId: `${deactivated.roomId}:${targetUserId}`,
+          metadata: {
+            userAccountId: after.id,
+            userId: targetUserId,
+            roomId: deactivated.roomId,
+            reason: 'scim_user_deactivated',
+          },
+          ...options.auditContext,
         },
-        ...options.auditContext,
-      });
+        options.client,
+      );
     }
   }
 }
@@ -237,17 +249,20 @@ export async function deactivateScimPersonalGaRoomForUser(
     client: options.client,
   });
   if (deactivated.updatedCount > 0) {
-    await p.logAudit({
-      action: 'personal_ga_room_member_deactivated',
-      targetTable: 'chat_room_members',
-      targetId: `${deactivated.roomId}:${userId}`,
-      metadata: {
-        userAccountId: options.user.id,
-        userId,
-        roomId: deactivated.roomId,
+    await p.logAudit(
+      {
+        action: 'personal_ga_room_member_deactivated',
+        targetTable: 'chat_room_members',
+        targetId: `${deactivated.roomId}:${userId}`,
+        metadata: {
+          userAccountId: options.user.id,
+          userId,
+          roomId: deactivated.roomId,
+        },
+        ...options.auditContext,
       },
-      ...options.auditContext,
-    });
+      options.client,
+    );
   }
 
   return { ...deactivated, userId };

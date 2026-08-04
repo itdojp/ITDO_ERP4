@@ -317,6 +317,8 @@ pass証跡は対象commit SHAとversionを固定し、private target identifier�
 
 application artifactは、PostgreSQL backupに含まれる`StorageArtifact` metadataとobject本体を分けて検証する。gdrive recordはcontext別folderへのread preflightとERP4認可済みendpointからのsize / SHA-256一致を確認し、Drive URLやprovider keyを証跡へ出さない。local recordは復元したasset volumeと従来readerで取得できることを確認する。実Driveでのcopy / cutover / rollback / 復元確認は#1981で実施し、repository fakeを実環境成功として扱わない。
 
+Knowledge Hub Workstream 02の`KnowledgeItem`と`KnowledgeItemGroupGrant`はPostgreSQL backup対象とし、create/update/delete/restoreの`AuditLog`も同じDB bundleへ含める。WS02はbinary artifactを追加しないためobject-store backup対象は増えない。isolated restoreではtable/constraint/FKの存在、item/grant/audit件数、logical delete状態、`version >= 1`、personal itemの`organizationId IS NULL`、organization itemの非空`organizationId`をprivate検証し、本文、URL、owner/group実識別子、raw rowを公開証跡へ出さない。共用`AuditLog`のKnowledge削除reason CHECKはexpand migrationで`NOT VALID`として新規writeを直ちに拘束し、既存row件数のprivate preflightが0の場合だけ別途validateする。旧applicationへのrollbackでは新tableを保持し、contract承認前にdropしない。
+
 ## storage / backup monitoring契約
 
 統合readinessは次の8 componentを固定順で返す。

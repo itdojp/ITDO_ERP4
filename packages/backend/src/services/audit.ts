@@ -30,6 +30,8 @@ type AuditInput = AuditContext & {
   metadata?: Prisma.InputJsonValue;
 };
 
+type AuditClient = Pick<Prisma.TransactionClient, 'auditLog'>;
+
 function resolveRequestId(req: FastifyRequest): string | undefined {
   const raw = req.id as unknown;
   if (raw === undefined || raw === null) return undefined;
@@ -125,9 +127,12 @@ export function auditContextFromRequest(
   };
 }
 
-export async function logAudit(entry: AuditInput) {
+export async function logAudit(
+  entry: AuditInput,
+  client: AuditClient = prisma,
+) {
   try {
-    await prisma.auditLog.create({
+    await client.auditLog.create({
       data: {
         action: entry.action,
         userId: entry.userId,
