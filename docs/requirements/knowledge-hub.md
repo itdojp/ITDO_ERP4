@@ -185,6 +185,73 @@ Knowledge item の logical delete 理由は自由記述ではなく有限のreas
 - 受け入れ: JSON array を正本にしない、descendant option、source/status/date/scope filter、ACL 済み count/facet、stable pagination、query cost limit。
 - rollback/test: additive indexes、query plan/性能 fixture、cross-owner label/suggestion leakage negative tests、saved-view ownership tests。
 
+#### Workstream 03 PR1: label core contract
+
+Issue #2011は、一つの巨大PRではなく次の2段階で実装する。PR1はlabel masterとassignmentのtransaction/ACL境界を先に固定し、PR2だけが検索・facet・suggestion・saved-view runtime APIを有効化して`Closes #2011`とする。PR1は`Refs #2011`であり、PR1単独ではIssueをcloseしない。
+
+PR1のDB正本は次の7 relationであり、label ID arrayやsaved-view filter JSONを正本にしない。
+
+- `KnowledgeLabel`: stable owner、`personal|organization` scope、organization、display name、slug、parent、version、logical delete
+- `KnowledgeLabelAlias`: 表示aliasとNFKC/case正規化値
+- `KnowledgeLabelPath`: self rowを含むclosure path
+- `KnowledgeItemLabel`: item-label relation、assignment source、assigner、AI confidence
+- `KnowledgeLabelGroupGrant`: canonical `GroupAccount.id`単位のactive `use|manage`
+- `KnowledgeSavedView`: owner、source/status/date/scope filter、schema/version、logical delete
+- `KnowledgeSavedViewLabelFilter`: saved view、label、`any|all|not`、descendant option
+
+所有・ACL契約:
+
+- `personal` labelはstable canonical `UserAccount.id` ownerだけがread/use/manageできる。`admin` / `mgmt` roleやgroup grantで通常アクセスを拡張しない。
+- `organization` labelのread/useには、actorのorganization一致とactiveな明示`use`または`manage` grantを同時に要求する。`manage`は`use`を包含するが、`use`はmaster mutationを許可しない。
+- organization labelのmaster mutationは、同一organizationの作成ownerまたはactiveな`manage` grantに限定する。grant欠落、無効化、別organization、canonical actor欠落はfail closedとする。
+- detail、alias、grant、attach/detachでは、hidden、logical deleted、revoked、cross-domain、存在しないlabelを外部から区別せず`404 not_found`とする。
+- itemへのattach/detachは、item owner、item version、label use権限を同じserializable transaction内で評価する。item versionとlabel master versionは別契約であり、attach/detach成功時はitem versionだけを進める。
+- mutation対象のlabel/item row lockは、生IDだけを先にlockせず、owner/organization/group/deleted predicateを含む単一`SELECT ... FOR UPDATE|SHARE`の結果にだけ適用する。権限外の既存rowと不存在IDのlock待ち時間差を作らない。
+
+master・階層・競合契約:
+
+- label create/update/delete、alias追加/削除、grant全置換はoptimistic `expectedVersion`を使い、increment可能なPostgreSQL `INTEGER`上限（2,147,483,646）を超える入力をmutation前に拒否する。
+- display name、slug、aliasはdomain内で正規化済みcanonical namespaceを共有し、曖昧な重複を`409 label_conflict`とする。active slugはDB partial unique indexでも保護する。
+- closure pathは各labelに`ancestorId = descendantId`かつ`depth = 0`のself rowを1件持つ。reparentはsubtreeをlockしてpathを同一transactionで再構築し、cycle、別scope/owner/organization、壊れたpath、depth 8超過をfail closedで拒否する。
+- Serializable conflict、adapter-pgのSQLSTATE `40001`、deadlock `40P01`、unique raceはDB transactionだけを最大3回再評価する。成功済み外部副作用はretry対象に含めない。上限到達時はraw Prisma errorやDB詳細を返さず、uniqueは`409 label_conflict`、その他の並行競合は`409 version_conflict`へ正規化する。
+- active childを持つlabelはlogical deleteできない。PR1はlabel masterやassignmentを物理削除しない。
+- business row、version更新、closure path、grant/assignment、Knowledge専用auditは同じtransactionでcommitし、audit失敗時もbusiness writeをrollbackする。
+
+PR1 API:
+
+- `POST|GET /knowledge/labels`
+- `GET|PATCH|DELETE /knowledge/labels/:id`
+- `GET|POST /knowledge/labels/:id/aliases`
+- `DELETE /knowledge/labels/:id/aliases/:aliasId`
+- `GET|PUT /knowledge/labels/:id/group-grants`
+- `POST /knowledge/items/:id/labels`
+- `DELETE /knowledge/items/:id/labels/:labelId`
+
+public attach APIは利用者操作の`manual` assignmentだけを作る。`assignmentSource=import|ai_suggestion`と`confidenceBasisPoints`は、将来の信頼済みimport/AI use caseがapplication portを呼ぶための内部契約であり、利用者request bodyから指定できない。responseは保存済みprovenanceを型付きで返す。
+
+監査・privacy契約:
+
+- label master auditは共有`AuditLog`の`targetTable=knowledge_labels`、`targetId=label_master`という一定markerを使い、raw label ID、label名、slug、alias、grant principal、検索語、filter bodyを保存しない。
+- item-label attach/detach auditはactorが認可済みの`knowledge_items` / item IDをtargetにできるが、label IDや名称はmetadataへ保存しない。
+- metadataはscope/status/version、bounded relation count、有限assignment sourceだけのallowlistとする。request ID/sourceはWorkstream 02と同じ検証済みactor contextを使う。
+- API responseにstorage URL、provider key、credentialを追加しない。本workstreamはGoogle Drive、Sakura Object Storage、production credentialへ接続しない。
+
+移行・rollback契約:
+
+- migrationは新enum/table/index/FK/CHECKだけのexpand-only変更とし、既存`KnowledgeItem`、`GroupAccount`、Chat、共有audit rowを更新・削除しない。
+- PR1適用後DBへWorkstream 02 merge artifact `358cb9e4d13489b703cb71cfee4b2754d15aa53e`の旧Prisma client/applicationを接続し、既存WS02 data保持、CRUD、health/readinessを確認する。
+- application rollbackでは7 tableと新enumを保持したまま旧imageへ戻す。table drop、migration逆適用、既存row削除をrollback手順にしない。
+- label/saved-view metadataとassignment/grant/auditは既存PostgreSQL backup bundleの対象である。PR1はbinary artifactや外部provider objectを追加しない。
+
+PR2へ残す範囲:
+
+- canonical ANY/ALL/NOTと`includeDescendants`
+- source/status/published/captured/scope filter
+- ACL predicateを同一queryへ含めるcount/facet/suggestion
+- query-cost guard、query/scope-bound signed cursor、stable pagination
+- saved-view CRUD/replayと、再生時点ACLによるlabel/filter再検証
+- query-plan/performance fixtureおよびcross-owner count/facet/suggestion leakage negative test
+
 ### 04. Snapshot / artifact / manual capture
 
 - Depends on: 02、#1975 repository-side storage boundary
