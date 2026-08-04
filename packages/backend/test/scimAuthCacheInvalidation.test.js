@@ -145,9 +145,24 @@ function runCacheInvalidationScenario(scenario) {
       return { count: rows.length };
     };
     prisma.projectMember.findMany = async () => [];
-    prisma.chatRoomMember.updateMany = async () => ({ count: 0 });
+    prisma.chatRoomMember.updateMany = async () => {
+      if (scenario === 'userDeleteSideEffectFailure') {
+        throw new Error('simulated personal GA membership failure');
+      }
+      return { count: 0 };
+    };
     prisma.auditLog.create = async () => ({ id: 'audit-1' });
-    prisma.$transaction = async (arg) => (Array.isArray(arg) ? Promise.all(arg) : arg(prisma));
+    prisma.$transaction = async (arg) => {
+      if (Array.isArray(arg)) return Promise.all(arg);
+      if (scenario !== 'userDeleteSideEffectFailure') return arg(prisma);
+      const snapshot = account;
+      try {
+        return await arg(prisma);
+      } catch (error) {
+        account = snapshot;
+        throw error;
+      }
+    };
 
     const token = await new SignJWT({
       sub: 'principal-user',
@@ -172,7 +187,16 @@ function runCacheInvalidationScenario(scenario) {
       const firstBody = JSON.parse(first.body || '{}');
 
       let scim;
-      if (scenario === 'groupMembership') {
+      if (
+        scenario === 'userDelete' ||
+        scenario === 'userDeleteSideEffectFailure'
+      ) {
+        scim = await server.inject({
+          method: 'DELETE',
+          url: '/scim/v2/Users/ua-1',
+          headers: { authorization: 'Bearer scim-test-token' },
+        });
+      } else if (scenario === 'groupMembership') {
         scim = await server.inject({
           method: 'PUT',
           url: '/scim/v2/Groups/group-admin',
@@ -223,6 +247,7 @@ function runCacheInvalidationScenario(scenario) {
         firstStatus: first.statusCode,
         firstRoles: firstBody.user?.roles,
         scimStatus: scim.statusCode,
+        accountActive: account.active,
         secondStatus: second.statusCode,
         secondBody: JSON.parse(second.body || '{}'),
       }));
@@ -253,6 +278,18 @@ test('SCIM user lifecycle changes clear cached auth context before TTL expiry', 
   assert.equal(payload.secondBody.error?.details?.reason, 'user_inactive');
 });
 
+test('SCIM user DELETE clears cached auth context after transactional deactivation', () => {
+  const result = runCacheInvalidationScenario('userDelete');
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout || '{}');
+  assert.equal(payload.firstStatus, 200);
+  assert.equal(payload.firstRoles.includes('admin'), true);
+  assert.equal(payload.scimStatus, 204);
+  assert.equal(payload.accountActive, false);
+  assert.equal(payload.secondStatus, 401);
+  assert.equal(payload.secondBody.error?.details?.reason, 'user_inactive');
+});
+
 test('SCIM group membership changes clear cached role-bearing auth context before TTL expiry', () => {
   const result = runCacheInvalidationScenario('groupMembership');
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -273,4 +310,16 @@ test('SCIM group PATCH membership changes clear cached role context before a lat
   assert.equal(payload.scimStatus, 400);
   assert.equal(payload.secondStatus, 200);
   assert.equal(payload.secondBody.user?.roles.includes('admin'), false);
+});
+
+test('SCIM user DELETE rolls back account deactivation when the personal GA side effect fails', () => {
+  const result = runCacheInvalidationScenario('userDeleteSideEffectFailure');
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout || '{}');
+  assert.equal(payload.firstStatus, 200);
+  assert.equal(payload.firstRoles.includes('admin'), true);
+  assert.equal(payload.scimStatus, 500);
+  assert.equal(payload.accountActive, true);
+  assert.equal(payload.secondStatus, 200);
+  assert.equal(payload.secondBody.user?.roles.includes('admin'), true);
 });

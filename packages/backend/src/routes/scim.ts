@@ -881,28 +881,32 @@ export async function registerScimRoutes(app: FastifyInstance) {
     if (requireScimAuth(req, reply)) return;
     const { id } = req.params as { id: string };
     try {
-      const updated = await prisma.userAccount.update({
-        where: { id },
-        data: { active: false, deletedAt: new Date() },
+      const updated = await prisma.$transaction(async (tx) => {
+        const next = await tx.userAccount.update({
+          where: { id },
+          data: { active: false, deletedAt: new Date() },
+        });
+        await deactivateScimPersonalGaRoomForUser({
+          user: {
+            id: next.id,
+            externalId: next.externalId,
+            userName: next.userName,
+            displayName: next.displayName,
+            active: next.active,
+          },
+          auditContext: auditContextFromRequest(req, { source: 'scim' }),
+          reason: 'scim_user_deactivated',
+          client: tx,
+        });
+        return next;
       });
-      await deactivateScimPersonalGaRoomForUser({
-        user: {
-          id: updated.id,
-          externalId: updated.externalId,
-          userName: updated.userName,
-          displayName: updated.displayName,
-          active: updated.active,
-        },
-        auditContext: auditContextFromRequest(req, { source: 'scim' }),
-        reason: 'scim_user_deactivated',
-      });
+      invalidateScimAuthContextCache();
       await logAudit({
         action: 'scim_user_deactivate',
         targetTable: 'UserAccount',
         targetId: updated.id,
         ...auditContextFromRequest(req, { source: 'scim' }),
       });
-      invalidateScimAuthContextCache();
       return reply.code(204).send();
     } catch (err) {
       if (

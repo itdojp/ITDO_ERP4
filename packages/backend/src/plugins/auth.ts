@@ -520,10 +520,18 @@ type CachedUserDbContext = {
 };
 
 const userDbContextCache = new Map<string, CachedUserDbContext>();
+// A global epoch conservatively suppresses every in-flight cache write when
+// authorization state is invalidated; existing unrelated entries remain intact.
+let userDbContextCacheWriteEpoch = Symbol('user-db-context-cache-write');
+
+function advanceUserDbContextCacheWriteEpoch() {
+  userDbContextCacheWriteEpoch = Symbol('user-db-context-cache-write');
+}
 
 export function invalidateUserDbContextCache(
   user: Pick<UserContext, 'userId' | 'auth'>,
 ) {
+  advanceUserDbContextCacheWriteEpoch();
   const invalidationKey = buildUserDbContextInvalidationKey(
     user as UserContext,
   );
@@ -535,6 +543,7 @@ export function invalidateUserDbContextCache(
 }
 
 export function clearUserDbContextCache() {
+  advanceUserDbContextCacheWriteEpoch();
   userDbContextCache.clear();
 }
 
@@ -578,7 +587,11 @@ async function resolveUserDbContext(user: UserContext): Promise<UserDbContext> {
   if (cached && cached.expiresAt > now) {
     return cached.value;
   }
+  const writeEpoch = userDbContextCacheWriteEpoch;
   const value = await resolveUserGroupsFromDb(user);
+  if (writeEpoch !== userDbContextCacheWriteEpoch) {
+    return value;
+  }
   const identityExpiresAt =
     value && !value.blocked ? value.identityExpiresAt : undefined;
   userDbContextCache.set(cacheKey, {

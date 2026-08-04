@@ -485,6 +485,137 @@ function runSessionIdentityCacheIsolationScenario() {
   });
 }
 
+function runInFlightCacheInvalidationScenario(scenario) {
+  const script = String.raw`
+    import { SignJWT, exportSPKI, generateKeyPair } from 'jose';
+
+    process.env.DATABASE_URL = process.env.DATABASE_URL || '${MIN_DATABASE_URL}';
+    process.env.AUTH_MODE = 'jwt';
+    process.env.JWT_ISSUER = 'test-issuer';
+    process.env.JWT_AUDIENCE = 'test-audience';
+    process.env.AUTH_DB_USER_CONTEXT_CACHE_TTL_SECONDS = '300';
+    process.env.AUTH_GROUP_TO_ROLE_MAP = 'Admins=admin';
+    process.env.ACTION_POLICY_ENFORCEMENT_PRESET = 'phase2_core';
+    process.env.ACTION_POLICY_REQUIRED_ACTIONS = '';
+    process.env.APPROVAL_EVIDENCE_REQUIRED_ACTIONS = '';
+
+    const scenario = process.env.TEST_SCENARIO;
+    const principal = scenario + '-principal';
+    const { privateKey, publicKey } = await generateKeyPair('RS256');
+    process.env.JWT_PUBLIC_KEY = await exportSPKI(publicKey);
+    const token = await new SignJWT({ sub: principal, roles: ['user'] })
+      .setProtectedHeader({ alg: 'RS256' })
+      .setIssuer(process.env.JWT_ISSUER)
+      .setAudience(process.env.JWT_AUDIENCE)
+      .setIssuedAt()
+      .setExpirationTime('10m')
+      .sign(privateKey);
+
+    let identityStatus = 'active';
+    let membershipActive = true;
+    let identityLookups = 0;
+    let notifyLookupStarted;
+    let releaseFirstLookup;
+    const lookupStarted = new Promise((resolve) => {
+      notifyLookupStarted = resolve;
+    });
+    const firstLookupRelease = new Promise((resolve) => {
+      releaseFirstLookup = resolve;
+    });
+    const accountSnapshot = (includeMembership) => ({
+      id: scenario + '-account',
+      externalId: principal,
+      userName: scenario + '-legacy-user',
+      active: true,
+      deletedAt: null,
+      organization: 'org-1',
+      memberships: includeMembership
+        ? [{ group: { id: 'group-admin', displayName: 'Admins', active: true } }]
+        : [],
+    });
+
+    const { prisma } = await import('./dist/services/db.js');
+    prisma.userIdentity.findFirst = async () => {
+      identityLookups += 1;
+      const snapshot = {
+        id: scenario + '-identity',
+        status: identityStatus,
+        effectiveUntil: null,
+        userAccountId: scenario + '-account',
+        userAccount: accountSnapshot(membershipActive),
+      };
+      if (identityLookups === 1) {
+        notifyLookupStarted();
+        await firstLookupRelease;
+      }
+      return snapshot;
+    };
+    prisma.userAccount.findUnique = async () => null;
+    prisma.projectMember.findMany = async () => [];
+    prisma.knowledgeItem.findMany = async () => [];
+
+    const { buildServer } = await import('./dist/server.js');
+    const {
+      clearUserDbContextCache,
+      invalidateUserDbContextCache,
+    } = await import('./dist/plugins/auth.js');
+    const server = await buildServer({ logger: false });
+    const request = () => server.inject({
+      method: 'GET',
+      url: scenario === 'subject' ? '/knowledge/items' : '/me',
+      headers: { authorization: 'Bearer ' + token },
+    });
+    try {
+      const firstPending = request();
+      await lookupStarted;
+      if (scenario === 'subject') {
+        identityStatus = 'disabled';
+        invalidateUserDbContextCache({
+          userId: principal,
+          auth: {
+            principalUserId: principal,
+            actorUserId: principal,
+            scopes: [],
+            delegated: false,
+            providerType: 'google_oidc',
+            issuer: process.env.JWT_ISSUER,
+          },
+        });
+      } else {
+        membershipActive = false;
+        clearUserDbContextCache();
+      }
+      releaseFirstLookup();
+      const first = await firstPending;
+      const second = await request();
+      const firstBody = JSON.parse(first.body || '{}');
+      const secondBody = JSON.parse(second.body || '{}');
+      process.stdout.write(JSON.stringify({
+        firstStatus: first.statusCode,
+        secondStatus: second.statusCode,
+        secondReason: secondBody.error?.details?.reason,
+        firstAdmin: firstBody.user?.roles?.includes('admin') ?? false,
+        secondAdmin: secondBody.user?.roles?.includes('admin') ?? false,
+        secondGroups: secondBody.user?.groupAccountIds ?? [],
+        identityLookups,
+      }));
+    } finally {
+      releaseFirstLookup();
+      await server.close();
+    }
+  `;
+
+  return spawnSync(process.execPath, ['-e', script], {
+    cwd: BACKEND_DIR,
+    env: {
+      ...process.env,
+      DATABASE_URL: MIN_DATABASE_URL,
+      TEST_SCENARIO: scenario,
+    },
+    encoding: 'utf8',
+  });
+}
+
 test('manual membership removal invalidates cached authorization before TTL expiry', () => {
   const result = runManualGroupMutationScenario('membership');
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -559,4 +690,26 @@ test('session DB context cache is isolated by canonical identity and account', (
     'negative-active-identity': 1,
     'expiring-active-identity': 2,
   });
+});
+
+test('subject invalidation prevents an in-flight stale identity from re-entering the cache', () => {
+  const result = runInFlightCacheInvalidationScenario('subject');
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout || '{}');
+  assert.equal(payload.firstStatus, 200);
+  assert.equal(payload.secondStatus, 401);
+  assert.equal(payload.secondReason, 'user_inactive');
+  assert.equal(payload.identityLookups, 2);
+});
+
+test('global clear prevents in-flight stale group context from re-entering the cache', () => {
+  const result = runInFlightCacheInvalidationScenario('global');
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const payload = JSON.parse(result.stdout || '{}');
+  assert.equal(payload.firstStatus, 200);
+  assert.equal(payload.secondStatus, 200);
+  assert.equal(payload.firstAdmin, true);
+  assert.equal(payload.secondAdmin, false);
+  assert.deepEqual(payload.secondGroups, []);
+  assert.equal(payload.identityLookups, 2);
 });
