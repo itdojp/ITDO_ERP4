@@ -73,7 +73,7 @@ function serviceStub(overrides = {}) {
   };
 }
 
-async function buildServer(service, user = {}) {
+async function buildServer(service, user = {}, options = {}) {
   const app = Fastify();
   app.setErrorHandler((error, _request, reply) => {
     const mapped = mapErrorToResponse(error, { env: 'test' });
@@ -94,6 +94,9 @@ async function buildServer(service, user = {}) {
       },
       ...user,
     };
+    if (options.fileOverride) {
+      request.file = options.fileOverride;
+    }
   });
   await app.register(multipart);
   await registerKnowledgeSnapshotRoutes(app, { service });
@@ -195,6 +198,69 @@ test('text and URL capture map the canonical actor and audit context with create
   assert.equal(captured[1].url, 'https://example.invalid/article');
 });
 
+test('text capture accepts the documented UTF-8 byte limit with worst-case JSON escaping', async (t) => {
+  let captured;
+  const app = await buildServer(
+    serviceStub({
+      capture: async (input) => {
+        captured = input;
+        return {
+          ok: true,
+          value: { replayed: false, snapshot: snapshot() },
+        };
+      },
+    }),
+  );
+  t.after(() => app.close());
+
+  const text = '\u0000'.repeat(knowledgeSnapshotLimits.maxTextBytes);
+  const response = await app.inject({
+    method: 'POST',
+    url: '/knowledge/items/item-1/snapshots',
+    payload: {
+      captureMethod: 'text',
+      requestKey: 'text-at-byte-limit',
+      text,
+    },
+  });
+
+  assert.equal(response.statusCode, 201, response.body);
+  assert.equal(
+    Buffer.byteLength(captured.text, 'utf8'),
+    knowledgeSnapshotLimits.maxTextBytes,
+  );
+});
+
+test('text capture rejects a multi-byte body over the UTF-8 limit before the service', async (t) => {
+  let calls = 0;
+  const app = await buildServer(
+    serviceStub({
+      capture: async () => {
+        calls += 1;
+        assert.fail('oversized UTF-8 text must not reach snapshot capture');
+      },
+    }),
+  );
+  t.after(() => app.close());
+
+  const text = 'é'.repeat(
+    Math.floor(knowledgeSnapshotLimits.maxTextBytes / 2) + 1,
+  );
+  const response = await app.inject({
+    method: 'POST',
+    url: '/knowledge/items/item-1/snapshots',
+    payload: {
+      captureMethod: 'text',
+      requestKey: 'text-over-byte-limit',
+      text,
+    },
+  });
+
+  assert.equal(response.statusCode, 413, response.body);
+  assert.equal(response.json().error?.code, 'snapshot_content_too_large');
+  assert.equal(calls, 0);
+});
+
 test('multipart upload accepts one bounded file and maps only file metadata and bytes', async (t) => {
   let captured;
   const app = await buildServer(
@@ -283,6 +349,41 @@ test('multipart upload rejects a missing file and schema rejects a missing reque
   assert.equal(calls, 0);
 });
 
+test('multipart parser size errors map to a sanitized content-too-large response', async (t) => {
+  let calls = 0;
+  const parserError = Object.assign(new Error('private parser detail'), {
+    code: 'FST_REQ_FILE_TOO_LARGE',
+  });
+  const app = await buildServer(
+    serviceStub({
+      capture: async () => {
+        calls += 1;
+        assert.fail('parser-rejected upload must not reach snapshot capture');
+      },
+    }),
+    {},
+    {
+      fileOverride: async () => {
+        throw parserError;
+      },
+    },
+  );
+  t.after(() => app.close());
+
+  const boundary = '----erp4-parser-limit-upload';
+  const response = await app.inject({
+    method: 'POST',
+    url: '/knowledge/items/item-1/snapshots/upload?requestKey=parser-limit',
+    headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+    payload: Buffer.from(`--${boundary}--\r\n`),
+  });
+
+  assert.equal(response.statusCode, 413, response.body);
+  assert.equal(response.json().error?.code, 'snapshot_content_too_large');
+  assert.doesNotMatch(response.body, /private parser detail/);
+  assert.equal(calls, 0);
+});
+
 test('multipart upload enforces the text-specific byte limit before capture', async (t) => {
   let calls = 0;
   const app = await buildServer(
@@ -310,6 +411,45 @@ test('multipart upload enforces the text-specific byte limit before capture', as
 
   assert.equal(response.statusCode, 413, response.body);
   assert.equal(response.json().error?.code, 'snapshot_content_too_large');
+  assert.equal(calls, 0);
+});
+
+test('multipart upload maps non-size stream failures to a sanitized invalid request', async (t) => {
+  let calls = 0;
+  const brokenStream = new Readable({
+    read() {
+      this.destroy(new Error('private transport detail'));
+    },
+  });
+  const app = await buildServer(
+    serviceStub({
+      capture: async () => {
+        calls += 1;
+        assert.fail('unreadable upload must not reach snapshot capture');
+      },
+    }),
+    {},
+    {
+      fileOverride: async () => ({
+        mimetype: 'text/plain',
+        filename: 'broken.txt',
+        file: brokenStream,
+      }),
+    },
+  );
+  t.after(() => app.close());
+
+  const boundary = '----erp4-broken-upload';
+  const response = await app.inject({
+    method: 'POST',
+    url: '/knowledge/items/item-1/snapshots/upload?requestKey=broken-upload',
+    headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+    payload: Buffer.from(`--${boundary}--\r\n`),
+  });
+
+  assert.equal(response.statusCode, 400, response.body);
+  assert.equal(response.json().error?.code, 'invalid_request');
+  assert.doesNotMatch(response.body, /private transport detail/);
   assert.equal(calls, 0);
 });
 

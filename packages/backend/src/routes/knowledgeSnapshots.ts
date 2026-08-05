@@ -32,6 +32,12 @@ import {
 
 const allowedRoles = ['admin', 'mgmt', 'exec', 'user'] as const;
 
+// A byte-valid 1 MiB text can require up to six JSON bytes per source byte
+// when JSON.stringify escapes control characters. Keep the transport envelope
+// bounded while allowing the application-level UTF-8 byte limit to decide.
+const knowledgeSnapshotJsonBodyLimit =
+  knowledgeSnapshotLimits.maxTextBytes * 6 + 64 * 1024;
+
 const errorResponseSchema = {
   type: 'object',
   additionalProperties: false,
@@ -259,7 +265,7 @@ async function readBoundedUpload(stream: Readable, maximumBytes: number) {
       const buffer = Buffer.from(chunk);
       sizeBytes += buffer.length;
       if (sizeBytes > maximumBytes) {
-        throw new Error('snapshot_content_too_large');
+        throw new KnowledgeSnapshotUploadTooLargeError();
       }
       chunks.push(buffer);
     }
@@ -268,6 +274,25 @@ async function readBoundedUpload(stream: Readable, maximumBytes: number) {
     stream.destroy();
     throw error;
   }
+}
+
+class KnowledgeSnapshotUploadTooLargeError extends Error {
+  constructor() {
+    super('snapshot_content_too_large');
+    this.name = 'KnowledgeSnapshotUploadTooLargeError';
+  }
+}
+
+function sendSnapshotContentTooLarge(reply: FastifyReply) {
+  return reply
+    .code(413)
+    .send(
+      createApiErrorResponse(
+        'snapshot_content_too_large',
+        'Snapshot content is too large',
+        { category: 'validation' },
+      ),
+    );
 }
 
 export async function registerKnowledgeSnapshotRoutes(
@@ -291,6 +316,7 @@ export async function registerKnowledgeSnapshotRoutes(
   app.post(
     '/knowledge/items/:itemId/snapshots',
     {
+      bodyLimit: knowledgeSnapshotJsonBodyLimit,
       preHandler,
       preValidation: rejectUnknownCaptureBodyFields,
       schema: {
@@ -340,6 +366,14 @@ export async function registerKnowledgeSnapshotRoutes(
         text?: string;
         url?: string;
       };
+      if (
+        body.captureMethod === 'text' &&
+        typeof body.text === 'string' &&
+        Buffer.byteLength(body.text, 'utf8') >
+          knowledgeSnapshotLimits.maxTextBytes
+      ) {
+        return sendSnapshotContentTooLarge(reply);
+      }
       const result = await service.capture({
         actor: knowledgeActorFromRequest(request),
         auditActor: knowledgeAuditActorFromRequest(request),
@@ -433,27 +467,22 @@ export async function registerKnowledgeSnapshotRoutes(
       let upload: Buffer;
       try {
         upload = await readBoundedUpload(file.file, maximumBytes);
-      } catch {
+      } catch (error) {
+        if (error instanceof KnowledgeSnapshotUploadTooLargeError) {
+          return sendSnapshotContentTooLarge(reply);
+        }
         return reply
-          .code(413)
+          .code(400)
           .send(
             createApiErrorResponse(
-              'snapshot_content_too_large',
-              'Snapshot file is too large',
+              'invalid_request',
+              'Snapshot upload could not be read',
               { category: 'validation' },
             ),
           );
       }
       if (file.file.truncated) {
-        return reply
-          .code(413)
-          .send(
-            createApiErrorResponse(
-              'snapshot_content_too_large',
-              'Snapshot file is too large',
-              { category: 'validation' },
-            ),
-          );
+        return sendSnapshotContentTooLarge(reply);
       }
       const result = await service.capture({
         actor: knowledgeActorFromRequest(request),
