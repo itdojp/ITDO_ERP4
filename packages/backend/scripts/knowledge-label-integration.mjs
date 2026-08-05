@@ -418,6 +418,60 @@ try {
     2,
   );
 
+  const hiddenGroup = await prisma.groupAccount.create({
+    data: { displayName: 'Knowledge integration hidden', active: true },
+  });
+  const delegatedManager = {
+    userId: 'integration-delegated-manager',
+    organizationId: owner.organizationId,
+    groupAccountIds: [manageGroup.id],
+  };
+  const hiddenOrganizationChild = await createLabel(delegatedManager, {
+    scope: 'organization',
+    displayName: 'Hidden organization child',
+    slug: 'hidden-organization-child',
+    parentId: organizationLabel.id,
+    groupGrants: [{ groupAccountId: hiddenGroup.id, capability: 'manage' }],
+  });
+  const organizationTarget = await createLabel(owner, {
+    scope: 'organization',
+    displayName: 'Organization target',
+    slug: 'organization-target',
+    groupGrants: [{ groupAccountId: manageGroup.id, capability: 'manage' }],
+  });
+  expectFailure(
+    await assertUnauthorizedRequestDoesNotWaitForRowLock({
+      acquireLock: (transaction) =>
+        transaction.$queryRaw(Prisma.sql`
+          SELECT "id"
+          FROM "KnowledgeLabel"
+          WHERE "id" = ${hiddenOrganizationChild.id}
+          FOR UPDATE
+        `),
+      request: () =>
+        labelService.update({
+          actor: owner,
+          auditActor,
+          labelId: organizationLabel.id,
+          body: {
+            expectedVersion: 2,
+            parentId: organizationTarget.id,
+          },
+        }),
+      context: 'hidden subtree lock oracle',
+    }),
+    'version_conflict',
+    'hidden subtree lock oracle',
+  );
+  assert.equal(
+    (
+      await prisma.knowledgeLabel.findUniqueOrThrow({
+        where: { id: organizationLabel.id },
+      })
+    ).parentId,
+    null,
+  );
+
   const personalItem = expectOk(
     await itemService.create({
       actor: owner,

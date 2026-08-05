@@ -69,6 +69,58 @@ test('mutation locks apply authorization predicates before acquiring label or it
   assert.match(itemSql, /FOR UPDATE/);
 });
 
+test('reparent locks only an entirely manageable subtree before changing closure paths', async () => {
+  const rawQueries = [];
+  let pathReadCount = 0;
+  let labelWriteCount = 0;
+  const repository = new PrismaKnowledgeLabelRepository({
+    $queryRaw: async (query) => {
+      rawQueries.push(query);
+      return [{ id: 'label-root' }];
+    },
+    knowledgeLabelPath: {
+      findMany: async () => {
+        pathReadCount += 1;
+        return [
+          { descendantId: 'label-root', depth: 0 },
+          { descendantId: 'label-hidden-child', depth: 1 },
+        ];
+      },
+    },
+    knowledgeLabel: {
+      updateMany: async () => {
+        labelWriteCount += 1;
+        return { count: 1 };
+      },
+    },
+  });
+
+  const result = await repository.updateVersioned({
+    actor: {
+      userId: 'owner-1',
+      organizationId: 'org-1',
+      groupAccountIds: ['group-1'],
+    },
+    labelId: 'label-root',
+    expectedVersion: 1,
+    patch: { parentId: null },
+  });
+
+  assert.deepEqual(result, { ok: false, reason: 'version_conflict' });
+  assert.equal(pathReadCount, 1);
+  assert.equal(labelWriteCount, 0);
+  assert.equal(rawQueries.length, 1);
+  const lockSql = rawQueries[0].text;
+  assert.match(lockSql, /FROM "KnowledgeLabel" AS label/);
+  assert.match(lockSql, /label\."deletedAt" IS NULL/);
+  assert.match(lockSql, /label\."ownerUserId" = \$\d+/);
+  assert.match(lockSql, /label\."organizationId" = \$\d+/);
+  assert.match(lockSql, /label_grant\."capability" = 'manage'/);
+  assert.match(lockSql, /group_account\."active" = TRUE/);
+  assert.match(lockSql, /ORDER BY label\."id"/);
+  assert.match(lockSql, /FOR UPDATE/);
+});
+
 test('label visibility requires owner for personal and same-org active use/manage grant for organization', () => {
   assert.deepEqual(
     buildKnowledgeLabelVisibilityWhere({
