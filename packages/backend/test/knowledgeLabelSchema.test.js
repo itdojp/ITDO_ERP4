@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 const migrationDirectory = '20260805090000_add_knowledge_labels';
@@ -31,6 +33,12 @@ const oldAppScript = readFileSync(
 const oldAppFixture = readFileSync(
   new URL('../scripts/knowledge-old-app-compat.mjs', import.meta.url),
   'utf8',
+);
+const integrationFixturePath = fileURLToPath(
+  new URL('../scripts/knowledge-label-integration.mjs', import.meta.url),
+);
+const oldAppFixturePath = fileURLToPath(
+  new URL('../scripts/knowledge-old-app-compat.mjs', import.meta.url),
 );
 
 function schemaBlock(kind, name) {
@@ -505,6 +513,40 @@ test('PostgreSQL integration harness is ephemeral, fixed-image, and destructive-
   assert.doesNotMatch(integrationScript, /podman system reset/);
   assert.doesNotMatch(integrationScript, /podman volume (?:rm|prune)/);
   assert.doesNotMatch(integrationScript, /\bgit (?:reset|clean)\b/);
+});
+
+test('integration fixtures reject missing or malformed database URLs with controlled messages', () => {
+  const cases = [
+    {
+      path: integrationFixturePath,
+      env: { KNOWLEDGE_LABEL_INTEGRATION_CONFIRM: '1' },
+      expected: /Refusing to run outside the confirmed loopback/,
+    },
+    {
+      path: oldAppFixturePath,
+      env: {
+        KNOWLEDGE_OLD_APP_COMPAT_CONFIRM: '1',
+        KNOWLEDGE_OLD_APP_COMPAT_MODE: 'seed',
+        OLD_APP_ROOT: '.',
+        PREEXISTING_ITEM_ID_FILE: 'synthetic-item-id',
+      },
+      expected: /Refusing to run outside the confirmed loopback/,
+    },
+  ];
+
+  for (const fixture of cases) {
+    for (const databaseUrl of [undefined, 'not-a-url']) {
+      const env = { ...fixture.env };
+      if (databaseUrl !== undefined) env.DATABASE_URL = databaseUrl;
+      const result = spawnSync(process.execPath, [fixture.path], {
+        encoding: 'utf8',
+        env,
+      });
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, fixture.expected);
+      assert.doesNotMatch(result.stderr, /ERR_INVALID_URL/);
+    }
+  }
 });
 
 test('old-app compatibility harness fixes the reviewed baseline and preserves pre-migration data', () => {

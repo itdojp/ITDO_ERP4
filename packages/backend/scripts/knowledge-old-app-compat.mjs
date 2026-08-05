@@ -6,12 +6,21 @@ const baseline = '358cb9e4d13489b703cb71cfee4b2754d15aa53e';
 const root = process.env.OLD_APP_ROOT;
 const mode = process.env.KNOWLEDGE_OLD_APP_COMPAT_MODE;
 const itemIdFile = process.env.PREEXISTING_ITEM_ID_FILE;
-const databaseUrl = new URL(process.env.DATABASE_URL ?? '');
+function parseDatabaseUrl(value) {
+  try {
+    return value ? new URL(value) : null;
+  } catch {
+    return null;
+  }
+}
+
+const databaseUrl = parseDatabaseUrl(process.env.DATABASE_URL);
 if (
   process.env.KNOWLEDGE_OLD_APP_COMPAT_CONFIRM !== '1' ||
   !root ||
   !itemIdFile ||
   !['seed', 'verify'].includes(mode) ||
+  !databaseUrl ||
   !['127.0.0.1', 'localhost'].includes(databaseUrl.hostname) ||
   databaseUrl.pathname !== '/erp4_knowledge_label_old_app_test'
 ) {

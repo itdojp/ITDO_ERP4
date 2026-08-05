@@ -432,9 +432,10 @@ test('alias mutations preserve normalized canonical namespace and version/audit 
   assert.equal(canonicalAlias.code, 'invalid_request');
 });
 
-test('grant replacement is organization/manage-only and rejects inactive or duplicate groups', async () => {
+test('grant replacement can delegate to an active group outside the manager membership', async () => {
+  const manager = actor();
   const personal = await createHarness().service.replaceGrants({
-    actor: actor(),
+    actor: manager,
     auditActor: {},
     labelId: 'label-1',
     expectedVersion: 1,
@@ -453,12 +454,13 @@ test('grant replacement is organization/manage-only and rejects inactive or dupl
     },
   });
   const replaced = await harness.service.replaceGrants({
-    actor: actor(),
+    actor: manager,
     auditActor: {},
     labelId: 'label-1',
     expectedVersion: 1,
     groupGrants: [{ groupAccountId: 'group-2', capability: 'use' }],
   });
+  assert.equal(manager.groupAccountIds.includes('group-2'), false);
   assert.equal(replaced.ok, true);
   assert.equal(replaced.value.grants[0].capability, 'use');
   assert.equal(harness.audits[0].action, 'knowledge_label_grants_replaced');

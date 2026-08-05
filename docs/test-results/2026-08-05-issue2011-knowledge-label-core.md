@@ -29,6 +29,8 @@ PR2へ残す範囲はANY/ALL/NOT検索、descendant filter、ACL済みcount/face
 - label master audit targetは`knowledge_labels` / `label_master`の一定markerとする。label ID/name/slug/alias、grant principal、検索語/filter bodyは共有監査metadataへ保存しない。
 - item-label監査は認可済みitemだけをtargetにし、label IDをmetadataへ保存しない。detach時も永続化済みのbounded `assignmentSource`を保持し、監査失敗はbusiness mutationもrollbackする。
 - item-label detachはassignment rowを物理削除せず、`detachedAt` / `detachedBy`で来歴を保持する。active assignmentだけをpartial unique indexで一意化し、同じlabelの再attachでは新しいactive rowを作る。
+- grant revoke / label logical deleteではassignment provenanceをcascade変更せず、effective readはactive relation + 非削除label + current ACLで決定する。hidden relation向けcleanup APIは提供せず、再grant時は保持済みrelationを再評価する。
+- integration fixtureはmissing/malformed `DATABASE_URL`でもURL parser例外を先に出さず、確認済みloopback test DB以外を一定の拒否メッセージでfail closedする。
 - production identifier、provider URL、Drive/S3 credential、外部接続は使用していない。
 
 ## Focused verification
@@ -37,7 +39,7 @@ PR2へ残す範囲はANY/ALL/NOT検索、descendant filter、ACL済みcount/face
 | --------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Prisma Client generate / schema validate      | PASS   | 7 model / enum / relation / CHECK / index contractを検証                                                                                                     |
 | backend TypeScript typecheck / build          | PASS   | strict TypeScript、OpenAPI再生成に使用                                                                                                                       |
-| focused Knowledge item + label tests          | PASS   | 57 tests、fail/skip/todo 0。schema/migration/OpenAPI/harness 13、adapter 11、route 6、use case 14、既存Knowledge item route 13                               |
+| focused Knowledge item + label tests          | PASS   | 58 tests、fail/skip/todo 0。schema/migration/OpenAPI/harness 14、adapter 11、route 6、use case 14、既存Knowledge item route 13                               |
 | PostgreSQL 15 integration                     | PASS   | fixed digest、tmpfs、loopback ephemeral port。`labels=14`、`paths=51`、`assignments=3`（active 2 / detached 1）、`labelAudits=22`、`maxDepth=8`              |
 | migration deploy / status                     | PASS   | 空DBへ全migration適用後、schema up to date                                                                                                                   |
 | hierarchy/ACL transaction checks              | PASS   | cycle、cross-domain、depth 8許可/depth 9拒否、personal/org ACL、use vs manage、attach/logical detach/re-attach、grant revoke、audit failure rollback         |
@@ -92,7 +94,7 @@ logical detach対応後にも同じexact old-app harnessを再実行し、旧94 
 | Gate                                              | Result  | Notes                                                                                             |
 | ------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------- |
 | backend lint / format / typecheck / build         | PASS    | logical detach対応後のfinal candidateで全てexit 0                                                 |
-| backend full test                                 | PASS    | 1,605 tests、fail/skip/todo 0                                                                     |
+| backend full test                                 | PASS    | 1,606 tests、fail/skip/todo 0                                                                     |
 | bounded-context architecture / coverage           | PASS    | dependency-cruiser 279 modules / 1,069 dependencies、source 264 / target 221、未分類・重複・違反0 |
 | frontend lint / format / typecheck / build / test | PASS    | 82 files / 468 tests、fail 0                                                                      |
 | `make ops-quality`                                | PASS    | ops docs/scripts、Quadlet/profile、backup/storage-readiness testsを含む                           |

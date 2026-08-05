@@ -204,8 +204,10 @@ PR1のDB正本は次の7 relationであり、label ID arrayやsaved-view filter 
 - `personal` labelはstable canonical `UserAccount.id` ownerだけがread/use/manageできる。`admin` / `mgmt` roleやgroup grantで通常アクセスを拡張しない。
 - `organization` labelのread/useには、actorのorganization一致とactiveな明示`use`または`manage` grantを同時に要求する。`manage`は`use`を包含するが、`use`はmaster mutationを許可しない。
 - organization labelのmaster mutationは、同一organizationの作成ownerまたはactiveな`manage` grantに限定する。grant欠落、無効化、別organization、canonical actor欠落はfail closedとする。
+- label ownerまたは`manage` grant保有者は、所属外を含むactive groupへ`use|manage`を委譲できる。grant設定者自身のgroup membershipは委譲先の認可条件にしない。受領側のread/useではactorのorganization一致、現在のgroup membership、group/grantのactive状態を常に再評価するため、別organizationのactorや失効済みmembershipへアクセスを拡張しない。
 - detail、alias、grant、attach/detachでは、hidden、logical deleted、revoked、cross-domain、存在しないlabelを外部から区別せず`404 not_found`とする。
 - itemへのattach/detachは、item owner、item version、label use権限を同じserializable transaction内で評価する。item versionとlabel master versionは別契約であり、attach/detach成功時はitem versionだけを進める。
+- grant revokeまたはlabel logical deleteは、既存item-labelをcascade detachせずprovenanceとして保持する。現在有効なassignmentとしてread/search/countへ採用するには、`detachedAt IS NULL`だけでなくlabelの非削除とactorのcurrent visibility/use ACLを同じqueryで満たす必要がある。grant再有効化では保持済みassignmentが再び有効になり、hidden/revoked/deleted中のdetach cleanup APIはlabel存在判定のoracleとなるため提供しない。
 - mutation対象のlabel/item row lockは、生IDだけを先にlockせず、owner/organization/group/deleted predicateを含む単一`SELECT ... FOR UPDATE|SHARE`の結果にだけ適用する。権限外の既存rowと不存在IDのlock待ち時間差を作らない。
 
 master・階層・競合契約:

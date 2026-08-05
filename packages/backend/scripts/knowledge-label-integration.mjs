@@ -1,8 +1,17 @@
 import assert from 'node:assert/strict';
 
-const databaseUrl = new URL(process.env.DATABASE_URL ?? '');
+function parseDatabaseUrl(value) {
+  try {
+    return value ? new URL(value) : null;
+  } catch {
+    return null;
+  }
+}
+
+const databaseUrl = parseDatabaseUrl(process.env.DATABASE_URL);
 if (
   process.env.KNOWLEDGE_LABEL_INTEGRATION_CONFIRM !== '1' ||
+  !databaseUrl ||
   !['127.0.0.1', 'localhost'].includes(databaseUrl.hostname) ||
   databaseUrl.pathname !== '/erp4_knowledge_label_test'
 ) {
