@@ -9,6 +9,7 @@ import {
 import { requireRole } from '../services/rbac.js';
 import { createPdfArtifactStorageAdapter } from '../adapters/storage/contextArtifactStorageAdapters.js';
 import type { PdfStoragePort } from '../application/pdf/pdfStoragePort.js';
+import { isArtifactUnavailableError } from '../application/storage/artifactStoragePort.js';
 
 type PdfFileRouteDependencies = {
   createStorage?: () => PdfStoragePort;
@@ -133,7 +134,7 @@ export async function registerPdfFileRoutes(
         });
         return reply.send(opened.stream);
       } catch (error) {
-        if (error instanceof Error && error.message === 'artifact_not_found') {
+        if (isArtifactUnavailableError(error)) {
           return reply.status(404).send({ error: 'not_found' });
         }
         return reply.status(500).send({ error: 'internal_error' });

@@ -49,6 +49,18 @@ export type OpenArtifactScope = {
   ownerType: string;
 };
 
+const ARTIFACT_UNAVAILABLE_ERRORS = new Set([
+  'artifact_not_found',
+  'artifact_provider_key_invalid',
+  'artifact_local_io_failed',
+]);
+
+export function isArtifactUnavailableError(error: unknown) {
+  return (
+    error instanceof Error && ARTIFACT_UNAVAILABLE_ERRORS.has(error.message)
+  );
+}
+
 export type ArtifactStoragePort = {
   open(artifactId: string, scope?: OpenArtifactScope): Promise<OpenedArtifact>;
   /**

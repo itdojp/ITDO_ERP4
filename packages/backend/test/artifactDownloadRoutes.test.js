@@ -212,3 +212,93 @@ test('evidence artifact download rejects non-UUID artifactId with 400', async ()
   );
   assert.equal(openCalls, 0);
 });
+
+test('legacy artifact download routes preserve 404 for corrupt or missing local ready artifacts', async (t) => {
+  for (const storageError of [
+    'artifact_provider_key_invalid',
+    'artifact_local_io_failed',
+  ]) {
+    await t.test(`PDF maps ${storageError} to 404`, async () => {
+      await withApp(
+        (app) =>
+          registerPdfFileRoutes(app, {
+            createStorage: () => ({
+              open: async () => {
+                throw new Error(storageError);
+              },
+            }),
+          }),
+        { userId: 'admin-placeholder', roles: ['admin'] },
+        async (app) => {
+          const response = await app.inject({
+            method: 'GET',
+            url: `/pdf-files/artifacts/${ARTIFACT_ID}`,
+          });
+          assert.equal(response.statusCode, 404, response.body);
+          assert.deepEqual(JSON.parse(response.body), { error: 'not_found' });
+        },
+      );
+    });
+
+    await t.test(`Report maps ${storageError} to 404`, async () => {
+      await withApp(
+        (app) =>
+          registerReportSubscriptionRoutes(app, {
+            createStorage: () => ({
+              open: async () => {
+                throw new Error(storageError);
+              },
+            }),
+          }),
+        { userId: 'admin-placeholder', roles: ['admin'] },
+        async (app) => {
+          const response = await app.inject({
+            method: 'GET',
+            url: `/report-outputs/${ARTIFACT_ID}`,
+          });
+          assert.equal(response.statusCode, 404, response.body);
+          assert.deepEqual(JSON.parse(response.body), { error: 'not_found' });
+        },
+      );
+    });
+
+    await t.test(`Evidence maps ${storageError} to 404`, async () => {
+      await withPrismaStubs(
+        {
+          'approvalInstance.findUnique': async () => ({
+            id: 'approval-placeholder',
+            targetTable: 'expenses',
+            projectId: 'project-placeholder',
+            createdBy: 'creator-placeholder',
+          }),
+        },
+        () =>
+          withApp(
+            (app) =>
+              registerEvidenceSnapshotRoutes(app, {
+                createArchiveStorage: () => ({
+                  open: async () => {
+                    throw new Error(storageError);
+                  },
+                }),
+              }),
+            {
+              userId: 'user-placeholder',
+              roles: ['user'],
+              projectIds: ['project-placeholder'],
+            },
+            async (app) => {
+              const response = await app.inject({
+                method: 'GET',
+                url: `/approval-instances/approval-placeholder/evidence-pack/archives/${ARTIFACT_ID}`,
+              });
+              assert.equal(response.statusCode, 404, response.body);
+              assert.deepEqual(JSON.parse(response.body), {
+                error: { code: 'NOT_FOUND', message: 'Archive not found' },
+              });
+            },
+          ),
+      );
+    });
+  }
+});

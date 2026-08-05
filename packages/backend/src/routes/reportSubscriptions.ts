@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { createReportArtifactStorageAdapter } from '../adapters/storage/contextArtifactStorageAdapters.js';
 import type { ReportOutputStoragePort } from '../application/reportSubscriptions/reportOutputStoragePort.js';
+import { isArtifactUnavailableError } from '../application/storage/artifactStoragePort.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { requireRole } from '../services/rbac.js';
 import {
@@ -105,7 +106,7 @@ export async function registerReportSubscriptionRoutes(
         });
         return reply.send(opened.stream);
       } catch (error) {
-        if (error instanceof Error && error.message === 'artifact_not_found') {
+        if (isArtifactUnavailableError(error)) {
           return reply.code(404).send({ error: 'not_found' });
         }
         return reply.code(500).send({ error: 'internal_error' });

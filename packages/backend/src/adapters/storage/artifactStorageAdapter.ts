@@ -531,7 +531,10 @@ export function createArtifactStorageAdapter(
       assertMatchingArtifact(row, input);
       assertMatchingOwner(row, input);
       if (row.status === 'ready') {
-        return row.providerKey ? toSafeResult(row) : null;
+        if (!row.providerKey) {
+          throw new Error('artifact_provider_key_invalid');
+        }
+        return toSafeResult(row);
       }
       if (row.status !== 'pending' && row.status !== 'failed') return null;
 

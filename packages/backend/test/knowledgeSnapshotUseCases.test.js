@@ -617,6 +617,29 @@ test('unknown storage result stays pending and reconciliation never invokes stor
   assert.equal(harness.audits.at(-1).action, 'knowledge_snapshot_reconciled');
 });
 
+test('reconciliation maps corrupt ready artifact recovery to sanitized storage failure', async () => {
+  const harness = createHarness();
+  harness.behavior.storeError = new Error('ambiguous provider response');
+  const capture = await harness.service.capture(textCapture());
+  assertFailure(capture, 502, 'snapshot_storage_pending');
+  const pending = [...harness.snapshots.values()][0];
+  harness.behavior.reconcileError = new KnowledgeArtifactOpenError(
+    'storage_failure',
+  );
+
+  const result = await harness.service.reconcile({
+    actor: owner,
+    auditActor: auditContext('corrupt-ready-artifact'),
+    itemId: 'item-1',
+    snapshotId: pending.id,
+    requestKey: 'request-key-1',
+  });
+
+  assertFailure(result, 502, 'snapshot_reconciliation_failed');
+  assert.doesNotMatch(JSON.stringify(result), /provider_key|credential|secret/);
+  assert.equal(harness.reconcileInputs.length, 1);
+});
+
 test('deterministic storage failure marks the snapshot failed and replays the sanitized failure', async () => {
   const harness = createHarness();
   harness.behavior.storeError = new KnowledgeArtifactStoreError('failed');

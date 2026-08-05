@@ -355,6 +355,31 @@ test('reader distinguishes a corrupt ready row without a provider key from row a
   }
 });
 
+test('recovery rejects a corrupt ready row without a provider key', async () => {
+  const localDir = await createScratchDir();
+  const db = createArtifactDb();
+  const value = input();
+  const ready = addPendingRow(db, value, 'local');
+  ready.status = 'ready';
+  try {
+    const adapter = createArtifactStorageAdapter({
+      context: 'pdf',
+      db,
+      env: {},
+      folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
+      localDir,
+      provider: 'local',
+    });
+
+    const { body: _body, ...recoverInput } = value;
+    await assert.rejects(() => adapter.recover(recoverInput), {
+      message: 'artifact_provider_key_invalid',
+    });
+  } finally {
+    await rm(localDir, { recursive: true, force: true });
+  }
+});
+
 test('local reader does not create a missing storage directory', async () => {
   const scratchDir = await createScratchDir();
   const localDir = path.join(scratchDir, 'missing-storage');

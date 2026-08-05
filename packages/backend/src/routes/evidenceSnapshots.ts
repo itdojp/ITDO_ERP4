@@ -12,6 +12,7 @@ import {
 import { archiveEvidencePack } from '../services/evidencePackArchive.js';
 import { createEvidenceArtifactStorageAdapter } from '../adapters/storage/contextArtifactStorageAdapters.js';
 import type { EvidenceArchiveStoragePort } from '../application/evidence/evidenceArchiveStoragePort.js';
+import { isArtifactUnavailableError } from '../application/storage/artifactStoragePort.js';
 import { createEvidenceSnapshotForApproval } from '../services/evidenceSnapshot.js';
 import {
   evidencePackArchiveBodySchema,
@@ -1067,7 +1068,7 @@ export async function registerEvidenceSnapshotRoutes(
         });
         return reply.send(opened.stream);
       } catch (error) {
-        if (error instanceof Error && error.message === 'artifact_not_found') {
+        if (isArtifactUnavailableError(error)) {
           return reply.status(404).send({
             error: { code: 'NOT_FOUND', message: 'Archive not found' },
           });
