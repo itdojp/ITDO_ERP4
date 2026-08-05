@@ -11,7 +11,9 @@ OLD_APP_ROOT="$SCRATCH_ROOT/old-app"
 ITEM_ID_FILE="$SCRATCH_ROOT/preexisting-item-id"
 TEST_DATABASE="erp4_knowledge_label_old_app_test"
 TEST_USER="erp4_label_old_app_test"
-TEST_PASSWORD="$(openssl rand -hex 24)"
+TEST_PASSWORD="$(
+  node -e 'process.stdout.write(require("node:crypto").randomBytes(24).toString("hex"))'
+)"
 
 if [[ "$BASE_SHA" != "$EXPECTED_BASE_SHA" ]]; then
   echo "Refusing an unreviewed old-app compatibility baseline" >&2

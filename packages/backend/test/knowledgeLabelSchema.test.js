@@ -560,6 +560,11 @@ test('old-app compatibility harness fixes the reviewed baseline and preserves pr
   assert.match(oldAppScript, /postgres:15@sha256:[0-9a-f]{64}/);
   assert.match(oldAppScript, /KNOWLEDGE_OLD_APP_COMPAT_MODE=seed/);
   assert.match(oldAppScript, /KNOWLEDGE_OLD_APP_COMPAT_MODE=verify/);
+  assert.match(
+    oldAppScript,
+    /require\("node:crypto"\)\.randomBytes\(24\)/,
+  );
+  assert.doesNotMatch(oldAppScript, /\bopenssl\b/);
   assert.ok(
     oldAppScript.indexOf('KNOWLEDGE_OLD_APP_COMPAT_MODE=seed') <
       oldAppScript.indexOf('prisma migrate status'),
