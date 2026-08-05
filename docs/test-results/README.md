@@ -41,6 +41,11 @@
 - [Storage artifact migration evidence template](storage-artifact-migration-template.md)
 - [Storage／backup統合readiness 記録テンプレート](storage-readiness-template.md)
 
+### 2026-08-06
+
+- [Issue #2012 Knowledge snapshot UI / E2E verification (PR B)](2026-08-06-issue2012-knowledge-snapshot-ui.md)
+  - 証跡: [docs/test-results/2026-08-06-issue2012-knowledge-snapshot-ui/](2026-08-06-issue2012-knowledge-snapshot-ui/)
+
 ### 2026-08-05
 
 - [Issue #2011 Knowledge label core verification (PR1)](2026-08-05-issue2011-knowledge-label-core.md)

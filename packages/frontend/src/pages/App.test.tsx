@@ -36,6 +36,7 @@ const {
   AdminJobs,
   DocumentSendLogs,
   PdfFiles,
+  KnowledgeHub,
 } = vi.hoisted(() => {
   const makeSectionMock = (testId: string, label: string) =>
     vi.fn(() => <div data-testid={testId}>{label}</div>);
@@ -80,6 +81,7 @@ const {
       'DocumentSendLogs',
     ),
     PdfFiles: makeSectionMock('section-pdf-files', 'PdfFiles'),
+    KnowledgeHub: makeSectionMock('section-knowledge-hub', 'KnowledgeHub'),
   };
 });
 
@@ -173,6 +175,7 @@ vi.mock('../sections/PeriodLocks', () => ({ PeriodLocks }));
 vi.mock('../sections/AdminJobs', () => ({ AdminJobs }));
 vi.mock('../sections/DocumentSendLogs', () => ({ DocumentSendLogs }));
 vi.mock('../sections/PdfFiles', () => ({ PdfFiles }));
+vi.mock('../sections/KnowledgeHub', () => ({ KnowledgeHub }));
 
 import { App } from './App';
 
@@ -291,6 +294,20 @@ describe('App', () => {
       expect(screen.getByTestId('section-dashboard')).toBeInTheDocument();
     });
     expect(window.localStorage.getItem('erp4_active_section')).toBe('home');
+  });
+
+  it('restores the lazy Knowledge Hub section and navigation state', async () => {
+    window.localStorage.setItem('erp4_active_section', 'knowledge-hub');
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('section-knowledge-hub')).toBeInTheDocument();
+      expect(screen.getByText('ナレッジ / Knowledge Hub')).toBeInTheDocument();
+    });
+    expect(
+      screen.getByRole('button', { name: 'Knowledge Hub' }),
+    ).toHaveAttribute('aria-current', 'page');
   });
 
   it.each([
