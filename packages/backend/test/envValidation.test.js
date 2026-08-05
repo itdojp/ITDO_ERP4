@@ -5,6 +5,8 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
+const VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET =
+  'knowledge-cursor-test-signing-secret-v1';
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const BACKEND_DIR = resolve(TEST_DIR, '..');
 
@@ -237,6 +239,7 @@ test('envValidation: PORT=0 is allowed only for ephemeral test listeners', () =>
 test('envValidation: production + AUTH_MODE=header is rejected', () => {
   const result = runEnvValidation({
     NODE_ENV: 'production',
+    KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
     AUTH_MODE: 'header',
     AUTH_ALLOW_HEADER_FALLBACK_IN_PROD: '',
   });
@@ -246,9 +249,49 @@ test('envValidation: production + AUTH_MODE=header is rejected', () => {
   assert.match(result.stderr.toString(), /jwt_bff/);
 });
 
+test('envValidation: configured knowledge cursor secret requires 32 UTF-8 bytes in every mode', () => {
+  const result = runEnvValidation({
+    NODE_ENV: 'development',
+    KNOWLEDGE_CURSOR_SIGNING_SECRET: 'short-secret',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /KNOWLEDGE_CURSOR_SIGNING_SECRET/);
+  assert.match(result.stderr, /32 UTF-8 bytes/);
+});
+
+test('envValidation: knowledge cursor secret length is measured in UTF-8 bytes', () => {
+  const result = runEnvValidation({
+    NODE_ENV: 'development',
+    KNOWLEDGE_CURSOR_SIGNING_SECRET: 'あ'.repeat(11),
+  });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, 'OK');
+});
+
+test('envValidation: production requires a knowledge cursor signing secret', () => {
+  const result = runEnvValidation({
+    NODE_ENV: 'production',
+    KNOWLEDGE_CURSOR_SIGNING_SECRET: '',
+    AUTH_MODE: 'jwt_bff',
+    JWT_ISSUER: 'https://accounts.google.com',
+    JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
+    JWT_JWKS_URL: 'https://www.googleapis.com/oauth2/v3/certs',
+    GOOGLE_OIDC_CLIENT_SECRET: 'secret',
+    GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
+    AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /KNOWLEDGE_CURSOR_SIGNING_SECRET/);
+  assert.match(result.stderr, /production/);
+});
+
 test('envValidation: production + AUTH_MODE=hybrid is rejected even with explicit fallback flag', () => {
   const result = runEnvValidation({
     NODE_ENV: 'production',
+    KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
     AUTH_MODE: 'hybrid',
     AUTH_ALLOW_HEADER_FALLBACK_IN_PROD: 'true',
     JWT_ISSUER: 'test-issuer',
@@ -264,6 +307,7 @@ test('envValidation: production + AUTH_MODE=hybrid is rejected even with explici
 test('envValidation: production + AUTH_MODE=jwt is rejected', () => {
   const result = runEnvValidation({
     NODE_ENV: 'production',
+    KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
     AUTH_MODE: 'jwt',
     JWT_ISSUER: 'test-issuer',
     JWT_AUDIENCE: 'test-audience',
@@ -278,6 +322,7 @@ test('envValidation: production + AUTH_MODE=jwt is rejected', () => {
 test('envValidation: production + AUTH_MODE=jwt_bff is allowed with required settings', () => {
   const result = runEnvValidation({
     NODE_ENV: 'production',
+    KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
     AUTH_MODE: 'jwt_bff',
     JWT_ISSUER: 'https://accounts.google.com',
     JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
@@ -294,6 +339,7 @@ test('envValidation: production + AUTH_MODE=jwt_bff is allowed with required set
 test('envValidation: production + AUTH_MODE=jwt_bff rejects insecure cookie override', () => {
   const result = runEnvValidation({
     NODE_ENV: 'production',
+    KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
     AUTH_MODE: 'jwt_bff',
     JWT_ISSUER: 'https://accounts.google.com',
     JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
@@ -312,6 +358,7 @@ test('envValidation: production + AUTH_MODE=jwt_bff rejects insecure cookie over
 test('envValidation: production + AUTH_MODE=jwt_bff rejects plain HTTP origins', () => {
   const result = runEnvValidation({
     NODE_ENV: 'production',
+    KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
     AUTH_MODE: 'jwt_bff',
     JWT_ISSUER: 'https://accounts.google.com',
     JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
@@ -518,6 +565,7 @@ test('envValidation: report provider rejects unsupported values', () => {
 test('envValidation: production external PDF requires host allowlist matching endpoint', () => {
   const result = runEnvValidation({
     NODE_ENV: 'production',
+    KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
     AUTH_MODE: 'jwt_bff',
     JWT_ISSUER: 'https://accounts.google.com',
     JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
@@ -537,6 +585,7 @@ test('envValidation: production external PDF requires host allowlist matching en
 test('envValidation: production PDF fetch flags fail closed for HTTP and private IP', () => {
   const result = runEnvValidation({
     NODE_ENV: 'production',
+    KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
     AUTH_MODE: 'jwt_bff',
     JWT_ISSUER: 'https://accounts.google.com',
     JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
@@ -638,6 +687,7 @@ test('auth plugin: production + AUTH_MODE=hybrid fails startup via env validatio
   const result = runCurrentUserRequest(
     {
       NODE_ENV: 'production',
+      KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
       AUTH_MODE: 'hybrid',
       AUTH_ALLOW_HEADER_FALLBACK_IN_PROD: '',
       JWT_ISSUER: 'test-issuer',
@@ -659,6 +709,7 @@ test('auth plugin: production + AUTH_MODE=jwt_bff still allows delegated JWT aut
   const result = runDelegatedJwtRequest({
     overrides: {
       NODE_ENV: 'production',
+      KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
       AUTH_MODE: 'jwt_bff',
       GOOGLE_OIDC_CLIENT_SECRET: 'secret',
       GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
@@ -686,6 +737,7 @@ test('auth plugin: production + AUTH_MODE=jwt_bff rejects direct non-delegated b
   const result = runDelegatedJwtRequest({
     overrides: {
       NODE_ENV: 'production',
+      KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
       AUTH_MODE: 'jwt_bff',
       GOOGLE_OIDC_CLIENT_SECRET: 'secret',
       GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
@@ -712,6 +764,7 @@ test('auth plugin: production + AUTH_MODE=jwt_bff rejects scoped bearer auth wit
   const result = runDelegatedJwtRequest({
     overrides: {
       NODE_ENV: 'production',
+      KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
       AUTH_MODE: 'jwt_bff',
       GOOGLE_OIDC_CLIENT_SECRET: 'secret',
       GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
@@ -739,6 +792,7 @@ test('auth plugin: production + AUTH_MODE=jwt_bff rejects scoped bearer auth wit
   const result = runDelegatedJwtRequest({
     overrides: {
       NODE_ENV: 'production',
+      KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
       AUTH_MODE: 'jwt_bff',
       GOOGLE_OIDC_CLIENT_SECRET: 'secret',
       GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
@@ -767,6 +821,7 @@ test('auth plugin: production + AUTH_MODE=jwt_bff allows SCIM route-level bearer
   const result = runInjectedRequest({
     overrides: {
       NODE_ENV: 'production',
+      KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
       AUTH_MODE: 'jwt_bff',
       JWT_ISSUER: 'https://accounts.google.com',
       JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
@@ -792,6 +847,7 @@ test('auth plugin: production + AUTH_MODE=jwt_bff allows SendGrid webhook route-
   const result = runInjectedRequest({
     overrides: {
       NODE_ENV: 'production',
+      KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
       AUTH_MODE: 'jwt_bff',
       JWT_ISSUER: 'https://accounts.google.com',
       JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
@@ -820,6 +876,7 @@ test('auth plugin: production + AUTH_MODE=header fails startup even with explici
   const result = runCurrentUserRequest(
     {
       NODE_ENV: 'production',
+      KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
       AUTH_MODE: 'header',
       AUTH_ALLOW_HEADER_FALLBACK_IN_PROD: 'true',
     },

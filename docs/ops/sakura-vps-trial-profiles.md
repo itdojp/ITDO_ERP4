@@ -51,15 +51,15 @@ probe は `podman exec` または明示的な SSH tunnel 内で実施する。Ca
 
 ### 必須設定
 
-| 区分         | 要件                                                                |
-| ------------ | ------------------------------------------------------------------- |
-| backend env  | `SAKURA_VPS_PROFILE=https-trial`                                    |
-| auth         | `NODE_ENV=production`、`AUTH_MODE=jwt_bff`、trial 専用 OAuth client |
-| HTTPS        | `AUTH_FRONTEND_ORIGIN` と `GOOGLE_OIDC_REDIRECT_URI` は `https://`  |
-| cookie       | `AUTH_SESSION_COOKIE_SECURE=true`                                   |
-| proxy        | Caddy を配置し、80/443 を公開                                       |
-| frontend     | `VITE_API_BASE=https://...`                                         |
-| mail/storage | `MAIL_TRANSPORT=stub`、local provider を既定                        |
+| 区分         | 要件                                                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| backend env  | `SAKURA_VPS_PROFILE=https-trial`                                                                                                      |
+| auth         | `NODE_ENV=production`、`AUTH_MODE=jwt_bff`、trial 専用 OAuth client、trial専用の32 UTF-8 bytes以上の`KNOWLEDGE_CURSOR_SIGNING_SECRET` |
+| HTTPS        | `AUTH_FRONTEND_ORIGIN` と `GOOGLE_OIDC_REDIRECT_URI` は `https://`                                                                    |
+| cookie       | `AUTH_SESSION_COOKIE_SECURE=true`                                                                                                     |
+| proxy        | Caddy を配置し、80/443 を公開                                                                                                         |
+| frontend     | `VITE_API_BASE=https://...`                                                                                                           |
+| mail/storage | `MAIL_TRANSPORT=stub`、local provider を既定                                                                                          |
 
 production domain、production OAuth client、production S3 は流用しない。Sakura packet filter / UFW などで接続元を trial 利用者に限定する。
 
@@ -95,6 +95,7 @@ profile-aware checker は以下を検出して非 0 終了する。
 - `https-trial` で HTTP origin / redirect / frontend API base を使っている
 - `https-trial` で secure cookie が無効
 - `https-trial` で Google OIDC / JWT BFF 必須値が不足
+- `https-trial` でKnowledge検索cursor署名secretが不足、または32 UTF-8 bytes未満
 
 ローカル regression test:
 

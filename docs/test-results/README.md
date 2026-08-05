@@ -44,6 +44,7 @@
 ### 2026-08-05
 
 - [Issue #2011 Knowledge label core verification (PR1)](2026-08-05-issue2011-knowledge-label-core.md)
+- [Issue #2011 Knowledge search / saved views verification (PR2)](2026-08-05-issue2011-knowledge-search-saved-views.md)
 
 ### 2026-08-04
 

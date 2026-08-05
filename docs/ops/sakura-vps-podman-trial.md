@@ -170,6 +170,7 @@ POSTGRES_DB=postgres
 DATABASE_URL=postgresql://erp4:REPLACE_WITH_STRONG_PASSWORD@erp4-postgres:5432/postgres?schema=public
 PORT=3001
 NODE_ENV=production
+KNOWLEDGE_CURSOR_SIGNING_SECRET=REPLACE_WITH_KNOWLEDGE_CURSOR_SIGNING_SECRET
 AUTH_MODE=jwt_bff
 ALLOWED_ORIGINS=https://app.example.com
 JWT_JWKS_URL=https://www.googleapis.com/oauth2/v3/certs

@@ -18,12 +18,14 @@
 Google 側の詳細手順は別紙の [google-oidc-google-cloud-console](google-oidc-google-cloud-console.md) を参照する。
 
 最小要件:
+
 - OAuth client 種別は `Web application`
 - `Authorized redirect URIs` に `https://<backend-origin>/auth/google/callback` を登録する
 - `Authorized JavaScript origins` は frontend が Google Identity Services を直接使う場合だけ登録する
 - さくらVPS 実機で Google OIDC を使う場合、Google 側登録値は raw IP ではなく FQDN + HTTPS にする
 
 運用判断:
+
 - 初期本番では Google グループを一次ソースにしない
 - Google 側の MFA / Passkey / 端末制御を有効化する
 - ERP4 は Google パスワードや refresh token を保持しない
@@ -35,6 +37,7 @@ Google 側の詳細手順は別紙の [google-oidc-google-cloud-console](google-
 
 ```dotenv
 NODE_ENV=production
+KNOWLEDGE_CURSOR_SIGNING_SECRET=replace-with-32-byte-or-longer-secret
 AUTH_MODE=jwt_bff
 ALLOWED_ORIGINS=https://app.example.com
 
@@ -54,6 +57,7 @@ GOOGLE_OIDC_POST_LOGIN_REDIRECT_URL=https://app.example.com/
 補足:
 
 - `GOOGLE_OIDC_CLIENT_SECRET` はシークレットストアで管理する
+- `KNOWLEDGE_CURSOR_SIGNING_SECRET` もシークレットストアで管理し、32 UTF-8 bytes以上を設定する。変更すると発行済みのKnowledge検索cursorは無効になる
 - `JWT_JWKS_URL` は Google の `jwks_uri` を設定する。固定値運用では OpenID Provider Configuration (`https://accounts.google.com/.well-known/openid-configuration`) の `jwks_uri` を確認する
 - `GOOGLE_OIDC_CLIENT_ID` と `JWT_AUDIENCE` は同じ OAuth client ID を設定する
 - `ALLOWED_ORIGINS` には frontend の公開 origin のみを列挙する

@@ -157,6 +157,7 @@ test('test hook route is disabled in production even when E2E_ENABLE_TEST_HOOKS=
       GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
       AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
       AUTH_COOKIE_SECRET: '0123456789abcdef0123456789abcdef',
+      KNOWLEDGE_CURSOR_SIGNING_SECRET: '0123456789abcdef0123456789abcdef',
       E2E_ENABLE_TEST_HOOKS: '1',
     },
     async () => {

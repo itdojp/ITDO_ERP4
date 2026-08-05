@@ -168,6 +168,7 @@ SAKURA_VPS_PROFILE=https-trial
 DATABASE_URL=postgresql://erp4:REPLACE_WITH_STRONG_PASSWORD@erp4-postgres:5432/postgres?schema=public
 PORT=3001
 NODE_ENV=production
+KNOWLEDGE_CURSOR_SIGNING_SECRET=REPLACE_WITH_TRIAL_KNOWLEDGE_CURSOR_SIGNING_SECRET
 AUTH_MODE=jwt_bff
 AUTH_ALLOW_HEADER_FALLBACK_IN_PROD=false
 ALLOWED_ORIGINS=https://trial-app.example.com
@@ -853,6 +854,18 @@ make_https_dir "$https_dir"
 write_frontend_env "$https_frontend" 'https://trial-api.example.com'
 run_success 'https-trial minimal env' \
   "$CHECK_ENV" --profile https-trial --target-dir "$https_dir" --frontend-build-env "$https_frontend"
+
+https_missing_cursor_secret_dir="$WORK_DIR/https-missing-cursor-secret"
+cp -a "$https_dir" "$https_missing_cursor_secret_dir"
+sed -i '/^KNOWLEDGE_CURSOR_SIGNING_SECRET=/d' "$https_missing_cursor_secret_dir/erp4-backend.env"
+run_failure 'https-trial rejects missing knowledge cursor signing secret' 'missing required key: KNOWLEDGE_CURSOR_SIGNING_SECRET' \
+  "$CHECK_ENV" --profile https-trial --target-dir "$https_missing_cursor_secret_dir" --frontend-build-env "$https_frontend"
+
+https_short_cursor_secret_dir="$WORK_DIR/https-short-cursor-secret"
+cp -a "$https_dir" "$https_short_cursor_secret_dir"
+sed -i 's/^KNOWLEDGE_CURSOR_SIGNING_SECRET=.*/KNOWLEDGE_CURSOR_SIGNING_SECRET=short/' "$https_short_cursor_secret_dir/erp4-backend.env"
+run_failure 'https-trial rejects short knowledge cursor signing secret' 'at least 32 UTF-8 bytes' \
+  "$CHECK_ENV" --profile https-trial --target-dir "$https_short_cursor_secret_dir" --frontend-build-env "$https_frontend"
 
 production_gdrive_dir="$WORK_DIR/production-gdrive"
 cp -a "$https_dir" "$production_gdrive_dir"

@@ -19,6 +19,7 @@
 ```
 
 このチェックは以下を検証します。
+
 - `loginctl show-user $(id -un)` の linger 有効化
 - `net.ipv4.ip_unprivileged_port_start` が 80 以下
 - `podman` / `systemctl` / `loginctl` の存在
@@ -44,6 +45,7 @@ sudo sysctl --system
 `%h/.config/containers/systemd/erp4-backend.env`:
 
 ```dotenv
+KNOWLEDGE_CURSOR_SIGNING_SECRET=REPLACE_WITH_KNOWLEDGE_CURSOR_SIGNING_SECRET
 ALLOWED_ORIGINS=https://app.example.com
 AUTH_FRONTEND_ORIGIN=https://app.example.com
 GOOGLE_OIDC_REDIRECT_URI=https://api.example.com/auth/google/callback
@@ -66,6 +68,7 @@ VITE_API_BASE=https://api.example.com
 最小設定例:
 
 `erp4-caddy.env`
+
 ```dotenv
 APP_DOMAIN=app.example.com
 API_DOMAIN=api.example.com
@@ -73,6 +76,7 @@ ACME_EMAIL=ops@example.com
 ```
 
 `erp4-caddy.Caddyfile`
+
 ```caddyfile
 {
 	email {$ACME_EMAIL}
