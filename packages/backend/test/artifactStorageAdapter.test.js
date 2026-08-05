@@ -134,8 +134,8 @@ function addPendingRow(db, value, provider = 'gdrive') {
     contentType: value.contentType,
     sizeBytes: BigInt(value.sizeBytes),
     sha256: value.sha256,
-    ownerType: null,
-    ownerId: null,
+    ownerType: value.ownerType ?? null,
+    ownerId: value.ownerId ?? null,
     failureCode: null,
     createdAt: new Date(),
     createdBy: null,
@@ -579,6 +579,17 @@ test('idempotent ready rows are reused and conflicting metadata fails closed', a
     const reused = await adapter.store(input());
     assert.equal(reused.artifactId, stored.artifactId);
     assert.equal(db.rows.length, 1);
+
+    await assert.rejects(
+      () =>
+        adapter.store({
+          ...input(),
+          ownerId: 'different-owner',
+        }),
+      { message: 'artifact_idempotency_conflict' },
+    );
+    assert.equal(db.rows.length, 1);
+    assert.equal(db.rows[0].ownerId, input().ownerId);
 
     await assert.rejects(
       () =>

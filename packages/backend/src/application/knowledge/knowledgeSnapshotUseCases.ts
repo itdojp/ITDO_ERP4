@@ -29,6 +29,7 @@ import {
   type KnowledgeSnapshot,
   type KnowledgeSnapshotCaptureMethod,
   type KnowledgeSnapshotReadRepository,
+  type KnowledgeSnapshotTransaction,
   type KnowledgeSnapshotUnitOfWork,
 } from './knowledgeSnapshotPorts.js';
 
@@ -371,35 +372,45 @@ export function createKnowledgeSnapshotService(
   const now = dependencies.now ?? (() => new Date());
   const randomId = dependencies.randomId ?? randomUUID;
 
+  const markSnapshotFailedInTransaction = async (
+    transaction: KnowledgeSnapshotTransaction,
+    input: {
+      actor: KnowledgeActor;
+      auditActor: KnowledgeAuditActorContext;
+      failureCode: string;
+      snapshot: KnowledgeSnapshot;
+    },
+  ) => {
+    const failed = await transaction.snapshots.markFailed({
+      snapshotId: input.snapshot.id,
+      failedAt: now(),
+      failureCode: input.failureCode,
+    });
+    if (!failed) return null;
+    await transaction.audit.write({
+      action: 'knowledge_snapshot_capture_failed',
+      actor: auditActor(input.actor, input.auditActor),
+      targetId: failed.id,
+      metadata: {
+        itemId: failed.knowledgeItemId,
+        version: failed.version,
+        status: failed.status,
+        captureMethod: failed.captureMethod,
+        failureCode: failed.failureCode ?? undefined,
+      },
+    });
+    return failed;
+  };
+
   const markSnapshotFailed = async (input: {
     actor: KnowledgeActor;
     auditActor: KnowledgeAuditActorContext;
     failureCode: string;
     snapshot: KnowledgeSnapshot;
-  }) => {
-    const failedAt = now();
-    return dependencies.unitOfWork.run(async (transaction) => {
-      const failed = await transaction.snapshots.markFailed({
-        snapshotId: input.snapshot.id,
-        failedAt,
-        failureCode: input.failureCode,
-      });
-      if (!failed) return null;
-      await transaction.audit.write({
-        action: 'knowledge_snapshot_capture_failed',
-        actor: auditActor(input.actor, input.auditActor),
-        targetId: failed.id,
-        metadata: {
-          itemId: failed.knowledgeItemId,
-          version: failed.version,
-          status: failed.status,
-          captureMethod: failed.captureMethod,
-          failureCode: failed.failureCode ?? undefined,
-        },
-      });
-      return failed;
-    });
-  };
+  }) =>
+    dependencies.unitOfWork.run((transaction) =>
+      markSnapshotFailedInTransaction(transaction, input),
+    );
 
   return {
     async capture(input: CaptureKnowledgeSnapshotInput): Promise<
@@ -525,16 +536,35 @@ export function createKnowledgeSnapshotService(
         .update(materialized.body)
         .digest('hex');
       const sizeBytes = materialized.body.length;
-      let recorded: KnowledgeSnapshot | null;
+      let recordedOutcome:
+        | { kind: 'not_found' }
+        | { kind: 'recorded'; snapshot: KnowledgeSnapshot | null };
       try {
-        recorded = await dependencies.unitOfWork.run((transaction) =>
-          transaction.snapshots.recordMaterialized({
-            snapshotId: intent.snapshot.id,
-            contentType: materialized.contentType,
-            extractedText: materialized.extractedText,
-            sha256,
-            sizeBytes,
-          }),
+        recordedOutcome = await dependencies.unitOfWork.run(
+          async (transaction) => {
+            const authorized = await transaction.snapshots.findOwnedSnapshot({
+              actor: input.actor,
+              itemId: input.itemId,
+              snapshotId: intent.snapshot.id,
+            });
+            if (!authorized) {
+              await markSnapshotFailedInTransaction(transaction, {
+                actor: input.actor,
+                auditActor: input.auditActor,
+                failureCode: 'snapshot_capture_failed',
+                snapshot: intent.snapshot,
+              });
+              return { kind: 'not_found' } as const;
+            }
+            const snapshot = await transaction.snapshots.recordMaterialized({
+              snapshotId: intent.snapshot.id,
+              contentType: materialized.contentType,
+              extractedText: materialized.extractedText,
+              sha256,
+              sizeBytes,
+            });
+            return { kind: 'recorded', snapshot } as const;
+          },
         );
       } catch {
         const captureError = new KnowledgeSnapshotCaptureError(
@@ -548,6 +578,8 @@ export function createKnowledgeSnapshotService(
         }).catch(() => undefined);
         return captureFailure(captureError);
       }
+      if (recordedOutcome.kind === 'not_found') return notFound();
+      const recorded = recordedOutcome.snapshot;
       if (!recorded) return stateConflict();
       if (
         !recorded.contentType ||
@@ -609,10 +641,25 @@ export function createKnowledgeSnapshotService(
       }
 
       try {
-        const finalized = await dependencies.unitOfWork.run(
+        const finalization = await dependencies.unitOfWork.run(
           async (transaction) => {
-            const finalized = await transaction.snapshots.markReady({
+            const authorized = await transaction.snapshots.findOwnedSnapshot({
+              actor: input.actor,
+              itemId: input.itemId,
               snapshotId: recorded.id,
+            });
+            if (!authorized) return { kind: 'not_found' } as const;
+            if (
+              authorized.status === 'ready' &&
+              authorized.artifactId === artifact.artifactId &&
+              authorized.contentType === recordedContentType &&
+              authorized.sha256 === sha256 &&
+              authorized.sizeBytes === sizeBytes
+            ) {
+              return { kind: 'ready', snapshot: authorized } as const;
+            }
+            const finalized = await transaction.snapshots.markReady({
+              snapshotId: intent.snapshot.id,
               artifactId: artifact.artifactId,
               contentType: recordedContentType,
               sha256,
@@ -630,8 +677,8 @@ export function createKnowledgeSnapshotService(
                 current.contentType === recordedContentType &&
                 current.sha256 === sha256 &&
                 current.sizeBytes === sizeBytes
-                ? current
-                : null;
+                ? ({ kind: 'ready', snapshot: current } as const)
+                : ({ kind: 'pending' } as const);
             }
             await transaction.audit.write({
               action: 'knowledge_snapshot_capture_ready',
@@ -647,10 +694,11 @@ export function createKnowledgeSnapshotService(
                 sizeBytes: finalized.sizeBytes ?? undefined,
               },
             });
-            return finalized;
+            return { kind: 'ready', snapshot: finalized } as const;
           },
         );
-        if (!finalized) {
+        if (finalization.kind === 'not_found') return notFound();
+        if (finalization.kind === 'pending') {
           return {
             ok: false,
             statusCode: 502,
@@ -660,7 +708,7 @@ export function createKnowledgeSnapshotService(
         }
         return {
           ok: true,
-          value: { replayed: false, snapshot: finalized },
+          value: { replayed: false, snapshot: finalization.snapshot },
         };
       } catch {
         return {

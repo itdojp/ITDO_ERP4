@@ -454,7 +454,13 @@ export function createArtifactStorageAdapter(
     row: StorageArtifact,
     input: Pick<
       StoreArtifactInput,
-      'contentType' | 'idempotencyKey' | 'originalName' | 'sha256' | 'sizeBytes'
+      | 'contentType'
+      | 'idempotencyKey'
+      | 'originalName'
+      | 'ownerId'
+      | 'ownerType'
+      | 'sha256'
+      | 'sizeBytes'
     >,
     providerKey: string,
     expectedStatus: StorageArtifact['status'] = 'pending',
@@ -473,6 +479,7 @@ export function createArtifactStorageAdapter(
     const current = await findIdempotentRow(input);
     if (current) {
       assertMatchingArtifact(current, input);
+      assertMatchingOwner(current, input);
       if (current.status === 'ready' && current.providerKey === providerKey) {
         return toSafeResult(current);
       }
@@ -573,6 +580,7 @@ export function createArtifactStorageAdapter(
       let row = where ? await db.storageArtifact.findUnique({ where }) : null;
       if (row) {
         assertMatchingArtifact(row, input);
+        assertMatchingOwner(row, input);
         if (row.status === 'ready' && row.providerKey) {
           return toSafeResult(row);
         }
@@ -617,6 +625,7 @@ export function createArtifactStorageAdapter(
           const raced = await db.storageArtifact.findUnique({ where });
           if (!raced) throw error;
           assertMatchingArtifact(raced, input);
+          assertMatchingOwner(raced, input);
           if (raced.status === 'ready' && raced.providerKey) {
             return toSafeResult(raced);
           }

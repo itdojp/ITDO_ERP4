@@ -371,6 +371,63 @@ test('capture and reconciliation require item ownership and do not disclose owne
   assertFailure(deniedDetail, 404, 'not_found');
 });
 
+test('capture rechecks owner access before artifact storage', async () => {
+  let ownerChecks = 0;
+  const harness = createHarness({
+    behavior: {
+      owned: () => {
+        ownerChecks += 1;
+        return ownerChecks === 1;
+      },
+    },
+  });
+
+  const result = await harness.service.capture(textCapture());
+
+  assertFailure(result, 404, 'not_found');
+  assert.equal(ownerChecks, 2);
+  assert.equal(harness.artifactStoreInputs.length, 0);
+  const snapshot = [...harness.snapshots.values()][0];
+  assert.equal(snapshot.status, 'failed');
+  assert.equal(snapshot.failureCode, 'snapshot_capture_failed');
+  assert.equal(snapshot.artifactId, null);
+  assert.deepEqual(
+    harness.audits.map((entry) => entry.action),
+    [
+      'knowledge_snapshot_capture_requested',
+      'knowledge_snapshot_capture_failed',
+    ],
+  );
+});
+
+test('capture remains pending without deleting the artifact when owner access changes during storage', async () => {
+  let ownerChecks = 0;
+  const harness = createHarness({
+    behavior: {
+      owned: () => {
+        ownerChecks += 1;
+        return ownerChecks <= 2;
+      },
+    },
+  });
+
+  const result = await harness.service.capture(textCapture());
+
+  assertFailure(result, 404, 'not_found');
+  assert.equal(ownerChecks, 3);
+  assert.equal(harness.artifactStoreInputs.length, 1);
+  const snapshot = [...harness.snapshots.values()][0];
+  assert.equal(snapshot.status, 'pending');
+  assert.equal(snapshot.artifactId, null);
+  assert.equal(snapshot.contentType, 'text/plain');
+  assert.match(snapshot.sha256, /^[a-f0-9]{64}$/);
+  assert.equal(snapshot.sizeBytes, Buffer.byteLength('Snapshot body'));
+  assert.deepEqual(
+    harness.audits.map((entry) => entry.action),
+    ['knowledge_snapshot_capture_requested'],
+  );
+});
+
 test('URL capture persists intent before materialization, then stores only after metadata and finalizes last', async () => {
   const harness = createHarness();
   const result = await harness.service.capture({
