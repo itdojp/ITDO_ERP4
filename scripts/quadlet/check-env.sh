@@ -66,6 +66,17 @@ require_env_key() {
   [[ -n "$value" ]] || fail "$file is missing required key: $key"
 }
 
+require_env_min_utf8_bytes() {
+  local file="$1"
+  local key="$2"
+  local minimum="$3"
+  local value byte_count
+  value="$(read_env_value "$file" "$key")"
+  [[ -n "$value" ]] || fail "$file is missing required key: $key"
+  byte_count="$(LC_ALL=C printf '%s' "$value" | wc -c | tr -d '[:space:]')"
+  (( byte_count >= minimum )) || fail "$file requires $key to contain at least $minimum UTF-8 bytes"
+}
+
 require_env_value() {
   local file="$1"
   local key="$2"
@@ -278,6 +289,7 @@ require_common_runtime_env() {
 }
 
 check_production_profile() {
+  require_env_min_utf8_bytes "$BACKEND_ENV" KNOWLEDGE_CURSOR_SIGNING_SECRET 32
   for key in GOOGLE_OIDC_CLIENT_SECRET GOOGLE_OIDC_REDIRECT_URI AUTH_FRONTEND_ORIGIN AUTH_SESSION_COOKIE_SECURE; do
     require_env_key "$BACKEND_ENV" "$key"
   done
@@ -379,6 +391,7 @@ check_https_trial_profile() {
   require_env_lower_value "$BACKEND_ENV" EVIDENCE_ARCHIVE_PROVIDER local
   require_env_lower_value "$BACKEND_ENV" CHAT_ATTACHMENT_PROVIDER local
   require_env_lower_value "$BACKEND_ENV" REPORT_PROVIDER local
+  require_env_min_utf8_bytes "$BACKEND_ENV" KNOWLEDGE_CURSOR_SIGNING_SECRET 32
 
   for key in JWT_ISSUER JWT_AUDIENCE GOOGLE_OIDC_CLIENT_SECRET GOOGLE_OIDC_REDIRECT_URI AUTH_FRONTEND_ORIGIN AUTH_SESSION_COOKIE_SECURE; do
     require_env_key "$BACKEND_ENV" "$key"

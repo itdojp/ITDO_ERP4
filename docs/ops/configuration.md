@@ -16,6 +16,7 @@ backend は起動時に環境変数の検証を行い、不正/不足があれ�
 基本:
 
 - `DATABASE_URL`（必須、`postgresql://` または `postgres://`）
+- `KNOWLEDGE_CURSOR_SIGNING_SECRET`（ナレッジ検索cursorのHMAC-SHA256鍵。設定時は32 UTF-8 bytes以上、productionでは必須。承認済みsecret storeから注入し、ログへ出力しない。production以外で未設定の場合はprocess lifetimeのランダム鍵を使うため、再起動前に発行したcursorは無効になる）
 - `PORT`（任意、指定時は `1-65535`、未指定時は `3001`）
 - `ALLOWED_ORIGINS`（任意、指定時は `http(s)` URL のカンマ区切り。未設定/空の場合は Fastify の CORS 設定で `origin: false` となり、全オリジン拒否）
 - レート制限
@@ -28,7 +29,7 @@ backend は起動時に環境変数の検証を行い、不正/不足があれ�
     - `RATE_LIMIT_REDIS_NAMESPACE`（任意、既定: `erp4-rate-limit-`）
     - `RATE_LIMIT_REDIS_CONNECT_TIMEOUT_MS`（任意、既定: `3000`）
   - 高負荷APIの個別制限（任意、未指定時は既定値）
-    - 検索: `RATE_LIMIT_SEARCH_MAX` / `RATE_LIMIT_SEARCH_WINDOW`
+    - 検索: `RATE_LIMIT_SEARCH_MAX` / `RATE_LIMIT_SEARCH_WINDOW`（Knowledge search/suggestion/saved-view executeの既定は60 requests / 1 minute）
     - 外部LLM要約: `RATE_LIMIT_AI_SUMMARY_MAX` / `RATE_LIMIT_AI_SUMMARY_WINDOW`
     - チャット添付アップロード: `RATE_LIMIT_ATTACHMENT_UPLOAD_MAX` / `RATE_LIMIT_ATTACHMENT_UPLOAD_WINDOW`
     - 文書送信（見積/請求/発注）: `RATE_LIMIT_DOC_SEND_MAX` / `RATE_LIMIT_DOC_SEND_WINDOW`

@@ -239,6 +239,26 @@ export function assertValidBackendEnv() {
   }
   const nodeEnv = (process.env.NODE_ENV || '').trim().toLowerCase();
   const isProd = nodeEnv === 'production';
+  const knowledgeCursorSigningSecret =
+    process.env.KNOWLEDGE_CURSOR_SIGNING_SECRET;
+  if (
+    knowledgeCursorSigningSecret !== undefined &&
+    knowledgeCursorSigningSecret.length > 0 &&
+    (knowledgeCursorSigningSecret.trim().length === 0 ||
+      Buffer.byteLength(knowledgeCursorSigningSecret, 'utf8') < 32)
+  ) {
+    addIssue(
+      issues,
+      'KNOWLEDGE_CURSOR_SIGNING_SECRET',
+      '設定する場合は32 UTF-8 bytes以上で指定してください',
+    );
+  } else if (isProd && !normalizeString(knowledgeCursorSigningSecret)) {
+    addIssue(
+      issues,
+      'KNOWLEDGE_CURSOR_SIGNING_SECRET',
+      'productionでは必須です',
+    );
+  }
   const allowHeaderFallbackRaw = normalizeString(
     process.env.AUTH_ALLOW_HEADER_FALLBACK_IN_PROD,
   );

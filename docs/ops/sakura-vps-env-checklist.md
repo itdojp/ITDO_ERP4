@@ -64,6 +64,7 @@ Google OIDC をさくらVPS 実機で使う場合は FQDN + HTTPS の origin / r
 - `DATABASE_URL`
 - `PORT`
 - `NODE_ENV`
+- `KNOWLEDGE_CURSOR_SIGNING_SECRET`（productionでは32 UTF-8 bytes以上。承認済みsecret storeから注入し、実値を記録しない）
 - `AUTH_MODE`
 - `ALLOWED_ORIGINS`
 - `JWT_JWKS_URL` または `JWT_PUBLIC_KEY`

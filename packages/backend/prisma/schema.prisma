@@ -2228,6 +2228,9 @@ model KnowledgeItem {
   @@index([ownerUserId, deletedAt, updatedAt])
   @@index([organizationId, scope, deletedAt, updatedAt])
   @@index([scope, status, deletedAt, updatedAt])
+  @@index([ownerUserId, deletedAt, updatedAt, id])
+  @@index([organizationId, scope, deletedAt, updatedAt, id])
+  @@index([scope, status, deletedAt, updatedAt, id])
 }
 
 model KnowledgeItemGroupGrant {
