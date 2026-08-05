@@ -516,7 +516,7 @@ test('delete fails closed on the optimistic-lock write result', async () => {
   assert.equal(finalReadCount, 0);
 });
 
-test('audit writes the saved-view targetId and allowlisted metadata without name or filter data', async () => {
+test('audit uses a constant target and allowlisted metadata without saved-view ID, name, or filter data', async () => {
   const writes = [];
   const writer = new PrismaKnowledgeSavedViewAuditWriter({
     auditLog: {
@@ -535,16 +535,16 @@ test('audit writes the saved-view targetId and allowlisted metadata without name
       source: 'api',
       secret: 'must-not-pass-through',
     },
-    targetId: 'actual-view-id',
     version: 4,
     schemaVersion: 1,
+    savedViewId: 'private-view-id',
     name: 'private view name',
     filter: { labels: ['private-label-id'] },
   });
 
   const data = writes[0].data;
   assert.equal(data.targetTable, 'knowledge_saved_views');
-  assert.equal(data.targetId, 'actual-view-id');
+  assert.equal(data.targetId, 'saved_view');
   assert.equal(data.userId, 'owner-1');
   assert.equal(data.actorUserId, undefined);
   assert.equal(data.requestId, 'request-1');
@@ -557,6 +557,7 @@ test('audit writes the saved-view targetId and allowlisted metadata without name
   const serialized = JSON.stringify(data);
   for (const forbidden of [
     'must-not-pass-through',
+    'private-view-id',
     'private view name',
     'private-label-id',
   ]) {
@@ -650,7 +651,6 @@ test('unit of work gives saved-view writes and audit the exact same transaction 
     await transaction.audit.write({
       action: 'knowledge_saved_view_created',
       actor,
-      targetId: created.value.id,
       version: created.value.version,
       schemaVersion: created.value.schemaVersion,
     });
@@ -671,7 +671,6 @@ test('unit of work gives saved-view writes and audit the exact same transaction 
     await transaction.audit.write({
       action: 'knowledge_saved_view_updated',
       actor,
-      targetId: updated.value.id,
       version: updated.value.version,
       schemaVersion: updated.value.schemaVersion,
     });

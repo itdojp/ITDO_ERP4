@@ -233,12 +233,11 @@ export function createKnowledgeSavedViewService(input: {
       if (!hasPrincipal(actor)) return failure('invalid_request');
       if (!validListQuery(query)) return failure('invalid_request');
       const views = await input.repository.listOwned(actor, query);
-      const valid: KnowledgeSavedView[] = [];
       for (const view of views) {
         const validated = await validateCurrent(actor, view);
-        if (validated.ok) valid.push(validated.value);
+        if (!validated.ok) return validated;
       }
-      return ok(valid);
+      return ok(views);
     },
 
     async listRecoveryMetadata({ actor, query }) {
@@ -284,7 +283,6 @@ export function createKnowledgeSavedViewService(input: {
         await transaction.audit.write({
           action: 'knowledge_saved_view_created',
           actor: auditActor(actor, context),
-          targetId: created.value.id,
           version: created.value.version,
           schemaVersion: created.value.schemaVersion,
         });
@@ -330,7 +328,6 @@ export function createKnowledgeSavedViewService(input: {
         await transaction.audit.write({
           action: 'knowledge_saved_view_updated',
           actor: auditActor(actor, context),
-          targetId: updated.value.id,
           version: updated.value.version,
           schemaVersion: updated.value.schemaVersion,
         });
@@ -354,7 +351,6 @@ export function createKnowledgeSavedViewService(input: {
         await transaction.audit.write({
           action: 'knowledge_saved_view_deleted',
           actor: auditActor(actor, context),
-          targetId: removed.value.id,
           version: removed.value.version,
           schemaVersion: removed.value.schemaVersion,
         });
