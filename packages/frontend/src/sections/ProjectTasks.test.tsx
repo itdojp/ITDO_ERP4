@@ -334,7 +334,7 @@ describe('ProjectTasks', () => {
       });
 
       expect(
-        screen.getByText('ベースラインを作成しました'),
+        await screen.findByText('ベースラインを作成しました'),
       ).toBeInTheDocument();
 
       await waitFor(() => {
@@ -343,7 +343,7 @@ describe('ProjectTasks', () => {
         );
       });
 
-      expect(screen.getByText('タスクなし')).toBeInTheDocument();
+      expect(await screen.findByText('タスクなし')).toBeInTheDocument();
     } finally {
       promptSpy.mockRestore();
     }
