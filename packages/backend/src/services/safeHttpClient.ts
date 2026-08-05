@@ -292,7 +292,7 @@ async function pinnedRequestFetch(
           }
         }
         const status = response.statusCode || 0;
-        if (status >= 300 && status < 400 && response.headers.location) {
+        if (status >= 300 && status < 400) {
           response.resume();
           reject(new SafeHttpError('redirect_blocked'));
           return;

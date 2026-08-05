@@ -88,12 +88,17 @@ test('validateExternalUrl rejects host not in allowlist', async () => {
   );
 });
 
-test('safeFetch blocks redirects and sends the default user-agent', async () => {
+test('safeFetch blocks every 3xx response and sends the default user-agent', async () => {
   const { safeFetch } = await loadSafeHttpClient();
   await withHttpServer(
     (request, response) => {
       if (request.url === '/redirect') {
         response.writeHead(302, { location: '/unexpected' });
+        response.end();
+        return;
+      }
+      if (request.url === '/redirect-without-location') {
+        response.writeHead(302);
         response.end();
         return;
       }
@@ -113,6 +118,17 @@ test('safeFetch blocks redirects and sends the default user-agent', async () => 
       await assert.rejects(
         safeFetch(
           `${baseUrl}/redirect`,
+          {},
+          {
+            allowHttp: true,
+            allowPrivateIp: true,
+          },
+        ),
+        (error) => error?.code === 'redirect_blocked',
+      );
+      await assert.rejects(
+        safeFetch(
+          `${baseUrl}/redirect-without-location`,
           {},
           {
             allowHttp: true,

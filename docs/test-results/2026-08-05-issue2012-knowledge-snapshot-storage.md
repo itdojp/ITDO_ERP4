@@ -39,6 +39,7 @@ manual capture UI、frontend E2E、sanitized screenshot evidenceは、PR A merge
 | Knowledge snapshot/storage focused tests  | PASS   | 125 tests、fail/cancelled/skip/todo 0                                                |
 | expanded security/transport focused tests | PASS   | env/safe transportを含む195 tests、fail/cancelled/skip/todo 0                        |
 | final route remediation repeated test     | PASS   | 17 testsを3回連続実行、fail/cancelled/skip/todo 0                                    |
+| fail-closed redirect repeated test         | PASS   | safe HTTP 13 testsを3回連続実行、`Location`なし3xxを含む                             |
 | focused source coverage                   | PASS   | 対象8 source modules: statements/lines 92.28%、branches 76.52%、functions 97.27%     |
 | PostgreSQL 15 integration                 | PASS   | 2 snapshots、2 artifacts、5 audits、version `[1,2]`                                  |
 | ACL integration                           | PASS   | outsider detail/downloadはともに404、owner downloadは38 bytes                        |
@@ -96,6 +97,7 @@ manual capture UI、frontend E2E、sanitized screenshot evidenceは、PR A merge
 - Copilot reviewで、共有storageのBuffer bodyが宣言size/hashと不一致でもprovider I/O後まで失敗しない回帰を検出した。新規writeまたはfailed retryのDB mutation/provider取得より前にlength/SHA-256を照合し、両不一致でDB row/provider call 0を確認した。ready/pending idempotent reuse/recoveryはbodyを再検証しない既存契約を維持し、stream bodyも既存のwrite後verification契約を維持する。
 - correctness delta reviewで、response headers受信後はcaller abortとtotal timeoutがbody streamへ伝播しない点を検出した。internal signalをNode responseへ接続し、responseのend/close/errorまでlistener/timer cleanupを遅延した。headers後caller abortとstalled body timeoutが`AbortError`でbody readを失敗させることを実HTTP serverで確認した。Content-Length未達のpremature closeもbody読込成功として扱わない回帰testを追加した。
 - 最終Copilot review本文のsuppressed findingsを再評価し、global 1 MiB body limitでは有効な上限textがJSON envelope分だけtransportで拒否され得る点と、多バイト文字のUTF-8 byte上限がroute境界まで確定しない点を修正した。route envelopeを最大6倍escapeと固定overheadでboundedに広げ、serviceより前に実UTF-8 byte数を413判定する。upload streamの非size I/O errorを413へ誤分類する従来分岐もsanitized 400へ分離し、worst-case JSON escapeの上限exact body、多バイト超過、multipart parser size error、非size stream failureをroute testで固定した。独立correctness reviewのLow test-gapへ対応後のactionable findingは0、独立security reviewはblocker/high/medium/low 0/0/0/0。
+- exact-head Copilot review本文のsuppressed findingで、共有`safeFetch`が`Location`付き3xxだけを`redirect_blocked`へ正規化し、`Location`なし3xxをresponseとして返すfail-open差分を検出した。全3xxをresponse body送信前に破棄して同じsanitized errorへ正規化し、`Location`有無の両経路を実HTTP serverで固定した。Snapshot callerの既存non-2xx拒否に依存せず、共有transport境界単体でredirectをfail-closedにする。
 
 ## Repository-wide quality gates
 
