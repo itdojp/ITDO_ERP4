@@ -58,6 +58,7 @@ import { registerAgentRunRoutes } from './agentRuns.js';
 import { registerDraftRoutes } from './drafts.js';
 import { registerTestHookRoutes } from './testHooks.js';
 import { registerKnowledgeItemRoutes } from './knowledgeItems.js';
+import { registerKnowledgeLabelRoutes } from './knowledgeLabels.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   await registerAuthRoutes(app);
@@ -118,5 +119,6 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerInsightRoutes(app);
   await registerEvidenceSnapshotRoutes(app);
   await registerKnowledgeItemRoutes(app);
+  await registerKnowledgeLabelRoutes(app);
   await registerTestHookRoutes(app);
 }

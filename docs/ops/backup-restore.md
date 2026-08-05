@@ -162,6 +162,20 @@ checkerはendpoint、bucket、object key、KMS識別子をlogへ出さず、AWS 
 
 Knowledge Hub Workstream 02以降は、PostgreSQL bundleに`KnowledgeItem`、`KnowledgeItemGroupGrant`、対応する`AuditLog`が含まれる。WS02単体ではbinary artifactや追加provider objectはない。
 
+Workstream 03 PR1以降は、同じPostgreSQL bundleに`KnowledgeLabel`、`KnowledgeLabelAlias`、`KnowledgeLabelPath`、`KnowledgeItemLabel`、`KnowledgeLabelGroupGrant`、`KnowledgeSavedView`、`KnowledgeSavedViewLabelFilter`と対応するallowlist監査が含まれる。`KnowledgeItemLabel`はlogical detach後もassignment source、assigner、confidence、detach時刻/実行者を保持する。これらはDB relationが正本であり、別のlabel ID JSONやprovider objectをbackup対象として追加しない。PR1単体はbinary artifactを作成しない。
+
+承認済みisolated restoreでは、raw ID/name/filterを公開logへ出さず次を確認する。
+
+- 全label/saved-view tableとenum、partial unique index、FK/CHECKが存在する
+- 各active labelにself closure path（depth 0）が1件あり、non-self pathはdepth 1以上、depth 8超過とorphan pathが0件
+- ownership契約に反するrowが0件（personal labelで`organizationId IS NOT NULL`、organization labelで`organizationId IS NULL`、blank owner、version 1未満）
+- orphan alias/item-label/group-grant/saved-view-filterが0件であり、item-labelのAI以外のconfidenceがNULL、`detachedAt` / `detachedBy`が両方NULLまたは両方非NULLである
+- active item-labelはitem/label対ごと1件以下、logical detached rowはprovenance保全のため残存し、activeとdetachedの合計がprivate backup manifestの期待値と一致する
+- item/grant/label/path/assignment/saved-view/audit件数がprivate backup manifestの期待値と一致する
+- 旧Workstream 02 imageへapplication rollbackしても既存Knowledge item CRUD、healthz、readyzを維持する
+
+restore rehearsalで不整合があれば自動修復やrow削除を行わず停止する。application rollbackではWorkstream 03のtable/enum/indexを保持し、migration fileの逆適用やtable dropを行わない。label master名、alias、raw label ID、saved-view filterはsanitized evidenceへ転記しない。
+
 共用`AuditLog`の`AuditLog_knowledge_delete_reason_check`はexpand migration時に`NOT VALID`で追加する。これによりmigrationは既存共有rowを走査・拒否せず、新規writeには有限reason contractを直ちに適用する。target deploy後は、private DB sessionで最初に次のread-only preflightだけを実行する。
 
 ```sql

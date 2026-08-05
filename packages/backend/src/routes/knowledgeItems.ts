@@ -10,17 +10,19 @@ import {
   knowledgeItemScopes,
   knowledgeItemStatuses,
   knowledgeSourceTypes,
-  type KnowledgeActor,
-  type KnowledgeAuditActorContext,
   type KnowledgeItem,
 } from '../application/knowledge/knowledgeItemPorts.js';
 import {
   prismaKnowledgeItemRepository,
   prismaKnowledgeUnitOfWork,
 } from '../adapters/knowledge/prismaKnowledgeItemAdapter.js';
-import { auditContextFromRequest } from '../services/audit.js';
 import { createApiErrorResponse } from '../services/errors.js';
 import { requireRole } from '../services/rbac.js';
+import {
+  knowledgeActorFromRequest,
+  knowledgeAuditActorFromRequest,
+  requireCanonicalKnowledgeActor,
+} from './knowledgeRouteContext.js';
 
 const allowedRoles = ['admin', 'mgmt', 'exec', 'user'] as const;
 
@@ -266,61 +268,6 @@ function toResponse(item: KnowledgeItem) {
   };
 }
 
-function actorFromRequest(request: FastifyRequest): KnowledgeActor {
-  const userId = knowledgeActorUserId(request);
-  const orgId = request.user?.orgId;
-  const groupAccountIds = request.user?.groupAccountIds;
-  return {
-    userId: typeof userId === 'string' ? userId.trim() : '',
-    organizationId:
-      typeof orgId === 'string' ? orgId.trim() || undefined : undefined,
-    groupAccountIds: [
-      ...new Set(
-        (Array.isArray(groupAccountIds) ? groupAccountIds : [])
-          .filter((value): value is string => typeof value === 'string')
-          .map((value) => value.trim())
-          .filter(Boolean),
-      ),
-    ],
-  };
-}
-
-function knowledgeActorUserId(request: FastifyRequest) {
-  const auth = request.user?.auth;
-  const hasCanonicalIdentity =
-    typeof auth?.identityId === 'string' && auth.identityId.trim().length > 0;
-  const candidate =
-    auth?.providerType === 'header'
-      ? request.user?.userId
-      : hasCanonicalIdentity
-        ? auth?.userAccountId
-        : undefined;
-  return typeof candidate === 'string' ? candidate.trim() : '';
-}
-
-async function requireCanonicalKnowledgeActor(
-  request: FastifyRequest,
-  reply: FastifyReply,
-) {
-  if (knowledgeActorUserId(request)) return;
-  return reply.code(403).send(
-    createApiErrorResponse('forbidden', 'Forbidden', {
-      category: 'permission',
-      details: { reason: 'canonical_account_required' },
-    }),
-  );
-}
-
-function auditActorFromRequest(
-  request: FastifyRequest,
-): KnowledgeAuditActorContext {
-  const context = auditContextFromRequest(request);
-  return {
-    requestId: context.requestId,
-    source: context.source,
-  };
-}
-
 function sendResult(
   reply: FastifyReply,
   result: KnowledgeApplicationResult<KnowledgeItem>,
@@ -428,8 +375,8 @@ export async function registerKnowledgeItemRoutes(
     },
     async (request, reply) => {
       const result = await service.create({
-        actor: actorFromRequest(request),
-        auditActor: auditActorFromRequest(request),
+        actor: knowledgeActorFromRequest(request),
+        auditActor: knowledgeAuditActorFromRequest(request),
         body: request.body as never,
       });
       return sendResult(reply, result, 201);
@@ -464,7 +411,7 @@ export async function registerKnowledgeItemRoutes(
         status?: (typeof knowledgeItemStatuses)[number];
       };
       const items = await service.list({
-        actor: actorFromRequest(request),
+        actor: knowledgeActorFromRequest(request),
         query: {
           limit: query.limit ?? 50,
           offset: query.offset ?? 0,
@@ -508,7 +455,7 @@ export async function registerKnowledgeItemRoutes(
       };
       return {
         count: await service.count({
-          actor: actorFromRequest(request),
+          actor: knowledgeActorFromRequest(request),
           scope: query.scope,
           status: query.status,
         }),
@@ -532,7 +479,7 @@ export async function registerKnowledgeItemRoutes(
     },
     async (request, reply) => {
       const result = await service.detail({
-        actor: actorFromRequest(request),
+        actor: knowledgeActorFromRequest(request),
         itemId: (request.params as { id: string }).id,
       });
       return sendResult(reply, result);
@@ -559,8 +506,8 @@ export async function registerKnowledgeItemRoutes(
     },
     async (request, reply) => {
       const result = await service.update({
-        actor: actorFromRequest(request),
-        auditActor: auditActorFromRequest(request),
+        actor: knowledgeActorFromRequest(request),
+        auditActor: knowledgeAuditActorFromRequest(request),
         itemId: (request.params as { id: string }).id,
         body: request.body as never,
       });
@@ -592,8 +539,8 @@ export async function registerKnowledgeItemRoutes(
         reasonCode: string;
       };
       const result = await service.remove({
-        actor: actorFromRequest(request),
-        auditActor: auditActorFromRequest(request),
+        actor: knowledgeActorFromRequest(request),
+        auditActor: knowledgeAuditActorFromRequest(request),
         itemId: (request.params as { id: string }).id,
         expectedVersion: body.expectedVersion,
         reasonCode: body.reasonCode,
@@ -622,8 +569,8 @@ export async function registerKnowledgeItemRoutes(
     },
     async (request, reply) => {
       const result = await service.restore({
-        actor: actorFromRequest(request),
-        auditActor: auditActorFromRequest(request),
+        actor: knowledgeActorFromRequest(request),
+        auditActor: knowledgeAuditActorFromRequest(request),
         itemId: (request.params as { id: string }).id,
         expectedVersion: (request.body as { expectedVersion: number })
           .expectedVersion,

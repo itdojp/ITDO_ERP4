@@ -41,6 +41,10 @@
 - [Storage artifact migration evidence template](storage-artifact-migration-template.md)
 - [Storage／backup統合readiness 記録テンプレート](storage-readiness-template.md)
 
+### 2026-08-05
+
+- [Issue #2011 Knowledge label core verification (PR1)](2026-08-05-issue2011-knowledge-label-core.md)
+
 ### 2026-08-04
 
 - [Issue #2010 Knowledge core schema / authorization / CRUD verification](2026-08-04-issue2010-knowledge-core.md)

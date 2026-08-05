@@ -148,6 +148,23 @@ enum KnowledgeDeletionReasonCode {
   owner_request
 }
 
+enum KnowledgeLabelAssignmentSource {
+  manual
+  import
+  ai_suggestion
+}
+
+enum KnowledgeLabelGrantCapability {
+  use
+  manage
+}
+
+enum KnowledgeSavedViewLabelOperator {
+  any
+  all
+  not
+}
+
 model Customer {
   id                    String    @id @default(uuid())
   code                  String    @unique
@@ -2206,6 +2223,7 @@ model KnowledgeItem {
   updatedAt          DateTime                     @updatedAt
   updatedBy          String?
   groupGrants        KnowledgeItemGroupGrant[]
+  labels             KnowledgeItemLabel[]
 
   @@index([ownerUserId, deletedAt, updatedAt])
   @@index([organizationId, scope, deletedAt, updatedAt])
@@ -2223,6 +2241,135 @@ model KnowledgeItemGroupGrant {
 
   @@unique([knowledgeItemId, groupAccountId])
   @@index([groupAccountId, knowledgeItemId])
+}
+
+model KnowledgeLabel {
+  id               String                          @id @default(uuid())
+  scope            KnowledgeItemScope
+  ownerUserId      String
+  organizationId   String?
+  displayName      String
+  slug             String
+  parent           KnowledgeLabel?                 @relation("KnowledgeLabelHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  parentId         String?
+  version          Int                             @default(1)
+  deletedAt        DateTime?
+  createdAt        DateTime                        @default(now())
+  createdBy        String?
+  updatedAt        DateTime                        @updatedAt
+  updatedBy        String?
+  children         KnowledgeLabel[]                @relation("KnowledgeLabelHierarchy")
+  aliases          KnowledgeLabelAlias[]
+  ancestorPaths    KnowledgeLabelPath[]            @relation("KnowledgeLabelPathAncestor")
+  descendantPaths  KnowledgeLabelPath[]            @relation("KnowledgeLabelPathDescendant")
+  itemLabels       KnowledgeItemLabel[]
+  groupGrants      KnowledgeLabelGroupGrant[]
+  savedViewFilters KnowledgeSavedViewLabelFilter[]
+
+  @@index([ownerUserId, deletedAt, updatedAt, id])
+  @@index([organizationId, deletedAt, updatedAt, id])
+  @@index([parentId, deletedAt, updatedAt, id])
+}
+
+model KnowledgeLabelAlias {
+  id              String         @id @default(uuid())
+  label           KnowledgeLabel @relation(fields: [labelId], references: [id], onDelete: Restrict)
+  labelId         String
+  alias           String
+  normalizedAlias String
+  createdAt       DateTime       @default(now())
+  createdBy       String?
+  updatedAt       DateTime       @updatedAt
+  updatedBy       String?
+
+  @@unique([labelId, normalizedAlias])
+  @@index([normalizedAlias, updatedAt, id])
+}
+
+model KnowledgeLabelPath {
+  id           String         @id @default(uuid())
+  ancestor     KnowledgeLabel @relation("KnowledgeLabelPathAncestor", fields: [ancestorId], references: [id], onDelete: Restrict)
+  ancestorId   String
+  descendant   KnowledgeLabel @relation("KnowledgeLabelPathDescendant", fields: [descendantId], references: [id], onDelete: Restrict)
+  descendantId String
+  depth        Int
+  createdAt    DateTime       @default(now())
+  createdBy    String?
+
+  @@unique([ancestorId, descendantId])
+  @@index([descendantId, depth, ancestorId])
+}
+
+model KnowledgeItemLabel {
+  id                    String                         @id @default(uuid())
+  knowledgeItem         KnowledgeItem                  @relation(fields: [knowledgeItemId], references: [id], onDelete: Restrict)
+  knowledgeItemId       String
+  label                 KnowledgeLabel                 @relation(fields: [labelId], references: [id], onDelete: Restrict)
+  labelId               String
+  assignmentSource      KnowledgeLabelAssignmentSource
+  assignedBy            String
+  confidenceBasisPoints Int?
+  detachedAt            DateTime?
+  detachedBy            String?
+  createdAt             DateTime                       @default(now())
+  updatedAt             DateTime                       @updatedAt
+
+  @@index([knowledgeItemId, detachedAt, updatedAt, id])
+  @@index([labelId, detachedAt, updatedAt, id])
+}
+
+model KnowledgeLabelGroupGrant {
+  id             String                        @id @default(uuid())
+  label          KnowledgeLabel                @relation(fields: [labelId], references: [id], onDelete: Restrict)
+  labelId        String
+  groupAccount   GroupAccount                  @relation(fields: [groupAccountId], references: [id], onDelete: Restrict)
+  groupAccountId String
+  capability     KnowledgeLabelGrantCapability
+  active         Boolean                       @default(true)
+  createdAt      DateTime                      @default(now())
+  createdBy      String?
+  updatedAt      DateTime                      @updatedAt
+  updatedBy      String?
+
+  @@unique([labelId, groupAccountId])
+  @@index([groupAccountId, active, updatedAt, id])
+}
+
+model KnowledgeSavedView {
+  id            String                          @id @default(uuid())
+  ownerUserId   String
+  name          String
+  sourceType    KnowledgeSourceType?
+  status        KnowledgeItemStatus?
+  scope         KnowledgeItemScope?
+  publishedFrom DateTime?
+  publishedTo   DateTime?
+  capturedFrom  DateTime?
+  capturedTo    DateTime?
+  schemaVersion Int                             @default(1)
+  version       Int                             @default(1)
+  deletedAt     DateTime?
+  createdAt     DateTime                        @default(now())
+  createdBy     String?
+  updatedAt     DateTime                        @updatedAt
+  updatedBy     String?
+  labelFilters  KnowledgeSavedViewLabelFilter[]
+
+  @@index([ownerUserId, deletedAt, updatedAt, id])
+}
+
+model KnowledgeSavedViewLabelFilter {
+  id                 String                          @id @default(uuid())
+  savedView          KnowledgeSavedView              @relation(fields: [savedViewId], references: [id], onDelete: Restrict)
+  savedViewId        String
+  label              KnowledgeLabel                  @relation(fields: [labelId], references: [id], onDelete: Restrict)
+  labelId            String
+  operator           KnowledgeSavedViewLabelOperator
+  includeDescendants Boolean                         @default(false)
+  createdAt          DateTime                        @default(now())
+
+  @@unique([savedViewId, labelId])
+  @@index([labelId, operator, savedViewId])
 }
 
 model ReassignmentLog {
@@ -2432,17 +2579,18 @@ model UserGroup {
 }
 
 model GroupAccount {
-  id                  String                    @id @default(uuid())
-  externalId          String?                   @unique
-  displayName         String
-  scimMeta            Json?
-  active              Boolean                   @default(true)
-  createdAt           DateTime                  @default(now())
-  createdBy           String?
-  updatedAt           DateTime                  @updatedAt
-  updatedBy           String?
-  memberships         UserGroup[]
-  knowledgeItemGrants KnowledgeItemGroupGrant[]
+  id                   String                     @id @default(uuid())
+  externalId           String?                    @unique
+  displayName          String
+  scimMeta             Json?
+  active               Boolean                    @default(true)
+  createdAt            DateTime                   @default(now())
+  createdBy            String?
+  updatedAt            DateTime                   @updatedAt
+  updatedBy            String?
+  memberships          UserGroup[]
+  knowledgeItemGrants  KnowledgeItemGroupGrant[]
+  knowledgeLabelGrants KnowledgeLabelGroupGrant[]
 
   @@index([displayName])
 }

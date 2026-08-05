@@ -77,7 +77,7 @@ const contexts = [
     displayName: 'Knowledge Hub',
     patterns: [
       '^src/application/knowledge/.+\\.ts$',
-      '^src/routes/knowledgeItems\\.ts$',
+      '^src/routes/knowledge(Items|Labels|RouteContext)\\.ts$',
     ],
   },
   {
