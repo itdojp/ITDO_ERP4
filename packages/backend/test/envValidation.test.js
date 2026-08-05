@@ -512,12 +512,14 @@ test('envValidation: non-Chat Google Drive providers require common credentials 
     PDF_PROVIDER: 'gdrive',
     EVIDENCE_ARCHIVE_PROVIDER: 'gdrive',
     REPORT_PROVIDER: 'gdrive',
+    KNOWLEDGE_SNAPSHOT_PROVIDER: 'gdrive',
     ERP4_GDRIVE_CLIENT_ID: 'common-client-placeholder',
     ERP4_GDRIVE_CLIENT_SECRET: 'common-secret-placeholder',
     ERP4_GDRIVE_REFRESH_TOKEN: 'common-refresh-placeholder',
     PDF_GDRIVE_FOLDER_ID: 'pdf-folder-placeholder',
     EVIDENCE_ARCHIVE_GDRIVE_FOLDER_ID: 'evidence-folder-placeholder',
     REPORT_GDRIVE_FOLDER_ID: 'report-folder-placeholder',
+    KNOWLEDGE_GDRIVE_FOLDER_ID: 'knowledge-folder-placeholder',
   });
 
   assert.equal(result.status, 0, result.stderr);
@@ -545,6 +547,7 @@ test('envValidation: non-Chat Google Drive reports every missing context folder'
     PDF_PROVIDER: 'gdrive',
     EVIDENCE_ARCHIVE_PROVIDER: 'gdrive',
     REPORT_PROVIDER: 'gdrive',
+    KNOWLEDGE_SNAPSHOT_PROVIDER: 'gdrive',
     ERP4_GDRIVE_CLIENT_ID: 'common-client-placeholder',
     ERP4_GDRIVE_CLIENT_SECRET: 'common-secret-placeholder',
     ERP4_GDRIVE_REFRESH_TOKEN: 'common-refresh-placeholder',
@@ -554,6 +557,29 @@ test('envValidation: non-Chat Google Drive reports every missing context folder'
   assert.match(result.stderr, /PDF_GDRIVE_FOLDER_ID/);
   assert.match(result.stderr, /EVIDENCE_ARCHIVE_GDRIVE_FOLDER_ID/);
   assert.match(result.stderr, /REPORT_GDRIVE_FOLDER_ID/);
+  assert.match(result.stderr, /KNOWLEDGE_GDRIVE_FOLDER_ID/);
+});
+
+test('envValidation: knowledge snapshot provider rejects unsupported values', () => {
+  const result = runEnvValidation({ KNOWLEDGE_SNAPSHOT_PROVIDER: 's3' });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /KNOWLEDGE_SNAPSHOT_PROVIDER/);
+});
+
+test('envValidation: Knowledge Google Drive never falls back to legacy Chat credentials', () => {
+  const result = runEnvValidation({
+    KNOWLEDGE_SNAPSHOT_PROVIDER: 'gdrive',
+    KNOWLEDGE_GDRIVE_FOLDER_ID: 'knowledge-folder-placeholder',
+    CHAT_ATTACHMENT_GDRIVE_CLIENT_ID: 'sensitive-legacy-client',
+    CHAT_ATTACHMENT_GDRIVE_CLIENT_SECRET: 'sensitive-legacy-secret',
+    CHAT_ATTACHMENT_GDRIVE_REFRESH_TOKEN: 'sensitive-legacy-refresh',
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /ERP4_GDRIVE_CLIENT_ID/);
+  assert.match(result.stderr, /ERP4_GDRIVE_CLIENT_SECRET/);
+  assert.match(result.stderr, /ERP4_GDRIVE_REFRESH_TOKEN/);
+  assert.doesNotMatch(result.stderr, /sensitive-legacy/);
 });
 
 test('envValidation: report provider rejects unsupported values', () => {

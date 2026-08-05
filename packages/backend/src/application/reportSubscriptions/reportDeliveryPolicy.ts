@@ -7,6 +7,8 @@ const NON_RETRYABLE_ERRORS = new Set([
   'pdf_missing',
   'pdf_template_missing',
   'artifact_not_found',
+  'artifact_provider_key_invalid',
+  'artifact_local_io_failed',
   'artifact_owner_scope_invalid',
   'report_artifact_size_invalid',
   'google_drive_auth_expired',

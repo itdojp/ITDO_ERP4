@@ -597,6 +597,19 @@ export function assertValidBackendEnv() {
     );
   }
 
+  const knowledgeSnapshotProvider = (
+    process.env.KNOWLEDGE_SNAPSHOT_PROVIDER || 'local'
+  )
+    .trim()
+    .toLowerCase();
+  if (!new Set(['local', 'gdrive']).has(knowledgeSnapshotProvider)) {
+    addIssue(
+      issues,
+      'KNOWLEDGE_SNAPSHOT_PROVIDER',
+      'local|gdrive のいずれかを指定してください',
+    );
+  }
+
   const nonChatGoogleDriveContexts = [
     {
       enabled: pdfProvider === 'gdrive',
@@ -609,6 +622,10 @@ export function assertValidBackendEnv() {
     {
       enabled: reportProvider === 'gdrive',
       folderKey: 'REPORT_GDRIVE_FOLDER_ID',
+    },
+    {
+      enabled: knowledgeSnapshotProvider === 'gdrive',
+      folderKey: 'KNOWLEDGE_GDRIVE_FOLDER_ID',
     },
   ];
   if (nonChatGoogleDriveContexts.some((context) => context.enabled)) {

@@ -1,10 +1,27 @@
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import test from 'node:test';
 
 const publicLookup = async () => [{ address: '93.184.216.34' }];
 
 async function loadSafeHttpClient() {
   return import('../dist/services/safeHttpClient.js');
+}
+
+async function withHttpServer(handler, fn) {
+  const server = createServer(handler);
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  try {
+    return await fn(`http://127.0.0.1:${address.port}`, server);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
 }
 
 test('validateExternalUrl allows https public host', async () => {
@@ -71,59 +88,275 @@ test('validateExternalUrl rejects host not in allowlist', async () => {
   );
 });
 
-test('safeFetch enforces redirect=error and default user-agent', async () => {
+test('safeFetch blocks every 3xx response and sends the default user-agent', async () => {
   const { safeFetch } = await loadSafeHttpClient();
-  let capturedInit = null;
-  const res = await safeFetch(
-    'https://example.com/path',
-    { method: 'POST', body: '{"ok":true}' },
-    {
-      dnsLookupImpl: publicLookup,
-      fetchImpl: async (_input, init) => {
-        capturedInit = init;
-        return new Response('{}', {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      },
+  await withHttpServer(
+    (request, response) => {
+      if (request.url === '/redirect') {
+        response.writeHead(302, { location: '/unexpected' });
+        response.end();
+        return;
+      }
+      if (request.url === '/redirect-without-location') {
+        response.writeHead(302);
+        response.end();
+        return;
+      }
+      assert.notEqual(request.url, '/unexpected');
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end('{}');
+    },
+    async (baseUrl) => {
+      const res = await safeFetch(
+        `${baseUrl}/path`,
+        { method: 'POST', body: '{"ok":true}' },
+        { allowHttp: true, allowPrivateIp: true },
+      );
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get('content-type'), 'application/json');
+
+      await assert.rejects(
+        safeFetch(
+          `${baseUrl}/redirect`,
+          {},
+          {
+            allowHttp: true,
+            allowPrivateIp: true,
+          },
+        ),
+        (error) => error?.code === 'redirect_blocked',
+      );
+      await assert.rejects(
+        safeFetch(
+          `${baseUrl}/redirect-without-location`,
+          {},
+          {
+            allowHttp: true,
+            allowPrivateIp: true,
+          },
+        ),
+        (error) => error?.code === 'redirect_blocked',
+      );
     },
   );
-  assert.equal(res.status, 200);
-  assert.equal(capturedInit?.redirect, 'error');
-  const headers = new Headers(capturedInit?.headers);
-  assert.equal(headers.get('user-agent'), 'ITDO_ERP4/0.1');
+
+  await withHttpServer(
+    (request, response) => {
+      assert.equal(request.headers['user-agent'], 'ITDO_ERP4/0.1');
+      response.end('ok');
+    },
+    async (baseUrl) => {
+      const response = await safeFetch(
+        `${baseUrl}/agent`,
+        {},
+        {
+          allowHttp: true,
+          allowPrivateIp: true,
+        },
+      );
+      assert.equal(response.status, 200);
+    },
+  );
 });
 
-test('safeFetch propagates caller abort signal', async () => {
+test('safeFetch destroys a trickling 3xx response instead of leaving its socket open', async () => {
   const { safeFetch } = await loadSafeHttpClient();
-  const callerController = new AbortController();
-  const call = safeFetch(
-    'https://example.com/path',
-    { signal: callerController.signal },
-    {
-      dnsLookupImpl: publicLookup,
-      fetchImpl: async (_input, init) => {
-        if (init?.signal?.aborted) {
-          const error = new Error('aborted');
-          error.name = 'AbortError';
-          throw error;
-        }
-        return new Promise((_resolve, reject) => {
-          init?.signal?.addEventListener(
-            'abort',
-            () => {
-              const error = new Error('aborted');
-              error.name = 'AbortError';
-              reject(error);
-            },
-            { once: true },
-          );
-        });
-      },
+  let resolveResponseClosed;
+  const responseClosed = new Promise((resolve) => {
+    resolveResponseClosed = resolve;
+  });
+  let emitted = 0;
+
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(302, { location: '/never-followed' });
+      response.flushHeaders();
+      const interval = setInterval(() => {
+        emitted += 1;
+        response.write('x');
+      }, 10);
+      response.once('close', () => {
+        clearInterval(interval);
+        resolveResponseClosed();
+      });
+    },
+    async (baseUrl, server) => {
+      await assert.rejects(
+        safeFetch(
+          `${baseUrl}/trickling-redirect`,
+          {},
+          {
+            allowHttp: true,
+            allowPrivateIp: true,
+            timeoutMs: 50,
+          },
+        ),
+        (error) => error?.code === 'redirect_blocked',
+      );
+
+      let timeout;
+      try {
+        await Promise.race([
+          responseClosed,
+          new Promise((_, reject) => {
+            timeout = setTimeout(
+              () => reject(new Error('redirect response socket remained open')),
+              500,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(timeout);
+      }
+      const emittedAtClose = emitted;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      assert.equal(emitted, emittedAtClose);
+      assert.equal(
+        await new Promise((resolve, reject) => {
+          server.getConnections((error, count) => {
+            if (error) reject(error);
+            else resolve(count);
+          });
+        }),
+        0,
+      );
     },
   );
-  callerController.abort();
-  await assert.rejects(call, (error) => error?.name === 'AbortError');
+});
+
+test('safeFetch represents HTTP 204 and 205 responses with a null body', async () => {
+  const { safeFetch } = await loadSafeHttpClient();
+
+  for (const status of [204, 205]) {
+    await withHttpServer(
+      (_request, response) => {
+        response.writeHead(status);
+        response.end();
+      },
+      async (baseUrl) => {
+        const response = await safeFetch(
+          `${baseUrl}/null-body`,
+          {},
+          { allowHttp: true, allowPrivateIp: true },
+        );
+        assert.equal(response.status, status);
+        assert.equal(response.body, null);
+        assert.equal(await response.text(), '');
+      },
+    );
+  }
+});
+
+test('safeFetch rejects invalid HTTP response status without an uncaught exception', async () => {
+  const { safeFetch } = await loadSafeHttpClient();
+
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(600);
+      response.end();
+    },
+    async (baseUrl) => {
+      await assert.rejects(
+        safeFetch(
+          `${baseUrl}/invalid-status`,
+          {},
+          { allowHttp: true, allowPrivateIp: true },
+        ),
+        (error) => error?.code === 'invalid_response',
+      );
+    },
+  );
+});
+
+test('safeFetch propagates caller abort before response headers', async () => {
+  const { safeFetch } = await loadSafeHttpClient();
+  await withHttpServer(
+    (_request, _response) => {
+      // Keep the response open until the caller aborts the request.
+    },
+    async (baseUrl) => {
+      const callerController = new AbortController();
+      const call = safeFetch(
+        `${baseUrl}/stalled`,
+        { signal: callerController.signal },
+        { allowHttp: true, allowPrivateIp: true },
+      );
+      callerController.abort();
+      await assert.rejects(call, (error) => error?.name === 'AbortError');
+    },
+  );
+});
+
+test('safeFetch propagates caller abort after headers to the response body', async () => {
+  const { safeFetch } = await loadSafeHttpClient();
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'text/plain' });
+      response.flushHeaders();
+      response.write('partial');
+    },
+    async (baseUrl) => {
+      const callerController = new AbortController();
+      const response = await safeFetch(
+        `${baseUrl}/stalled-body`,
+        { signal: callerController.signal },
+        { allowHttp: true, allowPrivateIp: true, timeoutMs: 5000 },
+      );
+      callerController.abort();
+      await assert.rejects(
+        response.text(),
+        (error) => error?.name === 'AbortError',
+      );
+    },
+  );
+});
+
+test('safeFetch timeout remains active while the response body is stalled', async () => {
+  const { safeFetch } = await loadSafeHttpClient();
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'text/plain' });
+      response.flushHeaders();
+      response.write('partial');
+    },
+    async (baseUrl) => {
+      const startedAt = Date.now();
+      const response = await safeFetch(
+        `${baseUrl}/timed-out-body`,
+        {},
+        { allowHttp: true, allowPrivateIp: true, timeoutMs: 30 },
+      );
+      await assert.rejects(
+        response.text(),
+        (error) => error?.name === 'AbortError',
+      );
+      assert.ok(Date.now() - startedAt < 500);
+    },
+  );
+});
+
+test('safeFetch does not treat a prematurely closed response body as success', async () => {
+  const { safeFetch } = await loadSafeHttpClient();
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, {
+        connection: 'close',
+        'content-length': '32',
+        'content-type': 'text/plain',
+      });
+      response.flushHeaders();
+      response.write('partial');
+      setTimeout(() => response.destroy(), 10);
+    },
+    async (baseUrl) => {
+      const response = await safeFetch(
+        `${baseUrl}/truncated-body`,
+        {},
+        { allowHttp: true, allowPrivateIp: true, timeoutMs: 1000 },
+      );
+      await assert.rejects(response.text());
+    },
+  );
 });
 
 test('safeFetch exposes pinned lookup from validated DNS results', async () => {

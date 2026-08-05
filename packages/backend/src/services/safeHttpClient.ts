@@ -4,8 +4,6 @@ import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
 import { Readable } from 'node:stream';
 
-const NATIVE_FETCH = globalThis.fetch;
-
 export type DnsLookupResult = Array<{ address: string; family?: number }>;
 
 type ValidatedExternalUrl = {
@@ -20,7 +18,6 @@ export type SafeHttpOptions = {
   timeoutMs?: number;
   userAgent?: string;
   dnsLookupImpl?: (hostname: string) => Promise<DnsLookupResult>;
-  fetchImpl?: typeof fetch;
 };
 
 export class SafeHttpError extends Error {
@@ -253,6 +250,7 @@ async function pinnedRequestFetch(
     pinnedAddresses: DnsLookupResult;
     timeoutMs: number;
     headers: Headers;
+    onResponseSettled: () => void;
   },
 ) {
   const body = await requestBodyToBuffer(init.body);
@@ -271,20 +269,51 @@ async function pinnedRequestFetch(
         lookup: lookup as any,
       },
       (response) => {
+        const responseSettled = () => options.onResponseSettled();
+        response.once('end', responseSettled);
+        response.once('close', responseSettled);
+        response.once('error', responseSettled);
+        const callerSignal = init.signal;
+        const abortResponse = () => {
+          const error = new Error('aborted');
+          error.name = 'AbortError';
+          response.destroy(error);
+        };
+        if (callerSignal) {
+          if (callerSignal.aborted) {
+            abortResponse();
+          } else {
+            callerSignal.addEventListener('abort', abortResponse, {
+              once: true,
+            });
+            response.once('close', () => {
+              callerSignal.removeEventListener('abort', abortResponse);
+            });
+          }
+        }
         const status = response.statusCode || 0;
-        if (status >= 300 && status < 400 && response.headers.location) {
-          response.resume();
+        if (status >= 300 && status < 400) {
+          response.destroy();
           reject(new SafeHttpError('redirect_blocked'));
           return;
         }
-        const webStream = Readable.toWeb(response) as unknown as BodyInit;
-        resolve(
-          new Response(webStream, {
+        try {
+          const responseInit = {
             status,
             statusText: response.statusMessage,
             headers: responseHeadersFromNode(response.headers),
-          }),
-        );
+          };
+          if (status === 204 || status === 205) {
+            response.destroy();
+            resolve(new Response(null, responseInit));
+            return;
+          }
+          const webStream = Readable.toWeb(response) as unknown as BodyInit;
+          resolve(new Response(webStream, responseInit));
+        } catch {
+          response.destroy();
+          reject(new SafeHttpError('invalid_response'));
+        }
       },
     );
     request.on('error', reject);
@@ -324,9 +353,6 @@ export async function safeFetch(
   const timeoutMs = Number.isFinite(options.timeoutMs)
     ? Math.max(1, Math.floor(options.timeoutMs as number))
     : 5000;
-  const fetchImpl =
-    options.fetchImpl ||
-    (globalThis.fetch !== NATIVE_FETCH ? globalThis.fetch : undefined);
   const userAgent = (options.userAgent || '').trim() || 'ITDO_ERP4/0.1';
 
   const controller = new AbortController();
@@ -342,28 +368,33 @@ export async function safeFetch(
     }
   }
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  timer.unref?.();
+  let cleanedUp = false;
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    clearTimeout(timer);
+    if (callerSignal) {
+      callerSignal.removeEventListener('abort', abortFromCaller);
+    }
+  };
   try {
     const headers = new Headers(init.headers || {});
     if (!headers.has('User-Agent')) {
       headers.set('User-Agent', userAgent);
     }
-    if (fetchImpl) {
-      return await fetchImpl(validatedUrl.toString(), {
-        ...init,
-        headers,
-        redirect: 'error',
-        signal: controller.signal,
-      });
-    }
     return await pinnedRequestFetch(
       validatedUrl,
       { ...init, signal: controller.signal },
-      { pinnedAddresses, timeoutMs, headers },
+      {
+        pinnedAddresses,
+        timeoutMs,
+        headers,
+        onResponseSettled: cleanup,
+      },
     );
-  } finally {
-    clearTimeout(timer);
-    if (callerSignal) {
-      callerSignal.removeEventListener('abort', abortFromCaller);
-    }
+  } catch (error) {
+    cleanup();
+    throw error;
   }
 }

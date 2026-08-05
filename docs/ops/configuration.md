@@ -132,11 +132,19 @@ Report生成物:
 - `REPORT_PROVIDER=local|gdrive`（既定: `local`）
 - `REPORT_PROVIDER=local`では`REPORT_STORAGE_DIR`を使用する
 - `REPORT_PROVIDER=gdrive`では完全な`ERP4_GDRIVE_*` setと`REPORT_GDRIVE_FOLDER_ID`が必須。delivery payloadにはDrive URLではなくartifact UUIDを保存し、retry時は同じartifactを再利用する
+
+### Knowledge snapshot storage
+
+- `KNOWLEDGE_SNAPSHOT_PROVIDER=local|gdrive`（既定: `local`）
+- `local`では`KNOWLEDGE_STORAGE_DIR`（既定: `/tmp/erp4/knowledge-snapshots`）を使用する
+- `gdrive`では完全な`ERP4_GDRIVE_*` setと`KNOWLEDGE_GDRIVE_FOLDER_ID`が必須。Knowledge専用owner-scoped wrapperを経由し、Drive URL/folder ID/provider keyはAPIへ返さない
+- repository-side fake/local検証は実Google Drive成功を意味しない。実credential、folder、Shared Driveの検証は別承認・別証跡とする
+- capture上限は1 artifact 10 MiB、text/HTML 1 MiB、URL fetch全体10秒。HTMLはraw artifactをinline表示せず、plain-text representationとattachment downloadへ分離する
 - gdrive障害時にlocalへ暗黙fallbackしない。provider readinessは#1980の運用監視で判定し、process healthzとは分離する
 
 Storage artifact migration:
 
-- `PDF_GDRIVE_FOLDER_ID` / `EVIDENCE_ARCHIVE_GDRIVE_FOLDER_ID` / `REPORT_GDRIVE_FOLDER_ID`は、対応するruntime providerが`gdrive`の場合または実Google Driveへのmigration `--apply`時に必須
+- `PDF_GDRIVE_FOLDER_ID` / `EVIDENCE_ARCHIVE_GDRIVE_FOLDER_ID` / `REPORT_GDRIVE_FOLDER_ID` / `KNOWLEDGE_GDRIVE_FOLDER_ID`は、対応するruntime providerが`gdrive`の場合または実Google Driveへのmigration `--apply`時に必須
 - helperはdry-run既定で、source削除・provider切替を行わない
 - 詳細は[storage-artifact-migration](storage-artifact-migration.md)を参照
 

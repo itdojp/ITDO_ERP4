@@ -148,6 +148,18 @@ enum KnowledgeDeletionReasonCode {
   owner_request
 }
 
+enum KnowledgeSnapshotStatus {
+  pending
+  ready
+  failed
+}
+
+enum KnowledgeSnapshotCaptureMethod {
+  text
+  url
+  upload
+}
+
 enum KnowledgeLabelAssignmentSource {
   manual
   import
@@ -2090,23 +2102,24 @@ model ReportDelivery {
 }
 
 model StorageArtifact {
-  id             String    @id @default(uuid())
-  context        String
-  provider       String
-  providerKey    String?
-  status         String    @default("pending")
-  idempotencyKey String?
-  originalName   String
-  contentType    String?
-  sizeBytes      BigInt
-  sha256         String
-  ownerType      String?
-  ownerId        String?
-  failureCode    String?
-  createdAt      DateTime  @default(now())
-  createdBy      String?
-  updatedAt      DateTime  @updatedAt
-  deletedAt      DateTime?
+  id                String             @id @default(uuid())
+  context           String
+  provider          String
+  providerKey       String?
+  status            String             @default("pending")
+  idempotencyKey    String?
+  originalName      String
+  contentType       String?
+  sizeBytes         BigInt
+  sha256            String
+  ownerType         String?
+  ownerId           String?
+  failureCode       String?
+  createdAt         DateTime           @default(now())
+  createdBy         String?
+  updatedAt         DateTime           @updatedAt
+  deletedAt         DateTime?
+  knowledgeSnapshot KnowledgeSnapshot?
 
   @@unique([context, provider, providerKey])
   @@unique([context, provider, idempotencyKey])
@@ -2224,6 +2237,7 @@ model KnowledgeItem {
   updatedBy          String?
   groupGrants        KnowledgeItemGroupGrant[]
   labels             KnowledgeItemLabel[]
+  snapshots          KnowledgeSnapshot[]
 
   @@index([ownerUserId, deletedAt, updatedAt])
   @@index([organizationId, scope, deletedAt, updatedAt])
@@ -2231,6 +2245,36 @@ model KnowledgeItem {
   @@index([ownerUserId, deletedAt, updatedAt, id])
   @@index([organizationId, scope, deletedAt, updatedAt, id])
   @@index([scope, status, deletedAt, updatedAt, id])
+}
+
+model KnowledgeSnapshot {
+  id                 String                         @id @default(uuid())
+  knowledgeItem      KnowledgeItem                  @relation(fields: [knowledgeItemId], references: [id], onDelete: Restrict)
+  knowledgeItemId    String
+  artifact           StorageArtifact?               @relation(fields: [artifactId], references: [id], onDelete: Restrict)
+  artifactId         String?                        @unique
+  version            Int
+  status             KnowledgeSnapshotStatus        @default(pending)
+  captureMethod      KnowledgeSnapshotCaptureMethod
+  sourceUrl          String?
+  originalName       String
+  contentType        String?
+  sizeBytes          BigInt?
+  sha256             String?
+  extractedText      String?                        @db.Text
+  requestKeyHash     String
+  requestPayloadHash String
+  failureCode        String?
+  capturedAt         DateTime                       @default(now())
+  capturedBy         String
+  readyAt            DateTime?
+  failedAt           DateTime?
+  createdAt          DateTime                       @default(now())
+  updatedAt          DateTime                       @updatedAt
+
+  @@unique([knowledgeItemId, version])
+  @@unique([knowledgeItemId, requestKeyHash])
+  @@index([knowledgeItemId, status, createdAt])
 }
 
 model KnowledgeItemGroupGrant {

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import test from 'node:test';
 
 function withEnv(overrides, fn) {
@@ -24,37 +25,59 @@ function withEnv(overrides, fn) {
     });
 }
 
+async function withHttpServer(handler, fn) {
+  const server = createServer(handler);
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  try {
+    return await fn(`http://127.0.0.1:${address.port}`);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
 test('sendEmail redacts bounded SendGrid failure diagnostics', async () => {
   const { sendEmail } = await import('../dist/services/notifier.js');
-  const originalFetch = globalThis.fetch;
   const originalConsoleError = console.error;
   const errors = [];
   try {
-    globalThis.fetch = async () =>
-      new Response(`authorization=Bearer reflected ${'x'.repeat(3000)}`, {
-        status: 500,
-        headers: { 'x-request-id': 'sg-req-1' },
-      });
     console.error = (...args) => {
       errors.push(args);
     };
-    await withEnv(
-      {
-        MAIL_TRANSPORT: 'sendgrid',
-        SENDGRID_API_KEY: 'sendgrid-secret',
-        SENDGRID_BASE_URL: 'https://127.0.0.1/v3',
-        SENDGRID_ALLOW_PRIVATE_IP: 'true',
-        SENDGRID_ALLOWED_HOSTS: '',
-        MAIL_FROM: 'noreply@example.com',
+    await withHttpServer(
+      (_request, response) => {
+        response.writeHead(500, { 'x-request-id': 'sg-req-1' });
+        response.end(`authorization=Bearer reflected ${'x'.repeat(3000)}`);
       },
-      async () => {
-        const result = await sendEmail(['user@example.com'], 'subject', 'body');
-        assert.equal(result.status, 'failed');
-        assert.equal(result.error, 'sendgrid_500');
+      async (baseUrl) => {
+        await withEnv(
+          {
+            MAIL_TRANSPORT: 'sendgrid',
+            SENDGRID_API_KEY: 'sendgrid-secret',
+            SENDGRID_BASE_URL: `${baseUrl}/v3`,
+            SENDGRID_ALLOW_HTTP: 'true',
+            SENDGRID_ALLOW_PRIVATE_IP: 'true',
+            SENDGRID_ALLOWED_HOSTS: '127.0.0.1',
+            MAIL_FROM: 'noreply@example.com',
+          },
+          async () => {
+            const result = await sendEmail(
+              ['user@example.com'],
+              'subject',
+              'body',
+            );
+            assert.equal(result.status, 'failed');
+            assert.equal(result.error, 'sendgrid_500');
+          },
+        );
       },
     );
   } finally {
-    globalThis.fetch = originalFetch;
     console.error = originalConsoleError;
   }
   const failure = errors.find((entry) => entry[0] === '[sendgrid send failed]');
@@ -68,46 +91,51 @@ test('sendEmail redacts bounded SendGrid failure diagnostics', async () => {
 
 test('sendEmail accepts an in-memory attachment without requiring a local path', async () => {
   const { sendEmail } = await import('../dist/services/notifier.js');
-  const originalFetch = globalThis.fetch;
   let payload;
-  try {
-    globalThis.fetch = async (_url, init) => {
-      payload = JSON.parse(init.body);
-      return new Response(null, {
-        status: 202,
-        headers: { 'x-message-id': 'message-placeholder' },
+  await withHttpServer(
+    (request, response) => {
+      let body = '';
+      request.setEncoding('utf8');
+      request.on('data', (chunk) => {
+        body += chunk;
       });
-    };
-    await withEnv(
-      {
-        MAIL_TRANSPORT: 'sendgrid',
-        SENDGRID_API_KEY: 'test-placeholder',
-        SENDGRID_BASE_URL: 'https://127.0.0.1/v3',
-        SENDGRID_ALLOW_PRIVATE_IP: 'true',
-        SENDGRID_ALLOWED_HOSTS: '',
-        MAIL_FROM: 'noreply@example.com',
-      },
-      async () => {
-        const result = await sendEmail(
-          ['user@example.com'],
-          'subject',
-          'body',
-          {
-            attachments: [
-              {
-                filename: 'document.pdf',
-                content: Buffer.from('%PDF-placeholder', 'utf8'),
-                contentType: 'application/pdf',
-              },
-            ],
-          },
-        );
-        assert.equal(result.status, 'success');
-      },
-    );
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+      request.on('end', () => {
+        payload = JSON.parse(body);
+        response.writeHead(202, { 'x-message-id': 'message-placeholder' });
+        response.end();
+      });
+    },
+    async (baseUrl) => {
+      await withEnv(
+        {
+          MAIL_TRANSPORT: 'sendgrid',
+          SENDGRID_API_KEY: 'test-placeholder',
+          SENDGRID_BASE_URL: `${baseUrl}/v3`,
+          SENDGRID_ALLOW_HTTP: 'true',
+          SENDGRID_ALLOW_PRIVATE_IP: 'true',
+          SENDGRID_ALLOWED_HOSTS: '127.0.0.1',
+          MAIL_FROM: 'noreply@example.com',
+        },
+        async () => {
+          const result = await sendEmail(
+            ['user@example.com'],
+            'subject',
+            'body',
+            {
+              attachments: [
+                {
+                  filename: 'document.pdf',
+                  content: Buffer.from('%PDF-placeholder', 'utf8'),
+                  contentType: 'application/pdf',
+                },
+              ],
+            },
+          );
+          assert.equal(result.status, 'success');
+        },
+      );
+    },
+  );
   assert.equal(payload.attachments.length, 1);
   assert.equal(payload.attachments[0].filename, 'document.pdf');
   assert.equal(
