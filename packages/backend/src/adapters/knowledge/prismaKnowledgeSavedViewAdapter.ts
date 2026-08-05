@@ -366,7 +366,7 @@ export class PrismaKnowledgeSavedViewAuditWriter implements KnowledgeSavedViewAu
         action: entry.action,
         userId: entry.actor.userId.slice(0, 255),
         targetTable: 'knowledge_saved_views',
-        targetId: 'saved_view',
+        targetId: entry.targetId,
         requestId:
           requestId && requestIdPattern.test(requestId) ? requestId : undefined,
         source,

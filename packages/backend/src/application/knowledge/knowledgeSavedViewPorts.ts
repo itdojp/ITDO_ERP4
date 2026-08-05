@@ -96,6 +96,7 @@ export interface KnowledgeSavedViewAuditWriter {
   write(entry: {
     action: KnowledgeSavedViewAuditAction;
     actor: KnowledgeAuditActor;
+    targetId: string;
     version: number;
     schemaVersion: number;
   }): Promise<void>;

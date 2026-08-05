@@ -238,12 +238,13 @@ test('owner reads map hidden, deleted, and revoked current label references to g
       'invalid_saved_view',
     );
 
+    // list() silently drops stale views so the list remains usable
     const listResult = await harness.service.list({
       actor: actor(),
       query: { limit: 20, offset: 0 },
     });
-    assertFailure(listResult, 'invalid_saved_view', 400);
-    assert.equal(listResult.message, 'Invalid saved view');
+    assert.ok(listResult.ok, 'list must succeed even when views are stale');
+    assert.deepEqual(listResult.value, []);
   }
 });
 
@@ -325,6 +326,7 @@ test('create resolves and validates the current filter before mutation and audit
         requestId: 'request-1',
         source: 'api',
       },
+      targetId: 'view-1',
       version: 1,
       schemaVersion: 1,
     },
@@ -413,6 +415,7 @@ test('update validates only the replacement filter and can recover from stale ol
     {
       action: 'knowledge_saved_view_updated',
       actor: { userId: 'owner-1', requestId: 'request-2', source: undefined },
+      targetId: 'view-1',
       version: 5,
       schemaVersion: 1,
     },
@@ -454,6 +457,7 @@ test('delete is versioned and can remove a stale view without resolving old labe
     {
       action: 'knowledge_saved_view_deleted',
       actor: { userId: 'owner-1', requestId: undefined, source: 'api' },
+      targetId: 'view-1',
       version: 3,
       schemaVersion: 1,
     },
@@ -588,11 +592,13 @@ test('execute preserves invalid_cursor without exposing saved-view contents', as
 test('unsupported schemaVersion is generic invalid_saved_view for read and execute', async () => {
   const harness = createHarness({ view: savedView({ schemaVersion: 2 }) });
 
+  // list silently drops views with unsupported schemaVersion
   const listResult = await harness.service.list({
     actor: actor(),
     query: { limit: 10, offset: 0 },
   });
-  assertFailure(listResult, 'invalid_saved_view', 400);
+  assert.ok(listResult.ok, 'list must succeed');
+  assert.deepEqual(listResult.value, []);
 
   const detailResult = await harness.service.detail({
     actor: actor(),
