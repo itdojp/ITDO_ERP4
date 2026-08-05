@@ -82,8 +82,7 @@ function validateArtifactMetadata(
   }
 }
 
-function validateStoreInput(input: StoreArtifactInput) {
-  validateArtifactMetadata(input);
+function validateBufferBody(input: StoreArtifactInput) {
   if (!Buffer.isBuffer(input.body)) return;
   if (input.body.length !== input.sizeBytes) {
     throw new Error('artifact_size_invalid');
@@ -561,7 +560,7 @@ export function createArtifactStorageAdapter(
     },
 
     async store(input) {
-      validateStoreInput(input);
+      validateArtifactMetadata(input);
       const where = input.idempotencyKey
         ? {
             context_provider_idempotencyKey: {
@@ -582,6 +581,7 @@ export function createArtifactStorageAdapter(
           if (recovered) return recovered;
           throw new Error('artifact_store_in_progress');
         }
+        validateBufferBody(input);
         const claimed = await db.storageArtifact.updateMany({
           where: { id: row.id, status: 'failed' },
           data: { status: 'pending', failureCode: null },
@@ -590,6 +590,7 @@ export function createArtifactStorageAdapter(
           throw new Error('artifact_store_in_progress');
         }
       } else {
+        validateBufferBody(input);
         try {
           row = await db.storageArtifact.create({
             data: {

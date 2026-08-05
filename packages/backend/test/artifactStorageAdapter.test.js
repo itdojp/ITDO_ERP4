@@ -11,6 +11,7 @@ import {
   rm,
   writeFile,
 } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
@@ -1206,7 +1207,7 @@ test('invalid metadata is rejected before creating a pending row', async () => {
   assert.equal(db.rows.length, 0);
 });
 
-test('Buffer size and checksum mismatches fail before database or provider I/O', async (t) => {
+test('Buffer size and checksum mismatches fail before database mutation or provider I/O', async (t) => {
   for (const scenario of [
     {
       name: 'size mismatch',
@@ -1254,5 +1255,29 @@ test('Buffer size and checksum mismatches fail before database or provider I/O',
       assert.equal(db.rows.length, 0);
       assert.equal(providerCalls, 0);
     });
+  }
+});
+
+test('an existing ready artifact preserves idempotent reuse before Buffer body validation', async () => {
+  const db = createArtifactDb();
+  const directory = await mkdtemp(path.join(tmpdir(), 'erp4-artifact-reuse-'));
+  try {
+    const adapter = createArtifactStorageAdapter({
+      context: 'report',
+      db,
+      env: {},
+      folderEnvKey: 'REPORT_GDRIVE_FOLDER_ID',
+      localDir: directory,
+      provider: 'local',
+    });
+    const first = await adapter.store(input());
+    const reused = await adapter.store({
+      ...input(),
+      body: Buffer.from('different-body'),
+    });
+    assert.deepEqual(reused, first);
+    assert.equal(db.rows.length, 1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });

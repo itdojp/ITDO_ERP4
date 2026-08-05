@@ -143,7 +143,7 @@ test('safeFetch blocks redirects and sends the default user-agent', async () => 
   );
 });
 
-test('safeFetch propagates caller abort signal', async () => {
+test('safeFetch propagates caller abort before response headers', async () => {
   const { safeFetch } = await loadSafeHttpClient();
   await withHttpServer(
     (_request, _response) => {
@@ -158,6 +158,78 @@ test('safeFetch propagates caller abort signal', async () => {
       );
       callerController.abort();
       await assert.rejects(call, (error) => error?.name === 'AbortError');
+    },
+  );
+});
+
+test('safeFetch propagates caller abort after headers to the response body', async () => {
+  const { safeFetch } = await loadSafeHttpClient();
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'text/plain' });
+      response.flushHeaders();
+      response.write('partial');
+    },
+    async (baseUrl) => {
+      const callerController = new AbortController();
+      const response = await safeFetch(
+        `${baseUrl}/stalled-body`,
+        { signal: callerController.signal },
+        { allowHttp: true, allowPrivateIp: true, timeoutMs: 5000 },
+      );
+      callerController.abort();
+      await assert.rejects(
+        response.text(),
+        (error) => error?.name === 'AbortError',
+      );
+    },
+  );
+});
+
+test('safeFetch timeout remains active while the response body is stalled', async () => {
+  const { safeFetch } = await loadSafeHttpClient();
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'text/plain' });
+      response.flushHeaders();
+      response.write('partial');
+    },
+    async (baseUrl) => {
+      const startedAt = Date.now();
+      const response = await safeFetch(
+        `${baseUrl}/timed-out-body`,
+        {},
+        { allowHttp: true, allowPrivateIp: true, timeoutMs: 30 },
+      );
+      await assert.rejects(
+        response.text(),
+        (error) => error?.name === 'AbortError',
+      );
+      assert.ok(Date.now() - startedAt < 500);
+    },
+  );
+});
+
+test('safeFetch does not treat a prematurely closed response body as success', async () => {
+  const { safeFetch } = await loadSafeHttpClient();
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, {
+        connection: 'close',
+        'content-length': '32',
+        'content-type': 'text/plain',
+      });
+      response.flushHeaders();
+      response.write('partial');
+      setTimeout(() => response.destroy(), 10);
+    },
+    async (baseUrl) => {
+      const response = await safeFetch(
+        `${baseUrl}/truncated-body`,
+        {},
+        { allowHttp: true, allowPrivateIp: true, timeoutMs: 1000 },
+      );
+      await assert.rejects(response.text());
     },
   );
 });
