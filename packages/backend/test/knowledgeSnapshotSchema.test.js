@@ -21,6 +21,11 @@ const openapi = JSON.parse(
   ),
 );
 
+function snapshotCaptureRequestSchema() {
+  return openapi.paths['/knowledge/items/{itemId}/snapshots'].post.requestBody
+    .content['application/json'].schema;
+}
+
 function schemaBlock(kind, name) {
   const match = schema.match(
     new RegExp(`\\b${kind} ${name}\\s*\\{([\\s\\S]*?)\\n\\}`),
@@ -50,6 +55,25 @@ test('schema adds typed snapshot lifecycle and capture method enums', () => {
     migration,
     /CREATE TYPE "KnowledgeSnapshotCaptureMethod" AS ENUM \('text', 'url', 'upload'\)/,
   );
+});
+
+test('OpenAPI requires the capture-method-specific text or URL payload', () => {
+  const requestSchema = snapshotCaptureRequestSchema();
+  assert.equal(requestSchema.oneOf.length, 2);
+
+  const byCaptureMethod = Object.fromEntries(
+    requestSchema.oneOf.map((variant) => [
+      variant.properties.captureMethod.enum[0],
+      variant,
+    ]),
+  );
+  assert.deepEqual(Object.keys(byCaptureMethod).sort(), ['text', 'url']);
+  assert.deepEqual(requestSchema.required, ['captureMethod', 'requestKey']);
+  assert.deepEqual(byCaptureMethod.text.required, ['captureMethod', 'text']);
+  assert.deepEqual(byCaptureMethod.url.required, ['captureMethod', 'url']);
+  assert.deepEqual(byCaptureMethod.text.not.required, ['url']);
+  assert.deepEqual(byCaptureMethod.url.not.required, ['text']);
+  assert.equal(requestSchema.additionalProperties, false);
 });
 
 test('KnowledgeSnapshot models append-only item versions and bounded storage metadata', () => {

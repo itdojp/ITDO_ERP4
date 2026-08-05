@@ -198,6 +198,52 @@ test('text and URL capture map the canonical actor and audit context with create
   assert.equal(captured[1].url, 'https://example.invalid/article');
 });
 
+test('capture schema requires the payload selected by captureMethod before the service', async (t) => {
+  let calls = 0;
+  const app = await buildServer(
+    serviceStub({
+      capture: async () => {
+        calls += 1;
+        assert.fail('schema-invalid capture must not reach the service');
+      },
+    }),
+  );
+  t.after(() => app.close());
+
+  const invalidPayloads = [
+    {
+      captureMethod: 'text',
+      requestKey: 'missing-text',
+    },
+    {
+      captureMethod: 'url',
+      requestKey: 'missing-url',
+    },
+    {
+      captureMethod: 'text',
+      requestKey: 'text-with-url',
+      text: 'snapshot body',
+      url: 'https://example.invalid/article',
+    },
+    {
+      captureMethod: 'url',
+      requestKey: 'url-with-text',
+      url: 'https://example.invalid/article',
+      text: 'snapshot body',
+    },
+  ];
+
+  for (const payload of invalidPayloads) {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/knowledge/items/item-1/snapshots',
+      payload,
+    });
+    assert.equal(response.statusCode, 400, response.body);
+  }
+  assert.equal(calls, 0);
+});
+
 test('text capture accepts the documented UTF-8 byte limit with worst-case JSON escaping', async (t) => {
   let captured;
   const app = await buildServer(
@@ -380,6 +426,7 @@ test('multipart parser size errors map to a sanitized content-too-large response
 
   assert.equal(response.statusCode, 413, response.body);
   assert.equal(response.json().error?.code, 'snapshot_content_too_large');
+  assert.equal(response.json().error?.message, 'Snapshot content is too large');
   assert.doesNotMatch(response.body, /private parser detail/);
   assert.equal(calls, 0);
 });

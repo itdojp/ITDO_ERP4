@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import path from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
 
@@ -7,10 +9,12 @@ import {
   createKnowledgeArtifactPort,
   resolveKnowledgeSnapshotProvider,
 } from '../dist/adapters/knowledge/knowledgeArtifactStorageAdapter.js';
+import { createArtifactStorageAdapter } from '../dist/adapters/storage/artifactStorageAdapter.js';
 import {
   KnowledgeArtifactOpenError,
   KnowledgeArtifactStoreError,
 } from '../dist/application/knowledge/knowledgeArtifactPort.js';
+import { knowledgeSnapshotLimits } from '../dist/application/knowledge/knowledgeSnapshotPorts.js';
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -63,6 +67,17 @@ function createDb(findFirst) {
       findFirst: findFirst ?? (async () => null),
     },
   };
+}
+
+async function createScratchDir() {
+  const scratchRoot = path.resolve(
+    process.cwd(),
+    '../..',
+    '.codex-local',
+    'tmp',
+  );
+  await mkdir(scratchRoot, { recursive: true });
+  return mkdtemp(path.join(scratchRoot, 'erp4-knowledge-artifact-'));
 }
 
 test('store fixes the knowledge owner scope and uses only an opaque idempotency namespace', async () => {
@@ -333,6 +348,56 @@ test('open preserves lazy streaming and destroys the provider stream when consum
   assert.equal(source.destroyed, true);
 });
 
+test('open and reconcile destroy provider streams when opened metadata is invalid', async (t) => {
+  const body = Buffer.from('knowledge snapshot');
+  const input = storeInput(body);
+  const recovered = storedArtifact(body);
+
+  for (const [operation, invoke] of [
+    [
+      'open',
+      (adapter) =>
+        adapter.open({
+          artifactId: recovered.artifactId,
+          snapshotId: input.snapshotId,
+        }),
+    ],
+    ['reconcile', (adapter) => adapter.reconcile(input)],
+  ]) {
+    for (const [metadata, override] of [
+      [
+        'oversized metadata',
+        { sizeBytes: knowledgeSnapshotLimits.maxBytes + 1 },
+      ],
+      ['invalid hash metadata', { sha256: 'not-a-sha256' }],
+    ]) {
+      await t.test(`${operation}: ${metadata}`, async () => {
+        const source = new Readable({
+          read() {
+            assert.fail('invalid metadata must be rejected before reading');
+          },
+        });
+        const openedArtifact = storedArtifact(body, override);
+        const adapter = createKnowledgeArtifactPort({
+          provider: 'local',
+          shared: {
+            store: async () =>
+              assert.fail('metadata validation must not create an artifact'),
+            recover: async () => recovered,
+            open: async () => ({ artifact: openedArtifact, stream: source }),
+          },
+        });
+
+        const error = await rejectedError(() => invoke(adapter));
+
+        assert.equal(error instanceof KnowledgeArtifactOpenError, true);
+        assert.equal(error.kind, 'storage_failure');
+        assert.equal(source.destroyed, true);
+      });
+    }
+  }
+});
+
 test('open separates owner-scoped not-found from provider or verification failure', async (t) => {
   for (const [name, sharedError, expectedKind] of [
     ['owner scoped absence', new Error('artifact_not_found'), 'not_found'],
@@ -357,6 +422,64 @@ test('open separates owner-scoped not-found from provider or verification failur
       assert.equal(error instanceof KnowledgeArtifactOpenError, true);
       assert.equal(error.kind, expectedKind);
     });
+  }
+});
+
+test('open maps a missing local file for an owner-matched ready row to storage failure', async () => {
+  const localDir = await createScratchDir();
+  const body = Buffer.from('knowledge snapshot');
+  const artifactId = randomUUID();
+  const snapshotId = 'snapshot-placeholder';
+  const row = {
+    id: artifactId,
+    context: 'knowledge',
+    provider: 'local',
+    providerKey: randomUUID(),
+    status: 'ready',
+    deletedAt: null,
+    ownerType: 'knowledge_snapshot',
+    ownerId: snapshotId,
+    contentType: 'text/plain',
+    originalName: 'snapshot.txt',
+    sizeBytes: BigInt(body.length),
+    sha256: sha256(body),
+    createdAt: new Date('2026-08-05T00:00:00.000Z'),
+  };
+  const db = {
+    storageArtifact: {
+      findFirst: async ({ where }) =>
+        where.id === row.id &&
+        where.context === row.context &&
+        where.status === row.status &&
+        where.deletedAt === row.deletedAt &&
+        where.ownerType === row.ownerType &&
+        where.ownerId === row.ownerId
+          ? row
+          : null,
+    },
+  };
+  const shared = createArtifactStorageAdapter({
+    context: 'knowledge',
+    db,
+    env: {},
+    folderEnvKey: 'KNOWLEDGE_SNAPSHOT_GDRIVE_FOLDER_ID',
+    localDir,
+    provider: 'local',
+  });
+  const adapter = createKnowledgeArtifactPort({
+    provider: 'local',
+    shared,
+  });
+
+  try {
+    const error = await rejectedError(() =>
+      adapter.open({ artifactId, snapshotId }),
+    );
+    assert.equal(error instanceof KnowledgeArtifactOpenError, true);
+    assert.equal(error.kind, 'storage_failure');
+    assert.equal(error.message, 'knowledge_artifact_open_failed');
+  } finally {
+    await rm(localDir, { recursive: true, force: true });
   }
 });
 

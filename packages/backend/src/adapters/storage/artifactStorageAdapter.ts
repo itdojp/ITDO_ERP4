@@ -697,7 +697,8 @@ export function createArtifactStorageAdapter(
             : {}),
         },
       });
-      if (!row?.providerKey) throw new Error('artifact_not_found');
+      if (!row) throw new Error('artifact_not_found');
+      if (!row.providerKey) throw new Error('artifact_provider_key_invalid');
       if (row.provider !== 'local' && row.provider !== 'gdrive') {
         throw new Error('artifact_provider_invalid');
       }
@@ -732,7 +733,7 @@ export function createArtifactStorageAdapter(
         handle = await directory.openRead(row.providerKey);
       } catch {
         await directory.close().catch(() => undefined);
-        throw new Error('artifact_not_found');
+        throw new Error('artifact_local_io_failed');
       }
       try {
         await verifyLocalHandle(handle, {

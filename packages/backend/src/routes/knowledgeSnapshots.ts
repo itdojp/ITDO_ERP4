@@ -167,6 +167,38 @@ const requestKeyProperty = {
   maxLength: knowledgeSnapshotLimits.requestKey,
 } as const;
 
+const snapshotOriginalNameProperty = {
+  type: 'string',
+  maxLength: knowledgeSnapshotLimits.originalName,
+} as const;
+
+const snapshotTextProperty = {
+  type: 'string',
+  maxLength: knowledgeSnapshotLimits.maxTextBytes,
+} as const;
+
+const snapshotUrlProperty = {
+  type: 'string',
+  maxLength: knowledgeSnapshotLimits.sourceUrl,
+  format: 'uri',
+} as const;
+
+const textSnapshotCaptureBodySchema = {
+  required: ['captureMethod', 'text'],
+  properties: {
+    captureMethod: { type: 'string', enum: ['text'] },
+  },
+  not: { required: ['url'] },
+} as const;
+
+const urlSnapshotCaptureBodySchema = {
+  required: ['captureMethod', 'url'],
+  properties: {
+    captureMethod: { type: 'string', enum: ['url'] },
+  },
+  not: { required: ['text'] },
+} as const;
+
 function rejectUnknownBodyFields(allowedFields: readonly string[]) {
   const allowed = new Set(allowedFields);
   return async (request: FastifyRequest, reply: FastifyReply) => {
@@ -329,20 +361,11 @@ export async function registerKnowledgeSnapshotRoutes(
           properties: {
             captureMethod: { type: 'string', enum: ['text', 'url'] },
             requestKey: requestKeyProperty,
-            originalName: {
-              type: 'string',
-              maxLength: knowledgeSnapshotLimits.originalName,
-            },
-            text: {
-              type: 'string',
-              maxLength: knowledgeSnapshotLimits.maxTextBytes,
-            },
-            url: {
-              type: 'string',
-              maxLength: knowledgeSnapshotLimits.sourceUrl,
-              format: 'uri',
-            },
+            originalName: snapshotOriginalNameProperty,
+            text: snapshotTextProperty,
+            url: snapshotUrlProperty,
           },
+          oneOf: [textSnapshotCaptureBodySchema, urlSnapshotCaptureBodySchema],
         },
         response: {
           200: snapshotDetailSchema,
@@ -435,7 +458,9 @@ export async function registerKnowledgeSnapshotRoutes(
           .send(
             createApiErrorResponse(
               tooLarge ? 'snapshot_content_too_large' : 'invalid_request',
-              'Invalid snapshot upload',
+              tooLarge
+                ? 'Snapshot content is too large'
+                : 'Invalid snapshot upload',
               { category: 'validation' },
             ),
           );

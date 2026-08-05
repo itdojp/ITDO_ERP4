@@ -69,7 +69,12 @@ function assertOpenedMetadata(
 function verifiedStream(
   opened: Awaited<ReturnType<ArtifactStoragePort['open']>>,
 ) {
-  assertOpenedMetadata(opened);
+  try {
+    assertOpenedMetadata(opened);
+  } catch (error) {
+    opened.stream.destroy();
+    throw error;
+  }
   const expectedSize = opened.artifact.sizeBytes;
   const expectedHash = opened.artifact.sha256;
   return Readable.from(

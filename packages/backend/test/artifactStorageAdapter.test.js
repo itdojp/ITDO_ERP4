@@ -9,6 +9,7 @@ import {
   readdir,
   rename,
   rm,
+  unlink,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -294,6 +295,60 @@ test('local reader rejects a different context and corrupted content', async () 
     );
     await assert.rejects(() => pdf.open(stored.artifactId), {
       message: 'artifact_local_verification_failed',
+    });
+  } finally {
+    await rm(localDir, { recursive: true, force: true });
+  }
+});
+
+test('local reader classifies a missing ready artifact file as storage I/O failure', async () => {
+  const localDir = await createScratchDir();
+  const db = createArtifactDb();
+  try {
+    const adapter = createArtifactStorageAdapter({
+      context: 'pdf',
+      db,
+      env: {},
+      folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
+      localDir,
+      provider: 'local',
+    });
+    const stored = await adapter.store(input());
+    await unlink(path.join(localDir, db.rows[0].providerKey));
+
+    await assert.rejects(
+      () =>
+        adapter.open(stored.artifactId, {
+          ownerType: 'invoice',
+          ownerId: 'owner-placeholder',
+        }),
+      { message: 'artifact_local_io_failed' },
+    );
+  } finally {
+    await rm(localDir, { recursive: true, force: true });
+  }
+});
+
+test('reader distinguishes a corrupt ready row without a provider key from row absence', async () => {
+  const localDir = await createScratchDir();
+  const db = createArtifactDb();
+  const ready = addPendingRow(db, input(), 'local');
+  ready.status = 'ready';
+  try {
+    const adapter = createArtifactStorageAdapter({
+      context: 'pdf',
+      db,
+      env: {},
+      folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
+      localDir,
+      provider: 'local',
+    });
+
+    await assert.rejects(() => adapter.open(ready.id), {
+      message: 'artifact_provider_key_invalid',
+    });
+    await assert.rejects(() => adapter.open(randomUUID()), {
+      message: 'artifact_not_found',
     });
   } finally {
     await rm(localDir, { recursive: true, force: true });
