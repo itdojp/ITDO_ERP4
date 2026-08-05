@@ -1295,6 +1295,10 @@ test('invalid metadata is rejected before creating a pending row', async () => {
     () => adapter.store({ ...input(), storageName: '../unsafe.pdf' }),
     { message: 'artifact_storage_name_invalid' },
   );
+  await assert.rejects(
+    () => adapter.store({ ...input(), storageName: '' }),
+    { message: 'artifact_storage_name_invalid' },
+  );
   assert.equal(db.rows.length, 0);
 });
 

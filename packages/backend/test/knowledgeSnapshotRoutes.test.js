@@ -431,6 +431,55 @@ test('multipart parser size errors map to a sanitized content-too-large response
   assert.equal(calls, 0);
 });
 
+test('multipart truncation destroys the upload stream before returning 413', async (t) => {
+  let calls = 0;
+  let destroyCalls = 0;
+  const truncatedStream = new Readable({
+    autoDestroy: false,
+    read() {
+      this.push(Buffer.from('truncated upload'));
+      this.push(null);
+    },
+  });
+  truncatedStream.truncated = true;
+  const originalDestroy = truncatedStream.destroy.bind(truncatedStream);
+  truncatedStream.destroy = (error) => {
+    destroyCalls += 1;
+    return originalDestroy(error);
+  };
+  const app = await buildServer(
+    serviceStub({
+      capture: async () => {
+        calls += 1;
+        assert.fail('truncated upload must not reach snapshot capture');
+      },
+    }),
+    {},
+    {
+      fileOverride: async () => ({
+        mimetype: 'text/plain',
+        filename: 'truncated.txt',
+        file: truncatedStream,
+      }),
+    },
+  );
+  t.after(() => app.close());
+
+  const boundary = '----erp4-truncated-upload';
+  const response = await app.inject({
+    method: 'POST',
+    url: '/knowledge/items/item-1/snapshots/upload?requestKey=truncated',
+    headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+    payload: Buffer.from(`--${boundary}--\r\n`),
+  });
+
+  assert.equal(response.statusCode, 413, response.body);
+  assert.equal(response.json().error?.code, 'snapshot_content_too_large');
+  assert.equal(destroyCalls, 1);
+  assert.equal(truncatedStream.destroyed, true);
+  assert.equal(calls, 0);
+});
+
 test('multipart upload enforces the text-specific byte limit before capture', async (t) => {
   let calls = 0;
   const app = await buildServer(

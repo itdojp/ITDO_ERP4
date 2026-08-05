@@ -77,7 +77,10 @@ function validateArtifactMetadata(
   ) {
     throw new Error('artifact_idempotency_key_invalid');
   }
-  if (input.storageName && !SAFE_STORAGE_NAME_PATTERN.test(input.storageName)) {
+  if (
+    input.storageName !== undefined &&
+    !SAFE_STORAGE_NAME_PATTERN.test(input.storageName)
+  ) {
     throw new Error('artifact_storage_name_invalid');
   }
 }

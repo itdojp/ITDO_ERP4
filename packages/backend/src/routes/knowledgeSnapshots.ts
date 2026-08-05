@@ -507,6 +507,7 @@ export async function registerKnowledgeSnapshotRoutes(
           );
       }
       if (file.file.truncated) {
+        file.file.destroy();
         return sendSnapshotContentTooLarge(reply);
       }
       const result = await service.capture({
