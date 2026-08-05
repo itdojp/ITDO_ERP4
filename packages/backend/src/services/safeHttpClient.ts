@@ -293,18 +293,27 @@ async function pinnedRequestFetch(
         }
         const status = response.statusCode || 0;
         if (status >= 300 && status < 400) {
-          response.resume();
+          response.destroy();
           reject(new SafeHttpError('redirect_blocked'));
           return;
         }
-        const webStream = Readable.toWeb(response) as unknown as BodyInit;
-        resolve(
-          new Response(webStream, {
+        try {
+          const responseInit = {
             status,
             statusText: response.statusMessage,
             headers: responseHeadersFromNode(response.headers),
-          }),
-        );
+          };
+          if (status === 204 || status === 205) {
+            response.destroy();
+            resolve(new Response(null, responseInit));
+            return;
+          }
+          const webStream = Readable.toWeb(response) as unknown as BodyInit;
+          resolve(new Response(webStream, responseInit));
+        } catch {
+          response.destroy();
+          reject(new SafeHttpError('invalid_response'));
+        }
       },
     );
     request.on('error', reject);

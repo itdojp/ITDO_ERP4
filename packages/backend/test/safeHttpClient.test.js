@@ -17,7 +17,7 @@ async function withHttpServer(handler, fn) {
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   try {
-    return await fn(`http://127.0.0.1:${address.port}`);
+    return await fn(`http://127.0.0.1:${address.port}`, server);
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
@@ -155,6 +155,115 @@ test('safeFetch blocks every 3xx response and sends the default user-agent', asy
         },
       );
       assert.equal(response.status, 200);
+    },
+  );
+});
+
+test('safeFetch destroys a trickling 3xx response instead of leaving its socket open', async () => {
+  const { safeFetch } = await loadSafeHttpClient();
+  let resolveResponseClosed;
+  const responseClosed = new Promise((resolve) => {
+    resolveResponseClosed = resolve;
+  });
+  let emitted = 0;
+
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(302, { location: '/never-followed' });
+      response.flushHeaders();
+      const interval = setInterval(() => {
+        emitted += 1;
+        response.write('x');
+      }, 10);
+      response.once('close', () => {
+        clearInterval(interval);
+        resolveResponseClosed();
+      });
+    },
+    async (baseUrl, server) => {
+      await assert.rejects(
+        safeFetch(
+          `${baseUrl}/trickling-redirect`,
+          {},
+          {
+            allowHttp: true,
+            allowPrivateIp: true,
+            timeoutMs: 50,
+          },
+        ),
+        (error) => error?.code === 'redirect_blocked',
+      );
+
+      let timeout;
+      try {
+        await Promise.race([
+          responseClosed,
+          new Promise((_, reject) => {
+            timeout = setTimeout(
+              () => reject(new Error('redirect response socket remained open')),
+              500,
+            );
+          }),
+        ]);
+      } finally {
+        clearTimeout(timeout);
+      }
+      const emittedAtClose = emitted;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      assert.equal(emitted, emittedAtClose);
+      assert.equal(
+        await new Promise((resolve, reject) => {
+          server.getConnections((error, count) => {
+            if (error) reject(error);
+            else resolve(count);
+          });
+        }),
+        0,
+      );
+    },
+  );
+});
+
+test('safeFetch represents HTTP 204 and 205 responses with a null body', async () => {
+  const { safeFetch } = await loadSafeHttpClient();
+
+  for (const status of [204, 205]) {
+    await withHttpServer(
+      (_request, response) => {
+        response.writeHead(status);
+        response.end();
+      },
+      async (baseUrl) => {
+        const response = await safeFetch(
+          `${baseUrl}/null-body`,
+          {},
+          { allowHttp: true, allowPrivateIp: true },
+        );
+        assert.equal(response.status, status);
+        assert.equal(response.body, null);
+        assert.equal(await response.text(), '');
+      },
+    );
+  }
+});
+
+test('safeFetch rejects invalid HTTP response status without an uncaught exception', async () => {
+  const { safeFetch } = await loadSafeHttpClient();
+
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(600);
+      response.end();
+    },
+    async (baseUrl) => {
+      await assert.rejects(
+        safeFetch(
+          `${baseUrl}/invalid-status`,
+          {},
+          { allowHttp: true, allowPrivateIp: true },
+        ),
+        (error) => error?.code === 'invalid_response',
+      );
     },
   );
 });

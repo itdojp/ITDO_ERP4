@@ -40,27 +40,28 @@ manual capture UI、frontend E2E、sanitized screenshot evidenceは、PR A merge
 | Command / check                           | Result | Evidence                                                                             |
 | ----------------------------------------- | ------ | ------------------------------------------------------------------------------------ |
 | Knowledge snapshot/storage focused tests  | PASS   | final review remediation 133 testsを3回連続実行、fail/cancelled/skip/todo 0          |
-| expanded security/transport focused tests | PASS   | env/schema/capture/storage/safe HTTP/legacy downloadを含む225 tests、全失敗区分0     |
+| safe HTTP transport regression            | PASS   | 16 testsを10回連続実行（160/160）、3xx socket、204/205、invalid statusを含む         |
+| expanded security/transport focused tests | PASS   | env/schema/capture/storage/safe HTTP/legacy downloadを含む234 tests、全失敗区分0     |
 | capture contract remediation              | PASS   | method別必須payload、反対payload拒否、multipart 413 messageをservice呼出前に固定     |
 | storage failure remediation               | PASS   | ready row破損、local file不在分類、legacy API互換、stream destroyを回帰testで固定    |
-| focused source coverage                   | PASS   | 対象9 source modules: statements/lines 92.65%、branches 76.45%、functions 96.97%     |
+| focused source coverage                   | PASS   | 対象9 source modules: statements/lines 92.66%、branches 77.02%、functions 96.97%     |
 | PostgreSQL 15 integration                 | PASS   | 2 snapshots、2 artifacts、5 audits、version `[1,2]`                                  |
 | ACL integration                           | PASS   | outsider detail/downloadはともに404、owner downloadは38 bytes                        |
 | migration deploy/status                   | PASS   | ephemeral DBへ既存migrationを含めて適用し、snapshot capture/reconcile/downloadを実行 |
 | backend lint / format / typecheck / build | PASS   | repository標準commandがexit 0                                                        |
-| backend full test                         | PASS   | 1,812 tests、fail/cancelled/skipped/todo 0                                           |
+| backend full test                         | PASS   | 1,815 tests、fail/cancelled/skipped/todo 0                                           |
 | `git diff --check`                        | PASS   | whitespace error 0、integration shellの`bash -n`もPASS                               |
 
 ### Focused coverage summary
 
 | Module group              | Statements / lines | Branches | Functions |
 | ------------------------- | -----------------: | -------: | --------: |
-| all focused modules       |             92.65% |   76.45% |    96.97% |
+| all focused modules       |             92.66% |   77.02% |    96.97% |
 | knowledge adapters        |             96.57% |   85.09% |      100% |
 | shared storage            |             93.82% |   74.75% |      100% |
 | knowledge application     |             89.55% |   76.23% |    93.48% |
 | knowledge snapshot routes |             96.97% |   80.28% |      100% |
-| safe HTTP transport       |             88.49% |   67.61% |    95.45% |
+| safe HTTP transport       |             88.75% |   71.95% |    95.45% |
 
 ### PostgreSQL integration summary
 
@@ -113,6 +114,8 @@ manual capture UI、frontend E2E、sanitized screenshot evidenceは、PR A merge
 - 独立correctness delta reviewで、共有adapterの詳細化した内部errorが既存PDF/Evidence/Report downloadの従来404契約を500へ変え、Report deliveryが破損ready artifactを再試行し得る点を検出した。共有portのunavailable分類を既存3 routeだけで404へ互換変換し、`artifact_provider_key_invalid` / `artifact_local_io_failed`をReport deliveryの非再試行errorへ追加した。6 download分岐とretry policyを回帰testで固定し、Knowledge固有の認可後storage failure 502契約は維持する。
 - 独立security delta reviewで、`recover()`が`ready`なのにprovider keyを持たない破損rowを`null`として返し、Knowledge reconcileがstorage failureを永続的pending 409へ誤分類する点を検出した。この状態を`artifact_provider_key_invalid`へ昇格し、port境界でdetailを消去して`snapshot_reconciliation_failed` 502となることをadapter/use-case testで固定した。
 - exact-head Copilot review本文のsuppressed findingsで、明示された空`storageName`がtruthy checkをすり抜ける点と、multipart parserがstreamをtruncatedと判定した413分岐で明示破棄していない点を検出した。`storageName !== undefined`で空値もprovider/DB I/O前に拒否し、truncation時にunderlying streamをdestroyする。empty nameのDB row 0と、`autoDestroy: false` streamのdestroy call/413/capture call 0を回帰testで固定した。
+- 独立security reviewで、拒否済み3xx応答を`resume()`してからtotal timeoutを解除するため、trickle bodyがsocket/bandwidthを保持し得る点を検出した。全3xxでresponseを即時`destroy()`してからsanitized `redirect_blocked`を返し、server側response close、送信停止、connection 0を実HTTP serverで確認した。
+- 独立correctness reviewで、204/205のnull-body statusにもNode response streamを渡してFetch `Response`を構築し、response callback内の未捕捉`TypeError`でbackend processが終了し得る点を検出した。204/205はstreamを破棄して`null` bodyのResponseへ変換し、Response構築例外はstreamを破棄してsanitized `invalid_response` rejectionへ正規化した。実HTTP 204/205と非標準600 statusを含む回帰testで、未捕捉例外が発生しないことを固定した。
 
 ## Repository-wide quality gates
 
