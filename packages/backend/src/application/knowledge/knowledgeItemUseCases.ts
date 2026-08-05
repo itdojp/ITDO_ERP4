@@ -308,7 +308,7 @@ function hasCredentialBearingNestedUrl(url: URL, depth = 0): boolean {
   return false;
 }
 
-function normalizeCanonicalUrl(
+export function normalizeKnowledgeCanonicalUrl(
   value: string | null | undefined,
 ): { ok: true; value: string | null | undefined } | { ok: false } {
   const normalized = normalizeOptional(value);
@@ -627,7 +627,7 @@ function createPatch(input: UpdateKnowledgeItemInput): {
   if ('sourceType' in input && input.sourceType !== undefined) {
     patch.sourceType = input.sourceType;
   }
-  const canonicalUrl = normalizeCanonicalUrl(input.canonicalUrl);
+  const canonicalUrl = normalizeKnowledgeCanonicalUrl(input.canonicalUrl);
   if ('canonicalUrl' in input && canonicalUrl.ok) {
     patch.canonicalUrl = canonicalUrl.value;
   }
@@ -799,7 +799,9 @@ export function createKnowledgeItemService(dependencies: {
       if (!(capturedAt instanceof Date)) {
         return invalid('capturedAt must be a valid date-time');
       }
-      const canonicalUrl = normalizeCanonicalUrl(input.body.canonicalUrl);
+      const canonicalUrl = normalizeKnowledgeCanonicalUrl(
+        input.body.canonicalUrl,
+      );
       if (!canonicalUrl.ok) {
         return invalid('canonicalUrl must be an HTTP(S) URL');
       }
@@ -871,7 +873,9 @@ export function createKnowledgeItemService(dependencies: {
         return invalid('capturedAt must be a valid date-time');
       }
       if ('canonicalUrl' in input.body) {
-        const canonicalUrl = normalizeCanonicalUrl(input.body.canonicalUrl);
+        const canonicalUrl = normalizeKnowledgeCanonicalUrl(
+          input.body.canonicalUrl,
+        );
         if (!canonicalUrl.ok) {
           return invalid('canonicalUrl must be an HTTP(S) URL');
         }

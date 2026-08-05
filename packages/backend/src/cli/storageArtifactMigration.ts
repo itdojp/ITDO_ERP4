@@ -25,6 +25,7 @@ const FOLDER_ENV_KEYS: Record<StorageArtifactContext, string> = {
   evidence: 'EVIDENCE_ARCHIVE_GDRIVE_FOLDER_ID',
   evidence_metadata: 'EVIDENCE_ARCHIVE_GDRIVE_FOLDER_ID',
   report: 'REPORT_GDRIVE_FOLDER_ID',
+  knowledge: 'KNOWLEDGE_GDRIVE_FOLDER_ID',
 };
 
 function valueAfter(args: string[], index: number, name: string) {

@@ -9,6 +9,7 @@ import type { PrismaClient, StorageArtifact } from '@prisma/client';
 
 import type {
   ArtifactStoragePort,
+  RecoverArtifactInput,
   StorageArtifactContext,
   StorageArtifactProvider,
   StoreArtifactInput,
@@ -55,7 +56,12 @@ const SAFE_STORAGE_NAME_PATTERN = /^[a-zA-Z0-9._-]{1,180}$/;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function validateStoreInput(input: StoreArtifactInput) {
+function validateArtifactMetadata(
+  input: Pick<
+    StoreArtifactInput,
+    'idempotencyKey' | 'originalName' | 'sha256' | 'sizeBytes' | 'storageName'
+  >,
+) {
   if (!SHA256_PATTERN.test(input.sha256)) {
     throw new Error('artifact_sha256_invalid');
   }
@@ -73,6 +79,18 @@ function validateStoreInput(input: StoreArtifactInput) {
   }
   if (input.storageName && !SAFE_STORAGE_NAME_PATTERN.test(input.storageName)) {
     throw new Error('artifact_storage_name_invalid');
+  }
+}
+
+function assertMatchingOwner(
+  row: { ownerId: string | null; ownerType: string | null },
+  input: Pick<RecoverArtifactInput, 'ownerId' | 'ownerType'>,
+) {
+  if (
+    row.ownerId !== (input.ownerId ?? null) ||
+    row.ownerType !== (input.ownerType ?? null)
+  ) {
+    throw new Error('artifact_idempotency_conflict');
   }
 }
 
@@ -110,7 +128,10 @@ function assertMatchingArtifact(
     sha256: string;
     sizeBytes: bigint;
   },
-  input: StoreArtifactInput,
+  input: Pick<
+    StoreArtifactInput,
+    'contentType' | 'originalName' | 'sha256' | 'sizeBytes'
+  >,
 ) {
   if (
     row.contentType !== input.contentType ||
@@ -406,7 +427,7 @@ export function createArtifactStorageAdapter(
     return objectStore;
   };
 
-  const findIdempotentRow = (input: StoreArtifactInput) => {
+  const findIdempotentRow = (input: { idempotencyKey?: string }) => {
     if (!input.idempotencyKey) return Promise.resolve(null);
     return db.storageArtifact.findUnique({
       where: {
@@ -421,11 +442,15 @@ export function createArtifactStorageAdapter(
 
   const markReady = async (
     row: StorageArtifact,
-    input: StoreArtifactInput,
+    input: Pick<
+      StoreArtifactInput,
+      'contentType' | 'idempotencyKey' | 'originalName' | 'sha256' | 'sizeBytes'
+    >,
     providerKey: string,
+    expectedStatus: StorageArtifact['status'] = 'pending',
   ) => {
     const completed = await db.storageArtifact.updateMany({
-      where: { id: row.id, status: 'pending' },
+      where: { id: row.id, status: expectedStatus },
       data: {
         providerKey,
         status: 'ready',
@@ -482,8 +507,50 @@ export function createArtifactStorageAdapter(
   };
 
   return {
+    async recover(input) {
+      validateArtifactMetadata(input);
+      const row = await findIdempotentRow(input);
+      if (!row || row.deletedAt) return null;
+      assertMatchingArtifact(row, input);
+      assertMatchingOwner(row, input);
+      if (row.status === 'ready') {
+        return row.providerKey ? toSafeResult(row) : null;
+      }
+      if (row.status !== 'pending' && row.status !== 'failed') return null;
+
+      let providerKey: string | null;
+      if (options.provider === 'local') {
+        providerKey = await findCompletedLocalArtifact(
+          options.localDir,
+          row.id,
+          input,
+        );
+      } else {
+        const store = getObjectStore();
+        const existing = await store.findByIdempotencyKey({
+          idempotencyKey: input.idempotencyKey,
+          sha256: input.sha256,
+          sizeBytes: input.sizeBytes,
+        });
+        if (
+          existing &&
+          (existing.trashed ||
+            existing.checksum.sha256 !== input.sha256 ||
+            existing.sizeBytes !== input.sizeBytes)
+        ) {
+          throw new Error('artifact_remote_verification_failed');
+        }
+        providerKey = existing?.key ?? null;
+        if (providerKey) {
+          await verifyObjectContent(store, providerKey, input);
+        }
+      }
+      if (!providerKey) return null;
+      return markReady(row, input, providerKey, row.status);
+    },
+
     async store(input) {
-      validateStoreInput(input);
+      validateArtifactMetadata(input);
       const where = input.idempotencyKey
         ? {
             context_provider_idempotencyKey: {

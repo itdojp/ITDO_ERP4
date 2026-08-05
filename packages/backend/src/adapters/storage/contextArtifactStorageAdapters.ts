@@ -3,6 +3,7 @@ import { createArtifactStorageAdapter } from './artifactStorageAdapter.js';
 import type { EvidenceArchiveStoragePort } from '../../application/evidence/evidenceArchiveStoragePort.js';
 import type { PdfStoragePort } from '../../application/pdf/pdfStoragePort.js';
 import type { ReportOutputStoragePort } from '../../application/reportSubscriptions/reportOutputStoragePort.js';
+import type { ArtifactStoragePort } from '../../application/storage/artifactStoragePort.js';
 import type { StorageArtifactProvider } from '../../application/storage/artifactStoragePort.js';
 
 type ContextAdapterOptions = {
@@ -53,6 +54,23 @@ export function createReportArtifactStorageAdapter(
     env,
     folderEnvKey: 'REPORT_GDRIVE_FOLDER_ID',
     localDir: value(env, 'REPORT_STORAGE_DIR', '/tmp/erp4/reports'),
+    provider: options.provider,
+  });
+}
+
+export function createKnowledgeArtifactStorageAdapter(
+  options: ContextAdapterOptions,
+): ArtifactStoragePort {
+  const env = options.env ?? process.env;
+  return createArtifactStorageAdapter({
+    context: 'knowledge',
+    env,
+    folderEnvKey: 'KNOWLEDGE_GDRIVE_FOLDER_ID',
+    localDir: value(
+      env,
+      'KNOWLEDGE_STORAGE_DIR',
+      '/tmp/erp4/knowledge-snapshots',
+    ),
     provider: options.provider,
   });
 }

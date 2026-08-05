@@ -290,6 +290,22 @@ migrationは既存indexを保持したまま、KnowledgeItemへ`updatedAt,id`終
 - 受け入れ: size/type/timeout、SSRF/redirect/private IP/active content対策、caller側 bounded stream/content-type検証、owner-scoped Knowledge artifact wrapper、pending/ready/failed reconciliation、provider URL非公開、manual capture UI。
 - rollback/test: fake/local storage、checksum/idempotency/partial failure、owner scope省略不能、owner跨ぎidempotency collision、download ACL、oversize/content-type拒否、sanitized UI evidence。実 credential は別証跡。
 
+#### 04-A. Backend snapshot/storage contract（Issue #2012 PR A）
+
+- `KnowledgeSnapshot`は`KnowledgeItem`配下のappend-only versionであり、`item + version`と`item + request-key hash`を一意にする。capture payload、SHA-256、size、content type、capture method、sanitized source URLをprovenanceとして保持し、既存versionを上書きしない。
+- capture intentと必須auditをSerializable transactionで先に確定し、bounded captureとartifact storeはtransaction外で行う。materialized metadataと`ready`確定はCAS更新し、外部createの結果が不明またはDB finalizationが失敗した場合は成功を返さず`pending`を残す。外部create前に確定できる設定・事前検証失敗はsanitized codeで`failed`へ遷移する。
+- retry/reconcileは外部createを再実行しない。`context=knowledge`、provider、owner、opaque idempotency key、content type、SHA-256、sizeが一致する既存`ready` artifactをowner-scoped openしてbyte内容まで再検証した場合だけDBを`ready`へ確定する。
+- Knowledge contextは専用portで共有artifact portを包み、`ownerType=knowledge_snapshot`と`ownerId=snapshotId`を呼出側から省略・変更できない。provider metadataへ渡すidempotency keyとstorage nameはSHA-256由来とし、生のuser/item/request keyやfilenameを使用しない。
+- append/reconcileはitem ownerだけ、list/detail/downloadはcurrent item ACLとsnapshot relation/statusを再評価する。downloadはprovider I/O直前・直後にもACLとartifact metadataを再確認し、provider key、Drive URL、artifact ID、request hashをAPIへ返さない。この境界はrequest-time authorizationであり、HTTP response開始後のin-flight revokeを原子的に保証しない。
+- download streamは全量をapplication heapへ保持せず、shared adapterの事前検証に加えてincremental size/hash guardを適用し、consumer終了・error時にunderlying provider/local streamを破棄する。owner-scope不一致は404、認可後のprovider/content/metadata障害はdetailを含まない502とする。
+- URL captureは既存`safeFetch`のHTTP(S)、DNS/private IP、redirect制限を使い、caller側でも10秒のtotal timeout、`Content-Length`、実読込byte、allowlist content typeを検証する。超過、timeout、read error時はbody readerをcancelする。
+- allowlistはUTF-8 plain text/HTML、PDF、PNG、JPEG、WebP、GIFとし、binaryはmagic byteを検査する。最大artifactは10 MiB、text/HTMLは1 MiB、抽出plain textは250,000 code pointとする。SVG等のactive content、invalid UTF-8、signature spoofはfail closedとする。
+- raw HTMLはinline表示せず、downloadはattachment、`application/octet-stream`、`nosniff`、`no-store`、sandbox CSPで返す。検索/UI用representationはactive elementを除いたplain textへ分離する。
+- providerは`KNOWLEDGE_SNAPSHOT_PROVIDER=local|gdrive`（既定`local`）。local pathは`KNOWLEDGE_STORAGE_DIR`、Google Drive folderは`KNOWLEDGE_GDRIVE_FOLDER_ID`とし、gdrive時は完全な共通`ERP4_GDRIVE_*` credential setを要求する。legacy Chat credentialへfallbackしない。
+- application rollbackは新table/artifactを保持したまま旧imageへ戻し、migration逆適用、source delete、artifact delete、provider cutoverを行わない。PR Aのrepository-side fake/local検証を実Google Drive、Sakura VPSまたはproduction成功として扱わない。
+
+manual capture UI、利用者向けpending/reconcile表示、frontend unit/E2E、sanitized screenshot evidenceはPR Bで実装し、PR Aは`Refs #2012`としてIssueをcloseしない。
+
 ### 05. Annotation / conversation import / synthesis
 
 - Depends on: 02（binary attachment参照は04）

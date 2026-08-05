@@ -711,6 +711,63 @@ test('pending Drive row recovers a verified idempotent object without reupload',
   assert.deepEqual(calls, ['lookup', 'get:drive-file-placeholder']);
 });
 
+test('read-only Drive recovery verifies a failed result-unknown row without reupload', async () => {
+  const db = createArtifactDb();
+  const value = input(Buffer.from('result-unknown-drive-upload'));
+  const failed = addPendingRow(db, value);
+  Object.assign(failed, {
+    status: 'failed',
+    failureCode: 'artifact_store_failed',
+    ownerType: value.ownerType,
+    ownerId: value.ownerId,
+  });
+  const calls = [];
+  const adapter = createArtifactStorageAdapter({
+    context: 'pdf',
+    db,
+    env: {
+      PDF_GDRIVE_FOLDER_ID: 'folder-placeholder',
+      ERP4_GDRIVE_CLIENT_ID: 'common-client',
+      ERP4_GDRIVE_CLIENT_SECRET: 'common-secret',
+      ERP4_GDRIVE_REFRESH_TOKEN: 'common-refresh',
+    },
+    folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
+    localDir: 'unused-local-directory',
+    objectStoreFactory: () => ({
+      findByIdempotencyKey: async () => {
+        calls.push('lookup');
+        return {
+          key: 'drive-file-placeholder',
+          checksum: { sha256: value.sha256 },
+          contentType: value.contentType,
+          createdAt: null,
+          modifiedAt: null,
+          originalName: value.storageName,
+          sizeBytes: value.sizeBytes,
+          trashed: false,
+        };
+      },
+      put: async () => assert.fail('recover must not upload'),
+      get: async () => {
+        calls.push('get');
+        return { stream: Readable.from(value.body) };
+      },
+      stat: async () => assert.fail('stat must not be called'),
+      trash: async () => assert.fail('trash must not be called'),
+    }),
+    provider: 'gdrive',
+  });
+  const { body: recoveredBody, ...recoveryInput } = value;
+  assert.equal(recoveredBody, value.body);
+
+  const recovered = await adapter.recover(recoveryInput);
+
+  assert.equal(recovered.artifactId, failed.id);
+  assert.equal(failed.status, 'ready');
+  assert.equal(failed.providerKey, 'drive-file-placeholder');
+  assert.deepEqual(calls, ['lookup', 'get']);
+});
+
 test('pending Drive row rejects mismatched recovery metadata without reupload', async () => {
   const db = createArtifactDb();
   const value = input(Buffer.from('mismatched-drive-upload'));
@@ -834,6 +891,57 @@ test('pending local row recovers a completed UUID file without rewriting it', as
       await readFile(path.join(localDir, pending.id)),
       value.body,
     );
+  } finally {
+    await rm(localDir, { recursive: true, force: true });
+  }
+});
+
+test('read-only recovery finalizes a pending row after a result-unknown DB failure without a second write', async () => {
+  const localDir = await createScratchDir();
+  const db = createArtifactDb();
+  const value = input(Buffer.from('provider-success-before-db-failure'));
+  const updateMany = db.storageArtifact.updateMany;
+  let failFinalization = true;
+  const statusTransitions = [];
+  db.storageArtifact.updateMany = async (args) => {
+    statusTransitions.push([args.where.status, args.data.status]);
+    if (args.data.status === 'ready' && failFinalization) {
+      failFinalization = false;
+      throw new Error('db-finalization-unavailable');
+    }
+    return updateMany(args);
+  };
+  try {
+    const adapter = createArtifactStorageAdapter({
+      context: 'pdf',
+      db,
+      env: {},
+      folderEnvKey: 'PDF_GDRIVE_FOLDER_ID',
+      localDir,
+      provider: 'local',
+    });
+
+    await assert.rejects(() => adapter.store(value), {
+      message: 'db-finalization-unavailable',
+    });
+    assert.equal(db.rows.length, 1);
+    assert.equal(
+      db.rows[0].status,
+      'pending',
+      JSON.stringify(statusTransitions),
+    );
+    assert.deepEqual(
+      await readFile(path.join(localDir, db.rows[0].id)),
+      value.body,
+    );
+
+    const { body: _body, ...recoveryInput } = value;
+    assert.equal(_body, value.body);
+    const recovered = await adapter.recover(recoveryInput);
+    assert.equal(recovered.artifactId, db.rows[0].id);
+    assert.equal(db.rows[0].status, 'ready');
+    assert.equal(db.rows[0].providerKey, db.rows[0].id);
+    assert.equal(db.rows.length, 1);
   } finally {
     await rm(localDir, { recursive: true, force: true });
   }
