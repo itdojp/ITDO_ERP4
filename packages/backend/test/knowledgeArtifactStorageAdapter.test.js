@@ -431,6 +431,47 @@ test('reconcile returns null without opening or creating when no materialized pr
   assert.equal(storeCalls, 0);
 });
 
+test('reconcile normalizes recovery and open failures without exposing provider details', async (t) => {
+  const input = storeInput();
+  const sensitiveDetail = 'provider credential secret';
+  for (const [name, recover, open, expectedKind] of [
+    [
+      'recovery failure',
+      async () => {
+        throw new Error(sensitiveDetail);
+      },
+      async () => assert.fail('failed recovery must not be opened'),
+      'storage_failure',
+    ],
+    [
+      'owner-scoped open absence',
+      async () => storedArtifact(input.body),
+      async () => {
+        throw new Error('artifact_not_found');
+      },
+      'not_found',
+    ],
+  ]) {
+    await t.test(name, async () => {
+      const adapter = createKnowledgeArtifactPort({
+        provider: 'local',
+        shared: {
+          store: async () =>
+            assert.fail('reconciliation must not create an artifact'),
+          recover,
+          open,
+        },
+      });
+
+      const error = await rejectedError(() => adapter.reconcile(input));
+
+      assert.equal(error instanceof KnowledgeArtifactOpenError, true);
+      assert.equal(error.kind, expectedKind);
+      assert.doesNotMatch(String(error), new RegExp(sensitiveDetail));
+    });
+  }
+});
+
 test('reconcile rejects corrupt content and metadata that differs from the recorded intent', async (t) => {
   const body = Buffer.from('knowledge snapshot');
   const input = storeInput(body);

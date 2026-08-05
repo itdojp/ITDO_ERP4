@@ -224,35 +224,39 @@ export function createKnowledgeArtifactPort(
     },
 
     async reconcile(input) {
-      const recovered = await shared.recover({
-        contentType: input.contentType,
-        idempotencyKey: idempotencyKey(input.idempotencyNamespace),
-        originalName: input.originalName,
-        ownerType: KNOWLEDGE_OWNER_TYPE,
-        ownerId: input.snapshotId,
-        sha256: input.sha256,
-        sizeBytes: input.sizeBytes,
-        storageName: `${input.sha256}.${extension(input.contentType)}`,
-      });
-      if (!recovered) return null;
-      if (
-        recovered.contentType !== input.contentType ||
-        recovered.sha256 !== input.sha256 ||
-        recovered.sizeBytes !== input.sizeBytes
-      ) {
-        throw new KnowledgeArtifactOpenError('storage_failure');
+      try {
+        const recovered = await shared.recover({
+          contentType: input.contentType,
+          idempotencyKey: idempotencyKey(input.idempotencyNamespace),
+          originalName: input.originalName,
+          ownerType: KNOWLEDGE_OWNER_TYPE,
+          ownerId: input.snapshotId,
+          sha256: input.sha256,
+          sizeBytes: input.sizeBytes,
+          storageName: `${input.sha256}.${extension(input.contentType)}`,
+        });
+        if (!recovered) return null;
+        if (
+          recovered.contentType !== input.contentType ||
+          recovered.sha256 !== input.sha256 ||
+          recovered.sizeBytes !== input.sizeBytes
+        ) {
+          throw new KnowledgeArtifactOpenError('storage_failure');
+        }
+        const opened = await openOwned(recovered.artifactId, input.snapshotId);
+        await consumeVerified(opened);
+        if (
+          opened.artifact.artifactId !== recovered.artifactId ||
+          opened.artifact.contentType !== input.contentType ||
+          opened.artifact.sha256 !== input.sha256 ||
+          opened.artifact.sizeBytes !== input.sizeBytes
+        ) {
+          throw new KnowledgeArtifactOpenError('storage_failure');
+        }
+        return safeArtifact(opened.artifact);
+      } catch (error) {
+        throw openError(error);
       }
-      const opened = await openOwned(recovered.artifactId, input.snapshotId);
-      await consumeVerified(opened);
-      if (
-        opened.artifact.artifactId !== recovered.artifactId ||
-        opened.artifact.contentType !== input.contentType ||
-        opened.artifact.sha256 !== input.sha256 ||
-        opened.artifact.sizeBytes !== input.sizeBytes
-      ) {
-        throw new KnowledgeArtifactOpenError('storage_failure');
-      }
-      return safeArtifact(opened.artifact);
     },
   };
 }

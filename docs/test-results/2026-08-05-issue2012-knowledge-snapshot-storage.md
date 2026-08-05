@@ -30,30 +30,31 @@ manual capture UI、frontend E2E、sanitized screenshot evidenceは、PR A merge
 - downloadはshared adapterで事前検証済みのstreamへKnowledge固有のincremental size/hash guardを重ね、全量をheapへ保持せず、consumer終了時にprovider/local streamをdestroyする。
 - ACLはrequest-time authorizationに加えprovider I/O直前・直後に再評価する。HTTP body送信開始後のgrant失効をchunk単位DB照会で割り込ませる契約ではない。
 - 共有`ArtifactStoragePort.store()`は既存Chat/PDF/Reportのidempotency/failure契約を維持しつつ、既存rowの全状態とunique-create/ready CAS競合でowner一致も照合する。追加した`recover()`だけが`pending` / `failed`の既存artifactをread-onlyで回復する。
+- reconcileのshared recovery/open失敗はKnowledge port境界で`not_found|storage_failure`へ正規化し、provider error detailを上位callerへ渡さない。
 - fixtureはsynthetic identifierだけを使用し、production credential、folder ID、provider URL、個人情報は保存していない。
 
 ## Focused verification
 
-| Command / check                           | Result | Evidence                                                                                 |
-| ----------------------------------------- | ------ | ---------------------------------------------------------------------------------------- |
-| Knowledge snapshot/storage focused tests  | PASS   | owner/ACL/storage/safe transportを含む120 testsを3回連続実行、fail/cancelled/skip/todo 0 |
-| expanded security/transport focused tests | PASS   | env/schema/captureを含む197 tests、fail/cancelled/skip/todo 0                            |
-| final route remediation repeated test     | PASS   | 17 testsを3回連続実行、fail/cancelled/skip/todo 0                                        |
-| fail-closed redirect repeated test        | PASS   | safe HTTP 13 testsを3回連続実行、`Location`なし3xxを含む                                 |
-| focused source coverage                   | PASS   | 対象8 source modules: statements/lines 92.62%、branches 77.19%、functions 97.30%         |
-| PostgreSQL 15 integration                 | PASS   | 2 snapshots、2 artifacts、5 audits、version `[1,2]`                                      |
-| ACL integration                           | PASS   | outsider detail/downloadはともに404、owner downloadは38 bytes                            |
-| migration deploy/status                   | PASS   | ephemeral DBへ既存migrationを含めて適用し、snapshot capture/reconcile/downloadを実行     |
-| backend lint / format / typecheck / build | PASS   | repository標準commandがexit 0                                                            |
-| backend full test                         | PASS   | 1,788 tests、fail/cancelled/skipped/todo 0                                               |
-| `git diff --check`                        | PASS   | whitespace error 0、integration shellの`bash -n`もPASS                                   |
+| Command / check                           | Result | Evidence                                                                             |
+| ----------------------------------------- | ------ | ------------------------------------------------------------------------------------ |
+| Knowledge snapshot/storage focused tests  | PASS   | reconcile/owner/ACL focused 51 testsを3回連続実行、fail/cancelled/skip/todo 0        |
+| expanded security/transport focused tests | PASS   | env/schema/captureを含む200 tests、fail/cancelled/skip/todo 0                        |
+| final route remediation repeated test     | PASS   | 17 testsを3回連続実行、fail/cancelled/skip/todo 0                                    |
+| fail-closed redirect repeated test        | PASS   | safe HTTP 13 testsを3回連続実行、`Location`なし3xxを含む                             |
+| focused source coverage                   | PASS   | 対象8 source modules: statements/lines 92.63%、branches 77.48%、functions 97.30%     |
+| PostgreSQL 15 integration                 | PASS   | 2 snapshots、2 artifacts、5 audits、version `[1,2]`                                  |
+| ACL integration                           | PASS   | outsider detail/downloadはともに404、owner downloadは38 bytes                        |
+| migration deploy/status                   | PASS   | ephemeral DBへ既存migrationを含めて適用し、snapshot capture/reconcile/downloadを実行 |
+| backend lint / format / typecheck / build | PASS   | repository標準commandがexit 0                                                        |
+| backend full test                         | PASS   | 1,791 tests、fail/cancelled/skipped/todo 0                                           |
+| `git diff --check`                        | PASS   | whitespace error 0、integration shellの`bash -n`もPASS                               |
 
 ### Focused coverage summary
 
 | Module group              | Statements / lines | Branches | Functions |
 | ------------------------- | -----------------: | -------: | --------: |
-| all focused modules       |             92.62% |   77.19% |    97.30% |
-| knowledge adapters        |             96.20% |   82.89% |      100% |
+| all focused modules       |             92.63% |   77.48% |    97.30% |
+| knowledge adapters        |             96.23% |   84.08% |      100% |
 | shared storage adapter    |             92.78% |   73.02% |      100% |
 | knowledge application     |             89.57% |   76.15% |    93.75% |
 | knowledge snapshot routes |             96.55% |   80.82% |      100% |
@@ -84,6 +85,7 @@ manual capture UI、frontend E2E、sanitized screenshot evidenceは、PR A merge
 - captureのartifact store前にitem ownershipが失効した場合はartifactを作らずsnapshotをsanitized `failed`へ遷移して404を返す。store中に失効した場合はartifactを削除せずmaterialized snapshotを`pending`に維持して404を返し、item restore後のread-only reconciliationを可能にすることを確認した。
 - reconcile/downloadの途中でitem ACLが失効した場合も404となり、download用staged streamを破棄することを確認した。
 - 共有artifact storeのready/pending/failed idempotent再利用とunique/CAS競合はowner一致を必須とし、owner跨ぎkey collisionをprovider I/OまたはDB mutation前の`artifact_idempotency_conflict`で拒否することを確認した。
+- reconcileのshared recovery/openがraw provider errorを返しても、Knowledge portからはsanitized `KnowledgeArtifactOpenError`だけが返り、detailが露出しないことを確認した。
 - local/GDrive fakeのfailed rowと、result-unknown local pending rowを、二度目のupload/writeなしでrecoverできることを確認した。
 
 ## Independent review remediation
@@ -102,6 +104,7 @@ manual capture UI、frontend E2E、sanitized screenshot evidenceは、PR A merge
 - exact-head Copilot review本文のsuppressed findingで、共有`safeFetch`が`Location`付き3xxだけを`redirect_blocked`へ正規化し、`Location`なし3xxをresponseとして返すfail-open差分を検出した。全3xxをresponse body送信前に破棄して同じsanitized errorへ正規化し、`Location`有無の両経路を実HTTP serverで固定した。Snapshot callerの既存non-2xx拒否に依存せず、共有transport境界単体でredirectをfail-closedにする。
 - 独立correctness reviewで、長時間のmaterialize/store中にitemがlogical deleteされてもcaptureが`ready`へ確定し得る点を検出した。materialized metadata記録前とfinalization transaction内にcurrent owner/active item再検査を追加し、store前失効はartifactなしのsanitized `failed`、store中失効はsource-delete禁止を維持した`pending`として、どちらもpublic 404へ正規化した。
 - 独立security reviewで、共有artifact adapterの既存ready row再利用がartifact metadataだけを照合しownerを照合しない点を検出した。store/recoveryの既存row、unique-create race、ready CAS raceの全再利用経路でowner一致を必須化し、owner不一致時に副作用なしでfail closedとなるtestを追加した。
+- exact-head Copilot review本文のsuppressed findingで、Knowledge artifact `reconcile()`だけがshared recovery/openのraw errorをport境界で正規化しない点を検出した。reconcile全体を既存`openError()`へ統一し、provider detailを含むrecovery failureとowner-scoped open不在をそれぞれsanitized `storage_failure` / `not_found`へ固定するtestを追加した。
 
 ## Repository-wide quality gates
 
