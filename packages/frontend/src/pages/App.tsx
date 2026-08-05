@@ -159,6 +159,11 @@ const PdfFiles = React.lazy(() =>
     default: module.PdfFiles,
   })),
 );
+const KnowledgeHub = React.lazy(() =>
+  import('../sections/KnowledgeHub').then((module) => ({
+    default: module.KnowledgeHub,
+  })),
+);
 
 function SectionLoadingFallback({ label }: { label: string }) {
   return (
@@ -467,6 +472,20 @@ export const App: React.FC = () => {
             render: () => (
               <Card>
                 <ChatBreakGlass />
+              </Card>
+            ),
+          },
+        ],
+      },
+      {
+        title: 'ナレッジ',
+        items: [
+          {
+            id: 'knowledge-hub',
+            label: 'Knowledge Hub',
+            render: () => (
+              <Card>
+                <KnowledgeHub />
               </Card>
             ),
           },

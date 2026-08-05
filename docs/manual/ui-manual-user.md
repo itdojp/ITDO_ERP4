@@ -14,7 +14,7 @@
 
 ## 目次
 
-- 共通: 現在のユーザー / ダッシュボード / ERP横断検索 / コマンドパレット
+- 共通: 現在のユーザー / ダッシュボード / ERP横断検索 / コマンドパレット / Knowledge Hub
 - 利用者向け: 日報 / 工数 / タスク / 経費 / 休暇 / 見積 / 請求 / チャット / オフライン
 - 補足: PWA キャッシュ更新
 
@@ -118,6 +118,17 @@
 2. 画面名（例: `ルームチャット`）または操作名（例: `再取得`）を入力する
 3. 候補を選択して `Enter` で実行する
 4. `Esc` で閉じる
+
+---
+
+## 共通: Knowledge Hub
+
+- 目的: 外部情報や手動メモを個人または明示した組織scopeのInboxへ保存し、immutableなversion・SHA-256・出所を確認する
+- 主な操作: text / URL / PDF / imageの保存、version追加、保存結果の再照合、認可済みdownload
+- 詳細: [Knowledge Hub 手動保存ガイド](knowledge-hub.md)
+- 証跡: `docs/test-results/2026-08-06-issue2012-knowledge-snapshot-ui/01-knowledge-hub-manual-capture.png`
+
+![Knowledge Hub](../test-results/2026-08-06-issue2012-knowledge-snapshot-ui/01-knowledge-hub-manual-capture.png)
 
 ---
 
