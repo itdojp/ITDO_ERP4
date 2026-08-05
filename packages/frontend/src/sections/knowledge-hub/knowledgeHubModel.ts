@@ -55,18 +55,21 @@ export type KnowledgeCaptureDraft = {
   selectedItem: KnowledgeItem | null;
 };
 
-export type ValidKnowledgeCapture = {
+type ValidKnowledgeCaptureBase = {
   destination: KnowledgeCaptureDestination;
-  mode: KnowledgeCaptureMode;
-  sourceType: KnowledgeSourceType;
   scope: KnowledgeScope;
   title: string | null;
   organizationGroupIds: string[];
-  text?: string;
-  url?: string;
-  file?: File;
   selectedItem: KnowledgeItem | null;
 };
+
+export type ValidKnowledgeCapture = ValidKnowledgeCaptureBase &
+  (
+    | { mode: 'text'; sourceType: 'manual'; text: string }
+    | { mode: 'url'; sourceType: 'web'; url: string }
+    | { mode: 'pdf'; sourceType: 'pdf'; file: File }
+    | { mode: 'image'; sourceType: 'image'; file: File }
+  );
 
 export const KNOWLEDGE_MAX_TEXT_BYTES = 1024 * 1024;
 export const KNOWLEDGE_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -181,9 +184,8 @@ export function validateKnowledgeCapture(
     };
   }
 
-  const base: Omit<ValidKnowledgeCapture, 'sourceType'> = {
+  const base: ValidKnowledgeCaptureBase = {
     destination: draft.destination,
-    mode: draft.mode,
     scope:
       draft.destination === 'new'
         ? draft.scope
@@ -208,7 +210,12 @@ export function validateKnowledgeCapture(
     }
     return {
       ok: true,
-      value: { ...base, sourceType: 'manual', text: draft.text },
+      value: {
+        ...base,
+        mode: 'text',
+        sourceType: 'manual',
+        text: draft.text,
+      },
     };
   }
 
@@ -235,7 +242,10 @@ export function validateKnowledgeCapture(
     } catch {
       return { ok: false, error: '有効なhttp/https URLを入力してください。' };
     }
-    return { ok: true, value: { ...base, sourceType: 'web', url } };
+    return {
+      ok: true,
+      value: { ...base, mode: 'url', sourceType: 'web', url },
+    };
   }
 
   const file = draft.file;
@@ -260,13 +270,15 @@ export function validateKnowledgeCapture(
       error: 'PNG、JPEG、WebP、GIF形式の画像を選択してください。',
     };
   }
+  if (draft.mode === 'pdf') {
+    return {
+      ok: true,
+      value: { ...base, mode: 'pdf', sourceType: 'pdf', file },
+    };
+  }
   return {
     ok: true,
-    value: {
-      ...base,
-      sourceType: draft.mode,
-      file,
-    },
+    value: { ...base, mode: 'image', sourceType: 'image', file },
   };
 }
 

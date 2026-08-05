@@ -272,19 +272,25 @@ export const KnowledgeHub: React.FC = () => {
       }
 
       const captured =
-        input.mode === 'text' || input.mode === 'url'
+        input.mode === 'text'
           ? await captureKnowledgeTextOrUrl({
               itemId: targetItem.id,
               requestKey,
-              mode: input.mode,
+              mode: 'text',
               text: input.text,
-              url: input.url,
             })
-          : await uploadKnowledgeSnapshot({
-              itemId: targetItem.id,
-              requestKey,
-              file: input.file as File,
-            });
+          : input.mode === 'url'
+            ? await captureKnowledgeTextOrUrl({
+                itemId: targetItem.id,
+                requestKey,
+                mode: 'url',
+                url: input.url,
+              })
+            : await uploadKnowledgeSnapshot({
+                itemId: targetItem.id,
+                requestKey,
+                file: input.file,
+              });
 
       setSelectedItemId(targetItem.id);
       setSnapshots((current) =>

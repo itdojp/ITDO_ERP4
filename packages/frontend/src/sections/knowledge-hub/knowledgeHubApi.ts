@@ -183,13 +183,11 @@ export async function createKnowledgeItem(input: {
   );
 }
 
-export async function captureKnowledgeTextOrUrl(input: {
-  itemId: string;
-  requestKey: string;
-  mode: 'text' | 'url';
-  text?: string;
-  url?: string;
-}) {
+export async function captureKnowledgeTextOrUrl(
+  input: { itemId: string; requestKey: string } & (
+    { mode: 'text'; text: string } | { mode: 'url'; url: string }
+  ),
+) {
   const body =
     input.mode === 'text'
       ? {
