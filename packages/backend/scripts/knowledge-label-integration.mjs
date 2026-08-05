@@ -491,6 +491,33 @@ try {
           FOR UPDATE
         `),
       request: () =>
+        labelService.remove({
+          actor: owner,
+          auditActor,
+          labelId: organizationLabel.id,
+          expectedVersion: 2,
+        }),
+      context: 'hidden active child delete oracle',
+    }),
+    'version_conflict',
+    'hidden active child delete oracle',
+  );
+  const organizationLabelAfterRejectedDelete =
+    await prisma.knowledgeLabel.findUniqueOrThrow({
+      where: { id: organizationLabel.id },
+    });
+  assert.equal(organizationLabelAfterRejectedDelete.deletedAt, null);
+  assert.equal(organizationLabelAfterRejectedDelete.version, 2);
+  expectFailure(
+    await assertUnauthorizedRequestDoesNotWaitForRowLock({
+      acquireLock: (transaction) =>
+        transaction.$queryRaw(Prisma.sql`
+          SELECT "id"
+          FROM "KnowledgeLabel"
+          WHERE "id" = ${hiddenOrganizationChild.id}
+          FOR UPDATE
+        `),
+      request: () =>
         labelService.update({
           actor: owner,
           auditActor,

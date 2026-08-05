@@ -216,7 +216,7 @@ master・階層・競合契約:
 - display name、slug、aliasはdomain内で正規化済みcanonical namespaceを共有し、曖昧な重複を`409 label_conflict`とする。active slugはDB partial unique indexでも保護する。
 - closure pathは各labelに`ancestorId = descendantId`かつ`depth = 0`のself rowを1件持つ。reparentはactive subtree rowだけをactorのcurrent manage ACLで修飾したqueryでlockし、active subtree全件をmanageできない場合はclosure pathを変更せずgeneric `409 version_conflict`でfail closedとする。logical deleted descendantはmutation不能なtombstoneとしてlock待ち対象から除外するが、provenanceとclosure整合性を保つためpath再構築対象には含める。全active row認可後にpathを同一transactionで再構築し、cycle、別scope/owner/organization、壊れたpath、depth 8超過を拒否する。
 - Serializable conflict、adapter-pgのSQLSTATE `40001`、deadlock `40P01`、unique raceはDB transactionだけを最大3回再評価する。成功済み外部副作用はretry対象に含めない。上限到達時はraw Prisma errorやDB詳細を返さず、canonical label name/slug/alias namespaceのunique競合は`409 label_conflict`、その他の並行競合は`409 version_conflict`へ正規化する。active item-label assignmentの重複だけは通常検出とunique retry枯渇を同じ`400 invalid_request`（`label is already attached`）とし、label master名競合と混同しない。
-- active childを持つlabelはlogical deleteできない。PR1はlabel masterやassignmentを物理削除しない。
+- active childを持つlabelはlogical deleteできない。delete時はactive child全件に対するactorのcurrent manage ACLを同一aggregate queryで評価し、全件をmanageできる場合だけ具体的な`has_active_children`拒否とする。hiddenまたはmanage不能なactive childが1件でもある場合は、子の存在・件数・権限を細分化しないgeneric `409 version_conflict`でfail closedとする。PR1はlabel masterやassignmentを物理削除しない。
 - business row、version更新、closure path、grant/assignment、Knowledge専用auditは同じtransactionでcommitし、audit失敗時もbusiness writeをrollbackする。
 
 PR1 API:

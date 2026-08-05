@@ -197,6 +197,72 @@ test('reparent preserves deleted descendant paths without locking immutable tomb
   });
 });
 
+test('delete hides unauthorized active children behind a generic conflict', async () => {
+  const rawQueries = [];
+  let labelWriteCount = 0;
+  const repository = new PrismaKnowledgeLabelRepository({
+    $queryRaw: async (query) => {
+      rawQueries.push(query);
+      return [{ activeCount: 2, manageableCount: 1 }];
+    },
+    knowledgeLabel: {
+      updateMany: async () => {
+        labelWriteCount += 1;
+        return { count: 1 };
+      },
+    },
+  });
+
+  const result = await repository.deleteVersioned({
+    actor: {
+      userId: 'owner-1',
+      organizationId: 'org-1',
+      groupAccountIds: ['group-1'],
+    },
+    labelId: 'label-parent',
+    expectedVersion: 1,
+    deletedAt: new Date('2026-08-05T00:00:00.000Z'),
+  });
+
+  assert.deepEqual(result, { ok: false, reason: 'version_conflict' });
+  assert.equal(labelWriteCount, 0);
+  assert.equal(rawQueries.length, 1);
+  const childAccessSql = rawQueries[0].text;
+  assert.match(childAccessSql, /label\."parentId" = \$\d+/);
+  assert.match(childAccessSql, /label\."deletedAt" IS NULL/);
+  assert.match(childAccessSql, /label\."ownerUserId" = \$\d+/);
+  assert.match(childAccessSql, /label\."organizationId" = \$\d+/);
+  assert.match(childAccessSql, /label_grant\."capability" = 'manage'/);
+  assert.match(childAccessSql, /group_account\."active" = TRUE/);
+});
+
+test('delete reports active children only when every child is manageable', async () => {
+  let labelWriteCount = 0;
+  const repository = new PrismaKnowledgeLabelRepository({
+    $queryRaw: async () => [{ activeCount: 1, manageableCount: 1 }],
+    knowledgeLabel: {
+      updateMany: async () => {
+        labelWriteCount += 1;
+        return { count: 1 };
+      },
+    },
+  });
+
+  const result = await repository.deleteVersioned({
+    actor: {
+      userId: 'owner-1',
+      organizationId: 'org-1',
+      groupAccountIds: ['group-1'],
+    },
+    labelId: 'label-parent',
+    expectedVersion: 1,
+    deletedAt: new Date('2026-08-05T00:00:00.000Z'),
+  });
+
+  assert.deepEqual(result, { ok: false, reason: 'has_active_children' });
+  assert.equal(labelWriteCount, 0);
+});
+
 test('label visibility requires owner for personal and same-org active use/manage grant for organization', () => {
   assert.deepEqual(
     buildKnowledgeLabelVisibilityWhere({

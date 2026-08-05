@@ -722,10 +722,22 @@ export class PrismaKnowledgeLabelRepository
     if (!canIncrementVersion(input.expectedVersion)) {
       return { ok: false as const, reason: 'version_conflict' as const };
     }
-    const activeChildren = await this.client.knowledgeLabel.count({
-      where: { parentId: input.labelId, deletedAt: null },
-    });
-    if (activeChildren > 0) {
+    const [childAccess] = await this.client.$queryRaw<
+      Array<{ activeCount: number; manageableCount: number }>
+    >(Prisma.sql`
+      SELECT
+        COUNT(*)::integer AS "activeCount",
+        COUNT(*) FILTER (
+          WHERE ${manageableLabelLockPredicate(input.actor)}
+        )::integer AS "manageableCount"
+      FROM "KnowledgeLabel" AS label
+      WHERE label."parentId" = ${input.labelId}
+        AND label."deletedAt" IS NULL
+    `);
+    if (childAccess.activeCount !== childAccess.manageableCount) {
+      return { ok: false as const, reason: 'version_conflict' as const };
+    }
+    if (childAccess.activeCount > 0) {
       return { ok: false as const, reason: 'has_active_children' as const };
     }
     const result = await this.client.knowledgeLabel.updateMany({
