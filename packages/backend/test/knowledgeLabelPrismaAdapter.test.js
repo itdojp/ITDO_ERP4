@@ -88,6 +88,7 @@ test('reparent locks only an entirely manageable subtree before changing closure
       },
     },
     knowledgeLabel: {
+      count: async () => 2,
       updateMany: async () => {
         labelWriteCount += 1;
         return { count: 1 };
@@ -119,6 +120,81 @@ test('reparent locks only an entirely manageable subtree before changing closure
   assert.match(lockSql, /group_account\."active" = TRUE/);
   assert.match(lockSql, /ORDER BY label\."id"/);
   assert.match(lockSql, /FOR UPDATE/);
+});
+
+test('reparent preserves deleted descendant paths without locking immutable tombstones', async () => {
+  const rawQueries = [];
+  const pathReads = [];
+  const pathDeletes = [];
+  const repository = new PrismaKnowledgeLabelRepository({
+    $queryRaw: async (query) => {
+      rawQueries.push(query);
+      return [{ id: 'label-root' }];
+    },
+    knowledgeLabelPath: {
+      findMany: async (args) => {
+        pathReads.push(args);
+        if (pathReads.length === 1) {
+          return [
+            { descendantId: 'label-root', depth: 0 },
+            { descendantId: 'label-deleted-child', depth: 1 },
+          ];
+        }
+        return [
+          { ancestorId: 'label-root', descendantId: 'label-root' },
+          {
+            ancestorId: 'label-deleted-child',
+            descendantId: 'label-deleted-child',
+          },
+        ];
+      },
+      deleteMany: async (args) => {
+        pathDeletes.push(args);
+        return { count: 0 };
+      },
+    },
+    knowledgeLabel: {
+      count: async (args) => {
+        assert.deepEqual(args.where, {
+          id: { in: ['label-root', 'label-deleted-child'] },
+          deletedAt: null,
+        });
+        return 1;
+      },
+      updateMany: async () => ({ count: 1 }),
+      findUniqueOrThrow: async () => ({
+        id: 'label-root',
+        ownerUserId: 'owner-1',
+        scope: 'personal',
+        organizationId: null,
+        displayName: 'Root',
+        slug: 'root',
+        parentId: null,
+        version: 2,
+        deletedAt: null,
+        createdAt: new Date('2026-08-05T00:00:00.000Z'),
+        createdBy: 'owner-1',
+        updatedAt: new Date('2026-08-05T00:00:00.000Z'),
+        updatedBy: 'owner-1',
+      }),
+    },
+  });
+
+  const result = await repository.updateVersioned({
+    actor: { userId: 'owner-1', groupAccountIds: [] },
+    labelId: 'label-root',
+    expectedVersion: 1,
+    patch: { parentId: null },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.value.version, 2);
+  assert.equal(rawQueries.length, 1);
+  assert.equal(pathReads.length, 2);
+  assert.deepEqual(pathDeletes[0].where, {
+    descendantId: { in: ['label-root', 'label-deleted-child'] },
+    ancestorId: { notIn: ['label-root', 'label-deleted-child'] },
+  });
 });
 
 test('label visibility requires owner for personal and same-org active use/manage grant for organization', () => {

@@ -611,6 +611,9 @@ export class PrismaKnowledgeLabelRepository
       return { ok: false as const, reason: 'broken_hierarchy' as const };
     }
     const subtreeIds = subtreeRootPaths.map((path) => path.descendantId);
+    const activeSubtreeCount = await this.client.knowledgeLabel.count({
+      where: { id: { in: subtreeIds }, deletedAt: null },
+    });
     const lockedSubtree = await this.client.$queryRaw<Array<{ id: string }>>(
       Prisma.sql`
       SELECT label."id"
@@ -622,7 +625,7 @@ export class PrismaKnowledgeLabelRepository
       FOR UPDATE
     `,
     );
-    if (lockedSubtree.length !== subtreeIds.length) {
+    if (lockedSubtree.length !== activeSubtreeCount) {
       return { ok: false as const, reason: 'version_conflict' as const };
     }
     const selfPaths = await this.client.knowledgeLabelPath.findMany({

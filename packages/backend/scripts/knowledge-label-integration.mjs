@@ -232,6 +232,48 @@ try {
     0,
   );
 
+  const tombstoneRoot = await createLabel(owner, {
+    scope: 'personal',
+    displayName: 'Tombstone Root',
+    slug: 'tombstone-root',
+  });
+  const tombstoneChild = await createLabel(owner, {
+    scope: 'personal',
+    displayName: 'Tombstone Child',
+    slug: 'tombstone-child',
+    parentId: tombstoneRoot.id,
+  });
+  expectOk(
+    await labelService.remove({
+      actor: owner,
+      auditActor,
+      labelId: tombstoneChild.id,
+      expectedVersion: 1,
+    }),
+    'delete tombstone child',
+  );
+  expectOk(
+    await labelService.update({
+      actor: owner,
+      auditActor,
+      labelId: tombstoneRoot.id,
+      body: { expectedVersion: 1, parentId: personalChild.id },
+    }),
+    'reparent ancestor with deleted descendant',
+  );
+  const tombstonePaths = await prisma.knowledgeLabelPath.findMany({
+    where: { descendantId: tombstoneChild.id },
+    orderBy: { depth: 'asc' },
+  });
+  assert.deepEqual(
+    tombstonePaths.map((path) => [path.ancestorId, path.depth]),
+    [
+      [tombstoneChild.id, 0],
+      [tombstoneRoot.id, 1],
+      [personalChild.id, 2],
+    ],
+  );
+
   const concurrentNameResults = await Promise.all([
     labelService.create({
       actor: owner,
