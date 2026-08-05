@@ -466,7 +466,7 @@ export async function registerKnowledgeSavedViewRoutes(
           properties: { expectedVersion: versionSchema },
         },
         response: {
-          200: savedViewResponseSchema,
+          204: { type: 'null' },
           400: errorResponseSchema,
           403: errorResponseSchema,
           404: errorResponseSchema,
@@ -483,7 +483,7 @@ export async function registerKnowledgeSavedViewRoutes(
           .expectedVersion,
       });
       if (!result.ok) return sendFailure(reply, result);
-      return reply.send(toResponse(result.value));
+      return reply.code(204).send();
     },
   );
 

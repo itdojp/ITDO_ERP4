@@ -183,7 +183,22 @@ test('saved-view mutations map canonical actor, audit context and full replaceme
         captured.push(['remove', input]);
         return {
           ok: true,
-          value: view({ version: 2, deletedAt: now }),
+          value: view({
+            version: 2,
+            deletedAt: now,
+            filter: {
+              labels: {
+                any: [
+                  {
+                    id: 'stale-hidden-label-id',
+                    includeDescendants: true,
+                  },
+                ],
+                all: [],
+                not: [],
+              },
+            },
+          }),
         };
       },
     }),
@@ -217,16 +232,14 @@ test('saved-view mutations map canonical actor, audit context and full replaceme
     ).statusCode,
     200,
   );
-  assert.equal(
-    (
-      await app.inject({
-        method: 'DELETE',
-        url: '/knowledge/saved-views/view-1',
-        payload: { expectedVersion: 1 },
-      })
-    ).statusCode,
-    200,
-  );
+  const removed = await app.inject({
+    method: 'DELETE',
+    url: '/knowledge/saved-views/view-1',
+    payload: { expectedVersion: 1 },
+  });
+  assert.equal(removed.statusCode, 204, removed.body);
+  assert.equal(removed.body, '');
+  assert.equal(removed.body.includes('stale-hidden-label-id'), false);
   assert.equal(captured.length, 3);
   assert.equal(captured[0][1].actor.userId, 'owner-1');
   assert.equal(captured[0][1].auditActor.source, 'api');

@@ -23,7 +23,7 @@
 - cursorはversion、順序key、filter hash、actor-scope fingerprintをHMAC-SHA256で署名し、改ざん、別filter、別principal/group scope、形式不正を一定の`invalid_cursor`で拒否する。
 - productionでは32 UTF-8 byte以上の`KNOWLEDGE_CURSOR_SIGNING_SECRET`を必須とする。non-production未設定時だけprocess-local random secretを使う。
 - 検索SQLはcurrent item ACL、current label ACL、非削除label、active assignmentを同じstatementで評価する。hidden/deleted/revoked relationはitems、total、facets、suggestionsへ出さない。search/suggestion/saved-view executeには既存`RATE_LIMIT_SEARCH_*`契約を使う個別制限（既定60 requests / minute）を適用する。
-- saved viewはowner-onlyであり、作成・更新時にcanonical root、current ACL、descendant展開、expanded ID上限をbusiness writeと同じSerializable transaction内で再検証する。list/detail/execute時にACLが失効したviewはfilter情報を返さず`invalid_saved_view`とし、別のrecovery APIもlabel/filterを返さず`id|name|version|updatedAt`だけを返す。
+- saved viewはowner-onlyであり、作成・更新時にcanonical root、current ACL、descendant展開、expanded ID上限をbusiness writeと同じSerializable transaction内で再検証する。list/detail/execute時にACLが失効したviewはfilter情報を返さず`invalid_saved_view`とし、別のrecovery APIもlabel/filterを返さず`id|name|version|updatedAt`だけを返す。DELETE成功時は`204 No Content`とし、staleな旧filterやcanonical label IDを応答へ戻さない。
 - saved-view監査は一定targetとschema/versionだけを記録し、label ID、query、filter body、cursor、group principalを共有監査metadataへ保存しない。
 - synthetic fixtureとloopback ephemeral PostgreSQLだけを使用し、production identifier、credential、provider URL、個人情報は使用していない。
 
@@ -63,6 +63,7 @@
 
 ## Independent review remediation
 
+- Codex P1で、stale viewのDELETE成功応答が旧filterをserializeし、通常readの`invalid_saved_view`境界を迂回してcanonical label IDを返し得ることを検出した。DELETE成功をbodyなしの`204 No Content`へ変更し、service fakeがstale label IDを返してもHTTP bodyが空であるroute test、OpenAPI、要件を同期した。修正後はfocused cursor/search/saved-view 64 tests、backend full 1681 tests、lint/format/typecheck/build、OpenAPI non-breaking diff、docs checkがPASSした。
 - staleな通常list/detailは固定契約どおりgeneric `invalid_saved_view`を維持しつつ、新しい端末からもownerが回復できるfilter非公開recovery metadata APIを追加した。
 - ad-hoc searchはlabel reference resolve、current-visible descendant expansion、single search statementを同じRepeatable Read transactionへ統合した。
 - saved-view create/updateは新filterのroot visibility、descendant expansion/self path、visible expanded ID 100上限、business write、allowlist auditを同じSerializable transactionで評価し、P2034/40001/40P01等を最大3回retryする。

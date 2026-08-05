@@ -263,7 +263,7 @@ PR2は次のAPIを有効化し、本節の完了をもってIssue #2011をclose�
 - `POST /knowledge/labels/suggestions`: 検索語をURLへ置かないbody-based候補検索
 - `GET|POST /knowledge/saved-views`: owner-only list/create
 - `GET /knowledge/saved-views/recovery`: current filterを返さず、ownerがstale viewを全置換または削除するための`id|name|version|updatedAt`だけを返すowner-only recovery metadata
-- `GET|PUT|DELETE /knowledge/saved-views/:id`: owner-only detail/full replacement/logical delete
+- `GET|PUT|DELETE /knowledge/saved-views/:id`: owner-only detail/full replacement/logical delete。DELETE成功時は`204 No Content`とし、stale filterやcanonical label IDを応答へ含めない
 - `POST /knowledge/saved-views/:id/execute`: 保存済みfilterをcurrent ACLで再評価して検索する
 
 検索実行は、canonical label解決、current ACLによるdescendant展開、検索statementを同じPostgreSQL Repeatable Read snapshotで行う。current item ACL、非削除label、activeなgroup/grant、`KnowledgeItemLabel.detachedAt IS NULL`を含む検索本体は単一SQL statementを使用する。最初にdistinctなACL済みmatched item IDのCTEを構成し、page、limit適用前total、要求されたfacetを同じmatched集合から導出する。facetは`sourceType|status|scope|label`に限定し、label facetは可視labelを最大100 bucket返す。search、suggestion、saved-view executeにはproductionで有効な`RATE_LIMIT_SEARCH_*`のroute-level制限を適用し、未指定時はclient IPあたり60 request/minuteとする。
@@ -276,7 +276,7 @@ pagination順序は`updatedAt DESC, id DESC`とする。cursorは`{v,updatedAt,i
 
 `KNOWLEDGE_CURSOR_SIGNING_SECRET`は設定する全modeでUTF-8 32 bytes以上、productionでは必須とする。production以外の未設定時はprocess-local random keyを使うため、process restart後の既存cursorは失効する。secret rotationでも既存cursorが失効することを運用上のrollback/rotation契約とする。
 
-saved viewはscalar filterをtyped column、label operator/descendant flagを正規化relationへcanonical IDだけで保存する。list/detail/executeはcurrent ACLを再評価し、hidden/deleted/revoked/absent/inactive-group参照を同じ`invalid_saved_view`へ畳み込む。通常list/detailがfilterを返せない場合でも、別のowner-only recovery metadata APIがlabel/filter内容を返さず`id|name|version|updatedAt`を提供する。update/deleteはowner + expectedVersionを要求するが、staleな旧refの可視性を要求しないため、ownerは全filter置換またはlogical deleteで回復できる。create/updateでは新filterのcanonical root visibility、current descendant展開、visible expanded ID上限をbusiness writeと同じSerializable transaction内で再確認し、競合はbounded retry後に一定のversion conflictへ正規化する。
+saved viewはscalar filterをtyped column、label operator/descendant flagを正規化relationへcanonical IDだけで保存する。list/detail/executeはcurrent ACLを再評価し、hidden/deleted/revoked/absent/inactive-group参照を同じ`invalid_saved_view`へ畳み込む。通常list/detailがfilterを返せない場合でも、別のowner-only recovery metadata APIがlabel/filter内容を返さず`id|name|version|updatedAt`を提供する。update/deleteはowner + expectedVersionを要求するが、staleな旧refの可視性を要求しないため、ownerは全filter置換またはlogical deleteで回復できる。DELETE成功時は`204 No Content`とし、旧filterやcanonical label IDを応答へ戻さない。create/updateでは新filterのcanonical root visibility、current descendant展開、visible expanded ID上限をbusiness writeと同じSerializable transaction内で再確認し、競合はbounded retry後に一定のversion conflictへ正規化する。
 
 saved-view mutationと監査は同じPrisma transactionでcommitする。共有`AuditLog`は`targetTable=knowledge_saved_views`、`targetId=saved_view`の一定markerと、schema/versionだけのallowlist metadataを使い、saved-view ID、name、label ID/name/alias、filter body、cursor、検索語を記録しない。
 
