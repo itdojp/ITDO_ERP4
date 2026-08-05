@@ -36,24 +36,25 @@ manual capture UI、frontend E2E、sanitized screenshot evidenceは、PR A merge
 
 | Command / check                           | Result | Evidence                                                                             |
 | ----------------------------------------- | ------ | ------------------------------------------------------------------------------------ |
-| Knowledge snapshot/storage focused tests  | PASS   | 116 tests、fail/cancelled/skip/todo 0                                                |
-| focused source coverage                   | PASS   | 対象8 compiled modules: statements/lines 91.40%、branches 76.20%、functions 97.19%   |
+| Knowledge snapshot/storage focused tests  | PASS   | 120 tests、fail/cancelled/skip/todo 0                                                |
+| CodeQL/Copilot remediation focused rerun  | PASS   | transport回帰を含む136 testsを3回連続実行、fail/cancelled/skip/todo 0                |
+| focused source coverage                   | PASS   | 対象8 compiled modules: statements/lines 91.58%、branches 76.20%、functions 97.22%   |
 | PostgreSQL 15 integration                 | PASS   | 2 snapshots、2 artifacts、5 audits、version `[1,2]`                                  |
 | ACL integration                           | PASS   | outsider detail/downloadはともに404、owner downloadは38 bytes                        |
 | migration deploy/status                   | PASS   | ephemeral DBへ既存migrationを含めて適用し、snapshot capture/reconcile/downloadを実行 |
 | backend lint / format / typecheck / build | PASS   | repository標準commandがexit 0                                                        |
-| backend full test                         | PASS   | 1,774 tests、fail/cancelled/skipped/todo 0                                           |
+| backend full test                         | PASS   | 1,778 tests、fail/cancelled/skipped/todo 0                                           |
 | `git diff --check`                        | PASS   | whitespace error 0、integration shellの`bash -n`もPASS                               |
 
 ### Focused coverage summary
 
 | Module group              | Statements / lines | Branches | Functions |
 | ------------------------- | -----------------: | -------: | --------: |
-| all focused modules       |             91.40% |   76.20% |    97.19% |
-| knowledge adapters        |             95.72% |   82.23% |      100% |
-| shared storage adapter    |             92.30% |   70.55% |      100% |
-| knowledge application     |             89.07% |   76.43% |    93.61% |
-| knowledge snapshot routes |             91.83% |   76.78% |      100% |
+| all focused modules       |             91.58% |   76.20% |    97.22% |
+| knowledge adapters        |             95.73% |   82.24% |      100% |
+| shared storage adapter    |             92.42% |   71.51% |      100% |
+| knowledge application     |             89.44% |   75.96% |    93.62% |
+| knowledge snapshot routes |             91.84% |   76.79% |      100% |
 
 ### PostgreSQL integration summary
 
@@ -90,6 +91,8 @@ manual capture UI、frontend E2E、sanitized screenshot evidenceは、PR A merge
 - security reviewで、text/plain/htmlの1 MiB上限が10 MiB読込後に評価される点を検出した。URLはContent-Type判定直後、multipartはfile metadata取得直後から1 MiBで停止・cancelするtestを追加した。
 - response送信開始後のACL失効はrequest-time authorizationモデルの範囲外であり、chunk単位のDB照会はraceを完全に除去できず負荷も増やすため採用しない。provider I/O直前・直後のcurrent ACL再評価を明示的な境界とする。
 - `capturedBy`は認可済みERP4利用者向けprovenanceで、provider metadata非公開とは別契約である。canonical account IDを維持し、証跡の過剰な非公開表現を修正した。
+- CodeQLでHTML entityの二重復号と、test差替え可能な`fetch`分岐へのSSRF taintを検出した。entityは単一replace passで1回だけ復号し、`&amp;lt;`等を再解釈しないtestを追加した。outbound transportは差替え分岐を除去し、検証済みhostをDNS pinningするNode HTTP(S)経路へ一本化した。既存LLM/SendGrid testもloopbackの実HTTP transportへ変更し、test-only bypassを残していない。
+- Copilot reviewで、共有storageのBuffer bodyが宣言size/hashと不一致でもprovider I/O後まで失敗しない回帰を検出した。DB row作成・provider factory取得より前にlength/SHA-256を照合し、両不一致でDB/provider call 0を確認した。stream bodyは既存のwrite後verification契約を維持する。
 
 ## Repository-wide quality gates
 

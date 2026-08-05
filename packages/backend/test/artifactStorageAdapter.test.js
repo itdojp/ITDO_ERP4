@@ -1205,3 +1205,54 @@ test('invalid metadata is rejected before creating a pending row', async () => {
   );
   assert.equal(db.rows.length, 0);
 });
+
+test('Buffer size and checksum mismatches fail before database or provider I/O', async (t) => {
+  for (const scenario of [
+    {
+      name: 'size mismatch',
+      change: { sizeBytes: Buffer.byteLength('content') + 1 },
+      error: 'artifact_size_invalid',
+    },
+    {
+      name: 'checksum mismatch',
+      change: { sha256: '0'.repeat(64) },
+      error: 'artifact_sha256_invalid',
+    },
+  ]) {
+    await t.test(scenario.name, async () => {
+      const db = createArtifactDb();
+      let providerCalls = 0;
+      const adapter = createArtifactStorageAdapter({
+        context: 'report',
+        db,
+        env: {
+          REPORT_GDRIVE_FOLDER_ID: 'folder-placeholder',
+          ERP4_GDRIVE_CLIENT_ID: 'common-client',
+          ERP4_GDRIVE_CLIENT_SECRET: 'common-secret',
+          ERP4_GDRIVE_REFRESH_TOKEN: 'common-refresh',
+        },
+        folderEnvKey: 'REPORT_GDRIVE_FOLDER_ID',
+        localDir: 'unused-local-directory',
+        objectStoreFactory: () => {
+          providerCalls += 1;
+          return {
+            put: async () => assert.fail('put must not be called'),
+            get: async () => assert.fail('get must not be called'),
+            stat: async () => assert.fail('stat must not be called'),
+            trash: async () => assert.fail('trash must not be called'),
+          };
+        },
+        provider: 'gdrive',
+      });
+
+      await assert.rejects(
+        () => adapter.store({ ...input(), ...scenario.change }),
+        {
+          message: scenario.error,
+        },
+      );
+      assert.equal(db.rows.length, 0);
+      assert.equal(providerCalls, 0);
+    });
+  }
+});

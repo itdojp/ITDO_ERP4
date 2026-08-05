@@ -4,8 +4,6 @@ import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
 import { Readable } from 'node:stream';
 
-const NATIVE_FETCH = globalThis.fetch;
-
 export type DnsLookupResult = Array<{ address: string; family?: number }>;
 
 type ValidatedExternalUrl = {
@@ -20,7 +18,6 @@ export type SafeHttpOptions = {
   timeoutMs?: number;
   userAgent?: string;
   dnsLookupImpl?: (hostname: string) => Promise<DnsLookupResult>;
-  fetchImpl?: typeof fetch;
 };
 
 export class SafeHttpError extends Error {
@@ -324,9 +321,6 @@ export async function safeFetch(
   const timeoutMs = Number.isFinite(options.timeoutMs)
     ? Math.max(1, Math.floor(options.timeoutMs as number))
     : 5000;
-  const fetchImpl =
-    options.fetchImpl ||
-    (globalThis.fetch !== NATIVE_FETCH ? globalThis.fetch : undefined);
   const userAgent = (options.userAgent || '').trim() || 'ITDO_ERP4/0.1';
 
   const controller = new AbortController();
@@ -346,14 +340,6 @@ export async function safeFetch(
     const headers = new Headers(init.headers || {});
     if (!headers.has('User-Agent')) {
       headers.set('User-Agent', userAgent);
-    }
-    if (fetchImpl) {
-      return await fetchImpl(validatedUrl.toString(), {
-        ...init,
-        headers,
-        redirect: 'error',
-        signal: controller.signal,
-      });
     }
     return await pinnedRequestFetch(
       validatedUrl,

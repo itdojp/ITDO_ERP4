@@ -82,6 +82,17 @@ function validateArtifactMetadata(
   }
 }
 
+function validateStoreInput(input: StoreArtifactInput) {
+  validateArtifactMetadata(input);
+  if (!Buffer.isBuffer(input.body)) return;
+  if (input.body.length !== input.sizeBytes) {
+    throw new Error('artifact_size_invalid');
+  }
+  if (createHash('sha256').update(input.body).digest('hex') !== input.sha256) {
+    throw new Error('artifact_sha256_invalid');
+  }
+}
+
 function assertMatchingOwner(
   row: { ownerId: string | null; ownerType: string | null },
   input: Pick<RecoverArtifactInput, 'ownerId' | 'ownerType'>,
@@ -550,7 +561,7 @@ export function createArtifactStorageAdapter(
     },
 
     async store(input) {
-      validateArtifactMetadata(input);
+      validateStoreInput(input);
       const where = input.idempotencyKey
         ? {
             context_provider_idempotencyKey: {

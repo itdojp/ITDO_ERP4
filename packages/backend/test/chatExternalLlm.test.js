@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import test from 'node:test';
 
 function withEnv(overrides, fn) {
@@ -24,6 +25,22 @@ function withEnv(overrides, fn) {
     });
 }
 
+async function withHttpServer(handler, fn) {
+  const server = createServer(handler);
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  try {
+    return await fn(`http://127.0.0.1:${address.port}`);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
 test('summarizeWithExternalLlm blocks private endpoint by default', async () => {
   const { summarizeWithExternalLlm } =
     await import('../dist/services/chatExternalLlm.js');
@@ -46,72 +63,68 @@ test('summarizeWithExternalLlm blocks private endpoint by default', async () => 
 test('summarizeWithExternalLlm uses guarded fetch for allowed host', async () => {
   const { summarizeWithExternalLlm } =
     await import('../dist/services/chatExternalLlm.js');
-  const originalFetch = globalThis.fetch;
   let called = false;
-  try {
-    globalThis.fetch = async (_input, _init) => {
+  await withHttpServer(
+    (_request, response) => {
       called = true;
-      return new Response(
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
         JSON.stringify({
           choices: [{ message: { content: '- 概要: テスト' } }],
         }),
+      );
+    },
+    async (baseUrl) => {
+      await withEnv(
         {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
+          CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+          CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+          CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: `${baseUrl}/v1`,
+          CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: '127.0.0.1',
+          CHAT_EXTERNAL_LLM_ALLOW_HTTP: 'true',
+          CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: 'true',
+        },
+        async () => {
+          const result = await summarizeWithExternalLlm({ bodies: ['hello'] });
+          assert.equal(result.provider, 'openai');
+          assert.equal(called, true);
+          assert.match(result.summary, /概要/);
         },
       );
-    };
-    await withEnv(
-      {
-        CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
-        CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
-        CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://api.openai.com/v1',
-        CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: 'api.openai.com',
-        CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: '',
-      },
-      async () => {
-        const result = await summarizeWithExternalLlm({ bodies: ['hello'] });
-        assert.equal(result.provider, 'openai');
-        assert.equal(called, true);
-        assert.match(result.summary, /概要/);
-      },
-    );
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+    },
+  );
 });
 
 test('summarizeWithExternalLlm redacts bounded provider error diagnostics', async () => {
   const { summarizeWithExternalLlm } =
     await import('../dist/services/chatExternalLlm.js');
-  const originalFetch = globalThis.fetch;
-  try {
-    globalThis.fetch = async () =>
-      new Response(`token=sk_secret_value ${'x'.repeat(2000)}`, {
-        status: 502,
-        headers: { 'content-type': 'text/plain' },
-      });
-    await withEnv(
-      {
-        CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
-        CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
-        CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://api.openai.com/v1',
-        CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: 'api.openai.com',
-        CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: '',
-      },
-      async () => {
-        await assert.rejects(
-          summarizeWithExternalLlm({ bodies: ['secret prompt'] }),
-          (error) => {
-            assert.match(error.message, /openai_error_502/);
-            assert.equal(error.message.includes('sk_secret_value'), false);
-            assert.ok(error.message.length < 260);
-            return true;
-          },
-        );
-      },
-    );
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(502, { 'content-type': 'text/plain' });
+      response.end(`token=sk_secret_value ${'x'.repeat(2000)}`);
+    },
+    async (baseUrl) => {
+      await withEnv(
+        {
+          CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+          CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+          CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: `${baseUrl}/v1`,
+          CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: '127.0.0.1',
+          CHAT_EXTERNAL_LLM_ALLOW_HTTP: 'true',
+          CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: 'true',
+        },
+        async () => {
+          await assert.rejects(
+            summarizeWithExternalLlm({ bodies: ['secret prompt'] }),
+            (error) => {
+              assert.match(error.message, /openai_error_502/);
+              assert.equal(error.message.includes('sk_secret_value'), false);
+              assert.ok(error.message.length < 260);
+              return true;
+            },
+          );
+        },
+      );
+    },
+  );
 });

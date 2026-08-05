@@ -42,6 +42,13 @@ test('HTML capture removes active elements and returns plain text only', () => {
   assert.doesNotMatch(extracted, /script|iframe|stealCredential|secret-style/);
 });
 
+test('HTML entity extraction decodes each entity exactly once', () => {
+  const extracted = extractKnowledgeHtmlText(
+    Buffer.from('<p>&amp;lt; &amp;amp; &#38;lt; &#x26;gt; &lt;safe&gt;</p>'),
+  );
+  assert.equal(extracted, '&lt; &amp; &lt; &gt; <safe>');
+});
+
 test('upload capture enforces allowlisted MIME and file signatures', () => {
   const pdf = materializeKnowledgeUpload({
     body: Buffer.from('%PDF-1.7\nfixture'),

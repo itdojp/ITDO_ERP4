@@ -83,27 +83,34 @@ const blockedHtmlElement =
   /<(script|style|template|noscript|iframe|object|embed|svg|math)\b[^>]*>[\s\S]*?<\/\1\s*>/gi;
 const htmlComment = /<!--[\s\S]*?-->/g;
 const htmlTag = /<[^>]*>/g;
+const safeHtmlEntity =
+  /&(?:nbsp|amp|lt|gt|quot|apos|#39|#\d{1,7}|#x[0-9a-f]{1,6});/gi;
 
 function decodeSafeHtmlEntities(value: string) {
-  return value
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
-    .replace(/&#(\d{1,7});/g, (_match, decimal) => {
-      const decoded = Number(decimal);
-      return Number.isInteger(decoded) && decoded >= 32 && decoded <= 0x10ffff
-        ? String.fromCodePoint(decoded)
-        : ' ';
-    })
-    .replace(/&#x([0-9a-f]{1,6});/gi, (_match, hexadecimal) => {
-      const decoded = Number.parseInt(hexadecimal, 16);
-      return Number.isInteger(decoded) && decoded >= 32 && decoded <= 0x10ffff
-        ? String.fromCodePoint(decoded)
-        : ' ';
-    });
+  return value.replace(safeHtmlEntity, (entity) => {
+    const normalized = entity.toLowerCase();
+    switch (normalized) {
+      case '&nbsp;':
+        return ' ';
+      case '&amp;':
+        return '&';
+      case '&lt;':
+        return '<';
+      case '&gt;':
+        return '>';
+      case '&quot;':
+        return '"';
+      case '&#39;':
+      case '&apos;':
+        return "'";
+    }
+    const decoded = normalized.startsWith('&#x')
+      ? Number.parseInt(normalized.slice(3, -1), 16)
+      : Number(normalized.slice(2, -1));
+    return Number.isInteger(decoded) && decoded >= 32 && decoded <= 0x10ffff
+      ? String.fromCodePoint(decoded)
+      : ' ';
+  });
 }
 
 export function extractKnowledgeHtmlText(body: Buffer) {
