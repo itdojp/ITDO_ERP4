@@ -18,7 +18,6 @@ type KnowledgeProvenanceAuditClient = Pick<
 >;
 
 const requestIdPattern = /^[A-Za-z0-9._-]{1,128}$/;
-const auditTextPattern = /^[^\u0000-\u001f\u007f]+$/u;
 const auditScopePattern = /^[A-Za-z0-9._:-]+$/;
 
 const auditContextLimits = {
@@ -53,6 +52,14 @@ function bounded(value: string | undefined, maximum: number) {
   return value.slice(0, maximum);
 }
 
+function hasAsciiControlCharacter(value: string) {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
+}
+
 function requiredAuditText(value: string | undefined, maximum: number): string {
   if (typeof value !== 'string') {
     throw new Error('knowledge_provenance_audit_contract_invalid');
@@ -61,7 +68,7 @@ function requiredAuditText(value: string | undefined, maximum: number): string {
   if (
     !normalized ||
     normalized.length > maximum ||
-    !auditTextPattern.test(normalized)
+    hasAsciiControlCharacter(normalized)
   ) {
     throw new Error('knowledge_provenance_audit_contract_invalid');
   }

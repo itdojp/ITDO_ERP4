@@ -1292,6 +1292,24 @@ test('provenance audit writer enforces action-target mapping and runtime metadat
     () =>
       writer.write({
         action: 'knowledge_annotation_created',
+        actor: {
+          userId: 'owner-1',
+          requestId: 'request-3',
+          source: 'agent',
+          principalUserId: 'principal\nwith-control',
+          actorUserId: 'agent-1',
+        },
+        targetTable: 'knowledge_annotations',
+        targetId: 'annotation-3',
+        metadata: {},
+      }),
+    /knowledge_provenance_audit_contract_invalid/,
+  );
+
+  await assert.rejects(
+    () =>
+      writer.write({
+        action: 'knowledge_annotation_created',
         actor: { userId: 'owner-1' },
         targetTable: 'knowledge_conversations',
         targetId: 'annotation-1',
