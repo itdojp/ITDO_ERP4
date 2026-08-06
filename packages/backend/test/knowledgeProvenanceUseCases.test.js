@@ -234,6 +234,74 @@ test('annotation and conversation reads always use a consistent snapshot', async
   assert.equal(conversationSnapshotCalls.length, 3);
 });
 
+test('history cursors accept the PostgreSQL integer maximum sequence', async () => {
+  let annotationBoundary;
+  const annotationReader = {
+    withConsistentSnapshot: async (read) => read(annotationReader),
+    listRevisionsVisible: async (input) => {
+      annotationBoundary = input.beforeRevision;
+      return { items: [], nextBoundary: null };
+    },
+  };
+  const annotationService = createKnowledgeAnnotationService({
+    reader: annotationReader,
+    unitOfWork: unitOfWork(transaction()),
+  });
+  const annotationResult = await annotationService.history({
+    actor,
+    itemId: 'item-1',
+    annotationId: 'annotation-1',
+    limit: 20,
+    beforeRevision: 2_147_483_647,
+  });
+  assert.equal(annotationResult.ok, true);
+  assert.equal(annotationBoundary, 2_147_483_647);
+
+  let turnBoundary;
+  const conversationReader = {
+    withConsistentSnapshot: async (read) => read(conversationReader),
+    listTurnsVisible: async (input) => {
+      turnBoundary = input.boundary;
+      return { items: [], nextBoundary: null };
+    },
+  };
+  const conversationService = createKnowledgeConversationService({
+    reader: conversationReader,
+    unitOfWork: unitOfWork(transaction()),
+  });
+  const conversationResult = await conversationService.listTurns({
+    actor,
+    conversationId: 'conversation-1',
+    limit: 20,
+    boundary: { sequence: 2_147_483_647, id: 'turn-maximum' },
+  });
+  assert.equal(conversationResult.ok, true);
+  assert.deepEqual(turnBoundary, {
+    sequence: 2_147_483_647,
+    id: 'turn-maximum',
+  });
+
+  let synthesisBoundary;
+  const synthesisReader = consistentSynthesisReader({
+    listVersionsVisible: async (input) => {
+      synthesisBoundary = input.beforeVersion;
+      return { items: [], nextBoundary: null };
+    },
+  });
+  const synthesisService = createKnowledgeSynthesisService({
+    reader: synthesisReader,
+    unitOfWork: unitOfWork(transaction()),
+  });
+  const synthesisResult = await synthesisService.history({
+    actor,
+    synthesisId: 'synthesis-1',
+    limit: 20,
+    beforeVersion: 2_147_483_647,
+  });
+  assert.equal(synthesisResult.ok, true);
+  assert.equal(synthesisBoundary, 2_147_483_647);
+});
+
 test('annotation create is owner-only, transactionally audited, and audit metadata excludes body', async () => {
   const audit = [];
   let createdInput;
@@ -378,6 +446,66 @@ test('annotation revision preserves prior content, rejects no-op and stale revis
   assert.equal(removed.ok, true);
   assert.equal(removed.value.deletedAt.toISOString(), now.toISOString());
   assert.equal(revisions.length, 2);
+});
+
+test('annotation deletion accepts the terminal stored revision while mutation rejects overflow', async () => {
+  const terminalRevision = 2_147_483_647;
+  let deleted = false;
+  const current = annotation({
+    currentRevision: terminalRevision,
+    revision: revision({ revision: terminalRevision }),
+  });
+  const tx = transaction({
+    annotations: {
+      findOwned: async () => current,
+      revise: async () => {
+        throw new Error('revision must be rejected before persistence');
+      },
+      logicallyDelete: async ({ expectedRevision }) => {
+        assert.equal(expectedRevision, terminalRevision);
+        deleted = true;
+        return annotation({ ...current, deletedAt: now });
+      },
+    },
+  });
+  const service = createKnowledgeAnnotationService({
+    reader: {},
+    unitOfWork: unitOfWork(tx),
+    now: () => now,
+  });
+
+  const removed = await service.remove({
+    actor,
+    auditActor,
+    itemId: 'item-1',
+    annotationId: 'annotation-1',
+    expectedRevision: terminalRevision,
+  });
+  assert.equal(removed.ok, true);
+  assert.equal(deleted, true);
+
+  const reviseOverflow = await service.revise({
+    actor,
+    auditActor,
+    itemId: 'item-1',
+    annotationId: 'annotation-1',
+    body: {
+      expectedRevision: terminalRevision,
+      kind: 'question',
+      origin: 'user',
+      content: 'Must not overflow the PostgreSQL integer revision',
+    },
+  });
+  assert.equal(reviseOverflow.statusCode, 400);
+
+  const deleteOverflow = await service.remove({
+    actor,
+    auditActor,
+    itemId: 'item-1',
+    annotationId: 'annotation-1',
+    expectedRevision: terminalRevision + 1,
+  });
+  assert.equal(deleteOverflow.statusCode, 400);
 });
 
 test('mandatory annotation audit failure rolls the mutation back', async () => {

@@ -17,6 +17,7 @@ import {
   isAllowedKnowledgeValue,
   isBoundedKnowledgeId,
   isValidKnowledgeListLimit,
+  isValidKnowledgeSequence,
   isValidKnowledgeVersion,
   knowledgeProvenanceAuditActor,
   normalizeBoundedContent,
@@ -90,7 +91,7 @@ export function createKnowledgeAnnotationService(dependencies: {
         !isBoundedKnowledgeId(input.annotationId) ||
         !isValidKnowledgeListLimit(input.limit) ||
         (input.beforeRevision !== undefined &&
-          !isValidKnowledgeVersion(input.beforeRevision))
+          !isValidKnowledgeSequence(input.beforeRevision))
       ) {
         return provenanceNotFound();
       }
@@ -250,7 +251,7 @@ export function createKnowledgeAnnotationService(dependencies: {
       ) {
         return provenanceNotFound();
       }
-      if (!isValidKnowledgeVersion(input.expectedRevision)) {
+      if (!isValidKnowledgeSequence(input.expectedRevision)) {
         return provenanceInvalid('expectedRevision is invalid');
       }
       return runKnowledgeProvenanceMutation(() =>

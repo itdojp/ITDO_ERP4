@@ -88,7 +88,9 @@ export const knowledgeProvenanceLimits = {
   listLimit: 100,
   defaultListLimit: 50,
   cursor: 4096,
+  // Mutations must leave room for one increment; read cursors may reach INTEGER max.
   expectedVersion: 2_147_483_646,
+  sequence: 2_147_483_647,
   confidenceBasisPoints: 10_000,
   synthesisProvenanceDepth: 16,
   synthesisProvenanceNodes: 128,

@@ -62,6 +62,37 @@ test('provenance sequence cursor is bound to actor, resource, and parent', () =>
     }),
     { sequence: 17, id: 'turn-17' },
   );
+  const maximumCursor = codec.encodeSequence({
+    kind: 'synthesis_versions',
+    parentId: 'synthesis-maximum',
+    actor,
+    boundary: { sequence: 2_147_483_647, id: 'version-maximum' },
+  });
+  assert.deepEqual(
+    codec.decodeSequence({
+      cursor: maximumCursor,
+      kind: 'synthesis_versions',
+      parentId: 'synthesis-maximum',
+      actor,
+    }),
+    { sequence: 2_147_483_647, id: 'version-maximum' },
+  );
+  const oversizedCursor = codec.encodeSequence({
+    kind: 'synthesis_versions',
+    parentId: 'synthesis-maximum',
+    actor,
+    boundary: { sequence: 2_147_483_648, id: 'version-oversized' },
+  });
+  assert.throws(
+    () =>
+      codec.decodeSequence({
+        cursor: oversizedCursor,
+        kind: 'synthesis_versions',
+        parentId: 'synthesis-maximum',
+        actor,
+      }),
+    KnowledgeProvenanceCursorError,
+  );
 
   for (const input of [
     {

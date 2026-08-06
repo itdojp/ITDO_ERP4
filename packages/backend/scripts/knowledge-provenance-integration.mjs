@@ -913,41 +913,99 @@ try {
       updatedBy: owner.userId,
     },
   });
-  let raceRelationInserted;
+  let markRaceRelationInserted;
   const raceRelationReady = new Promise((resolve) => {
-    raceRelationInserted = resolve;
+    markRaceRelationInserted = resolve;
   });
   let releaseRaceRelation;
-  const raceOwnerUpdateStarted = new Promise((resolve) => {
+  const raceRelationRelease = new Promise((resolve) => {
     releaseRaceRelation = resolve;
   });
-  const raceRelationInsert = prisma.$transaction(async (client) => {
-    await client.knowledgeConversationItem.create({
-      data: {
-        conversationId: raceConversation.id,
-        knowledgeItemId: raceItem.id,
-        ownerUserId: owner.userId,
-        relationType: 'primary',
-        ordinal: 0,
-        createdBy: owner.userId,
-      },
-    });
-    raceRelationInserted();
-    await raceOwnerUpdateStarted;
-  });
+  const raceRelationInsert = prisma.$transaction(
+    async (client) => {
+      await client.knowledgeConversationItem.create({
+        data: {
+          conversationId: raceConversation.id,
+          knowledgeItemId: raceItem.id,
+          ownerUserId: owner.userId,
+          relationType: 'primary',
+          ordinal: 0,
+          createdBy: owner.userId,
+        },
+      });
+      markRaceRelationInserted();
+      await raceRelationRelease;
+    },
+    { timeout: 10_000 },
+  );
   await raceRelationReady;
-  const raceOwnerUpdate = prisma.knowledgeItem
-    .update({
-      where: { id: raceItem.id },
-      data: { ownerUserId: 'integration-racing-owner' },
-    })
+  let publishRaceOwnerUpdatePid;
+  const raceOwnerUpdatePidReady = new Promise((resolve) => {
+    publishRaceOwnerUpdatePid = resolve;
+  });
+  const raceOwnerUpdate = prisma
+    .$transaction(
+      async (client) => {
+        const [session] = await client.$queryRawUnsafe(
+          'SELECT pg_backend_pid()::integer AS pid',
+        );
+        publishRaceOwnerUpdatePid(session.pid);
+        return client.knowledgeItem.update({
+          where: { id: raceItem.id },
+          data: { ownerUserId: 'integration-racing-owner' },
+        });
+      },
+      { timeout: 10_000 },
+    )
     .then(
       () => ({ ok: true }),
       (error) => ({ ok: false, error }),
     );
-  releaseRaceRelation();
+  let raceOwnerLockObserved = false;
+  let raceObservationError = null;
+  let pidWaitTimeout;
+  try {
+    const raceOwnerUpdatePid = await Promise.race([
+      raceOwnerUpdatePidReady,
+      new Promise((_, reject) => {
+        pidWaitTimeout = setTimeout(
+          () => reject(new Error('owner update session did not start')),
+          2_000,
+        );
+      }),
+    ]);
+    clearTimeout(pidWaitTimeout);
+    const lockObservationDeadline = Date.now() + 2_000;
+    while (Date.now() < lockObservationDeadline) {
+      const [activity] = await prisma.$queryRawUnsafe(
+        `SELECT
+           "wait_event_type" AS "waitEventType",
+           "wait_event" AS "waitEvent",
+           "state"
+         FROM "pg_stat_activity"
+         WHERE "pid" = $1`,
+        raceOwnerUpdatePid,
+      );
+      if (activity?.waitEventType === 'Lock') {
+        raceOwnerLockObserved = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.equal(
+      raceOwnerLockObserved,
+      true,
+      'owner update must enter a PostgreSQL lock wait before relation commit',
+    );
+  } catch (error) {
+    raceObservationError = error;
+  } finally {
+    clearTimeout(pidWaitTimeout);
+    releaseRaceRelation();
+  }
   await raceRelationInsert;
   const raceOwnerUpdateResult = await raceOwnerUpdate;
+  if (raceObservationError) throw raceObservationError;
   assert.equal(raceOwnerUpdateResult.ok, false);
   assert.match(
     String(raceOwnerUpdateResult.error),
@@ -1586,6 +1644,7 @@ try {
       crossOwnerRelationDbRejected: true,
       parentOwnerUpdateRejected: true,
       deferredOwnerTransferConsistent: true,
+      concurrentOwnerLockObserved: raceOwnerLockObserved,
       concurrentOwnerRaceRejected: true,
       sameSynthesisSourceRejected: true,
       immutableHistoryEnforced: true,

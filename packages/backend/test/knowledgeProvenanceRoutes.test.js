@@ -278,6 +278,62 @@ test('annotation routes reject unknown fields before service invocation', async 
   assert.equal(response.body.includes('must-not-pass'), false);
 });
 
+test('annotation routes permit terminal revision deletion but reject revision increment overflow', async (t) => {
+  const terminalRevision = 2_147_483_647;
+  let removedRevision;
+  let reviseCalls = 0;
+  const service = {
+    list: async () => notFound(),
+    detail: async () => notFound(),
+    history: async () => notFound(),
+    create: async () => notFound(),
+    revise: async () => {
+      reviseCalls += 1;
+      return notFound();
+    },
+    remove: async (input) => {
+      removedRevision = input.expectedRevision;
+      return {
+        ok: true,
+        value: annotation({
+          currentRevision: terminalRevision,
+          deletedAt: date,
+        }),
+      };
+    },
+  };
+  const app = await build(registerKnowledgeAnnotationRoutes, { service });
+  t.after(() => app.close());
+
+  const removed = await app.inject({
+    method: 'DELETE',
+    url: '/knowledge/items/item-1/annotations/annotation-1',
+    payload: { expectedRevision: terminalRevision },
+  });
+  assert.equal(removed.statusCode, 200, removed.body);
+  assert.equal(removedRevision, terminalRevision);
+
+  const revise = await app.inject({
+    method: 'POST',
+    url: '/knowledge/items/item-1/annotations/annotation-1/revisions',
+    payload: {
+      expectedRevision: terminalRevision,
+      kind: 'question',
+      origin: 'user',
+      content: 'Must not overflow the revision',
+    },
+  });
+  assert.equal(revise.statusCode, 400, revise.body);
+  assert.equal(reviseCalls, 0);
+
+  const deleteOverflow = await app.inject({
+    method: 'DELETE',
+    url: '/knowledge/items/item-1/annotations/annotation-1',
+    payload: { expectedRevision: terminalRevision + 1 },
+  });
+  assert.equal(deleteOverflow.statusCode, 400, deleteOverflow.body);
+});
+
 test('conversation routes preserve role/origin and return only allowlisted fields', async (t) => {
   let createCalls = 0;
   let appendCalls = 0;
@@ -517,6 +573,14 @@ test('all provenance routes require a canonical account and normalize unauthoriz
     url: '/knowledge/items/item-1/annotations',
   });
   assert.equal(forbidden.statusCode, 403, forbidden.body);
+  assert.deepEqual(forbidden.json(), {
+    error: {
+      code: 'forbidden',
+      message: 'Forbidden',
+      category: 'permission',
+    },
+  });
+  assert.equal(forbidden.body.includes('canonical_account_required'), false);
 
   const ownerApp = await build(registerKnowledgeAnnotationRoutes, { service });
   t.after(() => ownerApp.close());

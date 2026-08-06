@@ -46,7 +46,8 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
 - annotation revision、conversation turn、synthesis version/sourceは新規table専用triggerで
   update/deleteを拒否し、API経路外でもimmutable historyを保つ。
 - listはstable sort、bounded limit、actor/resource/parentへ束縛したHMAC署名付きopaque
-  cursorを使用する。
+  cursorを使用する。history cursorはPostgreSQL `INTEGER`最大sequenceを往復でき、incrementを
+  伴うmutationの`expectedVersion`上限とは分離する。
 - migrationはexpand-onlyで、既存table/column/dataをdrop、rename、更新しない。
 
 ## Focused tests
@@ -59,7 +60,7 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
 | Prisma adapter                                      | PASS   | Repeatable Read、ACL intersection、depth-aware memo/cycle/budget、200件境界、same-aggregate拒否、source-less fail-close        |
 | route contract                                      | PASS   | canonical actor、signed cursor、null-only label schema、unknown-field rejection、budget時のnon-disclosing empty/404            |
 
-Result: **55/55 PASS**（fail/skip/todo 0）
+Result: **58/58 PASS**（fail/skip/todo 0）
 
 Focused command:
 
@@ -100,7 +101,9 @@ Result: **PASS**
   revoke後の本文を混在させない
 - linked relation存在中の片親owner更新をcomposite FKが拒否
 - 両親を同一transactionで同じownerへ移す整合更新ではrelation ownerもcascade追従
-- relation insertと親owner更新の並行競合で不整合なowner更新を拒否
+- relation insertと親owner更新の並行競合では、owner更新transactionがPostgreSQLの
+  `Lock`待ちへ入ったことを別connectionから観測してから先行transactionをcommitし、
+  不整合なowner更新を拒否
 - concurrent turn append: one success / one conflict
 - concurrent synthesis version: one success / one conflict
 - synthesis source exactly-one CHECK rejects zero/two references
@@ -149,8 +152,8 @@ Result: **PASS**
 | ----------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Prisma format/generate                    | PASS    | Prisma 7.9.1                                                                                                                     |
 | root lint / format / typecheck / build    | PASS    | backend/frontend。frontend dev dependenciesはlockfile準拠の`npm ci`後に実行                                                      |
-| `make test`                               | PASS    | backend 1,870/1,870、frontend 85 files / 495 tests。fail/skip/todo 0                                                             |
-| focused coverage                          | PASS    | provenance files aggregate: statements/lines 81.62%、branches 68.09%、functions 88.82%。threshold/scope変更なし                  |
+| `make test`                               | PASS    | backend 1,873/1,873、frontend 85 files / 495 tests。fail/skip/todo 0                                                             |
+| focused coverage                          | PASS    | provenance files aggregate: statements/lines 82.05%、branches 70.15%、functions 88.89%。threshold/scope変更なし                  |
 | bounded-context dependency/coverage       | PASS    | 308 modules / 1,210 dependencies、293 source files / 244 targets、unclassified/duplicate/ambiguous 0                             |
 | OpenAPI export / breaking diff            | PASS    | generated snapshotとtracked fileはbyte-identical。baselineからbreaking 0、18 operation追加のみ                                   |
 | `make ops-quality`                        | PASS    | live systemd/provider操作なし。S3 profile 22/22、storage readiness 2/2を含む                                                     |

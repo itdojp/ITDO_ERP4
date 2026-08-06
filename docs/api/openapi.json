@@ -17468,7 +17468,7 @@
                 "additionalProperties": false,
                 "properties": {
                   "expectedRevision": {
-                    "maximum": 2147483646,
+                    "maximum": 2147483647,
                     "minimum": 1,
                     "type": "integer"
                   }

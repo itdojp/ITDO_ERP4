@@ -18,6 +18,7 @@ import {
   isAllowedKnowledgeValue,
   isBoundedKnowledgeId,
   isValidKnowledgeListLimit,
+  isValidKnowledgeSequence,
   isValidKnowledgeVersion,
   knowledgeProvenanceAuditActor,
   normalizeBoundedContent,
@@ -191,7 +192,7 @@ export function createKnowledgeSynthesisService(dependencies: {
         !isBoundedKnowledgeId(input.synthesisId) ||
         !isValidKnowledgeListLimit(input.limit) ||
         (input.beforeVersion !== undefined &&
-          !isValidKnowledgeVersion(input.beforeVersion))
+          !isValidKnowledgeSequence(input.beforeVersion))
       ) {
         return provenanceNotFound();
       }

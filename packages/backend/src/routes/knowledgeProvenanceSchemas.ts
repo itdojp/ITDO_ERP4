@@ -14,6 +14,8 @@ import type { KnowledgeProvenanceResult } from '../application/knowledge/knowled
 import { createApiErrorResponse } from '../services/errors.js';
 
 export const knowledgeProvenanceErrorResponseSchema = {
+  // Deliberately omit `details`: Fastify validation internals and canonical
+  // account diagnostics are not part of the public provenance API contract.
   type: 'object',
   additionalProperties: false,
   required: ['error'],

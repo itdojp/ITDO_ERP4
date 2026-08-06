@@ -181,6 +181,8 @@ synthesis sourceは参照先ごとのnullable FKとPostgreSQLのexactly-one CHEC
   contextを共有し、repository呼出しごとにbudgetやmemoを再生成しない。
 - list cursorは既存`KNOWLEDGE_CURSOR_SIGNING_SECRET`を使うHMAC署名付きopaque tokenと
   し、actor、resource、parent、sortへ束縛する。権限外rowをpage/cursor/countへ含めない。
+  append-only履歴のcursor sequenceはPostgreSQL `INTEGER`最大値まで表現し、mutationの
+  `expectedVersion`上限はincrement余地を残すため一つ小さい値とする。
   organization synthesis listのACL candidate走査は一request 200件までとし、query budget
   またはcandidate budget到達時は、非公開候補数をHTTP statusへ反映せず、空pageまたは既に
   確認済みのvisible rowだけを返してnext cursorを発行しない。ID指定readのquery budget超過は

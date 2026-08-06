@@ -352,6 +352,8 @@ PR Aはimport parserとUIを有効化する前に、次のDB/application/API契�
   cursorへ含めず、hidden件数によってHTTP statusを変えない。確認済みvisible rowのみを返し、
   続きが安全に確定できない場合はnext cursorを返さない。query budget超過時は空pageとする。
   version historyのlookahead rowもcursor発行前にACLを検査する。
+  履歴cursorのsequenceはPostgreSQL `INTEGER`最大値まで許可し、incrementを伴うmutationの
+  `expectedVersion`上限とは分離する。
 - annotation history/revise/deleteはannotation ownerだけでなくparent item ownerと
   `deletedAt IS NULL`も同じrepository predicateで再検査する。
 - annotation/conversationの全readはRepeatable Read transactionで実行し、そのsnapshotを

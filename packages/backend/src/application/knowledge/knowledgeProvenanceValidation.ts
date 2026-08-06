@@ -184,6 +184,15 @@ export function isValidKnowledgeVersion(value: unknown): value is number {
   );
 }
 
+export function isValidKnowledgeSequence(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= knowledgeProvenanceLimits.sequence
+  );
+}
+
 export function isValidKnowledgeListLimit(value: unknown): value is number {
   return (
     typeof value === 'number' &&

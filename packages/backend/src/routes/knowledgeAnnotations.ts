@@ -465,7 +465,7 @@ export async function registerKnowledgeAnnotationRoutes(
             expectedRevision: {
               type: 'integer',
               minimum: 1,
-              maximum: knowledgeProvenanceLimits.expectedVersion,
+              maximum: knowledgeProvenanceLimits.sequence,
             },
           },
         },

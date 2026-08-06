@@ -23,6 +23,7 @@ import {
   isBoundedKnowledgeId,
   isRoleOriginCompatible,
   isValidKnowledgeListLimit,
+  isValidKnowledgeSequence,
   isValidKnowledgeVersion,
   knowledgeProvenanceAuditActor,
   normalizeBoundedContent,
@@ -335,7 +336,10 @@ export function createKnowledgeConversationService(dependencies: {
       if (
         !hasKnowledgePrincipal(input.actor) ||
         !isBoundedKnowledgeId(input.conversationId) ||
-        !isValidKnowledgeListLimit(input.limit)
+        !isValidKnowledgeListLimit(input.limit) ||
+        (input.boundary !== undefined &&
+          (!isValidKnowledgeSequence(input.boundary.sequence) ||
+            !isBoundedKnowledgeId(input.boundary.id)))
       ) {
         return provenanceNotFound();
       }

@@ -6,9 +6,10 @@ import {
 } from 'node:crypto';
 
 import type { KnowledgeActor } from './knowledgeItemPorts.js';
-import type {
-  KnowledgePageBoundary,
-  KnowledgeSequenceBoundary,
+import {
+  knowledgeProvenanceLimits,
+  type KnowledgePageBoundary,
+  type KnowledgeSequenceBoundary,
 } from './knowledgeProvenancePorts.js';
 
 const CURSOR_VERSION = 1 as const;
@@ -172,7 +173,7 @@ function parseEnvelope(value: Buffer): CursorEnvelope {
     (typeof record.sequence !== 'number' ||
       !Number.isInteger(record.sequence) ||
       record.sequence < 1 ||
-      record.sequence > 2_147_483_647)
+      record.sequence > knowledgeProvenanceLimits.sequence)
   ) {
     throw invalidCursor();
   }
