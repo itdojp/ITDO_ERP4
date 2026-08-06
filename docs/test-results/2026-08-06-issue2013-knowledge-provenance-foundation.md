@@ -45,8 +45,9 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
   防ぐ。
 - provenance mutation auditはcanonical principal、実行actor、scope、token/audience/expiry、
   request、agent runの型付きallowlistだけを保持する。必須principal/actor/request/sourceが欠落・
-  不正な場合はauditをfail closedにし、業務mutationもrollbackする。scopeは100件・各255文字で
-  bounded/control-character-freeとし、認証層で正当なURI形式scopeも監査adapterで拒否しない。
+  不正な場合はauditをfail closedにし、業務mutationもrollbackする。scopeは100件・各255文字、
+  `A-Z a-z 0-9 . _ ~ : / -`に限定し、URI path形式は維持する。JWT/configと監査adapterで同じ
+  validatorを使い、Unicode制御・bidi文字、userinfo、query、fragmentをfail closedとする。
 - annotation revision、conversation turn、synthesis version/sourceは新規table専用triggerで
   update/deleteを拒否し、API経路外でもimmutable historyを保つ。
 - listはstable sort、bounded limit、actor/resource/parentへ束縛したHMAC署名付きopaque
@@ -59,18 +60,20 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
 | Verification                                        | Result | Evidence                                                                                                                       |
 | --------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------ |
 | provenance schema / constraint / migration contract | PASS   | explicit enum、content/version/hash/scope bounds、exactly-one FK、single primary、expand-only、OpenAPI assertions              |
+| delegated auth scope contract                       | PASS   | URI path保持、100/101件、255/256文字、trim/deduplicate、Unicode control/bidi/query/userinfo拒否                                |
 | signed cursor                                       | PASS   | actor/resource/parent/sort binding、tamper rejection、production secret requirement                                            |
 | application use cases                               | PASS   | annotation/conversation read snapshot、history/delete/audit rollback、cross-owner relation、role-origin、turn/version conflict |
 | Prisma adapter                                      | PASS   | Repeatable Read、ACL intersection、depth-aware memo/cycle/budget、200件境界、same-aggregate拒否、source-less fail-close        |
 | route contract                                      | PASS   | canonical actor、signed cursor、401内部reason除去、unknown-field rejection、budget時のnon-disclosing empty/404                 |
 
-Result: **59/59 PASS**（fail/skip/todo 0）
+Result: **66/66 PASS**（provenance 59 + delegated auth scope 7、fail/skip/todo 0）
 
 Focused command:
 
 ```bash
 cd packages/backend
 node scripts/run-tests.js \
+  test/authDelegated.test.js \
   test/knowledgeProvenanceSchema.test.js \
   test/knowledgeProvenanceCursor.test.js \
   test/knowledgeProvenanceUseCases.test.js \
@@ -157,9 +160,9 @@ Result: **PASS**
 | ----------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Prisma format/generate                    | PASS    | Prisma 7.9.1                                                                                                                     |
 | root lint / format / typecheck / build    | PASS    | backend/frontend。frontend dev dependenciesはlockfile準拠の`npm ci`後に実行                                                      |
-| `make test`                               | PASS    | backend 1,874/1,874、frontend 85 files / 495 tests。fail/skip/todo 0                                                             |
-| focused coverage                          | PASS    | provenance files aggregate: statements/lines 82.58%、branches 70.28%、functions 89.24%。threshold/scope変更なし                  |
-| bounded-context dependency/coverage       | PASS    | 308 modules / 1,210 dependencies、293 source files / 244 targets、unclassified/duplicate/ambiguous 0                             |
+| `make test`                               | PASS    | backend 1,875/1,875、frontend 85 files / 495 tests。fail/skip/todo 0                                                             |
+| focused coverage                          | PASS    | provenance files aggregate: statements/lines 82.61%、branches 70.44%、functions 89.24%。threshold/scope変更なし                  |
+| bounded-context dependency/coverage       | PASS    | 309 modules / 1,212 dependencies、294 source files / 245 targets、unclassified/duplicate/ambiguous 0                             |
 | OpenAPI export / breaking diff            | PASS    | generated snapshotとtracked fileはbyte-identical。baselineからbreaking 0、18 operation追加のみ                                   |
 | `make ops-quality`                        | PASS    | live systemd/provider操作なし。S3 profile 22/22、storage readiness 2/2を含む                                                     |
 | backend/frontend security audit           | PASS    | `npm audit --audit-level=high`: 0 vulnerabilities / 0 vulnerabilities                                                            |
@@ -168,8 +171,9 @@ Result: **PASS**
 | independent/Copilot review / CI / cooling | PENDING | Repeatable Read、depth memo、200件境界、same-aggregate/immutable DB保証を追加修正済み。final exact headで再review/CI/coolingする |
 
 Focused coverageのうち、main infrastructure adapterはc8計測でstatements/lines 67.67%、
-branches 68.27%、functions 79.31%、audit adapterはstatements/lines 90.68%、branches
-77.90%、functions 100%、request access contextはstatements/lines/functions 100%、branches
+branches 68.27%、functions 79.31%、audit adapterはstatements/lines 90.99%、branches
+78.88%、functions 100%、shared auth scope validatorはstatements/lines 92.50%、branches
+76.47%、functions 100%、request access contextはstatements/lines/functions 100%、branches
 50.00%だった。実DB経路は
 上記のPostgreSQL 15 integrationで追加検証している。coverage threshold、対象scope、
 ignore、skipは変更していない。

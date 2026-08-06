@@ -10,6 +10,7 @@ import {
   resolveAuthSession,
 } from '../services/authGateway.js';
 import { getRouteRateLimitOptions } from '../services/rateLimitOverrides.js';
+import { normalizeAuthScopes } from '../services/authScopes.js';
 import { parseGroupToRoleMap } from '../utils/authGroupToRoleMap.js';
 
 export type UserContext = {
@@ -118,28 +119,22 @@ const JWT_REVOKED_JTI = new Set(
     .filter(Boolean),
 );
 const AGENT_SCOPE_READ = new Set(
-  (process.env.AUTH_AGENT_READ_SCOPES || 'read-only,agent:read-only,agent:read')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean),
+  normalizeAuthScopes(
+    process.env.AUTH_AGENT_READ_SCOPES ||
+      'read-only,agent:read-only,agent:read',
+  ),
 );
 const AGENT_SCOPE_WRITE = new Set(
-  (
+  normalizeAuthScopes(
     process.env.AUTH_AGENT_WRITE_SCOPES ||
-    'write-limited,agent:write-limited,agent:write'
-  )
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean),
+      'write-limited,agent:write-limited,agent:write',
+  ),
 );
 const AGENT_SCOPE_APPROVAL = new Set(
-  (
+  normalizeAuthScopes(
     process.env.AUTH_AGENT_APPROVAL_SCOPES ||
-    'approval-required,agent:approval-required'
-  )
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean),
+      'approval-required,agent:approval-required',
+  ),
 );
 
 const AUTH_HEADER_MODE_FORBIDDEN_ERROR_MESSAGE =
@@ -701,7 +696,7 @@ function buildUserContext(payload: JWTPayload): UserContext | null {
     typeof actorClaim === 'string' && actorClaim.trim()
       ? actorClaim.trim()
       : principalUserId;
-  const scopes = normalizeList(resolveClaim(payload, JWT_SCOPE_CLAIM));
+  const scopes = normalizeAuthScopes(resolveClaim(payload, JWT_SCOPE_CLAIM));
   const tokenIdClaim = resolveClaim(payload, JWT_TOKEN_ID_CLAIM);
   const tokenId =
     typeof tokenIdClaim === 'string' && tokenIdClaim.trim()

@@ -27,6 +27,44 @@ test('buildUserContextFromJwtPayload: principal/actor/scopes are mapped', () => 
   assert.equal(user?.auth?.delegated, true);
 });
 
+test('buildUserContextFromJwtPayload: URI scopes are canonicalized and unsafe scope tokens fail closed', () => {
+  const user = buildUserContextFromJwtPayload({
+    sub: 'principal-user',
+    act: { sub: 'agent-bot' },
+    scp: [
+      ' knowledge:write ',
+      'https://idp.example/knowledge.write',
+      'knowledge:write',
+    ],
+    roles: ['user'],
+  });
+  assert.deepEqual(user?.auth?.scopes, [
+    'knowledge:write',
+    'https://idp.example/knowledge.write',
+  ]);
+
+  for (const invalid of [
+    'scope\u0000control',
+    'scope\u007fcontrol',
+    'scope\u0085control',
+    'scope\u202econtrol',
+    'https://user@idp.example/knowledge.write',
+    'https://idp.example/knowledge.write?token=synthetic',
+    'https://idp.example/knowledge.write#fragment',
+  ]) {
+    assert.throws(
+      () =>
+        buildUserContextFromJwtPayload({
+          sub: 'principal-user',
+          act: { sub: 'agent-bot' },
+          scp: ['knowledge:write', invalid],
+        }),
+      /auth_scope_contract_invalid/,
+      invalid,
+    );
+  }
+});
+
 test('buildUserContextFromJwtPayload: scopes alone do not mark JWT as delegated', () => {
   const user = buildUserContextFromJwtPayload({
     sub: 'principal-user',

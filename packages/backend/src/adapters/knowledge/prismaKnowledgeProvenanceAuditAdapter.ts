@@ -11,6 +11,7 @@ import {
   type KnowledgeProvenanceAuditEntry,
   type KnowledgeProvenanceAuditWriter,
 } from '../../application/knowledge/knowledgeProvenancePorts.js';
+import { normalizeAuthScopes } from '../../services/authScopes.js';
 
 type KnowledgeProvenanceAuditClient = Pick<
   Prisma.TransactionClient,
@@ -21,8 +22,6 @@ const requestIdPattern = /^[A-Za-z0-9._-]{1,128}$/;
 
 const auditContextLimits = {
   identifier: 255,
-  scope: 255,
-  scopeCount: 100,
   audience: 255,
   audienceCount: 100,
   agentIdentifier: 255,
@@ -122,11 +121,14 @@ function actorAuditMetadata(
     principalUserId,
     actorUserId,
   };
-  const scopes = optionalAuditArray(
-    actor.authScopes,
-    auditContextLimits.scopeCount,
-    auditContextLimits.scope,
-  );
+  let scopes: string[] | undefined;
+  if (actor.authScopes !== undefined) {
+    try {
+      scopes = normalizeAuthScopes(actor.authScopes);
+    } catch {
+      throw new Error('knowledge_provenance_audit_contract_invalid');
+    }
+  }
   if (scopes !== undefined) auth.scopes = scopes;
   const tokenId = optionalAuditText(
     actor.authTokenId,

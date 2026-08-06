@@ -1,6 +1,6 @@
 # 委任認証（principal/actor + scope）仕様
 
-更新日: 2026-02-23  
+更新日: 2026-08-06
 関連Issue: #1208
 
 ## 目的
@@ -40,6 +40,14 @@ MVPでは次の3段階を扱う。
 - `approval-required`（同義語: `agent:approval-required`）
 
 `read` / `write` のような汎用scope名は、通常ユーザーJWTに含まれる可能性があるため既定の委任scopeには含めない。既存IdPとの互換目的で利用する場合は、`AUTH_AGENT_READ_SCOPES` / `AUTH_AGENT_WRITE_SCOPES` に明示的に追加し、専用audience/client等と組み合わせる。
+
+scope tokenはJWT claimと`AUTH_AGENT_*_SCOPES`で同じvalidatorを使用する。1 tokenあたり
+100件、1 scopeあたり255文字までとし、trimと重複除去後の語彙を
+`A-Z a-z 0-9 . _ ~ : / -`に限定する。`https://idp.example/knowledge.write`や
+`api://client-id/.default`のようなURI path形式は許可するが、userinfo、query、fragment、
+Unicode制御・bidi文字、空白、quote、backslashを含むscopeは認証境界でfail closedとする。
+scopeへcredential、個人情報、可変provider metadataを埋め込まない。これにより認可とmandatory
+auditでscope受理規則を共有し、監査だけが正当なrequestをrollbackする状態を防ぐ。
 
 ### 判定ルール
 

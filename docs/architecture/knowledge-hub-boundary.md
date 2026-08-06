@@ -193,8 +193,8 @@ synthesis sourceは参照先ごとのnullable FKとPostgreSQLのexactly-one CHEC
   Repeatable Read snapshotで評価し、
   grant swapを跨いだ時点混在を許さない。監査action/targetとmetadata keyはallowlistで検証し、annotation、turn、
   synthesis本文、prompt、URL、provider key、raw error/request keyを監査metadataへ入れない。
-  認証scopeは検証済みrequest context由来のbounded/control-character-free配列だけを保持し、
-  認証層が許容するURI形式等を監査adapter独自の狭い文字種規則で拒否しない。
+  認証scopeはJWT/configと監査adapterで共有するbounded ASCII validatorを通し、URI path形式を
+  維持しつつUnicode制御・bidi文字、userinfo、query、fragmentを認証前にfail closedとする。
   DB CHECKもannotation/conversation/synthesis/importのaction groupを対応するtarget tableへ
   厳密に束縛し、対象actionのnullableなtarget table/IDも拒否する。annotationの履歴・改訂・
   削除はparent itemが非削除であることを再検査する。

@@ -1294,6 +1294,79 @@ test('provenance audit writer enforces action-target mapping and runtime metadat
     /knowledge_provenance_audit_contract_invalid/,
   );
 
+  const boundaryScopes = Array.from(
+    { length: 100 },
+    (_, index) => `scope:${index.toString().padStart(3, '0')}`,
+  );
+  let boundaryPersisted;
+  const boundaryClient = emptyClient({
+    auditLog: {
+      create: async (args) => {
+        boundaryPersisted = args;
+        return args;
+      },
+    },
+  });
+  const boundaryWriter = new PrismaKnowledgeProvenanceAuditWriter(
+    boundaryClient,
+  );
+  await boundaryWriter.write({
+    action: 'knowledge_annotation_created',
+    actor: {
+      userId: 'owner-1',
+      requestId: 'request-scope-boundary',
+      source: 'agent',
+      principalUserId: 'principal-1',
+      actorUserId: 'agent-1',
+      authScopes: [
+        ' a'.padEnd(256, 'a'),
+        'scope:duplicate',
+        'scope:duplicate',
+        ...boundaryScopes.slice(0, 97),
+      ],
+    },
+    targetTable: 'knowledge_annotations',
+    targetId: 'annotation-scope-boundary',
+    metadata: {},
+  });
+  assert.ok(boundaryPersisted);
+  assert.equal(boundaryPersisted.data.metadata._auth.scopes.length, 99);
+  assert.equal(boundaryPersisted.data.metadata._auth.scopes[0].length, 255);
+  assert.equal(
+    boundaryPersisted.data.metadata._auth.scopes.filter(
+      (scope) => scope === 'scope:duplicate',
+    ).length,
+    1,
+  );
+
+  for (const authScopes of [
+    Array.from({ length: 101 }, (_, index) => `scope:${index}`),
+    ['a'.repeat(256)],
+    ['   '],
+    ['scope\u0085control'],
+    ['scope\u202econtrol'],
+    ['https://idp.example/knowledge.write?token=synthetic'],
+  ]) {
+    await assert.rejects(
+      () =>
+        boundaryWriter.write({
+          action: 'knowledge_annotation_created',
+          actor: {
+            userId: 'owner-1',
+            requestId: 'request-invalid-scope-boundary',
+            source: 'agent',
+            principalUserId: 'principal-1',
+            actorUserId: 'agent-1',
+            authScopes,
+          },
+          targetTable: 'knowledge_annotations',
+          targetId: 'annotation-invalid-scope-boundary',
+          metadata: {},
+        }),
+      /knowledge_provenance_audit_contract_invalid/,
+    );
+  }
+
   await assert.rejects(
     () =>
       writer.write({
