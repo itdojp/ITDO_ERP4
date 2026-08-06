@@ -376,6 +376,7 @@ export class PrismaKnowledgeAnnotationRepository implements KnowledgeAnnotationR
       where: {
         knowledgeItemId: item.id,
         deletedAt: null,
+        knowledgeItem: { is: buildKnowledgeVisibilityWhere(input.actor) },
         AND: beforePageBoundary(input.boundary),
       },
       include: annotationInclude,
@@ -406,6 +407,7 @@ export class PrismaKnowledgeAnnotationRepository implements KnowledgeAnnotationR
       where: {
         id: input.annotationId,
         knowledgeItemId: item.id,
+        knowledgeItem: { is: buildKnowledgeVisibilityWhere(input.actor) },
         ...(!input.includeDeleted ? { deletedAt: null } : {}),
       },
       include: annotationInclude,

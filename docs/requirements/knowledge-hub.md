@@ -351,6 +351,11 @@ PR Aはimport parserとUIを有効化する前に、次のDB/application/API契�
   version historyのlookahead rowもcursor発行前にACLを検査する。
 - annotation history/revise/deleteはannotation ownerだけでなくparent item ownerと
   `deletedAt IS NULL`も同じrepository predicateで再検査する。
+- ACL付きrepository queryを各read/mutationの認可線形化点とする。annotation本文queryは
+  parent item ACLを同じpredicateで再検査し、source linkは同一transaction内でsource ACLを
+  検査してからmutationとmandatory auditを確定する。失効が認可queryより先にcommitした場合は
+  fail closedとし、認可queryより後の失効は後続requestから反映する。進行中transactionを
+  遡及取消しする契約やgrant rowの長時間lockは導入しない。
 - APIはannotation list/create/detail/history/revise/delete、conversation
   list/create/detail/item add-remove/turn list-append、synthesis list/create/detail/version
   history-appendを提供する。unauthorized IDと存在しないIDは同じ`not_found`へ正規化する。

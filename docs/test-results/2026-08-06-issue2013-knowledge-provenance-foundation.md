@@ -29,6 +29,9 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
 - annotation owner操作はparent itemが非削除であること、version historyはlookahead source
   ACLを再検査する。AuditLog DB CHECKはaction groupと非NULL target table/IDを厳密に対応
   付ける。
+- annotation本文query自体にparent item ACL predicateを含める。各ACL付きrepository queryを
+  point-in-timeの認可線形化点とし、それ以前にcommitした失効はfail closed、それ以後の失効は
+  後続requestから反映する。進行中transactionの遡及取消しやgrant rowの長時間lockは行わない。
 - mutation、version/idempotency確定、mandatory Knowledge auditを同一transactionで処理し、
   audit metadataへ本文、prompt、URL、provider/request key、raw errorを入れない。
 - listはstable sort、bounded limit、actor/resource/parentへ束縛したHMAC署名付きopaque
@@ -42,10 +45,10 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
 | provenance schema / constraint / migration contract | PASS   | explicit enum、content/version/hash/scope bounds、exactly-one FK、single primary、expand-only、OpenAPI assertions               |
 | signed cursor                                       | PASS   | actor/resource/parent/sort binding、tamper rejection、production secret requirement                                             |
 | application use cases                               | PASS   | annotation history/delete/audit rollback、cross-owner relation、role-origin、turn/version conflict、manual provenance label拒否 |
-| Prisma adapter                                      | PASS   | ACL intersection、parent delete、memo/depth/cycle/budget、source-less fail-close、lookahead、audit allowlist                    |
-| route contract                                      | PASS   | canonical actor、null-only label schema、unknown-field rejection、budget時のnon-disclosing empty/404                            |
+| Prisma adapter                                      | PASS   | ACL intersection、parent delete、memo/depth/cycle/budget、visible-hidden-visible pagination、source-less fail-close、lookahead |
+| route contract                                      | PASS   | canonical actor、signed cursor、null-only label schema、unknown-field rejection、budget時のnon-disclosing empty/404             |
 
-Result: **47/47 PASS**（fail/skip/todo 0）
+Result: **48/48 PASS**（fail/skip/todo 0）
 
 Focused command:
 
@@ -86,14 +89,19 @@ Result: **PASS**
 - deleted parent item blocks annotation history/revision
 - audit action/target mismatches are rejected by the database CHECK
 - audit target table/IDのNULLもdatabase CHECKで拒否
-- annotation revision、conversation turn、synthesis versionの複数page取得で重複・欠落なし
-- visible-hidden-visible synthesis listでhidden rowをcursorにせず、次pageを継続
-- source ACL失効後に既発行cursorを利用してもnot-foundへfail closed
+- annotation revision、conversation turn、synthesis versionの実repository複数page取得で
+  重複・欠落なし
+- organization synthesis historyのlookaheadを実DBで評価し、返却済みpage boundaryの次回利用前に
+  source ACLが失効した場合はnot-foundへfail closed
 - source logical deletion causes provenance redaction
 - mandatory audit failure rolls back the business mutation
 - audit rows contain no annotation/turn/synthesis bodies
 - Prisma schemaとmigrationのKnowledge provenance table/indexに新規driftなし
 - migration deploy/status succeeded
+
+visible-hidden-visible synthesis list、hidden rowをcursorにしないこと、署名cursorのroute往復は
+focused adapter/route testで検証した。PostgreSQL integrationはservice/repositoryのpage boundaryを
+検証しており、実DBとHTTP routeを同時に通す署名cursor結合試験ではない。
 
 ## Old-application compatibility
 
@@ -118,8 +126,8 @@ Result: **PASS**
 | ----------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Prisma format/generate                    | PASS    | Prisma 7.9.1                                                                                                                                          |
 | root lint / format / typecheck / build    | PASS    | backend/frontend。frontend dev dependenciesはlockfile準拠の`npm ci`後に実行                                                                           |
-| `make test`                               | PASS    | backend 1,862/1,862、frontend 85 files / 495 tests。fail/skip/todo 0                                                                                  |
-| focused coverage                          | PASS    | executed files aggregate: statements/lines 77.48%、branches 63.57%、functions 68.68%。threshold/scope変更なし                                         |
+| `make test`                               | PASS    | backend 1,863/1,863、frontend 85 files / 495 tests。fail/skip/todo 0                                                                                  |
+| focused coverage                          | PASS    | executed files aggregate: statements/lines 78.37%、branches 64.84%、functions 70.32%。threshold/scope変更なし                                         |
 | bounded-context dependency/coverage       | PASS    | 307 modules / 1,208 dependencies、292 source files、244 targets、unclassified/duplicate/ambiguous 0                                                   |
 | OpenAPI export / breaking diff            | PASS    | generated snapshotとtracked fileはbyte-identical。baselineからbreaking 0、18 operation追加のみ                                                        |
 | `make ops-quality`                        | PASS    | live systemd/provider操作なし。S3 profile 22/22、storage readiness 2/2を含む                                                                          |
@@ -128,8 +136,8 @@ Result: **PASS**
 | secret scan / `git diff --check`          | PASS    | candidate filesを含むtracked scan 0 match、whitespace error 0                                                                                         |
 | independent/Copilot review / CI / cooling | PENDING | 2回目独立reviewのACL予算、監査NULL制約、存在oracle、migration drift、null schema、pagination指摘を修正済み。final exact headで再review/CI/coolingする |
 
-Focused coverageのうち、infrastructure adapterはc8計測でstatements/lines 63.40%、
-branches 65.44%、functions 67.27%、request access contextは全指標100%だった。実DB経路は
+Focused coverageのうち、infrastructure adapterはc8計測でstatements/lines 66.77%、
+branches 66.00%、functions 72.72%、request access contextは全指標100%だった。実DB経路は
 上記のPostgreSQL 15 integrationで追加検証している。coverage threshold、対象scope、
 ignore、skipは変更していない。
 

@@ -611,6 +611,32 @@ test('synthesis source input is strict and concurrent version append returns con
   });
   assert.equal(unknown.statusCode, 400);
 
+  const nullQuestionsCreate = await service.create({
+    actor,
+    auditActor,
+    body: {
+      scope: 'personal',
+      title: 'Strict questions',
+      content: 'Conclusion',
+      unresolvedQuestions: null,
+      sources: [{ kind: 'item', sourceId: 'item-1', relationType: 'primary' }],
+    },
+  });
+  assert.equal(nullQuestionsCreate.statusCode, 400);
+
+  const nullQuestionsAppend = await service.appendVersion({
+    actor,
+    auditActor,
+    synthesisId: 'synthesis-1',
+    body: {
+      expectedVersion: 1,
+      content: 'Version two',
+      unresolvedQuestions: null,
+      sources: [{ kind: 'item', sourceId: 'item-1', relationType: 'primary' }],
+    },
+  });
+  assert.equal(nullQuestionsAppend.statusCode, 400);
+
   const conflict = await service.appendVersion({
     actor,
     auditActor,

@@ -226,7 +226,9 @@ export function createKnowledgeSynthesisService(dependencies: {
         knowledgeProvenanceLimits.synthesisContentBytes,
       );
       const questions = normalizeQuestions(
-        input.body?.unresolvedQuestions ?? [],
+        input.body?.unresolvedQuestions === undefined
+          ? []
+          : input.body.unresolvedQuestions,
       );
       const confidence = normalizeConfidence(input.body?.confidenceBasisPoints);
       const sources = normalizeSources(input.body?.sources);
@@ -329,7 +331,9 @@ export function createKnowledgeSynthesisService(dependencies: {
         knowledgeProvenanceLimits.synthesisContentBytes,
       );
       const questions = normalizeQuestions(
-        input.body?.unresolvedQuestions ?? [],
+        input.body?.unresolvedQuestions === undefined
+          ? []
+          : input.body.unresolvedQuestions,
       );
       const confidence = normalizeConfidence(input.body?.confidenceBasisPoints);
       const sources = normalizeSources(input.body?.sources);

@@ -177,6 +177,47 @@ test('annotation list checks item visibility before querying annotation rows', a
   assert.equal(annotationQueries, 0);
 });
 
+test('annotation content queries repeat the current parent ACL predicate', async () => {
+  const annotationPredicates = [];
+  const repository = new PrismaKnowledgeAnnotationRepository(
+    emptyClient({
+      knowledgeItem: {
+        findFirst: async () => ({
+          id: 'item-1',
+          ownerUserId: 'owner-1',
+          scope: 'personal',
+          organizationId: null,
+        }),
+      },
+      knowledgeAnnotation: {
+        findMany: async ({ where }) => {
+          annotationPredicates.push(where);
+          return [];
+        },
+        findFirst: async ({ where }) => {
+          annotationPredicates.push(where);
+          return null;
+        },
+      },
+    }),
+  );
+
+  await repository.listVisible({ actor, itemId: 'item-1', limit: 20 });
+  await repository.findVisible({
+    actor,
+    itemId: 'item-1',
+    annotationId: 'annotation-1',
+  });
+
+  assert.equal(annotationPredicates.length, 2);
+  for (const predicate of annotationPredicates) {
+    const serialized = JSON.stringify(predicate);
+    assert.match(serialized, /"knowledgeItem":\{"is":/);
+    assert.match(serialized, /"ownerUserId":"owner-1"/);
+    assert.match(serialized, /"deletedAt":null/);
+  }
+});
+
 test('annotation history and owner mutations require a non-deleted parent item', async () => {
   const predicates = [];
   const repository = new PrismaKnowledgeAnnotationRepository(

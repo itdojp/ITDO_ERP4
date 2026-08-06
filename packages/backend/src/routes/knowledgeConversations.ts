@@ -42,6 +42,11 @@ import {
 
 const allowedRoles = ['admin', 'mgmt', 'exec', 'user'] as const;
 
+const nullOnlyStringSchema = {
+  type: ['string', 'null'],
+  enum: [null],
+} as const;
+
 const conversationItemSchema = {
   $id: 'KnowledgeConversationItemResponse',
   type: 'object',
@@ -93,8 +98,8 @@ const conversationSchema = {
     ownerUserId: { type: 'string' },
     title: { type: 'string' },
     sourceType: { type: 'string', enum: ['manual', 'json', 'markdown'] },
-    provider: { type: 'string', nullable: true, enum: [null] },
-    model: { type: 'string', nullable: true, enum: [null] },
+    provider: nullOnlyStringSchema,
+    model: nullOnlyStringSchema,
     capturedAt: { type: 'string', format: 'date-time' },
     importedAt: nullableDateTimeSchema,
     contentHash: { type: 'string', pattern: '^[a-f0-9]{64}$' },
@@ -134,7 +139,7 @@ const turnSchema = {
     role: { type: 'string', enum: knowledgeConversationRoles },
     origin: { type: 'string', enum: knowledgeProvenanceOrigins },
     content: { type: 'string' },
-    name: { type: 'string', nullable: true, enum: [null] },
+    name: nullOnlyStringSchema,
     occurredAt: nullableDateTimeSchema,
     contentHash: { type: 'string', pattern: '^[a-f0-9]{64}$' },
     createdAt: { type: 'string', format: 'date-time' },
