@@ -345,7 +345,11 @@ PR Aはimport parserとUIを有効化する前に、次のDB/application/API契�
   IDと同じ`not_found`へ正規化する。
 - Knowledge mutationとmandatory auditを同一transactionで確定する。audit metadataは
   allowlistとし、annotation/turn/synthesis本文、prompt、URL、provider key、raw error、
-  request keyを保存しない。DB CHECKでもaction groupとtarget tableを厳密に対応付ける。
+  request keyを保存しない。provenance mutationの認証scopeは検証済みrequest contextからだけ
+  最大100件・各255文字で保持し、trim/deduplicateしてASCII制御文字を拒否する。認証層より
+  狭い独自語彙には制限せず、URI形式を含む正当なIdP scopeをmandatory auditだけで拒否しない。
+  request bodyやraw bearer tokenからscopeを受け付けない。DB CHECKでもaction groupとtarget
+  tableを厳密に対応付ける。
 - listはbounded limit、stable sort、actor/resource/parentへ束縛したHMAC署名付きopaque
   cursorを使用し、権限外rowをpage、cursor、countへ含めない。organization synthesisの
   candidate scanは200件、provenance queryは上記budgetで停止し、上限到達時はhidden rowを

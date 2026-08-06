@@ -45,7 +45,8 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
   防ぐ。
 - provenance mutation auditはcanonical principal、実行actor、scope、token/audience/expiry、
   request、agent runの型付きallowlistだけを保持する。必須principal/actor/request/sourceが欠落・
-  不正な場合はauditをfail closedにし、業務mutationもrollbackする。
+  不正な場合はauditをfail closedにし、業務mutationもrollbackする。scopeは100件・各255文字で
+  bounded/control-character-freeとし、認証層で正当なURI形式scopeも監査adapterで拒否しない。
 - annotation revision、conversation turn、synthesis version/sourceは新規table専用triggerで
   update/deleteを拒否し、API経路外でもimmutable historyを保つ。
 - listはstable sort、bounded limit、actor/resource/parentへ束縛したHMAC署名付きopaque
@@ -61,7 +62,7 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
 | signed cursor                                       | PASS   | actor/resource/parent/sort binding、tamper rejection、production secret requirement                                            |
 | application use cases                               | PASS   | annotation/conversation read snapshot、history/delete/audit rollback、cross-owner relation、role-origin、turn/version conflict |
 | Prisma adapter                                      | PASS   | Repeatable Read、ACL intersection、depth-aware memo/cycle/budget、200件境界、same-aggregate拒否、source-less fail-close        |
-| route contract                                      | PASS   | canonical actor、signed cursor、401内部reason除去、unknown-field rejection、budget時のnon-disclosing empty/404                  |
+| route contract                                      | PASS   | canonical actor、signed cursor、401内部reason除去、unknown-field rejection、budget時のnon-disclosing empty/404                 |
 
 Result: **59/59 PASS**（fail/skip/todo 0）
 
@@ -157,7 +158,7 @@ Result: **PASS**
 | Prisma format/generate                    | PASS    | Prisma 7.9.1                                                                                                                     |
 | root lint / format / typecheck / build    | PASS    | backend/frontend。frontend dev dependenciesはlockfile準拠の`npm ci`後に実行                                                      |
 | `make test`                               | PASS    | backend 1,874/1,874、frontend 85 files / 495 tests。fail/skip/todo 0                                                             |
-| focused coverage                          | PASS    | provenance files aggregate: statements/lines 82.55%、branches 70.26%、functions 89.24%。threshold/scope変更なし                  |
+| focused coverage                          | PASS    | provenance files aggregate: statements/lines 82.58%、branches 70.28%、functions 89.24%。threshold/scope変更なし                  |
 | bounded-context dependency/coverage       | PASS    | 308 modules / 1,210 dependencies、293 source files / 244 targets、unclassified/duplicate/ambiguous 0                             |
 | OpenAPI export / breaking diff            | PASS    | generated snapshotとtracked fileはbyte-identical。baselineからbreaking 0、18 operation追加のみ                                   |
 | `make ops-quality`                        | PASS    | live systemd/provider操作なし。S3 profile 22/22、storage readiness 2/2を含む                                                     |
@@ -167,8 +168,8 @@ Result: **PASS**
 | independent/Copilot review / CI / cooling | PENDING | Repeatable Read、depth memo、200件境界、same-aggregate/immutable DB保証を追加修正済み。final exact headで再review/CI/coolingする |
 
 Focused coverageのうち、main infrastructure adapterはc8計測でstatements/lines 67.67%、
-branches 68.27%、functions 79.31%、audit adapterはstatements/lines 89.90%、branches
-77.52%、functions 100%、request access contextはstatements/lines/functions 100%、branches
+branches 68.27%、functions 79.31%、audit adapterはstatements/lines 90.68%、branches
+77.90%、functions 100%、request access contextはstatements/lines/functions 100%、branches
 50.00%だった。実DB経路は
 上記のPostgreSQL 15 integrationで追加検証している。coverage threshold、対象scope、
 ignore、skipは変更していない。

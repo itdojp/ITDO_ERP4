@@ -1231,7 +1231,10 @@ test('provenance audit writer enforces action-target mapping and runtime metadat
       source: 'agent',
       principalUserId: 'principal-1',
       actorUserId: 'agent-1',
-      authScopes: ['knowledge:write'],
+      authScopes: [
+        'knowledge:write',
+        'https://idp.example/knowledge.write',
+      ],
       authTokenId: 'token-1',
       authAudience: ['erp4-agent'],
       authExpiresAt: 1_900_000_000,
@@ -1258,7 +1261,10 @@ test('provenance audit writer enforces action-target mapping and runtime metadat
     _auth: {
       principalUserId: 'principal-1',
       actorUserId: 'agent-1',
-      scopes: ['knowledge:write'],
+      scopes: [
+        'knowledge:write',
+        'https://idp.example/knowledge.write',
+      ],
       tokenId: 'token-1',
       audience: ['erp4-agent'],
       expiresAt: 1_900_000_000,
@@ -1283,6 +1289,25 @@ test('provenance audit writer enforces action-target mapping and runtime metadat
         },
         targetTable: 'knowledge_annotations',
         targetId: 'annotation-2',
+        metadata: {},
+      }),
+    /knowledge_provenance_audit_contract_invalid/,
+  );
+
+  await assert.rejects(
+    () =>
+      writer.write({
+        action: 'knowledge_annotation_created',
+        actor: {
+          userId: 'owner-1',
+          requestId: 'request-4',
+          source: 'agent',
+          principalUserId: 'principal-1',
+          actorUserId: 'agent-1',
+          authScopes: ['knowledge:write', 'scope\nwith-control'],
+        },
+        targetTable: 'knowledge_annotations',
+        targetId: 'annotation-4',
         metadata: {},
       }),
     /knowledge_provenance_audit_contract_invalid/,

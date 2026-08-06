@@ -214,7 +214,16 @@ test('annotation routes map canonical actor, serialize history, and issue actor-
       value: annotation({ deletedAt: date }),
     }),
   };
-  const app = await build(registerKnowledgeAnnotationRoutes, { service });
+  const delegatedUser = user();
+  delegatedUser.auth.scopes = [
+    'knowledge:write',
+    'https://idp.example/knowledge.write',
+  ];
+  const app = await build(
+    registerKnowledgeAnnotationRoutes,
+    { service },
+    delegatedUser,
+  );
   t.after(() => app.close());
 
   const created = await app.inject({
@@ -236,7 +245,10 @@ test('annotation routes map canonical actor, serialize history, and issue actor-
       source: 'agent',
       principalUserId: 'principal-1',
       actorUserId: 'owner-1',
-      authScopes: ['knowledge:write'],
+      authScopes: [
+        'knowledge:write',
+        'https://idp.example/knowledge.write',
+      ],
       authTokenId: 'token-1',
       authAudience: ['erp4-agent'],
       authExpiresAt: 1_900_000_000,

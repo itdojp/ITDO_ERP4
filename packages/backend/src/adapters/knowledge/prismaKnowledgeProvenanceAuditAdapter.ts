@@ -18,7 +18,6 @@ type KnowledgeProvenanceAuditClient = Pick<
 >;
 
 const requestIdPattern = /^[A-Za-z0-9._-]{1,128}$/;
-const auditScopePattern = /^[A-Za-z0-9._:-]+$/;
 
 const auditContextLimits = {
   identifier: 255,
@@ -87,7 +86,6 @@ function optionalAuditArray(
   values: string[] | undefined,
   maximumCount: number,
   maximumLength: number,
-  pattern?: RegExp,
 ): string[] | undefined {
   if (values === undefined) return undefined;
   if (!Array.isArray(values) || values.length > maximumCount) {
@@ -96,9 +94,6 @@ function optionalAuditArray(
   const normalized = [
     ...new Set(values.map((value) => requiredAuditText(value, maximumLength))),
   ];
-  if (pattern && normalized.some((value) => !pattern.test(value))) {
-    throw new Error('knowledge_provenance_audit_contract_invalid');
-  }
   return normalized;
 }
 
@@ -131,7 +126,6 @@ function actorAuditMetadata(
     actor.authScopes,
     auditContextLimits.scopeCount,
     auditContextLimits.scope,
-    auditScopePattern,
   );
   if (scopes !== undefined) auth.scopes = scopes;
   const tokenId = optionalAuditText(

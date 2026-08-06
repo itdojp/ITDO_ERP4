@@ -101,7 +101,10 @@ const auditActor = {
   source: 'api',
   principalUserId: 'knowledge-provenance-integration-user',
   actorUserId: 'knowledge-provenance-integration-user',
-  authScopes: ['knowledge:write'],
+  authScopes: [
+    'knowledge:write',
+    'https://idp.example/knowledge.write',
+  ],
 };
 
 function expectOk(result, context) {
