@@ -169,6 +169,7 @@ test('database constraints bound content, versions, hashes, confidence, scope, d
     'KnowledgeConversation_content_hash_check',
     'KnowledgeConversation_idempotency_hash_check',
     'KnowledgeConversation_deletion_state_check',
+    'KnowledgeConversationItem_owner_check',
     'KnowledgeConversationItem_ordinal_check',
     'KnowledgeConversationTurn_sequence_check',
     'KnowledgeConversationTurn_content_check',
@@ -235,7 +236,7 @@ test('audit database constraint binds each provenance action group to its exact 
   );
 });
 
-test('conversation links enforce identity, stable order, and a single primary item', () => {
+test('conversation links enforce same-owner identity, stable order, and a single primary item', () => {
   assert.match(
     migration,
     /KnowledgeConversationItem_conversationId_knowledgeItemId_key/,
@@ -250,12 +251,24 @@ test('conversation links enforce identity, stable order, and a single primary it
   );
   assert.match(
     migration,
-    /CREATE CONSTRAINT TRIGGER "KnowledgeConversationItem_same_owner_trigger"/,
+    /KnowledgeConversationItem_conversationId_ownerUserId_fkey"[\s\S]*?FOREIGN KEY \("conversationId", "ownerUserId"\)[\s\S]*?REFERENCES "KnowledgeConversation"\("id", "ownerUserId"\)/,
   );
-  assert.match(migration, /conversation\."ownerUserId" <> item\."ownerUserId"/);
   assert.match(
     migration,
-    /CONSTRAINT = 'KnowledgeConversationItem_same_owner_check'/,
+    /KnowledgeConversationItem_knowledgeItemId_ownerUserId_fkey"[\s\S]*?FOREIGN KEY \("knowledgeItemId", "ownerUserId"\)[\s\S]*?REFERENCES "KnowledgeItem"\("id", "ownerUserId"\)/,
+  );
+  assert.match(migration, /KnowledgeConversation_id_ownerUserId_key/);
+  assert.match(migration, /KnowledgeItem_id_ownerUserId_key/);
+  assert.match(migration, /DEFERRABLE INITIALLY IMMEDIATE/);
+  const relation = schemaBlock('model', 'KnowledgeConversationItem');
+  assert.match(relation, /\bownerUserId\s+String/);
+  assert.match(
+    relation,
+    /fields: \[conversationId, ownerUserId\], references: \[id, ownerUserId\]/,
+  );
+  assert.match(
+    relation,
+    /fields: \[knowledgeItemId, ownerUserId\], references: \[id, ownerUserId\]/,
   );
 });
 

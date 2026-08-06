@@ -328,8 +328,9 @@ PR Aはimport parserとUIを有効化する前に、次のDB/application/API契�
 - manual conversation/turn APIでは自由文字列のprovider、model、tool nameを受け付けず、
   responseも`null`へ固定する。import由来の公開label語彙はbounded parserと同時にPR Bで
   固定し、credential-like valueをDB/APIへ通さない。
-- conversationへlinkできるitemは同一ownerに限定し、application検査に加えてDB constraint
-  triggerでもconversation ownerとitem ownerの一致を保証する。read visibilityはlinked item
+- conversationへlinkできるitemは同一ownerに限定する。application検査に加え、relation内部の
+  `ownerUserId`からconversationとitemの`(id, ownerUserId)`へ張る2本のdeferrable composite
+  FKにより、直接insert、親owner更新、並行競合でもowner一致を保証する。read visibilityはlinked item
   ACLの共通部分とし、一件でも現在read不能ならconversation、turn、relation、件数を返さない。
 - synthesisはstable identityとappend-only versionを分離し、version番号を集約内で一意に
   する。source relationは`primary|supporting|contradicting|context`で、item、snapshot、
@@ -353,14 +354,15 @@ PR Aはimport parserとUIを有効化する前に、次のDB/application/API契�
   version historyのlookahead rowもcursor発行前にACLを検査する。
 - annotation history/revise/deleteはannotation ownerだけでなくparent item ownerと
   `deletedAt IS NULL`も同じrepository predicateで再検査する。
-- ACL付きrepository queryを各read/mutationの認可線形化点とする。annotation本文queryは
-  parent item ACLを同じpredicateで再検査する。annotation historyとconversation turn listは
-  parent visibilityの事前確認だけを本文返却の根拠にせず、revision/turnを読む子table query
-  自体でもcurrent parent ACLを再検査する。事前確認後、子query前にgrantが失効した場合は新規
-  本文を返さない。source linkは同一transaction内でsource ACLを検査してからmutationと
-  mandatory auditを確定する。失効が本文queryより先にcommitした場合はfail closedとし、本文
-  queryより後の失効は後続requestから反映する。進行中transactionを遡及取消しする契約やgrant
-  rowの長時間lockは導入しない。
+- annotation/conversationの全readはRepeatable Read transactionで実行し、そのsnapshotを
+  認可線形化点とする。annotation本文queryはparent item ACLを同じpredicateで再検査する。
+  annotation historyとconversation turn listはparent visibilityの事前確認だけを本文返却の
+  根拠にせず、revision/turnを読む子table query自体でも同じsnapshotのcurrent parent ACLを
+  再検査する。snapshot後にgrantが失効しownerが履歴を追加しても、失効後の新規本文を同じ
+  responseへ混在させない。source linkは同一transaction内でsource ACLを検査してからmutationと
+  mandatory auditを確定する。失効がsnapshotより先にcommitした場合はfail closedとし、
+  snapshotより後の失効は後続requestから反映する。進行中transactionを遡及取消しする契約や
+  grant rowの長時間lockは導入しない。
 - synthesisの複数source ACLはread/mutationとも同一Repeatable Read snapshotで評価する。
   再帰version memoは到達depthをkeyに含め、異なるdepthの結果を再利用しない。同一synthesisの
   現行・過去versionはapplication検査とDB constraint triggerの両方でsource指定を拒否する。

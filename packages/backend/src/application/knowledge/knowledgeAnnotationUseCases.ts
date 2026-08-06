@@ -53,7 +53,9 @@ export function createKnowledgeAnnotationService(dependencies: {
       ) {
         return provenanceNotFound();
       }
-      const page = await dependencies.reader.listVisible(input);
+      const page = await dependencies.reader.withConsistentSnapshot((reader) =>
+        reader.listVisible(input),
+      );
       return page ? provenanceOk(page) : provenanceNotFound();
     },
 
@@ -69,7 +71,9 @@ export function createKnowledgeAnnotationService(dependencies: {
       ) {
         return provenanceNotFound();
       }
-      const annotation = await dependencies.reader.findVisible(input);
+      const annotation = await dependencies.reader.withConsistentSnapshot(
+        (reader) => reader.findVisible(input),
+      );
       return annotation ? provenanceOk(annotation) : provenanceNotFound();
     },
 
@@ -90,7 +94,9 @@ export function createKnowledgeAnnotationService(dependencies: {
       ) {
         return provenanceNotFound();
       }
-      const page = await dependencies.reader.listRevisionsVisible(input);
+      const page = await dependencies.reader.withConsistentSnapshot((reader) =>
+        reader.listRevisionsVisible(input),
+      );
       return page ? provenanceOk(page) : provenanceNotFound();
     },
 

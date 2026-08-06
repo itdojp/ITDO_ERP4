@@ -152,7 +152,9 @@ synthesis sourceは参照先ごとのnullable FKとPostgreSQLのexactly-one CHEC
 - annotation mutationはcanonical actor本人だけが行い、編集時は旧revisionを保持して
   `currentRevision`を楽観的に進める。削除はlogical deleteとしrevisionを消さない。
 - conversation mutationはowner本人だけが行う。linked itemは全件同一ownerでなければ
-  relationを作成せず、同一owner制約はapplicationとDB constraint triggerの二層で保証する。
+  relationを作成しない。relation内部の`ownerUserId`からconversationとitemの
+  `(id, ownerUserId)`へ張る2本のdeferrable composite FKにより、直接insert、親owner更新、
+  並行競合を含む同一owner制約をapplicationとDBの二層で保証する。
   conversation readはlinked item ACLのunionではなく共通部分で
   判定し、actorが一件でも現在readできなければtitle、turn、relation、件数を返さない。
   linked itemがないconversationはownerだけがreadできる。
@@ -185,16 +187,19 @@ synthesis sourceは参照先ごとのnullable FKとPostgreSQLのexactly-one CHEC
   不存在/権限外と同じ`not_found`にする。version historyはlookahead rowもACL検査してから
   next cursorを発行する。
 - mutation、mandatory Knowledge audit、version/idempotency確定は同じPrisma transaction
-  で実行する。複数source ACLはread/mutationとも同一Repeatable Read snapshotで評価し、
+  で実行する。annotation/conversationの全readと複数source ACLのread/mutationは同一
+  Repeatable Read snapshotで評価し、
   grant swapを跨いだ時点混在を許さない。監査action/targetとmetadata keyはallowlistで検証し、annotation、turn、
   synthesis本文、prompt、URL、provider key、raw error/request keyを監査metadataへ入れない。
   DB CHECKもannotation/conversation/synthesis/importのaction groupを対応するtarget tableへ
   厳密に束縛し、対象actionのnullableなtarget table/IDも拒否する。annotationの履歴・改訂・
   削除はparent itemが非削除であることを再検査する。
 - annotation revisionとconversation turnの本文queryは、parent annotation/conversationの
-  事前visibility確認とは別に、子table query自身へcurrent item ACL predicateを含める。事前
-  確認と本文queryの間でgrantが失効しownerが履歴を追加しても、失効後のactorへその本文を
-  返さない。linked item ACLの共通部分もturn queryで再評価する。
+  visibility確認と同じRepeatable Read transactionで実行し、子table query自身にもcurrent
+  item ACL predicateを含める。このsnapshotをreadの認可線形化点とし、snapshot後にgrantが
+  失効してownerが履歴を追加しても、そのrequestへ失効後の新規本文を混在させない。失効が
+  snapshotより先にcommitした場合はfail closedとする。linked item ACLの共通部分も同じ
+  snapshot内のturn queryで再評価する。
 
 PR Aのmigrationはenum/table/index/FK/CHECKと新規履歴table専用DB triggerの追加だけを
 行うexpand-only migrationであり、

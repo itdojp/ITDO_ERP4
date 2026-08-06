@@ -378,6 +378,18 @@ export class PrismaKnowledgeAccessRepository implements KnowledgeAccessRepositor
 export class PrismaKnowledgeAnnotationRepository implements KnowledgeAnnotationRepository {
   constructor(private readonly client: KnowledgeProvenanceDbClient = prisma) {}
 
+  async withConsistentSnapshot<T>(
+    read: (repository: KnowledgeAnnotationRepository) => Promise<T>,
+  ): Promise<T> {
+    const host = this.client as KnowledgeProvenanceDbClient &
+      Partial<KnowledgeProvenanceTransactionHost>;
+    if (typeof host.$transaction !== 'function') return read(this);
+    return host.$transaction(
+      async (client) => read(new PrismaKnowledgeAnnotationRepository(client)),
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+  }
+
   async listVisible(input: {
     actor: KnowledgeActor;
     itemId: string;
@@ -600,6 +612,18 @@ export class PrismaKnowledgeAnnotationRepository implements KnowledgeAnnotationR
 export class PrismaKnowledgeConversationRepository implements KnowledgeConversationRepository {
   constructor(private readonly client: KnowledgeProvenanceDbClient = prisma) {}
 
+  async withConsistentSnapshot<T>(
+    read: (repository: KnowledgeConversationRepository) => Promise<T>,
+  ): Promise<T> {
+    const host = this.client as KnowledgeProvenanceDbClient &
+      Partial<KnowledgeProvenanceTransactionHost>;
+    if (typeof host.$transaction !== 'function') return read(this);
+    return host.$transaction(
+      async (client) => read(new PrismaKnowledgeConversationRepository(client)),
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+  }
+
   async listVisible(input: {
     actor: KnowledgeActor;
     limit: number;
@@ -712,6 +736,7 @@ export class PrismaKnowledgeConversationRepository implements KnowledgeConversat
       data: {
         conversationId: input.conversationId,
         knowledgeItemId: input.itemId,
+        ownerUserId: input.actor.userId,
         relationType: input.relationType,
         ordinal: input.ordinal,
         createdBy: input.actor.userId,

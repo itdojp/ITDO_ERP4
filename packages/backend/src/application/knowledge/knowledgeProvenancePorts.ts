@@ -316,6 +316,9 @@ export interface KnowledgeAccessRepository {
 }
 
 export interface KnowledgeAnnotationRepository {
+  withConsistentSnapshot<T>(
+    read: (repository: KnowledgeAnnotationRepository) => Promise<T>,
+  ): Promise<T>;
   listVisible(input: {
     actor: KnowledgeActor;
     itemId: string;
@@ -368,6 +371,9 @@ export interface KnowledgeAnnotationRepository {
 }
 
 export interface KnowledgeConversationRepository {
+  withConsistentSnapshot<T>(
+    read: (repository: KnowledgeConversationRepository) => Promise<T>,
+  ): Promise<T>;
   listVisible(input: {
     actor: KnowledgeActor;
     limit: number;

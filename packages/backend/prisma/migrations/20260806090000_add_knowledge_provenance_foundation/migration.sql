@@ -114,12 +114,16 @@ CREATE TABLE "KnowledgeConversationItem" (
   "id" TEXT NOT NULL,
   "conversationId" TEXT NOT NULL,
   "knowledgeItemId" TEXT NOT NULL,
+  "ownerUserId" TEXT NOT NULL,
   "relationType" "KnowledgeConversationItemRelationType" NOT NULL,
   "ordinal" INTEGER NOT NULL,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "createdBy" TEXT NOT NULL,
 
   CONSTRAINT "KnowledgeConversationItem_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "KnowledgeConversationItem_owner_check" CHECK (
+    LENGTH(BTRIM("ownerUserId")) > 0
+  ),
   CONSTRAINT "KnowledgeConversationItem_ordinal_check" CHECK ("ordinal" >= 0)
 );
 
@@ -242,34 +246,6 @@ CREATE TABLE "KnowledgeSynthesisSource" (
   )
 );
 
-CREATE FUNCTION "enforce_knowledge_conversation_item_same_owner"()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  IF EXISTS (
-    SELECT 1
-    FROM "KnowledgeConversation" AS conversation
-    INNER JOIN "KnowledgeItem" AS item
-      ON item."id" = NEW."knowledgeItemId"
-    WHERE conversation."id" = NEW."conversationId"
-      AND conversation."ownerUserId" <> item."ownerUserId"
-  ) THEN
-    RAISE EXCEPTION 'knowledge conversation item owner must match conversation owner'
-      USING
-        ERRCODE = '23514',
-        CONSTRAINT = 'KnowledgeConversationItem_same_owner_check';
-  END IF;
-  RETURN NEW;
-END;
-$$;
-
-CREATE CONSTRAINT TRIGGER "KnowledgeConversationItem_same_owner_trigger"
-AFTER INSERT OR UPDATE ON "KnowledgeConversationItem"
-DEFERRABLE INITIALLY IMMEDIATE
-FOR EACH ROW
-EXECUTE FUNCTION "enforce_knowledge_conversation_item_same_owner"();
-
 CREATE FUNCTION "enforce_knowledge_synthesis_source_no_same_aggregate"()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -339,6 +315,10 @@ CREATE INDEX "KnowledgeAnnotationRevision_annotationId_createdAt_id_idx"
 
 CREATE UNIQUE INDEX "KnowledgeConversation_ownerUserId_idempotencyHash_key"
   ON "KnowledgeConversation"("ownerUserId", "idempotencyHash");
+CREATE UNIQUE INDEX "KnowledgeConversation_id_ownerUserId_key"
+  ON "KnowledgeConversation"("id", "ownerUserId");
+CREATE UNIQUE INDEX "KnowledgeItem_id_ownerUserId_key"
+  ON "KnowledgeItem"("id", "ownerUserId");
 CREATE INDEX "KnowledgeConversation_ownerUserId_deletedAt_updatedAt_id_idx"
   ON "KnowledgeConversation"("ownerUserId", "deletedAt", "updatedAt", "id");
 CREATE UNIQUE INDEX "KnowledgeConversationItem_conversationId_knowledgeItemId_key"
@@ -411,13 +391,17 @@ ALTER TABLE "KnowledgeAnnotationRevision"
   FOREIGN KEY ("annotationId") REFERENCES "KnowledgeAnnotation"("id")
   ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "KnowledgeConversationItem"
-  ADD CONSTRAINT "KnowledgeConversationItem_conversationId_fkey"
-  FOREIGN KEY ("conversationId") REFERENCES "KnowledgeConversation"("id")
-  ON DELETE RESTRICT ON UPDATE CASCADE;
+  ADD CONSTRAINT "KnowledgeConversationItem_conversationId_ownerUserId_fkey"
+  FOREIGN KEY ("conversationId", "ownerUserId")
+  REFERENCES "KnowledgeConversation"("id", "ownerUserId")
+  ON DELETE RESTRICT ON UPDATE CASCADE
+  DEFERRABLE INITIALLY IMMEDIATE;
 ALTER TABLE "KnowledgeConversationItem"
-  ADD CONSTRAINT "KnowledgeConversationItem_knowledgeItemId_fkey"
-  FOREIGN KEY ("knowledgeItemId") REFERENCES "KnowledgeItem"("id")
-  ON DELETE RESTRICT ON UPDATE CASCADE;
+  ADD CONSTRAINT "KnowledgeConversationItem_knowledgeItemId_ownerUserId_fkey"
+  FOREIGN KEY ("knowledgeItemId", "ownerUserId")
+  REFERENCES "KnowledgeItem"("id", "ownerUserId")
+  ON DELETE RESTRICT ON UPDATE CASCADE
+  DEFERRABLE INITIALLY IMMEDIATE;
 ALTER TABLE "KnowledgeConversationTurn"
   ADD CONSTRAINT "KnowledgeConversationTurn_conversationId_fkey"
   FOREIGN KEY ("conversationId") REFERENCES "KnowledgeConversation"("id")

@@ -31,14 +31,14 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
 - annotation owner操作はparent itemが非削除であること、version historyはlookahead source
   ACLを再検査する。AuditLog DB CHECKはaction groupと非NULL target table/IDを厳密に対応
   付ける。
-- annotation本文query自体にparent item ACL predicateを含める。各ACL付きrepository queryを
-  point-in-timeの認可線形化点とし、それ以前にcommitした失効はfail closed、それ以後の失効は
-  後続requestから反映する。進行中transactionの遡及取消しやgrant rowの長時間lockは行わない。
-- annotation historyとconversation turn listは、parent visibilityの事前確認後も子tableの
-  本文query自体でcurrent parent ACLを再検査する。事前確認と本文queryの間にgrant revokeと
-  ownerによる履歴追加を挟むPostgreSQL 15実統合試験で、新規本文を返さないことを確認した。
-- conversation-itemの同一owner制約をapplication検査とdeferrable DB constraint triggerの
-  二層で保証し、Prisma直接insertによるcross-owner relationもSQLSTATE 23514で拒否する。
+- annotation/conversationの全readをRepeatable Read transactionで実行し、そのsnapshotを
+  認可線形化点とする。annotation本文queryとconversation relation/turn query自身にもparent
+  item ACL predicateを含める。snapshot後にgrant revokeとownerによる履歴追加を挟む
+  PostgreSQL 15実統合試験で、失効後の新規本文がresponseへ混在しないことを確認した。
+- conversation-itemの同一owner制約をapplication検査と、relation内部の`ownerUserId`から両親の
+  `(id, ownerUserId)`へ張る2本のdeferrable composite FKで保証する。Prisma直接insert、片親だけの
+  owner更新、relation insertと親owner更新の並行競合をDBが拒否し、両親を同一transactionで同じ
+  ownerへ移す整合した更新だけを許可する。
 - mutation、version/idempotency確定、mandatory Knowledge auditを同一transactionで処理し、
   audit metadataへ本文、prompt、URL、provider/request key、raw errorを入れない。複数source
   ACLはread/mutationとも一つのRepeatable Read snapshotで評価し、grant swapによる時点混在を
@@ -51,15 +51,15 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
 
 ## Focused tests
 
-| Verification                                        | Result | Evidence                                                                                                                        |
-| --------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| provenance schema / constraint / migration contract | PASS   | explicit enum、content/version/hash/scope bounds、exactly-one FK、single primary、expand-only、OpenAPI assertions               |
-| signed cursor                                       | PASS   | actor/resource/parent/sort binding、tamper rejection、production secret requirement                                             |
-| application use cases                               | PASS   | annotation history/delete/audit rollback、cross-owner relation、role-origin、turn/version conflict、manual provenance label拒否 |
-| Prisma adapter                                      | PASS   | Repeatable Read、ACL intersection、depth-aware memo/cycle/budget、200件境界、same-aggregate拒否、source-less fail-close         |
-| route contract                                      | PASS   | canonical actor、signed cursor、null-only label schema、unknown-field rejection、budget時のnon-disclosing empty/404             |
+| Verification                                        | Result | Evidence                                                                                                                       |
+| --------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| provenance schema / constraint / migration contract | PASS   | explicit enum、content/version/hash/scope bounds、exactly-one FK、single primary、expand-only、OpenAPI assertions              |
+| signed cursor                                       | PASS   | actor/resource/parent/sort binding、tamper rejection、production secret requirement                                            |
+| application use cases                               | PASS   | annotation/conversation read snapshot、history/delete/audit rollback、cross-owner relation、role-origin、turn/version conflict |
+| Prisma adapter                                      | PASS   | Repeatable Read、ACL intersection、depth-aware memo/cycle/budget、200件境界、same-aggregate拒否、source-less fail-close        |
+| route contract                                      | PASS   | canonical actor、signed cursor、null-only label schema、unknown-field rejection、budget時のnon-disclosing empty/404            |
 
-Result: **54/54 PASS**（fail/skip/todo 0）
+Result: **55/55 PASS**（fail/skip/todo 0）
 
 Focused command:
 
@@ -94,8 +94,13 @@ Result: **PASS**
 - multi-item conversation ACL intersection
 - cross-owner relation existence non-disclosure
 - direct DB cross-owner relation rejection
-- annotation historyの事前ACL確認後にgrant revokeとrevision追加を挟んでも本文非返却
-- conversation turnの事前ACL確認後にgrant revokeとturn追加を挟んでも本文非返却
+- annotation historyのRepeatable Read snapshot後にgrant revokeとrevision追加を挟んでも
+  revoke後の本文を混在させない
+- conversation turnのRepeatable Read snapshot後にgrant revokeとturn追加を挟んでも
+  revoke後の本文を混在させない
+- linked relation存在中の片親owner更新をcomposite FKが拒否
+- 両親を同一transactionで同じownerへ移す整合更新ではrelation ownerもcascade追従
+- relation insertと親owner更新の並行競合で不整合なowner更新を拒否
 - concurrent turn append: one success / one conflict
 - concurrent synthesis version: one success / one conflict
 - synthesis source exactly-one CHECK rejects zero/two references
@@ -144,8 +149,8 @@ Result: **PASS**
 | ----------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Prisma format/generate                    | PASS    | Prisma 7.9.1                                                                                                                     |
 | root lint / format / typecheck / build    | PASS    | backend/frontend。frontend dev dependenciesはlockfile準拠の`npm ci`後に実行                                                      |
-| `make test`                               | PASS    | backend 1,869/1,869、frontend 85 files / 495 tests。fail/skip/todo 0                                                             |
-| focused coverage                          | PASS    | selected files aggregate: statements/lines 80.79%、branches 68.42%、functions 83.44%。threshold/scope変更なし                    |
+| `make test`                               | PASS    | backend 1,870/1,870、frontend 85 files / 495 tests。fail/skip/todo 0                                                             |
+| focused coverage                          | PASS    | provenance files aggregate: statements/lines 81.62%、branches 68.09%、functions 88.82%。threshold/scope変更なし                  |
 | bounded-context dependency/coverage       | PASS    | 308 modules / 1,210 dependencies、293 source files / 244 targets、unclassified/duplicate/ambiguous 0                             |
 | OpenAPI export / breaking diff            | PASS    | generated snapshotとtracked fileはbyte-identical。baselineからbreaking 0、18 operation追加のみ                                   |
 | `make ops-quality`                        | PASS    | live systemd/provider操作なし。S3 profile 22/22、storage readiness 2/2を含む                                                     |
@@ -154,8 +159,8 @@ Result: **PASS**
 | secret scan / `git diff --check`          | PASS    | candidate filesを含むtracked scan 0 match、whitespace error 0                                                                    |
 | independent/Copilot review / CI / cooling | PENDING | Repeatable Read、depth memo、200件境界、same-aggregate/immutable DB保証を追加修正済み。final exact headで再review/CI/coolingする |
 
-Focused coverageのうち、main infrastructure adapterはc8計測でstatements/lines 67.38%、
-branches 67.22%、functions 77.77%、audit adapterはstatements/lines 88.59%、branches
+Focused coverageのうち、main infrastructure adapterはc8計測でstatements/lines 67.67%、
+branches 68.27%、functions 79.31%、audit adapterはstatements/lines 88.59%、branches
 73.91%、functions 100%、request access contextは全指標100%だった。実DB経路は
 上記のPostgreSQL 15 integrationで追加検証している。coverage threshold、対象scope、
 ignore、skipは変更していない。

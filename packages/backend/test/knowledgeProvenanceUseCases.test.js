@@ -178,6 +178,62 @@ function consistentSynthesisReader(overrides = {}) {
   return reader;
 }
 
+test('annotation and conversation reads always use a consistent snapshot', async () => {
+  const annotationSnapshotCalls = [];
+  const annotationReader = {
+    listVisible: async () => null,
+    findVisible: async () => null,
+    listRevisionsVisible: async () => null,
+  };
+  annotationReader.withConsistentSnapshot = async (read) => {
+    annotationSnapshotCalls.push('snapshot');
+    return read(annotationReader);
+  };
+  const annotationService = createKnowledgeAnnotationService({
+    reader: annotationReader,
+    unitOfWork: unitOfWork(transaction()),
+  });
+  await annotationService.list({ actor, itemId: 'item-1', limit: 20 });
+  await annotationService.detail({
+    actor,
+    itemId: 'item-1',
+    annotationId: 'annotation-1',
+  });
+  await annotationService.history({
+    actor,
+    itemId: 'item-1',
+    annotationId: 'annotation-1',
+    limit: 20,
+  });
+  assert.equal(annotationSnapshotCalls.length, 3);
+
+  const conversationSnapshotCalls = [];
+  const conversationReader = {
+    listVisible: async () => ({ items: [], nextBoundary: null }),
+    findVisible: async () => null,
+    listTurnsVisible: async () => null,
+  };
+  conversationReader.withConsistentSnapshot = async (read) => {
+    conversationSnapshotCalls.push('snapshot');
+    return read(conversationReader);
+  };
+  const conversationService = createKnowledgeConversationService({
+    reader: conversationReader,
+    unitOfWork: unitOfWork(transaction()),
+  });
+  await conversationService.list({ actor, limit: 20 });
+  await conversationService.detail({
+    actor,
+    conversationId: 'conversation-1',
+  });
+  await conversationService.listTurns({
+    actor,
+    conversationId: 'conversation-1',
+    limit: 20,
+  });
+  assert.equal(conversationSnapshotCalls.length, 3);
+});
+
 test('annotation create is owner-only, transactionally audited, and audit metadata excludes body', async () => {
   const audit = [];
   let createdInput;

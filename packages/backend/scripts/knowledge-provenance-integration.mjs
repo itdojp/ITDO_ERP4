@@ -60,6 +60,42 @@ const synthesisService = createKnowledgeSynthesisService({
   unitOfWork: provenanceAdapter.prismaKnowledgeProvenanceUnitOfWork,
 });
 
+function interleavingTransactionHost(delegateName, methodName, afterRead) {
+  return {
+    $transaction: (work, options) =>
+      prisma.$transaction(async (client) => {
+        const proxiedClient = new Proxy(client, {
+          get(target, property, receiver) {
+            const value = Reflect.get(target, property, receiver);
+            if (property !== delegateName) {
+              return typeof value === 'function' ? value.bind(target) : value;
+            }
+            return new Proxy(value, {
+              get(delegate, method, delegateReceiver) {
+                const operation = Reflect.get(
+                  delegate,
+                  method,
+                  delegateReceiver,
+                );
+                if (method !== methodName) {
+                  return typeof operation === 'function'
+                    ? operation.bind(delegate)
+                    : operation;
+                }
+                return async (input) => {
+                  const result = await operation.call(delegate, input);
+                  await afterRead();
+                  return result;
+                };
+              },
+            });
+          },
+        });
+        return work(proxiedClient);
+      }, options),
+  };
+}
+
 const auditActor = {
   requestId: 'knowledge-provenance-integration',
   source: 'api',
@@ -478,55 +514,73 @@ try {
     }),
     'create annotation ACL interleave fixture',
   );
-  let annotationInterleaveApplied = false;
+  let annotationFirstReadComplete;
+  const annotationFirstRead = new Promise((resolve) => {
+    annotationFirstReadComplete = resolve;
+  });
+  let releaseAnnotationRead;
+  const annotationAclChanged = new Promise((resolve) => {
+    releaseAnnotationRead = resolve;
+  });
   const annotationInterleaveRepository =
-    new provenanceAdapter.PrismaKnowledgeAnnotationRepository({
-      knowledgeAnnotation: {
-        findFirst: (input) => prisma.knowledgeAnnotation.findFirst(input),
-      },
-      knowledgeAnnotationRevision: {
-        findMany: async (input) => {
-          assert.equal(annotationInterleaveApplied, false);
-          annotationInterleaveApplied = true;
-          await prisma.knowledgeItemGroupGrant.delete({
-            where: {
-              knowledgeItemId_groupAccountId: {
-                knowledgeItemId: annotationInterleaveItem.id,
-                groupAccountId: interleaveGroup.id,
-              },
-            },
-          });
-          expectOk(
-            await annotationService.revise({
-              actor: owner,
-              auditActor,
-              itemId: annotationInterleaveItem.id,
-              annotationId: annotationInterleave.id,
-              body: {
-                expectedRevision: annotationInterleave.currentRevision,
-                kind: 'question',
-                origin: 'user',
-                content: 'Synthetic annotation after ACL revocation',
-              },
-            }),
-            'append annotation after ACL revocation',
-          );
-          return prisma.knowledgeAnnotationRevision.findMany(input);
+    new provenanceAdapter.PrismaKnowledgeAnnotationRepository(
+      interleavingTransactionHost(
+        'knowledgeAnnotation',
+        'findFirst',
+        async () => {
+          annotationFirstReadComplete();
+          await annotationAclChanged;
         },
-      },
-    });
-  const interleavedAnnotationHistory =
-    await annotationInterleaveRepository.listRevisionsVisible({
+      ),
+    );
+  const annotationInterleaveService = createKnowledgeAnnotationService({
+    reader: annotationInterleaveRepository,
+    unitOfWork: provenanceAdapter.prismaKnowledgeProvenanceUnitOfWork,
+  });
+  const interleavedAnnotationHistoryPromise =
+    annotationInterleaveService.history({
       actor: interleaveReader,
       itemId: annotationInterleaveItem.id,
       annotationId: annotationInterleave.id,
       limit: 20,
     });
-  assert.equal(annotationInterleaveApplied, true);
-  assert.deepEqual(interleavedAnnotationHistory, {
-    items: [],
-    nextBoundary: null,
-  });
+  await annotationFirstRead;
+  try {
+    await prisma.knowledgeItemGroupGrant.delete({
+      where: {
+        knowledgeItemId_groupAccountId: {
+          knowledgeItemId: annotationInterleaveItem.id,
+          groupAccountId: interleaveGroup.id,
+        },
+      },
+    });
+    expectOk(
+      await annotationService.revise({
+        actor: owner,
+        auditActor,
+        itemId: annotationInterleaveItem.id,
+        annotationId: annotationInterleave.id,
+        body: {
+          expectedRevision: annotationInterleave.currentRevision,
+          kind: 'question',
+          origin: 'user',
+          content: 'Synthetic annotation after ACL revocation',
+        },
+      }),
+      'append annotation after ACL revocation',
+    );
+  } finally {
+    releaseAnnotationRead();
+  }
+  const interleavedAnnotationHistory = expectOk(
+    await interleavedAnnotationHistoryPromise,
+    'annotation Repeatable Read ACL interleave',
+  );
+  assert.deepEqual(
+    interleavedAnnotationHistory.items.map((entry) => entry.content),
+    ['Synthetic annotation before ACL revocation'],
+  );
+  assert.equal(interleavedAnnotationHistory.nextBoundary, null);
   assert.equal(
     await prisma.knowledgeAnnotationRevision.count({
       where: { annotationId: annotationInterleave.id },
@@ -670,6 +724,16 @@ try {
     true,
   );
   expectFailure(
+    await annotationService.history({
+      actor: bothGroups,
+      itemId: orgItemA.id,
+      annotationId: orgAnnotation.id,
+      limit: 20,
+    }),
+    'not_found',
+    'deleted organization annotation history for non-owner',
+  );
+  expectFailure(
     await synthesisService.detail({
       actor: bothGroups,
       synthesisId: organizationSynthesis.synthesis.id,
@@ -777,12 +841,133 @@ try {
         data: {
           conversationId: conversation.id,
           knowledgeItemId: otherOwnerItem.id,
+          ownerUserId: owner.userId,
           relationType: 'context',
           ordinal: 2,
           createdBy: owner.userId,
         },
       }),
-    /23514|owner must match conversation owner/i,
+    /foreign key constraint|P2003/i,
+  );
+
+  const transferableItem = await createItem(owner, {
+    scope: 'personal',
+    sourceType: 'manual',
+    title: 'Synthetic same-owner transfer item',
+  });
+  const transferableConversation = await prisma.knowledgeConversation.create({
+    data: {
+      ownerUserId: owner.userId,
+      title: 'Synthetic same-owner transfer conversation',
+      sourceType: 'manual',
+      contentHash: 'a'.repeat(64),
+      createdBy: owner.userId,
+      updatedBy: owner.userId,
+    },
+  });
+  const transferableRelation = await prisma.knowledgeConversationItem.create({
+    data: {
+      conversationId: transferableConversation.id,
+      knowledgeItemId: transferableItem.id,
+      ownerUserId: owner.userId,
+      relationType: 'primary',
+      ordinal: 0,
+      createdBy: owner.userId,
+    },
+  });
+  const transferredOwner = 'integration-transferred-owner';
+  await prisma.$transaction(async (client) => {
+    await client.$executeRawUnsafe(`
+      SET CONSTRAINTS
+        "KnowledgeConversationItem_conversationId_ownerUserId_fkey",
+        "KnowledgeConversationItem_knowledgeItemId_ownerUserId_fkey"
+      DEFERRED
+    `);
+    await client.knowledgeConversation.update({
+      where: { id: transferableConversation.id },
+      data: { ownerUserId: transferredOwner },
+    });
+    await client.knowledgeItem.update({
+      where: { id: transferableItem.id },
+      data: { ownerUserId: transferredOwner },
+    });
+  });
+  const transferredRelation =
+    await prisma.knowledgeConversationItem.findUniqueOrThrow({
+      where: { id: transferableRelation.id },
+    });
+  assert.equal(transferredRelation.ownerUserId, transferredOwner);
+
+  const raceItem = await createItem(owner, {
+    scope: 'personal',
+    sourceType: 'manual',
+    title: 'Synthetic same-owner race item',
+  });
+  const raceConversation = await prisma.knowledgeConversation.create({
+    data: {
+      ownerUserId: owner.userId,
+      title: 'Synthetic same-owner race conversation',
+      sourceType: 'manual',
+      contentHash: 'b'.repeat(64),
+      createdBy: owner.userId,
+      updatedBy: owner.userId,
+    },
+  });
+  let raceRelationInserted;
+  const raceRelationReady = new Promise((resolve) => {
+    raceRelationInserted = resolve;
+  });
+  let releaseRaceRelation;
+  const raceOwnerUpdateStarted = new Promise((resolve) => {
+    releaseRaceRelation = resolve;
+  });
+  const raceRelationInsert = prisma.$transaction(async (client) => {
+    await client.knowledgeConversationItem.create({
+      data: {
+        conversationId: raceConversation.id,
+        knowledgeItemId: raceItem.id,
+        ownerUserId: owner.userId,
+        relationType: 'primary',
+        ordinal: 0,
+        createdBy: owner.userId,
+      },
+    });
+    raceRelationInserted();
+    await raceOwnerUpdateStarted;
+  });
+  await raceRelationReady;
+  const raceOwnerUpdate = prisma.knowledgeItem
+    .update({
+      where: { id: raceItem.id },
+      data: { ownerUserId: 'integration-racing-owner' },
+    })
+    .then(
+      () => ({ ok: true }),
+      (error) => ({ ok: false, error }),
+    );
+  releaseRaceRelation();
+  await raceRelationInsert;
+  const raceOwnerUpdateResult = await raceOwnerUpdate;
+  assert.equal(raceOwnerUpdateResult.ok, false);
+  assert.match(
+    String(raceOwnerUpdateResult.error),
+    /foreign key constraint|P2003/i,
+  );
+  await assert.rejects(
+    () =>
+      prisma.knowledgeItem.update({
+        where: { id: orgItemA.id },
+        data: { ownerUserId: 'integration-owner-change-rejected' },
+      }),
+    /foreign key constraint|P2003/i,
+  );
+  await assert.rejects(
+    () =>
+      prisma.knowledgeConversation.update({
+        where: { id: conversation.id },
+        data: { ownerUserId: 'integration-owner-change-rejected' },
+      }),
+    /foreign key constraint|P2003/i,
   );
 
   const concurrentTurns = await Promise.all([
@@ -932,54 +1117,71 @@ try {
     }),
     'append conversation turn before ACL revocation',
   );
-  let conversationInterleaveApplied = false;
+  let conversationFirstReadComplete;
+  const conversationFirstRead = new Promise((resolve) => {
+    conversationFirstReadComplete = resolve;
+  });
+  let releaseConversationRead;
+  const conversationAclChanged = new Promise((resolve) => {
+    releaseConversationRead = resolve;
+  });
   const conversationInterleaveRepository =
-    new provenanceAdapter.PrismaKnowledgeConversationRepository({
-      knowledgeConversation: {
-        findFirst: (input) => prisma.knowledgeConversation.findFirst(input),
-      },
-      knowledgeConversationTurn: {
-        findMany: async (input) => {
-          assert.equal(conversationInterleaveApplied, false);
-          conversationInterleaveApplied = true;
-          await prisma.knowledgeItemGroupGrant.delete({
-            where: {
-              knowledgeItemId_groupAccountId: {
-                knowledgeItemId: conversationInterleaveItem.id,
-                groupAccountId: interleaveGroup.id,
-              },
-            },
-          });
-          expectOk(
-            await conversationService.appendTurn({
-              actor: owner,
-              auditActor,
-              conversationId: conversationInterleave.id,
-              body: {
-                expectedVersion:
-                  conversationInterleaveTurn.conversation.version,
-                role: 'assistant',
-                origin: 'ai',
-                content: 'Synthetic turn after ACL revocation',
-              },
-            }),
-            'append conversation turn after ACL revocation',
-          );
-          return prisma.knowledgeConversationTurn.findMany(input);
+    new provenanceAdapter.PrismaKnowledgeConversationRepository(
+      interleavingTransactionHost(
+        'knowledgeConversation',
+        'findFirst',
+        async () => {
+          conversationFirstReadComplete();
+          await conversationAclChanged;
         },
-      },
-    });
-  const interleavedConversationTurns =
-    await conversationInterleaveRepository.listTurnsVisible({
+      ),
+    );
+  const conversationInterleaveService = createKnowledgeConversationService({
+    reader: conversationInterleaveRepository,
+    unitOfWork: provenanceAdapter.prismaKnowledgeProvenanceUnitOfWork,
+  });
+  const interleavedConversationTurnsPromise =
+    conversationInterleaveService.listTurns({
       actor: interleaveReader,
       conversationId: conversationInterleave.id,
       limit: 20,
     });
-  assert.equal(conversationInterleaveApplied, true);
-  assert.deepEqual(interleavedConversationTurns, {
-    items: [],
-    nextBoundary: null,
-  });
+  await conversationFirstRead;
+  try {
+    await prisma.knowledgeItemGroupGrant.delete({
+      where: {
+        knowledgeItemId_groupAccountId: {
+          knowledgeItemId: conversationInterleaveItem.id,
+          groupAccountId: interleaveGroup.id,
+        },
+      },
+    });
+    expectOk(
+      await conversationService.appendTurn({
+        actor: owner,
+        auditActor,
+        conversationId: conversationInterleave.id,
+        body: {
+          expectedVersion: conversationInterleaveTurn.conversation.version,
+          role: 'assistant',
+          origin: 'ai',
+          content: 'Synthetic turn after ACL revocation',
+        },
+      }),
+      'append conversation turn after ACL revocation',
+    );
+  } finally {
+    releaseConversationRead();
+  }
+  const interleavedConversationTurns = expectOk(
+    await interleavedConversationTurnsPromise,
+    'conversation Repeatable Read ACL interleave',
+  );
+  assert.deepEqual(
+    interleavedConversationTurns.items.map((entry) => entry.content),
+    ['Synthetic turn before ACL revocation'],
+  );
+  assert.equal(interleavedConversationTurns.nextBoundary, null);
   assert.equal(
     await prisma.knowledgeConversationTurn.count({
       where: { conversationId: conversationInterleave.id },
@@ -1377,9 +1579,14 @@ try {
       synthesisVersionRace: 'one_success_one_conflict',
       sourceRevocationRedacted: true,
       aclSwapSnapshotConsistent: true,
+      annotationReadSnapshotConsistent: true,
+      conversationReadSnapshotConsistent: true,
       annotationHistoryAclInterleaveRedacted: true,
       conversationTurnAclInterleaveRedacted: true,
       crossOwnerRelationDbRejected: true,
+      parentOwnerUpdateRejected: true,
+      deferredOwnerTransferConsistent: true,
+      concurrentOwnerRaceRejected: true,
       sameSynthesisSourceRejected: true,
       immutableHistoryEnforced: true,
       auditFailureRolledBack: true,

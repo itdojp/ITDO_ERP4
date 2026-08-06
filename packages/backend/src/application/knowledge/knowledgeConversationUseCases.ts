@@ -103,7 +103,11 @@ export function createKnowledgeConversationService(dependencies: {
       ) {
         return provenanceOk({ items: [], nextBoundary: null });
       }
-      return provenanceOk(await dependencies.reader.listVisible(input));
+      return provenanceOk(
+        await dependencies.reader.withConsistentSnapshot((reader) =>
+          reader.listVisible(input),
+        ),
+      );
     },
 
     async detail(input: { actor: KnowledgeActor; conversationId: string }) {
@@ -113,7 +117,9 @@ export function createKnowledgeConversationService(dependencies: {
       ) {
         return provenanceNotFound();
       }
-      const conversation = await dependencies.reader.findVisible(input);
+      const conversation = await dependencies.reader.withConsistentSnapshot(
+        (reader) => reader.findVisible(input),
+      );
       return conversation ? provenanceOk(conversation) : provenanceNotFound();
     },
 
@@ -333,7 +339,9 @@ export function createKnowledgeConversationService(dependencies: {
       ) {
         return provenanceNotFound();
       }
-      const page = await dependencies.reader.listTurnsVisible(input);
+      const page = await dependencies.reader.withConsistentSnapshot((reader) =>
+        reader.listTurnsVisible(input),
+      );
       return page ? provenanceOk(page) : provenanceNotFound();
     },
 

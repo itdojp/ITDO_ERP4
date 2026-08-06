@@ -419,18 +419,33 @@ test('source validation rechecks current item ACL and normalizes inaccessible ID
   );
 });
 
-test('synthesis reads and mutations use one Repeatable Read snapshot', async () => {
+test('provenance reads and mutations use one Repeatable Read snapshot', async () => {
   const isolationLevels = [];
   const transactionClient = emptyClient({
     knowledgeItem: { findFirst: async () => ({ id: 'visible-item' }) },
   });
-  const repository = new PrismaKnowledgeSynthesisRepository(
-    emptyClient({
-      $transaction: async (read, options) => {
-        isolationLevels.push(options?.isolationLevel);
-        return read(transactionClient);
-      },
-    }),
+  const host = emptyClient({
+    $transaction: async (read, options) => {
+      isolationLevels.push(options?.isolationLevel);
+      return read(transactionClient);
+    },
+  });
+  const annotationRepository = new PrismaKnowledgeAnnotationRepository(host);
+  const conversationRepository = new PrismaKnowledgeConversationRepository(
+    host,
+  );
+  const repository = new PrismaKnowledgeSynthesisRepository(host);
+  assert.equal(
+    await annotationRepository.withConsistentSnapshot(async () =>
+      Promise.resolve('annotation'),
+    ),
+    'annotation',
+  );
+  assert.equal(
+    await conversationRepository.withConsistentSnapshot(async () =>
+      Promise.resolve('conversation'),
+    ),
+    'conversation',
   );
   const visible = await repository.withConsistentSnapshot((reader) =>
     reader.validateSources({
@@ -442,7 +457,31 @@ test('synthesis reads and mutations use one Repeatable Read snapshot', async () 
     }),
   );
   assert.equal(visible, true);
-  assert.deepEqual(isolationLevels, ['RepeatableRead']);
+  assert.deepEqual(isolationLevels, [
+    'RepeatableRead',
+    'RepeatableRead',
+    'RepeatableRead',
+  ]);
+
+  const noTransactionRepository = new PrismaKnowledgeAnnotationRepository(
+    emptyClient({
+      knowledgeItem: {},
+    }),
+  );
+  assert.equal(
+    await noTransactionRepository.withConsistentSnapshot(async () =>
+      Promise.resolve('existing-transaction'),
+    ),
+    'existing-transaction',
+  );
+  const noTransactionConversationRepository =
+    new PrismaKnowledgeConversationRepository(emptyClient());
+  assert.equal(
+    await noTransactionConversationRepository.withConsistentSnapshot(async () =>
+      Promise.resolve('existing-conversation-transaction'),
+    ),
+    'existing-conversation-transaction',
+  );
 
   let mutationIsolation;
   const unitOfWork = new PrismaKnowledgeProvenanceUnitOfWork({

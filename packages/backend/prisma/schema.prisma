@@ -2285,6 +2285,7 @@ model KnowledgeItem {
   conversationItems  KnowledgeConversationItem[]
   synthesisSources   KnowledgeSynthesisSource[]
 
+  @@unique([id, ownerUserId])
   @@index([ownerUserId, deletedAt, updatedAt])
   @@index([organizationId, scope, deletedAt, updatedAt])
   @@index([scope, status, deletedAt, updatedAt])
@@ -2529,15 +2530,17 @@ model KnowledgeConversation {
   synthesisSources KnowledgeSynthesisSource[]
 
   @@unique([ownerUserId, idempotencyHash])
+  @@unique([id, ownerUserId])
   @@index([ownerUserId, deletedAt, updatedAt, id])
 }
 
 model KnowledgeConversationItem {
   id              String                                @id @default(uuid())
-  conversation    KnowledgeConversation                 @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+  conversation    KnowledgeConversation                 @relation(fields: [conversationId, ownerUserId], references: [id, ownerUserId], onDelete: Restrict)
   conversationId  String
-  knowledgeItem   KnowledgeItem                         @relation(fields: [knowledgeItemId], references: [id], onDelete: Restrict)
+  knowledgeItem   KnowledgeItem                         @relation(fields: [knowledgeItemId, ownerUserId], references: [id, ownerUserId], onDelete: Restrict)
   knowledgeItemId String
+  ownerUserId     String
   relationType    KnowledgeConversationItemRelationType
   ordinal         Int
   createdAt       DateTime                              @default(now())
