@@ -156,7 +156,9 @@ synthesis sourceは参照先ごとのnullable FKとPostgreSQLのexactly-one CHEC
   判定し、actorが一件でも現在readできなければtitle、turn、relation、件数を返さない。
   linked itemがないconversationはownerだけがreadできる。
 - turnは`conversationId + sequence`で一意とし、conversation versionを用いた競合検知を
-  行う。roleとoriginの組合せもallowlistで検証し、既存turnを更新しない。
+  行う。roleとoriginの組合せもallowlistで検証し、既存turnを更新しない。annotation
+  revision、conversation turn、synthesis version/sourceは新規table上のDB triggerでも
+  update/deleteを拒否し、application経路外の履歴改変も防ぐ。
 - PR Aのmanual APIはprovider/model/tool nameを入力として受け付けず、responseでもこれらを
   `null`へ固定する。PR Bでimport parserと同時に固定公開語彙を定義するまで、自由文字列を
   provenance labelとして保存・共有しない。
@@ -166,10 +168,12 @@ synthesis sourceは参照先ごとのnullable FKとPostgreSQLのexactly-one CHEC
   version履歴は保持するが、非公開sourceはkind/relation/order/accessibilityだけを返し、
   source ID、provenance row ID、actor、timestamp、本文を返さない。
 - synthesis versionは集約内versionを一意とし、version追加とsource固定を同一transaction
-  で行う。synthesisをsourceにできるのは既に確定した固定versionだけとし、同一versionへの
-  自己参照をDB constraintで拒否する。再帰的なcurrent access評価はfail closedかつ16段で
-  停止する。評価はrequest単位でmemoizeし、version node 128、source edge 512、DB query
-  512を上限とする。source 0件のorganization synthesisはnon-ownerへfail closedとする。
+  で行う。synthesisをsourceにできるのは別synthesisの既に確定した固定versionだけとし、
+  同一synthesis集約の現行・過去version参照をapplication検査とDB constraint triggerで拒否する。
+  再帰的なcurrent access評価はfail closedかつ16段で停止する。認可結果memoは到達depthをkeyに
+  含め、source順序によるdepth制限迂回を許さない。評価はrequest単位でmemoizeし、version node
+  128、source edge 512、DB query 512を上限とする。source 0件のorganization synthesisは
+  non-ownerへfail closedとする。
   create/append request内のowner確認、source検証、mutation後response組立ても同じaccess
   contextを共有し、repository呼出しごとにbudgetやmemoを再生成しない。
 - list cursorは既存`KNOWLEDGE_CURSOR_SIGNING_SECRET`を使うHMAC署名付きopaque tokenと
@@ -180,13 +184,15 @@ synthesis sourceは参照先ごとのnullable FKとPostgreSQLのexactly-one CHEC
   不存在/権限外と同じ`not_found`にする。version historyはlookahead rowもACL検査してから
   next cursorを発行する。
 - mutation、mandatory Knowledge audit、version/idempotency確定は同じPrisma transaction
-  で実行する。監査action/targetとmetadata keyはallowlistで検証し、annotation、turn、
+  で実行する。複数source ACLはread/mutationとも同一Repeatable Read snapshotで評価し、
+  grant swapを跨いだ時点混在を許さない。監査action/targetとmetadata keyはallowlistで検証し、annotation、turn、
   synthesis本文、prompt、URL、provider key、raw error/request keyを監査metadataへ入れない。
   DB CHECKもannotation/conversation/synthesis/importのaction groupを対応するtarget tableへ
   厳密に束縛し、対象actionのnullableなtarget table/IDも拒否する。annotationの履歴・改訂・
   削除はparent itemが非削除であることを再検査する。
 
-PR Aのmigrationはenum/table/index/FK/CHECKの追加だけを行うexpand-only migrationであり、
+PR Aのmigrationはenum/table/index/FK/CHECKと新規履歴table専用DB triggerの追加だけを
+行うexpand-only migrationであり、
 既存table/columnのdrop、rename、型変更、既存row更新を行わない。application rollbackでは
 新tableと履歴を保持したまま旧imageへ戻す。manual/JSON/Markdown importはPR B、UI/E2Eは
 PR Cで実装する。

@@ -320,7 +320,8 @@ PR Aはimport parserとUIを有効化する前に、次のDB/application/API契�
 
 - annotation kindは`note|question|hypothesis|quote|todo`、originは
   `user|external|ai|system|tool`とする。本人だけが作成・改訂・logical deleteでき、改訂は
-  immutable revisionを追加して旧本文を保持する。
+  immutable revisionを追加して旧本文を保持する。revision、turn、synthesis version/sourceは
+  新規table専用DB triggerでもupdate/deleteを拒否する。
 - conversation roleは`user|assistant|system|tool`、item relationは
   `primary|supporting|contradicting|context`とする。turnはappend-onlyで、sequenceと
   conversation versionを用いて同時追加を競合として返す。
@@ -356,11 +357,15 @@ PR Aはimport parserとUIを有効化する前に、次のDB/application/API契�
   検査してからmutationとmandatory auditを確定する。失効が認可queryより先にcommitした場合は
   fail closedとし、認可queryより後の失効は後続requestから反映する。進行中transactionを
   遡及取消しする契約やgrant rowの長時間lockは導入しない。
+- synthesisの複数source ACLはread/mutationとも同一Repeatable Read snapshotで評価する。
+  再帰version memoは到達depthをkeyに含め、異なるdepthの結果を再利用しない。同一synthesisの
+  現行・過去versionはapplication検査とDB constraint triggerの両方でsource指定を拒否する。
 - APIはannotation list/create/detail/history/revise/delete、conversation
   list/create/detail/item add-remove/turn list-append、synthesis list/create/detail/version
   history-appendを提供する。unauthorized IDと存在しないIDは同じ`not_found`へ正規化する。
 
 schema migrationはadditive/expand-onlyとし、既存table/column/dataを変更または削除しない。
+履歴改変拒否triggerは今回追加する新規tableだけを対象にする。
 旧applicationは新migration適用後もKnowledge CRUDとhealth/readinessを継続できることを
 PostgreSQL 15で確認する。application rollbackでは新table/dataを保持する。
 

@@ -141,10 +141,12 @@ export function createKnowledgeSynthesisService(dependencies: {
       }
       try {
         return provenanceOk(
-          await dependencies.reader.listVisible({
-            ...input,
-            accessContext: createSynthesisAccessContext(),
-          }),
+          await dependencies.reader.withConsistentSnapshot((reader) =>
+            reader.listVisible({
+              ...input,
+              accessContext: createSynthesisAccessContext(),
+            }),
+          ),
         );
       } catch (error) {
         if (error instanceof KnowledgeSynthesisAccessBudgetError) {
@@ -162,10 +164,13 @@ export function createKnowledgeSynthesisService(dependencies: {
         return provenanceNotFound();
       }
       try {
-        const synthesis = await dependencies.reader.findVisible({
-          ...input,
-          accessContext: createSynthesisAccessContext(),
-        });
+        const synthesis = await dependencies.reader.withConsistentSnapshot(
+          (reader) =>
+            reader.findVisible({
+              ...input,
+              accessContext: createSynthesisAccessContext(),
+            }),
+        );
         return synthesis ? provenanceOk(synthesis) : provenanceNotFound();
       } catch (error) {
         if (error instanceof KnowledgeSynthesisAccessBudgetError) {
@@ -191,10 +196,13 @@ export function createKnowledgeSynthesisService(dependencies: {
         return provenanceNotFound();
       }
       try {
-        const page = await dependencies.reader.listVersionsVisible({
-          ...input,
-          accessContext: createSynthesisAccessContext(),
-        });
+        const page = await dependencies.reader.withConsistentSnapshot(
+          (reader) =>
+            reader.listVersionsVisible({
+              ...input,
+              accessContext: createSynthesisAccessContext(),
+            }),
+        );
         return page ? provenanceOk(page) : provenanceNotFound();
       } catch (error) {
         if (error instanceof KnowledgeSynthesisAccessBudgetError) {
@@ -363,6 +371,7 @@ export function createKnowledgeSynthesisService(dependencies: {
               actor: input.actor,
               sources,
               accessContext,
+              excludedSynthesisId: current.synthesis.id,
             }))
           ) {
             return provenanceNotFound();

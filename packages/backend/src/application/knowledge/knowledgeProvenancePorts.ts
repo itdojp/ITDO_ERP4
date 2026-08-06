@@ -430,6 +430,9 @@ export interface KnowledgeConversationRepository {
 }
 
 export interface KnowledgeSynthesisRepository {
+  withConsistentSnapshot<T>(
+    read: (repository: KnowledgeSynthesisRepository) => Promise<T>,
+  ): Promise<T>;
   listVisible(input: {
     actor: KnowledgeActor;
     limit: number;
@@ -455,6 +458,7 @@ export interface KnowledgeSynthesisRepository {
     actor: KnowledgeActor;
     sources: KnowledgeSynthesisSourceInput[];
     accessContext: KnowledgeSynthesisAccessContext;
+    excludedSynthesisId?: string;
   }): Promise<boolean>;
   create(input: {
     actor: KnowledgeActor;

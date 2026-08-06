@@ -172,6 +172,12 @@ function unitOfWork(tx, options = {}) {
   };
 }
 
+function consistentSynthesisReader(overrides = {}) {
+  const reader = { ...overrides };
+  reader.withConsistentSnapshot = async (read) => read(reader);
+  return reader;
+}
+
 test('annotation create is owner-only, transactionally audited, and audit metadata excludes body', async () => {
   const audit = [];
   let createdInput;
@@ -653,6 +659,7 @@ test('synthesis source input is strict and concurrent version append returns con
 test('synthesis service shares one access context per mutation request', async () => {
   const createContexts = [];
   const appendContexts = [];
+  const excludedSynthesisIds = [];
   let operation = 'create';
   const tx = transaction({
     syntheses: {
@@ -660,6 +667,7 @@ test('synthesis service shares one access context per mutation request', async (
         (operation === 'create' ? createContexts : appendContexts).push(
           input.accessContext,
         );
+        excludedSynthesisIds.push(input.excludedSynthesisId);
         return true;
       },
       create: async (input) => {
@@ -699,6 +707,7 @@ test('synthesis service shares one access context per mutation request', async (
   assert.equal(created.ok, true);
   assert.equal(createContexts.length, 2);
   assert.equal(new Set(createContexts).size, 1);
+  assert.equal(excludedSynthesisIds[0], undefined);
 
   operation = 'append';
   const appended = await service.appendVersion({
@@ -715,10 +724,11 @@ test('synthesis service shares one access context per mutation request', async (
   assert.equal(appendContexts.length, 3);
   assert.equal(new Set(appendContexts).size, 1);
   assert.notEqual(createContexts[0], appendContexts[0]);
+  assert.equal(excludedSynthesisIds[1], 'synthesis-1');
 });
 
 test('synthesis ID reads and mutations normalize access-budget exhaustion as not found', async () => {
-  const reader = {
+  const reader = consistentSynthesisReader({
     listVisible: async () => {
       throw new KnowledgeSynthesisAccessBudgetError();
     },
@@ -728,7 +738,7 @@ test('synthesis ID reads and mutations normalize access-budget exhaustion as not
     listVersionsVisible: async () => {
       throw new KnowledgeSynthesisAccessBudgetError();
     },
-  };
+  });
   const tx = transaction({
     syntheses: {
       validateSources: async () => {

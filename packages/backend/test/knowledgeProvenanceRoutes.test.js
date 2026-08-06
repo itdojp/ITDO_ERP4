@@ -462,6 +462,7 @@ test('synthesis access-budget exhaustion does not disclose list or ID existence'
       throw new KnowledgeSynthesisAccessBudgetError();
     },
   };
+  reader.withConsistentSnapshot = async (read) => read(reader);
   const service = createKnowledgeSynthesisService({
     reader,
     unitOfWork: { run: async () => notFound() },

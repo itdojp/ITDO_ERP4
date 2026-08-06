@@ -322,6 +322,76 @@ test('source validation rechecks current item ACL and normalizes inaccessible ID
   );
 });
 
+test('synthesis reads and mutations use one Repeatable Read snapshot', async () => {
+  const isolationLevels = [];
+  const transactionClient = emptyClient({
+    knowledgeItem: { findFirst: async () => ({ id: 'visible-item' }) },
+  });
+  const repository = new PrismaKnowledgeSynthesisRepository(
+    emptyClient({
+      $transaction: async (read, options) => {
+        isolationLevels.push(options?.isolationLevel);
+        return read(transactionClient);
+      },
+    }),
+  );
+  const visible = await repository.withConsistentSnapshot((reader) =>
+    reader.validateSources({
+      actor,
+      accessContext: createSynthesisAccessContext(),
+      sources: [
+        { kind: 'item', sourceId: 'visible-item', relationType: 'primary' },
+      ],
+    }),
+  );
+  assert.equal(visible, true);
+  assert.deepEqual(isolationLevels, ['RepeatableRead']);
+
+  let mutationIsolation;
+  const unitOfWork = new PrismaKnowledgeProvenanceUnitOfWork({
+    $transaction: async (work, options) => {
+      mutationIsolation = options?.isolationLevel;
+      return work(emptyClient());
+    },
+  });
+  await unitOfWork.run(async () => undefined);
+  assert.equal(mutationIsolation, 'RepeatableRead');
+});
+
+test('same-synthesis historical versions are rejected as sources', async () => {
+  const predicates = [];
+  const repository = new PrismaKnowledgeSynthesisRepository(
+    emptyClient({
+      knowledgeSynthesisVersion: {
+        findFirst: async ({ where }) => {
+          predicates.push(where);
+          return where.synthesisId === 'synthesis-target'
+            ? { id: where.id }
+            : null;
+        },
+      },
+    }),
+  );
+  assert.equal(
+    await repository.validateSources({
+      actor,
+      accessContext: createSynthesisAccessContext(),
+      excludedSynthesisId: 'synthesis-target',
+      sources: [
+        {
+          kind: 'synthesis_version',
+          sourceId: 'version-old',
+          relationType: 'primary',
+        },
+      ],
+    }),
+    false,
+  );
+  assert.deepEqual(predicates, [
+    { id: 'version-old', synthesisId: 'synthesis-target' },
+  ]);
+});
+
 test('recursive synthesis access is memoized, detects cycles, and enforces the documented depth', async () => {
   function chainRepository(versionCount) {
     let versionQueries = 0;
@@ -449,6 +519,52 @@ test('shared synthesis provenance DAG uses request-scoped memoization', async ()
   );
   assert.equal(versionQueries, 4);
   assert.equal(itemQueries, 1);
+});
+
+test('mixed-depth shared provenance DAG fails closed regardless of source order', async () => {
+  const graph = {
+    shared: [versionSource('leaf')],
+    leaf: [itemSource('visible-item')],
+  };
+  for (let depth = 1; depth <= 15; depth += 1) {
+    graph[`deep-${depth}`] = [
+      versionSource(depth === 15 ? 'shared' : `deep-${depth + 1}`),
+    ];
+  }
+  for (const order of [
+    ['shared', 'deep-1'],
+    ['deep-1', 'shared'],
+  ]) {
+    const repository = new PrismaKnowledgeSynthesisRepository(
+      emptyClient({
+        knowledgeSynthesisVersion: {
+          findFirst: async ({ where }) => ({
+            id: where.id,
+            synthesisId: `synthesis-${where.id}`,
+            version: 1,
+            synthesis: { ownerUserId: 'owner-2' },
+            sources: graph[where.id],
+          }),
+        },
+        knowledgeItem: {
+          findFirst: async () => ({ id: 'visible-item' }),
+        },
+      }),
+    );
+    assert.equal(
+      await repository.validateSources({
+        actor,
+        accessContext: createSynthesisAccessContext(),
+        sources: order.map((sourceId, ordinal) => ({
+          kind: 'synthesis_version',
+          sourceId,
+          relationType: ordinal === 0 ? 'primary' : 'supporting',
+        })),
+      }),
+      false,
+      order.join(','),
+    );
+  }
 });
 
 test('synthesis mutation reuses one access context across repository operations', async () => {
@@ -704,6 +820,56 @@ test('synthesis list stops at a fixed hidden-candidate budget with a non-disclos
   assert.deepEqual(page, { items: [], nextBoundary: null });
   assert.equal(scanned, 200);
   assert.equal(candidateQueries, 100);
+});
+
+test('synthesis list suppresses the cursor when the 200th candidate is visible lookahead', async () => {
+  const candidates = Array.from({ length: 200 }, (_, index) =>
+    synthesisRow(
+      index < 100 || index === 199 ? `visible-${index}` : `hidden-${index}`,
+      {
+        ownerUserId: actor.userId,
+        scope: 'personal',
+        organizationId: null,
+        updatedAt: new Date(Date.UTC(2026, 7, 6, 0, 0, 200 - index)),
+      },
+    ),
+  );
+  let offset = 0;
+  const repository = new PrismaKnowledgeSynthesisRepository(
+    emptyClient({
+      knowledgeSynthesis: {
+        findMany: async ({ take }) => {
+          const page = candidates.slice(offset, offset + take);
+          offset += page.length;
+          return page;
+        },
+        findFirst: async ({ where }) =>
+          where.id.startsWith('visible-')
+            ? (candidates.find((candidate) => candidate.id === where.id) ??
+              null)
+            : null,
+      },
+      knowledgeSynthesisVersion: {
+        findUnique: async ({ where }) => {
+          const synthesisId = where.synthesisId_version.synthesisId;
+          return {
+            id: `version-${synthesisId}`,
+            synthesisId,
+            version: 1,
+            sources: [],
+          };
+        },
+      },
+    }),
+  );
+  const page = await repository.listVisible({
+    actor,
+    limit: 100,
+    accessContext: createSynthesisAccessContext(),
+  });
+  assert.equal(page.items.length, 100);
+  assert.equal(page.nextBoundary, null);
+  assert.equal(offset, 200);
 });
 
 test('synthesis list paginates visible-hidden-visible candidates without hidden boundaries, duplicates, or gaps', async () => {
@@ -963,9 +1129,11 @@ test('provenance audit writer enforces action-target mapping and runtime metadat
 });
 
 test('unit of work propagates mandatory audit failure and maps only known transaction conflicts', async () => {
+  let isolationLevel;
   const failing = new PrismaKnowledgeProvenanceUnitOfWork({
-    $transaction: async (work) =>
-      work(
+    $transaction: async (work, options) => {
+      isolationLevel = options?.isolationLevel;
+      return work(
         emptyClient({
           auditLog: {
             create: async () => {
@@ -973,7 +1141,8 @@ test('unit of work propagates mandatory audit failure and maps only known transa
             },
           },
         }),
-      ),
+      );
+    },
   });
   await assert.rejects(
     () =>
@@ -988,4 +1157,5 @@ test('unit of work propagates mandatory audit failure and maps only known transa
       }),
     /audit unavailable/,
   );
+  assert.equal(isolationLevel, 'RepeatableRead');
 });

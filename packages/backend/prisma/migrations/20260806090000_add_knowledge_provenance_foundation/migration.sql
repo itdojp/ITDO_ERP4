@@ -242,6 +242,64 @@ CREATE TABLE "KnowledgeSynthesisSource" (
   )
 );
 
+CREATE FUNCTION "enforce_knowledge_synthesis_source_no_same_aggregate"()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW."sourceSynthesisVersionId" IS NOT NULL AND EXISTS (
+    SELECT 1
+    FROM "KnowledgeSynthesisVersion" AS target_version
+    INNER JOIN "KnowledgeSynthesisVersion" AS source_version
+      ON source_version."id" = NEW."sourceSynthesisVersionId"
+    WHERE target_version."id" = NEW."synthesisVersionId"
+      AND target_version."synthesisId" = source_version."synthesisId"
+  ) THEN
+    RAISE EXCEPTION 'knowledge synthesis cannot source its own version history'
+      USING
+        ERRCODE = '23514',
+        CONSTRAINT = 'KnowledgeSynthesisSource_no_same_aggregate_check';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER "KnowledgeSynthesisSource_no_same_aggregate_trigger"
+AFTER INSERT OR UPDATE ON "KnowledgeSynthesisSource"
+DEFERRABLE INITIALLY IMMEDIATE
+FOR EACH ROW
+EXECUTE FUNCTION "enforce_knowledge_synthesis_source_no_same_aggregate"();
+
+CREATE FUNCTION "reject_knowledge_provenance_history_mutation"()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RAISE EXCEPTION 'immutable knowledge provenance history cannot be updated or deleted'
+    USING ERRCODE = '55000';
+END;
+$$;
+
+CREATE TRIGGER "KnowledgeAnnotationRevision_immutable_trigger"
+BEFORE UPDATE OR DELETE ON "KnowledgeAnnotationRevision"
+FOR EACH ROW
+EXECUTE FUNCTION "reject_knowledge_provenance_history_mutation"();
+
+CREATE TRIGGER "KnowledgeConversationTurn_immutable_trigger"
+BEFORE UPDATE OR DELETE ON "KnowledgeConversationTurn"
+FOR EACH ROW
+EXECUTE FUNCTION "reject_knowledge_provenance_history_mutation"();
+
+CREATE TRIGGER "KnowledgeSynthesisVersion_immutable_trigger"
+BEFORE UPDATE OR DELETE ON "KnowledgeSynthesisVersion"
+FOR EACH ROW
+EXECUTE FUNCTION "reject_knowledge_provenance_history_mutation"();
+
+CREATE TRIGGER "KnowledgeSynthesisSource_immutable_trigger"
+BEFORE UPDATE OR DELETE ON "KnowledgeSynthesisSource"
+FOR EACH ROW
+EXECUTE FUNCTION "reject_knowledge_provenance_history_mutation"();
+
 CREATE UNIQUE INDEX "KnowledgeAnnotationRevision_annotationId_revision_key"
   ON "KnowledgeAnnotationRevision"("annotationId", "revision");
 CREATE INDEX "KnowledgeAnnotation_knowledgeItemId_deletedAt_updatedAt_id_idx"

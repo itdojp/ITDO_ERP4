@@ -3,14 +3,7 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 import type { KnowledgeActor } from '../../application/knowledge/knowledgeItemPorts.js';
 import {
   KnowledgeProvenanceConflictError,
-  knowledgeAnnotationKinds,
-  knowledgeConversationItemRelationTypes,
-  knowledgeConversationRoles,
-  knowledgeConversationSourceTypes,
   knowledgeProvenanceLimits,
-  knowledgeProvenanceOrigins,
-  knowledgeSynthesisSourceKinds,
-  knowledgeSynthesisSourceRelationTypes,
   type KnowledgeAccessRepository,
   type KnowledgeAnnotation,
   type KnowledgeAnnotationRepository,
@@ -20,8 +13,6 @@ import {
   type KnowledgeConversationTurn,
   type KnowledgeItemAccess,
   type KnowledgePageBoundary,
-  type KnowledgeProvenanceAuditEntry,
-  type KnowledgeProvenanceAuditWriter,
   type KnowledgeProvenanceTransaction,
   type KnowledgeProvenanceUnitOfWork,
   type KnowledgeSequenceBoundary,
@@ -35,10 +26,13 @@ import {
 } from '../../application/knowledge/knowledgeProvenancePorts.js';
 import { prisma } from '../../services/db.js';
 import { buildKnowledgeVisibilityWhere } from './prismaKnowledgeItemAdapter.js';
+import { PrismaKnowledgeProvenanceAuditWriter } from './prismaKnowledgeProvenanceAuditAdapter.js';
 import {
   consumeSynthesisAccessBudget,
   type KnowledgeSynthesisAccessContext,
 } from '../../application/knowledge/knowledgeSynthesisAccessContext.js';
+
+export { PrismaKnowledgeProvenanceAuditWriter } from './prismaKnowledgeProvenanceAuditAdapter.js';
 
 type KnowledgeProvenanceDbClient = Pick<
   Prisma.TransactionClient,
@@ -58,6 +52,7 @@ type KnowledgeProvenanceDbClient = Pick<
 type KnowledgeProvenanceTransactionHost = {
   $transaction<T>(
     work: (transaction: Prisma.TransactionClient) => Promise<T>,
+    options?: { isolationLevel?: Prisma.TransactionIsolationLevel },
   ): Promise<T>;
 };
 
@@ -844,6 +839,18 @@ export class PrismaKnowledgeConversationRepository implements KnowledgeConversat
 export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRepository {
   constructor(private readonly client: KnowledgeProvenanceDbClient = prisma) {}
 
+  async withConsistentSnapshot<T>(
+    read: (repository: KnowledgeSynthesisRepository) => Promise<T>,
+  ): Promise<T> {
+    const host = this.client as KnowledgeProvenanceDbClient &
+      Partial<KnowledgeProvenanceTransactionHost>;
+    if (typeof host.$transaction !== 'function') return read(this);
+    return host.$transaction(
+      async (client) => read(new PrismaKnowledgeSynthesisRepository(client)),
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+    );
+  }
+
   private async sourceAccessible(
     actor: KnowledgeActor,
     source: SynthesisSourceRow,
@@ -965,7 +972,8 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
     if (path.has(versionId)) {
       return false;
     }
-    const memoized = context.versionMemo.get(versionId);
+    const memoKey = `${versionId}:${depth}`;
+    const memoized = context.versionMemo.get(memoKey);
     if (memoized !== undefined) return memoized;
     consumeSynthesisAccessBudget(context, 'node');
     consumeSynthesisAccessBudget(context, 'query');
@@ -997,7 +1005,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
       }
     }
     path.delete(versionId);
-    context.versionMemo.set(versionId, accessible);
+    context.versionMemo.set(memoKey, accessible);
     return accessible;
   }
 
@@ -1088,6 +1096,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
     const visible: SynthesisRow[] = [];
     let boundary = input.boundary;
     let exhausted = false;
+    let candidateBudgetReached = false;
     let scanned = 0;
     while (visible.length <= input.limit && !exhausted) {
       const remaining =
@@ -1127,16 +1136,12 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
           visible.push(row);
         if (visible.length > input.limit) break;
       }
+      candidateBudgetReached =
+        scanned >= knowledgeProvenanceLimits.synthesisListCandidates;
       const lastScanned = rows[rows.length - 1];
       if (!lastScanned || rows.length < take) exhausted = true;
       else boundary = { updatedAt: lastScanned.updatedAt, id: lastScanned.id };
-      if (
-        scanned >= knowledgeProvenanceLimits.synthesisListCandidates &&
-        visible.length <= input.limit &&
-        !exhausted
-      ) {
-        exhausted = true;
-      }
+      if (candidateBudgetReached) exhausted = true;
     }
     const hasMore = visible.length > input.limit;
     const selected = visible.slice(0, input.limit);
@@ -1144,7 +1149,9 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
     return {
       items: selected.map(mapSynthesis),
       nextBoundary:
-        hasMore && last ? { updatedAt: last.updatedAt, id: last.id } : null,
+        hasMore && last && !candidateBudgetReached
+          ? { updatedAt: last.updatedAt, id: last.id }
+          : null,
     };
   }
 
@@ -1220,9 +1227,22 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
     actor: KnowledgeActor;
     sources: KnowledgeSynthesisSourceInput[];
     accessContext: KnowledgeSynthesisAccessContext;
+    excludedSynthesisId?: string;
   }) {
     const context = input.accessContext;
     for (const source of input.sources) {
+      if (source.kind === 'synthesis_version' && input.excludedSynthesisId) {
+        consumeSynthesisAccessBudget(context, 'query');
+        const sameAggregate =
+          await this.client.knowledgeSynthesisVersion.findFirst({
+            where: {
+              id: source.sourceId,
+              synthesisId: input.excludedSynthesisId,
+            },
+            select: { id: true },
+          });
+        if (sameAggregate) return false;
+      }
       const synthetic = {
         id: '__validation__',
         synthesisVersionId: '__validation__',
@@ -1380,150 +1400,6 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
   }
 }
 
-function bounded(value: string | undefined, maximum: number) {
-  if (!value) return undefined;
-  return value.slice(0, maximum);
-}
-
-const requestIdPattern = /^[A-Za-z0-9._-]{1,128}$/;
-
-const auditTargetByAction = {
-  knowledge_annotation_created: 'knowledge_annotations',
-  knowledge_annotation_revised: 'knowledge_annotations',
-  knowledge_annotation_deleted: 'knowledge_annotations',
-  knowledge_conversation_created: 'knowledge_conversations',
-  knowledge_conversation_imported: 'knowledge_conversations',
-  knowledge_conversation_item_linked: 'knowledge_conversations',
-  knowledge_conversation_item_unlinked: 'knowledge_conversations',
-  knowledge_conversation_turn_appended: 'knowledge_conversations',
-  knowledge_synthesis_created: 'knowledge_syntheses',
-  knowledge_synthesis_version_appended: 'knowledge_syntheses',
-  knowledge_synthesis_source_linked: 'knowledge_syntheses',
-  knowledge_import_previewed: 'knowledge_imports',
-  knowledge_import_committed: 'knowledge_imports',
-  knowledge_import_duplicate_detected: 'knowledge_imports',
-  knowledge_import_rejected: 'knowledge_imports',
-} as const;
-
-function finiteMetadataInteger(value: unknown, maximum: number) {
-  return (
-    typeof value === 'number' &&
-    Number.isInteger(value) &&
-    value >= 0 &&
-    value <= maximum
-  );
-}
-
-function allowlistedAuditMetadata(
-  metadata: KnowledgeProvenanceAuditEntry['metadata'],
-): Prisma.InputJsonObject {
-  const result: Record<string, string | number | boolean> = {};
-  const version = metadata.version;
-  if (
-    finiteMetadataInteger(version, 2_147_483_647) &&
-    typeof version === 'number' &&
-    version !== 0
-  ) {
-    result.version = version;
-  }
-  const revision = metadata.revision;
-  if (
-    finiteMetadataInteger(revision, 2_147_483_647) &&
-    typeof revision === 'number' &&
-    revision !== 0
-  ) {
-    result.revision = revision;
-  }
-  if (metadata.scope === 'personal' || metadata.scope === 'organization') {
-    result.scope = metadata.scope;
-  }
-  const annotationKind = metadata.annotationKind;
-  if (
-    typeof annotationKind === 'string' &&
-    knowledgeAnnotationKinds.some((value) => value === annotationKind)
-  ) {
-    result.annotationKind = annotationKind;
-  }
-  const origin = metadata.origin;
-  if (
-    typeof origin === 'string' &&
-    knowledgeProvenanceOrigins.some((value) => value === origin)
-  ) {
-    result.origin = origin;
-  }
-  const role = metadata.role;
-  if (
-    typeof role === 'string' &&
-    knowledgeConversationRoles.some((value) => value === role)
-  ) {
-    result.role = role;
-  }
-  const relationType = metadata.relationType;
-  if (
-    typeof relationType === 'string' &&
-    (knowledgeConversationItemRelationTypes.some(
-      (value) => value === relationType,
-    ) ||
-      knowledgeSynthesisSourceRelationTypes.some(
-        (value) => value === relationType,
-      ))
-  ) {
-    result.relationType = relationType;
-  }
-  const sourceKind = metadata.sourceKind;
-  if (
-    typeof sourceKind === 'string' &&
-    knowledgeSynthesisSourceKinds.some((value) => value === sourceKind)
-  ) {
-    result.sourceKind = sourceKind;
-  }
-  for (const key of ['sourceCount', 'turnCount', 'itemCount'] as const) {
-    const value = metadata[key];
-    if (finiteMetadataInteger(value, 10_000) && typeof value === 'number') {
-      result[key] = value;
-    }
-  }
-  const format = metadata.format;
-  if (
-    typeof format === 'string' &&
-    knowledgeConversationSourceTypes.some((value) => value === format)
-  ) {
-    result.format = format;
-  }
-  if (typeof metadata.duplicate === 'boolean') {
-    result.duplicate = metadata.duplicate;
-  }
-  return result as Prisma.InputJsonObject;
-}
-
-export class PrismaKnowledgeProvenanceAuditWriter implements KnowledgeProvenanceAuditWriter {
-  constructor(
-    private readonly client: Pick<KnowledgeProvenanceDbClient, 'auditLog'>,
-  ) {}
-
-  async write(entry: KnowledgeProvenanceAuditEntry) {
-    const expectedTarget = auditTargetByAction[entry.action];
-    if (!expectedTarget || entry.targetTable !== expectedTarget) {
-      throw new Error('knowledge_provenance_audit_contract_invalid');
-    }
-    const metadata = allowlistedAuditMetadata(entry.metadata);
-    const requestId = entry.actor.requestId?.trim();
-    const source = entry.actor.source;
-    await this.client.auditLog.create({
-      data: {
-        action: entry.action,
-        userId: bounded(entry.actor.userId, 255),
-        requestId:
-          requestId && requestIdPattern.test(requestId) ? requestId : undefined,
-        source: source === 'api' || source === 'agent' ? source : undefined,
-        targetTable: entry.targetTable,
-        targetId: entry.targetId,
-        metadata,
-      },
-    });
-  }
-}
-
 export class PrismaKnowledgeProvenanceUnitOfWork implements KnowledgeProvenanceUnitOfWork {
   constructor(
     private readonly host: KnowledgeProvenanceTransactionHost = prisma as PrismaClient,
@@ -1533,14 +1409,16 @@ export class PrismaKnowledgeProvenanceUnitOfWork implements KnowledgeProvenanceU
     work: (transaction: KnowledgeProvenanceTransaction) => Promise<T>,
   ) {
     try {
-      return await this.host.$transaction(async (client) =>
-        work({
-          access: new PrismaKnowledgeAccessRepository(client),
-          annotations: new PrismaKnowledgeAnnotationRepository(client),
-          conversations: new PrismaKnowledgeConversationRepository(client),
-          syntheses: new PrismaKnowledgeSynthesisRepository(client),
-          audit: new PrismaKnowledgeProvenanceAuditWriter(client),
-        }),
+      return await this.host.$transaction(
+        async (client) =>
+          work({
+            access: new PrismaKnowledgeAccessRepository(client),
+            annotations: new PrismaKnowledgeAnnotationRepository(client),
+            conversations: new PrismaKnowledgeConversationRepository(client),
+            syntheses: new PrismaKnowledgeSynthesisRepository(client),
+            audit: new PrismaKnowledgeProvenanceAuditWriter(client),
+          }),
+        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
       );
     } catch (error) {
       if (

@@ -27,6 +27,7 @@ const [
   { createKnowledgeAnnotationService },
   { createKnowledgeConversationService },
   { createKnowledgeSynthesisService },
+  { createSynthesisAccessContext },
   provenanceAdapter,
 ] = await Promise.all([
   import('../dist/services/db.js'),
@@ -35,6 +36,7 @@ const [
   import('../dist/application/knowledge/knowledgeAnnotationUseCases.js'),
   import('../dist/application/knowledge/knowledgeConversationUseCases.js'),
   import('../dist/application/knowledge/knowledgeSynthesisUseCases.js'),
+  import('../dist/application/knowledge/knowledgeSynthesisAccessContext.js'),
   import('../dist/adapters/knowledge/prismaKnowledgeProvenanceAdapter.js'),
 ]);
 
@@ -125,6 +127,111 @@ try {
     sourceType: 'manual',
     title: 'Synthetic organization source B',
   });
+  const aclSwapItemA = await createItem(owner, {
+    scope: 'organization',
+    organizationGroupIds: [groupA.id],
+    sourceType: 'manual',
+    title: 'Synthetic ACL snapshot source A',
+  });
+  const aclSwapItemB = await createItem(owner, {
+    scope: 'organization',
+    organizationGroupIds: [groupB.id],
+    sourceType: 'manual',
+    title: 'Synthetic ACL snapshot source B',
+  });
+  await prisma.knowledgeItemGroupGrant.delete({
+    where: {
+      knowledgeItemId_groupAccountId: {
+        knowledgeItemId: aclSwapItemB.id,
+        groupAccountId: groupB.id,
+      },
+    },
+  });
+
+  let firstAclReadComplete;
+  const firstAclRead = new Promise((resolve) => {
+    firstAclReadComplete = resolve;
+  });
+  let releaseAclRead;
+  const aclSwapCommitted = new Promise((resolve) => {
+    releaseAclRead = resolve;
+  });
+  const consistentAclRead = prisma.$transaction(
+    async (client) => {
+      const repository =
+        new provenanceAdapter.PrismaKnowledgeSynthesisRepository(client);
+      const contextA = createSynthesisAccessContext();
+      const sourceAVisible = await repository.validateSources({
+        actor: bothGroups,
+        accessContext: contextA,
+        sources: [
+          {
+            kind: 'item',
+            sourceId: aclSwapItemA.id,
+            relationType: 'primary',
+          },
+        ],
+      });
+      firstAclReadComplete();
+      await aclSwapCommitted;
+      const sourceBVisible = await repository.validateSources({
+        actor: bothGroups,
+        accessContext: contextA,
+        sources: [
+          {
+            kind: 'item',
+            sourceId: aclSwapItemB.id,
+            relationType: 'supporting',
+          },
+        ],
+      });
+      return { sourceAVisible, sourceBVisible };
+    },
+    { isolationLevel: 'RepeatableRead' },
+  );
+  await firstAclRead;
+  try {
+    await prisma.$transaction([
+      prisma.knowledgeItemGroupGrant.delete({
+        where: {
+          knowledgeItemId_groupAccountId: {
+            knowledgeItemId: aclSwapItemA.id,
+            groupAccountId: groupA.id,
+          },
+        },
+      }),
+      prisma.knowledgeItemGroupGrant.create({
+        data: {
+          knowledgeItemId: aclSwapItemB.id,
+          groupAccountId: groupB.id,
+          createdBy: owner.userId,
+        },
+      }),
+    ]);
+  } finally {
+    releaseAclRead();
+  }
+  assert.deepEqual(await consistentAclRead, {
+    sourceAVisible: true,
+    sourceBVisible: false,
+  });
+  assert.equal(
+    await provenanceAdapter.prismaKnowledgeSynthesisRepository.withConsistentSnapshot(
+      (repository) =>
+        repository.validateSources({
+          actor: bothGroups,
+          accessContext: createSynthesisAccessContext(),
+          sources: [
+            {
+              kind: 'item',
+              sourceId: aclSwapItemB.id,
+              relationType: 'primary',
+            },
+          ],
+        }),
+    ),
+    true,
+  );
   const otherOwnerItem = await createItem(
     {
       userId: 'integration-other-owner',
@@ -783,6 +890,35 @@ try {
     }),
     'append synthesis version three',
   );
+  const synthesisVersionOne =
+    await prisma.knowledgeSynthesisVersion.findUniqueOrThrow({
+      where: {
+        synthesisId_version: {
+          synthesisId: synthesis.synthesis.id,
+          version: 1,
+        },
+      },
+    });
+  expectFailure(
+    await synthesisService.appendVersion({
+      actor: owner,
+      auditActor,
+      synthesisId: synthesis.synthesis.id,
+      body: {
+        expectedVersion: 3,
+        content: 'Synthetic same-aggregate source must be rejected',
+        sources: [
+          {
+            kind: 'synthesis_version',
+            sourceId: synthesisVersionOne.id,
+            relationType: 'primary',
+          },
+        ],
+      },
+    }),
+    'not_found',
+    'same synthesis historical version source',
+  );
   const synthesisPageOne = expectOk(
     await synthesisService.history({
       actor: owner,
@@ -840,6 +976,44 @@ try {
     ),
   );
 
+  const immutableSynthesisSource =
+    await prisma.knowledgeSynthesisSource.findFirstOrThrow({
+      where: { synthesisVersionId: synthesisVersionOne.id },
+      select: { id: true },
+    });
+  const immutableHistoryMutations = [
+    () =>
+      prisma.knowledgeAnnotationRevision.update({
+        where: { id: revisedAnnotation.revision.id },
+        data: { content: 'Synthetic destructive annotation rewrite' },
+      }),
+    () =>
+      prisma.knowledgeConversationTurn.update({
+        where: { id: storedTurns[0].id },
+        data: { content: 'Synthetic destructive turn rewrite' },
+      }),
+    () =>
+      prisma.knowledgeSynthesisVersion.update({
+        where: { id: synthesisVersionOne.id },
+        data: { content: 'Synthetic destructive synthesis rewrite' },
+      }),
+    () =>
+      prisma.knowledgeSynthesisSource.update({
+        where: { id: immutableSynthesisSource.id },
+        data: { relationType: 'context' },
+      }),
+    () =>
+      prisma.knowledgeSynthesisSource.delete({
+        where: { id: immutableSynthesisSource.id },
+      }),
+  ];
+  for (const mutateHistory of immutableHistoryMutations) {
+    await assert.rejects(
+      mutateHistory,
+      /immutable knowledge provenance history/i,
+    );
+  }
+
   await assert.rejects(
     () =>
       prisma.knowledgeSynthesisSource.create({
@@ -851,6 +1025,19 @@ try {
         },
       }),
     /constraint|check/i,
+  );
+  await assert.rejects(
+    () =>
+      prisma.knowledgeSynthesisSource.create({
+        data: {
+          synthesisVersionId: redacted.currentVersion.id,
+          relationType: 'context',
+          ordinal: 98,
+          sourceSynthesisVersionId: synthesisVersionOne.id,
+          createdBy: owner.userId,
+        },
+      }),
+    /23514|own version history/i,
   );
   await assert.rejects(
     () =>
@@ -993,6 +1180,9 @@ try {
       conversationTurns: turnPageOne.items.length + turnPageTwo.items.length,
       synthesisVersionRace: 'one_success_one_conflict',
       sourceRevocationRedacted: true,
+      aclSwapSnapshotConsistent: true,
+      sameSynthesisSourceRejected: true,
+      immutableHistoryEnforced: true,
       auditFailureRolledBack: true,
     }),
   );

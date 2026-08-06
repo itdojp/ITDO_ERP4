@@ -106,6 +106,24 @@ test('schema separates annotations, immutable revisions, conversations, turns, s
     schemaBlock('model', 'KnowledgeSynthesisVersion'),
     /@@unique\(\[synthesisId, version\]\)/,
   );
+  for (const table of [
+    'KnowledgeAnnotationRevision',
+    'KnowledgeConversationTurn',
+    'KnowledgeSynthesisVersion',
+    'KnowledgeSynthesisSource',
+  ]) {
+    assert.match(
+      migration,
+      new RegExp(
+        `CREATE TRIGGER "${table}_immutable_trigger"[\\s\\S]*?BEFORE UPDATE OR DELETE ON "${table}"`,
+      ),
+      `${table} must reject destructive history mutation`,
+    );
+  }
+  assert.match(
+    migration,
+    /immutable knowledge provenance history cannot be updated or deleted/,
+  );
 });
 
 test('synthesis provenance uses explicit foreign keys and an exactly-one database constraint', () => {
@@ -131,6 +149,11 @@ test('synthesis provenance uses explicit foreign keys and an exactly-one databas
     /KnowledgeSynthesisSource_exactly_one_check" CHECK \([\s\S]*?NUM_NONNULLS\([\s\S]*?\) = 1/,
   );
   assert.match(migration, /KnowledgeSynthesisSource_no_self_reference_check/);
+  assert.match(migration, /KnowledgeSynthesisSource_no_same_aggregate_trigger/);
+  assert.match(
+    migration,
+    /target_version\."synthesisId" = source_version\."synthesisId"/,
+  );
   assert.doesNotMatch(source, /\bsourceType\s+String/);
   assert.doesNotMatch(source, /\bsourceId\s+String/);
 });

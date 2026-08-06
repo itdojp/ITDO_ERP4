@@ -2,6 +2,7 @@ import { knowledgeProvenanceLimits } from './knowledgeProvenancePorts.js';
 
 export type KnowledgeSynthesisAccessContext = {
   sourceMemo: Map<string, boolean>;
+  /** Authorization results are depth-sensitive; key is `${versionId}:${depth}`. */
   versionMemo: Map<string, boolean>;
   nodes: number;
   edges: number;
