@@ -157,7 +157,7 @@ Result: **PASS**
 | Prisma format/generate                    | PASS    | Prisma 7.9.1                                                                                                                     |
 | root lint / format / typecheck / build    | PASS    | backend/frontend。frontend dev dependenciesはlockfile準拠の`npm ci`後に実行                                                      |
 | `make test`                               | PASS    | backend 1,874/1,874、frontend 85 files / 495 tests。fail/skip/todo 0                                                             |
-| focused coverage                          | PASS    | provenance files aggregate: statements/lines 82.48%、branches 69.92%、functions 89.17%。threshold/scope変更なし                  |
+| focused coverage                          | PASS    | provenance files aggregate: statements/lines 82.55%、branches 70.26%、functions 89.24%。threshold/scope変更なし                  |
 | bounded-context dependency/coverage       | PASS    | 308 modules / 1,210 dependencies、293 source files / 244 targets、unclassified/duplicate/ambiguous 0                             |
 | OpenAPI export / breaking diff            | PASS    | generated snapshotとtracked fileはbyte-identical。baselineからbreaking 0、18 operation追加のみ                                   |
 | `make ops-quality`                        | PASS    | live systemd/provider操作なし。S3 profile 22/22、storage readiness 2/2を含む                                                     |
@@ -167,8 +167,8 @@ Result: **PASS**
 | independent/Copilot review / CI / cooling | PENDING | Repeatable Read、depth memo、200件境界、same-aggregate/immutable DB保証を追加修正済み。final exact headで再review/CI/coolingする |
 
 Focused coverageのうち、main infrastructure adapterはc8計測でstatements/lines 67.67%、
-branches 68.27%、functions 79.31%、audit adapterはstatements/lines 88.55%、branches
-75.00%、functions 100%、request access contextはstatements/lines/functions 100%、branches
+branches 68.27%、functions 79.31%、audit adapterはstatements/lines 89.90%、branches
+77.52%、functions 100%、request access contextはstatements/lines/functions 100%、branches
 50.00%だった。実DB経路は
 上記のPostgreSQL 15 integrationで追加検証している。coverage threshold、対象scope、
 ignore、skipは変更していない。
