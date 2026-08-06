@@ -146,7 +146,7 @@ const layers = [
     patterns: [
       '^src/migration/(csv|legacyIds)\\.ts$',
       '^src/routes/validators(\\.ts|/.+\\.ts)$',
-      '^src/services/(authScopes|dueDateRule|errors|policyEnforcementPreset|rate|redaction|utils)\\.ts$',
+      '^src/services/(authIdentifiers|authScopes|dueDateRule|errors|policyEnforcementPreset|rate|redaction|utils)\\.ts$',
       '^src/utils/(csv|date)\\.ts$',
     ],
   },

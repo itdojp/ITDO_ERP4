@@ -1392,6 +1392,7 @@ test('provenance audit writer enforces action-target mapping and runtime metadat
     actorUserId: 'agent-1',
   };
   for (const actor of [
+    { ...validAuditActor, principalUserId: ' principal-1' },
     { ...validAuditActor, principalUserId: '\tprincipal-1' },
     { ...validAuditActor, actorUserId: 'agent-1\n' },
     { ...validAuditActor, requestId: '\rrequest-control-boundary' },

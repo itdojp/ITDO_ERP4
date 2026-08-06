@@ -86,6 +86,12 @@ test('JWT and configured scope delimiters remain distinct', () => {
   for (const scp of [
     'unprivileged,write-limited',
     ['unprivileged,write-limited'],
+    'unprivileged\twrite-limited',
+    'unprivileged\nwrite-limited',
+    'unprivileged\rwrite-limited',
+    'unprivileged\fwrite-limited',
+    'unprivileged\vwrite-limited',
+    '\nwrite-limited\r',
   ]) {
     assert.throws(
       () =>
@@ -105,6 +111,49 @@ test('JWT and configured scope delimiters remain distinct', () => {
   assert.throws(
     () => normalizeConfiguredAgentScopes('\twrite-limited'),
     /auth_scope_contract_invalid/,
+  );
+});
+
+test('buildUserContextFromJwtPayload rejects raw identity aliases before normalization', () => {
+  const base = {
+    sub: 'principal-user',
+    act: { sub: 'agent-bot' },
+    scp: ['write-limited'],
+    jti: 'token-1',
+    aud: ['erp4-agent'],
+    iss: 'https://issuer.example',
+  };
+  const invalidPayloads = [
+    { ...base, sub: '\tprincipal-user' },
+    { ...base, sub: 'principal-user ' },
+    { ...base, sub: undefined, email: '\nprincipal-user' },
+    { ...base, act: { sub: 'agent-bot\n' } },
+    { ...base, act: { sub: '\ufeffprincipal-user' }, sub: 'principal-user' },
+    { ...base, jti: '\rtoken-1' },
+    { ...base, aud: ['erp4-agent\u2028'] },
+    { ...base, aud: ['\u202eerp4-agent'] },
+    { ...base, aud: Array.from({ length: 101 }, (_, index) => `aud-${index}`) },
+    { ...base, aud: 123 },
+    { ...base, iss: '\u2029https://issuer.example' },
+    { ...base, iss: 'i'.repeat(2_049) },
+    { ...base, sub: 'p'.repeat(256) },
+  ];
+
+  for (const payload of invalidPayloads) {
+    assert.throws(
+      () => buildUserContextFromJwtPayload(payload),
+      /auth_identifier_contract_invalid/,
+    );
+  }
+
+  assert.throws(
+    () =>
+      buildUserContextFromJwtPayload({
+        ...base,
+        sub: 'principal-user',
+        act: { sub: '\tprincipal-user' },
+      }),
+    /auth_identifier_contract_invalid/,
   );
 });
 

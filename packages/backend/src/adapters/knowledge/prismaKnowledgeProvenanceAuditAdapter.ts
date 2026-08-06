@@ -11,6 +11,7 @@ import {
   type KnowledgeProvenanceAuditEntry,
   type KnowledgeProvenanceAuditWriter,
 } from '../../application/knowledge/knowledgeProvenancePorts.js';
+import { normalizeAuthIdentifier } from '../../services/authIdentifiers.js';
 import { normalizeAuthScopes } from '../../services/authScopes.js';
 
 type KnowledgeProvenanceAuditClient = Pick<
@@ -50,22 +51,12 @@ function bounded(value: string | undefined, maximum: number) {
   return value.slice(0, maximum);
 }
 
-function hasUnsafeAuditCharacter(value: string) {
-  return /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value);
-}
-
 function requiredAuditText(value: string | undefined, maximum: number): string {
-  if (typeof value !== 'string') {
+  try {
+    return normalizeAuthIdentifier(value, maximum);
+  } catch {
     throw new Error('knowledge_provenance_audit_contract_invalid');
   }
-  if (hasUnsafeAuditCharacter(value)) {
-    throw new Error('knowledge_provenance_audit_contract_invalid');
-  }
-  const normalized = value.trim();
-  if (!normalized || normalized.length > maximum) {
-    throw new Error('knowledge_provenance_audit_contract_invalid');
-  }
-  return normalized;
 }
 
 function optionalAuditText(

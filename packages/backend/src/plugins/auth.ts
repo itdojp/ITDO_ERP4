@@ -10,6 +10,10 @@ import {
   resolveAuthSession,
 } from '../services/authGateway.js';
 import { getRouteRateLimitOptions } from '../services/rateLimitOverrides.js';
+import {
+  authIdentifierLimits,
+  normalizeAuthIdentifier,
+} from '../services/authIdentifiers.js';
 import { normalizeAuthScopes } from '../services/authScopes.js';
 import { parseGroupToRoleMap } from '../utils/authGroupToRoleMap.js';
 
@@ -246,18 +250,30 @@ function resolveClaim(payload: JWTPayload, claim: string): unknown {
 
 function resolveUserId(payload: JWTPayload): string | null {
   const primary = resolveClaim(payload, JWT_SUB_CLAIM);
-  if (typeof primary === 'string' && primary.trim()) return primary.trim();
+  if (primary !== undefined && primary !== null) {
+    return normalizeAuthIdentifier(primary);
+  }
   const fallback = resolveClaim(payload, 'email');
-  if (typeof fallback === 'string' && fallback.trim()) return fallback.trim();
+  if (fallback !== undefined && fallback !== null) {
+    return normalizeAuthIdentifier(fallback);
+  }
   const alt = resolveClaim(payload, 'preferred_username');
-  if (typeof alt === 'string' && alt.trim()) return alt.trim();
+  if (alt !== undefined && alt !== null) {
+    return normalizeAuthIdentifier(alt);
+  }
   return null;
 }
 
 function normalizeAudience(value: unknown): string[] {
-  if (typeof value === 'string' && value.trim()) return [value.trim()];
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => String(item).trim()).filter(Boolean);
+  if (value === undefined || value === null) return [];
+  if (typeof value === 'string') return [normalizeAuthIdentifier(value)];
+  if (!Array.isArray(value)) {
+    throw new Error('auth_identifier_contract_invalid');
+  }
+  if (value.length > authIdentifierLimits.audienceCount) {
+    throw new Error('auth_identifier_contract_invalid');
+  }
+  return value.map((item) => normalizeAuthIdentifier(item));
 }
 
 function normalizeExpiresAt(value: unknown): number | undefined {
@@ -700,19 +716,23 @@ function buildUserContext(payload: JWTPayload): UserContext | null {
   if (!principalUserId) return null;
   const actorClaim = resolveClaim(payload, JWT_ACTOR_SUB_CLAIM);
   const actorUserId =
-    typeof actorClaim === 'string' && actorClaim.trim()
-      ? actorClaim.trim()
+    actorClaim !== undefined && actorClaim !== null
+      ? normalizeAuthIdentifier(actorClaim)
       : principalUserId;
   const scopes = normalizeAuthScopes(resolveClaim(payload, JWT_SCOPE_CLAIM));
   const tokenIdClaim = resolveClaim(payload, JWT_TOKEN_ID_CLAIM);
   const tokenId =
-    typeof tokenIdClaim === 'string' && tokenIdClaim.trim()
-      ? tokenIdClaim.trim()
+    tokenIdClaim !== undefined && tokenIdClaim !== null
+      ? normalizeAuthIdentifier(tokenIdClaim)
       : undefined;
   const audience = normalizeAudience(resolveClaim(payload, 'aud'));
   const expiresAt = normalizeExpiresAt(resolveClaim(payload, 'exp'));
   const delegated = actorUserId !== principalUserId;
   const tokenIssuer = resolveClaim(payload, 'iss');
+  const issuer =
+    tokenIssuer !== undefined && tokenIssuer !== null
+      ? normalizeAuthIdentifier(tokenIssuer, authIdentifierLimits.issuer)
+      : undefined;
   const roles = expandRoles(
     normalizeList(resolveClaim(payload, JWT_ROLE_CLAIM)),
   );
@@ -739,10 +759,7 @@ function buildUserContext(payload: JWTPayload): UserContext | null {
       expiresAt,
       delegated,
       providerType: 'google_oidc',
-      issuer:
-        typeof tokenIssuer === 'string' && tokenIssuer.trim()
-          ? tokenIssuer.trim()
-          : undefined,
+      issuer,
     },
   };
 }

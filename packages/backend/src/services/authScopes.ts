@@ -31,7 +31,7 @@ export function normalizeAuthScopes(value: unknown): string[] {
   const rawScopes = Array.isArray(value)
     ? value
     : typeof value === 'string'
-      ? value.split(/[ \t\r\n\f\v]+/).filter(Boolean)
+      ? value.split(/ +/).filter(Boolean)
       : (() => {
           throw new AuthScopeContractError();
         })();

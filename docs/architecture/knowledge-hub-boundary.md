@@ -195,10 +195,12 @@ synthesis sourceは参照先ごとのnullable FKとPostgreSQLのexactly-one CHEC
   synthesis本文、prompt、URL、provider key、raw error/request keyを監査metadataへ入れない。
   認証scopeはJWT/configと監査adapterで共有するbounded ASCII validatorを通し、URI path形式を
   維持しつつUnicode制御・bidi文字、userinfo、query、fragmentを認証前にfail closedとする。
-  JWT文字列はASCII whitespaceだけで分割し、comma-separatedの設定値はauth pluginのcall siteで
-  配列化してからvalidatorへ渡すため、issuerのopaque comma tokenを権限scopeへ再解釈しない。
+  JWT文字列はU+0020 SPだけで分割し、comma-separatedの設定値はauth pluginのcall siteで
+  配列化してからvalidatorへ渡すため、issuerのTAB/LF等またはopaque comma tokenを権限scopeへ
+  再解釈しない。
   array/config scopeと監査識別子はraw値の制御・format・bidi文字を正規化前にfail closedとし、
-  malformed provenanceを有効なscope／actor attributionへ変換しない。
+  JWT principal/actor/token/audience/issuerもcanonical identity lookup前に同じ検査を行う。
+  malformed provenanceを有効なscope／別identity／actor attributionへ変換しない。
   DB CHECKもannotation/conversation/synthesis/importのaction groupを対応するtarget tableへ
   厳密に束縛し、対象actionのnullableなtarget table/IDも拒否する。annotationの履歴・改訂・
   削除はparent itemが非削除であることを再検査する。

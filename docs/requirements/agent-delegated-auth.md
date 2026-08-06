@@ -49,11 +49,16 @@ scope tokenはJWT claimと`AUTH_AGENT_*_SCOPES`で同じvalidatorを使用する
 Unicode制御・bidi文字、空白、quote、backslashを含むscopeは認証境界でfail closedとする。
 scopeへcredential、個人情報、可変provider metadataを埋め込まない。これにより認可とmandatory
 auditでscope受理規則を共有し、監査だけが正当なrequestをrollbackする状態を防ぐ。
-JWTの文字列scopeはASCII whitespaceだけをdelimiterとし、配列scopeは1要素を1 tokenとして
-検証する。カンマを含むJWT tokenをCSVとして再解釈しない。`AUTH_AGENT_*_SCOPES`だけは
+JWTの文字列scopeは[OAuth 2.0 RFC 6749 section 3.3](https://www.rfc-editor.org/rfc/rfc6749.html#section-3.3)の
+scope ABNFに合わせてU+0020 SPだけをdelimiterとし、配列scopeは
+1要素を1 tokenとして検証する。TAB/LF/CR/FF/VTやカンマを含むJWT tokenをdelimiterやCSVとして
+再解釈しない。`AUTH_AGENT_*_SCOPES`だけは
 設定call siteでcomma-separated listへ分解してから、同じtoken validatorへ渡す。
 array要素および設定tokenのraw値は正規化前にallowlist検査し、端部のTAB/LF/CR、C1、
 Unicode line/paragraph separator、format/bidi文字、BOMを除去して有効scopeへ昇格させない。
+JWTのprincipal、actor、token ID、audience、issuerも最初のcanonical identity lookupやdelegated判定
+より前にraw値を検査する。制御・format・bidi文字および端部whitespaceを除去して別identifierへ
+alias化せず、invalid tokenとしてfail closedにする。
 
 ### 判定ルール
 
