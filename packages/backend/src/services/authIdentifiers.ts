@@ -1,4 +1,5 @@
-const unsafeAuthIdentifierCharacterPattern = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+const unsafeAuthIdentifierCharacterPattern =
+  /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u;
 
 export const authIdentifierLimits = {
   identifier: 255,

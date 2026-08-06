@@ -333,15 +333,19 @@ test('OpenAPI publishes the bounded provenance foundation without internal idemp
       openapi.paths?.[path]?.[method],
       `${method.toUpperCase()} ${path}`,
     );
+    assert.ok(openapi.paths[path][method].responses?.['400']);
     assert.ok(openapi.paths[path][method].responses?.['401']);
     assert.ok(openapi.paths[path][method].responses?.['403']);
-    const unauthorized =
-      openapi.paths[path][method].responses['401'].content['application/json']
-        .schema;
-    assert.equal(
-      resolveOpenApiSchema(unauthorized).properties.error.properties.details,
-      undefined,
-    );
+    for (const status of ['400', '401']) {
+      const failure =
+        openapi.paths[path][method].responses[status].content[
+          'application/json'
+        ].schema;
+      assert.equal(
+        resolveOpenApiSchema(failure).properties.error.properties.details,
+        undefined,
+      );
+    }
   }
 
   const conversation =

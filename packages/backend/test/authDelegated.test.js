@@ -127,6 +127,7 @@ test('buildUserContextFromJwtPayload rejects raw identity aliases before normali
     { ...base, sub: '\tprincipal-user' },
     { ...base, sub: 'principal-user ' },
     { ...base, sub: undefined, email: '\nprincipal-user' },
+    { ...base, act: { sub: ' ' } },
     { ...base, act: { sub: 'agent-bot\n' } },
     { ...base, act: { sub: '\ufeffprincipal-user' }, sub: 'principal-user' },
     { ...base, jti: '\rtoken-1' },
@@ -137,6 +138,11 @@ test('buildUserContextFromJwtPayload rejects raw identity aliases before normali
     { ...base, iss: '\u2029https://issuer.example' },
     { ...base, iss: 'i'.repeat(2_049) },
     { ...base, sub: 'p'.repeat(256) },
+    { ...base, sub: '\ud800principal-user' },
+    { ...base, act: { sub: '\udc00agent-bot' } },
+    { ...base, jti: '\ud800token-1' },
+    { ...base, aud: ['\udc00erp4-agent'] },
+    { ...base, iss: '\ud800https://issuer.example' },
   ];
 
   for (const payload of invalidPayloads) {
@@ -155,6 +161,27 @@ test('buildUserContextFromJwtPayload rejects raw identity aliases before normali
       }),
     /auth_identifier_contract_invalid/,
   );
+
+  const emptyActor = buildUserContextFromJwtPayload({
+    ...base,
+    act: { sub: '' },
+  });
+  assert.equal(emptyActor?.auth?.actorUserId, 'principal-user');
+  assert.equal(emptyActor?.auth?.delegated, false);
+
+  const bounded = buildUserContextFromJwtPayload({
+    ...base,
+    sub: 'p'.repeat(255),
+    act: { sub: 'a'.repeat(255) },
+    jti: 't'.repeat(255),
+    aud: Array.from({ length: 100 }, (_, index) => `aud-${index}`),
+    iss: 'i'.repeat(2_048),
+  });
+  assert.equal(bounded?.userId, 'p'.repeat(255));
+  assert.equal(bounded?.auth?.actorUserId, 'a'.repeat(255));
+  assert.equal(bounded?.auth?.tokenId, 't'.repeat(255));
+  assert.equal(bounded?.auth?.audience?.length, 100);
+  assert.equal(bounded?.auth?.issuer, 'i'.repeat(2_048));
 });
 
 test('buildUserContextFromJwtPayload: scopes alone do not mark JWT as delegated', () => {

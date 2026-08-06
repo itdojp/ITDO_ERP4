@@ -322,6 +322,7 @@ export async function registerKnowledgeAnnotationRoutes(
         response: {
           401: knowledgeProvenanceErrorResponseSchema,
           200: annotationResponseRef,
+          400: knowledgeProvenanceErrorResponseSchema,
           403: knowledgeProvenanceErrorResponseSchema,
           404: knowledgeProvenanceErrorResponseSchema,
         },

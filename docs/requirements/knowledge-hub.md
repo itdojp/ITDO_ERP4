@@ -352,8 +352,11 @@ PR Aはimport parserとUIを有効化する前に、次のDB/application/API契�
   requestをrollbackする状態を防ぐ。JWT文字列はU+0020 SPだけ、設定値だけはcall siteで
   comma-separated listとして分解し、JWT内のTAB/LF/CR/FF/VTやカンマを権限scopeへ再解釈しない。
   scopeおよびprincipal/actor/request/token/audience/agent run識別子はraw値の制御・format・
-  bidi文字と端部whitespaceをtrim前に拒否する。issuerもcanonical identity lookup前に同じ境界を
-  適用し、不正な認証provenanceを別identityへalias化したり正規化後の値として監査へ残さない。
+  bidi文字、ill-formed UTF-16 surrogateと端部whitespaceをtrim前に拒否する。issuerもcanonical
+  identity lookup前に同じ境界を適用し、不正な認証provenanceを別identityへalias化したり正規化後の
+  値として監査へ残さない。既存契約どおり`act.sub`の正確な空文字だけは未指定相当とする。
+  `x-request-id`はFastify logger生成前に安全文字・1〜128文字を検査し、不正値はraw値を保持せず
+  random UUIDへ置換してresponse、log、mandatory auditへ同じ検証済みIDだけを渡す。
   request bodyやraw bearer tokenからscopeを受け付けない。DB CHECKでもaction groupとtarget
   tableを厳密に対応付ける。
 - listはbounded limit、stable sort、actor/resource/parentへ束縛したHMAC署名付きopaque

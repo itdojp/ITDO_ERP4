@@ -412,6 +412,7 @@ export async function registerKnowledgeSynthesisRoutes(
         response: {
           401: knowledgeProvenanceErrorResponseSchema,
           200: detailResponseRef,
+          400: knowledgeProvenanceErrorResponseSchema,
           403: knowledgeProvenanceErrorResponseSchema,
           404: knowledgeProvenanceErrorResponseSchema,
         },

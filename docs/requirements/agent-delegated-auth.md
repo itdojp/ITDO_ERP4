@@ -57,8 +57,9 @@ scope ABNFに合わせてU+0020 SPだけをdelimiterとし、配列scopeは
 array要素および設定tokenのraw値は正規化前にallowlist検査し、端部のTAB/LF/CR、C1、
 Unicode line/paragraph separator、format/bidi文字、BOMを除去して有効scopeへ昇格させない。
 JWTのprincipal、actor、token ID、audience、issuerも最初のcanonical identity lookupやdelegated判定
-より前にraw値を検査する。制御・format・bidi文字および端部whitespaceを除去して別identifierへ
-alias化せず、invalid tokenとしてfail closedにする。
+より前にraw値を検査する。制御・format・bidi文字、ill-formed UTF-16 surrogateおよび端部whitespaceを
+除去・置換して別identifierへalias化せず、invalid tokenとしてfail closedにする。ただし既存契約どおり
+`act.sub`の正確な空文字だけは未指定相当としてprincipalへfallbackし、space-onlyや制御文字は拒否する。
 
 ### 判定ルール
 
@@ -100,6 +101,9 @@ alias化せず、invalid tokenとしてfail closedにする。
 - `_request.source`
 
 `source` カラムは委任実行時に `agent`、それ以外は `api`。
+`x-request-id`はFastifyのrequest loggerが生成される前に安全文字`A-Z a-z 0-9 . _ -`・1〜128文字を
+検査する。不正値はraw値を保持・反映せずrandom UUIDへ置換し、response、log、mandatory auditで同じ
+検証済みIDだけを利用する。
 
 ## 既知の制約（MVP）
 

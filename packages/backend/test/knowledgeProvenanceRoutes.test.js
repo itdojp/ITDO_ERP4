@@ -154,8 +154,9 @@ async function build(
   requestUser = user(),
   errorEnv = 'test',
   requestHook,
+  fastifyOptions,
 ) {
-  const app = Fastify();
+  const app = Fastify(fastifyOptions);
   app.setErrorHandler((error, _request, reply) => {
     const mapped = mapErrorToResponse(error, { env: errorEnv });
     return reply.status(mapped.statusCode).send(mapped.body);
@@ -628,6 +629,49 @@ test('all provenance routes require a canonical account and normalize unauthoriz
   });
   assert.equal(missing.statusCode, 404, missing.body);
   assert.equal(missing.json().error.message, 'Not found');
+});
+
+test('provenance detail routes redact Fastify validation diagnostics', async (t) => {
+  const detail = async () => {
+    assert.fail('parameter validation must stop before service invocation');
+  };
+  const routes = [
+    {
+      register: registerKnowledgeAnnotationRoutes,
+      url: `/knowledge/items/item-1/annotations/${'a'.repeat(101)}`,
+    },
+    {
+      register: registerKnowledgeConversationRoutes,
+      url: `/knowledge/conversations/${'c'.repeat(101)}`,
+    },
+    {
+      register: registerKnowledgeSynthesisRoutes,
+      url: `/knowledge/syntheses/${'s'.repeat(101)}`,
+    },
+  ];
+
+  for (const route of routes) {
+    const app = await build(
+      route.register,
+      { service: { detail } },
+      user(),
+      'test',
+      undefined,
+      { routerOptions: { maxParamLength: 1_000 } },
+    );
+    t.after(() => app.close());
+    const response = await app.inject({ method: 'GET', url: route.url });
+    assert.equal(response.statusCode, 400, response.body);
+    assert.deepEqual(response.json(), {
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Validation failed',
+        category: 'validation',
+      },
+    });
+    assert.equal(response.body.includes('details'), false);
+    assert.equal(response.body.includes('params'), false);
+  }
 });
 
 test('provenance route 401 schema removes authentication diagnostics', async (t) => {

@@ -716,9 +716,9 @@ function buildUserContext(payload: JWTPayload): UserContext | null {
   if (!principalUserId) return null;
   const actorClaim = resolveClaim(payload, JWT_ACTOR_SUB_CLAIM);
   const actorUserId =
-    actorClaim !== undefined && actorClaim !== null
-      ? normalizeAuthIdentifier(actorClaim)
-      : principalUserId;
+    actorClaim === undefined || actorClaim === null || actorClaim === ''
+      ? principalUserId
+      : normalizeAuthIdentifier(actorClaim);
   const scopes = normalizeAuthScopes(resolveClaim(payload, JWT_SCOPE_CLAIM));
   const tokenIdClaim = resolveClaim(payload, JWT_TOKEN_ID_CLAIM);
   const tokenId =

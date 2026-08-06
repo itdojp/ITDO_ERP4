@@ -54,6 +54,24 @@ test('inbound request-id is echoed if safe', async () => {
   await server.close();
 });
 
+test('unsafe inbound request-id is replaced before logging, audit, and response', async () => {
+  const unsafeValues = ['!', 'x'.repeat(129), '\u0085request-id'];
+  for (const unsafeValue of unsafeValues) {
+    const server = await buildTestServer();
+    const res = await server.inject({
+      method: 'GET',
+      url: '/healthz',
+      headers: { 'x-request-id': unsafeValue },
+    });
+    assert.equal(res.statusCode, 200);
+    const requestId = res.headers['x-request-id'];
+    assert.equal(typeof requestId, 'string');
+    assert.match(requestId, /^[A-Za-z0-9._-]{1,128}$/);
+    assert.notEqual(requestId, unsafeValue);
+    await server.close();
+  }
+});
+
 test('cache-control no-store headers are attached to success responses', async () => {
   const server = await buildTestServer();
   const res = await server.inject({ method: 'GET', url: '/healthz' });
