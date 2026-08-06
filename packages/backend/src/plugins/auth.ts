@@ -118,20 +118,27 @@ const JWT_REVOKED_JTI = new Set(
     .map((value) => value.trim())
     .filter(Boolean),
 );
+
+export function normalizeConfiguredAgentScopes(value: string): string[] {
+  return normalizeAuthScopes(
+    value.split(',').filter((scope) => /[^ ]/u.test(scope)),
+  );
+}
+
 const AGENT_SCOPE_READ = new Set(
-  normalizeAuthScopes(
+  normalizeConfiguredAgentScopes(
     process.env.AUTH_AGENT_READ_SCOPES ||
       'read-only,agent:read-only,agent:read',
   ),
 );
 const AGENT_SCOPE_WRITE = new Set(
-  normalizeAuthScopes(
+  normalizeConfiguredAgentScopes(
     process.env.AUTH_AGENT_WRITE_SCOPES ||
       'write-limited,agent:write-limited,agent:write',
   ),
 );
 const AGENT_SCOPE_APPROVAL = new Set(
-  normalizeAuthScopes(
+  normalizeConfiguredAgentScopes(
     process.env.AUTH_AGENT_APPROVAL_SCOPES ||
       'approval-required,agent:approval-required',
   ),

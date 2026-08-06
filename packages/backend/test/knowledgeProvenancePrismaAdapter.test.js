@@ -1231,10 +1231,7 @@ test('provenance audit writer enforces action-target mapping and runtime metadat
       source: 'agent',
       principalUserId: 'principal-1',
       actorUserId: 'agent-1',
-      authScopes: [
-        'knowledge:write',
-        'https://idp.example/knowledge.write',
-      ],
+      authScopes: ['knowledge:write', 'https://idp.example/knowledge.write'],
       authTokenId: 'token-1',
       authAudience: ['erp4-agent'],
       authExpiresAt: 1_900_000_000,
@@ -1261,10 +1258,7 @@ test('provenance audit writer enforces action-target mapping and runtime metadat
     _auth: {
       principalUserId: 'principal-1',
       actorUserId: 'agent-1',
-      scopes: [
-        'knowledge:write',
-        'https://idp.example/knowledge.write',
-      ],
+      scopes: ['knowledge:write', 'https://idp.example/knowledge.write'],
       tokenId: 'token-1',
       audience: ['erp4-agent'],
       expiresAt: 1_900_000_000,
@@ -1345,6 +1339,10 @@ test('provenance audit writer enforces action-target mapping and runtime metadat
     ['   '],
     ['scope\u0085control'],
     ['scope\u202econtrol'],
+    ['\tknowledge:write\n'],
+    ['\rknowledge:write\t'],
+    ['\ufeffknowledge:write\ufeff'],
+    ['\u2028knowledge:write\u2029'],
     ['https://idp.example/knowledge.write?token=synthetic'],
   ]) {
     await assert.rejects(
@@ -1385,6 +1383,34 @@ test('provenance audit writer enforces action-target mapping and runtime metadat
       }),
     /knowledge_provenance_audit_contract_invalid/,
   );
+
+  const validAuditActor = {
+    userId: 'owner-1',
+    requestId: 'request-control-boundary',
+    source: 'agent',
+    principalUserId: 'principal-1',
+    actorUserId: 'agent-1',
+  };
+  for (const actor of [
+    { ...validAuditActor, principalUserId: '\tprincipal-1' },
+    { ...validAuditActor, actorUserId: 'agent-1\n' },
+    { ...validAuditActor, requestId: '\rrequest-control-boundary' },
+    { ...validAuditActor, authTokenId: '\ufefftoken-1' },
+    { ...validAuditActor, authAudience: ['erp4-agent\u2028'] },
+    { ...validAuditActor, agentRunId: '\u202erun-1' },
+  ]) {
+    await assert.rejects(
+      () =>
+        writer.write({
+          action: 'knowledge_annotation_created',
+          actor,
+          targetTable: 'knowledge_annotations',
+          targetId: 'annotation-invalid-audit-identifier',
+          metadata: {},
+        }),
+      /knowledge_provenance_audit_contract_invalid/,
+    );
+  }
 
   await assert.rejects(
     () =>

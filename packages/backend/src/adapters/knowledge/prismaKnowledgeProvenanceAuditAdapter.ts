@@ -50,24 +50,19 @@ function bounded(value: string | undefined, maximum: number) {
   return value.slice(0, maximum);
 }
 
-function hasAsciiControlCharacter(value: string) {
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    if (code <= 0x1f || code === 0x7f) return true;
-  }
-  return false;
+function hasUnsafeAuditCharacter(value: string) {
+  return /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value);
 }
 
 function requiredAuditText(value: string | undefined, maximum: number): string {
   if (typeof value !== 'string') {
     throw new Error('knowledge_provenance_audit_contract_invalid');
   }
+  if (hasUnsafeAuditCharacter(value)) {
+    throw new Error('knowledge_provenance_audit_contract_invalid');
+  }
   const normalized = value.trim();
-  if (
-    !normalized ||
-    normalized.length > maximum ||
-    hasAsciiControlCharacter(normalized)
-  ) {
+  if (!normalized || normalized.length > maximum) {
     throw new Error('knowledge_provenance_audit_contract_invalid');
   }
   return normalized;
@@ -107,7 +102,7 @@ function actorAuditMetadata(
     actor.actorUserId,
     auditContextLimits.identifier,
   );
-  const requestId = actor.requestId?.trim();
+  const requestId = requiredAuditText(actor.requestId, 128);
   const source = actor.source;
   if (
     !requestId ||

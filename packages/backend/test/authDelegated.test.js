@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   buildUserContextFromJwtPayload,
   evaluateDelegatedScope,
+  normalizeConfiguredAgentScopes,
 } from '../dist/plugins/auth.js';
 
 test('buildUserContextFromJwtPayload: principal/actor/scopes are mapped', () => {
@@ -51,6 +52,11 @@ test('buildUserContextFromJwtPayload: URI scopes are canonicalized and unsafe sc
     'https://user@idp.example/knowledge.write',
     'https://idp.example/knowledge.write?token=synthetic',
     'https://idp.example/knowledge.write#fragment',
+    '\tknowledge:write\n',
+    '\rknowledge:write\t',
+    '\ufeffknowledge:write\ufeff',
+    '\u2028knowledge:write\u2029',
+    '\u202eknowledge:write',
   ]) {
     assert.throws(
       () =>
@@ -63,6 +69,43 @@ test('buildUserContextFromJwtPayload: URI scopes are canonicalized and unsafe sc
       invalid,
     );
   }
+});
+
+test('JWT and configured scope delimiters remain distinct', () => {
+  const user = buildUserContextFromJwtPayload({
+    sub: 'principal-user',
+    act: { sub: 'agent-bot' },
+    scp: 'read-only agent:read https://idp.example/knowledge.read',
+  });
+  assert.deepEqual(user?.auth?.scopes, [
+    'read-only',
+    'agent:read',
+    'https://idp.example/knowledge.read',
+  ]);
+
+  for (const scp of [
+    'unprivileged,write-limited',
+    ['unprivileged,write-limited'],
+  ]) {
+    assert.throws(
+      () =>
+        buildUserContextFromJwtPayload({
+          sub: 'principal-user',
+          act: { sub: 'agent-bot' },
+          scp,
+        }),
+      /auth_scope_contract_invalid/,
+    );
+  }
+
+  assert.deepEqual(
+    normalizeConfiguredAgentScopes(' read-only,agent:read,read-only '),
+    ['read-only', 'agent:read'],
+  );
+  assert.throws(
+    () => normalizeConfiguredAgentScopes('\twrite-limited'),
+    /auth_scope_contract_invalid/,
+  );
 });
 
 test('buildUserContextFromJwtPayload: scopes alone do not mark JWT as delegated', () => {

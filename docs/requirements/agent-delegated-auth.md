@@ -42,12 +42,18 @@ MVPでは次の3段階を扱う。
 `read` / `write` のような汎用scope名は、通常ユーザーJWTに含まれる可能性があるため既定の委任scopeには含めない。既存IdPとの互換目的で利用する場合は、`AUTH_AGENT_READ_SCOPES` / `AUTH_AGENT_WRITE_SCOPES` に明示的に追加し、専用audience/client等と組み合わせる。
 
 scope tokenはJWT claimと`AUTH_AGENT_*_SCOPES`で同じvalidatorを使用する。1 tokenあたり
-100件、1 scopeあたり255文字までとし、trimと重複除去後の語彙を
+100件、1 scopeあたり255文字までとし、外側の通常ASCII space（U+0020）だけを除去して
+重複除去した後の語彙を
 `A-Z a-z 0-9 . _ ~ : / -`に限定する。`https://idp.example/knowledge.write`や
 `api://client-id/.default`のようなURI path形式は許可するが、userinfo、query、fragment、
 Unicode制御・bidi文字、空白、quote、backslashを含むscopeは認証境界でfail closedとする。
 scopeへcredential、個人情報、可変provider metadataを埋め込まない。これにより認可とmandatory
 auditでscope受理規則を共有し、監査だけが正当なrequestをrollbackする状態を防ぐ。
+JWTの文字列scopeはASCII whitespaceだけをdelimiterとし、配列scopeは1要素を1 tokenとして
+検証する。カンマを含むJWT tokenをCSVとして再解釈しない。`AUTH_AGENT_*_SCOPES`だけは
+設定call siteでcomma-separated listへ分解してから、同じtoken validatorへ渡す。
+array要素および設定tokenのraw値は正規化前にallowlist検査し、端部のTAB/LF/CR、C1、
+Unicode line/paragraph separator、format/bidi文字、BOMを除去して有効scopeへ昇格させない。
 
 ### 判定ルール
 

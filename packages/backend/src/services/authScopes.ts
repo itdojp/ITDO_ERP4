@@ -3,7 +3,7 @@ export const authScopeLimits = {
   token: 255,
 } as const;
 
-const authScopeTokenPattern = /^[A-Za-z0-9._~:/-]+$/;
+const authScopeTokenDisallowedPattern = /[^A-Za-z0-9._~:/-]/u;
 
 export class AuthScopeContractError extends Error {
   constructor() {
@@ -13,11 +13,13 @@ export class AuthScopeContractError extends Error {
 
 function validateScopeToken(value: unknown): string {
   if (typeof value !== 'string') throw new AuthScopeContractError();
-  const normalized = value.trim();
+  // Only ordinary ASCII spaces are normalization whitespace. Other whitespace,
+  // controls, and format characters must reach the allowlist and fail closed.
+  const normalized = value.replace(/^ +| +$/g, '');
   if (
     normalized.length === 0 ||
     normalized.length > authScopeLimits.token ||
-    !authScopeTokenPattern.test(normalized)
+    authScopeTokenDisallowedPattern.test(normalized)
   ) {
     throw new AuthScopeContractError();
   }
@@ -29,7 +31,7 @@ export function normalizeAuthScopes(value: unknown): string[] {
   const rawScopes = Array.isArray(value)
     ? value
     : typeof value === 'string'
-      ? value.split(/[ ,]+/u).filter(Boolean)
+      ? value.split(/[ \t\r\n\f\v]+/).filter(Boolean)
       : (() => {
           throw new AuthScopeContractError();
         })();

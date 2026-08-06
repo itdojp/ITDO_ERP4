@@ -349,7 +349,10 @@ PR Aはimport parserとUIを有効化する前に、次のDB/application/API契�
   最大100件・各255文字で保持し、trim/deduplicateして共通の
   `A-Z a-z 0-9 . _ ~ : / -`語彙へ制限する。URI path形式を維持しつつ、Unicode制御・bidi文字、
   userinfo、query、fragmentを認証境界と監査境界の両方で拒否し、mandatory auditだけが正当な
-  requestをrollbackする状態を防ぐ。
+  requestをrollbackする状態を防ぐ。JWT文字列はASCII whitespace、設定値だけはcall siteで
+  comma-separated listとして分解し、JWT内のカンマを権限scopeへ再解釈しない。
+  scopeおよびprincipal/actor/request/token/audience/agent run識別子はraw値の制御・format・
+  bidi文字をtrim前に拒否し、不正な認証provenanceを正規化後の値として監査へ残さない。
   request bodyやraw bearer tokenからscopeを受け付けない。DB CHECKでもaction groupとtarget
   tableを厳密に対応付ける。
 - listはbounded limit、stable sort、actor/resource/parentへ束縛したHMAC署名付きopaque
