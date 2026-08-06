@@ -4,6 +4,7 @@ import test from 'node:test';
 import { createKnowledgeAnnotationService } from '../dist/application/knowledge/knowledgeAnnotationUseCases.js';
 import { createKnowledgeConversationService } from '../dist/application/knowledge/knowledgeConversationUseCases.js';
 import { KnowledgeProvenanceConflictError } from '../dist/application/knowledge/knowledgeProvenancePorts.js';
+import { KnowledgeSynthesisAccessBudgetError } from '../dist/application/knowledge/knowledgeSynthesisAccessContext.js';
 import { createKnowledgeSynthesisService } from '../dist/application/knowledge/knowledgeSynthesisUseCases.js';
 
 const now = new Date('2026-08-06T00:00:00.000Z');
@@ -621,4 +622,119 @@ test('synthesis source input is strict and concurrent version append returns con
     },
   });
   assert.equal(conflict.statusCode, 409);
+});
+
+test('synthesis service shares one access context per mutation request', async () => {
+  const createContexts = [];
+  const appendContexts = [];
+  let operation = 'create';
+  const tx = transaction({
+    syntheses: {
+      validateSources: async (input) => {
+        (operation === 'create' ? createContexts : appendContexts).push(
+          input.accessContext,
+        );
+        return true;
+      },
+      create: async (input) => {
+        createContexts.push(input.accessContext);
+        return synthesisDetail();
+      },
+      findOwned: async (input) => {
+        appendContexts.push(input.accessContext);
+        return synthesisDetail();
+      },
+      appendVersion: async (input) => {
+        appendContexts.push(input.accessContext);
+        return synthesisDetail({
+          synthesis: {
+            ...synthesisDetail().synthesis,
+            currentVersion: 2,
+          },
+          currentVersion: {
+            ...synthesisDetail().currentVersion,
+            version: 2,
+          },
+        });
+      },
+    },
+  });
+  const service = createKnowledgeSynthesisService({
+    reader: {},
+    unitOfWork: unitOfWork(tx),
+  });
+  const body = {
+    scope: 'personal',
+    title: 'Synthetic synthesis',
+    content: 'Synthetic conclusion',
+    sources: [{ kind: 'item', sourceId: 'item-1', relationType: 'primary' }],
+  };
+  const created = await service.create({ actor, auditActor, body });
+  assert.equal(created.ok, true);
+  assert.equal(createContexts.length, 2);
+  assert.equal(new Set(createContexts).size, 1);
+
+  operation = 'append';
+  const appended = await service.appendVersion({
+    actor,
+    auditActor,
+    synthesisId: 'synthesis-1',
+    body: {
+      expectedVersion: 1,
+      content: 'Synthetic conclusion version two',
+      sources: body.sources,
+    },
+  });
+  assert.equal(appended.ok, true);
+  assert.equal(appendContexts.length, 3);
+  assert.equal(new Set(appendContexts).size, 1);
+  assert.notEqual(createContexts[0], appendContexts[0]);
+});
+
+test('synthesis ID reads and mutations normalize access-budget exhaustion as not found', async () => {
+  const reader = {
+    listVisible: async () => {
+      throw new KnowledgeSynthesisAccessBudgetError();
+    },
+    findVisible: async () => {
+      throw new KnowledgeSynthesisAccessBudgetError();
+    },
+    listVersionsVisible: async () => {
+      throw new KnowledgeSynthesisAccessBudgetError();
+    },
+  };
+  const tx = transaction({
+    syntheses: {
+      validateSources: async () => {
+        throw new KnowledgeSynthesisAccessBudgetError();
+      },
+    },
+  });
+  const service = createKnowledgeSynthesisService({
+    reader,
+    unitOfWork: unitOfWork(tx),
+  });
+  const detail = await service.detail({ actor, synthesisId: 'synthesis-1' });
+  const list = await service.list({ actor, limit: 20 });
+  const history = await service.history({
+    actor,
+    synthesisId: 'synthesis-1',
+    limit: 20,
+  });
+  const create = await service.create({
+    actor,
+    auditActor,
+    body: {
+      scope: 'personal',
+      title: 'Synthetic conclusion',
+      content: 'Synthetic conclusion body',
+      sources: [{ kind: 'item', sourceId: 'item-1', relationType: 'primary' }],
+    },
+  });
+  for (const result of [detail, history, create]) {
+    assert.equal(result.statusCode, 404);
+    assert.equal(result.code, 'not_found');
+  }
+  assert.equal(list.ok, true);
+  assert.deepEqual(list.value, { items: [], nextBoundary: null });
 });

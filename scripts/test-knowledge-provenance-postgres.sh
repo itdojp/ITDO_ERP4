@@ -42,6 +42,16 @@ export KNOWLEDGE_PROVENANCE_INTEGRATION_CONFIRM=1
 npm run prisma:generate --prefix "$ROOT_DIR/packages/backend" >/dev/null
 npx --prefix "$ROOT_DIR/packages/backend" prisma migrate deploy \
   --config "$ROOT_DIR/packages/backend/prisma.config.ts" >/dev/null
+migration_diff="$(npx --prefix "$ROOT_DIR/packages/backend" prisma migrate diff \
+  --config "$ROOT_DIR/packages/backend/prisma.config.ts" \
+  --from-config-datasource \
+  --to-schema "$ROOT_DIR/packages/backend/prisma/schema.prisma" \
+  --script)"
+if grep -Eq '"Knowledge(Annotation|Conversation|Synthesis)' <<<"$migration_diff"; then
+  echo 'Knowledge provenance migration/schema drift detected:' >&2
+  grep -E 'Knowledge(Annotation|Conversation|Synthesis)' <<<"$migration_diff" >&2
+  exit 1
+fi
 npm run build --prefix "$ROOT_DIR/packages/backend" >/dev/null
 node "$ROOT_DIR/packages/backend/scripts/knowledge-provenance-integration.mjs"
 npx --prefix "$ROOT_DIR/packages/backend" prisma migrate status \

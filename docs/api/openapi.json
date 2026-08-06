@@ -257,6 +257,9 @@
             "type": "array"
           },
           "model": {
+            "enum": [
+              null
+            ],
             "nullable": true,
             "type": "string"
           },
@@ -264,6 +267,9 @@
             "type": "string"
           },
           "provider": {
+            "enum": [
+              null
+            ],
             "nullable": true,
             "type": "string"
           },
@@ -334,6 +340,9 @@
             "type": "string"
           },
           "name": {
+            "enum": [
+              null
+            ],
             "nullable": true,
             "type": "string"
           },

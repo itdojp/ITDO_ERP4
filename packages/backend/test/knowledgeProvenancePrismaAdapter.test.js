@@ -8,6 +8,7 @@ import {
   PrismaKnowledgeSynthesisRepository,
   PrismaKnowledgeProvenanceUnitOfWork,
 } from '../dist/adapters/knowledge/prismaKnowledgeProvenanceAdapter.js';
+import { createSynthesisAccessContext } from '../dist/application/knowledge/knowledgeSynthesisAccessContext.js';
 import {
   conversationResponse,
   conversationTurnResponse,
@@ -243,6 +244,7 @@ test('source validation rechecks current item ACL and normalizes inaccessible ID
   assert.equal(
     await repository.validateSources({
       actor,
+      accessContext: createSynthesisAccessContext(),
       sources: [
         { kind: 'item', sourceId: 'hidden-item', relationType: 'primary' },
       ],
@@ -316,6 +318,7 @@ test('recursive synthesis access is memoized, detects cycles, and enforces the d
   assert.equal(
     await depth16.repository.validateSources({
       actor,
+      accessContext: createSynthesisAccessContext(),
       sources: [
         { kind: 'synthesis_version', sourceId: 'v1', relationType: 'primary' },
       ],
@@ -328,6 +331,7 @@ test('recursive synthesis access is memoized, detects cycles, and enforces the d
   assert.equal(
     await depth17.repository.validateSources({
       actor,
+      accessContext: createSynthesisAccessContext(),
       sources: [
         { kind: 'synthesis_version', sourceId: 'v1', relationType: 'primary' },
       ],
@@ -352,6 +356,7 @@ test('recursive synthesis access is memoized, detects cycles, and enforces the d
   assert.equal(
     await cycle.validateSources({
       actor,
+      accessContext: createSynthesisAccessContext(),
       sources: [
         { kind: 'synthesis_version', sourceId: 'v1', relationType: 'primary' },
       ],
@@ -394,6 +399,7 @@ test('shared synthesis provenance DAG uses request-scoped memoization', async ()
   assert.equal(
     await repository.validateSources({
       actor,
+      accessContext: createSynthesisAccessContext(),
       sources: [
         { kind: 'synthesis_version', sourceId: 'v1', relationType: 'primary' },
       ],
@@ -402,6 +408,76 @@ test('shared synthesis provenance DAG uses request-scoped memoization', async ()
   );
   assert.equal(versionQueries, 4);
   assert.equal(itemQueries, 1);
+});
+
+test('synthesis mutation reuses one access context across repository operations', async () => {
+  let itemQueries = 0;
+  const synthesis = synthesisRow('synthesis-owned', {
+    ownerUserId: actor.userId,
+    scope: 'personal',
+    organizationId: null,
+  });
+  const version = {
+    id: 'version-owned',
+    synthesisId: synthesis.id,
+    version: 1,
+    content: 'Synthetic conclusion',
+    unresolvedQuestions: [],
+    confidenceBasisPoints: null,
+    createdAt: synthesis.createdAt,
+    createdBy: actor.userId,
+    sources: [itemSource('item-shared', { createdBy: actor.userId })],
+  };
+  const repository = new PrismaKnowledgeSynthesisRepository(
+    emptyClient({
+      knowledgeSynthesis: {
+        findFirst: async () => synthesis,
+        updateMany: async () => ({ count: 1 }),
+      },
+      knowledgeSynthesisVersion: {
+        findUniqueOrThrow: async () => version,
+        create: async () => version,
+      },
+      knowledgeItem: {
+        findFirst: async () => {
+          itemQueries += 1;
+          return { id: 'item-shared' };
+        },
+      },
+    }),
+  );
+  const accessContext = createSynthesisAccessContext();
+  const owned = await repository.findOwned({
+    actor,
+    synthesisId: synthesis.id,
+    accessContext,
+  });
+  assert.ok(owned);
+  assert.equal(
+    await repository.validateSources({
+      actor,
+      accessContext,
+      sources: [
+        { kind: 'item', sourceId: 'item-shared', relationType: 'primary' },
+      ],
+    }),
+    true,
+  );
+  const appended = await repository.appendVersion({
+    actor,
+    synthesisId: synthesis.id,
+    expectedVersion: 1,
+    content: 'Synthetic conclusion version two',
+    unresolvedQuestions: [],
+    confidenceBasisPoints: null,
+    sources: [
+      { kind: 'item', sourceId: 'item-shared', relationType: 'primary' },
+    ],
+    accessContext,
+  });
+  assert.ok(appended);
+  assert.equal(itemQueries, 1);
+  assert.equal(accessContext.queries, 1);
 });
 
 test('provenance edge/query budget fails closed before unbounded database work', async () => {
@@ -431,6 +507,7 @@ test('provenance edge/query budget fails closed before unbounded database work',
     () =>
       repository.validateSources({
         actor,
+        accessContext: createSynthesisAccessContext(),
         sources: [
           {
             kind: 'synthesis_version',
@@ -442,6 +519,87 @@ test('provenance edge/query budget fails closed before unbounded database work',
     /knowledge_synthesis_access_budget_exceeded/,
   );
   assert.ok(itemQueries <= 511);
+});
+
+test('provenance version-node budget fails closed independently of edge depth', async () => {
+  let versionQueries = 0;
+  const repository = new PrismaKnowledgeSynthesisRepository(
+    emptyClient({
+      knowledgeSynthesisVersion: {
+        findFirst: async ({ where }) => {
+          versionQueries += 1;
+          return {
+            id: where.id,
+            synthesisId: `synthesis-${where.id}`,
+            version: 1,
+            synthesis: {
+              ownerUserId: where.id === 'root' ? 'owner-2' : actor.userId,
+            },
+            sources:
+              where.id === 'root'
+                ? Array.from({ length: 129 }, (_, ordinal) =>
+                    versionSource(`leaf-${ordinal}`, { ordinal }),
+                  )
+                : [],
+          };
+        },
+      },
+    }),
+  );
+  await assert.rejects(
+    () =>
+      repository.validateSources({
+        actor,
+        accessContext: createSynthesisAccessContext(),
+        sources: [
+          {
+            kind: 'synthesis_version',
+            sourceId: 'root',
+            relationType: 'primary',
+          },
+        ],
+      }),
+    /knowledge_synthesis_access_budget_exceeded/,
+  );
+  assert.equal(versionQueries, 128);
+});
+
+test('provenance query budget fails closed before the candidate scan limit', async () => {
+  let scanned = 0;
+  const repository = new PrismaKnowledgeSynthesisRepository(
+    emptyClient({
+      knowledgeSynthesis: {
+        findMany: async ({ take }) =>
+          Array.from({ length: take }, (_, index) =>
+            synthesisRow(`hidden-query-${scanned + index}`),
+          ),
+        findFirst: async ({ where }) => {
+          scanned += 1;
+          return synthesisRow(where.id);
+        },
+      },
+      knowledgeSynthesisVersion: {
+        findUnique: async ({ where }) => {
+          const synthesisId = where.synthesisId_version.synthesisId;
+          return {
+            id: `version-${synthesisId}`,
+            synthesisId,
+            version: 1,
+            sources: [itemSource(`source-${synthesisId}`)],
+          };
+        },
+      },
+      knowledgeItem: { findFirst: async () => null },
+    }),
+  );
+  const accessContext = createSynthesisAccessContext();
+  await assert.rejects(
+    () => repository.listVisible({ actor, limit: 1, accessContext }),
+    /knowledge_synthesis_access_budget_exceeded/,
+  );
+  assert.ok(scanned < 200);
+  assert.equal(accessContext.queries, 513);
+  assert.ok(accessContext.edges < 512);
 });
 
 test('source-less organization synthesis fails closed for non-owner readers', async () => {
@@ -460,12 +618,16 @@ test('source-less organization synthesis fails closed for non-owner readers', as
     }),
   );
   assert.equal(
-    await repository.findVisible({ actor, synthesisId: synthesis.id }),
+    await repository.findVisible({
+      actor,
+      synthesisId: synthesis.id,
+      accessContext: createSynthesisAccessContext(),
+    }),
     null,
   );
 });
 
-test('synthesis list stops at a fixed hidden-candidate budget without returning a hidden cursor', async () => {
+test('synthesis list stops at a fixed hidden-candidate budget with a non-disclosing empty page', async () => {
   let candidateQueries = 0;
   let scanned = 0;
   const repository = new PrismaKnowledgeSynthesisRepository(
@@ -493,12 +655,100 @@ test('synthesis list stops at a fixed hidden-candidate budget without returning 
     }),
   );
 
-  await assert.rejects(
-    () => repository.listVisible({ actor, limit: 1 }),
-    /knowledge_synthesis_list_budget_exceeded/,
-  );
+  const page = await repository.listVisible({
+    actor,
+    limit: 1,
+    accessContext: createSynthesisAccessContext(),
+  });
+  assert.deepEqual(page, { items: [], nextBoundary: null });
   assert.equal(scanned, 200);
   assert.equal(candidateQueries, 100);
+});
+
+test('synthesis list paginates visible-hidden-visible candidates without hidden boundaries, duplicates, or gaps', async () => {
+  const timestamps = [
+    '2026-08-06T04:00:00.000Z',
+    '2026-08-06T03:00:00.000Z',
+    '2026-08-06T02:00:00.000Z',
+    '2026-08-06T01:00:00.000Z',
+  ].map((value) => new Date(value));
+  const candidates = [
+    synthesisRow('visible-a', { updatedAt: timestamps[0] }),
+    synthesisRow('hidden-between', { updatedAt: timestamps[1] }),
+    synthesisRow('visible-b', { updatedAt: timestamps[2] }),
+    synthesisRow('visible-c', { updatedAt: timestamps[3] }),
+  ];
+  const sourceFor = (id) =>
+    itemSource(id.startsWith('visible') ? `source-${id}` : 'source-hidden');
+  const repository = new PrismaKnowledgeSynthesisRepository(
+    emptyClient({
+      knowledgeSynthesis: {
+        findMany: async ({ where, take }) => {
+          const boundary = where.AND?.[1]?.OR;
+          const beforeDate = boundary?.[0]?.updatedAt?.lt;
+          const sameDate = boundary?.[1]?.updatedAt;
+          const beforeId = boundary?.[1]?.id?.lt;
+          return candidates
+            .filter(
+              (row) =>
+                !beforeDate ||
+                row.updatedAt < beforeDate ||
+                (row.updatedAt.getTime() === sameDate?.getTime() &&
+                  row.id < beforeId),
+            )
+            .slice(0, take);
+        },
+        findFirst: async ({ where }) =>
+          candidates.find((row) => row.id === where.id) ?? null,
+      },
+      knowledgeSynthesisVersion: {
+        findUnique: async ({ where }) => {
+          const id = where.synthesisId_version.synthesisId;
+          return {
+            id: `version-${id}`,
+            synthesisId: id,
+            version: 1,
+            sources: [sourceFor(id)],
+          };
+        },
+      },
+      knowledgeItem: {
+        findFirst: async ({ where }) => {
+          const serialized = JSON.stringify(where);
+          return serialized.includes('source-visible')
+            ? { id: 'visible-source' }
+            : null;
+        },
+      },
+    }),
+  );
+  const first = await repository.listVisible({
+    actor,
+    limit: 2,
+    accessContext: createSynthesisAccessContext(),
+  });
+  assert.deepEqual(
+    first.items.map((item) => item.id),
+    ['visible-a', 'visible-b'],
+  );
+  assert.equal(first.nextBoundary?.id, 'visible-b');
+  assert.notEqual(first.nextBoundary?.id, 'hidden-between');
+
+  const second = await repository.listVisible({
+    actor,
+    limit: 2,
+    boundary: first.nextBoundary,
+    accessContext: createSynthesisAccessContext(),
+  });
+  assert.deepEqual(
+    second.items.map((item) => item.id),
+    ['visible-c'],
+  );
+  assert.equal(second.nextBoundary, null);
+  assert.deepEqual(
+    [...first.items, ...second.items].map((item) => item.id),
+    ['visible-a', 'visible-b', 'visible-c'],
+  );
 });
 
 test('organization synthesis history fails closed when a historical version source is no longer visible', async () => {
@@ -558,6 +808,7 @@ test('organization synthesis history fails closed when a historical version sour
       actor,
       synthesisId: synthesis.id,
       limit: 20,
+      accessContext: createSynthesisAccessContext(),
     }),
     null,
   );
@@ -610,6 +861,7 @@ test('organization synthesis history validates the lookahead row before emitting
       actor,
       synthesisId: synthesis.id,
       limit: 1,
+      accessContext: createSynthesisAccessContext(),
     }),
     null,
   );

@@ -165,9 +165,23 @@ test('database constraints bound content, versions, hashes, confidence, scope, d
   assert.match(migration, /OCTET_LENGTH\("content"\) BETWEEN 1 AND 65536/);
   assert.match(migration, /OCTET_LENGTH\("content"\) BETWEEN 1 AND 262144/);
   assert.match(migration, /"confidenceBasisPoints" BETWEEN 0 AND 10000/);
+  assert.match(
+    migration,
+    /CREATE UNIQUE INDEX "KnowledgeAnnotationRevision_annotationId_revision_key"/,
+  );
+  assert.match(
+    migration,
+    /CREATE INDEX "KnowledgeSynthesis_organizationId_scope_deletedAt_updatedAt_idx"/,
+  );
+  assert.doesNotMatch(
+    migration,
+    /KnowledgeSynthesis_organizationId_scope_deletedAt_updatedAt_id_idx/,
+  );
 });
 
 test('audit database constraint binds each provenance action group to its exact target table', () => {
+  assert.match(migration, /"targetTable" IS NOT NULL/);
+  assert.match(migration, /"targetId" IS NOT NULL/);
   const expected = [
     ['knowledge_annotation_created', 'knowledge_annotations'],
     ['knowledge_annotation_revised', 'knowledge_annotations'],
@@ -289,4 +303,24 @@ test('OpenAPI publishes the bounded provenance foundation without internal idemp
   for (const internal of ['providerKey', 'providerUrl', 'rawMetadata']) {
     assert.equal(source.properties[internal], undefined);
   }
+  const conversationResponse = resolveOpenApiSchema(
+    openapi.paths['/knowledge/conversations'].post.responses['201'].content[
+      'application/json'
+    ].schema,
+  );
+  const nullOnlyString = {
+    type: 'string',
+    nullable: true,
+    enum: [null],
+  };
+  assert.deepEqual(conversationResponse.properties.provider, nullOnlyString);
+  assert.deepEqual(conversationResponse.properties.model, nullOnlyString);
+  const appendedTurnResponse = resolveOpenApiSchema(
+    openapi.paths['/knowledge/conversations/{conversationId}/turns'].post
+      .responses['201'].content['application/json'].schema,
+  );
+  const turnResponse = resolveOpenApiSchema(
+    appendedTurnResponse.properties.turn,
+  );
+  assert.deepEqual(turnResponse.properties.name, nullOnlyString);
 });

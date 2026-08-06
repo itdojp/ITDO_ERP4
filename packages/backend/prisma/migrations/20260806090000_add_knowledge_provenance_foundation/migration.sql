@@ -242,7 +242,7 @@ CREATE TABLE "KnowledgeSynthesisSource" (
   )
 );
 
-CREATE UNIQUE INDEX "KnowledgeAnnotation_annotation_revision_key"
+CREATE UNIQUE INDEX "KnowledgeAnnotationRevision_annotationId_revision_key"
   ON "KnowledgeAnnotationRevision"("annotationId", "revision");
 CREATE INDEX "KnowledgeAnnotation_knowledgeItemId_deletedAt_updatedAt_id_idx"
   ON "KnowledgeAnnotation"("knowledgeItemId", "deletedAt", "updatedAt", "id");
@@ -271,7 +271,7 @@ CREATE INDEX "KnowledgeConversationTurn_conversationId_createdAt_id_idx"
 
 CREATE INDEX "KnowledgeSynthesis_ownerUserId_deletedAt_updatedAt_id_idx"
   ON "KnowledgeSynthesis"("ownerUserId", "deletedAt", "updatedAt", "id");
-CREATE INDEX "KnowledgeSynthesis_organizationId_scope_deletedAt_updatedAt_id_idx"
+CREATE INDEX "KnowledgeSynthesis_organizationId_scope_deletedAt_updatedAt_idx"
   ON "KnowledgeSynthesis"("organizationId", "scope", "deletedAt", "updatedAt", "id");
 CREATE UNIQUE INDEX "KnowledgeSynthesisVersion_synthesisId_version_key"
   ON "KnowledgeSynthesisVersion"("synthesisId", "version");
@@ -395,40 +395,44 @@ ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_knowledge_provenance_target_chec
     'knowledge_import_rejected'
   )
   OR (
-    (
-      "action" IN (
-        'knowledge_annotation_created',
-        'knowledge_annotation_revised',
-        'knowledge_annotation_deleted'
+    "targetTable" IS NOT NULL
+    AND "targetId" IS NOT NULL
+    AND (
+      (
+        "action" IN (
+          'knowledge_annotation_created',
+          'knowledge_annotation_revised',
+          'knowledge_annotation_deleted'
+        )
+        AND "targetTable" = 'knowledge_annotations'
       )
-      AND "targetTable" = 'knowledge_annotations'
-    )
-    OR (
-      "action" IN (
-        'knowledge_conversation_created',
-        'knowledge_conversation_imported',
-        'knowledge_conversation_item_linked',
-        'knowledge_conversation_item_unlinked',
-        'knowledge_conversation_turn_appended'
+      OR (
+        "action" IN (
+          'knowledge_conversation_created',
+          'knowledge_conversation_imported',
+          'knowledge_conversation_item_linked',
+          'knowledge_conversation_item_unlinked',
+          'knowledge_conversation_turn_appended'
+        )
+        AND "targetTable" = 'knowledge_conversations'
       )
-      AND "targetTable" = 'knowledge_conversations'
-    )
-    OR (
-      "action" IN (
-        'knowledge_synthesis_created',
-        'knowledge_synthesis_version_appended',
-        'knowledge_synthesis_source_linked'
+      OR (
+        "action" IN (
+          'knowledge_synthesis_created',
+          'knowledge_synthesis_version_appended',
+          'knowledge_synthesis_source_linked'
+        )
+        AND "targetTable" = 'knowledge_syntheses'
       )
-      AND "targetTable" = 'knowledge_syntheses'
-    )
-    OR (
-      "action" IN (
-        'knowledge_import_previewed',
-        'knowledge_import_committed',
-        'knowledge_import_duplicate_detected',
-        'knowledge_import_rejected'
+      OR (
+        "action" IN (
+          'knowledge_import_previewed',
+          'knowledge_import_committed',
+          'knowledge_import_duplicate_detected',
+          'knowledge_import_rejected'
+        )
+        AND "targetTable" = 'knowledge_imports'
       )
-      AND "targetTable" = 'knowledge_imports'
     )
   )
 ) NOT VALID;

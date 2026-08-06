@@ -191,6 +191,65 @@ try {
       [1, 'Synthetic personal annotation'],
     ],
   );
+  const revisionThree = expectOk(
+    await annotationService.revise({
+      actor: owner,
+      auditActor,
+      itemId: personalItem.id,
+      annotationId: createdAnnotation.id,
+      body: {
+        expectedRevision: 2,
+        kind: 'hypothesis',
+        origin: 'user',
+        content: 'Synthetic revision three',
+      },
+    }),
+    'annotation revision three',
+  );
+  expectOk(
+    await annotationService.revise({
+      actor: owner,
+      auditActor,
+      itemId: personalItem.id,
+      annotationId: createdAnnotation.id,
+      body: {
+        expectedRevision: revisionThree.currentRevision,
+        kind: 'todo',
+        origin: 'user',
+        content: 'Synthetic revision four',
+      },
+    }),
+    'annotation revision four',
+  );
+  const annotationPageOne = expectOk(
+    await annotationService.history({
+      actor: owner,
+      itemId: personalItem.id,
+      annotationId: createdAnnotation.id,
+      limit: 2,
+    }),
+    'annotation history page one',
+  );
+  assert.deepEqual(
+    annotationPageOne.items.map((entry) => entry.revision),
+    [4, 3],
+  );
+  assert.equal(annotationPageOne.nextBoundary?.sequence, 3);
+  const annotationPageTwo = expectOk(
+    await annotationService.history({
+      actor: owner,
+      itemId: personalItem.id,
+      annotationId: createdAnnotation.id,
+      limit: 2,
+      beforeRevision: annotationPageOne.nextBoundary.sequence,
+    }),
+    'annotation history page two',
+  );
+  assert.deepEqual(
+    annotationPageTwo.items.map((entry) => entry.revision),
+    [2, 1],
+  );
+  assert.equal(annotationPageTwo.nextBoundary, null);
 
   const deletedParentItem = await createItem(owner, {
     scope: 'personal',
@@ -312,6 +371,39 @@ try {
     'not_found',
     'organization synthesis outsider',
   );
+  const organizationSynthesisVersionTwo = expectOk(
+    await synthesisService.appendVersion({
+      actor: owner,
+      auditActor,
+      synthesisId: organizationSynthesis.synthesis.id,
+      body: {
+        expectedVersion: 1,
+        content: 'Synthetic organization conclusion version two',
+        sources: [
+          {
+            kind: 'annotation',
+            sourceId: orgAnnotation.id,
+            relationType: 'primary',
+          },
+        ],
+      },
+    }),
+    'append organization synthesis version two',
+  );
+  assert.equal(organizationSynthesisVersionTwo.synthesis.currentVersion, 2);
+  const organizationHistoryBeforeRevoke = expectOk(
+    await synthesisService.history({
+      actor: bothGroups,
+      synthesisId: organizationSynthesis.synthesis.id,
+      limit: 1,
+    }),
+    'organization synthesis history before revoke',
+  );
+  assert.deepEqual(
+    organizationHistoryBeforeRevoke.items.map((entry) => entry.version),
+    [2],
+  );
+  assert.equal(organizationHistoryBeforeRevoke.nextBoundary?.sequence, 2);
   const sourceLessOrganizationSynthesis =
     await prisma.knowledgeSynthesis.create({
       data: {
@@ -385,6 +477,16 @@ try {
     }),
     'not_found',
     'organization synthesis source revoked',
+  );
+  expectFailure(
+    await synthesisService.history({
+      actor: bothGroups,
+      synthesisId: organizationSynthesis.synthesis.id,
+      limit: 1,
+      beforeVersion: organizationHistoryBeforeRevoke.nextBoundary.sequence,
+    }),
+    'not_found',
+    'organization synthesis cursor after source revoke',
   );
   const organizationOwnerAfterRevocation = expectOk(
     await synthesisService.detail({
@@ -522,6 +624,65 @@ try {
       }),
     /constraint|check/i,
   );
+  const winningTurn = expectOk(
+    concurrentTurns.find((result) => result.ok),
+    'winning concurrent turn',
+  );
+  const turnTwo = expectOk(
+    await conversationService.appendTurn({
+      actor: owner,
+      auditActor,
+      conversationId: conversation.id,
+      body: {
+        expectedVersion: winningTurn.conversation.version,
+        role: 'system',
+        origin: 'system',
+        content: 'Synthetic system turn',
+      },
+    }),
+    'append turn two',
+  );
+  expectOk(
+    await conversationService.appendTurn({
+      actor: owner,
+      auditActor,
+      conversationId: conversation.id,
+      body: {
+        expectedVersion: turnTwo.conversation.version,
+        role: 'tool',
+        origin: 'tool',
+        content: 'Synthetic tool turn',
+      },
+    }),
+    'append turn three',
+  );
+  const turnPageOne = expectOk(
+    await conversationService.listTurns({
+      actor: owner,
+      conversationId: conversation.id,
+      limit: 2,
+    }),
+    'conversation turns page one',
+  );
+  assert.deepEqual(
+    turnPageOne.items.map((entry) => entry.sequence),
+    [1, 2],
+  );
+  assert.equal(turnPageOne.nextBoundary?.sequence, 2);
+  const turnPageTwo = expectOk(
+    await conversationService.listTurns({
+      actor: owner,
+      conversationId: conversation.id,
+      limit: 2,
+      boundary: turnPageOne.nextBoundary,
+    }),
+    'conversation turns page two',
+  );
+  assert.deepEqual(
+    turnPageTwo.items.map((entry) => entry.sequence),
+    [3],
+  );
+  assert.equal(turnPageTwo.nextBoundary, null);
 
   const synthesis = expectOk(
     await synthesisService.create({
@@ -599,6 +760,56 @@ try {
     ).length,
     1,
   );
+  const versionTwo = expectOk(
+    concurrentVersions.find((result) => result.ok),
+    'winning synthesis version',
+  );
+  expectOk(
+    await synthesisService.appendVersion({
+      actor: owner,
+      auditActor,
+      synthesisId: synthesis.synthesis.id,
+      body: {
+        expectedVersion: versionTwo.synthesis.currentVersion,
+        content: 'Synthetic conclusion version three',
+        sources: [
+          {
+            kind: 'item',
+            sourceId: personalItem.id,
+            relationType: 'primary',
+          },
+        ],
+      },
+    }),
+    'append synthesis version three',
+  );
+  const synthesisPageOne = expectOk(
+    await synthesisService.history({
+      actor: owner,
+      synthesisId: synthesis.synthesis.id,
+      limit: 2,
+    }),
+    'synthesis history page one',
+  );
+  assert.deepEqual(
+    synthesisPageOne.items.map((entry) => entry.version),
+    [3, 2],
+  );
+  assert.equal(synthesisPageOne.nextBoundary?.sequence, 2);
+  const synthesisPageTwo = expectOk(
+    await synthesisService.history({
+      actor: owner,
+      synthesisId: synthesis.synthesis.id,
+      limit: 2,
+      beforeVersion: synthesisPageOne.nextBoundary.sequence,
+    }),
+    'synthesis history page two',
+  );
+  assert.deepEqual(
+    synthesisPageTwo.items.map((entry) => entry.version),
+    [1],
+  );
+  assert.equal(synthesisPageTwo.nextBoundary, null);
 
   const removedSource = expectOk(
     await itemService.remove({
@@ -663,6 +874,32 @@ try {
           userId: owner.userId,
           targetTable: 'knowledge_conversations',
           targetId: conversation.id,
+          metadata: {},
+        },
+      }),
+    /constraint|check/i,
+  );
+  await assert.rejects(
+    () =>
+      prisma.auditLog.create({
+        data: {
+          action: 'knowledge_annotation_created',
+          userId: owner.userId,
+          targetTable: null,
+          targetId: conversation.id,
+          metadata: {},
+        },
+      }),
+    /constraint|check/i,
+  );
+  await assert.rejects(
+    () =>
+      prisma.auditLog.create({
+        data: {
+          action: 'knowledge_annotation_created',
+          userId: owner.userId,
+          targetTable: 'knowledge_annotations',
+          targetId: null,
           metadata: {},
         },
       }),
@@ -750,9 +987,10 @@ try {
   console.log(
     JSON.stringify({
       result: 'PASS',
-      annotationRevisions: history.items.length,
+      annotationRevisions:
+        annotationPageOne.items.length + annotationPageTwo.items.length,
       conversationItems: linkedBoth.items.length,
-      conversationTurns: storedTurns.length,
+      conversationTurns: turnPageOne.items.length + turnPageTwo.items.length,
       synthesisVersionRace: 'one_success_one_conflict',
       sourceRevocationRedacted: true,
       auditFailureRolledBack: true,

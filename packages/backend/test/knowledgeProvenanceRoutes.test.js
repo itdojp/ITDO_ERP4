@@ -5,6 +5,8 @@ import test from 'node:test';
 import { registerKnowledgeAnnotationRoutes } from '../dist/routes/knowledgeAnnotations.js';
 import { registerKnowledgeConversationRoutes } from '../dist/routes/knowledgeConversations.js';
 import { registerKnowledgeSynthesisRoutes } from '../dist/routes/knowledgeSyntheses.js';
+import { createKnowledgeSynthesisService } from '../dist/application/knowledge/knowledgeSynthesisUseCases.js';
+import { KnowledgeSynthesisAccessBudgetError } from '../dist/application/knowledge/knowledgeSynthesisAccessContext.js';
 import { mapErrorToResponse } from '../dist/services/errors.js';
 
 const date = new Date('2026-08-06T00:00:00.000Z');
@@ -448,16 +450,22 @@ test('synthesis route keeps conclusion visible while fully redacting later-inacc
   assert.equal(unsupportedSource.body.includes('must-not-pass'), false);
 });
 
-test('synthesis access-budget exhaustion is returned as a generic internal error', async (t) => {
-  const service = {
-    list: async () => {
-      throw new Error('knowledge_synthesis_list_budget_exceeded');
+test('synthesis access-budget exhaustion does not disclose list or ID existence', async (t) => {
+  const reader = {
+    listVisible: async () => {
+      throw new KnowledgeSynthesisAccessBudgetError();
     },
-    detail: async () => notFound(),
-    history: async () => notFound(),
-    create: async () => notFound(),
-    appendVersion: async () => notFound(),
+    findVisible: async () => {
+      throw new KnowledgeSynthesisAccessBudgetError();
+    },
+    listVersionsVisible: async () => {
+      throw new KnowledgeSynthesisAccessBudgetError();
+    },
   };
+  const service = createKnowledgeSynthesisService({
+    reader,
+    unitOfWork: { run: async () => notFound() },
+  });
   const app = await build(
     registerKnowledgeSynthesisRoutes,
     { service },
@@ -469,9 +477,17 @@ test('synthesis access-budget exhaustion is returned as a generic internal error
     method: 'GET',
     url: '/knowledge/syntheses?limit=1',
   });
-  assert.equal(response.statusCode, 500, response.body);
-  assert.equal(response.body.includes('budget'), false);
-  assert.equal(response.body.includes('knowledge_synthesis'), false);
+  assert.equal(response.statusCode, 200, response.body);
+  assert.deepEqual(response.json(), { items: [], nextCursor: null });
+  for (const url of [
+    '/knowledge/syntheses/synthesis-1',
+    '/knowledge/syntheses/synthesis-1/versions?limit=1',
+  ]) {
+    const idResponse = await app.inject({ method: 'GET', url });
+    assert.equal(idResponse.statusCode, 404, idResponse.body);
+    assert.equal(idResponse.json().error.code, 'not_found');
+    assert.equal(idResponse.body.includes('budget'), false);
+  }
 });
 
 test('all provenance routes require a canonical account and normalize unauthorized IDs as not found', async (t) => {

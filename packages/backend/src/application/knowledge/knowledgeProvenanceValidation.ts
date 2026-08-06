@@ -11,6 +11,7 @@ import {
   type KnowledgeConversationRole,
   type KnowledgeProvenanceOrigin,
 } from './knowledgeProvenancePorts.js';
+import { KnowledgeSynthesisAccessBudgetError } from './knowledgeSynthesisAccessContext.js';
 
 export type KnowledgeProvenanceFailure = {
   ok: false;
@@ -63,6 +64,9 @@ export async function runKnowledgeProvenanceMutation<T>(
   } catch (error) {
     if (error instanceof KnowledgeProvenanceConflictError) {
       return provenanceConflict();
+    }
+    if (error instanceof KnowledgeSynthesisAccessBudgetError) {
+      return provenanceNotFound();
     }
     throw error;
   }

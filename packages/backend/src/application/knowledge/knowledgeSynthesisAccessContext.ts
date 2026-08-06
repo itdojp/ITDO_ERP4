@@ -1,6 +1,6 @@
-import { knowledgeProvenanceLimits } from '../../application/knowledge/knowledgeProvenancePorts.js';
+import { knowledgeProvenanceLimits } from './knowledgeProvenancePorts.js';
 
-export type SynthesisAccessContext = {
+export type KnowledgeSynthesisAccessContext = {
   sourceMemo: Map<string, boolean>;
   versionMemo: Map<string, boolean>;
   nodes: number;
@@ -8,7 +8,7 @@ export type SynthesisAccessContext = {
   queries: number;
 };
 
-export function createSynthesisAccessContext(): SynthesisAccessContext {
+export function createSynthesisAccessContext(): KnowledgeSynthesisAccessContext {
   return {
     sourceMemo: new Map(),
     versionMemo: new Map(),
@@ -18,8 +18,15 @@ export function createSynthesisAccessContext(): SynthesisAccessContext {
   };
 }
 
+export class KnowledgeSynthesisAccessBudgetError extends Error {
+  constructor() {
+    super('knowledge_synthesis_access_budget_exceeded');
+    this.name = 'KnowledgeSynthesisAccessBudgetError';
+  }
+}
+
 export function consumeSynthesisAccessBudget(
-  context: SynthesisAccessContext,
+  context: KnowledgeSynthesisAccessContext,
   kind: 'node' | 'edge' | 'query',
 ) {
   const counter =
@@ -32,6 +39,6 @@ export function consumeSynthesisAccessBudget(
         ? knowledgeProvenanceLimits.synthesisProvenanceEdges
         : knowledgeProvenanceLimits.synthesisProvenanceQueries;
   if (context[counter] > limit) {
-    throw new Error('knowledge_synthesis_access_budget_exceeded');
+    throw new KnowledgeSynthesisAccessBudgetError();
   }
 }

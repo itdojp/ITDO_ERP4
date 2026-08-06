@@ -37,9 +37,8 @@ import { prisma } from '../../services/db.js';
 import { buildKnowledgeVisibilityWhere } from './prismaKnowledgeItemAdapter.js';
 import {
   consumeSynthesisAccessBudget,
-  createSynthesisAccessContext,
-  type SynthesisAccessContext,
-} from './prismaKnowledgeSynthesisAccessBudget.js';
+  type KnowledgeSynthesisAccessContext,
+} from '../../application/knowledge/knowledgeSynthesisAccessContext.js';
 
 type KnowledgeProvenanceDbClient = Pick<
   Prisma.TransactionClient,
@@ -846,7 +845,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
   private async sourceAccessible(
     actor: KnowledgeActor,
     source: SynthesisSourceRow,
-    context: SynthesisAccessContext,
+    context: KnowledgeSynthesisAccessContext,
     path: Set<string>,
     depth: number,
   ): Promise<boolean> {
@@ -957,7 +956,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
   private async synthesisVersionAccessible(
     actor: KnowledgeActor,
     versionId: string,
-    context: SynthesisAccessContext,
+    context: KnowledgeSynthesisAccessContext,
     path: Set<string>,
     depth: number,
   ): Promise<boolean> {
@@ -1003,7 +1002,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
   private async versionSourcesAccessible(
     actor: KnowledgeActor,
     version: SynthesisVersionRow,
-    context: SynthesisAccessContext,
+    context: KnowledgeSynthesisAccessContext,
   ): Promise<boolean> {
     if (version.sources.length === 0) return false;
     for (const source of version.sources) {
@@ -1019,7 +1018,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
   private async versionWithAccess(
     actor: KnowledgeActor,
     row: SynthesisVersionRow,
-    context: SynthesisAccessContext,
+    context: KnowledgeSynthesisAccessContext,
   ): Promise<KnowledgeSynthesisVersion> {
     const sources: KnowledgeSynthesisSource[] = [];
     for (const source of row.sources) {
@@ -1046,7 +1045,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
   private async findBaseVisible(
     actor: KnowledgeActor,
     synthesisId: string,
-    context: SynthesisAccessContext,
+    context: KnowledgeSynthesisAccessContext,
   ) {
     consumeSynthesisAccessBudget(context, 'query');
     const synthesis = await this.client.knowledgeSynthesis.findFirst({
@@ -1081,8 +1080,9 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
     actor: KnowledgeActor;
     limit: number;
     boundary?: KnowledgePageBoundary;
+    accessContext: KnowledgeSynthesisAccessContext;
   }) {
-    const context = createSynthesisAccessContext();
+    const context = input.accessContext;
     const visible: SynthesisRow[] = [];
     let boundary = input.boundary;
     let exhausted = false;
@@ -1091,7 +1091,8 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
       const remaining =
         knowledgeProvenanceLimits.synthesisListCandidates - scanned;
       if (remaining <= 0) {
-        throw new Error('knowledge_synthesis_list_budget_exceeded');
+        exhausted = true;
+        break;
       }
       const take = Math.min(input.limit + 1, remaining);
       consumeSynthesisAccessBudget(context, 'query');
@@ -1132,7 +1133,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
         visible.length <= input.limit &&
         !exhausted
       ) {
-        throw new Error('knowledge_synthesis_list_budget_exceeded');
+        exhausted = true;
       }
     }
     const hasMore = visible.length > input.limit;
@@ -1145,8 +1146,12 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
     };
   }
 
-  async findVisible(input: { actor: KnowledgeActor; synthesisId: string }) {
-    const context = createSynthesisAccessContext();
+  async findVisible(input: {
+    actor: KnowledgeActor;
+    synthesisId: string;
+    accessContext: KnowledgeSynthesisAccessContext;
+  }) {
+    const context = input.accessContext;
     const result = await this.findBaseVisible(
       input.actor,
       input.synthesisId,
@@ -1168,8 +1173,9 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
     synthesisId: string;
     limit: number;
     beforeVersion?: number;
+    accessContext: KnowledgeSynthesisAccessContext;
   }) {
-    const context = createSynthesisAccessContext();
+    const context = input.accessContext;
     const visible = await this.findBaseVisible(
       input.actor,
       input.synthesisId,
@@ -1211,8 +1217,9 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
   async validateSources(input: {
     actor: KnowledgeActor;
     sources: KnowledgeSynthesisSourceInput[];
+    accessContext: KnowledgeSynthesisAccessContext;
   }) {
-    const context = createSynthesisAccessContext();
+    const context = input.accessContext;
     for (const source of input.sources) {
       const synthetic = {
         id: '__validation__',
@@ -1258,6 +1265,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
     unresolvedQuestions: string[];
     confidenceBasisPoints: number | null;
     sources: KnowledgeSynthesisSourceInput[];
+    accessContext: KnowledgeSynthesisAccessContext;
   }): Promise<KnowledgeSynthesisDetail> {
     const synthesis = await this.client.knowledgeSynthesis.create({
       data: {
@@ -1287,13 +1295,18 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
     const detail = await this.findVisible({
       actor: input.actor,
       synthesisId: synthesis.id,
+      accessContext: input.accessContext,
     });
     if (!detail)
       throw new Error('knowledge_synthesis_create_visibility_failed');
     return detail;
   }
 
-  async findOwned(input: { actor: KnowledgeActor; synthesisId: string }) {
+  async findOwned(input: {
+    actor: KnowledgeActor;
+    synthesisId: string;
+    accessContext: KnowledgeSynthesisAccessContext;
+  }) {
     const synthesis = await this.client.knowledgeSynthesis.findFirst({
       where: {
         id: input.synthesisId,
@@ -1317,7 +1330,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
       currentVersion: await this.versionWithAccess(
         input.actor,
         version,
-        createSynthesisAccessContext(),
+        input.accessContext,
       ),
     };
   }
@@ -1330,6 +1343,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
     unresolvedQuestions: string[];
     confidenceBasisPoints: number | null;
     sources: KnowledgeSynthesisSourceInput[];
+    accessContext: KnowledgeSynthesisAccessContext;
   }) {
     const updated = await this.client.knowledgeSynthesis.updateMany({
       where: {

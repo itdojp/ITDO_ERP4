@@ -3,6 +3,7 @@ import type {
   KnowledgeAuditActor,
   KnowledgeItemScope,
 } from './knowledgeItemPorts.js';
+import type { KnowledgeSynthesisAccessContext } from './knowledgeSynthesisAccessContext.js';
 
 export const knowledgeAnnotationKinds = [
   'note',
@@ -433,16 +434,19 @@ export interface KnowledgeSynthesisRepository {
     actor: KnowledgeActor;
     limit: number;
     boundary?: KnowledgePageBoundary;
+    accessContext: KnowledgeSynthesisAccessContext;
   }): Promise<KnowledgePage<KnowledgeSynthesis>>;
   findVisible(input: {
     actor: KnowledgeActor;
     synthesisId: string;
+    accessContext: KnowledgeSynthesisAccessContext;
   }): Promise<KnowledgeSynthesisDetail | null>;
   listVersionsVisible(input: {
     actor: KnowledgeActor;
     synthesisId: string;
     limit: number;
     beforeVersion?: number;
+    accessContext: KnowledgeSynthesisAccessContext;
   }): Promise<{
     items: KnowledgeSynthesisVersion[];
     nextBoundary: KnowledgeSequenceBoundary | null;
@@ -450,6 +454,7 @@ export interface KnowledgeSynthesisRepository {
   validateSources(input: {
     actor: KnowledgeActor;
     sources: KnowledgeSynthesisSourceInput[];
+    accessContext: KnowledgeSynthesisAccessContext;
   }): Promise<boolean>;
   create(input: {
     actor: KnowledgeActor;
@@ -460,10 +465,12 @@ export interface KnowledgeSynthesisRepository {
     unresolvedQuestions: string[];
     confidenceBasisPoints: number | null;
     sources: KnowledgeSynthesisSourceInput[];
+    accessContext: KnowledgeSynthesisAccessContext;
   }): Promise<KnowledgeSynthesisDetail>;
   findOwned(input: {
     actor: KnowledgeActor;
     synthesisId: string;
+    accessContext: KnowledgeSynthesisAccessContext;
   }): Promise<KnowledgeSynthesisDetail | null>;
   appendVersion(input: {
     actor: KnowledgeActor;
@@ -473,6 +480,7 @@ export interface KnowledgeSynthesisRepository {
     unresolvedQuestions: string[];
     confidenceBasisPoints: number | null;
     sources: KnowledgeSynthesisSourceInput[];
+    accessContext: KnowledgeSynthesisAccessContext;
   }): Promise<KnowledgeSynthesisDetail | null>;
 }
 

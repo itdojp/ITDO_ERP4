@@ -337,15 +337,18 @@ PR Aはimport parserとUIを有効化する前に、次のDB/application/API契�
   ID、actor、timestampを返さず、kind/relation/orderと`accessible=false`だけを返す。
 - recursive source ACLはsynthesis-version edgeを一段として16段まで許可し、request-scoped
   memoizationとversion node 128、source edge 512、DB query 512のbudgetを適用する。cycle、
-  budget超過、source 0件のorganization synthesisはnon-ownerへfail closedとする。
+  source 0件のorganization synthesisはnon-ownerへfail closedとする。create/append内の全
+  repository操作は同じaccess contextを共有し、ID指定read/mutationのbudget超過は存在しない
+  IDと同じ`not_found`へ正規化する。
 - Knowledge mutationとmandatory auditを同一transactionで確定する。audit metadataは
   allowlistとし、annotation/turn/synthesis本文、prompt、URL、provider key、raw error、
   request keyを保存しない。DB CHECKでもaction groupとtarget tableを厳密に対応付ける。
 - listはbounded limit、stable sort、actor/resource/parentへ束縛したHMAC署名付きopaque
   cursorを使用し、権限外rowをpage、cursor、countへ含めない。organization synthesisの
   candidate scanは200件、provenance queryは上記budgetで停止し、上限到達時はhidden rowを
-  cursorへ含めずgeneric errorとする。version historyのlookahead rowもcursor発行前にACLを
-  検査する。
+  cursorへ含めず、hidden件数によってHTTP statusを変えない。確認済みvisible rowのみを返し、
+  続きが安全に確定できない場合はnext cursorを返さない。query budget超過時は空pageとする。
+  version historyのlookahead rowもcursor発行前にACLを検査する。
 - annotation history/revise/deleteはannotation ownerだけでなくparent item ownerと
   `deletedAt IS NULL`も同じrepository predicateで再検査する。
 - APIはannotation list/create/detail/history/revise/delete、conversation

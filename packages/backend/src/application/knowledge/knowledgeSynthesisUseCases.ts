@@ -29,6 +29,10 @@ import {
   runKnowledgeProvenanceMutation,
   type KnowledgeProvenanceResult,
 } from './knowledgeProvenanceValidation.js';
+import {
+  createSynthesisAccessContext,
+  KnowledgeSynthesisAccessBudgetError,
+} from './knowledgeSynthesisAccessContext.js';
 
 function normalizeQuestions(value: unknown): string[] | null {
   if (
@@ -135,7 +139,19 @@ export function createKnowledgeSynthesisService(dependencies: {
       ) {
         return provenanceOk({ items: [], nextBoundary: null });
       }
-      return provenanceOk(await dependencies.reader.listVisible(input));
+      try {
+        return provenanceOk(
+          await dependencies.reader.listVisible({
+            ...input,
+            accessContext: createSynthesisAccessContext(),
+          }),
+        );
+      } catch (error) {
+        if (error instanceof KnowledgeSynthesisAccessBudgetError) {
+          return provenanceOk({ items: [], nextBoundary: null });
+        }
+        throw error;
+      }
     },
 
     async detail(input: { actor: KnowledgeActor; synthesisId: string }) {
@@ -145,8 +161,18 @@ export function createKnowledgeSynthesisService(dependencies: {
       ) {
         return provenanceNotFound();
       }
-      const synthesis = await dependencies.reader.findVisible(input);
-      return synthesis ? provenanceOk(synthesis) : provenanceNotFound();
+      try {
+        const synthesis = await dependencies.reader.findVisible({
+          ...input,
+          accessContext: createSynthesisAccessContext(),
+        });
+        return synthesis ? provenanceOk(synthesis) : provenanceNotFound();
+      } catch (error) {
+        if (error instanceof KnowledgeSynthesisAccessBudgetError) {
+          return provenanceNotFound();
+        }
+        throw error;
+      }
     },
 
     async history(input: {
@@ -164,8 +190,18 @@ export function createKnowledgeSynthesisService(dependencies: {
       ) {
         return provenanceNotFound();
       }
-      const page = await dependencies.reader.listVersionsVisible(input);
-      return page ? provenanceOk(page) : provenanceNotFound();
+      try {
+        const page = await dependencies.reader.listVersionsVisible({
+          ...input,
+          accessContext: createSynthesisAccessContext(),
+        });
+        return page ? provenanceOk(page) : provenanceNotFound();
+      } catch (error) {
+        if (error instanceof KnowledgeSynthesisAccessBudgetError) {
+          return provenanceNotFound();
+        }
+        throw error;
+      }
     },
 
     async create(input: {
@@ -216,10 +252,12 @@ export function createKnowledgeSynthesisService(dependencies: {
 
       return runKnowledgeProvenanceMutation(() =>
         dependencies.unitOfWork.run(async (transaction) => {
+          const accessContext = createSynthesisAccessContext();
           if (
             !(await transaction.syntheses.validateSources({
               actor: input.actor,
               sources,
+              accessContext,
             }))
           ) {
             return provenanceNotFound();
@@ -233,6 +271,7 @@ export function createKnowledgeSynthesisService(dependencies: {
             unresolvedQuestions: questions,
             confidenceBasisPoints: confidence,
             sources,
+            accessContext,
           });
           const auditActor = knowledgeProvenanceAuditActor(
             input.actor,
@@ -305,9 +344,11 @@ export function createKnowledgeSynthesisService(dependencies: {
       }
       return runKnowledgeProvenanceMutation(() =>
         dependencies.unitOfWork.run(async (transaction) => {
+          const accessContext = createSynthesisAccessContext();
           const current = await transaction.syntheses.findOwned({
             actor: input.actor,
             synthesisId: input.synthesisId,
+            accessContext,
           });
           if (!current) return provenanceNotFound();
           if (current.synthesis.currentVersion !== input.body.expectedVersion) {
@@ -317,6 +358,7 @@ export function createKnowledgeSynthesisService(dependencies: {
             !(await transaction.syntheses.validateSources({
               actor: input.actor,
               sources,
+              accessContext,
             }))
           ) {
             return provenanceNotFound();
@@ -329,6 +371,7 @@ export function createKnowledgeSynthesisService(dependencies: {
             unresolvedQuestions: questions,
             confidenceBasisPoints: confidence,
             sources,
+            accessContext,
           });
           if (!detail) return provenanceConflict();
           const auditActor = knowledgeProvenanceAuditActor(
