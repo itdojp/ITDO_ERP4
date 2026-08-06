@@ -57,16 +57,16 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
 
 ## Focused tests
 
-| Verification                                        | Result | Evidence                                                                                                                       |
-| --------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| provenance schema / constraint / migration contract | PASS   | explicit enum、content/version/hash/scope bounds、exactly-one FK、single primary、expand-only、OpenAPI assertions              |
-| delegated auth scope contract                       | PASS   | URI path保持、100/101件、255/256文字、trim/deduplicate、Unicode control/bidi/query/userinfo拒否                                |
-| signed cursor                                       | PASS   | actor/resource/parent/sort binding、tamper rejection、production secret requirement                                            |
-| application use cases                               | PASS   | annotation/conversation read snapshot、history/delete/audit rollback、cross-owner relation、role-origin、turn/version conflict |
-| Prisma adapter                                      | PASS   | Repeatable Read、ACL intersection、depth-aware memo/cycle/budget、200件境界、same-aggregate拒否、source-less fail-close        |
-| route contract                                      | PASS   | canonical actor、signed cursor、401内部reason除去、unknown-field rejection、budget時のnon-disclosing empty/404                 |
+| Verification                                        | Result | Evidence                                                                                                                                 |
+| --------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| provenance schema / constraint / migration contract | PASS   | explicit enum、content/version/hash/scope bounds、exactly-one FK、single primary、expand-only、enum/model drift gate、OpenAPI assertions |
+| delegated auth scope contract                       | PASS   | URI path保持、100/101件、255/256文字、trim/deduplicate、Unicode control/bidi/query/userinfo拒否                                          |
+| signed cursor                                       | PASS   | actor/resource/parent/sort binding、tamper rejection、production secret requirement                                                      |
+| application use cases                               | PASS   | annotation/conversation read snapshot、history/delete/audit rollback、cross-owner relation、role-origin、turn/version conflict           |
+| Prisma adapter                                      | PASS   | Repeatable Read、ACL intersection、depth-aware memo/cycle/budget、200件境界、same-aggregate拒否、source-less fail-close                  |
+| route contract                                      | PASS   | canonical actor、signed cursor、401内部reason除去、unknown-field rejection、budget時のnon-disclosing empty/404                           |
 
-Result: **66/66 PASS**（provenance 59 + delegated auth scope 7、fail/skip/todo 0）
+Result: **67/67 PASS**（provenance 60 + delegated auth scope 7、fail/skip/todo 0）
 
 Focused command:
 
@@ -130,7 +130,7 @@ Result: **PASS**
 - mandatory audit failure rolls back the business mutation
 - audit rows retain typed principal/actor/scope/request attribution
 - audit rows contain no annotation/turn/synthesis bodies
-- Prisma schemaとmigrationのKnowledge provenance table/indexに新規driftなし
+- Prisma schemaとmigrationのKnowledge provenance enum/model/indexに新規driftなし
 - migration deploy/status succeeded
 
 visible-hidden-visible synthesis list、hidden rowをcursorにしないこと、署名cursorのroute往復は
@@ -160,7 +160,7 @@ Result: **PASS**
 | ----------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Prisma format/generate                    | PASS    | Prisma 7.9.1                                                                                                                     |
 | root lint / format / typecheck / build    | PASS    | backend/frontend。frontend dev dependenciesはlockfile準拠の`npm ci`後に実行                                                      |
-| `make test`                               | PASS    | backend 1,875/1,875、frontend 85 files / 495 tests。fail/skip/todo 0                                                             |
+| `make test`                               | PASS    | backend 1,876/1,876、frontend 85 files / 495 tests。fail/skip/todo 0                                                             |
 | focused coverage                          | PASS    | provenance files aggregate: statements/lines 82.61%、branches 70.44%、functions 89.24%。threshold/scope変更なし                  |
 | bounded-context dependency/coverage       | PASS    | 309 modules / 1,212 dependencies、294 source files / 245 targets、unclassified/duplicate/ambiguous 0                             |
 | OpenAPI export / breaking diff            | PASS    | generated snapshotとtracked fileはbyte-identical。baselineからbreaking 0、18 operation追加のみ                                   |

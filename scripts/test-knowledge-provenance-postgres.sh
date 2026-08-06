@@ -47,9 +47,10 @@ migration_diff="$(npx --prefix "$ROOT_DIR/packages/backend" prisma migrate diff 
   --from-config-datasource \
   --to-schema "$ROOT_DIR/packages/backend/prisma/schema.prisma" \
   --script)"
-if grep -Eq 'Knowledge(Annotation|Conversation|Synthesis)|KnowledgeItem_id_ownerUserId_key|AuditLog_knowledge_provenance_target_check' <<<"$migration_diff"; then
+knowledge_provenance_drift_pattern='Knowledge(Provenance|Annotation|Conversation|Synthesis)|KnowledgeItem_id_ownerUserId_key|AuditLog_knowledge_provenance_target_check'
+if grep -Eq "$knowledge_provenance_drift_pattern" <<<"$migration_diff"; then
   echo 'Knowledge provenance migration/schema drift detected:' >&2
-  grep -E 'Knowledge(Annotation|Conversation|Synthesis)|KnowledgeItem_id_ownerUserId_key|AuditLog_knowledge_provenance_target_check' <<<"$migration_diff" >&2
+  grep -E "$knowledge_provenance_drift_pattern" <<<"$migration_diff" >&2
   exit 1
 fi
 npm run build --prefix "$ROOT_DIR/packages/backend" >/dev/null

@@ -20,6 +20,13 @@ const openapi = JSON.parse(
     'utf8',
   ),
 );
+const postgresIntegrationScript = readFileSync(
+  new URL(
+    '../../../scripts/test-knowledge-provenance-postgres.sh',
+    import.meta.url,
+  ),
+  'utf8',
+);
 
 function schemaBlock(kind, name) {
   const match = schema.match(
@@ -73,6 +80,21 @@ test('provenance enums are explicit finite allowlists', () => {
     assert.ok(type, `${name} migration enum`);
     for (const value of values) assert.match(type[1], new RegExp(`'${value}'`));
   }
+});
+
+test('PostgreSQL drift gate covers provenance enums and models', () => {
+  assert.match(
+    postgresIntegrationScript,
+    /knowledge_provenance_drift_pattern='Knowledge\(Provenance\|Annotation\|Conversation\|Synthesis\)/,
+  );
+  assert.match(
+    postgresIntegrationScript,
+    /grep -Eq "\$knowledge_provenance_drift_pattern"/,
+  );
+  assert.match(
+    postgresIntegrationScript,
+    /grep -E "\$knowledge_provenance_drift_pattern"/,
+  );
 });
 
 test('schema separates annotations, immutable revisions, conversations, turns, syntheses, versions, and sources', () => {
