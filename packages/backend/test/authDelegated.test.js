@@ -184,6 +184,28 @@ test('buildUserContextFromJwtPayload rejects raw identity aliases before normali
   assert.equal(bounded?.auth?.issuer, 'i'.repeat(2_048));
 });
 
+test('buildUserContextFromJwtPayload bounds expiration before audit attribution', () => {
+  const bounded = buildUserContextFromJwtPayload({
+    sub: 'principal-user',
+    exp: Number.MAX_SAFE_INTEGER,
+  });
+  assert.equal(bounded?.auth?.expiresAt, Number.MAX_SAFE_INTEGER);
+
+  for (const exp of [
+    Number.MAX_SAFE_INTEGER + 1,
+    Number.MAX_VALUE,
+    -1,
+    Number.POSITIVE_INFINITY,
+    '9007199254740991',
+    null,
+  ]) {
+    assert.throws(
+      () => buildUserContextFromJwtPayload({ sub: 'principal-user', exp }),
+      /auth_exp_contract_invalid/,
+    );
+  }
+});
+
 test('buildUserContextFromJwtPayload: scopes alone do not mark JWT as delegated', () => {
   const user = buildUserContextFromJwtPayload({
     sub: 'principal-user',

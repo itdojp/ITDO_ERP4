@@ -277,8 +277,15 @@ function normalizeAudience(value: unknown): string[] {
 }
 
 function normalizeExpiresAt(value: unknown): number | undefined {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
-  return Math.floor(value);
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error('auth_exp_contract_invalid');
+  }
+  const normalized = Math.floor(value);
+  if (!Number.isSafeInteger(normalized) || normalized < 0) {
+    throw new Error('auth_exp_contract_invalid');
+  }
+  return normalized;
 }
 
 function hasAnyScope(scopes: string[], expected: Set<string>): boolean {

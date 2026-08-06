@@ -54,8 +54,9 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
   含む制御・format・bidi文字とill-formed UTF-16 surrogateをtrim前に拒否する。JWT issuerを含む
   認証識別子はcanonical identity lookupとdelegated判定より前に同じ検査を行い、端部whitespaceや
   UTF-8 replacementによるalias化を拒否する。`act.sub`の正確な空文字だけは既存の非委任fallbackを
-  維持する。`x-request-id`はFastify logger生成前に検査し、不正なraw値をresponse、log、auditへ
-  伝播させずrandom UUIDへ置換する。
+  維持する。JWT `exp`は存在する場合に非負safe integerへ正規化できる有限numberだけを受理し、
+  認証とmandatory auditの型境界を一致させる。`x-request-id`はFastify logger生成前に検査し、
+  不正なraw値をresponse、log、auditへ伝播させずrandom UUIDへ置換する。
 - annotation revision、conversation turn、synthesis version/sourceは新規table専用triggerで
   update/deleteを拒否し、API経路外でもimmutable historyを保つ。
 - listはstable sort、bounded limit、actor/resource/parentへ束縛したHMAC署名付きopaque
@@ -68,17 +69,21 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
 | Verification                                        | Result | Evidence                                                                                                                                 |
 | --------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | provenance schema / constraint / migration contract | PASS   | explicit enum、content/version/hash/scope bounds、exactly-one FK、single primary、expand-only、enum/model drift gate、OpenAPI assertions |
-| delegated auth scope contract                       | PASS   | URI path保持、100/101件、255/256文字、empty actor互換、Unicode control/bidi/surrogate/query/userinfo拒否                                |
+| delegated auth scope/expiry contract                | PASS   | URI path保持、100/101件、255/256文字、empty actor互換、Unicode control/bidi/surrogate/query/userinfo拒否、`exp` safe integer境界         |
 | signed cursor                                       | PASS   | actor/resource/parent/sort binding、tamper rejection、production secret requirement                                                      |
 | application use cases                               | PASS   | annotation/conversation read snapshot、history/delete/audit rollback、cross-owner relation、role-origin、turn/version conflict           |
 | Prisma adapter                                      | PASS   | Repeatable Read、ACL intersection、depth-aware memo/cycle/budget、200件境界、same-aggregate拒否、source-less fail-close                  |
-| route contract                                      | PASS   | canonical actor、signed cursor、全18 operationのsanitized 400/401、unknown-field rejection、budget時のnon-disclosing empty/404          |
+| route contract                                      | PASS   | canonical actor、signed cursor、全18 operationのsanitized 400/401、unknown-field rejection、budget時のnon-disclosing empty/404           |
 
-Result: **70/70 PASS**（provenance 61 + delegated auth/identity 9、fail/skip/todo 0）
+Result: **71/71 PASS**（provenance 61 + delegated auth/identity/expiry 10、fail/skip/todo 0）
 
 これとは別に、request IDをlogger生成前に検証するobservability focused testは
-**11/11 PASS**だった。不正なheader値をresponseへ反射せず、mandatory auditにも安全な
-generated UUIDだけを渡すことを確認した。
+**11/11 PASS**だった。不正なheader値をresponseへ反射しないことを確認した。logger生成前の
+`genReqId`とmandatory auditが同じ検証済み`request.id`を利用する実装境界はdiff reviewで確認したが、
+logger bindingと`AuditLog.requestId`を同時にcaptureする専用結合testは今回追加していない。
+
+署名済みJWTの`exp`上限超過がbusiness routeへ到達する前に401と
+`auth_exp_contract_invalid`へ正規化されるruntime testも**PASS**した。
 
 Focused command:
 
@@ -172,7 +177,7 @@ Result: **PASS**
 | ----------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Prisma format/generate                    | PASS    | Prisma 7.9.1                                                                                                                     |
 | root lint / format / typecheck / build    | PASS    | backend/frontend。frontend dev dependenciesはlockfile準拠の`npm ci`後に実行                                                      |
-| `make test`                               | PASS    | backend 1,880/1,880、frontend 85 files / 495 tests。fail/skip/todo 0                                                             |
+| `make test`                               | PASS    | backend 1,882/1,882、frontend 85 files / 495 tests。fail/skip/todo 0                                                             |
 | focused coverage                          | PASS    | provenance files aggregate: statements/lines 82.58%、branches 70.03%、functions 89.17%。threshold/scope変更なし                  |
 | bounded-context dependency/coverage       | PASS    | 310 modules / 1,214 dependencies、295 source files / 246 targets、unclassified/duplicate/ambiguous 0                             |
 | OpenAPI export / breaking diff            | PASS    | generated snapshotとtracked fileはbyte-identical。baselineからbreaking 0。18 operation追加とdetail 3 operationの400明示のみ      |

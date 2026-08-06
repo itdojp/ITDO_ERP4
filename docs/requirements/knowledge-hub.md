@@ -355,6 +355,8 @@ PR Aはimport parserとUIを有効化する前に、次のDB/application/API契�
   bidi文字、ill-formed UTF-16 surrogateと端部whitespaceをtrim前に拒否する。issuerもcanonical
   identity lookup前に同じ境界を適用し、不正な認証provenanceを別identityへalias化したり正規化後の
   値として監査へ残さない。既存契約どおり`act.sub`の正確な空文字だけは未指定相当とする。
+  JWT `exp`は存在する場合に非負safe integerへ正規化できる有限numberだけを認証境界で受理し、
+  上限超過や不正型をbusiness mutation／mandatory auditへ到達させない。
   `x-request-id`はFastify logger生成前に安全文字・1〜128文字を検査し、不正値はraw値を保持せず
   random UUIDへ置換してresponse、log、mandatory auditへ同じ検証済みIDだけを渡す。
   request bodyやraw bearer tokenからscopeを受け付けない。DB CHECKでもaction groupとtarget

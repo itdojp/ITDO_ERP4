@@ -202,6 +202,8 @@ synthesis sourceは参照先ごとのnullable FKとPostgreSQLのexactly-one CHEC
   正規化前にfail closedとし、JWT principal/actor/token/audience/issuerもcanonical identity lookup前に
   同じ検査を行う。`act.sub`の正確な空文字だけは既存の非委任fallback契約を維持する。
   malformed provenanceを有効なscope／別identity／actor attributionへ変換しない。
+  JWT `exp`は存在する場合に非負safe integerへ正規化できる有限numberだけを受理し、認証と
+  mandatory auditの型境界を一致させる。不正な署名済みclaimをbusiness mutationへ進めない。
   request IDはFastify logger binding前にsafe allowlistで検査し、不正な外部値をrandom UUIDへ置換する。
   response、logger、mandatory auditへraw request IDを伝播させない。
   DB CHECKもannotation/conversation/synthesis/importのaction groupを対応するtarget tableへ

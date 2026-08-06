@@ -54,7 +54,7 @@ test('inbound request-id is echoed if safe', async () => {
   await server.close();
 });
 
-test('unsafe inbound request-id is replaced before logging, audit, and response', async () => {
+test('unsafe inbound request-id is replaced before response handling', async () => {
   const unsafeValues = ['!', 'x'.repeat(129), '\u0085request-id'];
   for (const unsafeValue of unsafeValues) {
     const server = await buildTestServer();

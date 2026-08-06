@@ -60,6 +60,9 @@ JWTのprincipal、actor、token ID、audience、issuerも最初のcanonical iden
 より前にraw値を検査する。制御・format・bidi文字、ill-formed UTF-16 surrogateおよび端部whitespaceを
 除去・置換して別identifierへalias化せず、invalid tokenとしてfail closedにする。ただし既存契約どおり
 `act.sub`の正確な空文字だけは未指定相当としてprincipalへfallbackし、space-onlyや制御文字は拒否する。
+JWT `exp`は省略可能とするが、存在する場合は非負のsafe integerへ正規化できる有限numberだけを
+受理する。上限超過、負数、非有限値、文字列はbusiness routeやmandatory auditへ到達する前に
+invalid tokenとしてfail closedにし、authとauditの型境界差によるrollbackを発生させない。
 
 ### 判定ルール
 

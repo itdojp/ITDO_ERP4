@@ -108,6 +108,7 @@ function runDelegatedJwtRequest({
   stubIdentity = null,
   stubLegacyAccount = null,
   expectProjectLookupUserId = null,
+  preserveExpiration = false,
 }) {
   const script = `
     import assert from 'node:assert/strict';
@@ -180,13 +181,15 @@ function runDelegatedJwtRequest({
 
     const { buildServer } = await import('./dist/server.js');
 
-    const token = await new SignJWT(claims)
+    let signer = new SignJWT(claims)
       .setProtectedHeader({ alg: 'RS256' })
       .setIssuer(issuer)
       .setAudience(audience)
-      .setIssuedAt()
-      .setExpirationTime('10m')
-      .sign(privateKey);
+      .setIssuedAt();
+    if (process.env.TEST_PRESERVE_EXPIRATION !== '1') {
+      signer = signer.setExpirationTime('10m');
+    }
+    const token = await signer.sign(privateKey);
 
     const server = await buildServer({ logger: false });
     try {
@@ -219,6 +222,7 @@ function runDelegatedJwtRequest({
       ? JSON.stringify(stubLegacyAccount)
       : '',
     TEST_EXPECT_PROJECT_LOOKUP_USER_ID: expectProjectLookupUserId || '',
+    TEST_PRESERVE_EXPIRATION: preserveExpiration ? '1' : '0',
   });
 }
 
@@ -707,6 +711,22 @@ test('envValidation: APPROVAL_RULE_FALLBACK_MODE accepts db_default_only', () =>
 
   assert.equal(result.status, 0);
   assert.equal(result.stdout, 'OK');
+});
+
+test('auth plugin rejects a signed JWT expiration outside the audit integer contract', () => {
+  const result = runDelegatedJwtRequest({
+    payload: {
+      sub: 'principal-user',
+      exp: Number.MAX_SAFE_INTEGER + 1,
+    },
+    preserveExpiration: true,
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const response = JSON.parse(result.stdout);
+  assert.equal(response.statusCode, 401);
+  const body = JSON.parse(response.body);
+  assert.equal(body.error?.details?.reason, 'auth_exp_contract_invalid');
 });
 
 test('auth plugin: production + AUTH_MODE=hybrid fails startup via env validation', () => {
