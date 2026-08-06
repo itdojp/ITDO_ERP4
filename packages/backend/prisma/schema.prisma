@@ -177,6 +177,49 @@ enum KnowledgeSavedViewLabelOperator {
   not
 }
 
+enum KnowledgeAnnotationKind {
+  note
+  question
+  hypothesis
+  quote
+  todo
+}
+
+enum KnowledgeProvenanceOrigin {
+  user
+  external
+  ai
+  system
+  tool
+}
+
+enum KnowledgeConversationSourceType {
+  manual
+  json
+  markdown
+}
+
+enum KnowledgeConversationRole {
+  user
+  assistant
+  system
+  tool
+}
+
+enum KnowledgeConversationItemRelationType {
+  primary
+  supporting
+  contradicting
+  context
+}
+
+enum KnowledgeSynthesisSourceRelationType {
+  primary
+  supporting
+  contradicting
+  context
+}
+
 model Customer {
   id                    String    @id @default(uuid())
   code                  String    @unique
@@ -2238,6 +2281,9 @@ model KnowledgeItem {
   groupGrants        KnowledgeItemGroupGrant[]
   labels             KnowledgeItemLabel[]
   snapshots          KnowledgeSnapshot[]
+  annotations        KnowledgeAnnotation[]
+  conversationItems  KnowledgeConversationItem[]
+  synthesisSources   KnowledgeSynthesisSource[]
 
   @@index([ownerUserId, deletedAt, updatedAt])
   @@index([organizationId, scope, deletedAt, updatedAt])
@@ -2271,6 +2317,7 @@ model KnowledgeSnapshot {
   failedAt           DateTime?
   createdAt          DateTime                       @default(now())
   updatedAt          DateTime                       @updatedAt
+  synthesisSources   KnowledgeSynthesisSource[]
 
   @@unique([knowledgeItemId, version])
   @@unique([knowledgeItemId, requestKeyHash])
@@ -2417,6 +2464,176 @@ model KnowledgeSavedViewLabelFilter {
 
   @@unique([savedViewId, labelId])
   @@index([labelId, operator, savedViewId])
+}
+
+model KnowledgeAnnotation {
+  id               String                        @id @default(uuid())
+  knowledgeItem    KnowledgeItem                 @relation(fields: [knowledgeItemId], references: [id], onDelete: Restrict)
+  knowledgeItemId  String
+  ownerUserId      String
+  authorUserId     String
+  scope            KnowledgeItemScope
+  organizationId   String?
+  kind             KnowledgeAnnotationKind
+  origin           KnowledgeProvenanceOrigin
+  currentRevision  Int                           @default(1)
+  deletedAt        DateTime?
+  deletedBy        String?
+  createdAt        DateTime                      @default(now())
+  createdBy        String
+  updatedAt        DateTime                      @updatedAt
+  updatedBy        String
+  revisions        KnowledgeAnnotationRevision[]
+  synthesisSources KnowledgeSynthesisSource[]
+
+  @@index([knowledgeItemId, deletedAt, updatedAt, id])
+  @@index([ownerUserId, deletedAt, updatedAt, id])
+}
+
+model KnowledgeAnnotationRevision {
+  id               String                     @id @default(uuid())
+  annotation       KnowledgeAnnotation        @relation(fields: [annotationId], references: [id], onDelete: Restrict)
+  annotationId     String
+  revision         Int
+  kind             KnowledgeAnnotationKind
+  origin           KnowledgeProvenanceOrigin
+  content          String                     @db.Text
+  createdAt        DateTime                   @default(now())
+  createdBy        String
+  synthesisSources KnowledgeSynthesisSource[]
+
+  @@unique([annotationId, revision])
+  @@index([annotationId, createdAt, id])
+}
+
+model KnowledgeConversation {
+  id               String                          @id @default(uuid())
+  ownerUserId      String
+  title            String
+  sourceType       KnowledgeConversationSourceType
+  provider         String?
+  model            String?
+  capturedAt       DateTime                        @default(now())
+  importedAt       DateTime?
+  contentHash      String
+  idempotencyHash  String?
+  version          Int                             @default(1)
+  deletedAt        DateTime?
+  deletedBy        String?
+  createdAt        DateTime                        @default(now())
+  createdBy        String
+  updatedAt        DateTime                        @updatedAt
+  updatedBy        String
+  items            KnowledgeConversationItem[]
+  turns            KnowledgeConversationTurn[]
+  synthesisSources KnowledgeSynthesisSource[]
+
+  @@unique([ownerUserId, idempotencyHash])
+  @@index([ownerUserId, deletedAt, updatedAt, id])
+}
+
+model KnowledgeConversationItem {
+  id              String                                @id @default(uuid())
+  conversation    KnowledgeConversation                 @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+  conversationId  String
+  knowledgeItem   KnowledgeItem                         @relation(fields: [knowledgeItemId], references: [id], onDelete: Restrict)
+  knowledgeItemId String
+  relationType    KnowledgeConversationItemRelationType
+  ordinal         Int
+  createdAt       DateTime                              @default(now())
+  createdBy       String
+
+  @@unique([conversationId, knowledgeItemId])
+  @@unique([conversationId, ordinal])
+  @@index([knowledgeItemId, conversationId])
+}
+
+model KnowledgeConversationTurn {
+  id               String                     @id @default(uuid())
+  conversation     KnowledgeConversation      @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+  conversationId   String
+  sequence         Int
+  role             KnowledgeConversationRole
+  origin           KnowledgeProvenanceOrigin
+  content          String                     @db.Text
+  name             String?
+  occurredAt       DateTime?
+  contentHash      String
+  createdAt        DateTime                   @default(now())
+  createdBy        String
+  synthesisSources KnowledgeSynthesisSource[]
+
+  @@unique([conversationId, sequence])
+  @@index([conversationId, createdAt, id])
+}
+
+model KnowledgeSynthesis {
+  id             String                      @id @default(uuid())
+  ownerUserId    String
+  scope          KnowledgeItemScope
+  organizationId String?
+  title          String
+  currentVersion Int                         @default(1)
+  deletedAt      DateTime?
+  deletedBy      String?
+  createdAt      DateTime                    @default(now())
+  createdBy      String
+  updatedAt      DateTime                    @updatedAt
+  updatedBy      String
+  versions       KnowledgeSynthesisVersion[]
+
+  @@index([ownerUserId, deletedAt, updatedAt, id])
+  @@index([organizationId, scope, deletedAt, updatedAt, id])
+}
+
+model KnowledgeSynthesisVersion {
+  id                    String                     @id @default(uuid())
+  synthesis             KnowledgeSynthesis         @relation(fields: [synthesisId], references: [id], onDelete: Restrict)
+  synthesisId           String
+  version               Int
+  content               String                     @db.Text
+  unresolvedQuestions   Json
+  confidenceBasisPoints Int?
+  createdAt             DateTime                   @default(now())
+  createdBy             String
+  sources               KnowledgeSynthesisSource[] @relation("KnowledgeSynthesisVersionSources")
+  usedAsSource          KnowledgeSynthesisSource[] @relation("KnowledgeSynthesisVersionReferenced")
+
+  @@unique([synthesisId, version])
+  @@index([synthesisId, createdAt, id])
+}
+
+model KnowledgeSynthesisSource {
+  id                         String                               @id @default(uuid())
+  synthesisVersion           KnowledgeSynthesisVersion            @relation("KnowledgeSynthesisVersionSources", fields: [synthesisVersionId], references: [id], onDelete: Restrict)
+  synthesisVersionId         String
+  relationType               KnowledgeSynthesisSourceRelationType
+  ordinal                    Int
+  sourceKnowledgeItem        KnowledgeItem?                       @relation(fields: [sourceKnowledgeItemId], references: [id], onDelete: Restrict)
+  sourceKnowledgeItemId      String?
+  sourceSnapshot             KnowledgeSnapshot?                   @relation(fields: [sourceSnapshotId], references: [id], onDelete: Restrict)
+  sourceSnapshotId           String?
+  sourceAnnotation           KnowledgeAnnotation?                 @relation(fields: [sourceAnnotationId], references: [id], onDelete: Restrict)
+  sourceAnnotationId         String?
+  sourceAnnotationRevision   KnowledgeAnnotationRevision?         @relation(fields: [sourceAnnotationRevisionId], references: [id], onDelete: Restrict)
+  sourceAnnotationRevisionId String?
+  sourceConversation         KnowledgeConversation?               @relation(fields: [sourceConversationId], references: [id], onDelete: Restrict)
+  sourceConversationId       String?
+  sourceConversationTurn     KnowledgeConversationTurn?           @relation(fields: [sourceConversationTurnId], references: [id], onDelete: Restrict)
+  sourceConversationTurnId   String?
+  sourceSynthesisVersion     KnowledgeSynthesisVersion?           @relation("KnowledgeSynthesisVersionReferenced", fields: [sourceSynthesisVersionId], references: [id], onDelete: Restrict)
+  sourceSynthesisVersionId   String?
+  createdAt                  DateTime                             @default(now())
+  createdBy                  String
+
+  @@unique([synthesisVersionId, ordinal])
+  @@index([sourceKnowledgeItemId])
+  @@index([sourceSnapshotId])
+  @@index([sourceAnnotationId])
+  @@index([sourceAnnotationRevisionId])
+  @@index([sourceConversationId])
+  @@index([sourceConversationTurnId])
+  @@index([sourceSynthesisVersionId])
 }
 
 model ReassignmentLog {

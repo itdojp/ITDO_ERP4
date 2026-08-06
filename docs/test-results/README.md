@@ -45,6 +45,7 @@
 
 - [Issue #2012 Knowledge snapshot UI / E2E verification (PR B)](2026-08-06-issue2012-knowledge-snapshot-ui.md)
   - 証跡: [docs/test-results/2026-08-06-issue2012-knowledge-snapshot-ui/](2026-08-06-issue2012-knowledge-snapshot-ui/)
+- [Issue #2013 Knowledge provenance foundation verification（PR A）](2026-08-06-issue2013-knowledge-provenance-foundation.md)
 
 ### 2026-08-05
 

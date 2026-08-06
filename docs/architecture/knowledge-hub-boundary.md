@@ -139,6 +139,44 @@ Google Drive / local storage infrastructure
 - thread から synthesis への promote は対象 thread snapshot と選択 message を固定し、元 message の live body を synthesis へ暗黙連結しない。
 - retry は read、stat、idempotent reconciliation 等に限定する。結果不明の外部 create、AI request、Chat post を新規操作として自動再実行しない。
 
+#### annotation / conversation / synthesis provenance foundation
+
+Issue #2013 PR Aでは、本文を相互に連結せず、`KnowledgeAnnotation` と immutable
+revision、`KnowledgeConversation` と append-only turn/item relation、
+`KnowledgeSynthesis` と immutable version/source relationを別集約として保持する。
+annotation kind、origin、conversation role、item/source relation typeはDB enumとAPI
+allowlistの両方で固定する。任意のpolymorphic `sourceType + sourceId`を正本にせず、
+synthesis sourceは参照先ごとのnullable FKとPostgreSQLのexactly-one CHECKで一件だけを
+指す。参照先の物理削除やcascade deleteは行わない。
+
+- annotation mutationはcanonical actor本人だけが行い、編集時は旧revisionを保持して
+  `currentRevision`を楽観的に進める。削除はlogical deleteとしrevisionを消さない。
+- conversation mutationはowner本人だけが行う。linked itemは全件同一ownerでなければ
+  relationを作成しない。conversation readはlinked item ACLのunionではなく共通部分で
+  判定し、actorが一件でも現在readできなければtitle、turn、relation、件数を返さない。
+  linked itemがないconversationはownerだけがreadできる。
+- turnは`conversationId + sequence`で一意とし、conversation versionを用いた競合検知を
+  行う。roleとoriginの組合せもallowlistで検証し、既存turnを更新しない。
+- personal synthesisはownerだけがread/writeできる。organization synthesisは同一
+  organizationに限定したうえで、non-owner read時にcurrent versionの全sourceを現在
+  readできることを再検査する。ownerが後からsource accessを失ってもsynthesis本文と
+  version履歴は保持するが、非公開sourceはkind/relation/order/accessibilityだけを返し、
+  source ID、provenance row ID、actor、timestamp、本文を返さない。
+- synthesis versionは集約内versionを一意とし、version追加とsource固定を同一transaction
+  で行う。synthesisをsourceにできるのは既に確定した固定versionだけとし、同一versionへの
+  自己参照をDB constraintで拒否する。再帰的なcurrent access評価はfail closedかつ16段で
+  停止する。
+- list cursorは既存`KNOWLEDGE_CURSOR_SIGNING_SECRET`を使うHMAC署名付きopaque tokenと
+  し、actor、resource、parent、sortへ束縛する。権限外rowをpage/cursor/countへ含めない。
+- mutation、mandatory Knowledge audit、version/idempotency確定は同じPrisma transaction
+  で実行する。監査action/targetとmetadata keyはallowlistで検証し、annotation、turn、
+  synthesis本文、prompt、URL、provider key、raw error/request keyを監査metadataへ入れない。
+
+PR Aのmigrationはenum/table/index/FK/CHECKの追加だけを行うexpand-only migrationであり、
+既存table/columnのdrop、rename、型変更、既存row更新を行わない。application rollbackでは
+新tableと履歴を保持したまま旧imageへ戻す。manual/JSON/Markdown importはPR B、UI/E2Eは
+PR Cで実装する。
+
 ### 11. migration と rollback
 
 - schema は expand → migrate → contract を原則とし、最初の migration は既存 Chat/API を変更しない additive migration とする。

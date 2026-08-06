@@ -314,6 +314,42 @@ manual capture UI、利用者向けpending/reconcile表示、frontend unit/E2E�
 - 受け入れ: role/source分離、複数item relation、Markdown/JSON/manual import、引用と本人/AI/外部情報のUI区別、idempotent import。
 - rollback/test: parser bounds、malformed/oversize input、cross-owner relation拒否、version/history、sanitized fixtures/UI evidence。
 
+#### 05-A. Backend provenance foundation（Issue #2013 PR A）
+
+PR Aはimport parserとUIを有効化する前に、次のDB/application/API契約を固定する。
+
+- annotation kindは`note|question|hypothesis|quote|todo`、originは
+  `user|external|ai|system|tool`とする。本人だけが作成・改訂・logical deleteでき、改訂は
+  immutable revisionを追加して旧本文を保持する。
+- conversation roleは`user|assistant|system|tool`、item relationは
+  `primary|supporting|contradicting|context`とする。turnはappend-onlyで、sequenceと
+  conversation versionを用いて同時追加を競合として返す。
+- conversationへlinkできるitemは同一ownerに限定する。read visibilityはlinked item ACLの
+  共通部分とし、一件でも現在read不能ならconversation、turn、relation、件数を返さない。
+- synthesisはstable identityとappend-only versionを分離し、version番号を集約内で一意に
+  する。source relationは`primary|supporting|contradicting|context`で、item、snapshot、
+  annotation/revision、conversation/turn、別synthesisの固定versionのいずれか一件を明示FK
+  で参照する。exactly-oneとself-source拒否をDB constraintでも保証する。
+- sourceは作成時とread時にcurrent ACLを再検査する。後からaccessが失効したsourceは本文、
+  ID、actor、timestampを返さず、kind/relation/orderと`accessible=false`だけを返す。
+- Knowledge mutationとmandatory auditを同一transactionで確定する。audit metadataは
+  allowlistとし、annotation/turn/synthesis本文、prompt、URL、provider key、raw error、
+  request keyを保存しない。
+- listはbounded limit、stable sort、actor/resource/parentへ束縛したHMAC署名付きopaque
+  cursorを使用し、権限外rowをpage、cursor、countへ含めない。
+- APIはannotation list/create/detail/history/revise/delete、conversation
+  list/create/detail/item add-remove/turn list-append、synthesis list/create/detail/version
+  history-appendを提供する。unauthorized IDと存在しないIDは同じ`not_found`へ正規化する。
+
+schema migrationはadditive/expand-onlyとし、既存table/column/dataを変更または削除しない。
+旧applicationは新migration適用後もKnowledge CRUDとhealth/readinessを継続できることを
+PostgreSQL 15で確認する。application rollbackでは新table/dataを保持する。
+
+PR Bはmanual/JSON/限定Markdownのpreview/commit、parser bounds、idempotencyを追加する。
+PR CはKnowledge Hub UI、real-backend E2E、manual、sanitized screenshot evidenceを追加し、
+その時点でIssue #2013をcloseする。annotation/synthesis検索とconversation全文検索は現行
+#2011の明示検索scopeを暗黙に拡張せず、別途API/query-cost/ACL契約を固定してから扱う。
+
 ### 06. Chat thread foundation
 
 - Depends on: 01。Knowledge schema とは独立して実装可能
