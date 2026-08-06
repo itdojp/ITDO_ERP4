@@ -238,6 +238,7 @@ export async function registerKnowledgeConversationRoutes(
         tags: ['knowledge'],
         querystring: listQuerySchema,
         response: {
+          401: knowledgeProvenanceErrorResponseSchema,
           200: {
             type: 'object',
             additionalProperties: false,
@@ -318,6 +319,7 @@ export async function registerKnowledgeConversationRoutes(
           },
         },
         response: {
+          401: knowledgeProvenanceErrorResponseSchema,
           201: conversationResponseRef,
           400: knowledgeProvenanceErrorResponseSchema,
           403: knowledgeProvenanceErrorResponseSchema,
@@ -348,6 +350,7 @@ export async function registerKnowledgeConversationRoutes(
         tags: ['knowledge'],
         params: idParamsSchema,
         response: {
+          401: knowledgeProvenanceErrorResponseSchema,
           200: conversationResponseRef,
           403: knowledgeProvenanceErrorResponseSchema,
           404: knowledgeProvenanceErrorResponseSchema,
@@ -404,6 +407,7 @@ export async function registerKnowledgeConversationRoutes(
           },
         },
         response: {
+          401: knowledgeProvenanceErrorResponseSchema,
           200: conversationResponseRef,
           400: knowledgeProvenanceErrorResponseSchema,
           403: knowledgeProvenanceErrorResponseSchema,
@@ -447,6 +451,7 @@ export async function registerKnowledgeConversationRoutes(
           },
         },
         response: {
+          401: knowledgeProvenanceErrorResponseSchema,
           200: conversationResponseRef,
           400: knowledgeProvenanceErrorResponseSchema,
           403: knowledgeProvenanceErrorResponseSchema,
@@ -482,6 +487,7 @@ export async function registerKnowledgeConversationRoutes(
         params: idParamsSchema,
         querystring: listQuerySchema,
         response: {
+          401: knowledgeProvenanceErrorResponseSchema,
           200: {
             type: 'object',
             additionalProperties: false,
@@ -568,11 +574,18 @@ export async function registerKnowledgeConversationRoutes(
             },
             role: { type: 'string', enum: knowledgeConversationRoles },
             origin: { type: 'string', enum: knowledgeProvenanceOrigins },
-            content: { type: 'string', minLength: 1, maxLength: 65_536 },
+            content: {
+              type: 'string',
+              minLength: 1,
+              maxLength: knowledgeProvenanceLimits.conversationTurnBytes,
+              description:
+                'Maximum 65,536 UTF-8 bytes; the server enforces the byte length.',
+            },
             occurredAt: nullableDateTimeSchema,
           },
         },
         response: {
+          401: knowledgeProvenanceErrorResponseSchema,
           201: {
             type: 'object',
             additionalProperties: false,

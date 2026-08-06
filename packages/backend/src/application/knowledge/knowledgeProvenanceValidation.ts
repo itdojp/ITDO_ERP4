@@ -207,9 +207,8 @@ export function knowledgeProvenanceAuditActor(
   context: KnowledgeAuditActorContext,
 ): KnowledgeAuditActor {
   return {
+    ...context,
     userId: actor.userId,
-    requestId: context.requestId,
-    source: context.source,
   };
 }
 

@@ -43,6 +43,9 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
   audit metadataへ本文、prompt、URL、provider/request key、raw errorを入れない。複数source
   ACLはread/mutationとも一つのRepeatable Read snapshotで評価し、grant swapによる時点混在を
   防ぐ。
+- provenance mutation auditはcanonical principal、実行actor、scope、token/audience/expiry、
+  request、agent runの型付きallowlistだけを保持する。必須principal/actor/request/sourceが欠落・
+  不正な場合はauditをfail closedにし、業務mutationもrollbackする。
 - annotation revision、conversation turn、synthesis version/sourceは新規table専用triggerで
   update/deleteを拒否し、API経路外でもimmutable historyを保つ。
 - listはstable sort、bounded limit、actor/resource/parentへ束縛したHMAC署名付きopaque
@@ -58,9 +61,9 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
 | signed cursor                                       | PASS   | actor/resource/parent/sort binding、tamper rejection、production secret requirement                                            |
 | application use cases                               | PASS   | annotation/conversation read snapshot、history/delete/audit rollback、cross-owner relation、role-origin、turn/version conflict |
 | Prisma adapter                                      | PASS   | Repeatable Read、ACL intersection、depth-aware memo/cycle/budget、200件境界、same-aggregate拒否、source-less fail-close        |
-| route contract                                      | PASS   | canonical actor、signed cursor、null-only label schema、unknown-field rejection、budget時のnon-disclosing empty/404            |
+| route contract                                      | PASS   | canonical actor、signed cursor、401内部reason除去、unknown-field rejection、budget時のnon-disclosing empty/404                  |
 
-Result: **58/58 PASS**（fail/skip/todo 0）
+Result: **59/59 PASS**（fail/skip/todo 0）
 
 Focused command:
 
@@ -121,6 +124,7 @@ Result: **PASS**
   source ACLが失効した場合はnot-foundへfail closed
 - source logical deletion causes provenance redaction
 - mandatory audit failure rolls back the business mutation
+- audit rows retain typed principal/actor/scope/request attribution
 - audit rows contain no annotation/turn/synthesis bodies
 - Prisma schemaとmigrationのKnowledge provenance table/indexに新規driftなし
 - migration deploy/status succeeded
@@ -152,8 +156,8 @@ Result: **PASS**
 | ----------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | Prisma format/generate                    | PASS    | Prisma 7.9.1                                                                                                                     |
 | root lint / format / typecheck / build    | PASS    | backend/frontend。frontend dev dependenciesはlockfile準拠の`npm ci`後に実行                                                      |
-| `make test`                               | PASS    | backend 1,873/1,873、frontend 85 files / 495 tests。fail/skip/todo 0                                                             |
-| focused coverage                          | PASS    | provenance files aggregate: statements/lines 82.05%、branches 70.15%、functions 88.89%。threshold/scope変更なし                  |
+| `make test`                               | PASS    | backend 1,874/1,874、frontend 85 files / 495 tests。fail/skip/todo 0                                                             |
+| focused coverage                          | PASS    | provenance files aggregate: statements/lines 82.48%、branches 69.92%、functions 89.17%。threshold/scope変更なし                  |
 | bounded-context dependency/coverage       | PASS    | 308 modules / 1,210 dependencies、293 source files / 244 targets、unclassified/duplicate/ambiguous 0                             |
 | OpenAPI export / breaking diff            | PASS    | generated snapshotとtracked fileはbyte-identical。baselineからbreaking 0、18 operation追加のみ                                   |
 | `make ops-quality`                        | PASS    | live systemd/provider操作なし。S3 profile 22/22、storage readiness 2/2を含む                                                     |
@@ -163,8 +167,9 @@ Result: **PASS**
 | independent/Copilot review / CI / cooling | PENDING | Repeatable Read、depth memo、200件境界、same-aggregate/immutable DB保証を追加修正済み。final exact headで再review/CI/coolingする |
 
 Focused coverageのうち、main infrastructure adapterはc8計測でstatements/lines 67.67%、
-branches 68.27%、functions 79.31%、audit adapterはstatements/lines 88.59%、branches
-73.91%、functions 100%、request access contextは全指標100%だった。実DB経路は
+branches 68.27%、functions 79.31%、audit adapterはstatements/lines 88.55%、branches
+75.00%、functions 100%、request access contextはstatements/lines/functions 100%、branches
+50.00%だった。実DB経路は
 上記のPostgreSQL 15 integrationで追加検証している。coverage threshold、対象scope、
 ignore、skipは変更していない。
 
@@ -195,6 +200,8 @@ Import preview/commit/duplicate/rejected auditはPR Bで実装する。
 - manual/JSON/Markdown import parser、preview/commit、idempotency（PR B）
 - Knowledge Hub annotation/conversation/synthesis UI、real-backend E2E、screenshot（PR C）
 - production migration、backup、restore、provider cutover
+- 既存`KnowledgeItem`への非CONCURRENT composite unique index作成時間とwrite lock時間。
+  production適用前に実data規模で測定する
 - Sakura VPS/systemd/Quadlet lifecycle
 - real Google Drive/Sakura Object Storage/external LLM credentials or runtime
 - annotation/synthesis/conversation full-text search expansion

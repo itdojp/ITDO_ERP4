@@ -5,6 +5,7 @@ import {
   createKnowledgeProvenanceCursorCodec,
   KnowledgeProvenanceCursorError,
 } from '../dist/application/knowledge/knowledgeProvenanceCursor.js';
+import { knowledgeProvenanceLimits } from '../dist/application/knowledge/knowledgeProvenancePorts.js';
 
 const env = {
   NODE_ENV: 'test',
@@ -89,6 +90,38 @@ test('provenance sequence cursor is bound to actor, resource, and parent', () =>
         cursor: oversizedCursor,
         kind: 'synthesis_versions',
         parentId: 'synthesis-maximum',
+        actor,
+      }),
+    KnowledgeProvenanceCursorError,
+  );
+  const maximumId = 'i'.repeat(knowledgeProvenanceLimits.id);
+  const maximumIdCursor = codec.encodeSequence({
+    kind: 'conversation_turns',
+    parentId: 'conversation-maximum-id',
+    actor,
+    boundary: { sequence: 18, id: maximumId },
+  });
+  assert.deepEqual(
+    codec.decodeSequence({
+      cursor: maximumIdCursor,
+      kind: 'conversation_turns',
+      parentId: 'conversation-maximum-id',
+      actor,
+    }),
+    { sequence: 18, id: maximumId },
+  );
+  const oversizedIdCursor = codec.encodeSequence({
+    kind: 'conversation_turns',
+    parentId: 'conversation-maximum-id',
+    actor,
+    boundary: { sequence: 19, id: `${maximumId}i` },
+  });
+  assert.throws(
+    () =>
+      codec.decodeSequence({
+        cursor: oversizedIdCursor,
+        kind: 'conversation_turns',
+        parentId: 'conversation-maximum-id',
         actor,
       }),
     KnowledgeProvenanceCursorError,

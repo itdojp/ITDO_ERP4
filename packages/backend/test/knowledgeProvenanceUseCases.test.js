@@ -13,7 +13,18 @@ const actor = {
   organizationId: 'org-1',
   groupAccountIds: ['group-1'],
 };
-const auditActor = { requestId: 'request-1', source: 'api' };
+const auditActor = {
+  requestId: 'request-1',
+  source: 'agent',
+  principalUserId: 'principal-1',
+  actorUserId: 'agent-1',
+  authScopes: ['knowledge:write'],
+  authTokenId: 'token-1',
+  authAudience: ['erp4-agent'],
+  authExpiresAt: 1_900_000_000,
+  agentRunId: 'agent-run-1',
+  decisionRequestId: 'decision-request-1',
+};
 
 function item(overrides = {}) {
   return {
@@ -340,6 +351,10 @@ test('annotation create is owner-only, transactionally audited, and audit metada
   assert.equal(result.ok, true);
   assert.equal(createdInput.content, 'private annotation body');
   assert.equal(audit.length, 1);
+  assert.deepEqual(audit[0].actor, {
+    ...auditActor,
+    userId: actor.userId,
+  });
   assert.deepEqual(audit[0].metadata, {
     annotationKind: 'hypothesis',
     origin: 'user',

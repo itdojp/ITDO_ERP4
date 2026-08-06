@@ -60,5 +60,29 @@ export function knowledgeAuditActorFromRequest(
   return {
     requestId: context.requestId,
     source: context.source,
+    ...(context.principalUserId !== undefined
+      ? { principalUserId: context.principalUserId }
+      : {}),
+    ...(context.actorUserId !== undefined
+      ? { actorUserId: context.actorUserId }
+      : {}),
+    ...(context.authScopes !== undefined
+      ? { authScopes: context.authScopes }
+      : {}),
+    ...(context.authTokenId !== undefined
+      ? { authTokenId: context.authTokenId }
+      : {}),
+    ...(context.authAudience !== undefined
+      ? { authAudience: context.authAudience }
+      : {}),
+    ...(context.authExpiresAt !== undefined
+      ? { authExpiresAt: context.authExpiresAt }
+      : {}),
+    ...(context.agentRunId !== undefined
+      ? { agentRunId: context.agentRunId }
+      : {}),
+    ...(context.decisionRequestId !== undefined
+      ? { decisionRequestId: context.decisionRequestId }
+      : {}),
   };
 }

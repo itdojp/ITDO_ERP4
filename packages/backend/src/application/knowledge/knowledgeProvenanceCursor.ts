@@ -152,7 +152,7 @@ function parseEnvelope(value: Buffer): CursorEnvelope {
     !HASH_PATTERN.test(record.actorFingerprint) ||
     typeof record.id !== 'string' ||
     record.id.length === 0 ||
-    record.id.length > 100 ||
+    record.id.length > knowledgeProvenanceLimits.id ||
     record.id !== record.id.trim()
   ) {
     throw invalidCursor();

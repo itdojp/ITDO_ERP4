@@ -213,7 +213,13 @@ const sourceInputSchema = {
 } as const;
 
 const versionInputProperties = {
-  content: { type: 'string', minLength: 1, maxLength: 262_144 },
+  content: {
+    type: 'string',
+    minLength: 1,
+    maxLength: knowledgeProvenanceLimits.synthesisContentBytes,
+    description:
+      'Maximum 262,144 UTF-8 bytes; the server enforces the byte length.',
+  },
   unresolvedQuestions: {
     type: 'array',
     maxItems: knowledgeProvenanceLimits.unresolvedQuestions,
@@ -281,6 +287,7 @@ export async function registerKnowledgeSynthesisRoutes(
         tags: ['knowledge'],
         querystring: listQuerySchema,
         response: {
+          401: knowledgeProvenanceErrorResponseSchema,
           200: {
             type: 'object',
             additionalProperties: false,
@@ -371,6 +378,7 @@ export async function registerKnowledgeSynthesisRoutes(
           },
         },
         response: {
+          401: knowledgeProvenanceErrorResponseSchema,
           201: detailResponseRef,
           400: knowledgeProvenanceErrorResponseSchema,
           403: knowledgeProvenanceErrorResponseSchema,
@@ -402,6 +410,7 @@ export async function registerKnowledgeSynthesisRoutes(
         tags: ['knowledge'],
         params: idParamsSchema,
         response: {
+          401: knowledgeProvenanceErrorResponseSchema,
           200: detailResponseRef,
           403: knowledgeProvenanceErrorResponseSchema,
           404: knowledgeProvenanceErrorResponseSchema,
@@ -430,6 +439,7 @@ export async function registerKnowledgeSynthesisRoutes(
         params: idParamsSchema,
         querystring: listQuerySchema,
         response: {
+          401: knowledgeProvenanceErrorResponseSchema,
           200: {
             type: 'object',
             additionalProperties: false,
@@ -521,6 +531,7 @@ export async function registerKnowledgeSynthesisRoutes(
           },
         },
         response: {
+          401: knowledgeProvenanceErrorResponseSchema,
           200: detailResponseRef,
           400: knowledgeProvenanceErrorResponseSchema,
           403: knowledgeProvenanceErrorResponseSchema,

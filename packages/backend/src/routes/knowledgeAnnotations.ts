@@ -165,7 +165,13 @@ const writeBodySchema = {
   properties: {
     kind: { type: 'string', enum: knowledgeAnnotationKinds },
     origin: { type: 'string', enum: knowledgeProvenanceOrigins },
-    content: { type: 'string', minLength: 1, maxLength: 65_536 },
+    content: {
+      type: 'string',
+      minLength: 1,
+      maxLength: knowledgeProvenanceLimits.annotationContentBytes,
+      description:
+        'Maximum 65,536 UTF-8 bytes; the server enforces the byte length.',
+    },
   },
 } as const;
 
@@ -208,6 +214,7 @@ export async function registerKnowledgeAnnotationRoutes(
         params: itemParamsSchema,
         querystring: listQuerySchema,
         response: {
+          401: knowledgeProvenanceErrorResponseSchema,
           200: {
             type: 'object',
             additionalProperties: false,
@@ -281,6 +288,7 @@ export async function registerKnowledgeAnnotationRoutes(
         params: itemParamsSchema,
         body: writeBodySchema,
         response: {
+          401: knowledgeProvenanceErrorResponseSchema,
           201: annotationResponseRef,
           400: knowledgeProvenanceErrorResponseSchema,
           403: knowledgeProvenanceErrorResponseSchema,
@@ -312,6 +320,7 @@ export async function registerKnowledgeAnnotationRoutes(
         tags: ['knowledge'],
         params: annotationParamsSchema,
         response: {
+          401: knowledgeProvenanceErrorResponseSchema,
           200: annotationResponseRef,
           403: knowledgeProvenanceErrorResponseSchema,
           404: knowledgeProvenanceErrorResponseSchema,
@@ -340,6 +349,7 @@ export async function registerKnowledgeAnnotationRoutes(
         params: annotationParamsSchema,
         querystring: listQuerySchema,
         response: {
+          401: knowledgeProvenanceErrorResponseSchema,
           200: {
             type: 'object',
             additionalProperties: false,
@@ -424,6 +434,7 @@ export async function registerKnowledgeAnnotationRoutes(
           },
         },
         response: {
+          401: knowledgeProvenanceErrorResponseSchema,
           200: annotationResponseRef,
           400: knowledgeProvenanceErrorResponseSchema,
           403: knowledgeProvenanceErrorResponseSchema,
@@ -470,6 +481,7 @@ export async function registerKnowledgeAnnotationRoutes(
           },
         },
         response: {
+          401: knowledgeProvenanceErrorResponseSchema,
           200: annotationResponseRef,
           400: knowledgeProvenanceErrorResponseSchema,
           403: knowledgeProvenanceErrorResponseSchema,

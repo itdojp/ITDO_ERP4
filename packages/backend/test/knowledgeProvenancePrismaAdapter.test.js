@@ -1228,7 +1228,15 @@ test('provenance audit writer enforces action-target mapping and runtime metadat
     actor: {
       userId: 'owner-1',
       requestId: 'request-1',
-      source: 'api',
+      source: 'agent',
+      principalUserId: 'principal-1',
+      actorUserId: 'agent-1',
+      authScopes: ['knowledge:write'],
+      authTokenId: 'token-1',
+      authAudience: ['erp4-agent'],
+      authExpiresAt: 1_900_000_000,
+      agentRunId: 'agent-run-1',
+      decisionRequestId: 'decision-request-1',
       bearer: 'must-not-pass',
     },
     targetTable: 'knowledge_annotations',
@@ -1247,9 +1255,38 @@ test('provenance audit writer enforces action-target mapping and runtime metadat
     scope: 'personal',
     annotationKind: 'question',
     origin: 'user',
+    _auth: {
+      principalUserId: 'principal-1',
+      actorUserId: 'agent-1',
+      scopes: ['knowledge:write'],
+      tokenId: 'token-1',
+      audience: ['erp4-agent'],
+      expiresAt: 1_900_000_000,
+    },
+    _request: { id: 'request-1', source: 'agent' },
+    _agent: {
+      runId: 'agent-run-1',
+      decisionRequestId: 'decision-request-1',
+    },
   });
   assert.equal(JSON.stringify(persisted).includes('must-not-pass'), false);
   assert.equal(persisted.data.targetTable, 'knowledge_annotations');
+
+  await assert.rejects(
+    () =>
+      writer.write({
+        action: 'knowledge_annotation_created',
+        actor: {
+          userId: 'owner-1',
+          requestId: 'request-2',
+          source: 'api',
+        },
+        targetTable: 'knowledge_annotations',
+        targetId: 'annotation-2',
+        metadata: {},
+      }),
+    /knowledge_provenance_audit_contract_invalid/,
+  );
 
   await assert.rejects(
     () =>
@@ -1285,7 +1322,13 @@ test('unit of work propagates mandatory audit failure and maps only known transa
       failing.run(async ({ audit }) => {
         await audit.write({
           action: 'knowledge_conversation_created',
-          actor: { userId: 'owner-1' },
+          actor: {
+            userId: 'owner-1',
+            requestId: 'request-transaction-failure',
+            source: 'api',
+            principalUserId: 'owner-1',
+            actorUserId: 'owner-1',
+          },
           targetTable: 'knowledge_conversations',
           targetId: 'conversation-1',
           metadata: { version: 1 },

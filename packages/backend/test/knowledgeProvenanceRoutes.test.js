@@ -138,6 +138,9 @@ function user(overrides = {}) {
       principalUserId: 'principal-1',
       actorUserId: 'owner-1',
       scopes: ['knowledge:write'],
+      tokenId: 'token-1',
+      audience: ['erp4-agent'],
+      expiresAt: 1_900_000_000,
       delegated: true,
       providerType: 'header',
     },
@@ -150,14 +153,21 @@ async function build(
   dependencies,
   requestUser = user(),
   errorEnv = 'test',
+  requestHook,
 ) {
   const app = Fastify();
   app.setErrorHandler((error, _request, reply) => {
     const mapped = mapErrorToResponse(error, { env: errorEnv });
     return reply.status(mapped.statusCode).send(mapped.body);
   });
-  app.addHook('onRequest', async (request) => {
+  app.addHook('onRequest', async (request, reply) => {
     request.user = requestUser;
+    request.agentRun = {
+      runId: 'agent-run-1',
+      stepId: 'agent-step-1',
+      decisionRequestId: 'decision-request-1',
+    };
+    return requestHook?.(request, reply);
   });
   await register(app, dependencies);
   await app.ready();
@@ -218,6 +228,22 @@ test('annotation routes map canonical actor, serialize history, and issue actor-
     organizationId: 'org-1',
     groupAccountIds: ['group-1'],
   });
+  assert.equal(typeof createInput.auditActor.requestId, 'string');
+  assert.deepEqual(
+    { ...createInput.auditActor, requestId: '<normalized>' },
+    {
+      requestId: '<normalized>',
+      source: 'agent',
+      principalUserId: 'principal-1',
+      actorUserId: 'owner-1',
+      authScopes: ['knowledge:write'],
+      authTokenId: 'token-1',
+      authAudience: ['erp4-agent'],
+      authExpiresAt: 1_900_000_000,
+      agentRunId: 'agent-run-1',
+      decisionRequestId: 'decision-request-1',
+    },
+  );
   assert.equal(created.json().revision.content, 'Synthetic annotation');
 
   const listed = await app.inject({
@@ -590,4 +616,49 @@ test('all provenance routes require a canonical account and normalize unauthoriz
   });
   assert.equal(missing.statusCode, 404, missing.body);
   assert.equal(missing.json().error.message, 'Not found');
+});
+
+test('provenance route 401 schema removes authentication diagnostics', async (t) => {
+  const service = {
+    list: async () => {
+      assert.fail('authentication failure must stop before service invocation');
+    },
+    detail: async () => notFound(),
+    history: async () => notFound(),
+    create: async () => notFound(),
+    revise: async () => notFound(),
+    remove: async () => notFound(),
+  };
+  const app = await build(
+    registerKnowledgeAnnotationRoutes,
+    { service },
+    user(),
+    'production',
+    (_request, reply) =>
+      reply.code(401).send({
+        error: {
+          code: 'unauthorized',
+          message: 'Unauthorized',
+          category: 'auth',
+          details: { reason: 'internal_identity_resolution_failure' },
+        },
+      }),
+  );
+  t.after(() => app.close());
+  const response = await app.inject({
+    method: 'GET',
+    url: '/knowledge/items/item-1/annotations',
+  });
+  assert.equal(response.statusCode, 401, response.body);
+  assert.deepEqual(response.json(), {
+    error: {
+      code: 'unauthorized',
+      message: 'Unauthorized',
+      category: 'auth',
+    },
+  });
+  assert.equal(
+    response.body.includes('internal_identity_resolution_failure'),
+    false,
+  );
 });

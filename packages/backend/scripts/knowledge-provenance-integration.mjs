@@ -99,6 +99,9 @@ function interleavingTransactionHost(delegateName, methodName, afterRead) {
 const auditActor = {
   requestId: 'knowledge-provenance-integration',
   source: 'api',
+  principalUserId: 'knowledge-provenance-integration-user',
+  actorUserId: 'knowledge-provenance-integration-user',
+  authScopes: ['knowledge:write'],
 };
 
 function expectOk(result, context) {
@@ -1614,6 +1617,17 @@ try {
     select: { action: true, metadata: true },
   });
   assert.ok(auditRows.length >= 10);
+  for (const row of auditRows) {
+    assert.deepEqual(row.metadata?._auth, {
+      principalUserId: auditActor.principalUserId,
+      actorUserId: auditActor.actorUserId,
+      scopes: auditActor.authScopes,
+    });
+    assert.deepEqual(row.metadata?._request, {
+      id: auditActor.requestId,
+      source: auditActor.source,
+    });
+  }
   const serializedAudit = JSON.stringify(auditRows);
   for (const body of [
     'Synthetic personal annotation',

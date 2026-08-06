@@ -18,6 +18,17 @@ type KnowledgeProvenanceAuditClient = Pick<
 >;
 
 const requestIdPattern = /^[A-Za-z0-9._-]{1,128}$/;
+const auditTextPattern = /^[^\u0000-\u001f\u007f]+$/u;
+const auditScopePattern = /^[A-Za-z0-9._:-]+$/;
+
+const auditContextLimits = {
+  identifier: 255,
+  scope: 255,
+  scopeCount: 100,
+  audience: 255,
+  audienceCount: 100,
+  agentIdentifier: 255,
+} as const;
 
 const auditTargetByAction = {
   knowledge_annotation_created: 'knowledge_annotations',
@@ -40,6 +51,119 @@ const auditTargetByAction = {
 function bounded(value: string | undefined, maximum: number) {
   if (!value) return undefined;
   return value.slice(0, maximum);
+}
+
+function requiredAuditText(value: string | undefined, maximum: number): string {
+  if (typeof value !== 'string') {
+    throw new Error('knowledge_provenance_audit_contract_invalid');
+  }
+  const normalized = value.trim();
+  if (
+    !normalized ||
+    normalized.length > maximum ||
+    !auditTextPattern.test(normalized)
+  ) {
+    throw new Error('knowledge_provenance_audit_contract_invalid');
+  }
+  return normalized;
+}
+
+function optionalAuditText(
+  value: string | undefined,
+  maximum: number,
+): string | undefined {
+  if (value === undefined) return undefined;
+  return requiredAuditText(value, maximum);
+}
+
+function optionalAuditArray(
+  values: string[] | undefined,
+  maximumCount: number,
+  maximumLength: number,
+  pattern?: RegExp,
+): string[] | undefined {
+  if (values === undefined) return undefined;
+  if (!Array.isArray(values) || values.length > maximumCount) {
+    throw new Error('knowledge_provenance_audit_contract_invalid');
+  }
+  const normalized = [
+    ...new Set(values.map((value) => requiredAuditText(value, maximumLength))),
+  ];
+  if (pattern && normalized.some((value) => !pattern.test(value))) {
+    throw new Error('knowledge_provenance_audit_contract_invalid');
+  }
+  return normalized;
+}
+
+function actorAuditMetadata(
+  actor: KnowledgeProvenanceAuditEntry['actor'],
+): Prisma.InputJsonObject {
+  const principalUserId = requiredAuditText(
+    actor.principalUserId,
+    auditContextLimits.identifier,
+  );
+  const actorUserId = requiredAuditText(
+    actor.actorUserId,
+    auditContextLimits.identifier,
+  );
+  const requestId = actor.requestId?.trim();
+  const source = actor.source;
+  if (
+    !requestId ||
+    !requestIdPattern.test(requestId) ||
+    (source !== 'api' && source !== 'agent')
+  ) {
+    throw new Error('knowledge_provenance_audit_contract_invalid');
+  }
+
+  const auth: Record<string, Prisma.InputJsonValue> = {
+    principalUserId,
+    actorUserId,
+  };
+  const scopes = optionalAuditArray(
+    actor.authScopes,
+    auditContextLimits.scopeCount,
+    auditContextLimits.scope,
+    auditScopePattern,
+  );
+  if (scopes !== undefined) auth.scopes = scopes;
+  const tokenId = optionalAuditText(
+    actor.authTokenId,
+    auditContextLimits.identifier,
+  );
+  if (tokenId !== undefined) auth.tokenId = tokenId;
+  const audience = optionalAuditArray(
+    actor.authAudience,
+    auditContextLimits.audienceCount,
+    auditContextLimits.audience,
+  );
+  if (audience !== undefined) auth.audience = audience;
+  if (actor.authExpiresAt !== undefined) {
+    if (!Number.isSafeInteger(actor.authExpiresAt) || actor.authExpiresAt < 0) {
+      throw new Error('knowledge_provenance_audit_contract_invalid');
+    }
+    auth.expiresAt = actor.authExpiresAt;
+  }
+
+  const metadata: Record<string, Prisma.InputJsonValue> = {
+    _auth: auth,
+    _request: { id: requestId, source },
+  };
+  const runId = optionalAuditText(
+    actor.agentRunId,
+    auditContextLimits.agentIdentifier,
+  );
+  const decisionRequestId = optionalAuditText(
+    actor.decisionRequestId,
+    auditContextLimits.agentIdentifier,
+  );
+  if (runId !== undefined || decisionRequestId !== undefined) {
+    metadata._agent = {
+      ...(runId !== undefined ? { runId } : {}),
+      ...(decisionRequestId !== undefined ? { decisionRequestId } : {}),
+    };
+  }
+  return metadata;
 }
 
 function finiteMetadataInteger(value: unknown, maximum: number) {
@@ -141,7 +265,10 @@ export class PrismaKnowledgeProvenanceAuditWriter implements KnowledgeProvenance
     if (!expectedTarget || entry.targetTable !== expectedTarget) {
       throw new Error('knowledge_provenance_audit_contract_invalid');
     }
-    const metadata = allowlistedAuditMetadata(entry.metadata);
+    const metadata = {
+      ...allowlistedAuditMetadata(entry.metadata),
+      ...actorAuditMetadata(entry.actor),
+    } as Prisma.InputJsonObject;
     const requestId = entry.actor.requestId?.trim();
     const source = entry.actor.source;
     await this.client.auditLog.create({
