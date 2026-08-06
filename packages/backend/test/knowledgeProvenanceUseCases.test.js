@@ -477,7 +477,7 @@ test('known database uniqueness races are normalized to version conflict', async
   assert.ok(tx);
 });
 
-test('conversation metadata rejects provider URLs, credential labels, and invalid calendar dates', async () => {
+test('manual conversation rejects all provider/model/tool labels and invalid calendar dates', async () => {
   let createCalls = 0;
   const tx = transaction({
     conversations: {
@@ -494,12 +494,32 @@ test('conversation metadata rejects provider URLs, credential labels, and invali
   for (const body of [
     { title: 'URL', provider: 'https://provider.invalid/private' },
     { title: 'Credential', model: 'Bearer secret' },
+    {
+      title: 'OpenAI-like credential',
+      provider: 'sk-proj-abcdefghijklmnopqrstuvwxyz0123456789',
+    },
+    { title: 'AWS-like credential', model: 'synthetic-credential-marker' },
+    { title: 'Google-like credential', provider: 'AIzaSyntheticNotASecret' },
     { title: 'Invalid date', capturedAt: '2026-02-31T00:00:00Z' },
   ]) {
     const result = await service.create({ actor, auditActor, body });
     assert.equal(result.statusCode, 400, JSON.stringify(body));
   }
   assert.equal(createCalls, 0);
+
+  const namedTurn = await service.appendTurn({
+    actor,
+    auditActor,
+    conversationId: 'conversation-1',
+    body: {
+      expectedVersion: 1,
+      role: 'tool',
+      origin: 'tool',
+      content: 'Synthetic tool result',
+      name: 'synthetic-credential-marker',
+    },
+  });
+  assert.equal(namedTurn.statusCode, 400);
 });
 
 test('synthesis creation validates all sources and audits only allowlisted provenance metadata', async () => {

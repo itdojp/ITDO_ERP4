@@ -13650,16 +13650,6 @@
                     "nullable": true,
                     "type": "string"
                   },
-                  "model": {
-                    "maxLength": 200,
-                    "nullable": true,
-                    "type": "string"
-                  },
-                  "provider": {
-                    "maxLength": 200,
-                    "nullable": true,
-                    "type": "string"
-                  },
                   "sourceType": {
                     "default": "manual",
                     "enum": [
@@ -14522,11 +14512,6 @@
                     "maximum": 2147483646,
                     "minimum": 1,
                     "type": "integer"
-                  },
-                  "name": {
-                    "maxLength": 200,
-                    "nullable": true,
-                    "type": "string"
                   },
                   "occurredAt": {
                     "format": "date-time",

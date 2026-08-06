@@ -143,10 +143,15 @@ function user(overrides = {}) {
   };
 }
 
-async function build(register, dependencies, requestUser = user()) {
+async function build(
+  register,
+  dependencies,
+  requestUser = user(),
+  errorEnv = 'test',
+) {
   const app = Fastify();
   app.setErrorHandler((error, _request, reply) => {
-    const mapped = mapErrorToResponse(error, { env: 'test' });
+    const mapped = mapErrorToResponse(error, { env: errorEnv });
     return reply.status(mapped.statusCode).send(mapped.body);
   });
   app.addHook('onRequest', async (request) => {
@@ -272,23 +277,42 @@ test('annotation routes reject unknown fields before service invocation', async 
 });
 
 test('conversation routes preserve role/origin and return only allowlisted fields', async (t) => {
+  let createCalls = 0;
+  let appendCalls = 0;
   const service = {
     list: async () => ({
       ok: true,
-      value: { items: [conversation()], nextBoundary: null },
+      value: {
+        items: [
+          conversation({
+            provider: 'sk-proj-abcdefghijklmnopqrstuvwxyz0123456789',
+            model: 'synthetic-credential-marker',
+          }),
+        ],
+        nextBoundary: null,
+      },
     }),
     detail: async () => ({ ok: true, value: conversation() }),
-    create: async () => ({ ok: true, value: conversation() }),
+    create: async () => {
+      createCalls += 1;
+      return { ok: true, value: conversation() };
+    },
     addItem: async () => ({ ok: true, value: conversation({ version: 2 }) }),
     removeItem: async () => ({ ok: true, value: conversation({ version: 2 }) }),
     listTurns: async () => ({
       ok: true,
       value: { items: [turn()], nextBoundary: null },
     }),
-    appendTurn: async () => ({
-      ok: true,
-      value: { conversation: conversation({ version: 2 }), turn: turn() },
-    }),
+    appendTurn: async () => {
+      appendCalls += 1;
+      return {
+        ok: true,
+        value: {
+          conversation: conversation({ version: 2 }),
+          turn: turn({ name: 'AIzaSyntheticNotASecret' }),
+        },
+      };
+    },
   };
   const app = await build(registerKnowledgeConversationRoutes, { service });
   t.after(() => app.close());
@@ -305,6 +329,7 @@ test('conversation routes preserve role/origin and return only allowlisted field
   assert.equal(response.statusCode, 201, response.body);
   assert.equal(response.json().turn.role, 'assistant');
   assert.equal(response.json().turn.origin, 'ai');
+  assert.equal(response.json().turn.name, null);
   assert.equal(response.json().turn.providerKey, undefined);
   assert.equal(response.json().conversation.idempotencyHash, undefined);
 
@@ -319,6 +344,41 @@ test('conversation routes preserve role/origin and return only allowlisted field
     },
   });
   assert.equal(unknownRole.statusCode, 400, unknownRole.body);
+
+  const listed = await app.inject({
+    method: 'GET',
+    url: '/knowledge/conversations',
+  });
+  assert.equal(listed.statusCode, 200, listed.body);
+  assert.equal(listed.json().items[0].provider, null);
+  assert.equal(listed.json().items[0].model, null);
+  assert.equal(listed.body.includes('sk-proj-'), false);
+  assert.equal(listed.body.includes('AKIA'), false);
+
+  const providerRejected = await app.inject({
+    method: 'POST',
+    url: '/knowledge/conversations',
+    payload: {
+      title: 'Synthetic conversation',
+      provider: 'sk-proj-abcdefghijklmnopqrstuvwxyz0123456789',
+    },
+  });
+  assert.equal(providerRejected.statusCode, 400, providerRejected.body);
+  assert.equal(createCalls, 0);
+
+  const nameRejected = await app.inject({
+    method: 'POST',
+    url: '/knowledge/conversations/conversation-1/turns',
+    payload: {
+      expectedVersion: 1,
+      role: 'tool',
+      origin: 'tool',
+      content: 'Synthetic tool output',
+      name: 'synthetic-credential-marker',
+    },
+  });
+  assert.equal(nameRejected.statusCode, 400, nameRejected.body);
+  assert.equal(appendCalls, 1);
 });
 
 test('synthesis route keeps conclusion visible while fully redacting later-inaccessible provenance identity', async (t) => {
@@ -386,6 +446,32 @@ test('synthesis route keeps conclusion visible while fully redacting later-inacc
   assert.equal(unsupportedSource.statusCode, 400, unsupportedSource.body);
   assert.equal(createCalls, 0);
   assert.equal(unsupportedSource.body.includes('must-not-pass'), false);
+});
+
+test('synthesis access-budget exhaustion is returned as a generic internal error', async (t) => {
+  const service = {
+    list: async () => {
+      throw new Error('knowledge_synthesis_list_budget_exceeded');
+    },
+    detail: async () => notFound(),
+    history: async () => notFound(),
+    create: async () => notFound(),
+    appendVersion: async () => notFound(),
+  };
+  const app = await build(
+    registerKnowledgeSynthesisRoutes,
+    { service },
+    user(),
+    'production',
+  );
+  t.after(() => app.close());
+  const response = await app.inject({
+    method: 'GET',
+    url: '/knowledge/syntheses?limit=1',
+  });
+  assert.equal(response.statusCode, 500, response.body);
+  assert.equal(response.body.includes('budget'), false);
+  assert.equal(response.body.includes('knowledge_synthesis'), false);
 });
 
 test('all provenance routes require a canonical account and normalize unauthorized IDs as not found', async (t) => {

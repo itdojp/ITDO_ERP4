@@ -35,6 +35,11 @@ import {
 } from '../../application/knowledge/knowledgeProvenancePorts.js';
 import { prisma } from '../../services/db.js';
 import { buildKnowledgeVisibilityWhere } from './prismaKnowledgeItemAdapter.js';
+import {
+  consumeSynthesisAccessBudget,
+  createSynthesisAccessContext,
+  type SynthesisAccessContext,
+} from './prismaKnowledgeSynthesisAccessBudget.js';
 
 type KnowledgeProvenanceDbClient = Pick<
   Prisma.TransactionClient,
@@ -421,7 +426,12 @@ export class PrismaKnowledgeAnnotationRepository implements KnowledgeAnnotationR
         id: input.annotationId,
         knowledgeItemId: input.itemId,
         OR: [
-          { ownerUserId: input.actor.userId },
+          {
+            ownerUserId: input.actor.userId,
+            knowledgeItem: {
+              is: { ownerUserId: input.actor.userId, deletedAt: null },
+            },
+          },
           {
             deletedAt: null,
             knowledgeItem: { is: buildKnowledgeVisibilityWhere(input.actor) },
@@ -495,6 +505,9 @@ export class PrismaKnowledgeAnnotationRepository implements KnowledgeAnnotationR
         id: input.annotationId,
         knowledgeItemId: input.itemId,
         ownerUserId: input.actor.userId,
+        knowledgeItem: {
+          is: { ownerUserId: input.actor.userId, deletedAt: null },
+        },
         deletedAt: input.deleted ? { not: null } : null,
       },
       include: annotationInclude,
@@ -516,6 +529,9 @@ export class PrismaKnowledgeAnnotationRepository implements KnowledgeAnnotationR
         ownerUserId: input.actor.userId,
         currentRevision: input.expectedRevision,
         deletedAt: null,
+        knowledgeItem: {
+          is: { ownerUserId: input.actor.userId, deletedAt: null },
+        },
       },
       data: {
         currentRevision: { increment: 1 },
@@ -554,6 +570,9 @@ export class PrismaKnowledgeAnnotationRepository implements KnowledgeAnnotationR
         ownerUserId: input.actor.userId,
         currentRevision: input.expectedRevision,
         deletedAt: null,
+        knowledgeItem: {
+          is: { ownerUserId: input.actor.userId, deletedAt: null },
+        },
       },
       data: {
         deletedAt: input.deletedAt,
@@ -827,15 +846,33 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
   private async sourceAccessible(
     actor: KnowledgeActor,
     source: SynthesisSourceRow,
-    visited: Set<string>,
+    context: SynthesisAccessContext,
+    path: Set<string>,
     depth: number,
   ): Promise<boolean> {
-    if (depth > knowledgeProvenanceLimits.synthesisProvenanceDepth)
-      return false;
     const identity = sourceIdentity(source);
+    consumeSynthesisAccessBudget(context, 'edge');
+    if (identity.kind === 'synthesis_version') {
+      const nextDepth = depth + 1;
+      if (nextDepth > knowledgeProvenanceLimits.synthesisProvenanceDepth) {
+        return false;
+      }
+      return this.synthesisVersionAccessible(
+        actor,
+        identity.sourceId,
+        context,
+        path,
+        nextDepth,
+      );
+    }
+    const memoKey = `${identity.kind}:${identity.sourceId}`;
+    const memoized = context.sourceMemo.get(memoKey);
+    if (memoized !== undefined) return memoized;
+    consumeSynthesisAccessBudget(context, 'query');
+    let accessible: boolean;
     switch (identity.kind) {
       case 'item':
-        return Boolean(
+        accessible = Boolean(
           await this.client.knowledgeItem.findFirst({
             where: {
               AND: [
@@ -846,8 +883,9 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
             select: { id: true },
           }),
         );
+        break;
       case 'snapshot':
-        return Boolean(
+        accessible = Boolean(
           await this.client.knowledgeSnapshot.findFirst({
             where: {
               id: identity.sourceId,
@@ -856,8 +894,9 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
             select: { id: true },
           }),
         );
+        break;
       case 'annotation':
-        return Boolean(
+        accessible = Boolean(
           await this.client.knowledgeAnnotation.findFirst({
             where: {
               id: identity.sourceId,
@@ -867,8 +906,9 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
             select: { id: true },
           }),
         );
+        break;
       case 'annotation_revision':
-        return Boolean(
+        accessible = Boolean(
           await this.client.knowledgeAnnotationRevision.findFirst({
             where: {
               id: identity.sourceId,
@@ -884,8 +924,9 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
             select: { id: true },
           }),
         );
+        break;
       case 'conversation':
-        return Boolean(
+        accessible = Boolean(
           await this.client.knowledgeConversation.findFirst({
             where: {
               AND: [
@@ -896,8 +937,9 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
             select: { id: true },
           }),
         );
+        break;
       case 'conversation_turn':
-        return Boolean(
+        accessible = Boolean(
           await this.client.knowledgeConversationTurn.findFirst({
             where: {
               id: identity.sourceId,
@@ -906,29 +948,27 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
             select: { id: true },
           }),
         );
-      case 'synthesis_version':
-        return this.synthesisVersionAccessible(
-          actor,
-          identity.sourceId,
-          visited,
-          depth + 1,
-        );
+        break;
     }
+    context.sourceMemo.set(memoKey, accessible);
+    return accessible;
   }
 
   private async synthesisVersionAccessible(
     actor: KnowledgeActor,
     versionId: string,
-    visited = new Set<string>(),
-    depth = 0,
+    context: SynthesisAccessContext,
+    path: Set<string>,
+    depth: number,
   ): Promise<boolean> {
-    if (
-      visited.has(versionId) ||
-      depth > knowledgeProvenanceLimits.synthesisProvenanceDepth
-    ) {
+    if (path.has(versionId)) {
       return false;
     }
-    visited.add(versionId);
+    const memoized = context.versionMemo.get(versionId);
+    if (memoized !== undefined) return memoized;
+    consumeSynthesisAccessBudget(context, 'node');
+    consumeSynthesisAccessBudget(context, 'query');
+    path.add(versionId);
     const version = await this.client.knowledgeSynthesisVersion.findFirst({
       where: {
         id: versionId,
@@ -939,29 +979,37 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
         sources: true,
       },
     });
-    if (!version) return false;
-    if (version.synthesis.ownerUserId === actor.userId) return true;
-    for (const source of version.sources) {
-      if (
-        !(await this.sourceAccessible(
-          actor,
-          source,
-          new Set(visited),
-          depth + 1,
-        ))
-      ) {
-        return false;
+    let accessible = false;
+    if (version) {
+      if (version.synthesis.ownerUserId === actor.userId) {
+        accessible = true;
+      } else if (version.sources.length > 0) {
+        accessible = true;
+        for (const source of version.sources) {
+          if (
+            !(await this.sourceAccessible(actor, source, context, path, depth))
+          ) {
+            accessible = false;
+            break;
+          }
+        }
       }
     }
-    return true;
+    path.delete(versionId);
+    context.versionMemo.set(versionId, accessible);
+    return accessible;
   }
 
   private async versionSourcesAccessible(
     actor: KnowledgeActor,
     version: SynthesisVersionRow,
+    context: SynthesisAccessContext,
   ): Promise<boolean> {
+    if (version.sources.length === 0) return false;
     for (const source of version.sources) {
-      if (!(await this.sourceAccessible(actor, source, new Set(), 0))) {
+      if (
+        !(await this.sourceAccessible(actor, source, context, new Set(), 0))
+      ) {
         return false;
       }
     }
@@ -971,13 +1019,14 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
   private async versionWithAccess(
     actor: KnowledgeActor,
     row: SynthesisVersionRow,
+    context: SynthesisAccessContext,
   ): Promise<KnowledgeSynthesisVersion> {
     const sources: KnowledgeSynthesisSource[] = [];
     for (const source of row.sources) {
       sources.push(
         mapSynthesisSource(
           source,
-          await this.sourceAccessible(actor, source, new Set(), 0),
+          await this.sourceAccessible(actor, source, context, new Set(), 0),
         ),
       );
     }
@@ -994,7 +1043,12 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
     };
   }
 
-  private async findBaseVisible(actor: KnowledgeActor, synthesisId: string) {
+  private async findBaseVisible(
+    actor: KnowledgeActor,
+    synthesisId: string,
+    context: SynthesisAccessContext,
+  ) {
+    consumeSynthesisAccessBudget(context, 'query');
     const synthesis = await this.client.knowledgeSynthesis.findFirst({
       where: {
         id: synthesisId,
@@ -1002,6 +1056,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
       },
     });
     if (!synthesis) return null;
+    consumeSynthesisAccessBudget(context, 'query');
     const version = await this.client.knowledgeSynthesisVersion.findUnique({
       where: {
         synthesisId_version: {
@@ -1015,7 +1070,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
       throw new Error('knowledge_synthesis_current_version_missing');
     if (
       synthesis.ownerUserId !== actor.userId &&
-      !(await this.versionSourcesAccessible(actor, version))
+      !(await this.versionSourcesAccessible(actor, version, context))
     ) {
       return null;
     }
@@ -1027,10 +1082,19 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
     limit: number;
     boundary?: KnowledgePageBoundary;
   }) {
+    const context = createSynthesisAccessContext();
     const visible: SynthesisRow[] = [];
     let boundary = input.boundary;
     let exhausted = false;
+    let scanned = 0;
     while (visible.length <= input.limit && !exhausted) {
+      const remaining =
+        knowledgeProvenanceLimits.synthesisListCandidates - scanned;
+      if (remaining <= 0) {
+        throw new Error('knowledge_synthesis_list_budget_exceeded');
+      }
+      const take = Math.min(input.limit + 1, remaining);
+      consumeSynthesisAccessBudget(context, 'query');
       const rows = await this.client.knowledgeSynthesis.findMany({
         where: {
           AND: [
@@ -1051,16 +1115,25 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
           ],
         },
         orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
-        take: input.limit + 1,
+        take,
       });
       if (rows.length === 0) break;
       for (const row of rows) {
-        if (await this.findBaseVisible(input.actor, row.id)) visible.push(row);
+        scanned += 1;
+        if (await this.findBaseVisible(input.actor, row.id, context))
+          visible.push(row);
         if (visible.length > input.limit) break;
       }
       const lastScanned = rows[rows.length - 1];
-      if (!lastScanned || rows.length < input.limit + 1) exhausted = true;
+      if (!lastScanned || rows.length < take) exhausted = true;
       else boundary = { updatedAt: lastScanned.updatedAt, id: lastScanned.id };
+      if (
+        scanned >= knowledgeProvenanceLimits.synthesisListCandidates &&
+        visible.length <= input.limit &&
+        !exhausted
+      ) {
+        throw new Error('knowledge_synthesis_list_budget_exceeded');
+      }
     }
     const hasMore = visible.length > input.limit;
     const selected = visible.slice(0, input.limit);
@@ -1073,11 +1146,20 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
   }
 
   async findVisible(input: { actor: KnowledgeActor; synthesisId: string }) {
-    const result = await this.findBaseVisible(input.actor, input.synthesisId);
+    const context = createSynthesisAccessContext();
+    const result = await this.findBaseVisible(
+      input.actor,
+      input.synthesisId,
+      context,
+    );
     if (!result) return null;
     return {
       synthesis: mapSynthesis(result.synthesis),
-      currentVersion: await this.versionWithAccess(input.actor, result.version),
+      currentVersion: await this.versionWithAccess(
+        input.actor,
+        result.version,
+        context,
+      ),
     };
   }
 
@@ -1087,8 +1169,14 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
     limit: number;
     beforeVersion?: number;
   }) {
-    const visible = await this.findBaseVisible(input.actor, input.synthesisId);
+    const context = createSynthesisAccessContext();
+    const visible = await this.findBaseVisible(
+      input.actor,
+      input.synthesisId,
+      context,
+    );
     if (!visible) return null;
+    consumeSynthesisAccessBudget(context, 'query');
     const rows = await this.client.knowledgeSynthesisVersion.findMany({
       where: {
         synthesisId: input.synthesisId,
@@ -1103,15 +1191,15 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
     const hasMore = rows.length > input.limit;
     const selected = rows.slice(0, input.limit);
     if (visible.synthesis.ownerUserId !== input.actor.userId) {
-      for (const row of selected) {
-        if (!(await this.versionSourcesAccessible(input.actor, row))) {
+      for (const row of rows) {
+        if (!(await this.versionSourcesAccessible(input.actor, row, context))) {
           return null;
         }
       }
     }
     const mapped: KnowledgeSynthesisVersion[] = [];
     for (const row of selected)
-      mapped.push(await this.versionWithAccess(input.actor, row));
+      mapped.push(await this.versionWithAccess(input.actor, row, context));
     const last = selected[selected.length - 1];
     return {
       items: mapped,
@@ -1124,6 +1212,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
     actor: KnowledgeActor;
     sources: KnowledgeSynthesisSourceInput[];
   }) {
+    const context = createSynthesisAccessContext();
     for (const source of input.sources) {
       const synthetic = {
         id: '__validation__',
@@ -1146,7 +1235,13 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
         createdBy: input.actor.userId,
       } satisfies SynthesisSourceRow;
       if (
-        !(await this.sourceAccessible(input.actor, synthetic, new Set(), 0))
+        !(await this.sourceAccessible(
+          input.actor,
+          synthetic,
+          context,
+          new Set(),
+          0,
+        ))
       ) {
         return false;
       }
@@ -1219,7 +1314,11 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
       });
     return {
       synthesis: mapSynthesis(synthesis),
-      currentVersion: await this.versionWithAccess(input.actor, version),
+      currentVersion: await this.versionWithAccess(
+        input.actor,
+        version,
+        createSynthesisAccessContext(),
+      ),
     };
   }
 

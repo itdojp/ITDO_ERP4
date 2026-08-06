@@ -139,8 +139,12 @@ export function conversationResponse(conversation: KnowledgeConversation) {
     ownerUserId: conversation.ownerUserId,
     title: conversation.title,
     sourceType: conversation.sourceType,
-    provider: conversation.provider,
-    model: conversation.model,
+    // Provider/model labels are not exposed until the bounded import contract
+    // supplies a fixed public vocabulary. This prevents direct database or
+    // future adapter writes from turning provenance labels into a secret
+    // exfiltration channel.
+    provider: null,
+    model: null,
     capturedAt: conversation.capturedAt.toISOString(),
     importedAt: conversation.importedAt?.toISOString() ?? null,
     contentHash: conversation.contentHash,
@@ -168,7 +172,9 @@ export function conversationTurnResponse(turn: KnowledgeConversationTurn) {
     role: turn.role,
     origin: turn.origin,
     content: turn.content,
-    name: turn.name,
+    // The manual append API does not accept tool labels. Keep the response
+    // fail-closed until PR B defines the bounded import label vocabulary.
+    name: null,
     occurredAt: turn.occurredAt?.toISOString() ?? null,
     contentHash: turn.contentHash,
     createdAt: turn.createdAt.toISOString(),

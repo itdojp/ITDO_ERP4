@@ -21,6 +21,12 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
   sanitized not-foundとして拒否する。
 - synthesis sourceは明示FKとexactly-one CHECKで一件を参照する。read時もsource accessを
   再検査し、失効したsource identity/bodyを返さない。
+- recursive provenanceはrequest-scoped memoization、16段、version node 128、source edge
+  512、DB query 512でboundedにし、cycle/budget/source-less organization accessをfail
+  closedにする。synthesis listのhidden candidate scanは200件で停止する。
+- manual APIは自由文字列のprovider/model/tool nameを受け付けず、responseも`null`へ固定する。
+- annotation owner操作はparent itemが非削除であること、version historyはlookahead source
+  ACLを再検査する。AuditLog DB CHECKはaction groupとtarget tableを厳密に対応付ける。
 - mutation、version/idempotency確定、mandatory Knowledge auditを同一transactionで処理し、
   audit metadataへ本文、prompt、URL、provider/request key、raw errorを入れない。
 - listはstable sort、bounded limit、actor/resource/parentへ束縛したHMAC署名付きopaque
@@ -33,11 +39,11 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
 | --------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------- |
 | provenance schema / constraint / migration contract | PASS   | explicit enum、content/version/hash/scope bounds、exactly-one FK、single primary、expand-only、OpenAPI assertions               |
 | signed cursor                                       | PASS   | actor/resource/parent/sort binding、tamper rejection、production secret requirement                                             |
-| application use cases                               | PASS   | annotation history/delete/audit rollback、cross-owner relation、role-origin、turn/version conflict、source validation/redaction |
-| Prisma adapter                                      | PASS   | ACL intersection DB predicate、item-first ACL、audit action/target/metadata allowlist、transaction conflict normalization       |
-| route contract                                      | PASS   | canonical actor、allowlisted response、unknown-field rejection、sanitized not-found、provenance redaction                       |
+| application use cases                               | PASS   | annotation history/delete/audit rollback、cross-owner relation、role-origin、turn/version conflict、manual provenance label拒否 |
+| Prisma adapter                                      | PASS   | ACL intersection、parent delete、memo/depth/cycle/budget、source-less fail-close、lookahead、audit allowlist                    |
+| route contract                                      | PASS   | canonical actor、allowlisted response、credential-like label redaction、unknown-field rejection、generic budget error           |
 
-Result: **31/31 PASS**（fail/skip/todo 0）
+Result: **41/41 PASS**（fail/skip/todo 0）
 
 Focused command:
 
@@ -74,6 +80,9 @@ Result: **PASS**
 - concurrent turn append: one success / one conflict
 - concurrent synthesis version: one success / one conflict
 - synthesis source exactly-one CHECK rejects zero/two references
+- source-less organization synthesis is owner-readable but non-owner fail-closed
+- deleted parent item blocks annotation history/revision
+- audit action/target mismatches are rejected by the database CHECK
 - source logical deletion causes provenance redaction
 - mandatory audit failure rolls back the business mutation
 - audit rows contain no annotation/turn/synthesis bodies
@@ -102,18 +111,18 @@ Result: **PASS**
 | ----------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------- |
 | Prisma format/generate                    | PASS    | Prisma 7.9.1                                                                                                  |
 | root lint / format / typecheck / build    | PASS    | backend/frontend。frontend dev dependenciesはlockfile準拠の`npm ci`後に実行                                   |
-| `make test`                               | PASS    | backend 1,846/1,846、frontend 85 files / 495 tests。fail/skip/todo 0                                          |
-| focused coverage                          | PASS    | executed files aggregate: statements/lines 70.38%、branches 62.23%、functions 58.88%。threshold/scope変更なし |
-| bounded-context dependency/coverage       | PASS    | 306 modules / 1,203 dependencies、291 source files、243 targets、unclassified/duplicate/ambiguous 0           |
+| `make test`                               | PASS    | backend 1,856/1,856、frontend 85 files / 495 tests。fail/skip/todo 0                                          |
+| focused coverage                          | PASS    | executed files aggregate: statements/lines 73.85%、branches 63.32%、functions 62.98%。threshold/scope変更なし |
+| bounded-context dependency/coverage       | PASS    | 307 modules / 1,205 dependencies、292 source files、243 targets、unclassified/duplicate/ambiguous 0           |
 | OpenAPI export / breaking diff            | PASS    | generated snapshotとtracked fileはbyte-identical。baselineからbreaking 0、18 operation追加のみ                |
 | `make ops-quality`                        | PASS    | live systemd/provider操作なし。S3 profile 22/22、storage readiness 2/2を含む                                  |
 | backend/frontend security audit           | PASS    | `npm audit --audit-level=high`: 0 vulnerabilities / 0 vulnerabilities                                         |
 | docs index / image links                  | PASS    | index current、118 image links / 351 Markdown files                                                           |
 | secret scan / `git diff --check`          | PASS    | candidate filesを含むtracked scan 0 match、whitespace error 0                                                 |
-| independent/Copilot review / CI / cooling | PENDING | Draft PR作成後にexact headで確認する                                                                          |
+| independent/Copilot review / CI / cooling | PENDING | 初回独立review 8件を修正済み。remediation exact headで再review/CI/coolingする                                  |
 
-Focused coverageのうち、infrastructure adapterはc8計測でstatements/lines 39.10%、
-branches 53.92%、functions 41.81%だった。実DB経路は上記のPostgreSQL 15 integrationで
+Focused coverageのうち、infrastructure adapterはc8計測でstatements/lines 54.30%、
+branches 64.70%、functions 56.14%だった。実DB経路は上記のPostgreSQL 15 integrationで
 追加検証している。coverage threshold、対象scope、ignore、skipは変更していない。
 
 ## Audit events

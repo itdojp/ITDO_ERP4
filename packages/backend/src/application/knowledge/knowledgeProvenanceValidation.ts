@@ -110,27 +110,6 @@ export function normalizeOptionalBoundedText(
   return normalizeBoundedText(value, maximumCodePoints) ?? undefined;
 }
 
-const provenanceLabelPattern = /^[\p{L}\p{N}][\p{L}\p{N} ._+:/-]*$/u;
-const sensitiveLabelMarker =
-  /(?:bearer|credential|password|private[-_ ]?key|refresh[-_ ]?token|access[-_ ]?token|api[-_ ]?key)/i;
-
-export function normalizeOptionalProvenanceLabel(
-  value: unknown,
-  maximumCodePoints: number,
-): string | null | undefined {
-  const normalized = normalizeOptionalBoundedText(value, maximumCodePoints);
-  if (normalized === null || normalized === undefined) return normalized;
-  if (
-    !provenanceLabelPattern.test(normalized) ||
-    normalized.includes('://') ||
-    /[?#@=%]/.test(normalized) ||
-    sensitiveLabelMarker.test(normalized)
-  ) {
-    return undefined;
-  }
-  return normalized;
-}
-
 export function normalizeBoundedContent(
   value: unknown,
   maximumBytes: number,

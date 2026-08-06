@@ -27,7 +27,6 @@ import {
   knowledgeProvenanceAuditActor,
   normalizeBoundedContent,
   normalizeBoundedText,
-  normalizeOptionalProvenanceLabel,
   parseOptionalKnowledgeDate,
   provenanceConflict,
   provenanceInvalid,
@@ -124,25 +123,21 @@ export function createKnowledgeConversationService(dependencies: {
       body: {
         title: string;
         sourceType?: KnowledgeConversationSourceType;
-        provider?: string | null;
-        model?: string | null;
         capturedAt?: string | null;
       };
     }): Promise<KnowledgeProvenanceResult<unknown>> {
       if (!hasKnowledgePrincipal(input.actor)) return provenanceNotFound();
+      if (
+        Object.prototype.hasOwnProperty.call(input.body ?? {}, 'provider') ||
+        Object.prototype.hasOwnProperty.call(input.body ?? {}, 'model')
+      ) {
+        return provenanceInvalid('conversation metadata is invalid');
+      }
       const title = normalizeBoundedText(
         input.body?.title,
         knowledgeProvenanceLimits.title,
       );
       const sourceType = input.body?.sourceType ?? 'manual';
-      const provider = normalizeOptionalProvenanceLabel(
-        input.body?.provider,
-        knowledgeProvenanceLimits.provider,
-      );
-      const model = normalizeOptionalProvenanceLabel(
-        input.body?.model,
-        knowledgeProvenanceLimits.model,
-      );
       const capturedAt = parseOptionalKnowledgeDate(input.body?.capturedAt);
       if (
         !title ||
@@ -151,8 +146,6 @@ export function createKnowledgeConversationService(dependencies: {
           sourceType,
         ) ||
         sourceType !== 'manual' ||
-        provider === undefined ||
-        model === undefined ||
         capturedAt === undefined
       ) {
         return provenanceInvalid('conversation metadata is invalid');
@@ -161,8 +154,8 @@ export function createKnowledgeConversationService(dependencies: {
       const contentHash = initialConversationHash({
         title,
         sourceType,
-        provider,
-        model,
+        provider: null,
+        model: null,
         capturedAt: effectiveCapturedAt,
       });
       return runKnowledgeProvenanceMutation(() =>
@@ -171,8 +164,8 @@ export function createKnowledgeConversationService(dependencies: {
             actor: input.actor,
             title,
             sourceType,
-            provider,
-            model,
+            provider: null,
+            model: null,
             capturedAt: effectiveCapturedAt,
             contentHash,
           });
@@ -353,7 +346,6 @@ export function createKnowledgeConversationService(dependencies: {
         role: KnowledgeConversationRole;
         origin: KnowledgeProvenanceOrigin;
         content: string;
-        name?: string | null;
         occurredAt?: string | null;
       };
     }): Promise<KnowledgeProvenanceResult<unknown>> {
@@ -362,6 +354,9 @@ export function createKnowledgeConversationService(dependencies: {
         !isBoundedKnowledgeId(input.conversationId)
       ) {
         return provenanceNotFound();
+      }
+      if (Object.prototype.hasOwnProperty.call(input.body ?? {}, 'name')) {
+        return provenanceInvalid('conversation turn content is invalid');
       }
       if (
         !isValidKnowledgeVersion(input.body?.expectedVersion) ||
@@ -381,12 +376,8 @@ export function createKnowledgeConversationService(dependencies: {
         input.body?.content,
         knowledgeProvenanceLimits.conversationTurnBytes,
       );
-      const name = normalizeOptionalProvenanceLabel(
-        input.body?.name,
-        knowledgeProvenanceLimits.name,
-      );
       const occurredAt = parseOptionalKnowledgeDate(input.body?.occurredAt);
-      if (!content || name === undefined || occurredAt === undefined) {
+      if (!content || occurredAt === undefined) {
         return provenanceInvalid('conversation turn content is invalid');
       }
       const contentHash = sha256KnowledgeText('conversation-turn', content);
@@ -411,7 +402,7 @@ export function createKnowledgeConversationService(dependencies: {
             sequence,
             role: input.body.role,
             origin: input.body.origin,
-            name,
+            name: null,
             occurredAt,
             contentHash,
           });
@@ -423,7 +414,7 @@ export function createKnowledgeConversationService(dependencies: {
             role: input.body.role,
             origin: input.body.origin,
             content,
-            name,
+            name: null,
             occurredAt,
             contentHash,
             aggregateContentHash,

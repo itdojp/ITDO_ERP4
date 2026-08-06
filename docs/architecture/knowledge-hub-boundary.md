@@ -157,6 +157,9 @@ synthesis sourceは参照先ごとのnullable FKとPostgreSQLのexactly-one CHEC
   linked itemがないconversationはownerだけがreadできる。
 - turnは`conversationId + sequence`で一意とし、conversation versionを用いた競合検知を
   行う。roleとoriginの組合せもallowlistで検証し、既存turnを更新しない。
+- PR Aのmanual APIはprovider/model/tool nameを入力として受け付けず、responseでもこれらを
+  `null`へ固定する。PR Bでimport parserと同時に固定公開語彙を定義するまで、自由文字列を
+  provenance labelとして保存・共有しない。
 - personal synthesisはownerだけがread/writeできる。organization synthesisは同一
   organizationに限定したうえで、non-owner read時にcurrent versionの全sourceを現在
   readできることを再検査する。ownerが後からsource accessを失ってもsynthesis本文と
@@ -165,12 +168,18 @@ synthesis sourceは参照先ごとのnullable FKとPostgreSQLのexactly-one CHEC
 - synthesis versionは集約内versionを一意とし、version追加とsource固定を同一transaction
   で行う。synthesisをsourceにできるのは既に確定した固定versionだけとし、同一versionへの
   自己参照をDB constraintで拒否する。再帰的なcurrent access評価はfail closedかつ16段で
-  停止する。
+  停止する。評価はrequest単位でmemoizeし、version node 128、source edge 512、DB query
+  512を上限とする。source 0件のorganization synthesisはnon-ownerへfail closedとする。
 - list cursorは既存`KNOWLEDGE_CURSOR_SIGNING_SECRET`を使うHMAC署名付きopaque tokenと
   し、actor、resource、parent、sortへ束縛する。権限外rowをpage/cursor/countへ含めない。
+  organization synthesis listのACL candidate走査は一request 200件までとし、query budget
+  またはcandidate budget到達時は非公開境界をcursorへ入れずgeneric errorでfail closedに
+  する。version historyはlookahead rowもACL検査してからnext cursorを発行する。
 - mutation、mandatory Knowledge audit、version/idempotency確定は同じPrisma transaction
   で実行する。監査action/targetとmetadata keyはallowlistで検証し、annotation、turn、
   synthesis本文、prompt、URL、provider key、raw error/request keyを監査metadataへ入れない。
+  DB CHECKもannotation/conversation/synthesis/importのaction groupを対応するtarget tableへ
+  厳密に束縛する。annotationの履歴・改訂・削除はparent itemが非削除であることを再検査する。
 
 PR Aのmigrationはenum/table/index/FK/CHECKの追加だけを行うexpand-only migrationであり、
 既存table/columnのdrop、rename、型変更、既存row更新を行わない。application rollbackでは

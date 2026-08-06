@@ -192,6 +192,61 @@ try {
     ],
   );
 
+  const deletedParentItem = await createItem(owner, {
+    scope: 'personal',
+    sourceType: 'manual',
+    title: 'Synthetic deleted annotation parent',
+  });
+  const deletedParentAnnotation = expectOk(
+    await annotationService.create({
+      actor: owner,
+      auditActor,
+      itemId: deletedParentItem.id,
+      body: {
+        kind: 'note',
+        origin: 'user',
+        content: 'Synthetic deleted parent annotation',
+      },
+    }),
+    'create deleted-parent annotation',
+  );
+  expectOk(
+    await itemService.remove({
+      actor: owner,
+      auditActor,
+      itemId: deletedParentItem.id,
+      expectedVersion: deletedParentItem.version,
+      reasonCode: 'owner_request',
+    }),
+    'delete annotation parent item',
+  );
+  expectFailure(
+    await annotationService.history({
+      actor: owner,
+      itemId: deletedParentItem.id,
+      annotationId: deletedParentAnnotation.id,
+      limit: 20,
+    }),
+    'not_found',
+    'deleted parent annotation history',
+  );
+  expectFailure(
+    await annotationService.revise({
+      actor: owner,
+      auditActor,
+      itemId: deletedParentItem.id,
+      annotationId: deletedParentAnnotation.id,
+      body: {
+        expectedRevision: 1,
+        kind: 'question',
+        origin: 'user',
+        content: 'Must not be persisted',
+      },
+    }),
+    'not_found',
+    'deleted parent annotation mutation',
+  );
+
   const orgAnnotation = expectOk(
     await annotationService.create({
       actor: owner,
@@ -256,6 +311,42 @@ try {
     }),
     'not_found',
     'organization synthesis outsider',
+  );
+  const sourceLessOrganizationSynthesis =
+    await prisma.knowledgeSynthesis.create({
+      data: {
+        ownerUserId: owner.userId,
+        scope: 'organization',
+        organizationId: owner.organizationId,
+        title: 'Synthetic source-less organization synthesis',
+        createdBy: owner.userId,
+        updatedBy: owner.userId,
+        versions: {
+          create: {
+            version: 1,
+            content: 'Synthetic source-less conclusion',
+            unresolvedQuestions: [],
+            createdBy: owner.userId,
+          },
+        },
+      },
+    });
+  assert.equal(
+    (
+      await synthesisService.detail({
+        actor: owner,
+        synthesisId: sourceLessOrganizationSynthesis.id,
+      })
+    ).ok,
+    true,
+  );
+  expectFailure(
+    await synthesisService.detail({
+      actor: bothGroups,
+      synthesisId: sourceLessOrganizationSynthesis.id,
+    }),
+    'not_found',
+    'source-less organization synthesis non-owner',
   );
   expectOk(
     await annotationService.remove({
@@ -560,6 +651,19 @@ try {
           sourceKnowledgeItemId: orgItemA.id,
           sourceConversationId: conversation.id,
           createdBy: owner.userId,
+        },
+      }),
+    /constraint|check/i,
+  );
+  await assert.rejects(
+    () =>
+      prisma.auditLog.create({
+        data: {
+          action: 'knowledge_annotation_created',
+          userId: owner.userId,
+          targetTable: 'knowledge_conversations',
+          targetId: conversation.id,
+          metadata: {},
         },
       }),
     /constraint|check/i,

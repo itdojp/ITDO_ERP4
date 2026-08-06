@@ -167,6 +167,37 @@ test('database constraints bound content, versions, hashes, confidence, scope, d
   assert.match(migration, /"confidenceBasisPoints" BETWEEN 0 AND 10000/);
 });
 
+test('audit database constraint binds each provenance action group to its exact target table', () => {
+  const expected = [
+    ['knowledge_annotation_created', 'knowledge_annotations'],
+    ['knowledge_annotation_revised', 'knowledge_annotations'],
+    ['knowledge_annotation_deleted', 'knowledge_annotations'],
+    ['knowledge_conversation_created', 'knowledge_conversations'],
+    ['knowledge_conversation_imported', 'knowledge_conversations'],
+    ['knowledge_conversation_item_linked', 'knowledge_conversations'],
+    ['knowledge_conversation_item_unlinked', 'knowledge_conversations'],
+    ['knowledge_conversation_turn_appended', 'knowledge_conversations'],
+    ['knowledge_synthesis_created', 'knowledge_syntheses'],
+    ['knowledge_synthesis_version_appended', 'knowledge_syntheses'],
+    ['knowledge_synthesis_source_linked', 'knowledge_syntheses'],
+    ['knowledge_import_previewed', 'knowledge_imports'],
+    ['knowledge_import_committed', 'knowledge_imports'],
+    ['knowledge_import_duplicate_detected', 'knowledge_imports'],
+    ['knowledge_import_rejected', 'knowledge_imports'],
+  ];
+  for (const [action, target] of expected) {
+    assert.match(
+      migration,
+      new RegExp(`'${action}'[\\s\\S]*?"targetTable" = '${target}'`),
+      `${action} -> ${target}`,
+    );
+  }
+  assert.doesNotMatch(
+    migration,
+    /"targetTable" IN \(\s*'knowledge_annotations',\s*'knowledge_conversations'/,
+  );
+});
+
 test('conversation links enforce identity, stable order, and a single primary item', () => {
   assert.match(
     migration,
@@ -201,14 +232,8 @@ test('OpenAPI publishes the bounded provenance foundation without internal idemp
     ['/knowledge/items/{itemId}/annotations', 'post'],
     ['/knowledge/items/{itemId}/annotations/{annotationId}', 'get'],
     ['/knowledge/items/{itemId}/annotations/{annotationId}', 'delete'],
-    [
-      '/knowledge/items/{itemId}/annotations/{annotationId}/revisions',
-      'get',
-    ],
-    [
-      '/knowledge/items/{itemId}/annotations/{annotationId}/revisions',
-      'post',
-    ],
+    ['/knowledge/items/{itemId}/annotations/{annotationId}/revisions', 'get'],
+    ['/knowledge/items/{itemId}/annotations/{annotationId}/revisions', 'post'],
     ['/knowledge/conversations', 'get'],
     ['/knowledge/conversations', 'post'],
     ['/knowledge/conversations/{conversationId}', 'get'],
@@ -223,7 +248,10 @@ test('OpenAPI publishes the bounded provenance foundation without internal idemp
     ['/knowledge/syntheses/{synthesisId}/versions', 'post'],
   ];
   for (const [path, method] of operations) {
-    assert.ok(openapi.paths?.[path]?.[method], `${method.toUpperCase()} ${path}`);
+    assert.ok(
+      openapi.paths?.[path]?.[method],
+      `${method.toUpperCase()} ${path}`,
+    );
     assert.ok(openapi.paths[path][method].responses?.['403']);
   }
 

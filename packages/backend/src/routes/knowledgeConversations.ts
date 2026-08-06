@@ -294,8 +294,6 @@ export async function registerKnowledgeConversationRoutes(
       preValidation: rejectUnknownKnowledgeBodyFields([
         'title',
         'sourceType',
-        'provider',
-        'model',
         'capturedAt',
       ]),
       schema: {
@@ -311,21 +309,6 @@ export async function registerKnowledgeConversationRoutes(
               maxLength: knowledgeProvenanceLimits.title,
             },
             sourceType: { type: 'string', enum: ['manual'], default: 'manual' },
-            provider: {
-              anyOf: [
-                {
-                  type: 'string',
-                  maxLength: knowledgeProvenanceLimits.provider,
-                },
-                { type: 'null' },
-              ],
-            },
-            model: {
-              anyOf: [
-                { type: 'string', maxLength: knowledgeProvenanceLimits.model },
-                { type: 'null' },
-              ],
-            },
             capturedAt: nullableDateTimeSchema,
           },
         },
@@ -563,7 +546,6 @@ export async function registerKnowledgeConversationRoutes(
         'role',
         'origin',
         'content',
-        'name',
         'occurredAt',
       ]),
       schema: {
@@ -582,12 +564,6 @@ export async function registerKnowledgeConversationRoutes(
             role: { type: 'string', enum: knowledgeConversationRoles },
             origin: { type: 'string', enum: knowledgeProvenanceOrigins },
             content: { type: 'string', minLength: 1, maxLength: 65_536 },
-            name: {
-              anyOf: [
-                { type: 'string', maxLength: knowledgeProvenanceLimits.name },
-                { type: 'null' },
-              ],
-            },
             occurredAt: nullableDateTimeSchema,
           },
         },

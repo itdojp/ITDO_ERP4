@@ -90,6 +90,10 @@ export const knowledgeProvenanceLimits = {
   expectedVersion: 2_147_483_646,
   confidenceBasisPoints: 10_000,
   synthesisProvenanceDepth: 16,
+  synthesisProvenanceNodes: 128,
+  synthesisProvenanceEdges: 512,
+  synthesisProvenanceQueries: 512,
+  synthesisListCandidates: 200,
 } as const;
 
 export type KnowledgePageBoundary = {

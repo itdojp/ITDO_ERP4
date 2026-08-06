@@ -394,10 +394,41 @@ ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_knowledge_provenance_target_chec
     'knowledge_import_duplicate_detected',
     'knowledge_import_rejected'
   )
-  OR "targetTable" IN (
-    'knowledge_annotations',
-    'knowledge_conversations',
-    'knowledge_syntheses',
-    'knowledge_imports'
+  OR (
+    (
+      "action" IN (
+        'knowledge_annotation_created',
+        'knowledge_annotation_revised',
+        'knowledge_annotation_deleted'
+      )
+      AND "targetTable" = 'knowledge_annotations'
+    )
+    OR (
+      "action" IN (
+        'knowledge_conversation_created',
+        'knowledge_conversation_imported',
+        'knowledge_conversation_item_linked',
+        'knowledge_conversation_item_unlinked',
+        'knowledge_conversation_turn_appended'
+      )
+      AND "targetTable" = 'knowledge_conversations'
+    )
+    OR (
+      "action" IN (
+        'knowledge_synthesis_created',
+        'knowledge_synthesis_version_appended',
+        'knowledge_synthesis_source_linked'
+      )
+      AND "targetTable" = 'knowledge_syntheses'
+    )
+    OR (
+      "action" IN (
+        'knowledge_import_previewed',
+        'knowledge_import_committed',
+        'knowledge_import_duplicate_detected',
+        'knowledge_import_rejected'
+      )
+      AND "targetTable" = 'knowledge_imports'
+    )
   )
 ) NOT VALID;
