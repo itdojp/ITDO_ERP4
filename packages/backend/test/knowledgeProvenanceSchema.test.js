@@ -248,6 +248,15 @@ test('conversation links enforce identity, stable order, and a single primary it
     migration,
     /CREATE UNIQUE INDEX "KnowledgeConversationItem_one_primary_key"[\s\S]*?WHERE "relationType" = 'primary'/,
   );
+  assert.match(
+    migration,
+    /CREATE CONSTRAINT TRIGGER "KnowledgeConversationItem_same_owner_trigger"/,
+  );
+  assert.match(migration, /conversation\."ownerUserId" <> item\."ownerUserId"/);
+  assert.match(
+    migration,
+    /CONSTRAINT = 'KnowledgeConversationItem_same_owner_check'/,
+  );
 });
 
 test('migration is expand-only and retains existing data on application rollback', () => {

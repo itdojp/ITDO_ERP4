@@ -242,6 +242,34 @@ CREATE TABLE "KnowledgeSynthesisSource" (
   )
 );
 
+CREATE FUNCTION "enforce_knowledge_conversation_item_same_owner"()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM "KnowledgeConversation" AS conversation
+    INNER JOIN "KnowledgeItem" AS item
+      ON item."id" = NEW."knowledgeItemId"
+    WHERE conversation."id" = NEW."conversationId"
+      AND conversation."ownerUserId" <> item."ownerUserId"
+  ) THEN
+    RAISE EXCEPTION 'knowledge conversation item owner must match conversation owner'
+      USING
+        ERRCODE = '23514',
+        CONSTRAINT = 'KnowledgeConversationItem_same_owner_check';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER "KnowledgeConversationItem_same_owner_trigger"
+AFTER INSERT OR UPDATE ON "KnowledgeConversationItem"
+DEFERRABLE INITIALLY IMMEDIATE
+FOR EACH ROW
+EXECUTE FUNCTION "enforce_knowledge_conversation_item_same_owner"();
+
 CREATE FUNCTION "enforce_knowledge_synthesis_source_no_same_aggregate"()
 RETURNS TRIGGER
 LANGUAGE plpgsql

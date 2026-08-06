@@ -84,6 +84,31 @@ function synthesisRow(id, overrides = {}) {
   };
 }
 
+function conversationRow(id, overrides = {}) {
+  const timestamp = new Date('2026-08-06T00:00:00.000Z');
+  return {
+    id,
+    ownerUserId: 'owner-1',
+    title: `Conversation ${id}`,
+    sourceType: 'manual',
+    provider: null,
+    model: null,
+    capturedAt: timestamp,
+    importedAt: null,
+    contentHash: 'a'.repeat(64),
+    idempotencyHash: null,
+    version: 1,
+    deletedAt: null,
+    deletedBy: null,
+    createdAt: timestamp,
+    createdBy: 'owner-1',
+    updatedAt: timestamp,
+    updatedBy: 'owner-1',
+    items: [],
+    ...overrides,
+  };
+}
+
 test('conversation response keeps untrusted provider/model/tool labels redacted', () => {
   const now = new Date('2026-08-06T00:00:00.000Z');
   const response = conversationResponse({
@@ -268,6 +293,78 @@ test('annotation history and owner mutations require a non-deleted parent item',
     assert.match(serialized, /"ownerUserId":"owner-1"/);
     assert.match(serialized, /"deletedAt":null/);
   }
+});
+
+test('annotation revision rows repeat current parent ACL after the initial visibility check', async () => {
+  let revisionPredicate;
+  const repository = new PrismaKnowledgeAnnotationRepository(
+    emptyClient({
+      knowledgeAnnotation: {
+        findFirst: async () => ({ id: 'annotation-1' }),
+      },
+      knowledgeAnnotationRevision: {
+        findMany: async ({ where }) => {
+          revisionPredicate = where;
+          return [];
+        },
+      },
+    }),
+  );
+
+  assert.deepEqual(
+    await repository.listRevisionsVisible({
+      actor,
+      itemId: 'item-1',
+      annotationId: 'annotation-1',
+      limit: 20,
+    }),
+    { items: [], nextBoundary: null },
+  );
+
+  const serialized = JSON.stringify(revisionPredicate);
+  assert.match(serialized, /"annotation":\{"is":/);
+  assert.match(serialized, /"knowledgeItemId":"item-1"/);
+  assert.match(serialized, /"ownerUserId":"owner-1"/);
+  assert.match(serialized, /"organizationId":"org-1"/);
+  assert.match(serialized, /"groupAccountId":\{"in":\["group-1"\]\}/);
+  assert.match(serialized, /"active":true/);
+  assert.match(serialized, /"deletedAt":null/);
+});
+
+test('conversation turn rows repeat the linked-item ACL intersection after the initial visibility check', async () => {
+  let turnPredicate;
+  const repository = new PrismaKnowledgeConversationRepository(
+    emptyClient({
+      knowledgeConversation: {
+        findFirst: async () => conversationRow('conversation-1'),
+      },
+      knowledgeConversationTurn: {
+        findMany: async ({ where }) => {
+          turnPredicate = where;
+          return [];
+        },
+      },
+    }),
+  );
+
+  assert.deepEqual(
+    await repository.listTurnsVisible({
+      actor,
+      conversationId: 'conversation-1',
+      limit: 20,
+    }),
+    { items: [], nextBoundary: null },
+  );
+
+  const serialized = JSON.stringify(turnPredicate);
+  assert.match(serialized, /"conversation":\{"is":/);
+  assert.match(serialized, /"items":\{"some":\{\}\}/);
+  assert.match(serialized, /"items":\{"every":/);
+  assert.match(serialized, /"knowledgeItem":\{"is":/);
+  assert.match(serialized, /"ownerUserId":"owner-1"/);
+  assert.match(serialized, /"organizationId":"org-1"/);
+  assert.match(serialized, /"groupAccountId":\{"in":\["group-1"\]\}/);
+  assert.match(serialized, /"active":true/);
 });
 
 test('source validation rechecks current item ACL and normalizes inaccessible IDs', async () => {

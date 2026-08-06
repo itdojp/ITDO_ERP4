@@ -152,7 +152,8 @@ synthesis sourceは参照先ごとのnullable FKとPostgreSQLのexactly-one CHEC
 - annotation mutationはcanonical actor本人だけが行い、編集時は旧revisionを保持して
   `currentRevision`を楽観的に進める。削除はlogical deleteとしrevisionを消さない。
 - conversation mutationはowner本人だけが行う。linked itemは全件同一ownerでなければ
-  relationを作成しない。conversation readはlinked item ACLのunionではなく共通部分で
+  relationを作成せず、同一owner制約はapplicationとDB constraint triggerの二層で保証する。
+  conversation readはlinked item ACLのunionではなく共通部分で
   判定し、actorが一件でも現在readできなければtitle、turn、relation、件数を返さない。
   linked itemがないconversationはownerだけがreadできる。
 - turnは`conversationId + sequence`で一意とし、conversation versionを用いた競合検知を
@@ -190,6 +191,10 @@ synthesis sourceは参照先ごとのnullable FKとPostgreSQLのexactly-one CHEC
   DB CHECKもannotation/conversation/synthesis/importのaction groupを対応するtarget tableへ
   厳密に束縛し、対象actionのnullableなtarget table/IDも拒否する。annotationの履歴・改訂・
   削除はparent itemが非削除であることを再検査する。
+- annotation revisionとconversation turnの本文queryは、parent annotation/conversationの
+  事前visibility確認とは別に、子table query自身へcurrent item ACL predicateを含める。事前
+  確認と本文queryの間でgrantが失効しownerが履歴を追加しても、失効後のactorへその本文を
+  返さない。linked item ACLの共通部分もturn queryで再評価する。
 
 PR Aのmigrationはenum/table/index/FK/CHECKと新規履歴table専用DB triggerの追加だけを
 行うexpand-only migrationであり、

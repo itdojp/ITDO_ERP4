@@ -286,6 +286,27 @@ function conversationVisibilityWhere(
   };
 }
 
+function annotationHistoryVisibilityWhere(
+  actor: KnowledgeActor,
+  itemId: string,
+): Prisma.KnowledgeAnnotationWhereInput {
+  return {
+    knowledgeItemId: itemId,
+    OR: [
+      {
+        ownerUserId: actor.userId,
+        knowledgeItem: {
+          is: { ownerUserId: actor.userId, deletedAt: null },
+        },
+      },
+      {
+        deletedAt: null,
+        knowledgeItem: { is: buildKnowledgeVisibilityWhere(actor) },
+      },
+    ],
+  };
+}
+
 function synthesisBaseVisibilityWhere(
   actor: KnowledgeActor,
 ): Prisma.KnowledgeSynthesisWhereInput {
@@ -420,19 +441,7 @@ export class PrismaKnowledgeAnnotationRepository implements KnowledgeAnnotationR
     const annotation = await this.client.knowledgeAnnotation.findFirst({
       where: {
         id: input.annotationId,
-        knowledgeItemId: input.itemId,
-        OR: [
-          {
-            ownerUserId: input.actor.userId,
-            knowledgeItem: {
-              is: { ownerUserId: input.actor.userId, deletedAt: null },
-            },
-          },
-          {
-            deletedAt: null,
-            knowledgeItem: { is: buildKnowledgeVisibilityWhere(input.actor) },
-          },
-        ],
+        ...annotationHistoryVisibilityWhere(input.actor, input.itemId),
       },
       select: { id: true },
     });
@@ -440,6 +449,9 @@ export class PrismaKnowledgeAnnotationRepository implements KnowledgeAnnotationR
     const rows = await this.client.knowledgeAnnotationRevision.findMany({
       where: {
         annotationId: annotation.id,
+        annotation: {
+          is: annotationHistoryVisibilityWhere(input.actor, input.itemId),
+        },
         ...(input.beforeRevision
           ? { revision: { lt: input.beforeRevision } }
           : {}),
@@ -753,6 +765,7 @@ export class PrismaKnowledgeConversationRepository implements KnowledgeConversat
     const rows = await this.client.knowledgeConversationTurn.findMany({
       where: {
         conversationId: input.conversationId,
+        conversation: { is: conversationVisibilityWhere(input.actor) },
         ...(input.boundary
           ? {
               OR: [
