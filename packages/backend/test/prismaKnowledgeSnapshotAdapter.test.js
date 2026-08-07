@@ -85,7 +85,19 @@ test('visible reads embed current item visibility and owner mutations use owner 
         groupGrants: {
           some: {
             groupAccountId: { in: ['group-2', 'group-1'] },
-            groupAccount: { active: true },
+            groupAccount: {
+              active: true,
+              memberships: {
+                some: {
+                  userId: 'owner-1',
+                  user: {
+                    active: true,
+                    deletedAt: null,
+                    organization: 'org-1',
+                  },
+                },
+              },
+            },
           },
         },
       },

@@ -158,6 +158,10 @@ synthesis sourceは参照先ごとのnullable FKとPostgreSQLのexactly-one CHEC
   conversation readはlinked item ACLのunionではなく共通部分で
   判定し、actorが一件でも現在readできなければtitle、turn、relation、件数を返さない。
   linked itemがないconversationはownerだけがreadできる。
+- organization itemのnon-owner ACLはrequest開始時のgroup IDだけを信頼せず、item/grantを読む
+  同じDB snapshot内でactorのcurrent `UserGroup` membership、active/non-deleted `UserAccount`、
+  current organization、active `GroupAccount`を再検査する。membership失効がsnapshot開始前に
+  commitしていればannotation、conversation、synthesis/source mutationをfail closedにする。
 - turnは`conversationId + sequence`で一意とし、conversation versionを用いた競合検知を
   行う。roleとoriginの組合せもallowlistで検証し、既存turnを更新しない。annotation
   revision、conversation turn、synthesis version/sourceは新規table上のDB triggerでも
@@ -199,12 +203,13 @@ synthesis sourceは参照先ごとのnullable FKとPostgreSQLのexactly-one CHEC
   配列化してからvalidatorへ渡すため、JWT scopeのTAB/LF等またはopaque comma tokenを権限scopeへ
   再解釈しない。
   array/config scopeと監査識別子はraw値の制御・format・bidi文字、ill-formed UTF-16 surrogateを
-  正規化前にfail closedとし、JWT principal/actor/token/audience/issuerもcanonical identity lookup前に
-  同じ検査を行う。`act.sub`の正確な空文字だけは既存の非委任fallback契約を維持する。
+  正規化前にfail closedとし、JWT principal/actor/token/audience/issuerおよびBFF OIDCのprovider
+  subject/issuerもcanonical identity lookup前に同じ検査を行う。`act.sub`の正確な空文字だけは
+  既存の非委任fallback契約を維持する。
   malformed provenanceを有効なscope／別identity／actor attributionへ変換しない。
   JWT `exp`は存在する場合に非負safe integerへ正規化できる有限numberだけを受理し、認証と
   mandatory auditの型境界を一致させる。不正な署名済みclaimをbusiness mutationへ進めない。
-  request IDはFastify logger binding前にsafe allowlistで検査し、不正な外部値をrandom UUIDへ置換する。
+  request IDはFastify logger binding前かつtrim等の正規化前にraw値をsafe allowlistで検査し、不正な外部値をrandom UUIDへ置換する。
   response、logger、mandatory auditへraw request IDを伝播させない。
   DB CHECKもannotation/conversation/synthesis/importのaction groupを対応するtarget tableへ
   厳密に束縛し、対象actionのnullableなtarget table/IDも拒否する。annotationの履歴・改訂・

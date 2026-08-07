@@ -98,7 +98,19 @@ export function buildKnowledgeVisibilityWhere(
       groupGrants: {
         some: {
           groupAccountId: { in: groups },
-          groupAccount: { active: true },
+          groupAccount: {
+            active: true,
+            memberships: {
+              some: {
+                userId: ownerUserId,
+                user: {
+                  active: true,
+                  deletedAt: null,
+                  organization: organizationId,
+                },
+              },
+            },
+          },
         },
       },
     });

@@ -163,7 +163,7 @@ Knowledge item の logical delete 理由は自由記述ではなく有限のreas
 
 - APIは `POST /knowledge/items`、`GET /knowledge/items`、`GET /knowledge/items/count`、`GET|PATCH|DELETE /knowledge/items/:id`、`POST /knowledge/items/:id/restore` とする。
 - `personal` のread/writeはowner subjectをDB predicateへ含め、`admin` / `mgmt` roleだけの通常閲覧を許可しない。JWT/sessionのDB canonical contextでは可変な`externalId` / `userName`ではなくstableな`UserAccount.id`を`ownerUserId`へ保存・照合する。development/test専用header authだけはsynthetic `UserContext.userId`へfallbackする。non-header authはactiveな`UserIdentity`に裏付けられたcanonical `UserAccount.id`と`identityId`を必須とし、解決できない場合はKnowledge route全体を`403 forbidden`（`canonical_account_required`）でfail closedとする。既存API互換の`userName` / `externalId`解決結果やJWT subjectをKnowledge owner/audit主体へfallbackしない。
-- `organization` の通常readはowner、またはitemの `organizationId` とactorの `orgId` が一致し、かつactiveなcanonical `GroupAccount.id` の明示grantが一致する場合だけ許可する。org/group context欠落、inactive group、壊れたrelationはdenyする。
+- `organization` の通常readはowner、またはitemの `organizationId` とactorの `orgId` が一致し、かつactiveなcanonical `GroupAccount.id` の明示grantとactorのcurrent `UserGroup` membershipが同じDB snapshot内で一致する場合だけ許可する。membershipの`UserAccount`もactive、非削除、同一organizationであることを再検査する。org/group context欠落、inactive group、失効済みmembership、壊れたrelationはdenyする。
 - JWT/sessionのorganizationとcanonical group IDはDB解決成功時にDB正本へ置換し、stale token claimをACLへ使わない。正のDB context cache TTLを使う場合もidentity-backed entryの期限を`UserIdentity.effectiveUntil`で上限設定し、identity失効後のKnowledge actor再利用を拒否する。session認証のcache keyはcanonical identity/account単位で分離し、同じprovider subjectを持つ別identityの正・負contextを共有しない。DB解決中にsubject/global invalidationが発生した場合は、失効前snapshotをcacheへ書き戻さない。header authはdevelopment/test用のsynthetic trust boundaryであり、productionはenv validationで`AUTH_MODE=jwt_bff`以外を起動拒否する。
 - organization item作成時はactor自身のactive `groupAccountIds` に含まれるgrantを1件以上要求する。WS02のgrantはread-onlyで、update/delete/restoreはownerだけに限定する。
 - JWT/sessionでDB user contextを解決できた場合、`orgId`、`groupIds`、`groupAccountIds`およびgroup由来roleはDB正本で置換し、signed tokenのstale group claimをunionしない。独立したrole claimは既存認証契約として保持する。development/test専用header authはsynthetic contextをそのまま信頼し、DB canonical化を行わない。
@@ -352,12 +352,13 @@ PR Aはimport parserとUIを有効化する前に、次のDB/application/API契�
   requestをrollbackする状態を防ぐ。JWT文字列はU+0020 SPだけ、設定値だけはcall siteで
   comma-separated listとして分解し、JWT内のTAB/LF/CR/FF/VTやカンマを権限scopeへ再解釈しない。
   scopeおよびprincipal/actor/request/token/audience/agent run識別子はraw値の制御・format・
-  bidi文字、ill-formed UTF-16 surrogateと端部whitespaceをtrim前に拒否する。issuerもcanonical
-  identity lookup前に同じ境界を適用し、不正な認証provenanceを別identityへalias化したり正規化後の
-  値として監査へ残さない。既存契約どおり`act.sub`の正確な空文字だけは未指定相当とする。
+  bidi文字、ill-formed UTF-16 surrogateと端部whitespaceをtrim前に拒否する。JWTとBFF OIDCの
+  issuer/provider subjectもcanonical identity lookup前に同じ境界を適用し、不正な認証provenanceを
+  別identityへalias化したり正規化後の値として監査へ残さない。既存契約どおり`act.sub`の正確な
+  空文字だけは未指定相当とする。
   JWT `exp`は存在する場合に非負safe integerへ正規化できる有限numberだけを認証境界で受理し、
   上限超過や不正型をbusiness mutation／mandatory auditへ到達させない。
-  `x-request-id`はFastify logger生成前に安全文字・1〜128文字を検査し、不正値はraw値を保持せず
+  `x-request-id`はFastify logger生成前かつtrim等の正規化前にraw値を安全文字・1〜128文字で検査し、不正値はraw値を保持せず
   random UUIDへ置換してresponse、log、mandatory auditへ同じ検証済みIDだけを渡す。
   request bodyやraw bearer tokenからscopeを受け付けない。DB CHECKでもaction groupとtarget
   tableを厳密に対応付ける。

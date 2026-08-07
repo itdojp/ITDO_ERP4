@@ -35,6 +35,10 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
   認可線形化点とする。annotation本文queryとconversation relation/turn query自身にもparent
   item ACL predicateを含める。snapshot後にgrant revokeとownerによる履歴追加を挟む
   PostgreSQL 15実統合試験で、失効後の新規本文がresponseへ混在しないことを確認した。
+- organization itemのnon-owner ACLはrequest開始時のgroup IDだけを信頼せず、item/grantを読む
+  同じDB snapshot内でcurrent `UserGroup` membership、active/non-deleted `UserAccount`、
+  current organization、active `GroupAccount`を再検査する。membership失効がsnapshot開始前に
+  commit済みの場合、annotation、conversation、synthesis/source mutationをfail closedにする。
 - conversation-itemの同一owner制約をapplication検査と、relation内部の`ownerUserId`から両親の
   `(id, ownerUserId)`へ張る2本のdeferrable composite FKで保証する。Prisma直接insert、片親だけの
   owner更新、relation insertと親owner更新の並行競合をDBが拒否し、両親を同一transactionで同じ
@@ -52,11 +56,12 @@ Sakura VPS、Google Drive、Sakura Object Storage、external LLM、実credential
   TAB/LF/CR/FF/VTまたはcomma tokenを複数の認可scopeへ再解釈しない。
   array/config scopeとprincipal/actor/request/token/audience/agent run識別子は、raw値の端部を
   含む制御・format・bidi文字とill-formed UTF-16 surrogateをtrim前に拒否する。JWT issuerを含む
-  認証識別子はcanonical identity lookupとdelegated判定より前に同じ検査を行い、端部whitespaceや
-  UTF-8 replacementによるalias化を拒否する。`act.sub`の正確な空文字だけは既存の非委任fallbackを
-  維持する。JWT `exp`は存在する場合に非負safe integerへ正規化できる有限numberだけを受理し、
-  認証とmandatory auditの型境界を一致させる。`x-request-id`はFastify logger生成前に検査し、
-  不正なraw値をresponse、log、auditへ伝播させずrandom UUIDへ置換する。
+  認証識別子はcanonical identity lookupとdelegated判定より前に同じ検査を行い、BFF OIDCの
+  provider subject/issuerを含めて端部whitespaceやUTF-8 replacementによるalias化を拒否する。
+  `act.sub`の正確な空文字だけは既存の非委任fallbackを維持する。JWT `exp`は存在する場合に
+  非負safe integerへ正規化できる有限numberだけを受理し、認証とmandatory auditの型境界を
+  一致させる。`x-request-id`はFastify logger生成前かつtrim等の正規化前にraw値を検査し、
+  不正値をresponse、log、auditへ伝播させずrandom UUIDへ置換する。
 - annotation revision、conversation turn、synthesis version/sourceは新規table専用triggerで
   update/deleteを拒否し、API経路外でもimmutable historyを保つ。
 - listはstable sort、bounded limit、actor/resource/parentへ束縛したHMAC署名付きopaque
@@ -81,6 +86,12 @@ Result: **71/71 PASS**（provenance 61 + delegated auth/identity/expiry 10、fai
 **11/11 PASS**だった。不正なheader値をresponseへ反射しないことを確認した。logger生成前の
 `genReqId`とmandatory auditが同じ検証済み`request.id`を利用する実装境界はdiff reviewで確認したが、
 logger bindingと`AuditLog.requestId`を同時にcaptureする専用結合testは今回追加していない。
+
+独立reviewのblocker remediationとして、current organization membership、BFF OIDCのraw
+provider subject、raw request IDの正規化前検査をまとめたfocused testは **83/83 PASS**
+（fail/skip/todo 0）だった。署名済みGoogle ID tokenの端部ASCII/NBSP、NUL、bidi、lone
+surrogate、長さ超過subjectをidentity lookup前に拒否し、NBSP/BOMで囲まれたrequest IDが
+trim後の攻撃者指定IDへalias化されないことを確認した。
 
 署名済みJWTの`exp`上限超過がbusiness routeへ到達する前に401と
 `auth_exp_contract_invalid`へ正規化されるruntime testも**PASS**した。
@@ -123,6 +134,9 @@ Result: **PASS**
   revoke後の本文を混在させない
 - conversation turnのRepeatable Read snapshot後にgrant revokeとturn追加を挟んでも
   revoke後の本文を混在させない
+- organization membershipをsnapshot開始前に失効させたstale actorについて、annotation detail/
+  history、conversation turn、synthesis detail/history、synthesis source mutationをnot-foundへ
+  fail closedにする
 - linked relation存在中の片親owner更新をcomposite FKが拒否
 - 両親を同一transactionで同じownerへ移す整合更新ではrelation ownerもcascade追従
 - relation insertと親owner更新の並行競合では、owner更新transactionがPostgreSQLの
@@ -173,19 +187,19 @@ Result: **PASS**
 
 ## Repository quality gates
 
-| Gate                                      | Result  | Notes                                                                                                                            |
-| ----------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Prisma format/generate                    | PASS    | Prisma 7.9.1                                                                                                                     |
-| root lint / format / typecheck / build    | PASS    | backend/frontend。frontend dev dependenciesはlockfile準拠の`npm ci`後に実行                                                      |
-| `make test`                               | PASS    | backend 1,882/1,882、frontend 85 files / 495 tests。fail/skip/todo 0                                                             |
-| focused coverage                          | PASS    | provenance files aggregate: statements/lines 82.58%、branches 70.03%、functions 89.17%。threshold/scope変更なし                  |
-| bounded-context dependency/coverage       | PASS    | 310 modules / 1,214 dependencies、295 source files / 246 targets、unclassified/duplicate/ambiguous 0                             |
-| OpenAPI export / breaking diff            | PASS    | generated snapshotとtracked fileはbyte-identical。baselineからbreaking 0。18 operation追加とdetail 3 operationの400明示のみ      |
-| `make ops-quality`                        | PASS    | live systemd/provider操作なし。S3 profile 22/22、storage readiness 2/2を含む                                                     |
-| backend/frontend security audit           | PASS    | `npm audit --audit-level=high`: 0 vulnerabilities / 0 vulnerabilities                                                            |
-| docs index / image links                  | PASS    | index current、118 image links / 351 Markdown files                                                                              |
-| secret scan / `git diff --check`          | PASS    | candidate filesを含むtracked scan 0 match、whitespace error 0                                                                    |
-| independent/Copilot review / CI / cooling | PENDING | Repeatable Read、depth memo、200件境界、same-aggregate/immutable DB保証を追加修正済み。final exact headで再review/CI/coolingする |
+| Gate                                      | Result  | Notes                                                                                                                                                                                                          |
+| ----------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prisma format/generate                    | PASS    | Prisma 7.9.1                                                                                                                                                                                                   |
+| root lint / format / typecheck / build    | PASS    | backend/frontend。frontend dev dependenciesはlockfile準拠の`npm ci`後に実行                                                                                                                                    |
+| `make test`                               | PASS    | backend 1,883/1,883、frontend 85 files / 495 tests。fail/skip/todo 0                                                                                                                                           |
+| focused coverage                          | PASS    | provenance files aggregate: statements/lines 82.58%、branches 70.03%、functions 89.17%。final review remediation対象3実装はstatements/lines 82.25%、branches 73.98%、functions 87.83%。threshold/scope変更なし |
+| bounded-context dependency/coverage       | PASS    | 310 modules / 1,214 dependencies、295 source files / 246 targets、unclassified/duplicate/ambiguous 0                                                                                                           |
+| OpenAPI export / breaking diff            | PASS    | generated snapshotとtracked fileはbyte-identical。baselineからbreaking 0。18 operation追加とdetail 3 operationの400明示のみ                                                                                    |
+| `make ops-quality`                        | PASS    | live systemd/provider操作なし。S3 profile 22/22、storage readiness 2/2を含む                                                                                                                                   |
+| backend/frontend security audit           | PASS    | `npm audit --audit-level=high`: 0 vulnerabilities / 0 vulnerabilities                                                                                                                                          |
+| docs index / image links                  | PASS    | index current、118 image links / 351 Markdown files                                                                                                                                                            |
+| secret scan / `git diff --check`          | PASS    | candidate filesを含むtracked scan 0 match、whitespace error 0                                                                                                                                                  |
+| independent/Copilot review / CI / cooling | PENDING | Repeatable Read、depth memo、200件境界、same-aggregate/immutable DB保証を追加修正済み。final exact headで再review/CI/coolingする                                                                               |
 
 Focused coverageのうち、main infrastructure adapterはc8計測でstatements/lines 67.67%、
 branches 68.27%、functions 79.31%、audit adapterはstatements/lines 90.50%、branches
@@ -194,6 +208,10 @@ shared auth scope validatorはstatements/lines 92.85%、branches 76.47%、functi
 50.00%だった。実DB経路は
 上記のPostgreSQL 15 integrationで追加検証している。coverage threshold、対象scope、
 ignore、skipは変更していない。
+
+auth標準coverage gateもfinal review remediation後に再実行し、statements/lines 90.21%
+（基準89.70%）、branches 71.39%（基準70.50%）、functions 98.69%（基準97.90%）で
+PASSした。
 
 ## Audit events
 

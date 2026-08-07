@@ -137,6 +137,59 @@ try {
       active: true,
     },
   });
+  await prisma.userAccount.createMany({
+    data: [
+      {
+        id: 'integration-owner',
+        userName: 'integration-owner',
+        active: true,
+        organization: 'integration-org',
+      },
+      {
+        id: 'integration-both-groups',
+        userName: 'integration-both-groups',
+        active: true,
+        organization: 'integration-org',
+      },
+      {
+        id: 'integration-group-a-only',
+        userName: 'integration-group-a-only',
+        active: true,
+        organization: 'integration-org',
+      },
+      {
+        id: 'integration-acl-interleave-reader',
+        userName: 'integration-acl-interleave-reader',
+        active: true,
+        organization: 'integration-org',
+      },
+      {
+        id: 'integration-outsider',
+        userName: 'integration-outsider',
+        active: true,
+        organization: 'other-org',
+      },
+      {
+        id: 'integration-other-owner',
+        userName: 'integration-other-owner',
+        active: true,
+      },
+    ],
+  });
+  await prisma.userGroup.createMany({
+    data: [
+      { userId: 'integration-owner', groupId: groupA.id },
+      { userId: 'integration-owner', groupId: groupB.id },
+      { userId: 'integration-owner', groupId: interleaveGroup.id },
+      { userId: 'integration-both-groups', groupId: groupA.id },
+      { userId: 'integration-both-groups', groupId: groupB.id },
+      { userId: 'integration-group-a-only', groupId: groupA.id },
+      {
+        userId: 'integration-acl-interleave-reader',
+        groupId: interleaveGroup.id,
+      },
+    ],
+  });
   const owner = {
     userId: 'integration-owner',
     organizationId: 'integration-org',
@@ -1555,6 +1608,216 @@ try {
     /constraint|check/i,
   );
 
+  const membershipRevokeGroup = await prisma.groupAccount.create({
+    data: {
+      displayName: 'Knowledge provenance membership revoke group',
+      active: true,
+    },
+  });
+  const membershipReader = {
+    userId: 'integration-membership-reader',
+    organizationId: 'integration-org',
+    groupAccountIds: [membershipRevokeGroup.id],
+  };
+  await prisma.userAccount.create({
+    data: {
+      id: membershipReader.userId,
+      userName: membershipReader.userId,
+      active: true,
+      organization: membershipReader.organizationId,
+    },
+  });
+  await prisma.userGroup.createMany({
+    data: [
+      {
+        userId: owner.userId,
+        groupId: membershipRevokeGroup.id,
+      },
+      {
+        userId: membershipReader.userId,
+        groupId: membershipRevokeGroup.id,
+      },
+    ],
+  });
+  owner.groupAccountIds.push(membershipRevokeGroup.id);
+  const membershipItem = await createItem(owner, {
+    scope: 'organization',
+    organizationGroupIds: [membershipRevokeGroup.id],
+    sourceType: 'manual',
+    title: 'Synthetic current membership source',
+  });
+  const membershipAnnotation = expectOk(
+    await annotationService.create({
+      actor: owner,
+      auditActor,
+      itemId: membershipItem.id,
+      body: {
+        kind: 'note',
+        origin: 'user',
+        content: 'Synthetic current membership annotation',
+      },
+    }),
+    'create current membership annotation',
+  );
+  const membershipConversation = expectOk(
+    await conversationService.create({
+      actor: owner,
+      auditActor,
+      body: { title: 'Synthetic current membership conversation' },
+    }),
+    'create current membership conversation',
+  );
+  const membershipConversationLinked = expectOk(
+    await conversationService.addItem({
+      actor: owner,
+      auditActor,
+      conversationId: membershipConversation.id,
+      body: {
+        itemId: membershipItem.id,
+        relationType: 'primary',
+        ordinal: 0,
+        expectedVersion: membershipConversation.version,
+      },
+    }),
+    'link current membership conversation',
+  );
+  expectOk(
+    await conversationService.appendTurn({
+      actor: owner,
+      auditActor,
+      conversationId: membershipConversation.id,
+      body: {
+        expectedVersion: membershipConversationLinked.version,
+        role: 'user',
+        origin: 'user',
+        content: 'Synthetic current membership turn',
+      },
+    }),
+    'append current membership turn',
+  );
+  const membershipSynthesis = expectOk(
+    await synthesisService.create({
+      actor: owner,
+      auditActor,
+      body: {
+        scope: 'organization',
+        title: 'Synthetic current membership synthesis',
+        content: 'Synthetic current membership conclusion',
+        sources: [
+          {
+            kind: 'item',
+            sourceId: membershipItem.id,
+            relationType: 'primary',
+          },
+        ],
+      },
+    }),
+    'create current membership synthesis',
+  );
+  assert.equal(
+    (
+      await annotationService.history({
+        actor: membershipReader,
+        itemId: membershipItem.id,
+        annotationId: membershipAnnotation.id,
+        limit: 20,
+      })
+    ).ok,
+    true,
+  );
+  assert.equal(
+    (
+      await conversationService.listTurns({
+        actor: membershipReader,
+        conversationId: membershipConversation.id,
+        limit: 20,
+      })
+    ).ok,
+    true,
+  );
+  assert.equal(
+    (
+      await synthesisService.detail({
+        actor: membershipReader,
+        synthesisId: membershipSynthesis.synthesis.id,
+      })
+    ).ok,
+    true,
+  );
+  await prisma.userGroup.delete({
+    where: {
+      userId_groupId: {
+        userId: membershipReader.userId,
+        groupId: membershipRevokeGroup.id,
+      },
+    },
+  });
+  expectFailure(
+    await annotationService.detail({
+      actor: membershipReader,
+      itemId: membershipItem.id,
+      annotationId: membershipAnnotation.id,
+    }),
+    'not_found',
+    'annotation membership revoked before snapshot',
+  );
+  expectFailure(
+    await annotationService.history({
+      actor: membershipReader,
+      itemId: membershipItem.id,
+      annotationId: membershipAnnotation.id,
+      limit: 20,
+    }),
+    'not_found',
+    'annotation history membership revoked before snapshot',
+  );
+  expectFailure(
+    await conversationService.listTurns({
+      actor: membershipReader,
+      conversationId: membershipConversation.id,
+      limit: 20,
+    }),
+    'not_found',
+    'conversation membership revoked before snapshot',
+  );
+  expectFailure(
+    await synthesisService.detail({
+      actor: membershipReader,
+      synthesisId: membershipSynthesis.synthesis.id,
+    }),
+    'not_found',
+    'synthesis membership revoked before snapshot',
+  );
+  expectFailure(
+    await synthesisService.history({
+      actor: membershipReader,
+      synthesisId: membershipSynthesis.synthesis.id,
+      limit: 20,
+    }),
+    'not_found',
+    'synthesis history membership revoked before snapshot',
+  );
+  expectFailure(
+    await synthesisService.create({
+      actor: membershipReader,
+      auditActor,
+      body: {
+        scope: 'personal',
+        title: 'Must not create from revoked membership',
+        content: 'Must not persist after membership revocation',
+        sources: [
+          {
+            kind: 'item',
+            sourceId: membershipItem.id,
+            relationType: 'primary',
+          },
+        ],
+      },
+    }),
+    'not_found',
+    'synthesis source mutation membership revoked before snapshot',
+  );
+
   const auditFailureItem = await createItem(owner, {
     scope: 'personal',
     sourceType: 'manual',
@@ -1658,6 +1921,7 @@ try {
       conversationReadSnapshotConsistent: true,
       annotationHistoryAclInterleaveRedacted: true,
       conversationTurnAclInterleaveRedacted: true,
+      currentMembershipRevocationEnforced: true,
       crossOwnerRelationDbRejected: true,
       parentOwnerUpdateRejected: true,
       deferredOwnerTransferConsistent: true,

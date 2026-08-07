@@ -192,6 +192,50 @@ test('production jwt_bff auth cookies include Secure by default', async () => {
   });
 });
 
+test('Google ID token verification rejects non-canonical provider subjects', async () => {
+  const { privateKey, publicKeyPem } = await getGoogleOidcTestKey();
+  await withEnv(
+    {
+      ...baseBffEnv(),
+      JWT_PUBLIC_KEY: publicKeyPem,
+      JWT_JWKS_URL: undefined,
+    },
+    async () => {
+      const { verifyGoogleIdToken } = await import(
+        new URL(
+          `../dist/services/authGateway.js?bust=${backendModulesCacheBust}`,
+          import.meta.url,
+        ).href
+      );
+      for (const providerSubject of [
+        ' google-sub-001',
+        'google-sub-001 ',
+        '\u00a0google-sub-001',
+        '\u0000google-sub-001',
+        '\u202egoogle-sub-001',
+        '\ud800google-sub-001',
+        's'.repeat(256),
+      ]) {
+        const idToken = await new SignJWT({
+          sub: providerSubject,
+          nonce: 'nonce-001',
+        })
+          .setProtectedHeader({ alg: 'RS256' })
+          .setIssuer('https://accounts.google.com')
+          .setAudience('client-id.apps.googleusercontent.com')
+          .setIssuedAt()
+          .setExpirationTime('10m')
+          .sign(privateKey);
+        await assert.rejects(
+          () => verifyGoogleIdToken(idToken, 'nonce-001'),
+          /google_identity_claim_invalid/,
+          JSON.stringify(providerSubject),
+        );
+      }
+    },
+  );
+});
+
 test('Google BFF and session endpoints return not_found when AUTH_MODE is header', () => {
   const script = `
     import assert from 'node:assert/strict';

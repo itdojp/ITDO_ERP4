@@ -223,10 +223,8 @@ function generateRequestId() {
 
 function sanitizeRequestId(value: unknown): string | null {
   if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (!REQUEST_ID_SAFE_PATTERN.test(trimmed)) return null;
-  return trimmed;
+  if (!REQUEST_ID_SAFE_PATTERN.test(value)) return null;
+  return value;
 }
 
 function buildLoggerOptions() {

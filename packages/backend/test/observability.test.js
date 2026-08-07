@@ -55,7 +55,13 @@ test('inbound request-id is echoed if safe', async () => {
 });
 
 test('unsafe inbound request-id is replaced before response handling', async () => {
-  const unsafeValues = ['!', 'x'.repeat(129), '\u0085request-id'];
+  const unsafeValues = [
+    '!',
+    'x'.repeat(129),
+    '\u0085request-id',
+    '\u00a0safe-id\u00a0',
+    '\ufeffsafe-id\ufeff',
+  ];
   for (const unsafeValue of unsafeValues) {
     const server = await buildTestServer();
     const res = await server.inject({
@@ -66,8 +72,12 @@ test('unsafe inbound request-id is replaced before response handling', async () 
     assert.equal(res.statusCode, 200);
     const requestId = res.headers['x-request-id'];
     assert.equal(typeof requestId, 'string');
-    assert.match(requestId, /^[A-Za-z0-9._-]{1,128}$/);
+    assert.match(
+      requestId,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
     assert.notEqual(requestId, unsafeValue);
+    assert.notEqual(requestId, unsafeValue.trim());
     await server.close();
   }
 });
