@@ -45,11 +45,11 @@ migration、external LLM、Sakura VPS、Google Drive、Sakura Object Storage、�
 
 ## Focused tests
 
-| Verification | Result | Evidence |
-| --- | --- | --- |
-| parser / token / use case / adapter / route | PASS | 37/37、fail/skip/todo 0 |
-| provenance schema / migration / OpenAPI contract | PASS | 10/10、fail/skip/todo 0 |
-| focused coverage | PASS | statements/lines 85.00%、branches 74.21%、functions 93.50%。threshold/scope変更なし |
+| Verification                                     | Result | Evidence                                                                            |
+| ------------------------------------------------ | ------ | ----------------------------------------------------------------------------------- |
+| parser / token / use case / adapter / route      | PASS   | 39/39、fail/skip/todo 0                                                             |
+| provenance schema / migration / OpenAPI contract | PASS   | 10/10、fail/skip/todo 0                                                             |
+| focused coverage                                 | PASS   | statements/lines 85.94%、branches 76.69%、functions 93.50%。threshold/scope変更なし |
 
 Focused coverageはimport parser、port、token、use case、Prisma adapter、routeを対象にした。
 Prisma adapter単体のstatements/linesは52.15%だが、実transaction／constraint経路は後述の
@@ -70,8 +70,8 @@ Result: **PASS**
 - same key+different payloadの並行conflict
 - preview後のACL失効、cross-owner relationのfail closed
 - mandatory audit failure rollback
-- owner composite FK、createdBy/owner、hash、unique、tool name/role CHECK、ledger immutable triggerの
-  negative insert拒否
+- owner composite FK、createdBy/owner、hash、unique、provider/model vocabulary、tool name/role CHECK、
+  ledger immutable triggerのnegative insert拒否
 - audit metadata redaction
 - migration deploy/statusとschema drift
 
@@ -85,7 +85,9 @@ make knowledge-provenance-old-app
 
 Result: **PASS**
 
-- exact baseline `fb10a4df864299d55afcad1985c4996d65e3cd16` applicationをpost-migration DBへ接続した。
+- exact baseline `fb10a4df864299d55afcad1985c4996d65e3cd16` applicationをmigration前後のDBへ接続した。
+- migration前に旧applicationで作成した未対応provider/model値のrowをmigration後も保持した。
+- 現applicationと旧applicationはいずれも保持した未対応provider/modelを`null`へredactした。
 - import済みconversation／turnをPR A applicationでreadできた。
 - PR Bの公開provider/model/tool labelは旧application responseで`null`へredactされた。
 - 既存Knowledge item CRUDと旧conversation create/appendを継続できた。
@@ -94,18 +96,18 @@ Result: **PASS**
 
 ## Repository quality gates
 
-| Gate | Result | Notes |
-| --- | --- | --- |
-| Prisma generate | PASS | Prisma 7.9.1 |
-| backend lint / format / typecheck / build | PASS | source format、ESLint、TypeScript build |
-| backend full test | PASS | 1,922/1,922、fail/skip/todo 0 |
-| frontend full test | PASS | 85 files / 495 tests、fail 0 |
-| OpenAPI export / breaking diff | PASS | tracked snapshot byte一致、breaking 0、2 operation追加 |
-| bounded-context dependency / coverage | PASS | 316 modules / 1,249 dependencies、301 source / 251 target、未分類・重複・曖昧0 |
-| `make audit` / `make ops-quality` | PASS | backend/frontend high audit 0 vulnerabilities、S3 profile 22/22、storage readiness 2/2 |
-| docs index / image links | PASS | generated index current、118 image links / 352 Markdown files |
-| secret scan / `git diff --check` | PASS | intent-to-addした新規fileを含む1,963 filesで0 match、whitespace error 0 |
-| independent/Copilot review / CI / cooling | PENDING | Draft PR作成後にexact headで実施する |
+| Gate                                      | Result  | Notes                                                                                  |
+| ----------------------------------------- | ------- | -------------------------------------------------------------------------------------- |
+| Prisma generate                           | PASS    | Prisma 7.9.1                                                                           |
+| backend lint / format / typecheck / build | PASS    | source format、ESLint、TypeScript build                                                |
+| backend full test                         | PASS    | 1,924/1,924、fail/skip/todo 0                                                          |
+| frontend full test                        | PASS    | 85 files / 495 tests、fail 0                                                           |
+| OpenAPI export / breaking diff            | PASS    | tracked snapshot byte一致、breaking 0、2 operation追加                                 |
+| bounded-context dependency / coverage     | PASS    | 316 modules / 1,249 dependencies、301 source / 251 target、未分類・重複・曖昧0         |
+| `make audit` / `make ops-quality`         | PASS    | backend/frontend high audit 0 vulnerabilities、S3 profile 22/22、storage readiness 2/2 |
+| docs index / image links                  | PASS    | generated index current、118 image links / 352 Markdown files                          |
+| secret scan / `git diff --check`          | PASS    | intent-to-addした新規fileを含む1,963 filesで0 match、whitespace error 0                |
+| independent/Copilot review / CI / cooling | PENDING | Draft PR作成後にexact headで実施する                                                   |
 
 ## Rollback
 

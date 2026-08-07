@@ -7,6 +7,7 @@ import {
   KnowledgeConversationImportParserError,
   parseKnowledgeConversationImport,
 } from '../dist/application/knowledge/knowledgeConversationImportParser.js';
+import { knowledgeConversationImportLimits } from '../dist/application/knowledge/knowledgeConversationImportPorts.js';
 
 function turn(overrides = {}) {
   return {
@@ -275,6 +276,28 @@ test('turn, linked-item, per-turn, and canonical byte bounds are enforced', () =
         }),
       ),
     errorCode('input_oversize'),
+  );
+});
+
+test('canonical byte limit rejects expansion even when raw input remains in bounds', () => {
+  const conversation = {
+    title: 'x',
+    turns: Array.from({ length: 8 }, (_, index) =>
+      turn({ content: `${index}${'a'.repeat(65_449)}` }),
+    ),
+  };
+  const raw = JSON.stringify(conversation);
+  assert.ok(
+    Buffer.byteLength(raw, 'utf8') < knowledgeConversationImportLimits.rawBytes,
+  );
+  assert.throws(
+    () =>
+      parseKnowledgeConversationImport({
+        format: 'manual',
+        inputBase64: encodeKnowledgeConversationImportInput(raw),
+        linkedItems: [],
+      }),
+    errorCode('conversation_oversize'),
   );
 });
 

@@ -523,6 +523,28 @@ try {
       }),
     /check|P2004|P2010/i,
   );
+  for (const invalidLabels of [
+    { provider: 'unsupported-provider', model: null },
+    { provider: null, model: 'unsupported-model' },
+  ]) {
+    await assert.rejects(
+      () =>
+        prisma.knowledgeConversation.create({
+          data: {
+            id: randomUUID(),
+            ownerUserId: actor.userId,
+            title: 'Synthetic invalid public provenance label',
+            sourceType: 'manual',
+            provider: invalidLabels.provider,
+            model: invalidLabels.model,
+            contentHash: 'e'.repeat(64),
+            createdBy: actor.userId,
+            updatedBy: actor.userId,
+          },
+        }),
+      /check|P2004|P2010/i,
+    );
+  }
 
   const importAudits = await prisma.auditLog.findMany({
     where: {
@@ -568,6 +590,7 @@ try {
       auditRollback: 'verified',
       immutableLedger: 'verified',
       databaseConstraints: 'negative-inserts-rejected',
+      publicVocabularyConstraints: 'provider-model-rejected',
     }),
   );
 } finally {

@@ -45,6 +45,7 @@ const auditActor = {
   actorUserId: actor.userId,
   authScopes: ['knowledge:write'],
 };
+const legacyVocabularyConversationId = 'old-app-legacy-vocabulary-conversation';
 
 function expectOk(result, context) {
   assert.equal(result.ok, true, `${context}: ${JSON.stringify(result)}`);
@@ -57,6 +58,7 @@ if (mode === 'import') {
     { createKnowledgeConversationImportTokenCodec },
     { encodeKnowledgeConversationImportInput },
     importAdapter,
+    responseMapper,
     { prisma },
   ] = await Promise.all([
     load(
@@ -71,9 +73,21 @@ if (mode === 'import') {
     load(
       'packages/backend/dist/adapters/knowledge/prismaKnowledgeConversationImportAdapter.js',
     ),
+    load('packages/backend/dist/routes/knowledgeProvenanceSchemas.js'),
     load('packages/backend/dist/services/db.js'),
   ]);
   try {
+    const legacyVocabularyConversation =
+      await prisma.knowledgeConversation.findUniqueOrThrow({
+        where: { id: legacyVocabularyConversationId },
+        include: { items: true },
+      });
+    const mappedLegacyVocabulary = responseMapper.conversationResponse(
+      legacyVocabularyConversation,
+    );
+    assert.equal(mappedLegacyVocabulary.provider, null);
+    assert.equal(mappedLegacyVocabulary.model, null);
+
     const itemId = (await readFile(itemIdFile, 'utf8')).trim();
     assert.ok(itemId);
     const payload = {
@@ -138,7 +152,14 @@ if (mode === 'import') {
     await writeFile(conversationIdFile, `${committed.conversationId}\n`, {
       mode: 0o600,
     });
-    console.log(JSON.stringify({ result: 'IMPORTED', baseline }));
+    console.log(
+      JSON.stringify({
+        result: 'IMPORTED',
+        baseline,
+        legacyVocabularyRowRetained: true,
+        legacyVocabularyRedactedByNewApp: true,
+      }),
+    );
   } finally {
     await prisma.$disconnect();
   }
@@ -180,6 +201,19 @@ if (mode === 'import') {
   });
   try {
     if (mode === 'seed') {
+      await prisma.knowledgeConversation.create({
+        data: {
+          id: legacyVocabularyConversationId,
+          ownerUserId: actor.userId,
+          title: 'Old application legacy vocabulary conversation',
+          sourceType: 'manual',
+          provider: 'legacy-provider',
+          model: 'legacy-model',
+          contentHash: 'f'.repeat(64),
+          createdBy: actor.userId,
+          updatedBy: actor.userId,
+        },
+      });
       const created = expectOk(
         await itemService.create({
           actor,
@@ -193,7 +227,13 @@ if (mode === 'import') {
         'seed item',
       );
       await writeFile(itemIdFile, `${created.id}\n`, { mode: 0o600 });
-      console.log(JSON.stringify({ result: 'SEEDED', baseline }));
+      console.log(
+        JSON.stringify({
+          result: 'SEEDED',
+          baseline,
+          legacyVocabularyRowCreatedBeforeMigration: true,
+        }),
+      );
     } else {
       const itemId = (await readFile(itemIdFile, 'utf8')).trim();
       const conversationId = (
@@ -254,6 +294,18 @@ if (mode === 'import') {
         mappedTurns.every((turn) => turn.name === null),
         true,
       );
+      const legacyVocabularyDetail = expectOk(
+        await conversationService.detail({
+          actor,
+          conversationId: legacyVocabularyConversationId,
+        }),
+        'old application legacy vocabulary conversation detail',
+      );
+      const mappedLegacyVocabulary = responseMapper.conversationResponse(
+        legacyVocabularyDetail,
+      );
+      assert.equal(mappedLegacyVocabulary.provider, null);
+      assert.equal(mappedLegacyVocabulary.model, null);
 
       const oldCreated = expectOk(
         await conversationService.create({
@@ -295,6 +347,8 @@ if (mode === 'import') {
           importedConversationReadable: true,
           importedProviderModelRedacted: true,
           importedToolNameRedacted: true,
+          legacyVocabularyRowRetained: true,
+          legacyVocabularyRedacted: true,
           oldApplicationCrudFinalVersion: restored.version,
           healthz: 200,
           readyz: 200,

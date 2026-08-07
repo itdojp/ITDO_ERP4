@@ -424,6 +424,53 @@ test('tampered token and malformed input return sanitized errors with mandatory 
   );
 });
 
+test('request key enforces the application-owned 200-code-point boundary and redacts rejection audits', async () => {
+  const acceptedHarness = createHarness();
+  const acceptedPreview = await preview(acceptedHarness);
+  const acceptedKey = 'k'.repeat(200);
+  const accepted = await acceptedHarness.service.commit({
+    actor,
+    auditActor,
+    body: commitBody(acceptedPreview, body(), acceptedKey),
+  });
+  assert.equal(accepted.ok, true);
+  assert.equal(
+    JSON.stringify(acceptedHarness.state.audits).includes(acceptedKey),
+    false,
+  );
+
+  for (const requestKey of [
+    'k'.repeat(201),
+    ' leading-space',
+    'trailing-space ',
+    'control\u0001key',
+    'bidi\u202ekey',
+    'lone-surrogate\ud800',
+  ]) {
+    const harness = createHarness();
+    const previewValue = await preview(harness);
+    const result = await harness.service.commit({
+      actor,
+      auditActor,
+      body: commitBody(previewValue, body(), requestKey),
+    });
+    assert.deepEqual(result, {
+      ok: false,
+      statusCode: 400,
+      code: 'invalid_import',
+      message: 'Invalid import',
+    });
+    assert.equal(
+      harness.state.audits.at(-1).action,
+      'knowledge_import_rejected',
+    );
+    assert.equal(
+      JSON.stringify(harness.state.audits).includes(requestKey),
+      false,
+    );
+  }
+});
+
 test('unknown envelope fields reach strict application validation and mandatory audit', async () => {
   const harness = createHarness();
   const result = await harness.service.preview({
