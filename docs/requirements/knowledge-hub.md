@@ -163,7 +163,7 @@ Knowledge item の logical delete 理由は自由記述ではなく有限のreas
 
 - APIは `POST /knowledge/items`、`GET /knowledge/items`、`GET /knowledge/items/count`、`GET|PATCH|DELETE /knowledge/items/:id`、`POST /knowledge/items/:id/restore` とする。
 - `personal` のread/writeはowner subjectをDB predicateへ含め、`admin` / `mgmt` roleだけの通常閲覧を許可しない。JWT/sessionのDB canonical contextでは可変な`externalId` / `userName`ではなくstableな`UserAccount.id`を`ownerUserId`へ保存・照合する。development/test専用header authだけはsynthetic `UserContext.userId`へfallbackする。non-header authはactiveな`UserIdentity`に裏付けられたcanonical `UserAccount.id`と`identityId`を必須とし、解決できない場合はKnowledge route全体を`403 forbidden`（`canonical_account_required`）でfail closedとする。既存API互換の`userName` / `externalId`解決結果やJWT subjectをKnowledge owner/audit主体へfallbackしない。
-- `organization` の通常readはowner、またはitemの `organizationId` とactorの `orgId` が一致し、かつactiveなcanonical `GroupAccount.id` の明示grantが一致する場合だけ許可する。org/group context欠落、inactive group、壊れたrelationはdenyする。
+- `organization` の通常readはowner、またはitemの `organizationId` とactorの `orgId` が一致し、かつactiveなcanonical `GroupAccount.id` の明示grantとactorのcurrent `UserGroup` membershipが同じDB snapshot内で一致する場合だけ許可する。membershipの`UserAccount`もactive、非削除、同一organizationであることを再検査する。org/group context欠落、inactive group、失効済みmembership、壊れたrelationはdenyする。
 - JWT/sessionのorganizationとcanonical group IDはDB解決成功時にDB正本へ置換し、stale token claimをACLへ使わない。正のDB context cache TTLを使う場合もidentity-backed entryの期限を`UserIdentity.effectiveUntil`で上限設定し、identity失効後のKnowledge actor再利用を拒否する。session認証のcache keyはcanonical identity/account単位で分離し、同じprovider subjectを持つ別identityの正・負contextを共有しない。DB解決中にsubject/global invalidationが発生した場合は、失効前snapshotをcacheへ書き戻さない。header authはdevelopment/test用のsynthetic trust boundaryであり、productionはenv validationで`AUTH_MODE=jwt_bff`以外を起動拒否する。
 - organization item作成時はactor自身のactive `groupAccountIds` に含まれるgrantを1件以上要求する。WS02のgrantはread-onlyで、update/delete/restoreはownerだけに限定する。
 - JWT/sessionでDB user contextを解決できた場合、`orgId`、`groupIds`、`groupAccountIds`およびgroup由来roleはDB正本で置換し、signed tokenのstale group claimをunionしない。独立したrole claimは既存認証契約として保持する。development/test専用header authはsynthetic contextをそのまま信頼し、DB canonical化を行わない。
@@ -313,6 +313,90 @@ manual capture UI、利用者向けpending/reconcile表示、frontend unit/E2E�
 - 非対象: external LLM runtime、自動 ChatGPT session取得。
 - 受け入れ: role/source分離、複数item relation、Markdown/JSON/manual import、引用と本人/AI/外部情報のUI区別、idempotent import。
 - rollback/test: parser bounds、malformed/oversize input、cross-owner relation拒否、version/history、sanitized fixtures/UI evidence。
+
+#### 05-A. Backend provenance foundation（Issue #2013 PR A）
+
+PR Aはimport parserとUIを有効化する前に、次のDB/application/API契約を固定する。
+
+- annotation kindは`note|question|hypothesis|quote|todo`、originは
+  `user|external|ai|system|tool`とする。本人だけが作成・改訂・logical deleteでき、改訂は
+  immutable revisionを追加して旧本文を保持する。revision、turn、synthesis version/sourceは
+  新規table専用DB triggerでもupdate/deleteを拒否する。
+- conversation roleは`user|assistant|system|tool`、item relationは
+  `primary|supporting|contradicting|context`とする。turnはappend-onlyで、sequenceと
+  conversation versionを用いて同時追加を競合として返す。
+- manual conversation/turn APIでは自由文字列のprovider、model、tool nameを受け付けず、
+  responseも`null`へ固定する。import由来の公開label語彙はbounded parserと同時にPR Bで
+  固定し、credential-like valueをDB/APIへ通さない。
+- conversationへlinkできるitemは同一ownerに限定する。application検査に加え、relation内部の
+  `ownerUserId`からconversationとitemの`(id, ownerUserId)`へ張る2本のdeferrable composite
+  FKにより、直接insert、親owner更新、並行競合でもowner一致を保証する。read visibilityはlinked item
+  ACLの共通部分とし、一件でも現在read不能ならconversation、turn、relation、件数を返さない。
+- synthesisはstable identityとappend-only versionを分離し、version番号を集約内で一意に
+  する。source relationは`primary|supporting|contradicting|context`で、item、snapshot、
+  annotation/revision、conversation/turn、別synthesisの固定versionのいずれか一件を明示FK
+  で参照する。exactly-oneとself-source拒否をDB constraintでも保証する。
+- sourceは作成時とread時にcurrent ACLを再検査する。後からaccessが失効したsourceは本文、
+  ID、actor、timestampを返さず、kind/relation/orderと`accessible=false`だけを返す。
+- recursive source ACLはsynthesis-version edgeを一段として16段まで許可し、request-scoped
+  memoizationとversion node 128、source edge 512、DB query 512のbudgetを適用する。cycle、
+  source 0件のorganization synthesisはnon-ownerへfail closedとする。create/append内の全
+  repository操作は同じaccess contextを共有し、ID指定read/mutationのbudget超過は存在しない
+  IDと同じ`not_found`へ正規化する。
+- Knowledge mutationとmandatory auditを同一transactionで確定する。audit metadataは
+  allowlistとし、annotation/turn/synthesis本文、prompt、URL、provider key、raw error、
+  request keyを保存しない。provenance mutationの認証scopeは検証済みrequest contextからだけ
+  最大100件・各255文字で保持し、trim/deduplicateして共通の
+  `A-Z a-z 0-9 . _ ~ : / -`語彙へ制限する。URI path形式を維持しつつ、Unicode制御・bidi文字、
+  userinfo、query、fragmentを認証境界と監査境界の両方で拒否し、mandatory auditだけが正当な
+  requestをrollbackする状態を防ぐ。JWT文字列はU+0020 SPだけ、設定値だけはcall siteで
+  comma-separated listとして分解し、JWT内のTAB/LF/CR/FF/VTやカンマを権限scopeへ再解釈しない。
+  scopeおよびprincipal/actor/request/token/audience/agent run識別子はraw値の制御・format・
+  bidi文字、ill-formed UTF-16 surrogateと端部whitespaceをtrim前に拒否する。JWTとBFF OIDCの
+  issuer/provider subjectもcanonical identity lookup前に同じ境界を適用し、不正な認証provenanceを
+  別identityへalias化したり正規化後の値として監査へ残さない。既存契約どおり`act.sub`の正確な
+  空文字だけは未指定相当とする。
+  JWT `exp`は存在する場合に非負safe integerへ正規化できる有限numberだけを認証境界で受理し、
+  上限超過や不正型をbusiness mutation／mandatory auditへ到達させない。
+  `x-request-id`はFastify logger生成前かつtrim等の正規化前にraw値を安全文字・1〜128文字で検査し、不正値はraw値を保持せず
+  random UUIDへ置換してresponse、log、mandatory auditへ同じ検証済みIDだけを渡す。
+  request bodyやraw bearer tokenからscopeを受け付けない。DB CHECKでもaction groupとtarget
+  tableを厳密に対応付ける。
+- listはbounded limit、stable sort、actor/resource/parentへ束縛したHMAC署名付きopaque
+  cursorを使用し、権限外rowをpage、cursor、countへ含めない。organization synthesisの
+  candidate scanは200件、provenance queryは上記budgetで停止し、上限到達時はhidden rowを
+  cursorへ含めず、hidden件数によってHTTP statusを変えない。確認済みvisible rowのみを返し、
+  続きが安全に確定できない場合はnext cursorを返さない。query budget超過時は空pageとする。
+  version historyのlookahead rowもcursor発行前にACLを検査する。
+  履歴cursorのsequenceはPostgreSQL `INTEGER`最大値まで許可し、incrementを伴うmutationの
+  `expectedVersion`上限とは分離する。
+- annotation history/revise/deleteはannotation ownerだけでなくparent item ownerと
+  `deletedAt IS NULL`も同じrepository predicateで再検査する。
+- annotation/conversationの全readはRepeatable Read transactionで実行し、そのsnapshotを
+  認可線形化点とする。annotation本文queryはparent item ACLを同じpredicateで再検査する。
+  annotation historyとconversation turn listはparent visibilityの事前確認だけを本文返却の
+  根拠にせず、revision/turnを読む子table query自体でも同じsnapshotのcurrent parent ACLを
+  再検査する。snapshot後にgrantが失効しownerが履歴を追加しても、失効後の新規本文を同じ
+  responseへ混在させない。source linkは同一transaction内でsource ACLを検査してからmutationと
+  mandatory auditを確定する。失効がsnapshotより先にcommitした場合はfail closedとし、
+  snapshotより後の失効は後続requestから反映する。進行中transactionを遡及取消しする契約や
+  grant rowの長時間lockは導入しない。
+- synthesisの複数source ACLはread/mutationとも同一Repeatable Read snapshotで評価する。
+  再帰version memoは到達depthをkeyに含め、異なるdepthの結果を再利用しない。同一synthesisの
+  現行・過去versionはapplication検査とDB constraint triggerの両方でsource指定を拒否する。
+- APIはannotation list/create/detail/history/revise/delete、conversation
+  list/create/detail/item add-remove/turn list-append、synthesis list/create/detail/version
+  history-appendを提供する。unauthorized IDと存在しないIDは同じ`not_found`へ正規化する。
+
+schema migrationはadditive/expand-onlyとし、既存table/column/dataを変更または削除しない。
+履歴改変拒否triggerは今回追加する新規tableだけを対象にする。
+旧applicationは新migration適用後もKnowledge CRUDとhealth/readinessを継続できることを
+PostgreSQL 15で確認する。application rollbackでは新table/dataを保持する。
+
+PR Bはmanual/JSON/限定Markdownのpreview/commit、parser bounds、idempotencyを追加する。
+PR CはKnowledge Hub UI、real-backend E2E、manual、sanitized screenshot evidenceを追加し、
+その時点でIssue #2013をcloseする。annotation/synthesis検索とconversation全文検索は現行
+#2011の明示検索scopeを暗黙に拡張せず、別途API/query-cost/ACL契約を固定してから扱う。
 
 ### 06. Chat thread foundation
 

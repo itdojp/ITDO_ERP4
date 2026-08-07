@@ -223,10 +223,8 @@ function generateRequestId() {
 
 function sanitizeRequestId(value: unknown): string | null {
   if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (!REQUEST_ID_SAFE_PATTERN.test(trimmed)) return null;
-  return trimmed;
+  if (!REQUEST_ID_SAFE_PATTERN.test(value)) return null;
+  return value;
 }
 
 function buildLoggerOptions() {
@@ -331,8 +329,13 @@ async function buildServerWithOwnership(
   const server = Fastify({
     logger: options.logger === false ? false : buildLoggerOptions(),
     bodyLimit: 1024 * 1024,
-    requestIdHeader: REQUEST_ID_HEADER,
-    genReqId: () => generateRequestId(),
+    // Fastify otherwise accepts requestIdHeader without validation before the
+    // request logger is bound. Validate it in the ID factory so audit, logs,
+    // and the response header always share the same safe identifier.
+    requestIdHeader: false,
+    genReqId: (request) =>
+      sanitizeRequestId(request.headers[REQUEST_ID_HEADER]) ??
+      generateRequestId(),
   });
   onServerCreated?.(server);
   let ownedRateLimitRedisClient: RateLimitRedisClient | null = null;
@@ -345,13 +348,6 @@ async function buildServerWithOwnership(
       disconnectPrisma: () => prisma.$disconnect(),
       rateLimitRedisClient: redisClient,
     });
-  });
-
-  server.addHook('onRequest', async (req) => {
-    const incoming = sanitizeRequestId(req.headers[REQUEST_ID_HEADER]);
-    if (incoming) {
-      req.id = incoming;
-    }
   });
 
   server.addHook('onSend', async (req, reply, payload) => {

@@ -198,7 +198,9 @@ describe('KnowledgeHub', () => {
         url: 'https://example.com/article',
       }),
     );
-    expect(screen.getByText('https://example.com/article')).toBeVisible();
+    expect(
+      await screen.findByText('https://example.com/article'),
+    ).toBeVisible();
     expect(screen.queryByText(/private-provider/)).not.toBeInTheDocument();
   });
 

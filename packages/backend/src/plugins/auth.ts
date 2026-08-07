@@ -10,6 +10,11 @@ import {
   resolveAuthSession,
 } from '../services/authGateway.js';
 import { getRouteRateLimitOptions } from '../services/rateLimitOverrides.js';
+import {
+  authIdentifierLimits,
+  normalizeAuthIdentifier,
+} from '../services/authIdentifiers.js';
+import { normalizeAuthScopes } from '../services/authScopes.js';
 import { parseGroupToRoleMap } from '../utils/authGroupToRoleMap.js';
 
 export type UserContext = {
@@ -117,29 +122,30 @@ const JWT_REVOKED_JTI = new Set(
     .map((value) => value.trim())
     .filter(Boolean),
 );
+
+export function normalizeConfiguredAgentScopes(value: string): string[] {
+  return normalizeAuthScopes(
+    value.split(',').filter((scope) => /[^ ]/u.test(scope)),
+  );
+}
+
 const AGENT_SCOPE_READ = new Set(
-  (process.env.AUTH_AGENT_READ_SCOPES || 'read-only,agent:read-only,agent:read')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean),
+  normalizeConfiguredAgentScopes(
+    process.env.AUTH_AGENT_READ_SCOPES ||
+      'read-only,agent:read-only,agent:read',
+  ),
 );
 const AGENT_SCOPE_WRITE = new Set(
-  (
+  normalizeConfiguredAgentScopes(
     process.env.AUTH_AGENT_WRITE_SCOPES ||
-    'write-limited,agent:write-limited,agent:write'
-  )
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean),
+      'write-limited,agent:write-limited,agent:write',
+  ),
 );
 const AGENT_SCOPE_APPROVAL = new Set(
-  (
+  normalizeConfiguredAgentScopes(
     process.env.AUTH_AGENT_APPROVAL_SCOPES ||
-    'approval-required,agent:approval-required'
-  )
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean),
+      'approval-required,agent:approval-required',
+  ),
 );
 
 const AUTH_HEADER_MODE_FORBIDDEN_ERROR_MESSAGE =
@@ -244,23 +250,42 @@ function resolveClaim(payload: JWTPayload, claim: string): unknown {
 
 function resolveUserId(payload: JWTPayload): string | null {
   const primary = resolveClaim(payload, JWT_SUB_CLAIM);
-  if (typeof primary === 'string' && primary.trim()) return primary.trim();
+  if (primary !== undefined && primary !== null) {
+    return normalizeAuthIdentifier(primary);
+  }
   const fallback = resolveClaim(payload, 'email');
-  if (typeof fallback === 'string' && fallback.trim()) return fallback.trim();
+  if (fallback !== undefined && fallback !== null) {
+    return normalizeAuthIdentifier(fallback);
+  }
   const alt = resolveClaim(payload, 'preferred_username');
-  if (typeof alt === 'string' && alt.trim()) return alt.trim();
+  if (alt !== undefined && alt !== null) {
+    return normalizeAuthIdentifier(alt);
+  }
   return null;
 }
 
 function normalizeAudience(value: unknown): string[] {
-  if (typeof value === 'string' && value.trim()) return [value.trim()];
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => String(item).trim()).filter(Boolean);
+  if (value === undefined || value === null) return [];
+  if (typeof value === 'string') return [normalizeAuthIdentifier(value)];
+  if (!Array.isArray(value)) {
+    throw new Error('auth_identifier_contract_invalid');
+  }
+  if (value.length > authIdentifierLimits.audienceCount) {
+    throw new Error('auth_identifier_contract_invalid');
+  }
+  return value.map((item) => normalizeAuthIdentifier(item));
 }
 
 function normalizeExpiresAt(value: unknown): number | undefined {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
-  return Math.floor(value);
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error('auth_exp_contract_invalid');
+  }
+  const normalized = Math.floor(value);
+  if (!Number.isSafeInteger(normalized) || normalized < 0) {
+    throw new Error('auth_exp_contract_invalid');
+  }
+  return normalized;
 }
 
 function hasAnyScope(scopes: string[], expected: Set<string>): boolean {
@@ -698,19 +723,23 @@ function buildUserContext(payload: JWTPayload): UserContext | null {
   if (!principalUserId) return null;
   const actorClaim = resolveClaim(payload, JWT_ACTOR_SUB_CLAIM);
   const actorUserId =
-    typeof actorClaim === 'string' && actorClaim.trim()
-      ? actorClaim.trim()
-      : principalUserId;
-  const scopes = normalizeList(resolveClaim(payload, JWT_SCOPE_CLAIM));
+    actorClaim === undefined || actorClaim === null || actorClaim === ''
+      ? principalUserId
+      : normalizeAuthIdentifier(actorClaim);
+  const scopes = normalizeAuthScopes(resolveClaim(payload, JWT_SCOPE_CLAIM));
   const tokenIdClaim = resolveClaim(payload, JWT_TOKEN_ID_CLAIM);
   const tokenId =
-    typeof tokenIdClaim === 'string' && tokenIdClaim.trim()
-      ? tokenIdClaim.trim()
+    tokenIdClaim !== undefined && tokenIdClaim !== null
+      ? normalizeAuthIdentifier(tokenIdClaim)
       : undefined;
   const audience = normalizeAudience(resolveClaim(payload, 'aud'));
   const expiresAt = normalizeExpiresAt(resolveClaim(payload, 'exp'));
   const delegated = actorUserId !== principalUserId;
   const tokenIssuer = resolveClaim(payload, 'iss');
+  const issuer =
+    tokenIssuer !== undefined && tokenIssuer !== null
+      ? normalizeAuthIdentifier(tokenIssuer, authIdentifierLimits.issuer)
+      : undefined;
   const roles = expandRoles(
     normalizeList(resolveClaim(payload, JWT_ROLE_CLAIM)),
   );
@@ -737,10 +766,7 @@ function buildUserContext(payload: JWTPayload): UserContext | null {
       expiresAt,
       delegated,
       providerType: 'google_oidc',
-      issuer:
-        typeof tokenIssuer === 'string' && tokenIssuer.trim()
-          ? tokenIssuer.trim()
-          : undefined,
+      issuer,
     },
   };
 }

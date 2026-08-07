@@ -108,6 +108,9 @@ test('knowledge create route maps authenticated org/group context and returns th
   assert.deepEqual(captured.auditActor, {
     requestId: captured.auditActor.requestId,
     source: 'agent',
+    principalUserId: 'principal-1',
+    actorUserId: 'owner-1',
+    authScopes: ['knowledge:write'],
   });
   assert.match(captured.auditActor.requestId, /^[A-Za-z0-9._-]{1,128}$/);
   assert.equal(response.json().version, 1);

@@ -1,6 +1,6 @@
 # 委任認証（principal/actor + scope）仕様
 
-更新日: 2026-02-23  
+更新日: 2026-08-06
 関連Issue: #1208
 
 ## 目的
@@ -40,6 +40,29 @@ MVPでは次の3段階を扱う。
 - `approval-required`（同義語: `agent:approval-required`）
 
 `read` / `write` のような汎用scope名は、通常ユーザーJWTに含まれる可能性があるため既定の委任scopeには含めない。既存IdPとの互換目的で利用する場合は、`AUTH_AGENT_READ_SCOPES` / `AUTH_AGENT_WRITE_SCOPES` に明示的に追加し、専用audience/client等と組み合わせる。
+
+scope tokenはJWT claimと`AUTH_AGENT_*_SCOPES`で同じvalidatorを使用する。1 tokenあたり
+100件、1 scopeあたり255文字までとし、外側の通常ASCII space（U+0020）だけを除去して
+重複除去した後の語彙を
+`A-Z a-z 0-9 . _ ~ : / -`に限定する。`https://idp.example/knowledge.write`や
+`api://client-id/.default`のようなURI path形式は許可するが、userinfo、query、fragment、
+Unicode制御・bidi文字、空白、quote、backslashを含むscopeは認証境界でfail closedとする。
+scopeへcredential、個人情報、可変provider metadataを埋め込まない。これにより認可とmandatory
+auditでscope受理規則を共有し、監査だけが正当なrequestをrollbackする状態を防ぐ。
+JWTの文字列scopeは[OAuth 2.0 RFC 6749 section 3.3](https://www.rfc-editor.org/rfc/rfc6749.html#section-3.3)の
+scope ABNFに合わせてU+0020 SPだけをdelimiterとし、配列scopeは
+1要素を1 tokenとして検証する。TAB/LF/CR/FF/VTやカンマを含むJWT tokenをdelimiterやCSVとして
+再解釈しない。`AUTH_AGENT_*_SCOPES`だけは
+設定call siteでcomma-separated listへ分解してから、同じtoken validatorへ渡す。
+array要素および設定tokenのraw値は正規化前にallowlist検査し、端部のTAB/LF/CR、C1、
+Unicode line/paragraph separator、format/bidi文字、BOMを除去して有効scopeへ昇格させない。
+JWTのprincipal、actor、token ID、audience、issuerも最初のcanonical identity lookupやdelegated判定
+より前にraw値を検査する。制御・format・bidi文字、ill-formed UTF-16 surrogateおよび端部whitespaceを
+除去・置換して別identifierへalias化せず、invalid tokenとしてfail closedにする。ただし既存契約どおり
+`act.sub`の正確な空文字だけは未指定相当としてprincipalへfallbackし、space-onlyや制御文字は拒否する。
+JWT `exp`は省略可能とするが、存在する場合は非負のsafe integerへ正規化できる有限numberだけを
+受理する。上限超過、負数、非有限値、文字列はbusiness routeやmandatory auditへ到達する前に
+invalid tokenとしてfail closedにし、authとauditの型境界差によるrollbackを発生させない。
 
 ### 判定ルール
 
@@ -81,6 +104,9 @@ MVPでは次の3段階を扱う。
 - `_request.source`
 
 `source` カラムは委任実行時に `agent`、それ以外は `api`。
+`x-request-id`はFastifyのrequest loggerが生成される前に安全文字`A-Z a-z 0-9 . _ -`・1〜128文字を
+検査する。不正値はraw値を保持・反映せずrandom UUIDへ置換し、response、log、mandatory auditで同じ
+検証済みIDだけを利用する。
 
 ## 既知の制約（MVP）
 

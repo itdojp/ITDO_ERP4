@@ -77,7 +77,7 @@ const contexts = [
     displayName: 'Knowledge Hub',
     patterns: [
       '^src/application/knowledge/.+\\.ts$',
-      '^src/routes/knowledge(Items|Labels|Search|SavedViews|Snapshots|RouteContext)\\.ts$',
+      '^src/routes/knowledge(Items|Labels|Search|SavedViews|Snapshots|Annotations|Conversations|Syntheses|ProvenanceSchemas|RouteContext)\\.ts$',
     ],
   },
   {
@@ -146,7 +146,7 @@ const layers = [
     patterns: [
       '^src/migration/(csv|legacyIds)\\.ts$',
       '^src/routes/validators(\\.ts|/.+\\.ts)$',
-      '^src/services/(dueDateRule|errors|policyEnforcementPreset|rate|redaction|utils)\\.ts$',
+      '^src/services/(authIdentifiers|authScopes|dueDateRule|errors|policyEnforcementPreset|rate|redaction|utils)\\.ts$',
       '^src/utils/(csv|date)\\.ts$',
     ],
   },

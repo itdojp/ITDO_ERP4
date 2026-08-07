@@ -59,6 +59,14 @@ export type KnowledgeActor = {
 export type KnowledgeAuditActorContext = {
   requestId?: string;
   source?: string;
+  principalUserId?: string;
+  actorUserId?: string;
+  authScopes?: string[];
+  authTokenId?: string;
+  authAudience?: string[];
+  authExpiresAt?: number;
+  agentRunId?: string;
+  decisionRequestId?: string;
 };
 
 export type KnowledgeAuditActor = KnowledgeAuditActorContext & {

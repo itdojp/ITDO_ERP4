@@ -52,7 +52,19 @@ test('visibility predicate keeps owner access and requires org plus active canon
           groupGrants: {
             some: {
               groupAccountId: { in: ['group-1'] },
-              groupAccount: { active: true },
+              groupAccount: {
+                active: true,
+                memberships: {
+                  some: {
+                    userId: 'owner-1',
+                    user: {
+                      active: true,
+                      deletedAt: null,
+                      organization: 'org-1',
+                    },
+                  },
+                },
+              },
             },
           },
         },
@@ -120,6 +132,8 @@ test('list, detail, and count embed the shared authorization predicate in databa
     assert.match(where, /"organizationId":"org-1"/, name);
     assert.match(where, /"groupAccountId":\{"in":\["group-1"\]\}/, name);
     assert.match(where, /"active":true/, name);
+    assert.match(where, /"memberships":\{"some":/, name);
+    assert.match(where, /"userId":"owner-1"/, name);
   }
 });
 

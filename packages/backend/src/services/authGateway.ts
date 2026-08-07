@@ -2,6 +2,10 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createRemoteJWKSet, importSPKI, jwtVerify } from 'jose';
 import type { CryptoKey, JWTPayload, JWTVerifyGetKey } from 'jose';
 import { Prisma } from '@prisma/client';
+import {
+  authIdentifierLimits,
+  normalizeAuthIdentifier,
+} from './authIdentifiers.js';
 
 const GOOGLE_OIDC_PROVIDER = 'google_oidc';
 const GOOGLE_OIDC_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -361,10 +365,21 @@ export async function verifyGoogleIdToken(
   if (payload.nonce !== expectedNonce) {
     throw new Error('google_nonce_mismatch');
   }
-  const sub = typeof payload.sub === 'string' ? payload.sub.trim() : '';
-  const iss = typeof payload.iss === 'string' ? payload.iss.trim() : '';
-  if (!sub || !iss) {
+  if (
+    typeof payload.sub !== 'string' ||
+    payload.sub.length === 0 ||
+    typeof payload.iss !== 'string' ||
+    payload.iss.length === 0
+  ) {
     throw new Error('google_identity_claim_missing');
+  }
+  let sub: string;
+  let iss: string;
+  try {
+    sub = normalizeAuthIdentifier(payload.sub);
+    iss = normalizeAuthIdentifier(payload.iss, authIdentifierLimits.issuer);
+  } catch {
+    throw new Error('google_identity_claim_invalid');
   }
   return {
     payload,

@@ -139,6 +139,94 @@ Google Drive / local storage infrastructure
 - thread から synthesis への promote は対象 thread snapshot と選択 message を固定し、元 message の live body を synthesis へ暗黙連結しない。
 - retry は read、stat、idempotent reconciliation 等に限定する。結果不明の外部 create、AI request、Chat post を新規操作として自動再実行しない。
 
+#### annotation / conversation / synthesis provenance foundation
+
+Issue #2013 PR Aでは、本文を相互に連結せず、`KnowledgeAnnotation` と immutable
+revision、`KnowledgeConversation` と append-only turn/item relation、
+`KnowledgeSynthesis` と immutable version/source relationを別集約として保持する。
+annotation kind、origin、conversation role、item/source relation typeはDB enumとAPI
+allowlistの両方で固定する。任意のpolymorphic `sourceType + sourceId`を正本にせず、
+synthesis sourceは参照先ごとのnullable FKとPostgreSQLのexactly-one CHECKで一件だけを
+指す。参照先の物理削除やcascade deleteは行わない。
+
+- annotation mutationはcanonical actor本人だけが行い、編集時は旧revisionを保持して
+  `currentRevision`を楽観的に進める。削除はlogical deleteとしrevisionを消さない。
+- conversation mutationはowner本人だけが行う。linked itemは全件同一ownerでなければ
+  relationを作成しない。relation内部の`ownerUserId`からconversationとitemの
+  `(id, ownerUserId)`へ張る2本のdeferrable composite FKにより、直接insert、親owner更新、
+  並行競合を含む同一owner制約をapplicationとDBの二層で保証する。
+  conversation readはlinked item ACLのunionではなく共通部分で
+  判定し、actorが一件でも現在readできなければtitle、turn、relation、件数を返さない。
+  linked itemがないconversationはownerだけがreadできる。
+- organization itemのnon-owner ACLはrequest開始時のgroup IDだけを信頼せず、item/grantを読む
+  同じDB snapshot内でactorのcurrent `UserGroup` membership、active/non-deleted `UserAccount`、
+  current organization、active `GroupAccount`を再検査する。membership失効がsnapshot開始前に
+  commitしていればannotation、conversation、synthesis/source mutationをfail closedにする。
+- turnは`conversationId + sequence`で一意とし、conversation versionを用いた競合検知を
+  行う。roleとoriginの組合せもallowlistで検証し、既存turnを更新しない。annotation
+  revision、conversation turn、synthesis version/sourceは新規table上のDB triggerでも
+  update/deleteを拒否し、application経路外の履歴改変も防ぐ。
+- PR Aのmanual APIはprovider/model/tool nameを入力として受け付けず、responseでもこれらを
+  `null`へ固定する。PR Bでimport parserと同時に固定公開語彙を定義するまで、自由文字列を
+  provenance labelとして保存・共有しない。
+- personal synthesisはownerだけがread/writeできる。organization synthesisは同一
+  organizationに限定したうえで、non-owner read時にcurrent versionの全sourceを現在
+  readできることを再検査する。ownerが後からsource accessを失ってもsynthesis本文と
+  version履歴は保持するが、非公開sourceはkind/relation/order/accessibilityだけを返し、
+  source ID、provenance row ID、actor、timestamp、本文を返さない。
+- synthesis versionは集約内versionを一意とし、version追加とsource固定を同一transaction
+  で行う。synthesisをsourceにできるのは別synthesisの既に確定した固定versionだけとし、
+  同一synthesis集約の現行・過去version参照をapplication検査とDB constraint triggerで拒否する。
+  再帰的なcurrent access評価はfail closedかつ16段で停止する。認可結果memoは到達depthをkeyに
+  含め、source順序によるdepth制限迂回を許さない。評価はrequest単位でmemoizeし、version node
+  128、source edge 512、DB query 512を上限とする。source 0件のorganization synthesisは
+  non-ownerへfail closedとする。
+  create/append request内のowner確認、source検証、mutation後response組立ても同じaccess
+  contextを共有し、repository呼出しごとにbudgetやmemoを再生成しない。
+- list cursorは既存`KNOWLEDGE_CURSOR_SIGNING_SECRET`を使うHMAC署名付きopaque tokenと
+  し、actor、resource、parent、sortへ束縛する。権限外rowをpage/cursor/countへ含めない。
+  append-only履歴のcursor sequenceはPostgreSQL `INTEGER`最大値まで表現し、mutationの
+  `expectedVersion`上限はincrement余地を残すため一つ小さい値とする。
+  organization synthesis listのACL candidate走査は一request 200件までとし、query budget
+  またはcandidate budget到達時は、非公開候補数をHTTP statusへ反映せず、空pageまたは既に
+  確認済みのvisible rowだけを返してnext cursorを発行しない。ID指定readのquery budget超過は
+  不存在/権限外と同じ`not_found`にする。version historyはlookahead rowもACL検査してから
+  next cursorを発行する。
+- mutation、mandatory Knowledge audit、version/idempotency確定は同じPrisma transaction
+  で実行する。annotation/conversationの全readと複数source ACLのread/mutationは同一
+  Repeatable Read snapshotで評価し、
+  grant swapを跨いだ時点混在を許さない。監査action/targetとmetadata keyはallowlistで検証し、annotation、turn、
+  synthesis本文、prompt、URL、provider key、raw error/request keyを監査metadataへ入れない。
+  認証scopeはJWT/configと監査adapterで共有するbounded ASCII validatorを通し、URI path形式を
+  維持しつつUnicode制御・bidi文字、userinfo、query、fragmentを認証前にfail closedとする。
+  JWT文字列はU+0020 SPだけで分割し、comma-separatedの設定値はauth pluginのcall siteで
+  配列化してからvalidatorへ渡すため、JWT scopeのTAB/LF等またはopaque comma tokenを権限scopeへ
+  再解釈しない。
+  array/config scopeと監査識別子はraw値の制御・format・bidi文字、ill-formed UTF-16 surrogateを
+  正規化前にfail closedとし、JWT principal/actor/token/audience/issuerおよびBFF OIDCのprovider
+  subject/issuerもcanonical identity lookup前に同じ検査を行う。`act.sub`の正確な空文字だけは
+  既存の非委任fallback契約を維持する。
+  malformed provenanceを有効なscope／別identity／actor attributionへ変換しない。
+  JWT `exp`は存在する場合に非負safe integerへ正規化できる有限numberだけを受理し、認証と
+  mandatory auditの型境界を一致させる。不正な署名済みclaimをbusiness mutationへ進めない。
+  request IDはFastify logger binding前かつtrim等の正規化前にraw値をsafe allowlistで検査し、不正な外部値をrandom UUIDへ置換する。
+  response、logger、mandatory auditへraw request IDを伝播させない。
+  DB CHECKもannotation/conversation/synthesis/importのaction groupを対応するtarget tableへ
+  厳密に束縛し、対象actionのnullableなtarget table/IDも拒否する。annotationの履歴・改訂・
+  削除はparent itemが非削除であることを再検査する。
+- annotation revisionとconversation turnの本文queryは、parent annotation/conversationの
+  visibility確認と同じRepeatable Read transactionで実行し、子table query自身にもcurrent
+  item ACL predicateを含める。このsnapshotをreadの認可線形化点とし、snapshot後にgrantが
+  失効してownerが履歴を追加しても、そのrequestへ失効後の新規本文を混在させない。失効が
+  snapshotより先にcommitした場合はfail closedとする。linked item ACLの共通部分も同じ
+  snapshot内のturn queryで再評価する。
+
+PR Aのmigrationはenum/table/index/FK/CHECKと新規履歴table専用DB triggerの追加だけを
+行うexpand-only migrationであり、
+既存table/columnのdrop、rename、型変更、既存row更新を行わない。application rollbackでは
+新tableと履歴を保持したまま旧imageへ戻す。manual/JSON/Markdown importはPR B、UI/E2Eは
+PR Cで実装する。
+
 ### 11. migration と rollback
 
 - schema は expand → migrate → contract を原則とし、最初の migration は既存 Chat/API を変更しない additive migration とする。

@@ -155,7 +155,7 @@ describe('WorklogSettingsCard', () => {
 
   it('shows an error when saving fails', async () => {
     api
-      .mockResolvedValueOnce({ id: 'worklog-setting-1', editableDays: 14 })
+      .mockResolvedValueOnce({ id: 'worklog-setting-1', editableDays: 21 })
       .mockRejectedValueOnce(new Error('save failed'));
 
     render(<WorklogSettingsCard />);
@@ -163,7 +163,7 @@ describe('WorklogSettingsCard', () => {
     const input = screen.getByRole('spinbutton', { name: '期間（日）' });
 
     await waitFor(() => {
-      expect(input).toHaveValue(14);
+      expect(input).toHaveValue(21);
     });
 
     fireEvent.click(screen.getByRole('button', { name: '保存' }));
