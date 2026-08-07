@@ -131,11 +131,7 @@ function boundedText(value: unknown, maximumCodePoints: number): string {
     fail('invalid_conversation');
   }
   const normalized = value.trim();
-  if (
-    normalized.length === 0 ||
-    normalized !== value.trim() ||
-    [...normalized].length > maximumCodePoints
-  ) {
+  if (normalized.length === 0 || [...normalized].length > maximumCodePoints) {
     fail('invalid_conversation');
   }
   return normalized;
