@@ -2,13 +2,14 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BASE_SHA="${KNOWLEDGE_PROVENANCE_OLD_APP_BASE_SHA:-40eb3985acbdfa290909ebe7e198a74ca171e953}"
-EXPECTED_BASE_SHA="40eb3985acbdfa290909ebe7e198a74ca171e953"
+BASE_SHA="${KNOWLEDGE_PROVENANCE_OLD_APP_BASE_SHA:-fb10a4df864299d55afcad1985c4996d65e3cd16}"
+EXPECTED_BASE_SHA="fb10a4df864299d55afcad1985c4996d65e3cd16"
 POSTGRES_IMAGE="${POSTGRES_IMAGE:-docker.io/library/postgres:15@sha256:6ab12ad4395ee49ab49fe19530f7e183c5a9c97fc47cf687b3e281bec5f91ee4}"
 CONTAINER_NAME="erp4-knowledge-provenance-old-app-$$"
 SCRATCH_ROOT="$ROOT_DIR/.codex-local/tmp/knowledge-provenance-old-app-$$"
 OLD_APP_ROOT="$SCRATCH_ROOT/old-app"
 ITEM_ID_FILE="$SCRATCH_ROOT/preexisting-item-id"
+CONVERSATION_ID_FILE="$SCRATCH_ROOT/imported-conversation-id"
 TEST_DATABASE="erp4_knowledge_provenance_old_app_test"
 TEST_USER="erp4_provenance_old_app_test"
 TEST_PASSWORD="$(
@@ -60,7 +61,9 @@ export KNOWLEDGE_PROVENANCE_OLD_APP_CONFIRM=1
 export KNOWLEDGE_PROVENANCE_OLD_APP_MODE=seed
 export KNOWLEDGE_PROVENANCE_OLD_APP_BASE_SHA="$BASE_SHA"
 export OLD_APP_ROOT
+export CURRENT_APP_ROOT="$ROOT_DIR"
 export PREEXISTING_ITEM_ID_FILE="$ITEM_ID_FILE"
+export IMPORTED_CONVERSATION_ID_FILE="$CONVERSATION_ID_FILE"
 
 npm ci --prefix "$OLD_APP_ROOT/packages/backend" >/dev/null
 npm run prisma:generate --prefix "$OLD_APP_ROOT/packages/backend" >/dev/null
@@ -75,9 +78,13 @@ npx --prefix "$ROOT_DIR/packages/backend" prisma migrate deploy \
 npx --prefix "$ROOT_DIR/packages/backend" prisma migrate status \
   --config "$ROOT_DIR/packages/backend/prisma.config.ts" >/dev/null
 NEW_MIGRATIONS="$(find "$ROOT_DIR/packages/backend/prisma/migrations" -mindepth 1 -maxdepth 1 -type d | wc -l)"
+npm run prisma:generate --prefix "$ROOT_DIR/packages/backend" >/dev/null
+npm run build --prefix "$ROOT_DIR/packages/backend" >/dev/null
 
+export KNOWLEDGE_PROVENANCE_OLD_APP_MODE=import
+node "$ROOT_DIR/packages/backend/scripts/knowledge-provenance-old-app-compat.mjs"
 export KNOWLEDGE_PROVENANCE_OLD_APP_MODE=verify
 node "$ROOT_DIR/packages/backend/scripts/knowledge-provenance-old-app-compat.mjs"
-printf '{"oldMigrations":%s,"newMigrations":%s,"existingKnowledgeDataRetained":true}\n' \
+printf '{"oldMigrations":%s,"newMigrations":%s,"existingKnowledgeDataRetained":true,"importedConversationReadableByOldApp":true}\n' \
   "$OLD_MIGRATIONS" "$NEW_MIGRATIONS"
 echo "knowledge provenance old-app compatibility: PASS"

@@ -41,6 +41,10 @@
 - [Storage artifact migration evidence template](storage-artifact-migration-template.md)
 - [Storage／backup統合readiness 記録テンプレート](storage-readiness-template.md)
 
+### 2026-08-08
+
+- [Issue #2013 bounded conversation import verification（PR B）](2026-08-08-issue2013-knowledge-conversation-import.md)
+
 ### 2026-08-06
 
 - [Issue #2012 Knowledge snapshot UI / E2E verification (PR B)](2026-08-06-issue2012-knowledge-snapshot-ui.md)

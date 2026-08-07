@@ -258,6 +258,11 @@
           },
           "model": {
             "enum": [
+              "gpt",
+              "claude",
+              "gemini",
+              "copilot",
+              "other",
               null
             ],
             "nullable": true,
@@ -268,6 +273,11 @@
           },
           "provider": {
             "enum": [
+              "openai",
+              "anthropic",
+              "google",
+              "microsoft",
+              "other",
               null
             ],
             "nullable": true,
@@ -341,6 +351,11 @@
           },
           "name": {
             "enum": [
+              "search",
+              "browser",
+              "code",
+              "file",
+              "other",
               null
             ],
             "nullable": true,
@@ -14970,6 +14985,650 @@
             "description": "Default Response"
           },
           "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/knowledge/conversations/import/commit": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "description": "Strict bounded import envelope plus actor-bound preview token and opaque request key.",
+                "properties": {
+                  "format": {
+                    "enum": [
+                      "manual",
+                      "json",
+                      "markdown"
+                    ],
+                    "type": "string"
+                  },
+                  "inputBase64": {
+                    "description": "Canonical unpadded base64url. Manual and JSON decode to the strict structured conversation model; Markdown uses the versioned role-block grammar.",
+                    "maxLength": 699051,
+                    "minLength": 1,
+                    "pattern": "^[A-Za-z0-9_-]+$",
+                    "type": "string"
+                  },
+                  "linkedItems": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "itemId": {
+                          "maxLength": 100,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "relationType": {
+                          "enum": [
+                            "primary",
+                            "supporting",
+                            "contradicting",
+                            "context"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "itemId",
+                        "relationType"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 20,
+                    "type": "array"
+                  },
+                  "previewToken": {
+                    "maxLength": 4096,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "requestKey": {
+                    "description": "Opaque high-entropy client operation key. The raw value is not persisted.",
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "format",
+                  "inputBase64",
+                  "linkedItems",
+                  "previewToken",
+                  "requestKey"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "description": "Strict bounded import envelope plus actor-bound preview token and opaque request key.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "conversationId": {
+                      "type": "string"
+                    },
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "linkedItemCount": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "result": {
+                      "enum": [
+                        "created",
+                        "reused"
+                      ],
+                      "type": "string"
+                    },
+                    "reused": {
+                      "type": "boolean"
+                    },
+                    "turnCount": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "conversationId",
+                    "created",
+                    "reused",
+                    "turnCount",
+                    "linkedItemCount",
+                    "result"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/knowledge/conversations/import/preview": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "description": "Strict bounded import envelope. Validation is application-owned so rejected input is included in the mandatory audit transaction without storing its content.",
+                "properties": {
+                  "format": {
+                    "enum": [
+                      "manual",
+                      "json",
+                      "markdown"
+                    ],
+                    "type": "string"
+                  },
+                  "inputBase64": {
+                    "description": "Canonical unpadded base64url. Manual and JSON decode to the strict structured conversation model; Markdown uses the versioned role-block grammar.",
+                    "maxLength": 699051,
+                    "minLength": 1,
+                    "pattern": "^[A-Za-z0-9_-]+$",
+                    "type": "string"
+                  },
+                  "linkedItems": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "itemId": {
+                          "maxLength": 100,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "relationType": {
+                          "enum": [
+                            "primary",
+                            "supporting",
+                            "contradicting",
+                            "context"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "itemId",
+                        "relationType"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 20,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "format",
+                  "inputBase64",
+                  "linkedItems"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "description": "Strict bounded import envelope. Validation is application-owned so rejected input is included in the mandatory audit transaction without storing its content.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "expiresAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "previewToken": {
+                      "type": "string"
+                    },
+                    "rejectedFields": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 0,
+                      "type": "array"
+                    },
+                    "summary": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "format": {
+                          "enum": [
+                            "manual",
+                            "json",
+                            "markdown"
+                          ],
+                          "type": "string"
+                        },
+                        "linkedItemCount": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "model": {
+                          "enum": [
+                            "gpt",
+                            "claude",
+                            "gemini",
+                            "copilot",
+                            "other",
+                            null
+                          ],
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "origins": {
+                          "items": {
+                            "enum": [
+                              "user",
+                              "external",
+                              "ai",
+                              "system",
+                              "tool"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array",
+                          "uniqueItems": true
+                        },
+                        "provider": {
+                          "enum": [
+                            "openai",
+                            "anthropic",
+                            "google",
+                            "microsoft",
+                            "other",
+                            null
+                          ],
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "roles": {
+                          "items": {
+                            "enum": [
+                              "user",
+                              "assistant",
+                              "system",
+                              "tool"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array",
+                          "uniqueItems": true
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "turnCount": {
+                          "minimum": 1,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "format",
+                        "title",
+                        "provider",
+                        "model",
+                        "roles",
+                        "origins",
+                        "turnCount",
+                        "linkedItemCount"
+                      ],
+                      "type": "object"
+                    },
+                    "warnings": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 0,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "summary",
+                    "warnings",
+                    "rejectedFields",
+                    "previewToken",
+                    "expiresAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
             "content": {
               "application/json": {
                 "schema": {

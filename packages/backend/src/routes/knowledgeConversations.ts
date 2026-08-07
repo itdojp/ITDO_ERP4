@@ -1,6 +1,11 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 
 import {
+  knowledgeConversationImportModels,
+  knowledgeConversationImportProviders,
+  knowledgeConversationImportToolNames,
+} from '../application/knowledge/knowledgeConversationImportPorts.js';
+import {
   createKnowledgeConversationService,
   type KnowledgeConversationService,
 } from '../application/knowledge/knowledgeConversationUseCases.js';
@@ -42,9 +47,19 @@ import {
 
 const allowedRoles = ['admin', 'mgmt', 'exec', 'user'] as const;
 
-const nullOnlyStringSchema = {
+const importProviderSchema = {
   type: ['string', 'null'],
-  enum: [null],
+  enum: [...knowledgeConversationImportProviders, null],
+} as const;
+
+const importModelSchema = {
+  type: ['string', 'null'],
+  enum: [...knowledgeConversationImportModels, null],
+} as const;
+
+const importToolNameSchema = {
+  type: ['string', 'null'],
+  enum: [...knowledgeConversationImportToolNames, null],
 } as const;
 
 const conversationItemSchema = {
@@ -98,8 +113,8 @@ const conversationSchema = {
     ownerUserId: { type: 'string' },
     title: { type: 'string' },
     sourceType: { type: 'string', enum: ['manual', 'json', 'markdown'] },
-    provider: nullOnlyStringSchema,
-    model: nullOnlyStringSchema,
+    provider: importProviderSchema,
+    model: importModelSchema,
     capturedAt: { type: 'string', format: 'date-time' },
     importedAt: nullableDateTimeSchema,
     contentHash: { type: 'string', pattern: '^[a-f0-9]{64}$' },
@@ -139,7 +154,7 @@ const turnSchema = {
     role: { type: 'string', enum: knowledgeConversationRoles },
     origin: { type: 'string', enum: knowledgeProvenanceOrigins },
     content: { type: 'string' },
-    name: nullOnlyStringSchema,
+    name: importToolNameSchema,
     occurredAt: nullableDateTimeSchema,
     contentHash: { type: 'string', pattern: '^[a-f0-9]{64}$' },
     createdAt: { type: 'string', format: 'date-time' },
