@@ -45,6 +45,15 @@ function body(overrides = {}) {
   };
 }
 
+function stringLeaves(value) {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(stringLeaves);
+  if (value && typeof value === 'object') {
+    return Object.values(value).flatMap(stringLeaves);
+  }
+  return [];
+}
+
 function createHarness() {
   const state = {
     accessible: true,
@@ -435,7 +444,7 @@ test('request key enforces the application-owned 200-code-point boundary and red
   });
   assert.equal(accepted.ok, true);
   assert.equal(
-    JSON.stringify(acceptedHarness.state.audits).includes(acceptedKey),
+    stringLeaves(acceptedHarness.state.audits).includes(acceptedKey),
     false,
   );
 
@@ -465,7 +474,7 @@ test('request key enforces the application-owned 200-code-point boundary and red
       'knowledge_import_rejected',
     );
     assert.equal(
-      JSON.stringify(harness.state.audits).includes(requestKey),
+      stringLeaves(harness.state.audits).includes(requestKey),
       false,
     );
   }

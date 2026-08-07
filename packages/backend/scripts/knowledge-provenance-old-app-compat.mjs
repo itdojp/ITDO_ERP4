@@ -58,6 +58,8 @@ if (mode === 'import') {
     { createKnowledgeConversationImportTokenCodec },
     { encodeKnowledgeConversationImportInput },
     importAdapter,
+    { createKnowledgeConversationService },
+    provenanceAdapter,
     responseMapper,
     { prisma },
   ] = await Promise.all([
@@ -73,9 +75,20 @@ if (mode === 'import') {
     load(
       'packages/backend/dist/adapters/knowledge/prismaKnowledgeConversationImportAdapter.js',
     ),
+    load(
+      'packages/backend/dist/application/knowledge/knowledgeConversationUseCases.js',
+    ),
+    load(
+      'packages/backend/dist/adapters/knowledge/prismaKnowledgeProvenanceAdapter.js',
+    ),
     load('packages/backend/dist/routes/knowledgeProvenanceSchemas.js'),
     load('packages/backend/dist/services/db.js'),
   ]);
+  const conversationService = createKnowledgeConversationService({
+    reader: provenanceAdapter.prismaKnowledgeConversationRepository,
+    unitOfWork: provenanceAdapter.prismaKnowledgeProvenanceUnitOfWork,
+    now: () => new Date('2026-08-08T00:00:00.000Z'),
+  });
   try {
     const legacyVocabularyConversation =
       await prisma.knowledgeConversation.findUniqueOrThrow({
@@ -87,6 +100,40 @@ if (mode === 'import') {
     );
     assert.equal(mappedLegacyVocabulary.provider, null);
     assert.equal(mappedLegacyVocabulary.model, null);
+    const currentAppLegacyAppend = expectOk(
+      await conversationService.appendTurn({
+        actor,
+        auditActor,
+        conversationId: legacyVocabularyConversationId,
+        body: {
+          expectedVersion: legacyVocabularyConversation.version,
+          role: 'user',
+          origin: 'user',
+          content: 'Synthetic current-application legacy-row turn',
+        },
+      }),
+      'current application legacy vocabulary turn append',
+    );
+    assert.equal(
+      currentAppLegacyAppend.conversation.version,
+      legacyVocabularyConversation.version + 1,
+    );
+    const currentAppLegacyRow =
+      await prisma.knowledgeConversation.findUniqueOrThrow({
+        where: { id: legacyVocabularyConversationId },
+      });
+    assert.equal(currentAppLegacyRow.provider, 'legacy-provider');
+    assert.equal(currentAppLegacyRow.model, 'legacy-model');
+    assert.equal(
+      responseMapper.conversationResponse(currentAppLegacyAppend.conversation)
+        .provider,
+      null,
+    );
+    assert.equal(
+      responseMapper.conversationResponse(currentAppLegacyAppend.conversation)
+        .model,
+      null,
+    );
 
     const itemId = (await readFile(itemIdFile, 'utf8')).trim();
     assert.ok(itemId);
@@ -158,6 +205,7 @@ if (mode === 'import') {
         baseline,
         legacyVocabularyRowRetained: true,
         legacyVocabularyRedactedByNewApp: true,
+        legacyVocabularyMutableByNewApp: true,
       }),
     );
   } finally {
@@ -306,6 +354,35 @@ if (mode === 'import') {
       );
       assert.equal(mappedLegacyVocabulary.provider, null);
       assert.equal(mappedLegacyVocabulary.model, null);
+      const oldAppLegacyAppend = expectOk(
+        await conversationService.appendTurn({
+          actor,
+          auditActor,
+          conversationId: legacyVocabularyConversationId,
+          body: {
+            expectedVersion: legacyVocabularyDetail.version,
+            role: 'user',
+            origin: 'user',
+            content: 'Synthetic old-application legacy-row turn',
+          },
+        }),
+        'old application legacy vocabulary turn append',
+      );
+      assert.equal(
+        oldAppLegacyAppend.conversation.version,
+        legacyVocabularyDetail.version + 1,
+      );
+      const oldAppLegacyRow =
+        await prisma.knowledgeConversation.findUniqueOrThrow({
+          where: { id: legacyVocabularyConversationId },
+        });
+      assert.equal(oldAppLegacyRow.provider, 'legacy-provider');
+      assert.equal(oldAppLegacyRow.model, 'legacy-model');
+      const mappedOldAppLegacyAppend = responseMapper.conversationResponse(
+        oldAppLegacyAppend.conversation,
+      );
+      assert.equal(mappedOldAppLegacyAppend.provider, null);
+      assert.equal(mappedOldAppLegacyAppend.model, null);
 
       const oldCreated = expectOk(
         await conversationService.create({
@@ -349,6 +426,7 @@ if (mode === 'import') {
           importedToolNameRedacted: true,
           legacyVocabularyRowRetained: true,
           legacyVocabularyRedacted: true,
+          legacyVocabularyMutableByOldAndNewApp: true,
           oldApplicationCrudFinalVersion: restored.version,
           healthz: 200,
           readyz: 200,

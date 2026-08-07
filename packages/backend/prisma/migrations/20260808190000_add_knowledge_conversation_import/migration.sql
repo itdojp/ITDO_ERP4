@@ -25,6 +25,7 @@ CREATE TABLE "KnowledgeConversationImportRequest" (
 ALTER TABLE "KnowledgeConversation"
   ADD CONSTRAINT "KnowledgeConversation_import_provider_check"
   CHECK (
+    "idempotencyHash" IS NULL OR
     "provider" IS NULL OR
     "provider" IN ('openai', 'anthropic', 'google', 'microsoft', 'other')
   ) NOT VALID;
@@ -32,6 +33,7 @@ ALTER TABLE "KnowledgeConversation"
 ALTER TABLE "KnowledgeConversation"
   ADD CONSTRAINT "KnowledgeConversation_import_model_check"
   CHECK (
+    "idempotencyHash" IS NULL OR
     "model" IS NULL OR
     "model" IN ('gpt', 'claude', 'gemini', 'copilot', 'other')
   ) NOT VALID;

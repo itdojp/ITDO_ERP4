@@ -440,10 +440,13 @@ mutationする。
 - ledger、conversation、turn、relation、mandatory auditは同じtransactionで確定する。auditには
   format、turn/item件数、duplicate flag等のallowlistだけを保存し、本文、hash、request key、item ID、
   parser stackを入れない。ledgerはowner複合FKとDB CHECKを持ち、update/deleteをtriggerで拒否する。
-- migrationはledger table/index/FK/CHECKと既存provider/model/name列への`NOT VALID` CHECKだけを
-  追加するexpand-only変更とする。rollbackは新tableとimport済みdataを保持したままPR A application
-  imageへ戻す。PR A applicationでimport済みconversation/turnを読めること、未知だった公開labelを
-  `null`へredactすること、既存Knowledge CRUD/health/readinessが継続することをPostgreSQL 15で検証する。
+- migrationはledger table/index/FK/CHECK、import識別子があるconversationのprovider/model列、
+  新規turnのname列への`NOT VALID` CHECKだけを追加するexpand-only変更とする。migration前の
+  非import conversationに未対応provider/model値があっても、値を保持・redactしたまま親rowの
+  version/content hashを更新できなければならない。rollbackは新tableとimport済みdataを保持したまま
+  PR A application imageへ戻す。PR A applicationでimport済みconversation/turnを読めること、未知だった
+  公開labelを`null`へredactすること、migration前の未対応label rowを新旧applicationで更新できること、
+  既存Knowledge CRUD/health/readinessが継続することをPostgreSQL 15で検証する。
 
 ### 06. Chat thread foundation
 

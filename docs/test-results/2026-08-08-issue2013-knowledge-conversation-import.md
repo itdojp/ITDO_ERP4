@@ -39,8 +39,9 @@ migration、external LLM、Sakura VPS、Google Drive、Sakura Object Storage、�
 - preview／commit responseはserializerへ依存せずroute mapperがallowlist fieldだけで新規objectを
   構築する。内部hash、request key、item detailはmapper出力へ含めない。
 - `RATE_LIMIT_KNOWLEDGE_IMPORT_MAX`は他のroute別上限と同様、起動時に正の整数だけを受理する。
-- migrationはowner-scoped ledger table、複合FK、unique／CHECK、immutable triggerと既存公開label列の
-  allowlist CHECKだけを追加するexpand-only変更である。turn nameはallowlistだけでなく`tool` roleへ
+- migrationはowner-scoped ledger table、複合FK、unique／CHECK、immutable triggerとimport由来
+  conversationの公開label列に対するallowlist CHECKだけを追加するexpand-only変更である。migration前の
+  非import rowは未対応labelを保持したまま更新できる。turn nameはallowlistだけでなく`tool` roleへ
   DB制約で束縛する。
 
 ## Focused tests
@@ -88,6 +89,8 @@ Result: **PASS**
 - exact baseline `fb10a4df864299d55afcad1985c4996d65e3cd16` applicationをmigration前後のDBへ接続した。
 - migration前に旧applicationで作成した未対応provider/model値のrowをmigration後も保持した。
 - 現applicationと旧applicationはいずれも保持した未対応provider/modelを`null`へredactした。
+- 保持した旧rowへ現applicationと旧applicationの双方でturnを追加でき、provider/modelの元値はDBに
+  保持されたままversion/content hashを更新できた。
 - import済みconversation／turnをPR A applicationでreadできた。
 - PR Bの公開provider/model/tool labelは旧application responseで`null`へredactされた。
 - 既存Knowledge item CRUDと旧conversation create/appendを継続できた。

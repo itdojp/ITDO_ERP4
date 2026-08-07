@@ -153,11 +153,11 @@ test('bounded import ledger is owner-scoped, immutable, and bound by composite f
   );
   assert.match(
     importMigration,
-    /KnowledgeConversation_import_provider_check[\s\S]*?"provider" IN \('openai', 'anthropic', 'google', 'microsoft', 'other'\)[\s\S]*?NOT VALID/,
+    /KnowledgeConversation_import_provider_check[\s\S]*?"idempotencyHash" IS NULL[\s\S]*?"provider" IN \('openai', 'anthropic', 'google', 'microsoft', 'other'\)[\s\S]*?NOT VALID/,
   );
   assert.match(
     importMigration,
-    /KnowledgeConversation_import_model_check[\s\S]*?"model" IN \('gpt', 'claude', 'gemini', 'copilot', 'other'\)[\s\S]*?NOT VALID/,
+    /KnowledgeConversation_import_model_check[\s\S]*?"idempotencyHash" IS NULL[\s\S]*?"model" IN \('gpt', 'claude', 'gemini', 'copilot', 'other'\)[\s\S]*?NOT VALID/,
   );
   assert.match(
     importPostgresIntegrationScript,

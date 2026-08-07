@@ -245,6 +245,9 @@ SHA-256を`KnowledgeConversationImportRequest`へ保存する。raw request key�
 同じpayloadのreplayは同じconversationへ収束し、post-importに手動turn/itemが追加されてもreplayで
 import turnを再追加しない。conversationがlogical delete済みの場合は再利用せずsanitized conflictとする。
 ledgerはconversationとのowner複合FKでcross-owner bindingを拒否し、immutable triggerで履歴を保持する。
+provider/modelのDB公開語彙CHECKはimport識別子があるconversationだけへ適用する。`NOT VALID`で
+migration前rowのscanを避けるだけでは無関係なUPDATE時の再検査を防げないため、非importの旧rowは
+未対応値を保持・responseでredactしたままturn/item変更に伴う親row更新を継続できる条件にする。
 
 import transactionはSerializable、最大3 attemptとし、各attemptでACL lock、request ledger、payload
 idempotencyを先頭から再評価する。IDとserver commit timestampはretry外で一度だけ決定する。

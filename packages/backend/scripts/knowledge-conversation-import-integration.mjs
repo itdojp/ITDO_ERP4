@@ -524,8 +524,16 @@ try {
     /check|P2004|P2010/i,
   );
   for (const invalidLabels of [
-    { provider: 'unsupported-provider', model: null },
-    { provider: null, model: 'unsupported-model' },
+    {
+      provider: 'unsupported-provider',
+      model: null,
+      idempotencyHash: '1'.repeat(64),
+    },
+    {
+      provider: null,
+      model: 'unsupported-model',
+      idempotencyHash: '2'.repeat(64),
+    },
   ]) {
     await assert.rejects(
       () =>
@@ -537,7 +545,9 @@ try {
             sourceType: 'manual',
             provider: invalidLabels.provider,
             model: invalidLabels.model,
+            importedAt: new Date('2026-08-08T00:00:00.000Z'),
             contentHash: 'e'.repeat(64),
+            idempotencyHash: invalidLabels.idempotencyHash,
             createdBy: actor.userId,
             updatedBy: actor.userId,
           },
