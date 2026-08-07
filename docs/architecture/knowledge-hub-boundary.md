@@ -242,6 +242,8 @@ actor/payload/itemは用途別HMAC bindingで表現する。commitではtokenだ
 
 永続idempotencyはtoken secret rotationから分離し、ownerとopaque request keyのdomain-separated
 SHA-256を`KnowledgeConversationImportRequest`へ保存する。raw request keyとpayloadはledgerへ複製しない。
+request keyはhash前にC0/C1、Unicode `Bidi_Control`、BOM、ill-formed UTF-16 surrogate、端部whitespaceを
+拒否し、視覚的に紛らわしい別operation keyによるidempotency誤認を防ぐ。
 同じpayloadのreplayは同じconversationへ収束し、post-importに手動turn/itemが追加されてもreplayで
 import turnを再追加しない。conversationがlogical delete済みの場合は再利用せずsanitized conflictとする。
 ledgerはconversationとのowner複合FKでcross-owner bindingを拒否し、immutable triggerで履歴を保持する。

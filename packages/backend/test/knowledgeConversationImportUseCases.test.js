@@ -54,6 +54,10 @@ function stringLeaves(value) {
   return [];
 }
 
+function auditContainsRequestKey(audits, requestKey) {
+  return stringLeaves(audits).some((leaf) => leaf.includes(requestKey));
+}
+
 function createHarness() {
   const state = {
     accessible: true,
@@ -444,7 +448,7 @@ test('request key enforces the application-owned 200-code-point boundary and red
   });
   assert.equal(accepted.ok, true);
   assert.equal(
-    stringLeaves(acceptedHarness.state.audits).includes(acceptedKey),
+    auditContainsRequestKey(acceptedHarness.state.audits, acceptedKey),
     false,
   );
 
@@ -453,7 +457,12 @@ test('request key enforces the application-owned 200-code-point boundary and red
     ' leading-space',
     'trailing-space ',
     'control\u0001key',
-    'bidi\u202ekey',
+    'c1-control\u0085key',
+    'bidi-arabic-mark\u061ckey',
+    'bidi-left-to-right\u200ekey',
+    'bidi-right-to-left\u200fkey',
+    'bidi-override\u202ekey',
+    'bidi-isolate\u2066key',
     'lone-surrogate\ud800',
   ]) {
     const harness = createHarness();
@@ -474,7 +483,7 @@ test('request key enforces the application-owned 200-code-point boundary and red
       'knowledge_import_rejected',
     );
     assert.equal(
-      stringLeaves(harness.state.audits).includes(requestKey),
+      auditContainsRequestKey(harness.state.audits, requestKey),
       false,
     );
   }

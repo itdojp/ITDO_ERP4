@@ -104,7 +104,10 @@ function validRequestKey(value: unknown): value is string {
     const code = value.charCodeAt(index);
     if (
       code < 0x20 ||
-      code === 0x7f ||
+      (code >= 0x7f && code <= 0x9f) ||
+      code === 0x061c ||
+      code === 0x200e ||
+      code === 0x200f ||
       code === 0x2028 ||
       code === 0x2029 ||
       (code >= 0x202a && code <= 0x202e) ||

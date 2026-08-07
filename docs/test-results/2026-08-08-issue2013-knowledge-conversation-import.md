@@ -32,7 +32,8 @@ migration、external LLM、Sakura VPS、Google Drive、Sakura Object Storage、�
   権限外、存在しないitem、cross-ownerは同じ`not_found`へ正規化する。
 - request ledgerはownerとopaque operation keyのdomain-separated SHA-256だけを保存する。同じ
   key+payloadと同じpayload+別keyは既存結果を返し、同じkey+別payloadはsanitized 409とする。
-  transaction conflictは最大3 attemptで再評価し、無制限retryを行わない。
+  request keyはC0/C1、Unicode `Bidi_Control`、BOM、ill-formed UTF-16 surrogate、端部whitespaceを
+  hash前に拒否する。transaction conflictは最大3 attemptで再評価し、無制限retryを行わない。
 - audit metadataはformat、件数、結果code等のallowlistだけを保存する。本文、payload hash、raw
   request key、linked item ID、preview token、parser stackを保存しない。必須audit失敗時は業務mutationも
   rollbackする。
@@ -50,7 +51,7 @@ migration、external LLM、Sakura VPS、Google Drive、Sakura Object Storage、�
 | ------------------------------------------------ | ------ | ----------------------------------------------------------------------------------- |
 | parser / token / use case / adapter / route      | PASS   | 39/39、fail/skip/todo 0                                                             |
 | provenance schema / migration / OpenAPI contract | PASS   | 10/10、fail/skip/todo 0                                                             |
-| focused coverage                                 | PASS   | statements/lines 85.94%、branches 76.69%、functions 93.50%。threshold/scope変更なし |
+| focused coverage                                 | PASS   | statements/lines 85.96%、branches 76.92%、functions 93.50%。threshold/scope変更なし |
 
 Focused coverageはimport parser、port、token、use case、Prisma adapter、routeを対象にした。
 Prisma adapter単体のstatements/linesは52.15%だが、実transaction／constraint経路は後述の

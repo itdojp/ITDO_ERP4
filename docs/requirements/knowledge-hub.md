@@ -436,7 +436,8 @@ mutationする。
   `(ownerUserId, requestKeyHash)`を一意にする。同じkey+payloadと同じpayload+別keyは既存conversationを
   返してturn/relationを増殖させない。同じkey+別payloadはsanitized 409とし、同時競合は
   Serializable transactionを最大3回だけ再評価して一件へ収束させる。clientはUUID v4相当または
-  128 bit以上の予測困難なoperation keyを生成し、利用者入力や本文から導出しない。
+  128 bit以上の予測困難なoperation keyを生成し、利用者入力や本文から導出しない。serverはC0/C1、
+  Unicode `Bidi_Control`、BOM、ill-formed UTF-16 surrogate、端部whitespaceをhash前に拒否する。
 - ledger、conversation、turn、relation、mandatory auditは同じtransactionで確定する。auditには
   format、turn/item件数、duplicate flag等のallowlistだけを保存し、本文、hash、request key、item ID、
   parser stackを入れない。ledgerはowner複合FKとDB CHECKを持ち、update/deleteをtriggerで拒否する。
