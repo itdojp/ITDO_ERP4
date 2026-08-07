@@ -2527,11 +2527,28 @@ model KnowledgeConversation {
   updatedBy        String
   items            KnowledgeConversationItem[]
   turns            KnowledgeConversationTurn[]
+  importRequests   KnowledgeConversationImportRequest[]
   synthesisSources KnowledgeSynthesisSource[]
 
   @@unique([ownerUserId, idempotencyHash])
   @@unique([id, ownerUserId])
   @@index([ownerUserId, deletedAt, updatedAt, id])
+}
+
+model KnowledgeConversationImportRequest {
+  id                   String                          @id @default(uuid())
+  ownerUserId          String
+  requestKeyHash       String
+  canonicalPayloadHash String
+  sourceType           KnowledgeConversationSourceType
+  conversation         KnowledgeConversation           @relation(fields: [conversationId, ownerUserId], references: [id, ownerUserId], onDelete: Restrict, onUpdate: Restrict)
+  conversationId       String
+  createdAt            DateTime                        @default(now())
+  createdBy            String
+
+  @@unique([ownerUserId, requestKeyHash])
+  @@index([ownerUserId, createdAt, id])
+  @@index([conversationId, ownerUserId])
 }
 
 model KnowledgeConversationItem {

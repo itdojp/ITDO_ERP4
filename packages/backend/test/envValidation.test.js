@@ -425,6 +425,21 @@ test('envValidation: RATE_LIMIT_DOC_SEND_MAX validates positive integer', () => 
   assert.match(result.stderr, /RATE_LIMIT_DOC_SEND_MAX/);
 });
 
+test('envValidation: RATE_LIMIT_KNOWLEDGE_IMPORT_MAX validates positive integer', () => {
+  for (const value of ['0', '-5', '1.5', 'not-a-number']) {
+    const result = runEnvValidation({
+      RATE_LIMIT_KNOWLEDGE_IMPORT_MAX: value,
+    });
+    assert.notEqual(result.status, 0, value);
+    assert.match(result.stderr, /RATE_LIMIT_KNOWLEDGE_IMPORT_MAX/, value);
+  }
+
+  const accepted = runEnvValidation({
+    RATE_LIMIT_KNOWLEDGE_IMPORT_MAX: '20',
+  });
+  assert.equal(accepted.status, 0, accepted.stderr);
+});
+
 test('envValidation: Google Drive accepts common ERP4 credentials', () => {
   const result = runEnvValidation({
     CHAT_ATTACHMENT_PROVIDER: 'gdrive',

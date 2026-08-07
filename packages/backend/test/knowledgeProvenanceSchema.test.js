@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const migrationDirectory = '20260806090000_add_knowledge_provenance_foundation';
+const importMigrationDirectory =
+  '20260808190000_add_knowledge_conversation_import';
 const schema = readFileSync(
   new URL('../prisma/schema.prisma', import.meta.url),
   'utf8',
@@ -10,6 +12,13 @@ const schema = readFileSync(
 const migration = readFileSync(
   new URL(
     `../prisma/migrations/${migrationDirectory}/migration.sql`,
+    import.meta.url,
+  ),
+  'utf8',
+);
+const importMigration = readFileSync(
+  new URL(
+    `../prisma/migrations/${importMigrationDirectory}/migration.sql`,
     import.meta.url,
   ),
   'utf8',
@@ -23,6 +32,13 @@ const openapi = JSON.parse(
 const postgresIntegrationScript = readFileSync(
   new URL(
     '../../../scripts/test-knowledge-provenance-postgres.sh',
+    import.meta.url,
+  ),
+  'utf8',
+);
+const importPostgresIntegrationScript = readFileSync(
+  new URL(
+    '../../../scripts/test-knowledge-conversation-import-postgres.sh',
     import.meta.url,
   ),
   'utf8',
@@ -94,6 +110,62 @@ test('PostgreSQL drift gate covers provenance enums and models', () => {
   assert.match(
     postgresIntegrationScript,
     /grep -E "\$knowledge_provenance_drift_pattern"/,
+  );
+});
+
+test('bounded import ledger is owner-scoped, immutable, and bound by composite foreign key', () => {
+  const ledger = schemaBlock('model', 'KnowledgeConversationImportRequest');
+  for (const field of [
+    'ownerUserId',
+    'requestKeyHash',
+    'canonicalPayloadHash',
+    'sourceType',
+    'conversationId',
+    'createdBy',
+  ]) {
+    assert.match(ledger, new RegExp(`\\b${field}\\s+`), field);
+  }
+  assert.match(ledger, /@@unique\(\[ownerUserId, requestKeyHash\]\)/);
+  assert.match(
+    ledger,
+    /fields: \[conversationId, ownerUserId\], references: \[id, ownerUserId\]/,
+  );
+  assert.match(
+    importMigration,
+    /CREATE TABLE "KnowledgeConversationImportRequest"/,
+  );
+  assert.match(importMigration, /requestKeyHash" ~ '\^\[0-9a-f\]\{64\}\$'/);
+  assert.match(
+    importMigration,
+    /canonicalPayloadHash" ~ '\^\[0-9a-f\]\{64\}\$'/,
+  );
+  assert.match(
+    importMigration,
+    /FOREIGN KEY \("conversationId", "ownerUserId"\)[\s\S]*?REFERENCES "KnowledgeConversation"\("id", "ownerUserId"\)/,
+  );
+  assert.match(
+    importMigration,
+    /KnowledgeConversationImportRequest_immutable_trigger[\s\S]*?BEFORE UPDATE OR DELETE/,
+  );
+  assert.match(
+    importMigration,
+    /KnowledgeConversationTurn_import_name_check[\s\S]*?"role" = 'tool'[\s\S]*?"name" IN \('search', 'browser', 'code', 'file', 'other'\)/,
+  );
+  assert.match(
+    importMigration,
+    /KnowledgeConversation_import_provider_check[\s\S]*?"idempotencyHash" IS NULL[\s\S]*?"provider" IN \('openai', 'anthropic', 'google', 'microsoft', 'other'\)[\s\S]*?NOT VALID/,
+  );
+  assert.match(
+    importMigration,
+    /KnowledgeConversation_import_model_check[\s\S]*?"idempotencyHash" IS NULL[\s\S]*?"model" IN \('gpt', 'claude', 'gemini', 'copilot', 'other'\)[\s\S]*?NOT VALID/,
+  );
+  assert.match(
+    importPostgresIntegrationScript,
+    /KnowledgeConversationImportRequest\|KnowledgeConversation_import_/,
+  );
+  assert.doesNotMatch(
+    importMigration,
+    /\b(?:DROP|TRUNCATE|DELETE\s+FROM|UPDATE\s+"|RENAME)\b/i,
   );
 });
 
@@ -322,6 +394,8 @@ test('OpenAPI publishes the bounded provenance foundation without internal idemp
     ['/knowledge/conversations/{conversationId}/items/{itemId}', 'delete'],
     ['/knowledge/conversations/{conversationId}/turns', 'get'],
     ['/knowledge/conversations/{conversationId}/turns', 'post'],
+    ['/knowledge/conversations/import/preview', 'post'],
+    ['/knowledge/conversations/import/commit', 'post'],
     ['/knowledge/syntheses', 'get'],
     ['/knowledge/syntheses', 'post'],
     ['/knowledge/syntheses/{synthesisId}', 'get'],
@@ -387,13 +461,18 @@ test('OpenAPI publishes the bounded provenance foundation without internal idemp
       'application/json'
     ].schema,
   );
-  const nullOnlyString = {
+  const nullableProvider = {
     type: 'string',
     nullable: true,
-    enum: [null],
+    enum: ['openai', 'anthropic', 'google', 'microsoft', 'other', null],
   };
-  assert.deepEqual(conversationResponse.properties.provider, nullOnlyString);
-  assert.deepEqual(conversationResponse.properties.model, nullOnlyString);
+  const nullableModel = {
+    type: 'string',
+    nullable: true,
+    enum: ['gpt', 'claude', 'gemini', 'copilot', 'other', null],
+  };
+  assert.deepEqual(conversationResponse.properties.provider, nullableProvider);
+  assert.deepEqual(conversationResponse.properties.model, nullableModel);
   const appendedTurnResponse = resolveOpenApiSchema(
     openapi.paths['/knowledge/conversations/{conversationId}/turns'].post
       .responses['201'].content['application/json'].schema,
@@ -401,5 +480,41 @@ test('OpenAPI publishes the bounded provenance foundation without internal idemp
   const turnResponse = resolveOpenApiSchema(
     appendedTurnResponse.properties.turn,
   );
-  assert.deepEqual(turnResponse.properties.name, nullOnlyString);
+  assert.deepEqual(turnResponse.properties.name, {
+    type: 'string',
+    nullable: true,
+    enum: ['search', 'browser', 'code', 'file', 'other', null],
+  });
+
+  const previewOperation =
+    openapi.paths['/knowledge/conversations/import/preview'].post;
+  const previewResponse =
+    previewOperation.responses['200'].content['application/json'].schema;
+  assert.equal(previewResponse.properties.warnings.maxItems, 0);
+  assert.equal(previewResponse.properties.rejectedFields.maxItems, 0);
+  for (const internal of [
+    'canonicalPayloadHash',
+    'requestKey',
+    'itemIds',
+    'content',
+  ]) {
+    assert.equal(previewResponse.properties[internal], undefined, internal);
+  }
+  const commitResponse =
+    openapi.paths['/knowledge/conversations/import/commit'].post.responses[
+      '200'
+    ].content['application/json'].schema;
+  for (const internal of [
+    'canonicalPayloadHash',
+    'requestKey',
+    'previewToken',
+    'providerKey',
+  ]) {
+    assert.equal(commitResponse.properties[internal], undefined, internal);
+  }
+  assert.ok(
+    openapi.paths['/knowledge/conversations/import/commit'].post.responses[
+      '409'
+    ],
+  );
 });

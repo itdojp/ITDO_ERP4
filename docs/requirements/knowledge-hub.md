@@ -398,6 +398,57 @@ PR CはKnowledge Hub UI、real-backend E2E、manual、sanitized screenshot evide
 その時点でIssue #2013をcloseする。annotation/synthesis検索とconversation全文検索は現行
 #2011の明示検索scopeを暗黙に拡張せず、別途API/query-cost/ACL契約を固定してから扱う。
 
+#### 05-B. Bounded conversation import（Issue #2013 PR B）
+
+PR Bのimport APIは`POST /knowledge/conversations/import/preview`と
+`POST /knowledge/conversations/import/commit`の二段階とする。previewはDBへconversation、turn、
+item relationを作成せず、canonical actor、linked item ACL、形式・上限を検査して10分間だけ
+有効なopaque tokenを返す。commitは同じ入力とtokenを再検証し、利用者の明示操作としてだけ
+mutationする。
+
+- 対応形式は`manual`、strict `json`、限定`markdown`。全形式の入力本文をcanonicalな
+  unpadded base64urlでtransportし、decode後にfatal UTF-8を適用する。ZIP/TAR、URL/network
+  fetch、HTML実行、provider API、ChatGPT/Chatwork account archive、添付展開は扱わない。
+- manualとJSONは同じstrict object grammarを使い、title、固定provider/model語彙、turn配列だけを
+  受理する。JSONは`JSON.parse`前に線形走査し、depth 12、container node 5,000、duplicate key、
+  `__proto__|prototype|constructor`を検査する。未知field、role、origin、provider/model/tool nameは
+  推測変換せず拒否する。
+- Markdownは`# Knowledge Conversation v1`、header metadata、`## Turn`、turn metadata、本文から
+  なる限定文法だけを受理する。speakerを本文から推測せず、raw HTML、script、linkは実行・取得せず
+  inert textとして保持する。
+- 上限はraw/canonical各512 KiB、1 turn 64 KiB、turn 200件、linked item 20件、Markdown
+  5,000行、metadata 1行1 KiB、title 500 code point、provider/model/tool nameとrequest key
+  200 code pointとする。HTTP body limitは1 MiB、preview/commitは既定20 requests/1 minuteの
+  専用rate limitを持つ。
+- roleは`user|assistant|system|tool`、originは`user|external|ai|system|tool`を別fieldで保持し、
+  固定した組合せだけを許す。公開providerは`openai|anthropic|google|microsoft|other`、modelは
+  `gpt|claude|gemini|copilot|other`、tool nameは`search|browser|code|file|other`とする。
+- canonical payload hashはformat、固定key順のnormalized payload、ordered turn、ordered item relation、
+  canonical ownerを含み、server commit時刻は含めない。hash、raw input、item ID、request keyは
+  response、audit、application logへ返さない。
+- preview tokenは既存`KNOWLEDGE_CURSOR_SIGNING_SECRET`から用途別に導出したHMAC-SHA-256鍵を使い、
+  purpose/version、actor fingerprint、format、keyed payload/item binding、issued/expiry、opaque operation
+  IDだけを署名する。本文、raw hash、raw request key、item ID、provider keyはtoken envelopeへ入れない。
+- commitはlinked item IDをsortして同一順序で`FOR UPDATE`し、owner一致・非削除を全件再検査する。
+  preview後にACLが失効した場合とcross-owner/nonexistent itemは同じ`not_found`とし、item title、
+  relation、件数を漏らさない。
+- request ledgerはcanonical ownerとraw request keyのdomain-separated SHA-256だけを保存し、
+  `(ownerUserId, requestKeyHash)`を一意にする。同じkey+payloadと同じpayload+別keyは既存conversationを
+  返してturn/relationを増殖させない。同じkey+別payloadはsanitized 409とし、同時競合は
+  Serializable transactionを最大3回だけ再評価して一件へ収束させる。clientはUUID v4相当または
+  128 bit以上の予測困難なoperation keyを生成し、利用者入力や本文から導出しない。serverはC0/C1、
+  Unicode `Bidi_Control`、BOM、ill-formed UTF-16 surrogate、端部whitespaceをhash前に拒否する。
+- ledger、conversation、turn、relation、mandatory auditは同じtransactionで確定する。auditには
+  format、turn/item件数、duplicate flag等のallowlistだけを保存し、本文、hash、request key、item ID、
+  parser stackを入れない。ledgerはowner複合FKとDB CHECKを持ち、update/deleteをtriggerで拒否する。
+- migrationはledger table/index/FK/CHECK、import識別子があるconversationのprovider/model列、
+  新規turnのname列への`NOT VALID` CHECKだけを追加するexpand-only変更とする。migration前の
+  非import conversationに未対応provider/model値があっても、値を保持・redactしたまま親rowの
+  version/content hashを更新できなければならない。rollbackは新tableとimport済みdataを保持したまま
+  PR A application imageへ戻す。PR A applicationでimport済みconversation/turnを読めること、未知だった
+  公開labelを`null`へredactすること、migration前の未対応label rowを新旧applicationで更新できること、
+  既存Knowledge CRUD/health/readinessが継続することをPostgreSQL 15で検証する。
+
 ### 06. Chat thread foundation
 
 - Depends on: 01。Knowledge schema とは独立して実装可能

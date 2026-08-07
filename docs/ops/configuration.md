@@ -30,6 +30,7 @@ backend は起動時に環境変数の検証を行い、不正/不足があれ�
     - `RATE_LIMIT_REDIS_CONNECT_TIMEOUT_MS`（任意、既定: `3000`）
   - 高負荷APIの個別制限（任意、未指定時は既定値）
     - 検索: `RATE_LIMIT_SEARCH_MAX` / `RATE_LIMIT_SEARCH_WINDOW`（Knowledge search/suggestion/saved-view executeの既定は60 requests / 1 minute）
+    - Knowledge会話import: `RATE_LIMIT_KNOWLEDGE_IMPORT_MAX` / `RATE_LIMIT_KNOWLEDGE_IMPORT_WINDOW`（preview/commit共通、既定は20 requests / 1 minute。既存global rate-limitのclient key契約を使用）
     - 外部LLM要約: `RATE_LIMIT_AI_SUMMARY_MAX` / `RATE_LIMIT_AI_SUMMARY_WINDOW`
     - チャット添付アップロード: `RATE_LIMIT_ATTACHMENT_UPLOAD_MAX` / `RATE_LIMIT_ATTACHMENT_UPLOAD_WINDOW`
     - 文書送信（見積/請求/発注）: `RATE_LIMIT_DOC_SEND_MAX` / `RATE_LIMIT_DOC_SEND_WINDOW`

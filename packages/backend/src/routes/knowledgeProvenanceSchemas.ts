@@ -10,6 +10,11 @@ import type {
   KnowledgeSynthesisSource,
   KnowledgeSynthesisVersion,
 } from '../application/knowledge/knowledgeProvenancePorts.js';
+import {
+  knowledgeConversationImportModels,
+  knowledgeConversationImportProviders,
+  knowledgeConversationImportToolNames,
+} from '../application/knowledge/knowledgeConversationImportPorts.js';
 import type { KnowledgeProvenanceResult } from '../application/knowledge/knowledgeProvenanceValidation.js';
 import { createApiErrorResponse } from '../services/errors.js';
 
@@ -141,12 +146,16 @@ export function conversationResponse(conversation: KnowledgeConversation) {
     ownerUserId: conversation.ownerUserId,
     title: conversation.title,
     sourceType: conversation.sourceType,
-    // Provider/model labels are not exposed until the bounded import contract
-    // supplies a fixed public vocabulary. This prevents direct database or
-    // future adapter writes from turning provenance labels into a secret
-    // exfiltration channel.
-    provider: null,
-    model: null,
+    provider: knowledgeConversationImportProviders.some(
+      (value) => value === conversation.provider,
+    )
+      ? conversation.provider
+      : null,
+    model: knowledgeConversationImportModels.some(
+      (value) => value === conversation.model,
+    )
+      ? conversation.model
+      : null,
     capturedAt: conversation.capturedAt.toISOString(),
     importedAt: conversation.importedAt?.toISOString() ?? null,
     contentHash: conversation.contentHash,
@@ -174,9 +183,11 @@ export function conversationTurnResponse(turn: KnowledgeConversationTurn) {
     role: turn.role,
     origin: turn.origin,
     content: turn.content,
-    // The manual append API does not accept tool labels. Keep the response
-    // fail-closed until PR B defines the bounded import label vocabulary.
-    name: null,
+    name:
+      turn.role === 'tool' &&
+      knowledgeConversationImportToolNames.some((value) => value === turn.name)
+        ? turn.name
+        : null,
     occurredAt: turn.occurredAt?.toISOString() ?? null,
     contentHash: turn.contentHash,
     createdAt: turn.createdAt.toISOString(),

@@ -227,6 +227,35 @@ PR Aのmigrationはenum/table/index/FK/CHECKと新規履歴table専用DB trigger
 新tableと履歴を保持したまま旧imageへ戻す。manual/JSON/Markdown importはPR B、UI/E2Eは
 PR Cで実装する。
 
+#### bounded conversation import boundary
+
+Issue #2013 PR Bはimport transport、parser、preview token、idempotency ledgerをKnowledge
+application context内に置き、routeからPrismaを直接呼ばない。parserはmutationを行わず、manual、
+JSON、Markdownを一度だけ共通canonical modelへ変換する。全形式をcanonical unpadded base64urlと
+fatal UTF-8で受け、JSONはparse前の有限scanner、Markdownはversion付きrole-block文法で処理する。
+URL fetch、HTML実行、外部provider呼出しはこの境界に存在しない。
+
+preview tokenは署名済みauthorization grantではなく、同じactor、format、payload、linked item集合を
+10分間だけcommitへ束縛するtamper-evident operation tokenである。tokenへ本文やraw hashを格納せず、
+actor/payload/itemは用途別HMAC bindingで表現する。commitではtokenだけを信頼せず、linked itemを
+決定順にlockしてcurrent owner/non-deleted ACLを全件再検査する。
+
+永続idempotencyはtoken secret rotationから分離し、ownerとopaque request keyのdomain-separated
+SHA-256を`KnowledgeConversationImportRequest`へ保存する。raw request keyとpayloadはledgerへ複製しない。
+request keyはhash前にC0/C1、Unicode `Bidi_Control`、BOM、ill-formed UTF-16 surrogate、端部whitespaceを
+拒否し、視覚的に紛らわしい別operation keyによるidempotency誤認を防ぐ。
+同じpayloadのreplayは同じconversationへ収束し、post-importに手動turn/itemが追加されてもreplayで
+import turnを再追加しない。conversationがlogical delete済みの場合は再利用せずsanitized conflictとする。
+ledgerはconversationとのowner複合FKでcross-owner bindingを拒否し、immutable triggerで履歴を保持する。
+provider/modelのDB公開語彙CHECKはimport識別子があるconversationだけへ適用する。`NOT VALID`で
+migration前rowのscanを避けるだけでは無関係なUPDATE時の再検査を防げないため、非importの旧rowは
+未対応値を保持・responseでredactしたままturn/item変更に伴う親row更新を継続できる条件にする。
+
+import transactionはSerializable、最大3 attemptとし、各attemptでACL lock、request ledger、payload
+idempotencyを先頭から再評価する。IDとserver commit timestampはretry外で一度だけ決定する。
+conversation/turn/relation/ledgerと`knowledge_conversation_imported`、`knowledge_import_committed`等の
+mandatory auditを同じtransaction clientで確定し、audit failure時は全mutationをrollbackする。
+
 ### 11. migration と rollback
 
 - schema は expand → migrate → contract を原則とし、最初の migration は既存 Chat/API を変更しない additive migration とする。

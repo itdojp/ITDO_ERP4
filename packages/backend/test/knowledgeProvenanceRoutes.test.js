@@ -398,7 +398,10 @@ test('conversation routes preserve role/origin and return only allowlisted field
     removeItem: async () => ({ ok: true, value: conversation({ version: 2 }) }),
     listTurns: async () => ({
       ok: true,
-      value: { items: [turn()], nextBoundary: null },
+      value: {
+        items: [turn({ role: 'tool', origin: 'tool', name: 'search' })],
+        nextBoundary: null,
+      },
     }),
     appendTurn: async () => {
       appendCalls += 1;
@@ -406,7 +409,7 @@ test('conversation routes preserve role/origin and return only allowlisted field
         ok: true,
         value: {
           conversation: conversation({ version: 2 }),
-          turn: turn({ name: 'AIzaSyntheticNotASecret' }),
+          turn: turn({ name: 'search' }),
         },
       };
     },
@@ -429,6 +432,15 @@ test('conversation routes preserve role/origin and return only allowlisted field
   assert.equal(response.json().turn.name, null);
   assert.equal(response.json().turn.providerKey, undefined);
   assert.equal(response.json().conversation.idempotencyHash, undefined);
+
+  const turns = await app.inject({
+    method: 'GET',
+    url: '/knowledge/conversations/conversation-1/turns',
+  });
+  assert.equal(turns.statusCode, 200, turns.body);
+  assert.equal(turns.json().items[0].role, 'tool');
+  assert.equal(turns.json().items[0].origin, 'tool');
+  assert.equal(turns.json().items[0].name, 'search');
 
   const unknownRole = await app.inject({
     method: 'POST',

@@ -64,6 +64,7 @@ import { registerKnowledgeSavedViewRoutes } from './knowledgeSavedViews.js';
 import { registerKnowledgeSnapshotRoutes } from './knowledgeSnapshots.js';
 import { registerKnowledgeAnnotationRoutes } from './knowledgeAnnotations.js';
 import { registerKnowledgeConversationRoutes } from './knowledgeConversations.js';
+import { registerKnowledgeConversationImportRoutes } from './knowledgeConversationImports.js';
 import { registerKnowledgeSynthesisRoutes } from './knowledgeSyntheses.js';
 
 export async function registerRoutes(app: FastifyInstance) {
@@ -132,5 +133,6 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerTestHookRoutes(app);
   await registerKnowledgeAnnotationRoutes(app);
   await registerKnowledgeConversationRoutes(app);
+  await registerKnowledgeConversationImportRoutes(app);
   await registerKnowledgeSynthesisRoutes(app);
 }
