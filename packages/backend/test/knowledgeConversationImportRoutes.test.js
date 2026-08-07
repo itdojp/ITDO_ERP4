@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import Fastify from 'fastify';
 import test from 'node:test';
 
-import { registerKnowledgeConversationImportRoutes } from '../dist/routes/knowledgeConversationImports.js';
+import {
+  knowledgeConversationImportCommitResponse,
+  knowledgeConversationImportPreviewResponse,
+  registerKnowledgeConversationImportRoutes,
+} from '../dist/routes/knowledgeConversationImports.js';
 import { mapErrorToResponse } from '../dist/services/errors.js';
 import { encodeKnowledgeConversationImportInput } from '../dist/application/knowledge/knowledgeConversationImportParser.js';
 
@@ -135,6 +139,62 @@ test('preview and commit routes return explicit allowlisted responses', async (t
   });
   assert.equal(calls[0][1].actor.userId, 'owner-1');
   assert.equal(calls[0][1].auditActor.requestId.length > 0, true);
+});
+
+test('response mappers discard internal import fields before serialization', () => {
+  const preview = knowledgeConversationImportPreviewResponse({
+    summary: {
+      format: 'manual',
+      title: 'Synthetic import',
+      provider: 'openai',
+      model: 'gpt',
+      roles: ['user'],
+      origins: ['user'],
+      turnCount: 1,
+      linkedItemCount: 0,
+      itemTitle: 'must-not-leak',
+    },
+    warnings: [],
+    rejectedFields: [],
+    previewToken: 'opaque.preview.token',
+    expiresAt: '2026-08-08T00:10:00.000Z',
+    payloadHash: 'must-not-leak',
+  });
+  assert.deepEqual(preview, {
+    summary: {
+      format: 'manual',
+      title: 'Synthetic import',
+      provider: 'openai',
+      model: 'gpt',
+      roles: ['user'],
+      origins: ['user'],
+      turnCount: 1,
+      linkedItemCount: 0,
+    },
+    warnings: [],
+    rejectedFields: [],
+    previewToken: 'opaque.preview.token',
+    expiresAt: '2026-08-08T00:10:00.000Z',
+  });
+
+  assert.deepEqual(
+    knowledgeConversationImportCommitResponse({
+      conversationId: 'conversation-1',
+      created: false,
+      reused: true,
+      turnCount: 1,
+      linkedItemCount: 0,
+      requestKey: 'must-not-leak',
+    }),
+    {
+      conversationId: 'conversation-1',
+      created: false,
+      reused: true,
+      turnCount: 1,
+      linkedItemCount: 0,
+      result: 'reused',
+    },
+  );
 });
 
 test('route preserves invalid fields for application-owned rejection auditing', async (t) => {

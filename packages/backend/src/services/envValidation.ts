@@ -187,6 +187,7 @@ export function assertValidBackendEnv() {
   assertPositiveIntegerEnv(issues, 'RATE_LIMIT_ATTACHMENT_UPLOAD_MAX');
   assertPositiveIntegerEnv(issues, 'RATE_LIMIT_DOC_SEND_MAX');
   assertPositiveIntegerEnv(issues, 'RATE_LIMIT_DOC_SEND_RETRY_MAX');
+  assertPositiveIntegerEnv(issues, 'RATE_LIMIT_KNOWLEDGE_IMPORT_MAX');
 
   const authMode = (process.env.AUTH_MODE || 'header').trim().toLowerCase();
   const allowedAuthModes = new Set(['header', 'jwt', 'hybrid', 'jwt_bff']);

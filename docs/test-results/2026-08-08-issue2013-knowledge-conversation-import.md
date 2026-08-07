@@ -36,16 +36,20 @@ migration、external LLM、Sakura VPS、Google Drive、Sakura Object Storage、�
 - audit metadataはformat、件数、結果code等のallowlistだけを保存する。本文、payload hash、raw
   request key、linked item ID、preview token、parser stackを保存しない。必須audit失敗時は業務mutationも
   rollbackする。
+- preview／commit responseはserializerへ依存せずroute mapperがallowlist fieldだけで新規objectを
+  構築する。内部hash、request key、item detailはmapper出力へ含めない。
+- `RATE_LIMIT_KNOWLEDGE_IMPORT_MAX`は他のroute別上限と同様、起動時に正の整数だけを受理する。
 - migrationはowner-scoped ledger table、複合FK、unique／CHECK、immutable triggerと既存公開label列の
-  allowlist CHECKだけを追加するexpand-only変更である。
+  allowlist CHECKだけを追加するexpand-only変更である。turn nameはallowlistだけでなく`tool` roleへ
+  DB制約で束縛する。
 
 ## Focused tests
 
 | Verification | Result | Evidence |
 | --- | --- | --- |
-| parser / token / use case / adapter / route | PASS | 36/36、fail/skip/todo 0 |
+| parser / token / use case / adapter / route | PASS | 37/37、fail/skip/todo 0 |
 | provenance schema / migration / OpenAPI contract | PASS | 10/10、fail/skip/todo 0 |
-| focused coverage | PASS | statements/lines 84.81%、branches 73.75%、functions 93.33%。threshold/scope変更なし |
+| focused coverage | PASS | statements/lines 85.00%、branches 74.21%、functions 93.50%。threshold/scope変更なし |
 
 Focused coverageはimport parser、port、token、use case、Prisma adapter、routeを対象にした。
 Prisma adapter単体のstatements/linesは52.15%だが、実transaction／constraint経路は後述の
@@ -66,7 +70,8 @@ Result: **PASS**
 - same key+different payloadの並行conflict
 - preview後のACL失効、cross-owner relationのfail closed
 - mandatory audit failure rollback
-- owner composite FK、hash／unique／CHECK、ledger immutable trigger
+- owner composite FK、createdBy/owner、hash、unique、tool name/role CHECK、ledger immutable triggerの
+  negative insert拒否
 - audit metadata redaction
 - migration deploy/statusとschema drift
 
@@ -93,7 +98,7 @@ Result: **PASS**
 | --- | --- | --- |
 | Prisma generate | PASS | Prisma 7.9.1 |
 | backend lint / format / typecheck / build | PASS | source format、ESLint、TypeScript build |
-| backend full test | PASS | 1,920/1,920、fail/skip/todo 0 |
+| backend full test | PASS | 1,922/1,922、fail/skip/todo 0 |
 | frontend full test | PASS | 85 files / 495 tests、fail 0 |
 | OpenAPI export / breaking diff | PASS | tracked snapshot byte一致、breaking 0、2 operation追加 |
 | bounded-context dependency / coverage | PASS | 316 modules / 1,249 dependencies、301 source / 251 target、未分類・重複・曖昧0 |

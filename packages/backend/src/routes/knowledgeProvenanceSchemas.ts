@@ -183,11 +183,11 @@ export function conversationTurnResponse(turn: KnowledgeConversationTurn) {
     role: turn.role,
     origin: turn.origin,
     content: turn.content,
-    name: knowledgeConversationImportToolNames.some(
-      (value) => value === turn.name,
-    )
-      ? turn.name
-      : null,
+    name:
+      turn.role === 'tool' &&
+      knowledgeConversationImportToolNames.some((value) => value === turn.name)
+        ? turn.name
+        : null,
     occurredAt: turn.occurredAt?.toISOString() ?? null,
     contentHash: turn.contentHash,
     createdAt: turn.createdAt.toISOString(),

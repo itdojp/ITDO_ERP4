@@ -437,6 +437,92 @@ try {
       }),
     /check|P2004|P2010/i,
   );
+  await assert.rejects(
+    () =>
+      prisma.knowledgeConversationImportRequest.create({
+        data: {
+          id: randomUUID(),
+          ownerUserId: otherActor.userId,
+          requestKeyHash: 'a'.repeat(64),
+          canonicalPayloadHash: 'b'.repeat(64),
+          sourceType: 'manual',
+          conversationId: firstLedger.conversationId,
+          createdBy: otherActor.userId,
+        },
+      }),
+    /foreign key|P2003|P2010/i,
+  );
+  await assert.rejects(
+    () =>
+      prisma.knowledgeConversationImportRequest.create({
+        data: {
+          id: randomUUID(),
+          ownerUserId: actor.userId,
+          requestKeyHash: 'b'.repeat(64),
+          canonicalPayloadHash: 'c'.repeat(64),
+          sourceType: 'manual',
+          conversationId: firstLedger.conversationId,
+          createdBy: otherActor.userId,
+        },
+      }),
+    /check|P2004|P2010/i,
+  );
+  await assert.rejects(
+    () =>
+      prisma.knowledgeConversationImportRequest.create({
+        data: {
+          id: randomUUID(),
+          ownerUserId: actor.userId,
+          requestKeyHash: 'c'.repeat(64),
+          canonicalPayloadHash: 'not-a-hash',
+          sourceType: 'manual',
+          conversationId: firstLedger.conversationId,
+          createdBy: actor.userId,
+        },
+      }),
+    /check|P2004|P2010/i,
+  );
+  await assert.rejects(
+    () =>
+      prisma.knowledgeConversationImportRequest.create({
+        data: {
+          id: randomUUID(),
+          ownerUserId: actor.userId,
+          requestKeyHash: firstLedger.requestKeyHash,
+          canonicalPayloadHash: firstLedger.canonicalPayloadHash,
+          sourceType: firstLedger.sourceType,
+          conversationId: firstLedger.conversationId,
+          createdBy: actor.userId,
+        },
+      }),
+    /unique|P2002|P2010/i,
+  );
+
+  const importedToolTurn =
+    await prisma.knowledgeConversationTurn.findFirstOrThrow({
+      where: {
+        conversationId: formatResults[0].conversationId,
+        role: 'tool',
+      },
+    });
+  assert.equal(importedToolTurn.name, 'search');
+  await assert.rejects(
+    () =>
+      prisma.knowledgeConversationTurn.create({
+        data: {
+          id: randomUUID(),
+          conversationId: formatResults[0].conversationId,
+          sequence: 999,
+          role: 'user',
+          origin: 'user',
+          content: 'Synthetic invalid role-bound tool provenance',
+          name: 'search',
+          contentHash: 'd'.repeat(64),
+          createdBy: actor.userId,
+        },
+      }),
+    /check|P2004|P2010/i,
+  );
 
   const importAudits = await prisma.auditLog.findMany({
     where: {
@@ -481,6 +567,7 @@ try {
       aclLoss: 'fail-closed',
       auditRollback: 'verified',
       immutableLedger: 'verified',
+      databaseConstraints: 'negative-inserts-rejected',
     }),
   );
 } finally {

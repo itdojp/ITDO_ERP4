@@ -192,6 +192,65 @@ type ImportService = ReturnType<
   typeof createKnowledgeConversationImportUseCases
 >;
 
+type KnowledgeConversationImportPreviewResponse = {
+  summary: {
+    format: 'manual' | 'json' | 'markdown';
+    title: string;
+    provider: 'openai' | 'anthropic' | 'google' | 'microsoft' | 'other' | null;
+    model: 'gpt' | 'claude' | 'gemini' | 'copilot' | 'other' | null;
+    roles: (typeof knowledgeConversationRoles)[number][];
+    origins: (typeof knowledgeProvenanceOrigins)[number][];
+    turnCount: number;
+    linkedItemCount: number;
+  };
+  warnings: string[];
+  rejectedFields: string[];
+  previewToken: string;
+  expiresAt: string;
+};
+
+type KnowledgeConversationImportCommitResponse = {
+  conversationId: string;
+  created: boolean;
+  reused: boolean;
+  turnCount: number;
+  linkedItemCount: number;
+};
+
+export function knowledgeConversationImportPreviewResponse(
+  value: KnowledgeConversationImportPreviewResponse,
+) {
+  return {
+    summary: {
+      format: value.summary.format,
+      title: value.summary.title,
+      provider: value.summary.provider,
+      model: value.summary.model,
+      roles: [...value.summary.roles],
+      origins: [...value.summary.origins],
+      turnCount: value.summary.turnCount,
+      linkedItemCount: value.summary.linkedItemCount,
+    },
+    warnings: [...value.warnings],
+    rejectedFields: [...value.rejectedFields],
+    previewToken: value.previewToken,
+    expiresAt: value.expiresAt,
+  };
+}
+
+export function knowledgeConversationImportCommitResponse(
+  value: KnowledgeConversationImportCommitResponse,
+) {
+  return {
+    conversationId: value.conversationId,
+    created: value.created,
+    reused: value.reused,
+    turnCount: value.turnCount,
+    linkedItemCount: value.linkedItemCount,
+    result: value.created ? ('created' as const) : ('reused' as const),
+  };
+}
+
 function sendResult(
   reply: FastifyReply,
   result: KnowledgeConversationImportUseCaseResult<unknown>,
@@ -255,7 +314,11 @@ export async function registerKnowledgeConversationImportRoutes(
         auditActor: knowledgeAuditActorFromRequest(request),
         body: request.body,
       });
-      return sendResult(reply, result, (value) => value);
+      return sendResult(reply, result, (value) =>
+        knowledgeConversationImportPreviewResponse(
+          value as KnowledgeConversationImportPreviewResponse,
+        ),
+      );
     },
   );
 
@@ -285,19 +348,11 @@ export async function registerKnowledgeConversationImportRoutes(
         auditActor: knowledgeAuditActorFromRequest(request),
         body: request.body,
       });
-      return sendResult(reply, result, (value) => {
-        const typed = value as {
-          conversationId: string;
-          created: boolean;
-          reused: boolean;
-          turnCount: number;
-          linkedItemCount: number;
-        };
-        return {
-          ...typed,
-          result: typed.created ? 'created' : 'reused',
-        };
-      });
+      return sendResult(reply, result, (value) =>
+        knowledgeConversationImportCommitResponse(
+          value as KnowledgeConversationImportCommitResponse,
+        ),
+      );
     },
   );
 }

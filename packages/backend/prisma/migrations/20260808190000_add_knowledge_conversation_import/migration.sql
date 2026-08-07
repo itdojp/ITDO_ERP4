@@ -40,7 +40,10 @@ ALTER TABLE "KnowledgeConversationTurn"
   ADD CONSTRAINT "KnowledgeConversationTurn_import_name_check"
   CHECK (
     "name" IS NULL OR
-    "name" IN ('search', 'browser', 'code', 'file', 'other')
+    (
+      "role" = 'tool' AND
+      "name" IN ('search', 'browser', 'code', 'file', 'other')
+    )
   ) NOT VALID;
 
 CREATE UNIQUE INDEX "KnowledgeConversationImportRequest_ownerUserId_requestKeyHa_key"

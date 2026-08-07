@@ -148,6 +148,10 @@ test('bounded import ledger is owner-scoped, immutable, and bound by composite f
     /KnowledgeConversationImportRequest_immutable_trigger[\s\S]*?BEFORE UPDATE OR DELETE/,
   );
   assert.match(
+    importMigration,
+    /KnowledgeConversationTurn_import_name_check[\s\S]*?"role" = 'tool'[\s\S]*?"name" IN \('search', 'browser', 'code', 'file', 'other'\)/,
+  );
+  assert.match(
     importPostgresIntegrationScript,
     /KnowledgeConversationImportRequest\|KnowledgeConversation_import_/,
   );
