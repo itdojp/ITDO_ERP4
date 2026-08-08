@@ -753,11 +753,12 @@ export async function registerChatRoomMessageRoutes(app: FastifyInstance) {
         dueAt: message.ackRequest.dueAt,
       });
 
+      let mentionRecipients: string[] = [];
       if (
         body.parentMessageId &&
         (mentionsAll || mentionUserIds.length || mentionGroupIds.length)
       ) {
-        await tryCreateChatMentionNotificationEffects({
+        mentionRecipients = await tryCreateChatMentionNotificationEffects({
           auditContext: auditContextFromRequest(req),
           logger: req.log,
           failureMessage: 'Failed to create chat reply mention notifications',
@@ -769,6 +770,20 @@ export async function registerChatRoomMessageRoutes(app: FastifyInstance) {
           mentionsAll,
           mentionUserIds,
           mentionGroupIds,
+        });
+      }
+      if (body.parentMessageId) {
+        await tryCreateChatMessageNotificationEffects({
+          auditContext: auditContextFromRequest(req),
+          logger: req.log,
+          failureMessage: 'Failed to create room chat reply notifications',
+          notificationPort: defaultChatNotificationPort,
+          projectId,
+          room: access.room,
+          messageId: message.id,
+          messageBody: message.body ?? '',
+          senderUserId: userId,
+          excludeUserIds: mentionRecipients,
         });
       }
 

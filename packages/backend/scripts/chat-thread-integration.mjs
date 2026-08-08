@@ -157,6 +157,7 @@ try {
   await prisma.projectMember.createMany({
     data: [
       { projectId, userId: ownerId, role: 'leader' },
+      { projectId, userId: 'thread-member', role: 'member' },
       { projectId: projectAliasId, userId: ownerId, role: 'leader' },
       {
         projectId: projectAliasId,
@@ -513,6 +514,63 @@ try {
   });
   assert.equal(aliasNotification.projectId, projectAliasId);
   assert.equal(aliasNotification.payload.roomId, projectAliasRoomId);
+  const aliasMessageNotification =
+    await prisma.appNotification.findFirstOrThrow({
+      where: {
+        userId: 'thread-member',
+        kind: 'chat_message',
+        messageId: aliasAckBody.id,
+      },
+    });
+  assert.equal(aliasMessageNotification.projectId, projectAliasId);
+  assert.equal(aliasMessageNotification.payload.roomId, projectAliasRoomId);
+  assert.equal(
+    await prisma.appNotification.count({
+      where: {
+        userId: ownerId,
+        kind: 'chat_message',
+        messageId: aliasAckBody.id,
+      },
+    }),
+    0,
+  );
+
+  const projectAliasAckReply = await server.inject({
+    method: 'POST',
+    url: `/projects/${projectId}/chat-ack-requests`,
+    headers: {
+      'x-user-id': ownerId,
+      'x-roles': 'user',
+      'x-project-ids': projectId,
+    },
+    payload: {
+      parentMessageId: 'thread-project-root',
+      body: 'Synthetic legacy project acknowledgement reply',
+      requiredUserIds: ['thread-member'],
+    },
+  });
+  assert.equal(projectAliasAckReply.statusCode, 200, projectAliasAckReply.body);
+  const projectAliasAckBody = projectAliasAckReply.json();
+  const projectAliasMessageNotification =
+    await prisma.appNotification.findFirstOrThrow({
+      where: {
+        userId: 'thread-member',
+        kind: 'chat_message',
+        messageId: projectAliasAckBody.id,
+      },
+    });
+  assert.equal(projectAliasMessageNotification.projectId, projectId);
+  assert.equal(projectAliasMessageNotification.payload.roomId, projectId);
+  assert.equal(
+    await prisma.appNotification.count({
+      where: {
+        userId: ownerId,
+        kind: 'chat_message',
+        messageId: projectAliasAckBody.id,
+      },
+    }),
+    0,
+  );
   const aliasAckRead = await server.inject({
     method: 'GET',
     url: `/chat-ack-requests/${aliasAckBody.ackRequest.id}`,
@@ -764,6 +822,95 @@ try {
     }),
     0,
   );
+  assert.equal(
+    await prisma.appNotification.count({
+      where: {
+        messageId: ackReply.json().id,
+        userId: ownerId,
+        kind: 'chat_message',
+      },
+    }),
+    1,
+  );
+  assert.equal(
+    await prisma.appNotification.count({
+      where: {
+        messageId: ackReply.json().id,
+        userId: 'thread-member',
+        kind: 'chat_message',
+      },
+    }),
+    0,
+  );
+
+  const mentionedAckReply = await server.inject({
+    method: 'POST',
+    url: `/chat-rooms/${roomId}/ack-requests`,
+    headers: memberHeaders,
+    payload: {
+      parentMessageId: behaviorRootId,
+      body: 'Synthetic reply acknowledgement with valid mention',
+      requiredUserIds: [ownerId],
+      mentions: { userIds: [ownerId] },
+    },
+  });
+  assert.equal(mentionedAckReply.statusCode, 200, mentionedAckReply.body);
+  assert.equal(
+    await prisma.appNotification.count({
+      where: {
+        messageId: mentionedAckReply.json().id,
+        userId: ownerId,
+        kind: 'chat_mention',
+      },
+    }),
+    1,
+  );
+  assert.equal(
+    await prisma.appNotification.count({
+      where: {
+        messageId: mentionedAckReply.json().id,
+        userId: ownerId,
+        kind: 'chat_message',
+      },
+    }),
+    0,
+  );
+
+  const suppressAllPosts = await server.inject({
+    method: 'PATCH',
+    url: `/chat-rooms/${roomId}/notification-setting`,
+    headers: ownerHeaders,
+    payload: { notifyAllPosts: false, muteUntil: null },
+  });
+  assert.equal(suppressAllPosts.statusCode, 200, suppressAllPosts.body);
+  const suppressedAckReply = await server.inject({
+    method: 'POST',
+    url: `/chat-rooms/${roomId}/ack-requests`,
+    headers: memberHeaders,
+    payload: {
+      parentMessageId: behaviorRootId,
+      body: 'Synthetic reply acknowledgement with all-post suppression',
+      requiredUserIds: [ownerId],
+    },
+  });
+  assert.equal(suppressedAckReply.statusCode, 200, suppressedAckReply.body);
+  assert.equal(
+    await prisma.appNotification.count({
+      where: {
+        messageId: suppressedAckReply.json().id,
+        userId: ownerId,
+        kind: 'chat_message',
+      },
+    }),
+    0,
+  );
+  const restoreAllPosts = await server.inject({
+    method: 'PATCH',
+    url: `/chat-rooms/${roomId}/notification-setting`,
+    headers: ownerHeaders,
+    payload: { notifyAllPosts: true, muteUntil: null },
+  });
+  assert.equal(restoreAllPosts.statusCode, 200, restoreAllPosts.body);
   const replyAck = await server.inject({
     method: 'POST',
     url: `/chat-ack-requests/${ackReply.json().ackRequest.id}/ack`,
@@ -1262,11 +1409,21 @@ try {
     headers: ownerHeaders,
   });
   assert.equal(behaviorThread.statusCode, 200, behaviorThread.body);
-  assert.equal(behaviorThread.json().replyCount, 3);
+  assert.equal(behaviorThread.json().replyCount, 5);
   assert.ok(
     behaviorThread
       .json()
       .replies.some((item) => item.id === ackReply.json().id),
+  );
+  assert.ok(
+    behaviorThread
+      .json()
+      .replies.some((item) => item.id === mentionedAckReply.json().id),
+  );
+  assert.ok(
+    behaviorThread
+      .json()
+      .replies.some((item) => item.id === suppressedAckReply.json().id),
   );
   const deletedPlaceholder = behaviorThread
     .json()
@@ -1356,6 +1513,8 @@ try {
       paginationPagesChecked: 2,
       unauthorizedNormalized: true,
       projectAliasCompatible: true,
+      ackAliasMessageNotifications: true,
+      ackAliasNotificationSuppression: true,
       rootTimelineExcludesReplies: true,
       concurrentRootDeleteFailsClosed: true,
       replyMutationAndAck: true,

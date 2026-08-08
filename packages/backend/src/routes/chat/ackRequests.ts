@@ -27,7 +27,10 @@ import {
   chatAckMutationService,
   type ChatAckMutationResult,
 } from '../../application/chat/chatAckMutationService.js';
-import { tryCreateChatMentionNotificationEffects } from '../../application/chat/chatNotificationEffects.js';
+import {
+  tryCreateChatMentionNotificationEffects,
+  tryCreateChatMessageNotificationEffects,
+} from '../../application/chat/chatNotificationEffects.js';
 import { normalizeStringArray } from './shared/inputParsers.js';
 import { normalizeMentions } from './shared/mentions.js';
 import { requireUserId } from './shared/requireUserId.js';
@@ -523,7 +526,7 @@ export function registerChatAckRequestRoutes(
         mentionUserIds,
         mentionGroupIds,
       });
-      await tryCreateChatMentionNotificationEffects({
+      const mentionRecipients = await tryCreateChatMentionNotificationEffects({
         auditContext: auditContextFromRequest(req),
         logger: req.log,
         notificationPort: defaultChatNotificationPort,
@@ -536,6 +539,20 @@ export function registerChatAckRequestRoutes(
         mentionUserIds,
         mentionGroupIds,
       });
+      if (body.parentMessageId) {
+        await tryCreateChatMessageNotificationEffects({
+          auditContext: auditContextFromRequest(req),
+          logger: req.log,
+          failureMessage: 'Failed to create project chat reply notifications',
+          notificationPort: defaultChatNotificationPort,
+          projectId: canonicalProjectId,
+          room,
+          messageId: message.id,
+          messageBody: message.body ?? '',
+          senderUserId: userId,
+          excludeUserIds: mentionRecipients,
+        });
+      }
       await tryCreateChatAckRequiredNotificationsWithAudit({
         auditContext: auditContextFromRequest(req, { userId }),
         logger: req.log,
