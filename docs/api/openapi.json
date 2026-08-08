@@ -18051,6 +18051,16 @@
             }
           },
           {
+            "description": "Include logically deleted annotations only when the current actor owns both the annotation and its Knowledge item.",
+            "in": "query",
+            "name": "includeDeleted",
+            "required": false,
+            "schema": {
+              "default": false,
+              "type": "boolean"
+            }
+          },
+          {
             "in": "path",
             "name": "itemId",
             "required": true,

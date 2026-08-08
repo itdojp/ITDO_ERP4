@@ -46,11 +46,14 @@ export function createKnowledgeAnnotationService(dependencies: {
       itemId: string;
       limit: number;
       boundary?: KnowledgePageBoundary;
+      includeDeleted?: boolean;
     }) {
       if (
         !hasKnowledgePrincipal(input.actor) ||
         !isBoundedKnowledgeId(input.itemId) ||
-        !isValidKnowledgeListLimit(input.limit)
+        !isValidKnowledgeListLimit(input.limit) ||
+        (input.includeDeleted !== undefined &&
+          typeof input.includeDeleted !== 'boolean')
       ) {
         return provenanceNotFound();
       }

@@ -46,6 +46,41 @@ test('provenance page cursor round-trips without exposing actor or parent IDs', 
   assert.equal(cursor.includes('org-1'), false);
 });
 
+test('annotation cursors bind the active and include-deleted views separately', () => {
+  const codec = createKnowledgeProvenanceCursorCodec(env);
+  const cursor = codec.encodePage({
+    kind: 'annotations_with_deleted',
+    parentId: 'item-private-1',
+    actor,
+    boundary: {
+      updatedAt: new Date('2026-08-06T01:02:03.000Z'),
+      id: 'annotation-deleted-1',
+    },
+  });
+  assert.deepEqual(
+    codec.decodePage({
+      cursor,
+      kind: 'annotations_with_deleted',
+      parentId: 'item-private-1',
+      actor,
+    }),
+    {
+      updatedAt: new Date('2026-08-06T01:02:03.000Z'),
+      id: 'annotation-deleted-1',
+    },
+  );
+  assert.throws(
+    () =>
+      codec.decodePage({
+        cursor,
+        kind: 'annotations',
+        parentId: 'item-private-1',
+        actor,
+      }),
+    KnowledgeProvenanceCursorError,
+  );
+});
+
 test('provenance sequence cursor is bound to actor, resource, and parent', () => {
   const codec = createKnowledgeProvenanceCursorCodec(env);
   const cursor = codec.encodeSequence({

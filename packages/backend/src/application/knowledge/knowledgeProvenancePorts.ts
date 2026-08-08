@@ -326,6 +326,7 @@ export interface KnowledgeAnnotationRepository {
     itemId: string;
     limit: number;
     boundary?: KnowledgePageBoundary;
+    includeDeleted?: boolean;
   }): Promise<KnowledgePage<KnowledgeAnnotation> | null>;
   findVisible(input: {
     actor: KnowledgeActor;

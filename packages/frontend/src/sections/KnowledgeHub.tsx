@@ -47,6 +47,7 @@ import {
   type KnowledgeScope,
   type KnowledgeSnapshot,
 } from './knowledge-hub/knowledgeHubModel';
+import { KnowledgeProvenanceWorkspace } from './knowledge-hub/KnowledgeProvenanceWorkspace';
 
 type LoadStatus = 'idle' | 'loading' | 'success' | 'error';
 type Notice = {
@@ -637,7 +638,7 @@ export const KnowledgeHub: React.FC = () => {
     <div className="knowledge-hub">
       <WorkflowPageHeader
         title="Knowledge Hub"
-        description="外部情報や手動メモをInboxへ保存し、immutableなversion・SHA-256・出所を確認します。"
+        description="外部情報をimmutable snapshotとして保存し、本人annotation、会話、AI/System/Tool provenance、versioned synthesisを区別して検証します。"
       />
       <WorkflowMetricGrid items={metrics} ariaLabel="Knowledge Hubサマリー" />
 
@@ -848,6 +849,29 @@ export const KnowledgeHub: React.FC = () => {
           ) : null}
           {snapshotList}
         </Card>
+      </WorkflowPanel>
+
+      <WorkflowPanel
+        title="Annotation / 会話 / Synthesis"
+        description="選択中のKnowledge itemを基点に、本人意見、外部情報、引用、会話role、結論と根拠履歴を別entityとして管理します。"
+      >
+        {selectedItem ? (
+          <KnowledgeProvenanceWorkspace
+            key={selectedItem.id}
+            itemId={selectedItem.id}
+            itemLabel={itemLabel(selectedItem)}
+            itemScope={selectedItem.scope}
+          />
+        ) : (
+          <AsyncStatePanel
+            state="empty"
+            empty={{
+              title: 'Knowledge itemを選択してください',
+              description:
+                'annotation、会話、Synthesisは選択中のitem ACLを基準に取得します。',
+            }}
+          />
+        )}
       </WorkflowPanel>
     </div>
   );

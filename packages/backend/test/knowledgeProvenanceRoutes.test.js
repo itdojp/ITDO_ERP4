@@ -186,14 +186,23 @@ function notFound() {
 
 test('annotation routes map canonical actor, serialize history, and issue actor-bound cursors', async (t) => {
   let createInput;
+  const listInputs = [];
   const service = {
-    list: async () => ({
-      ok: true,
-      value: {
-        items: [annotation()],
-        nextBoundary: { updatedAt: date, id: 'annotation-1' },
-      },
-    }),
+    list: async (input) => {
+      listInputs.push(input);
+      return {
+        ok: true,
+        value: {
+          items: [
+            annotation({
+              deletedAt: input.includeDeleted ? date : null,
+              providerKey: 'must-not-pass',
+            }),
+          ],
+          nextBoundary: { updatedAt: date, id: 'annotation-1' },
+        },
+      };
+    },
     detail: async () => ({ ok: true, value: annotation() }),
     history: async () => ({
       ok: true,
@@ -246,10 +255,7 @@ test('annotation routes map canonical actor, serialize history, and issue actor-
       source: 'agent',
       principalUserId: 'principal-1',
       actorUserId: 'owner-1',
-      authScopes: [
-        'knowledge:write',
-        'https://idp.example/knowledge.write',
-      ],
+      authScopes: ['knowledge:write', 'https://idp.example/knowledge.write'],
       authTokenId: 'token-1',
       authAudience: ['erp4-agent'],
       authExpiresAt: 1_900_000_000,
@@ -266,6 +272,36 @@ test('annotation routes map canonical actor, serialize history, and issue actor-
   assert.equal(listed.statusCode, 200, listed.body);
   assert.equal(typeof listed.json().nextCursor, 'string');
   assert.equal(listed.json().nextCursor.includes('annotation-1'), false);
+  assert.equal(listed.json().items[0].deletedAt, null);
+  assert.equal(listed.json().items[0].providerKey, undefined);
+  assert.equal(listInputs[0].includeDeleted, false);
+
+  const includeDeleted = await app.inject({
+    method: 'GET',
+    url: '/knowledge/items/item-1/annotations?limit=1&includeDeleted=true',
+  });
+  assert.equal(includeDeleted.statusCode, 200, includeDeleted.body);
+  assert.equal(includeDeleted.json().items[0].deletedAt, date.toISOString());
+  assert.equal(listInputs[1].includeDeleted, true);
+  const includeDeletedCursor = includeDeleted.json().nextCursor;
+  assert.equal(typeof includeDeletedCursor, 'string');
+
+  const nextDeletedPage = await app.inject({
+    method: 'GET',
+    url: `/knowledge/items/item-1/annotations?includeDeleted=true&cursor=${encodeURIComponent(includeDeletedCursor)}`,
+  });
+  assert.equal(nextDeletedPage.statusCode, 200, nextDeletedPage.body);
+  assert.deepEqual(listInputs[2].boundary, {
+    updatedAt: date,
+    id: 'annotation-1',
+  });
+
+  const crossViewCursor = await app.inject({
+    method: 'GET',
+    url: `/knowledge/items/item-1/annotations?cursor=${encodeURIComponent(includeDeletedCursor)}`,
+  });
+  assert.equal(crossViewCursor.statusCode, 400, crossViewCursor.body);
+  assert.equal(listInputs.length, 3);
 
   const history = await app.inject({
     method: 'GET',
@@ -285,6 +321,17 @@ test('annotation routes map canonical actor, serialize history, and issue actor-
     'code',
     'message',
   ]);
+
+  const invalidIncludeDeleted = await app.inject({
+    method: 'GET',
+    url: '/knowledge/items/item-1/annotations?includeDeleted=yes',
+  });
+  assert.equal(
+    invalidIncludeDeleted.statusCode,
+    400,
+    invalidIncludeDeleted.body,
+  );
+  assert.equal(listInputs.length, 3);
 });
 
 test('annotation routes reject unknown fields before service invocation', async (t) => {

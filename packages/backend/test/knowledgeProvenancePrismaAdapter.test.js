@@ -109,6 +109,40 @@ function conversationRow(id, overrides = {}) {
   };
 }
 
+function annotationRow(id, overrides = {}) {
+  const timestamp = new Date('2026-08-06T00:00:00.000Z');
+  return {
+    id,
+    knowledgeItemId: 'item-1',
+    ownerUserId: 'owner-1',
+    authorUserId: 'owner-1',
+    scope: 'personal',
+    organizationId: null,
+    kind: 'note',
+    origin: 'user',
+    currentRevision: 1,
+    deletedAt: null,
+    deletedBy: null,
+    createdAt: timestamp,
+    createdBy: 'owner-1',
+    updatedAt: timestamp,
+    updatedBy: 'owner-1',
+    revisions: [
+      {
+        id: `revision-${id}`,
+        annotationId: id,
+        revision: 1,
+        kind: 'note',
+        origin: 'user',
+        content: `Synthetic annotation ${id}`,
+        createdAt: timestamp,
+        createdBy: 'owner-1',
+      },
+    ],
+    ...overrides,
+  };
+}
+
 test('conversation response keeps untrusted provider/model/tool labels redacted', () => {
   const now = new Date('2026-08-06T00:00:00.000Z');
   const response = conversationResponse({
@@ -200,6 +234,122 @@ test('annotation list checks item visibility before querying annotation rows', a
     null,
   );
   assert.equal(annotationQueries, 0);
+});
+
+test('annotation list includes deleted rows only for the item and annotation owner while preserving pagination', async () => {
+  const queries = [];
+  let visibleItem = {
+    id: 'item-1',
+    ownerUserId: 'owner-1',
+    scope: 'personal',
+    organizationId: null,
+  };
+  const deletedAt = new Date('2026-08-06T01:00:00.000Z');
+  const repository = new PrismaKnowledgeAnnotationRepository(
+    emptyClient({
+      knowledgeItem: { findFirst: async () => visibleItem },
+      knowledgeAnnotation: {
+        findMany: async (input) => {
+          queries.push(input);
+          if (queries.length === 2) {
+            return [
+              annotationRow('annotation-deleted', {
+                deletedAt,
+                updatedAt: deletedAt,
+              }),
+              annotationRow('annotation-extra', {
+                updatedAt: new Date('2026-08-06T00:30:00.000Z'),
+              }),
+            ];
+          }
+          return [];
+        },
+      },
+    }),
+  );
+
+  await repository.listVisible({ actor, itemId: 'item-1', limit: 1 });
+  const ownerPage = await repository.listVisible({
+    actor,
+    itemId: 'item-1',
+    limit: 1,
+    boundary: {
+      updatedAt: new Date('2026-08-06T02:00:00.000Z'),
+      id: 'annotation-boundary',
+    },
+    includeDeleted: true,
+  });
+  visibleItem = {
+    id: 'item-1',
+    ownerUserId: 'owner-2',
+    scope: 'organization',
+    organizationId: 'org-1',
+  };
+  await repository.listVisible({
+    actor,
+    itemId: 'item-1',
+    limit: 1,
+    includeDeleted: true,
+  });
+
+  assert.equal(queries[0].where.deletedAt, null);
+  const ownerPredicate = JSON.stringify(queries[1].where);
+  assert.match(ownerPredicate, /"OR":\[/);
+  assert.match(ownerPredicate, /"deletedAt":\{"not":null\}/);
+  assert.match(ownerPredicate, /"ownerUserId":"owner-1"/);
+  assert.match(ownerPredicate, /"knowledgeItem":\{"is":/);
+  assert.match(
+    ownerPredicate,
+    /"updatedAt":\{"lt":"2026-08-06T02:00:00.000Z"\}/,
+  );
+  assert.deepEqual(queries[1].orderBy, [{ updatedAt: 'desc' }, { id: 'desc' }]);
+  assert.equal(queries[1].take, 2);
+  assert.equal(ownerPage.items.length, 1);
+  assert.equal(ownerPage.items[0].deletedAt, deletedAt);
+  assert.deepEqual(ownerPage.nextBoundary, {
+    updatedAt: deletedAt,
+    id: 'annotation-deleted',
+  });
+
+  assert.equal(queries[2].where.deletedAt, null);
+  assert.equal(JSON.stringify(queries[2].where).includes('"not":null'), false);
+});
+
+test('deleted annotation history remains reachable only through the owner predicate', async () => {
+  const predicates = [];
+  const repository = new PrismaKnowledgeAnnotationRepository(
+    emptyClient({
+      knowledgeAnnotation: {
+        findFirst: async ({ where }) => {
+          predicates.push(where);
+          return { id: 'annotation-deleted' };
+        },
+      },
+      knowledgeAnnotationRevision: {
+        findMany: async ({ where }) => {
+          predicates.push(where);
+          return annotationRow('annotation-deleted').revisions;
+        },
+      },
+    }),
+  );
+
+  const page = await repository.listRevisionsVisible({
+    actor,
+    itemId: 'item-1',
+    annotationId: 'annotation-deleted',
+    limit: 20,
+  });
+  assert.equal(
+    page.items[0].content,
+    'Synthetic annotation annotation-deleted',
+  );
+  assert.equal(page.nextBoundary, null);
+  for (const predicate of predicates) {
+    const serialized = JSON.stringify(predicate);
+    assert.match(serialized, /"ownerUserId":"owner-1"/);
+    assert.match(serialized, /"knowledgeItemId":"item-1"/);
+  }
 });
 
 test('annotation content queries repeat the current parent ACL predicate', async () => {

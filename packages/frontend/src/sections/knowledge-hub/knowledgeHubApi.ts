@@ -132,7 +132,10 @@ function errorCode(payload: unknown): KnowledgeHubErrorCode {
   return isKnowledgeHubErrorCode(value) ? value : 'unknown_error';
 }
 
-async function requestJson(path: string, options?: RequestInit) {
+export async function requestKnowledgeJson(
+  path: string,
+  options?: RequestInit,
+) {
   let response: Response;
   try {
     response = await apiResponse(path, options);
@@ -150,7 +153,9 @@ async function requestJson(path: string, options?: RequestInit) {
 }
 
 export async function listKnowledgeInbox() {
-  const payload = await requestJson('/knowledge/items?status=inbox&limit=100');
+  const payload = await requestKnowledgeJson(
+    '/knowledge/items?status=inbox&limit=100',
+  );
   if (!Array.isArray(payload.items)) {
     throw new KnowledgeHubApiError('invalid_response', null);
   }
@@ -175,7 +180,7 @@ export async function createKnowledgeItem(input: {
     body.organizationGroupIds = input.organizationGroupIds;
   }
   return normalizeItem(
-    await requestJson('/knowledge/items', {
+    await requestKnowledgeJson('/knowledge/items', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -202,7 +207,7 @@ export async function captureKnowledgeTextOrUrl(
           url: input.url,
         };
   return normalizeSnapshot(
-    await requestJson(
+    await requestKnowledgeJson(
       `/knowledge/items/${encodeURIComponent(input.itemId)}/snapshots`,
       {
         method: 'POST',
@@ -221,7 +226,7 @@ export async function uploadKnowledgeSnapshot(input: {
   const body = new FormData();
   body.append('file', input.file, input.file.name);
   return normalizeSnapshot(
-    await requestJson(
+    await requestKnowledgeJson(
       `/knowledge/items/${encodeURIComponent(input.itemId)}/snapshots/upload?requestKey=${encodeURIComponent(input.requestKey)}`,
       { method: 'POST', body },
     ),
@@ -229,7 +234,7 @@ export async function uploadKnowledgeSnapshot(input: {
 }
 
 export async function listKnowledgeSnapshots(itemId: string) {
-  const payload = await requestJson(
+  const payload = await requestKnowledgeJson(
     `/knowledge/items/${encodeURIComponent(itemId)}/snapshots?limit=50`,
   );
   if (!Array.isArray(payload.items)) {
@@ -244,7 +249,7 @@ export async function reconcileKnowledgeSnapshot(input: {
   requestKey: string;
 }) {
   return normalizeSnapshot(
-    await requestJson(
+    await requestKnowledgeJson(
       `/knowledge/items/${encodeURIComponent(input.itemId)}/snapshots/${encodeURIComponent(input.snapshotId)}/reconcile`,
       {
         method: 'POST',

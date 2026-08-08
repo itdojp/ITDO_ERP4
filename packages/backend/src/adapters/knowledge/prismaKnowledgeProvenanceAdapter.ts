@@ -395,15 +395,34 @@ export class PrismaKnowledgeAnnotationRepository implements KnowledgeAnnotationR
     itemId: string;
     limit: number;
     boundary?: KnowledgePageBoundary;
+    includeDeleted?: boolean;
   }) {
     const item = await new PrismaKnowledgeAccessRepository(
       this.client,
     ).findVisibleItem(input.actor, input.itemId);
     if (!item) return null;
+    const includeOwnedDeleted =
+      input.includeDeleted === true && item.ownerUserId === input.actor.userId;
     const rows = await this.client.knowledgeAnnotation.findMany({
       where: {
         knowledgeItemId: item.id,
-        deletedAt: null,
+        ...(includeOwnedDeleted
+          ? {
+              OR: [
+                { deletedAt: null },
+                {
+                  deletedAt: { not: null },
+                  ownerUserId: input.actor.userId,
+                  knowledgeItem: {
+                    is: {
+                      ownerUserId: input.actor.userId,
+                      deletedAt: null,
+                    },
+                  },
+                },
+              ],
+            }
+          : { deletedAt: null }),
         knowledgeItem: { is: buildKnowledgeVisibilityWhere(input.actor) },
         AND: beforePageBoundary(input.boundary),
       },

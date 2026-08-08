@@ -245,6 +245,61 @@ test('annotation and conversation reads always use a consistent snapshot', async
   assert.equal(conversationSnapshotCalls.length, 3);
 });
 
+test('annotation list passes the deleted view through one consistent snapshot', async () => {
+  const listInputs = [];
+  const deleted = annotation({ deletedAt: now });
+  const annotationReader = {
+    listVisible: async (input) => {
+      listInputs.push(input);
+      return {
+        items: input.includeDeleted ? [deleted] : [],
+        nextBoundary: input.boundary ?? null,
+      };
+    },
+  };
+  annotationReader.withConsistentSnapshot = async (read) =>
+    read(annotationReader);
+  const service = createKnowledgeAnnotationService({
+    reader: annotationReader,
+    unitOfWork: unitOfWork(transaction()),
+  });
+
+  const defaultResult = await service.list({
+    actor,
+    itemId: 'item-1',
+    limit: 20,
+    includeDeleted: false,
+  });
+  assert.equal(defaultResult.ok, true);
+  assert.deepEqual(defaultResult.value.items, []);
+
+  const boundary = { updatedAt: now, id: 'annotation-1' };
+  const ownerResult = await service.list({
+    actor,
+    itemId: 'item-1',
+    limit: 20,
+    boundary,
+    includeDeleted: true,
+  });
+  assert.equal(ownerResult.ok, true);
+  assert.equal(ownerResult.value.items[0].deletedAt, now);
+  assert.deepEqual(listInputs, [
+    {
+      actor,
+      itemId: 'item-1',
+      limit: 20,
+      includeDeleted: false,
+    },
+    {
+      actor,
+      itemId: 'item-1',
+      limit: 20,
+      boundary,
+      includeDeleted: true,
+    },
+  ]);
+});
+
 test('history cursors accept the PostgreSQL integer maximum sequence', async () => {
   let annotationBoundary;
   const annotationReader = {

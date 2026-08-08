@@ -158,6 +158,19 @@ const listQuerySchema = {
   },
 } as const;
 
+const annotationListQuerySchema = {
+  ...listQuerySchema,
+  properties: {
+    ...listQuerySchema.properties,
+    includeDeleted: {
+      type: 'boolean',
+      default: false,
+      description:
+        'Include logically deleted annotations only when the current actor owns both the annotation and its Knowledge item.',
+    },
+  },
+} as const;
+
 const writeBodySchema = {
   type: 'object',
   additionalProperties: false,
@@ -212,7 +225,7 @@ export async function registerKnowledgeAnnotationRoutes(
       schema: {
         tags: ['knowledge'],
         params: itemParamsSchema,
-        querystring: listQuerySchema,
+        querystring: annotationListQuerySchema,
         response: {
           401: knowledgeProvenanceErrorResponseSchema,
           200: {
@@ -233,13 +246,21 @@ export async function registerKnowledgeAnnotationRoutes(
     async (request, reply) => {
       const actor = knowledgeActorFromRequest(request);
       const { itemId } = request.params as { itemId: string };
-      const query = request.query as { limit?: number; cursor?: string };
+      const query = request.query as {
+        limit?: number;
+        cursor?: string;
+        includeDeleted?: boolean;
+      };
+      const includeDeleted = query.includeDeleted === true;
+      const cursorKind = includeDeleted
+        ? ('annotations_with_deleted' as const)
+        : ('annotations' as const);
       let boundary;
       try {
         boundary = query.cursor
           ? cursor.decodePage({
               cursor: query.cursor,
-              kind: 'annotations',
+              kind: cursorKind,
               parentId: itemId,
               actor,
             })
@@ -255,6 +276,7 @@ export async function registerKnowledgeAnnotationRoutes(
         itemId,
         limit: query.limit ?? knowledgeProvenanceLimits.defaultListLimit,
         boundary,
+        includeDeleted,
       });
       return sendKnowledgeProvenanceResult(
         reply,
@@ -263,7 +285,7 @@ export async function registerKnowledgeAnnotationRoutes(
           items: page.items.map(annotationResponse),
           nextCursor: page.nextBoundary
             ? cursor.encodePage({
-                kind: 'annotations',
+                kind: cursorKind,
                 parentId: itemId,
                 actor,
                 boundary: page.nextBoundary,

@@ -20,6 +20,7 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 export const knowledgeProvenanceCursorKinds = [
   'annotations',
+  'annotations_with_deleted',
   'annotation_revisions',
   'conversations',
   'conversation_turns',

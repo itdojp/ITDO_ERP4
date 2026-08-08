@@ -422,6 +422,17 @@ test('OpenAPI publishes the bounded provenance foundation without internal idemp
     }
   }
 
+  const annotationListParameters =
+    openapi.paths['/knowledge/items/{itemId}/annotations'].get.parameters;
+  const includeDeleted = annotationListParameters.find(
+    (parameter) =>
+      parameter.in === 'query' && parameter.name === 'includeDeleted',
+  );
+  assert.deepEqual(includeDeleted?.schema, {
+    default: false,
+    type: 'boolean',
+  });
+
   const conversation =
     openapi.paths['/knowledge/conversations'].post.responses['201'].content[
       'application/json'
