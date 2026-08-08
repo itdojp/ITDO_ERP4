@@ -214,6 +214,18 @@ const listQuerySchema = {
   },
 } as const;
 
+const conversationListQuerySchema = {
+  ...listQuerySchema,
+  properties: {
+    ...listQuerySchema.properties,
+    knowledgeItemId: {
+      type: 'string',
+      minLength: 1,
+      maxLength: knowledgeProvenanceLimits.id,
+    },
+  },
+} as const;
+
 function sendInvalidCursor(reply: FastifyReply) {
   return reply.code(400).send(
     createApiErrorResponse('invalid_request', 'Invalid cursor', {
@@ -251,7 +263,7 @@ export async function registerKnowledgeConversationRoutes(
       preHandler,
       schema: {
         tags: ['knowledge'],
-        querystring: listQuerySchema,
+        querystring: conversationListQuerySchema,
         response: {
           401: knowledgeProvenanceErrorResponseSchema,
           200: {
@@ -265,18 +277,24 @@ export async function registerKnowledgeConversationRoutes(
           },
           400: knowledgeProvenanceErrorResponseSchema,
           403: knowledgeProvenanceErrorResponseSchema,
+          404: knowledgeProvenanceErrorResponseSchema,
         },
       },
     },
     async (request, reply) => {
       const actor = knowledgeActorFromRequest(request);
-      const query = request.query as { limit?: number; cursor?: string };
+      const query = request.query as {
+        knowledgeItemId?: string;
+        limit?: number;
+        cursor?: string;
+      };
       let boundary;
       try {
         boundary = query.cursor
           ? cursor.decodePage({
               cursor: query.cursor,
               kind: 'conversations',
+              parentId: query.knowledgeItemId,
               actor,
             })
           : undefined;
@@ -288,6 +306,7 @@ export async function registerKnowledgeConversationRoutes(
       }
       const result = await service.list({
         actor,
+        knowledgeItemId: query.knowledgeItemId,
         limit: query.limit ?? knowledgeProvenanceLimits.defaultListLimit,
         boundary,
       });
@@ -299,6 +318,7 @@ export async function registerKnowledgeConversationRoutes(
           nextCursor: page.nextBoundary
             ? cursor.encodePage({
                 kind: 'conversations',
+                parentId: query.knowledgeItemId,
                 actor,
                 boundary: page.nextBoundary,
               })

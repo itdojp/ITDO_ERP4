@@ -947,6 +947,65 @@ try {
     }),
     'link item B',
   );
+  await prisma.knowledgeConversation.createMany({
+    data: Array.from({ length: 101 }, (_, index) => ({
+      ownerUserId: owner.userId,
+      title: `Synthetic unrelated conversation ${index + 1}`,
+      sourceType: 'manual',
+      contentHash: String(index + 1).padStart(64, '0'),
+      createdBy: owner.userId,
+      updatedBy: owner.userId,
+    })),
+  });
+  const globalConversationPage = expectOk(
+    await conversationService.list({ actor: owner, limit: 100 }),
+    'global conversation page',
+  );
+  assert.equal(globalConversationPage.items.length, 100);
+  assert.equal(
+    globalConversationPage.items.some((entry) => entry.id === conversation.id),
+    false,
+  );
+  const itemConversationPage = expectOk(
+    await conversationService.list({
+      actor: bothGroups,
+      knowledgeItemId: orgItemA.id,
+      limit: 100,
+    }),
+    'item-scoped conversation page',
+  );
+  assert.deepEqual(
+    itemConversationPage.items.map((entry) => entry.id),
+    [conversation.id],
+  );
+  assert.equal(itemConversationPage.nextBoundary, null);
+  const partialAclConversationPage = expectOk(
+    await conversationService.list({
+      actor: groupAOnly,
+      knowledgeItemId: orgItemA.id,
+      limit: 100,
+    }),
+    'item-scoped conversation effective ACL intersection',
+  );
+  assert.deepEqual(partialAclConversationPage.items, []);
+  expectFailure(
+    await conversationService.list({
+      actor: outsider,
+      knowledgeItemId: orgItemA.id,
+      limit: 100,
+    }),
+    'not_found',
+    'item-scoped conversation outsider',
+  );
+  expectFailure(
+    await conversationService.list({
+      actor: owner,
+      knowledgeItemId: 'synthetic-missing-item',
+      limit: 100,
+    }),
+    'not_found',
+    'item-scoped conversation missing item',
+  );
   assert.equal(
     (
       await conversationService.detail({
@@ -1319,6 +1378,17 @@ try {
     }),
     'append conversation turn before ACL revocation',
   );
+  assert.deepEqual(
+    expectOk(
+      await conversationService.list({
+        actor: interleaveReader,
+        knowledgeItemId: conversationInterleaveItem.id,
+        limit: 20,
+      }),
+      'item-scoped conversation before ACL revocation',
+    ).items.map((entry) => entry.id),
+    [conversationInterleave.id],
+  );
   let conversationFirstReadComplete;
   const conversationFirstRead = new Promise((resolve) => {
     conversationFirstReadComplete = resolve;
@@ -1389,6 +1459,15 @@ try {
       where: { conversationId: conversationInterleave.id },
     }),
     2,
+  );
+  expectFailure(
+    await conversationService.list({
+      actor: interleaveReader,
+      knowledgeItemId: conversationInterleaveItem.id,
+      limit: 20,
+    }),
+    'not_found',
+    'item-scoped conversation after ACL revocation',
   );
 
   const synthesis = expectOk(

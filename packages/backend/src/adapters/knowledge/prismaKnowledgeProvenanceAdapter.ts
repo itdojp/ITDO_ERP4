@@ -654,13 +654,29 @@ export class PrismaKnowledgeConversationRepository implements KnowledgeConversat
 
   async listVisible(input: {
     actor: KnowledgeActor;
+    knowledgeItemId?: string;
     limit: number;
     boundary?: KnowledgePageBoundary;
   }) {
+    if (input.knowledgeItemId !== undefined) {
+      const item = await new PrismaKnowledgeAccessRepository(
+        this.client,
+      ).findVisibleItem(input.actor, input.knowledgeItemId);
+      if (!item) return null;
+    }
     const rows = await this.client.knowledgeConversation.findMany({
       where: {
         AND: [
           conversationVisibilityWhere(input.actor),
+          ...(input.knowledgeItemId !== undefined
+            ? [
+                {
+                  items: {
+                    some: { knowledgeItemId: input.knowledgeItemId },
+                  },
+                },
+              ]
+            : []),
           ...(input.boundary
             ? [
                 {

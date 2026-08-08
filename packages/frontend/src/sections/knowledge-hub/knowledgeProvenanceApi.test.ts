@@ -284,7 +284,7 @@ describe('knowledgeProvenanceApi conversations/import', () => {
         }),
       );
 
-    const conversations = await listKnowledgeConversations();
+    const conversations = await listKnowledgeConversations('item/1');
     const turns = await listKnowledgeConversationTurns('conversation-1');
     expect(conversations.items[0]).not.toHaveProperty('contentHash');
     expect(conversations.items[0]).not.toHaveProperty('ownerUserId');
@@ -364,7 +364,7 @@ describe('knowledgeProvenanceApi conversations/import', () => {
         nextCursor: null,
       }),
     );
-    await expect(listKnowledgeConversations()).rejects.toMatchObject({
+    await expect(listKnowledgeConversations('item-1')).rejects.toMatchObject({
       code: 'invalid_response',
     });
   });
@@ -376,12 +376,16 @@ describe('knowledgeProvenanceApi conversations/import', () => {
       )
       .mockResolvedValueOnce(response({ items: [conversation] }));
 
-    const first = await listKnowledgeConversations('previous/cursor+=');
+    const first = await listKnowledgeConversations(
+      'item/1',
+      'previous/cursor+=',
+    );
     expect(first.nextCursor).toBe('opaque/cursor+=');
+    expect(apiResponse.mock.calls[0][0]).toContain('knowledgeItemId=item%2F1');
     expect(apiResponse.mock.calls[0][0]).toContain(
       'cursor=previous%2Fcursor%2B%3D',
     );
-    await expect(listKnowledgeConversations()).rejects.toMatchObject({
+    await expect(listKnowledgeConversations('item-1')).rejects.toMatchObject({
       code: 'invalid_response',
     });
   });

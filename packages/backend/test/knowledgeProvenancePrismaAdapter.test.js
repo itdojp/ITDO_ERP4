@@ -216,6 +216,69 @@ test('conversation list and owner mutation use the linked-item ACL intersection 
   }
 });
 
+test('conversation item filter verifies item visibility before applying the relation predicate and lookahead', async () => {
+  const calls = [];
+  const visibleRepository = new PrismaKnowledgeConversationRepository(
+    emptyClient({
+      knowledgeItem: {
+        findFirst: async (input) => {
+          calls.push(['item', input.where]);
+          return {
+            id: 'item-1',
+            ownerUserId: 'owner-1',
+            scope: 'personal',
+            organizationId: null,
+          };
+        },
+      },
+      knowledgeConversation: {
+        findMany: async (input) => {
+          calls.push(['list', input]);
+          return Array.from({ length: 101 }, (_, index) =>
+            conversationRow(`conversation-${String(index).padStart(3, '0')}`),
+          );
+        },
+      },
+    }),
+  );
+  const page = await visibleRepository.listVisible({
+    actor,
+    knowledgeItemId: 'item-1',
+    limit: 100,
+  });
+  assert.equal(page.items.length, 100);
+  assert.equal(page.nextBoundary?.id, 'conversation-099');
+  assert.equal(calls[0][0], 'item');
+  assert.equal(calls[1][0], 'list');
+  const listInput = calls[1][1];
+  assert.equal(listInput.take, 101);
+  const serialized = JSON.stringify(listInput.where);
+  assert.match(serialized, /"items":\{"some":\{"knowledgeItemId":"item-1"\}\}/);
+  assert.match(serialized, /"items":\{"every":/);
+
+  let hiddenQueries = 0;
+  const hiddenRepository = new PrismaKnowledgeConversationRepository(
+    emptyClient({
+      knowledgeItem: { findFirst: async () => null },
+      knowledgeConversation: {
+        findMany: async () => {
+          hiddenQueries += 1;
+          return [];
+        },
+      },
+    }),
+  );
+  assert.equal(
+    await hiddenRepository.listVisible({
+      actor,
+      knowledgeItemId: 'hidden-item',
+      limit: 20,
+    }),
+    null,
+  );
+  assert.equal(hiddenQueries, 0);
+});
+
 test('annotation list checks item visibility before querying annotation rows', async () => {
   let annotationQueries = 0;
   const repository = new PrismaKnowledgeAnnotationRepository(

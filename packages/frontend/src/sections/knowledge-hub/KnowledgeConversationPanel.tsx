@@ -175,10 +175,6 @@ function relationForItem(conversation: KnowledgeConversation, itemId: string) {
   return conversation.items.find((item) => item.knowledgeItemId === itemId);
 }
 
-function isLinkedToItem(conversation: KnowledgeConversation, itemId: string) {
-  return Boolean(relationForItem(conversation, itemId));
-}
-
 function codePointLength(value: string) {
   return [...value].length;
 }
@@ -304,7 +300,7 @@ export function KnowledgeConversationPanel(props: {
       if (!targetItemId) return;
 
       try {
-        const page = await listKnowledgeConversations(cursor);
+        const page = await listKnowledgeConversations(targetItemId, cursor);
         if (
           !mountedRef.current ||
           conversationLoadSequence.current !== sequence ||
@@ -312,16 +308,13 @@ export function KnowledgeConversationPanel(props: {
         ) {
           return;
         }
-        const linkedConversations = page.items.filter((conversation) =>
-          isLinkedToItem(conversation, targetItemId),
-        );
         setConversationList((current) => ({
           itemId: targetItemId,
           status: 'success',
           items:
             append && current.itemId === targetItemId
-              ? mergeById(current.items, linkedConversations)
-              : linkedConversations,
+              ? mergeById(current.items, page.items)
+              : page.items,
           nextCursor: page.nextCursor,
           loadingMore: false,
           error: '',
@@ -787,11 +780,7 @@ export function KnowledgeConversationPanel(props: {
     return (
       <div>
         {visibleConversations.length === 0 ? (
-          <p>
-            {conversationList.nextCursor
-              ? '現在読み込んだ範囲には、この項目に関連する会話がありません。'
-              : 'この項目に関連する会話はありません。'}
-          </p>
+          <p>この項目に関連する会話はありません。</p>
         ) : (
           <ul aria-label="選択項目に関連する会話">
             {visibleConversations.map((conversation) => {

@@ -387,9 +387,10 @@ export interface KnowledgeConversationRepository {
   ): Promise<T>;
   listVisible(input: {
     actor: KnowledgeActor;
+    knowledgeItemId?: string;
     limit: number;
     boundary?: KnowledgePageBoundary;
-  }): Promise<KnowledgePage<KnowledgeConversation>>;
+  }): Promise<KnowledgePage<KnowledgeConversation> | null>;
   findVisible(input: {
     actor: KnowledgeActor;
     conversationId: string;
