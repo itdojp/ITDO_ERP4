@@ -285,10 +285,15 @@ export function validateKnowledgeCapture(
 export type KnowledgeHubErrorCode =
   | 'forbidden'
   | 'idempotency_conflict'
+  | 'import_conflict'
+  | 'import_oversize'
+  | 'invalid_import'
   | 'invalid_request'
   | 'invalid_response'
   | 'network_error'
   | 'not_found'
+  | 'preview_token_expired'
+  | 'preview_token_invalid'
   | 'snapshot_capture_failed'
   | 'snapshot_capture_timeout'
   | 'snapshot_content_invalid'
@@ -307,10 +312,19 @@ const errorMessages: Record<KnowledgeHubErrorCode, string> = {
   forbidden: 'この操作を実行する権限がありません。',
   idempotency_conflict:
     '同じ保存操作の内容が一致しません。画面を再読込してください。',
+  import_conflict:
+    '同じ会話取込が同時に処理されています。結果を再読込してください。',
+  import_oversize: '会話データが取込上限を超えています。',
+  invalid_import:
+    '会話データの形式、role、origin、日時、または上限を確認してください。',
   invalid_request: '入力内容を確認してください。',
   invalid_response: 'サーバー応答を確認できませんでした。再試行してください。',
   network_error: 'サーバーへ接続できませんでした。通信状態を確認してください。',
   not_found: '対象が見つからないか、現在の権限では参照できません。',
+  preview_token_expired:
+    '取込プレビューの有効期限が切れました。もう一度プレビューしてください。',
+  preview_token_invalid:
+    '取込内容がプレビュー時点から変わりました。もう一度プレビューしてください。',
   snapshot_capture_failed: '元情報の取得に失敗しました。',
   snapshot_capture_timeout: '元情報の取得が時間内に完了しませんでした。',
   snapshot_content_invalid: '内容またはファイル形式を確認できませんでした。',

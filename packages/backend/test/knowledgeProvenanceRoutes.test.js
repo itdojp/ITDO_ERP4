@@ -186,13 +186,26 @@ function notFound() {
 
 test('annotation routes map canonical actor, serialize history, and issue actor-bound cursors', async (t) => {
   let createInput;
+  const listInputs = [];
   const service = {
-    list: async () => ({
+    list: async (input) => {
+      listInputs.push(input);
+      return {
+        ok: true,
+        value: {
+          items: [
+            annotation({
+              deletedAt: input.includeDeleted ? date : null,
+              providerKey: 'must-not-pass',
+            }),
+          ],
+          nextBoundary: { updatedAt: date, id: 'annotation-1' },
+        },
+      };
+    },
+    capabilities: async () => ({
       ok: true,
-      value: {
-        items: [annotation()],
-        nextBoundary: { updatedAt: date, id: 'annotation-1' },
-      },
+      value: { canManageAnnotations: true },
     }),
     detail: async () => ({ ok: true, value: annotation() }),
     history: async () => ({
@@ -246,10 +259,7 @@ test('annotation routes map canonical actor, serialize history, and issue actor-
       source: 'agent',
       principalUserId: 'principal-1',
       actorUserId: 'owner-1',
-      authScopes: [
-        'knowledge:write',
-        'https://idp.example/knowledge.write',
-      ],
+      authScopes: ['knowledge:write', 'https://idp.example/knowledge.write'],
       authTokenId: 'token-1',
       authAudience: ['erp4-agent'],
       authExpiresAt: 1_900_000_000,
@@ -266,6 +276,43 @@ test('annotation routes map canonical actor, serialize history, and issue actor-
   assert.equal(listed.statusCode, 200, listed.body);
   assert.equal(typeof listed.json().nextCursor, 'string');
   assert.equal(listed.json().nextCursor.includes('annotation-1'), false);
+  assert.equal(listed.json().items[0].deletedAt, null);
+  assert.equal(listed.json().items[0].providerKey, undefined);
+  assert.equal(listInputs[0].includeDeleted, false);
+
+  const capabilities = await app.inject({
+    method: 'GET',
+    url: '/knowledge/items/item-1/annotations/capabilities',
+  });
+  assert.equal(capabilities.statusCode, 200, capabilities.body);
+  assert.deepEqual(capabilities.json(), { canManageAnnotations: true });
+
+  const includeDeleted = await app.inject({
+    method: 'GET',
+    url: '/knowledge/items/item-1/annotations?limit=1&includeDeleted=true',
+  });
+  assert.equal(includeDeleted.statusCode, 200, includeDeleted.body);
+  assert.equal(includeDeleted.json().items[0].deletedAt, date.toISOString());
+  assert.equal(listInputs[1].includeDeleted, true);
+  const includeDeletedCursor = includeDeleted.json().nextCursor;
+  assert.equal(typeof includeDeletedCursor, 'string');
+
+  const nextDeletedPage = await app.inject({
+    method: 'GET',
+    url: `/knowledge/items/item-1/annotations?includeDeleted=true&cursor=${encodeURIComponent(includeDeletedCursor)}`,
+  });
+  assert.equal(nextDeletedPage.statusCode, 200, nextDeletedPage.body);
+  assert.deepEqual(listInputs[2].boundary, {
+    updatedAt: date,
+    id: 'annotation-1',
+  });
+
+  const crossViewCursor = await app.inject({
+    method: 'GET',
+    url: `/knowledge/items/item-1/annotations?cursor=${encodeURIComponent(includeDeletedCursor)}`,
+  });
+  assert.equal(crossViewCursor.statusCode, 400, crossViewCursor.body);
+  assert.equal(listInputs.length, 3);
 
   const history = await app.inject({
     method: 'GET',
@@ -285,6 +332,17 @@ test('annotation routes map canonical actor, serialize history, and issue actor-
     'code',
     'message',
   ]);
+
+  const invalidIncludeDeleted = await app.inject({
+    method: 'GET',
+    url: '/knowledge/items/item-1/annotations?includeDeleted=yes',
+  });
+  assert.equal(
+    invalidIncludeDeleted.statusCode,
+    400,
+    invalidIncludeDeleted.body,
+  );
+  assert.equal(listInputs.length, 3);
 });
 
 test('annotation routes reject unknown fields before service invocation', async (t) => {
@@ -601,6 +659,7 @@ test('synthesis access-budget exhaustion does not disclose list or ID existence'
 test('all provenance routes require a canonical account and normalize unauthorized IDs as not found', async (t) => {
   const service = {
     list: async () => ({ ok: true, value: { items: [], nextBoundary: null } }),
+    capabilities: async () => notFound(),
     detail: async () => notFound(),
     history: async () => notFound(),
     create: async () => notFound(),
@@ -641,6 +700,13 @@ test('all provenance routes require a canonical account and normalize unauthoriz
   });
   assert.equal(missing.statusCode, 404, missing.body);
   assert.equal(missing.json().error.message, 'Not found');
+
+  const missingCapabilities = await ownerApp.inject({
+    method: 'GET',
+    url: '/knowledge/items/hidden-item/annotations/capabilities',
+  });
+  assert.equal(missingCapabilities.statusCode, 404, missingCapabilities.body);
+  assert.equal(missingCapabilities.json().error.message, 'Not found');
 });
 
 test('provenance detail routes redact Fastify validation diagnostics', async (t) => {

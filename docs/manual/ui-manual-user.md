@@ -125,10 +125,20 @@
 
 - 目的: 外部情報や手動メモを個人または明示した組織scopeのInboxへ保存し、immutableなversion・SHA-256・出所を確認する
 - 主な操作: text / URL / PDF / imageの保存、version追加、保存結果の再照合、認可済みdownload
-- 詳細: [Knowledge Hub 手動保存ガイド](knowledge-hub.md)
-- 証跡: `docs/test-results/2026-08-06-issue2012-knowledge-snapshot-ui/01-knowledge-hub-manual-capture.png`
+- 詳細: [Knowledge Hub 保存・annotation・会話・Synthesisガイド](knowledge-hub.md)
+- snapshot証跡: `docs/test-results/2026-08-06-issue2012-knowledge-snapshot-ui/01-knowledge-hub-manual-capture.png`
+- provenance証跡:
+  - `docs/test-results/2026-08-08-issue2013-knowledge-provenance-ui/01-annotation-revision-history.png`
+  - `docs/test-results/2026-08-08-issue2013-knowledge-provenance-ui/02-conversation-role-timeline.png`
+  - `docs/test-results/2026-08-08-issue2013-knowledge-provenance-ui/03-synthesis-version-provenance.png`
 
 ![Knowledge Hub](../test-results/2026-08-06-issue2012-knowledge-snapshot-ui/01-knowledge-hub-manual-capture.png)
+
+![本人annotationの改訂履歴](../test-results/2026-08-08-issue2013-knowledge-provenance-ui/01-annotation-revision-history.png)
+
+![会話のroleとorigin timeline](../test-results/2026-08-08-issue2013-knowledge-provenance-ui/02-conversation-role-timeline.png)
+
+![Synthesisのversionとprovenance](../test-results/2026-08-08-issue2013-knowledge-provenance-ui/03-synthesis-version-provenance.png)
 
 ---
 

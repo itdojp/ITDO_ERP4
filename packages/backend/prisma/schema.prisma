@@ -2508,22 +2508,22 @@ model KnowledgeAnnotationRevision {
 }
 
 model KnowledgeConversation {
-  id               String                          @id @default(uuid())
+  id               String                               @id @default(uuid())
   ownerUserId      String
   title            String
   sourceType       KnowledgeConversationSourceType
   provider         String?
   model            String?
-  capturedAt       DateTime                        @default(now())
+  capturedAt       DateTime                             @default(now())
   importedAt       DateTime?
   contentHash      String
   idempotencyHash  String?
-  version          Int                             @default(1)
+  version          Int                                  @default(1)
   deletedAt        DateTime?
   deletedBy        String?
-  createdAt        DateTime                        @default(now())
+  createdAt        DateTime                             @default(now())
   createdBy        String
-  updatedAt        DateTime                        @updatedAt
+  updatedAt        DateTime                             @updatedAt
   updatedBy        String
   items            KnowledgeConversationItem[]
   turns            KnowledgeConversationTurn[]

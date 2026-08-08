@@ -1,8 +1,8 @@
-# Knowledge Hub 手動保存ガイド
+# Knowledge Hub 保存・annotation・会話・Synthesisガイド
 
 ## 目的と対象
 
-Knowledge Hub は、外部情報や手動メモを ERP4 の Inbox 項目として登録し、保存時点の内容を改変しない snapshot として版管理する画面です。`user` / `admin` / `mgmt` / `exec` ロールの利用者を対象とします。
+Knowledge Hub は、外部情報や手動メモを ERP4 の Inbox 項目として登録し、保存時点の内容を改変しない snapshot として版管理する画面です。選択した項目には、本人annotation、取り込んだ会話、versioned Synthesisを別entityとして追加できます。`user` / `admin` / `mgmt` / `exec` ロールの利用者を対象とします。
 
 MVP で扱う入力は次の4種類です。
 
@@ -52,6 +52,76 @@ MVP で扱う入力は次の4種類です。
 
 誤った共有範囲を指定した場合、画面上で scope を変更して再保存するのではなく、組織の運用手順に従って対象項目を確認してください。
 
+## 本人annotationを追加・改訂する
+
+1. `Knowledge Inbox` から対象項目を選択します。
+2. `Annotation / 会話 / Synthesis` の `本人annotation` tabを開きます。
+3. 種類（本人メモ、質問、仮説、引用、TODO）とorigin（本人、外部情報、AI、System、Tool）を選択します。
+4. 本文を入力し、`アノテーションを作成` を選択します。
+5. 訂正する場合は対象annotationの`改訂`を選びます。旧本文はrevision履歴に残り、上書き消去されません。
+6. 不要になった場合は`削除`を選びます。論理削除のため、再読込後も削除済みであることと履歴を確認できます。
+
+annotation本文は元snapshotへ連結されません。種類とoriginは色だけでなくtext labelでも表示されます。organization項目でも、current item ACLをserver側で再検査します。作成・改訂・削除はitem ownerだけが実行でき、共有先の非ownerにはannotation管理可否APIのserver判定に基づく「閲覧のみ」を表示します。管理可否を取得できない場合も安全側で閲覧専用とし、annotation一覧とrevision履歴の参照は維持します。一覧またはrevision履歴に続きがある場合は`さらに読み込む`操作が表示され、opaque cursorで次ページを取得します。
+
+## 会話をpreviewして取り込む
+
+`会話・取込` tabでは、次の3形式を一件の`KnowledgeConversation`として取り込みます。
+
+- 手動入力: タイトル、role、origin、1 turnの本文を画面で入力する
+- JSON: strictな`title`、`provider`、`model`、`turns[]`構造を入力する
+- Markdown: 次のversion付き限定文法を入力する
+
+```markdown
+# Knowledge Conversation v1
+
+title: 検証会話
+provider: other
+model: other
+
+## Turn
+
+role: user
+origin: user
+
+確認したい内容
+
+## Turn
+
+role: assistant
+origin: ai
+
+回答本文
+```
+
+Markdownの見出しや引用記号からspeakerを推測しません。raw HTML、script、linkを実行・取得せず、本文はtextとして表示します。
+
+1. 形式と内容を指定し、`取込内容をプレビュー`を選択します。
+2. title、turn数、role、origin、関連item数、有効期限を確認します。この時点ではDBへ会話を保存しません。
+3. 内容を変更した場合は以前のpreviewを使用せず、もう一度previewします。
+4. `取込を確定`を明示的に選択します。
+5. 同じoperationを再送した場合は`再利用`と表示され、conversationやturnを増殖させません。
+
+上限はraw/canonical各512 KiB、1 turn 64 KiB、turn 200件、linked item 20件、JSON depth 12/node 5,000、Markdown 5,000行です。preview tokenは10分間だけcomponent memoryへ保持し、request keyとともに画面・log・永続storageへ表示・保存しません。
+
+取り込み後のtimelineでは`User`、`AI Assistant`、`System`、`Tool` roleと、本人・外部情報・AI・System・Tool originを別labelで確認できます。provider/modelは固定語彙だけを表示し、provider URL/keyは表示しません。関連会話またはtimelineに続きがある場合は`さらに読み込む`操作で次ページを取得できます。
+
+## Synthesisを作成・version追加する
+
+1. `Synthesis・結論` tabを開きます。
+2. タイトル、結論、confidence、未解決事項を入力します。
+3. `統合知を作成`を選択します。選択中のKnowledge itemが`主根拠`として明示的に関連付けられます。
+4. 結論を更新するときは新しいversionを追加し、version履歴を確認します。
+
+confidenceは0〜100%で入力し、未設定と0%を区別します。未解決事項は結論と分離して表示されます。sourceへのcurrent accessが失効した場合、非公開本文や識別子を展開せず`参照不可（redacted）`として表示します。Synthesis scopeは選択中itemと同じ値に固定され、画面操作だけでpersonalからorganizationへ昇格しません。
+
+Synthesis一覧はcurrent actorが参照可能なglobal一覧です。選択中itemをcurrent versionのaccessibleなitem sourceとして持たないSynthesis、またはcurrent sourceの一部が参照不可のSynthesisは参照専用となり、不完全なprovenanceでversionを置き換える操作はできません。version追加時はcurrent sourceの種類・関係・順序を維持します。一覧またはversion履歴に続きがある場合は`さらに読み込む`操作で次ページを取得します。
+
+![本人annotationの改訂履歴](../test-results/2026-08-08-issue2013-knowledge-provenance-ui/01-annotation-revision-history.png)
+
+![会話のroleとorigin timeline](../test-results/2026-08-08-issue2013-knowledge-provenance-ui/02-conversation-role-timeline.png)
+
+![Synthesisのversionとprovenance](../test-results/2026-08-08-issue2013-knowledge-provenance-ui/03-synthesis-version-provenance.png)
+
 ## 保存状態と再照合
 
 | 状態       | 意味                                      | 操作                                                              |
@@ -82,3 +152,4 @@ MVP で扱う入力は次の4種類です。
 - [Knowledge Hub 基盤要件](../requirements/knowledge-hub.md)
 - [Knowledge Hub 境界 ADR](../architecture/knowledge-hub-boundary.md)
 - [Issue #2012 UI/E2E 検証結果](../test-results/2026-08-06-issue2012-knowledge-snapshot-ui.md)
+- [Issue #2013 annotation／会話／Synthesis UI検証結果](../test-results/2026-08-08-issue2013-knowledge-provenance-ui.md)

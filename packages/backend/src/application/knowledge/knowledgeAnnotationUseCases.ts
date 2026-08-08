@@ -46,11 +46,14 @@ export function createKnowledgeAnnotationService(dependencies: {
       itemId: string;
       limit: number;
       boundary?: KnowledgePageBoundary;
+      includeDeleted?: boolean;
     }) {
       if (
         !hasKnowledgePrincipal(input.actor) ||
         !isBoundedKnowledgeId(input.itemId) ||
-        !isValidKnowledgeListLimit(input.limit)
+        !isValidKnowledgeListLimit(input.limit) ||
+        (input.includeDeleted !== undefined &&
+          typeof input.includeDeleted !== 'boolean')
       ) {
         return provenanceNotFound();
       }
@@ -58,6 +61,19 @@ export function createKnowledgeAnnotationService(dependencies: {
         reader.listVisible(input),
       );
       return page ? provenanceOk(page) : provenanceNotFound();
+    },
+
+    async capabilities(input: { actor: KnowledgeActor; itemId: string }) {
+      if (
+        !hasKnowledgePrincipal(input.actor) ||
+        !isBoundedKnowledgeId(input.itemId)
+      ) {
+        return provenanceNotFound();
+      }
+      const capabilities = await dependencies.reader.withConsistentSnapshot(
+        (reader) => reader.capabilities(input),
+      );
+      return capabilities ? provenanceOk(capabilities) : provenanceNotFound();
     },
 
     async detail(input: {

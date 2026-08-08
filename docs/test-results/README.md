@@ -44,6 +44,8 @@
 ### 2026-08-08
 
 - [Issue #2013 bounded conversation import verification（PR B）](2026-08-08-issue2013-knowledge-conversation-import.md)
+- [Issue #2013 Knowledge provenance UI検証（PR C）](2026-08-08-issue2013-knowledge-provenance-ui.md)
+  - 証跡: [docs/test-results/2026-08-08-issue2013-knowledge-provenance-ui/](2026-08-08-issue2013-knowledge-provenance-ui/)
 
 ### 2026-08-06
 

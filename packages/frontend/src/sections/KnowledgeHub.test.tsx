@@ -26,6 +26,11 @@ vi.mock('./knowledge-hub/knowledgeHubApi', async (importOriginal) => ({
   ...apiMocks,
 }));
 vi.mock('../utils/download', () => ({ downloadResponseAsFile }));
+vi.mock('./knowledge-hub/KnowledgeProvenanceWorkspace', () => ({
+  KnowledgeProvenanceWorkspace: ({ itemLabel }: { itemLabel: string }) => (
+    <div>provenance workspace: {itemLabel}</div>
+  ),
+}));
 
 import { KnowledgeHub } from './KnowledgeHub';
 import { KnowledgeHubApiError } from './knowledge-hub/knowledgeHubApi';
