@@ -15,6 +15,7 @@ test('notification push failure log exposes only bounded classification', () => 
   assert.deepEqual(buildNotificationPushFailureLog('chat_mention'), {
     phase: 'notification_push_dispatch',
     errorClass: 'notification_failure',
+    errorType: 'unknown_error',
     kind: 'chat_mention',
   });
   const privateKind =
@@ -27,8 +28,30 @@ test('notification push failure log exposes only bounded classification', () => 
   assert.deepEqual(buildNotificationPushFailureLog(privateKind), {
     phase: 'notification_push_dispatch',
     errorClass: 'notification_failure',
+    errorType: 'unknown_error',
     kind: 'unknown',
   });
+  const privateError = new TypeError(
+    'private-message-id credential=private-token',
+  );
+  privateError.name = 'credential=private-token';
+  const errorLog = buildNotificationPushFailureLog(
+    'chat_message',
+    privateError,
+  );
+  assert.deepEqual(errorLog, {
+    phase: 'notification_push_dispatch',
+    errorClass: 'notification_failure',
+    errorType: 'type_error',
+    kind: 'chat_message',
+  });
+  assert.equal(JSON.stringify(errorLog).includes('private-token'), false);
+  assert.equal(
+    buildNotificationPushFailureLog('chat_message', {
+      name: 'private-token',
+    }).errorType,
+    'non_error',
+  );
 });
 
 function notification(overrides = {}) {

@@ -127,6 +127,12 @@ test('reaction routes normalize inaccessible and invalid inputs', async () => {
       });
       assert.equal(response.statusCode, expectedStatus, response.body);
       assert.equal(response.json().error.code, expectedCode);
+      assert.equal(
+        response.json().error.message,
+        expectedCode === 'INVALID_EMOJI'
+          ? 'Invalid reaction'
+          : 'Message not found',
+      );
       assert.equal(response.body.includes('room-1'), false);
     });
   }

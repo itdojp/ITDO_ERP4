@@ -152,7 +152,18 @@ function isGlobalMuteBypassKind(kind: string) {
   return resolveGlobalMuteBypassKinds().has(kind.trim());
 }
 
-export function buildNotificationPushFailureLog(kind: unknown) {
+function classifyNotificationPushError(error: unknown) {
+  if (error instanceof TypeError) return 'type_error';
+  if (error instanceof RangeError) return 'range_error';
+  if (error instanceof SyntaxError) return 'syntax_error';
+  if (error instanceof Error) return 'error';
+  return error === undefined ? 'unknown_error' : 'non_error';
+}
+
+export function buildNotificationPushFailureLog(
+  kind: unknown,
+  error?: unknown,
+) {
   const normalizedKind =
     typeof kind === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(kind)
       ? kind
@@ -160,6 +171,7 @@ export function buildNotificationPushFailureLog(kind: unknown) {
   return {
     phase: 'notification_push_dispatch',
     errorClass: 'notification_failure',
+    errorType: classifyNotificationPushError(error),
     kind: normalizedKind,
   };
 }
@@ -172,10 +184,10 @@ function dispatchNotificationPushesAsync(options: {
   projectId?: string | null;
   actorUserId?: string | null;
 }) {
-  void dispatchNotificationPushes(options).catch(() => {
+  void dispatchNotificationPushes(options).catch((error: unknown) => {
     console.error(
       '[notification push dispatch failed]',
-      buildNotificationPushFailureLog(options.kind),
+      buildNotificationPushFailureLog(options.kind, error),
     );
   });
 }

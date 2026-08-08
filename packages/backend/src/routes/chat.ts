@@ -711,7 +711,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
                 : 'NOT_FOUND',
             message:
               result.reason === 'invalid_reaction'
-                ? 'emoji is required'
+                ? 'Invalid reaction'
                 : 'Message not found',
           },
         });
