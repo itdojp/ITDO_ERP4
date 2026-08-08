@@ -284,6 +284,9 @@
 .knowledge-provenance-workspace-heading strong,
 .knowledge-provenance-workspace-heading span {
   display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .knowledge-provenance-workspace-heading span {
   margin-top: 4px;
@@ -294,6 +297,19 @@
   display: grid;
   gap: 16px;
   min-width: 0;
+}
+.knowledge-provenance-retained-panels,
+.knowledge-provenance-retained-panel,
+.knowledge-provenance-workspace-panel div,
+.knowledge-provenance-workspace-panel article,
+.knowledge-provenance-workspace-panel dl,
+.knowledge-provenance-workspace-panel ul,
+.knowledge-provenance-workspace-panel ol {
+  min-width: 0;
+  max-width: 100%;
+}
+.knowledge-provenance-retained-panel[hidden] {
+  display: none;
 }
 .knowledge-provenance-workspace-panel section,
 .knowledge-provenance-workspace-panel form {
@@ -328,9 +344,21 @@
   border-radius: 10px;
   background: var(--color-bg-base, #fff);
 }
-.knowledge-provenance-workspace-panel article p,
-.knowledge-provenance-workspace-panel article dd {
+.knowledge-provenance-workspace-panel h4,
+.knowledge-provenance-workspace-panel h5,
+.knowledge-provenance-workspace-panel h6,
+.knowledge-provenance-workspace-panel p,
+.knowledge-provenance-workspace-panel li,
+.knowledge-provenance-workspace-panel dd,
+.knowledge-provenance-workspace-panel strong,
+.knowledge-provenance-workspace-panel button,
+.knowledge-provenance-content {
+  min-width: 0;
+  max-width: 100%;
   overflow-wrap: anywhere;
+}
+.knowledge-provenance-content {
+  white-space: pre-wrap;
 }
 .knowledge-provenance-workspace-panel dl {
   display: grid;

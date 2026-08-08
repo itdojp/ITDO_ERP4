@@ -752,6 +752,19 @@ try {
     'not_found',
     'source-less organization synthesis non-owner',
   );
+  const activeOrganizationAnnotation = expectOk(
+    await annotationService.create({
+      actor: owner,
+      auditActor,
+      itemId: orgItemA.id,
+      body: {
+        kind: 'note',
+        origin: 'user',
+        content: 'Synthetic active organization annotation',
+      },
+    }),
+    'create active organization annotation for deleted-list checks',
+  );
   expectOk(
     await annotationService.remove({
       actor: owner,
@@ -781,6 +794,65 @@ try {
       })
     ).ok,
     true,
+  );
+  const activeOrganizationAnnotations = expectOk(
+    await annotationService.list({
+      actor: owner,
+      itemId: orgItemA.id,
+      limit: 20,
+      includeDeleted: false,
+    }),
+    'active organization annotation list',
+  );
+  assert.deepEqual(
+    activeOrganizationAnnotations.items.map((entry) => entry.id),
+    [activeOrganizationAnnotation.id],
+  );
+
+  const ownerAnnotationIds = [];
+  let ownerAnnotationBoundary;
+  for (let pageNumber = 0; pageNumber < 3; pageNumber += 1) {
+    const page = expectOk(
+      await annotationService.list({
+        actor: owner,
+        itemId: orgItemA.id,
+        limit: 1,
+        boundary: ownerAnnotationBoundary,
+        includeDeleted: true,
+      }),
+      `owner deleted annotation list page ${pageNumber + 1}`,
+    );
+    ownerAnnotationIds.push(...page.items.map((entry) => entry.id));
+    ownerAnnotationBoundary = page.nextBoundary;
+    if (!ownerAnnotationBoundary) break;
+  }
+  assert.deepEqual(
+    ownerAnnotationIds.sort(),
+    [activeOrganizationAnnotation.id, orgAnnotation.id].sort(),
+  );
+
+  const sharedReaderAnnotations = expectOk(
+    await annotationService.list({
+      actor: bothGroups,
+      itemId: orgItemA.id,
+      limit: 20,
+      includeDeleted: true,
+    }),
+    'organization annotation list for non-owner',
+  );
+  assert.deepEqual(
+    sharedReaderAnnotations.items.map((entry) => entry.id),
+    [activeOrganizationAnnotation.id],
+  );
+  expectFailure(
+    await annotationService.list({
+      actor: outsider,
+      itemId: orgItemA.id,
+      limit: 20,
+      includeDeleted: true,
+    }),
+    'not_found',
+    'deleted organization annotation list outsider',
   );
   expectFailure(
     await annotationService.history({

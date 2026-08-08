@@ -458,7 +458,17 @@ describe('KnowledgeConversationPanel', () => {
         if (cursor === 'page-2') {
           return Promise.resolve(page([firstLinked], 'page-3'));
         }
-        return Promise.resolve(page([firstLinked, secondLinked]));
+        return Promise.resolve(
+          page([
+            makeConversation({
+              ...firstLinked,
+              title: '更新された二ページ目の会話',
+              version: 2,
+              updatedAt: '2026-08-08T01:02:00.000Z',
+            }),
+            secondLinked,
+          ]),
+        );
       },
     );
 
@@ -488,8 +498,11 @@ describe('KnowledgeConversationPanel', () => {
       await screen.findByRole('button', { name: /三ページ目の会話/ }),
     ).toBeVisible();
     expect(
-      screen.getAllByRole('button', { name: /二ページ目の会話/ }),
+      screen.getAllByRole('button', { name: /更新された二ページ目の会話/ }),
     ).toHaveLength(1);
+    expect(
+      screen.queryByRole('button', { name: /^二ページ目の会話/ }),
+    ).not.toBeInTheDocument();
     expect(apiMocks.listKnowledgeConversations.mock.calls).toEqual([
       [null],
       ['page-2'],

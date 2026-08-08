@@ -185,11 +185,15 @@ function codePointLength(value: string) {
 
 function mergeById<T extends { id: string }>(current: T[], incoming: T[]) {
   const merged = [...current];
-  const seen = new Set(current.map((item) => item.id));
+  const indexes = new Map(merged.map((item, index) => [item.id, index]));
   for (const item of incoming) {
-    if (seen.has(item.id)) continue;
-    seen.add(item.id);
-    merged.push(item);
+    const existingIndex = indexes.get(item.id);
+    if (existingIndex === undefined) {
+      indexes.set(item.id, merged.length);
+      merged.push(item);
+    } else {
+      merged[existingIndex] = item;
+    }
   }
   return merged;
 }

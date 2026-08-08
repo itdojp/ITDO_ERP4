@@ -13,6 +13,7 @@
 - annotation kind/origin、conversation role/origin、Synthesis/未解決事項/provenanceを色だけでなくtext labelとsemantic markupで区別する。
 - importはmanual/strict JSON/限定Markdownをpreviewし、明示confirm後にだけcommitする。
 - preview tokenとCSPRNG request keyはcomponent memoryだけに保持し、画面、URL、localStorage、証跡へ出さない。
+- 一度開いたworkspace tabはitem選択中だけmountを維持し、tab切替で未保存draft、preview token、同一request keyの明示retry状態を失わない。
 - API responseはallowlistで正規化し、未知field、raw backend error、actor ID、content hash、provider URL/keyをUI stateへcopyしない。
 - unauthorizedとnot-foundは同じ非開示案内に正規化する。
 - inaccessible sourceは本文・識別子を展開せず`参照不可（redacted）`と表示する。
@@ -39,17 +40,17 @@ unknown provider fieldとraw backend errorを意図的に注入した境界検�
 | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | frontend focused                                            | 9 files / 92 tests PASS                                                                                                                                          |
 | frontend full                                               | 91 files / 561 tests PASS                                                                                                                                        |
-| UI-core coverage                                            | statements 70.33%、branches 63.05%、functions 69.94%、lines 72.67%（全threshold PASS）                                                                           |
+| UI-core coverage                                            | statements 70.34%、branches 63.06%、functions 69.97%、lines 72.68%（全threshold PASS）                                                                           |
 | frontend lint / format / typecheck / build / build budget   | PASS                                                                                                                                                             |
 | backend provenance focused                                  | 66 / 66 tests PASS                                                                                                                                               |
 | backend focused coverage                                    | statements 80.71%、branches 73.06%、functions 86.90%、lines 80.71%                                                                                               |
 | backend full                                                | 1,928 / 1,928 tests PASS、fail / cancelled / skipped / todo 0                                                                                                    |
 | backend lint / format / typecheck / build / Prisma generate | PASS                                                                                                                                                             |
-| PostgreSQL 15                                               | provenance integration、conversation import integrationともにPASS                                                                                                |
+| PostgreSQL 15                                               | provenance integration（owner限定deleted list、active/deleted paginationを含む）、conversation import integrationともにPASS                                      |
 | old-application compatibility                               | PR A merge `fb10a4df...`から現行schemaへの移行、既存data保持、旧新application読取を確認してPASS                                                                  |
 | focused real-backend E2E                                    | Knowledge Hub synthetic flow 1 / 1 PASS                                                                                                                          |
 | core E2E                                                    | 106 / 106 PASS                                                                                                                                                   |
-| responsive                                                  | 375 × 667でworkspace全体とform controlに横overflowなし                                                                                                           |
+| responsive                                                  | 375 × 667で3 tabすべて、長い非改行title/content、workspace全体、form controlに横overflowなし                                                                     |
 | OpenAPI                                                     | 生成snapshotとbyte一致、`origin/main`からbreaking changeなし                                                                                                     |
 | repository gates                                            | bounded-context dependency / coverage、audit（backend/frontendとも0 vulnerabilities）、ops-quality、docs index/image links、secret scan、`git diff --check` PASS |
 

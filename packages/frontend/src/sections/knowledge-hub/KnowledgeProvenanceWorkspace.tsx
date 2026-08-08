@@ -24,8 +24,21 @@ export function KnowledgeProvenanceWorkspace(props: {
   itemScope: KnowledgeScope;
 }) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('annotations');
+  const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<WorkspaceTab>>(
+    () => new Set(['annotations']),
+  );
+
+  const selectTab = (value: string) => {
+    if (!isWorkspaceTab(value)) return;
+    setActiveTab(value);
+    setVisitedTabs((current) => {
+      if (current.has(value)) return current;
+      return new Set([...current, value]);
+    });
+  };
+
   return (
-    <Card padding="small">
+    <Card className="knowledge-provenance-workspace" padding="small">
       <div className="knowledge-provenance-workspace-heading">
         <div>
           <strong>{props.itemLabel}</strong>
@@ -42,27 +55,43 @@ export function KnowledgeProvenanceWorkspace(props: {
       <Tabs
         className="knowledge-provenance-workspace-tabs"
         value={activeTab}
-        onValueChange={(value) => {
-          if (isWorkspaceTab(value)) setActiveTab(value);
-        }}
+        onValueChange={selectTab}
         ariaLabel="Knowledge provenance機能"
-        items={workspaceTabs.map((tab) => ({
-          ...tab,
-          panel:
-            tab.id === 'annotations' ? (
-              <KnowledgeAnnotationPanel
-                itemId={props.itemId}
-                itemScope={props.itemScope}
-              />
-            ) : tab.id === 'conversations' ? (
-              <KnowledgeConversationPanel itemId={props.itemId} />
-            ) : (
-              <KnowledgeSynthesisPanel
-                itemId={props.itemId}
-                itemScope={props.itemScope}
-              />
-            ),
-        }))}
+        items={workspaceTabs.map((tab) => ({ ...tab }))}
+        renderPanel={() => (
+          <div className="knowledge-provenance-retained-panels">
+            {visitedTabs.has('annotations') ? (
+              <div
+                className="knowledge-provenance-retained-panel"
+                hidden={activeTab !== 'annotations'}
+              >
+                <KnowledgeAnnotationPanel
+                  itemId={props.itemId}
+                  itemScope={props.itemScope}
+                />
+              </div>
+            ) : null}
+            {visitedTabs.has('conversations') ? (
+              <div
+                className="knowledge-provenance-retained-panel"
+                hidden={activeTab !== 'conversations'}
+              >
+                <KnowledgeConversationPanel itemId={props.itemId} />
+              </div>
+            ) : null}
+            {visitedTabs.has('syntheses') ? (
+              <div
+                className="knowledge-provenance-retained-panel"
+                hidden={activeTab !== 'syntheses'}
+              >
+                <KnowledgeSynthesisPanel
+                  itemId={props.itemId}
+                  itemScope={props.itemScope}
+                />
+              </div>
+            ) : null}
+          </div>
+        )}
         fullWidth
         panelClassName="knowledge-provenance-workspace-panel"
       />

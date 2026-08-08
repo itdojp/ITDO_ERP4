@@ -288,7 +288,7 @@ function VersionSummary(props: {
       <p>
         <strong>本文</strong>
       </p>
-      <div style={{ whiteSpace: 'pre-wrap' }}>{version.content}</div>
+      <div className="knowledge-provenance-content">{version.content}</div>
       <p>
         <strong>未解決の質問</strong>
       </p>
@@ -1044,7 +1044,7 @@ export function KnowledgeSynthesisPanel(props: {
                 </div>
               </dl>
               <h6>現在の本文</h6>
-              <div style={{ whiteSpace: 'pre-wrap' }}>
+              <div className="knowledge-provenance-content">
                 {detail.currentVersion.content}
               </div>
               <h6>現在の未解決の質問</h6>

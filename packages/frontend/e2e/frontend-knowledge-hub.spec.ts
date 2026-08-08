@@ -63,6 +63,23 @@ async function captureSection(locator: Locator, filename: string) {
   await locator.screenshot({ path: path.join(evidenceDir, filename) });
 }
 
+async function expectNoHorizontalOverflow(locator: Locator, context: string) {
+  const box = await locator.boundingBox();
+  expect(box, `${context}: workspace must be visible`).not.toBeNull();
+  expect(
+    box!.width,
+    `${context}: workspace must fit the viewport`,
+  ).toBeLessThanOrEqual(375);
+  const width = await locator.evaluate((element) => ({
+    client: element.clientWidth,
+    scroll: element.scrollWidth,
+  }));
+  expect(
+    width.scroll,
+    `${context}: workspace must not overflow horizontally`,
+  ).toBeLessThanOrEqual(width.client);
+}
+
 test('Knowledge Hub snapshot, annotation, conversation import, and synthesis provenance @core @knowledge-hub', async ({
   page,
   request,
@@ -161,7 +178,7 @@ test('Knowledge Hub snapshot, annotation, conversation import, and synthesis pro
   );
 
   await hub.getByRole('tab', { name: '会話・取込' }).click();
-  await hub.getByRole('tab', { name: 'JSON' }).click();
+  await hub.getByRole('tab', { name: 'JSON入力', exact: true }).click();
   const conversationInput = JSON.stringify({
     title: conversationTitle,
     provider: null,
@@ -323,17 +340,73 @@ test('Knowledge Hub snapshot, annotation, conversation import, and synthesis pro
   );
 
   await page.setViewportSize({ width: 375, height: 667 });
-  const provenanceWorkspace = hub
-    .locator('.knowledge-provenance-workspace-panel')
-    .locator('..');
-  const workspaceBox = await provenanceWorkspace.boundingBox();
-  expect(workspaceBox).not.toBeNull();
-  expect(workspaceBox!.width).toBeLessThanOrEqual(375);
-  const workspaceWidth = await provenanceWorkspace.evaluate((element) => ({
-    client: element.clientWidth,
-    scroll: element.scrollWidth,
-  }));
-  expect(workspaceWidth.scroll).toBeLessThanOrEqual(workspaceWidth.client);
+  const provenanceWorkspace = hub.locator('.knowledge-provenance-workspace');
+  const longToken = `LongSynthetic${'x'.repeat(2_048)}`;
+
+  await hub.getByRole('tab', { name: '本人annotation' }).click();
+  await annotationForm.getByLabel('新規アノテーションの内容').fill(longToken);
+  await annotationForm
+    .getByRole('button', { name: 'アノテーションを作成' })
+    .click();
+  await expect(hub.getByText(longToken, { exact: true })).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await expectNoHorizontalOverflow(provenanceWorkspace, 'annotation tab');
+
+  const longConversationTitle = `LongConversation${'t'.repeat(450)}`;
+  await hub.getByRole('tab', { name: '会話・取込' }).click();
+  await hub.getByRole('tab', { name: 'JSON入力', exact: true }).click();
+  await hub.getByLabel('JSON本文').fill(
+    JSON.stringify({
+      title: longConversationTitle,
+      provider: null,
+      model: null,
+      turns: [
+        {
+          role: 'user',
+          origin: 'user',
+          content: longToken,
+          name: null,
+          occurredAt: null,
+        },
+      ],
+    }),
+  );
+  await hub.getByRole('button', { name: '取込内容をプレビュー' }).click();
+  await expect(
+    hub.getByRole('heading', { name: '取込プレビュー' }),
+  ).toBeVisible({ timeout: actionTimeout });
+  await hub.getByRole('button', { name: '取込を確定' }).click();
+  await expect(hub.getByText(/会話を取り込みました。1ターン/)).toBeVisible({
+    timeout: actionTimeout,
+  });
+  const longConversationButton = hub
+    .getByRole('button')
+    .filter({ hasText: longConversationTitle });
+  await expect(longConversationButton).toBeVisible({ timeout: actionTimeout });
+  await longConversationButton.click();
+  await expect(
+    hub
+      .getByRole('list', { name: '会話タイムライン' })
+      .getByText(longToken, { exact: true }),
+  ).toBeVisible({ timeout: actionTimeout });
+  await expectNoHorizontalOverflow(provenanceWorkspace, 'conversation tab');
+
+  const longSynthesisTitle = `LongSynthesis${'s'.repeat(450)}`;
+  await hub.getByRole('tab', { name: 'Synthesis・結論' }).click();
+  await synthesisPanel
+    .getByLabel('タイトル', { exact: true })
+    .fill(longSynthesisTitle);
+  await synthesisPanel.getByLabel('本文', { exact: true }).fill(longToken);
+  await synthesisPanel.getByLabel('確信度（%）', { exact: true }).fill('75');
+  await synthesisPanel
+    .getByLabel('未解決の質問', { exact: true })
+    .fill(longToken);
+  await synthesisPanel.getByRole('button', { name: '統合知を作成' }).click();
+  await expect(
+    synthesisPanel.getByRole('heading', { name: longSynthesisTitle }),
+  ).toBeVisible({ timeout: actionTimeout });
+  await expectNoHorizontalOverflow(provenanceWorkspace, 'synthesis tab');
 
   const synthesisListResponse = await request.get(
     `${apiBase}/knowledge/syntheses?limit=100`,
