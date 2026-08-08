@@ -171,14 +171,14 @@ test('GET /audit-logs masks a numeric-only UUID segment without hiding public ro
               userAgent: 'node-test',
               source: 'api',
               reasonCode: null,
-              reasonText: 'Contact 09012345678 for delivery status',
+              reasonText: 'Contact 00000000000 for delivery status',
               targetTable: 'estimates',
               targetId: 'estimate-public-identity',
               createdAt: new Date('2026-03-06T00:00:00Z'),
               metadata: {
                 sendLogId,
                 recipientEmail: 'recipient@example.com',
-                phone: '09012345678',
+                phone: '00000000000',
                 provider: 'internal-provider-name',
                 credential: 'reflected-credential',
                 status: 'delivered',
@@ -215,7 +215,7 @@ test('GET /audit-logs masks a numeric-only UUID segment without hiding public ro
             const serialized = JSON.stringify(item);
             assert.doesNotMatch(serialized, /123456789012/);
             assert.doesNotMatch(serialized, /recipient@example\.com/);
-            assert.doesNotMatch(serialized, /09012345678/);
+            assert.doesNotMatch(serialized, /00000000000/);
             assert.doesNotMatch(serialized, /internal-provider-name/);
             assert.doesNotMatch(serialized, /reflected-credential/);
           } finally {
