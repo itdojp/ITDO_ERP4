@@ -47,7 +47,12 @@ export function useRoomChatMessages({
   }, [items]);
 
   useEffect(() => {
-    return () => abortRef.current?.abort();
+    return () => {
+      requestSeqRef.current += 1;
+      const controller = abortRef.current;
+      abortRef.current = null;
+      controller?.abort();
+    };
   }, []);
 
   const fetchUnreadState = useCallback(
@@ -56,7 +61,8 @@ export function useRoomChatMessages({
       options?: { preserveHighlight?: boolean; signal?: AbortSignal },
     ) => {
       const unread = await fetchRoomUnreadState(targetRoomId, options?.signal);
-      if (roomIdRef.current !== targetRoomId) return;
+      if (options?.signal?.aborted || roomIdRef.current !== targetRoomId)
+        return;
       setUnreadCount(unread.unreadCount);
       if (!options?.preserveHighlight) {
         setHighlightSince(
@@ -157,7 +163,11 @@ export function useRoomChatMessages({
         setMessage('メッセージの取得に失敗しました');
         setHasMore(false);
       } finally {
-        if (requestSeqRef.current === requestSeq) {
+        if (
+          requestSeqRef.current === requestSeq &&
+          roomIdRef.current === targetRoomId &&
+          !controller.signal.aborted
+        ) {
           setIsLoading(false);
           setIsLoadingMore(false);
         }

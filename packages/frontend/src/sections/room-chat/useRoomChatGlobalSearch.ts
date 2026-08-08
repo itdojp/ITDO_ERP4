@@ -15,7 +15,12 @@ export function useRoomChatGlobalSearch() {
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    return () => abortRef.current?.abort();
+    return () => {
+      requestSeqRef.current += 1;
+      const controller = abortRef.current;
+      abortRef.current = null;
+      controller?.abort();
+    };
   }, []);
 
   const updateGlobalQuery = useCallback((value: string) => {
@@ -83,7 +88,12 @@ export function useRoomChatGlobalSearch() {
         if (!append) setGlobalItems([]);
         setGlobalHasMore(false);
       } finally {
-        if (requestSeqRef.current === requestSeq) setGlobalLoading(false);
+        if (
+          requestSeqRef.current === requestSeq &&
+          !controller.signal.aborted
+        ) {
+          setGlobalLoading(false);
+        }
         if (abortRef.current === controller) abortRef.current = null;
       }
     },

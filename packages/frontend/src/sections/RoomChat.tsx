@@ -898,7 +898,9 @@ export const RoomChat: React.FC = () => {
 
   const addReaction = async (id: string, emoji: string) => {
     try {
-      const updated = await postMessageReaction(id, emoji);
+      const expected = items.find((item) => item.id === id);
+      if (!expected) return;
+      const updated = await postMessageReaction(expected, emoji);
       setItems((prev) =>
         prev.map((item) =>
           item.id === id ? { ...item, reactions: updated.reactions } : item,

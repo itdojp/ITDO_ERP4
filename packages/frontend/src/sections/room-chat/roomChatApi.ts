@@ -46,6 +46,17 @@ export type ChatSearchPage = {
   nextBeforeId: string | null;
 };
 
+export type ChatMessageIdentity = Pick<
+  ChatMessage,
+  'id' | 'roomId' | 'parentMessageId' | 'threadRootId'
+>;
+
+const postWithoutViewWarning = {
+  code: 'POST_WITHOUT_VIEW',
+  message:
+    '投稿後、このルームを閲覧できません。閲覧権限を管理者に確認してください。',
+} as const;
+
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   try {
     return options
@@ -64,14 +75,46 @@ function normalizedMessageOrThrow(value: unknown): ChatMessage {
   return normalized;
 }
 
-function normalizedAckRequestOrThrow(value: unknown) {
+function normalizedAckRequestOrThrow(value: unknown, requestId: string) {
   const normalized = normalizeAckRequest(value);
-  if (!normalized) throw new Error('Invalid chat ack response');
+  if (!normalized || normalized.id !== requestId) {
+    throw new Error('Invalid chat ack response');
+  }
   return normalized;
 }
 
-function normalizedPostedMessageOrThrow(value: unknown) {
+function matchesMessageIdentity(
+  message: ChatMessage,
+  expected: ChatMessageIdentity,
+): boolean {
+  return (
+    message.id === expected.id &&
+    message.roomId === expected.roomId &&
+    message.parentMessageId === expected.parentMessageId &&
+    message.threadRootId === expected.threadRootId
+  );
+}
+
+function isRootMessageForRoom(message: ChatMessage, roomId: string): boolean {
+  return (
+    message.roomId === roomId &&
+    message.parentMessageId === null &&
+    message.threadRootId === null
+  );
+}
+
+function normalizedPostedMessageOrThrow(
+  value: unknown,
+  expected: { roomId: string; parentMessageId: string | null },
+) {
   const message = normalizedMessageOrThrow(value);
+  if (
+    message.roomId !== expected.roomId ||
+    message.parentMessageId !== expected.parentMessageId ||
+    message.threadRootId !== expected.parentMessageId
+  ) {
+    throw new Error('Invalid posted chat message response');
+  }
   const record = value as { warning?: unknown };
   const warning =
     record.warning && typeof record.warning === 'object'
@@ -79,10 +122,8 @@ function normalizedPostedMessageOrThrow(value: unknown) {
       : null;
   return {
     ...message,
-    ...(warning &&
-    typeof warning.code === 'string' &&
-    typeof warning.message === 'string'
-      ? { warning: { code: warning.code, message: warning.message } }
+    ...(warning?.code === postWithoutViewWarning.code
+      ? { warning: postWithoutViewWarning }
       : {}),
   };
 }
@@ -163,11 +204,14 @@ export async function fetchRoomMessages(
   const res = signal
     ? await api<{ items?: unknown[] }>(path, { signal })
     : await api<{ items?: unknown[] }>(path);
-  return Array.isArray(res.items)
-    ? res.items
-        .map(normalizeChatMessage)
-        .filter((message): message is ChatMessage => message !== null)
-    : [];
+  if (!Array.isArray(res.items)) return [];
+  return res.items.map((item) => {
+    const message = normalizeChatMessage(item);
+    if (!message || !isRootMessageForRoom(message, roomId)) {
+      throw new Error('Invalid room message response');
+    }
+    return message;
+  });
 }
 
 export async function searchChatMessages(input: {
@@ -241,7 +285,14 @@ export async function postThreadReply(
       body: JSON.stringify(payload),
     },
   );
-  return normalizedMessageOrThrow(response);
+  const normalized = normalizedMessageOrThrow(response);
+  if (
+    normalized.parentMessageId !== rootMessageId ||
+    normalized.threadRootId !== rootMessageId
+  ) {
+    throw new Error('Invalid thread reply response');
+  }
+  return normalized;
 }
 
 export async function deleteChatMessage(
@@ -306,7 +357,10 @@ export async function postRoomMessage(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  return normalizedPostedMessageOrThrow(response);
+  return normalizedPostedMessageOrThrow(response, {
+    roomId,
+    parentMessageId: null,
+  });
 }
 
 export async function postRoomAckRequest(
@@ -330,7 +384,10 @@ export async function postRoomAckRequest(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  return normalizedPostedMessageOrThrow(response);
+  return normalizedPostedMessageOrThrow(response, {
+    roomId,
+    parentMessageId: payload.parentMessageId ?? null,
+  });
 }
 
 export async function uploadMessageAttachment(messageId: string, file: File) {
@@ -346,20 +403,30 @@ export async function downloadMessageAttachment(attachmentId: string) {
   return apiResponse(`/chat-attachments/${attachmentId}`);
 }
 
-export async function postMessageReaction(messageId: string, emoji: string) {
-  const response = await api<unknown>(`/chat-messages/${messageId}/reactions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ emoji }),
-  });
-  return normalizedMessageOrThrow(response);
+export async function postMessageReaction(
+  expected: ChatMessageIdentity,
+  emoji: string,
+) {
+  const response = await api<unknown>(
+    `/chat-messages/${expected.id}/reactions`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emoji }),
+    },
+  );
+  const normalized = normalizedMessageOrThrow(response);
+  if (!matchesMessageIdentity(normalized, expected)) {
+    throw new Error('Invalid chat reaction response');
+  }
+  return normalized;
 }
 
 export async function ackRequest(requestId: string) {
   const response = await api<unknown>(`/chat-ack-requests/${requestId}/ack`, {
     method: 'POST',
   });
-  return normalizedAckRequestOrThrow(response);
+  return normalizedAckRequestOrThrow(response, requestId);
 }
 
 export async function revokeAckRequest(requestId: string) {
@@ -369,7 +436,7 @@ export async function revokeAckRequest(requestId: string) {
       method: 'POST',
     },
   );
-  return normalizedAckRequestOrThrow(response);
+  return normalizedAckRequestOrThrow(response, requestId);
 }
 
 export async function cancelAckRequestById(requestId: string, reason?: string) {
@@ -381,7 +448,7 @@ export async function cancelAckRequestById(requestId: string, reason?: string) {
       body: JSON.stringify({ reason }),
     },
   );
-  return normalizedAckRequestOrThrow(response);
+  return normalizedAckRequestOrThrow(response, requestId);
 }
 
 export async function createPrivateGroupRoom(input: {

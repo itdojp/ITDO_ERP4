@@ -259,6 +259,7 @@ export function ChatThreadPanel({
   const [body, setBody] = useState('');
   const [tags, setTags] = useState('');
   const [mentions, setMentions] = useState<MentionTarget[]>([]);
+  const [ackGroups, setAckGroups] = useState<MentionTarget[]>([]);
   const [mentionAll, setMentionAll] = useState(false);
   const [ackMode, setAckMode] = useState(false);
   const [requiredUsers, setRequiredUsers] = useState('');
@@ -287,9 +288,10 @@ export function ChatThreadPanel({
   useEffect(() => {
     closeButtonRef.current?.focus();
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose();
+        if (!threadState.isMutating) onClose();
         return;
       }
       if (event.key !== 'Tab') return;
@@ -311,7 +313,7 @@ export function ChatThreadPanel({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, threadState.isMutating]);
 
   const mentionPayload = useMemo(() => {
     const userIds = mentions
@@ -335,6 +337,7 @@ export function ChatThreadPanel({
     setBody('');
     setTags('');
     setMentions([]);
+    setAckGroups([]);
     setMentionAll(false);
     setRequiredUsers('');
     setAckMode(false);
@@ -357,6 +360,13 @@ export function ChatThreadPanel({
           requiredUserIds: Array.from(
             new Set(parseUserIds(requiredUsers)),
           ).slice(0, 50),
+          requiredGroupIds: Array.from(
+            new Set(
+              ackGroups
+                .filter((target) => target.kind === 'group')
+                .map((target) => target.id),
+            ),
+          ).slice(0, 20),
         })
       : await threadState.postReply(payload);
     if (success) resetComposer();
@@ -386,6 +396,7 @@ export function ChatThreadPanel({
   };
 
   const thread = threadState.thread;
+  const interactionLocked = threadState.isMutating || threadState.isLoadingMore;
   return (
     <div
       role="presentation"
@@ -398,7 +409,9 @@ export function ChatThreadPanel({
         justifyContent: 'flex-end',
       }}
       onMouseDown={(event) => {
-        if (event.currentTarget === event.target) onClose();
+        if (!threadState.isMutating && event.currentTarget === event.target) {
+          onClose();
+        }
       }}
     >
       <section
@@ -438,6 +451,7 @@ export function ChatThreadPanel({
             type="button"
             className="button secondary"
             onClick={onClose}
+            disabled={threadState.isMutating}
             aria-label="スレッドを閉じる"
           >
             閉じる
@@ -459,7 +473,7 @@ export function ChatThreadPanel({
                 kind="root"
                 currentUserId={currentUserId}
                 roles={roles}
-                isMutating={threadState.isMutating}
+                isMutating={interactionLocked}
                 nowMs={nowMs}
                 renderMessageBody={renderMessageBody}
                 onReaction={(id, emoji) =>
@@ -485,7 +499,7 @@ export function ChatThreadPanel({
                   kind="reply"
                   currentUserId={currentUserId}
                   roles={roles}
-                  isMutating={threadState.isMutating}
+                  isMutating={interactionLocked}
                   nowMs={nowMs}
                   renderMessageBody={renderMessageBody}
                   onReaction={(id, emoji) =>
@@ -506,7 +520,7 @@ export function ChatThreadPanel({
                 type="button"
                 className="button secondary"
                 style={{ marginTop: 12 }}
-                disabled={threadState.isLoadingMore}
+                disabled={interactionLocked}
                 onClick={() => threadState.loadMore().catch(() => undefined)}
               >
                 {threadState.isLoadingMore
@@ -532,13 +546,10 @@ export function ChatThreadPanel({
                     onBodyChange={setBody}
                     mentions={mentions}
                     onMentionsChange={setMentions}
-                    groups={[]}
-                    onGroupsChange={() => undefined}
+                    groups={ackGroups}
+                    onGroupsChange={setAckGroups}
                     requiredUsers={[]}
                     requiredRoles={[]}
-                    attachments={[]}
-                    onAddFiles={() => undefined}
-                    onRemoveAttachment={() => undefined}
                     fetchCandidates={fetchMentionComposerCandidates}
                     onSubmit={() => submitReply().catch(() => undefined)}
                     onCancel={resetComposer}
@@ -554,7 +565,7 @@ export function ChatThreadPanel({
                     }
                     cancelLabel="クリア"
                     requiredSectionLabel="確認対象"
-                    disabled={threadState.isMutating}
+                    disabled={interactionLocked}
                     limits={{
                       maxBodyLength: 2000,
                       maxMentions: 70,
@@ -569,7 +580,7 @@ export function ChatThreadPanel({
                         onChange={(event) =>
                           setMentionAll(event.target.checked)
                         }
-                        disabled={threadState.isMutating}
+                        disabled={interactionLocked}
                       />{' '}
                       全員にメンション (@all)
                     </label>
@@ -580,7 +591,7 @@ export function ChatThreadPanel({
                       type="text"
                       value={tags}
                       onChange={(event) => setTags(event.target.value)}
-                      disabled={threadState.isMutating}
+                      disabled={interactionLocked}
                     />
                   </label>
                   <label style={{ display: 'block', marginTop: 8 }}>
@@ -588,7 +599,7 @@ export function ChatThreadPanel({
                       type="checkbox"
                       checked={ackMode}
                       onChange={(event) => setAckMode(event.target.checked)}
-                      disabled={threadState.isMutating}
+                      disabled={interactionLocked}
                     />{' '}
                     確認依頼として返信
                   </label>
@@ -601,7 +612,7 @@ export function ChatThreadPanel({
                         onChange={(event) =>
                           setRequiredUsers(event.target.value)
                         }
-                        disabled={threadState.isMutating}
+                        disabled={interactionLocked}
                         aria-describedby="chat-thread-ack-help"
                       />
                       <span

@@ -20,8 +20,12 @@ vi.mock('../../ui', () => ({
     onSubmit,
     onCancel,
     placeholder,
+    groupPlaceholder,
     submitLabel,
     cancelLabel,
+    groups,
+    onGroupsChange,
+    attachments,
     disabled,
   }: {
     body: string;
@@ -29,8 +33,14 @@ vi.mock('../../ui', () => ({
     onSubmit: () => void;
     onCancel: () => void;
     placeholder: string;
+    groupPlaceholder: string;
     submitLabel: string;
     cancelLabel: string;
+    groups: { id: string; kind: 'group'; label: string }[];
+    onGroupsChange: (
+      value: { id: string; kind: 'group'; label: string }[],
+    ) => void;
+    attachments?: unknown[];
     disabled?: boolean;
   }) => (
     <div>
@@ -40,6 +50,31 @@ vi.mock('../../ui', () => ({
         onChange={(event) => onBodyChange(event.target.value)}
         disabled={disabled}
       />
+      <input
+        role="combobox"
+        aria-label={groupPlaceholder}
+        disabled={disabled}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') event.preventDefault();
+        }}
+      />
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() =>
+          onGroupsChange([
+            ...groups,
+            { id: 'group-1', kind: 'group', label: 'Group 1' },
+          ])
+        }
+      >
+        合成グループを追加
+      </button>
+      {attachments !== undefined && (
+        <button type="button" aria-label="ファイルを追加">
+          ファイルを追加
+        </button>
+      )}
       <button type="button" onClick={onSubmit} disabled={disabled}>
         {submitLabel}
       </button>
@@ -222,6 +257,35 @@ describe('ChatThreadPanel', () => {
     });
   });
 
+  it('keeps the read boundary before the newest timestamp while another reply page exists', async () => {
+    api.mockImplementation(async (path: string) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.pathname === '/chat-rooms/room-1/mention-candidates') return {};
+      if (url.pathname.endsWith('/thread')) {
+        return { ...thread(), nextCursor: 'page-2' };
+      }
+      if (url.pathname === '/chat-rooms/room-1/read') return {};
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+
+    renderPanel();
+    await screen.findByText('reply-1 body');
+    await waitFor(() =>
+      expect(
+        api.mock.calls.some(([path]) =>
+          String(path).endsWith('/chat-rooms/room-1/read'),
+        ),
+      ).toBe(true),
+    );
+    const read = api.mock.calls.find(([path]) =>
+      String(path).endsWith('/chat-rooms/room-1/read'),
+    );
+    expect(JSON.parse(String(read?.[1]?.body))).toEqual({
+      through: '2026-08-09T00:00:00.000Z',
+      throughMessageId: 'root-1',
+    });
+  });
+
   it('supports reply reaction, ack, and logical delete without exposing deleted content', async () => {
     let current = thread();
     api.mockImplementation(async (path: string, init?: RequestInit) => {
@@ -237,7 +301,19 @@ describe('ChatThreadPanel', () => {
         });
       }
       if (url.pathname === '/chat-ack-requests/ack-1/ack') {
-        return { id: 'ack-1' };
+        return {
+          id: 'ack-1',
+          requiredUserIds: ['demo-user'],
+          dueAt: null,
+          canceledAt: null,
+          canceledBy: null,
+          acks: [
+            {
+              userId: 'demo-user',
+              ackedAt: '2026-08-09T00:02:00.000Z',
+            },
+          ],
+        };
       }
       if (
         url.pathname === '/chat-messages/reply-1' &&
@@ -268,16 +344,36 @@ describe('ChatThreadPanel', () => {
         expect.objectContaining({ method: 'POST' }),
       ),
     );
+    await waitFor(() =>
+      expect(
+        within(
+          document.querySelector<HTMLElement>(
+            '[data-thread-message-id="reply-1"]',
+          ) as HTMLElement,
+        ).getByRole('button', { name: 'replyへ👍リアクション' }),
+      ).toHaveTextContent('1'),
+    );
 
-    fireEvent.click(within(replyCard).getByRole('button', { name: 'OK' }));
+    fireEvent.click(
+      within(
+        document.querySelector<HTMLElement>(
+          '[data-thread-message-id="reply-1"]',
+        ) as HTMLElement,
+      ).getByRole('button', { name: 'OK' }),
+    );
     await waitFor(() =>
       expect(api).toHaveBeenCalledWith('/chat-ack-requests/ack-1/ack', {
         method: 'POST',
       }),
     );
+    expect(await screen.findByText('確認しました')).toBeInTheDocument();
 
     fireEvent.click(
-      within(replyCard).getByRole('button', { name: '返信を削除' }),
+      within(
+        document.querySelector<HTMLElement>(
+          '[data-thread-message-id="reply-1"]',
+        ) as HTMLElement,
+      ).getByRole('button', { name: '返信を削除' }),
     );
     expect(
       await screen.findByRole('status', { name: '削除済みの返信' }),
@@ -313,6 +409,232 @@ describe('ChatThreadPanel', () => {
     expect(screen.queryByRole('textbox', { name: '返信を入力' })).toBeNull();
 
     fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the panel open when a nested combobox consumes Escape', async () => {
+    const onClose = vi.fn();
+    api.mockImplementation(async (path: string) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.pathname === '/chat-rooms/room-1/mention-candidates') return {};
+      if (url.pathname.endsWith('/thread')) return thread();
+      if (url.pathname === '/chat-rooms/room-1/read') return {};
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+
+    renderPanel({ onClose });
+    await screen.findByText('reply-1 body');
+    fireEvent.keyDown(
+      screen.getByRole('combobox', { name: '確認対象グループ' }),
+      { key: 'Escape' },
+    );
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('posts selected acknowledgement groups and does not expose an attachment control', async () => {
+    const created = message('reply-group', {
+      parentMessageId: 'root-1',
+      threadRootId: 'root-1',
+      userId: 'demo-user',
+      body: 'group acknowledgement',
+      createdAt: '2026-08-09T00:02:00.000Z',
+      ackRequest: {
+        id: 'ack-group',
+        requiredUserIds: [],
+        dueAt: null,
+        canceledAt: null,
+        canceledBy: null,
+        acks: [],
+      },
+    });
+    api.mockImplementation(async (path: string, init?: RequestInit) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.pathname === '/chat-rooms/room-1/mention-candidates') return {};
+      if (url.pathname.endsWith('/thread')) return thread();
+      if (url.pathname === '/chat-rooms/room-1/read') return {};
+      if (
+        url.pathname === '/chat-rooms/room-1/ack-requests' &&
+        init?.method === 'POST'
+      ) {
+        return created;
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+
+    renderPanel();
+    await screen.findByText('reply-1 body');
+    expect(screen.queryByRole('button', { name: /ファイル/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '合成グループを追加' }));
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: '確認依頼として返信' }),
+    );
+    fireEvent.change(screen.getByRole('textbox', { name: '返信を入力' }), {
+      target: { value: 'group acknowledgement' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '確認依頼として返信' }));
+
+    await screen.findByText('確認依頼付きの返信を投稿しました');
+    const post = api.mock.calls.find(
+      ([path, init]) =>
+        String(path) === '/chat-rooms/room-1/ack-requests' &&
+        init?.method === 'POST',
+    );
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual(
+      expect.objectContaining({ requiredGroupIds: ['group-1'] }),
+    );
+  });
+
+  it.each([
+    { mode: 'standard' as const, label: '返信' },
+    { mode: 'ack' as const, label: '確認依頼として返信' },
+  ])(
+    'keeps a concurrently deleted reply redacted after $mode post refresh',
+    async ({ mode, label }) => {
+      const created = message('reply-race', {
+        parentMessageId: 'root-1',
+        threadRootId: 'root-1',
+        userId: 'demo-user',
+        body: 'must remain redacted',
+        createdAt: '2026-08-09T00:02:00.000Z',
+        ...(mode === 'ack'
+          ? {
+              ackRequest: {
+                id: 'ack-race',
+                requiredUserIds: ['demo-user'],
+                dueAt: null,
+                canceledAt: null,
+                canceledBy: null,
+                acks: [],
+              },
+            }
+          : {}),
+      });
+      const initial = thread();
+      const refreshed = {
+        ...thread(),
+        replies: [
+          ...thread().replies,
+          message('reply-race', {
+            parentMessageId: 'root-1',
+            threadRootId: 'root-1',
+            userId: 'demo-user',
+            body: null,
+            createdAt: '2026-08-09T00:02:00.000Z',
+            deletedAt: '2026-08-09T00:03:00.000Z',
+            deletedReason: 'admin_moderation',
+          }),
+        ],
+        replyCount: 2,
+        lastReplyAt: '2026-08-09T00:02:00.000Z',
+      };
+      api.mockImplementation(async (path: string, init?: RequestInit) => {
+        const url = new URL(path, 'http://localhost');
+        if (url.pathname === '/chat-rooms/room-1/mention-candidates') return {};
+        if (url.pathname === '/chat-messages/reply-1/thread') return initial;
+        if (url.pathname === '/chat-messages/root-1/thread') return refreshed;
+        if (url.pathname === '/chat-rooms/room-1/read') return {};
+        if (
+          mode === 'standard' &&
+          url.pathname === '/chat-messages/root-1/replies' &&
+          init?.method === 'POST'
+        ) {
+          return created;
+        }
+        if (
+          mode === 'ack' &&
+          url.pathname === '/chat-rooms/room-1/ack-requests' &&
+          init?.method === 'POST'
+        ) {
+          return created;
+        }
+        throw new Error(`Unhandled api path: ${path}`);
+      });
+
+      renderPanel();
+      await screen.findByText('reply-1 body');
+      if (mode === 'ack') {
+        fireEvent.click(
+          screen.getByRole('checkbox', { name: '確認依頼として返信' }),
+        );
+        fireEvent.change(screen.getByLabelText(/確認対象ユーザーID/), {
+          target: { value: 'demo-user' },
+        });
+      }
+      fireEvent.change(screen.getByRole('textbox', { name: '返信を入力' }), {
+        target: { value: 'must remain redacted' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: label }));
+
+      expect(
+        await screen.findByRole('status', { name: '削除済みの返信' }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText('must remain redacted')).toBeNull();
+    },
+  );
+
+  it('prevents closing during a committed root deletion and redacts the parent timeline', async () => {
+    const onClose = vi.fn();
+    const onRootUpdated = vi.fn();
+    let resolveDelete: (() => void) | null = null;
+    const ownedThread = (deletedRoot = false) => {
+      const value = thread({ deletedRoot });
+      return { ...value, root: { ...value.root, userId: 'demo-user' } };
+    };
+    let current = ownedThread();
+    const pendingDelete = new Promise<void>((resolve) => {
+      resolveDelete = resolve;
+    });
+    api.mockImplementation(async (path: string, init?: RequestInit) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.pathname === '/chat-rooms/room-1/mention-candidates') return {};
+      if (url.pathname.endsWith('/thread')) return current;
+      if (url.pathname === '/chat-rooms/room-1/read') return {};
+      if (
+        url.pathname === '/chat-messages/root-1' &&
+        init?.method === 'DELETE'
+      ) {
+        await pendingDelete;
+        current = ownedThread(true);
+        return {};
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    renderPanel({ onClose, onRootUpdated });
+    await screen.findByText('root-1 body');
+    const rootCard = document.querySelector<HTMLElement>(
+      '[data-thread-message-id="root-1"]',
+    );
+    expect(rootCard).not.toBeNull();
+    fireEvent.click(
+      within(rootCard as HTMLElement).getByRole('button', {
+        name: '親メッセージを削除',
+      }),
+    );
+    const closeButton = screen.getByRole('button', {
+      name: 'スレッドを閉じる',
+    });
+    await waitFor(() => expect(closeButton).toBeDisabled());
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.mouseDown(
+      screen.getByRole('dialog').parentElement as HTMLElement,
+    );
+    expect(onClose).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveDelete?.();
+      await pendingDelete;
+    });
+    expect(
+      await screen.findByRole('status', { name: '削除済みの親メッセージ' }),
+    ).toBeInTheDocument();
+    expect(onRootUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'root-1', deleted: true, body: null }),
+    );
+    await waitFor(() => expect(closeButton).toBeEnabled());
+    fireEvent.click(closeButton);
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -392,6 +714,104 @@ describe('ChatThreadPanel', () => {
     expect(
       screen.queryByRole('button', { name: '返信をさらに読み込む' }),
     ).toBeNull();
+  });
+
+  it('does not start reply pagination while a mutation is in flight', async () => {
+    let resolveReaction: ((value: Record<string, unknown>) => void) | undefined;
+    const pendingReaction = new Promise<Record<string, unknown>>((resolve) => {
+      resolveReaction = resolve;
+    });
+    const initial = { ...thread(), nextCursor: 'page-2' };
+    api.mockImplementation(async (path: string, init?: RequestInit) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.pathname === '/chat-rooms/room-1/mention-candidates') return {};
+      if (url.pathname.endsWith('/thread')) return initial;
+      if (url.pathname === '/chat-rooms/room-1/read') return {};
+      if (
+        url.pathname === '/chat-messages/reply-1/reactions' &&
+        init?.method === 'POST'
+      ) {
+        return pendingReaction;
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+
+    renderPanel();
+    const reactionButton = await screen.findByRole('button', {
+      name: 'replyへ👍リアクション',
+    });
+    fireEvent.click(reactionButton);
+    const loadMoreButton = screen.getByRole('button', {
+      name: '返信をさらに読み込む',
+    });
+    await waitFor(() => expect(loadMoreButton).toBeDisabled());
+    fireEvent.click(loadMoreButton);
+    expect(
+      api.mock.calls.filter(([path]) =>
+        new URL(String(path), 'http://localhost').searchParams.has('cursor'),
+      ),
+    ).toHaveLength(0);
+
+    await act(async () => {
+      resolveReaction?.(
+        message('reply-1', {
+          parentMessageId: 'root-1',
+          threadRootId: 'root-1',
+          reactions: { '👍': 1 },
+        }),
+      );
+      await pendingReaction;
+    });
+    await waitFor(() => expect(loadMoreButton).toBeEnabled());
+  });
+
+  it('does not start a mutation while reply pagination is in flight', async () => {
+    let resolvePage: ((value: ReturnType<typeof thread>) => void) | undefined;
+    const pendingPage = new Promise<ReturnType<typeof thread>>((resolve) => {
+      resolvePage = resolve;
+    });
+    const initial = { ...thread(), nextCursor: 'page-2' };
+    api.mockImplementation((path: string, init?: RequestInit) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.pathname === '/chat-rooms/room-1/mention-candidates') {
+        return Promise.resolve({});
+      }
+      if (url.pathname.endsWith('/thread') && url.searchParams.has('cursor')) {
+        return pendingPage;
+      }
+      if (url.pathname.endsWith('/thread')) return Promise.resolve(initial);
+      if (url.pathname === '/chat-rooms/room-1/read') {
+        return Promise.resolve({});
+      }
+      if (
+        url.pathname === '/chat-messages/reply-1/reactions' &&
+        init?.method === 'POST'
+      ) {
+        throw new Error('mutation must not start during pagination');
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+
+    renderPanel();
+    const reactionButton = await screen.findByRole('button', {
+      name: 'replyへ👍リアクション',
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: '返信をさらに読み込む' }),
+    );
+    await waitFor(() => expect(reactionButton).toBeDisabled());
+    fireEvent.click(reactionButton);
+    expect(
+      api.mock.calls.filter(
+        ([path]) => String(path) === '/chat-messages/reply-1/reactions',
+      ),
+    ).toHaveLength(0);
+
+    await act(async () => {
+      resolvePage?.({ ...thread(), replies: [], nextCursor: null });
+      await pendingPage;
+    });
+    await waitFor(() => expect(reactionButton).toBeEnabled());
   });
 
   it('keeps the thread and warns without raw error details when post-refresh fails', async () => {
@@ -634,6 +1054,41 @@ describe('ChatThreadPanel', () => {
     ).toHaveLength(initialReadWrites);
   });
 
+  it('aborts and invalidates an in-flight thread load on unmount', async () => {
+    let resolveThread: ((value: ReturnType<typeof thread>) => void) | null =
+      null;
+    let signal: AbortSignal | undefined;
+    const pending = new Promise<ReturnType<typeof thread>>((resolve) => {
+      resolveThread = resolve;
+    });
+    api.mockImplementation((path: string, init?: RequestInit) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.pathname === '/chat-rooms/room-1/mention-candidates') {
+        return Promise.resolve({});
+      }
+      if (url.pathname.endsWith('/thread')) {
+        signal = init?.signal ?? undefined;
+        return pending;
+      }
+      throw new Error(`Unexpected post-unmount request: ${path}`);
+    });
+
+    const rendered = renderPanel();
+    await waitFor(() => expect(signal).toBeDefined());
+    rendered.unmount();
+    expect(signal?.aborted).toBe(true);
+
+    await act(async () => {
+      resolveThread?.(thread());
+      await pending;
+    });
+    expect(
+      api.mock.calls.some(
+        ([path]) => String(path) === '/chat-rooms/room-1/read',
+      ),
+    ).toBe(false);
+  });
+
   it('does not merge a reply response whose room or root identity is inconsistent', async () => {
     const mismatchedReply = message('reply-2', {
       roomId: 'room-2',
@@ -665,11 +1120,11 @@ describe('ChatThreadPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '返信' }));
 
     expect(
-      await screen.findByText(
-        '投稿結果を確認できません。再送せず再読み込みしてください',
-      ),
+      await screen.findByText('スレッドを更新できませんでした'),
     ).toBeInTheDocument();
-    expect(screen.queryByText('must not be rendered')).toBeNull();
+    expect(
+      document.querySelector('[data-thread-message-id="reply-2"]'),
+    ).toBeNull();
     expect(
       api.mock.calls.some(
         ([path]) => String(path) === '/chat-rooms/room-2/read',

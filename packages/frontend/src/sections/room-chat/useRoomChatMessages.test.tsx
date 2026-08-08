@@ -160,6 +160,36 @@ describe('useRoomChatMessages', () => {
     ).toBe(false);
   });
 
+  it('does not guess a read boundary from same-millisecond random IDs', async () => {
+    api.mockImplementation(async (path: string) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.pathname.endsWith('/messages')) {
+        return {
+          items: [
+            message('z-random-id', 'room-1'),
+            message('a-random-id', 'room-1'),
+          ],
+        };
+      }
+      if (url.pathname.endsWith('/unread')) {
+        return { unreadCount: 2, lastReadAt: null };
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+    const { result } = renderHook(() =>
+      useRoomChatMessages({ roomId: 'room-1', filterQuery: '', filterTag: '' }),
+    );
+
+    await act(async () => {
+      await result.current.loadMessages();
+    });
+
+    expect(result.current.items).toHaveLength(2);
+    expect(
+      api.mock.calls.some(([path]) => String(path).endsWith('/read')),
+    ).toBe(false);
+  });
+
   it('does not let a stale room response overwrite the current room messages', async () => {
     const room1 = deferred<{ items: ReturnType<typeof message>[] }>();
     const room2 = deferred<{ items: ReturnType<typeof message>[] }>();
@@ -224,6 +254,33 @@ describe('useRoomChatMessages', () => {
     expect(result.current.items).toEqual([message('m2', 'room-2')]);
     expect(result.current.isLoading).toBe(false);
     expect(result.current.isLoadingMore).toBe(false);
+  });
+
+  it('aborts and invalidates an in-flight message request on unmount', async () => {
+    const pending = deferred<{ items: ReturnType<typeof message>[] }>();
+    let signal: AbortSignal | undefined;
+    api.mockImplementation((path: string, init?: RequestInit) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.pathname.endsWith('/messages')) {
+        signal = init?.signal ?? undefined;
+        return pending.promise;
+      }
+      throw new Error(`Unexpected post-unmount request: ${path}`);
+    });
+    const { result, unmount } = renderHook(() =>
+      useRoomChatMessages({ roomId: 'room-1', filterQuery: '', filterTag: '' }),
+    );
+
+    const load = result.current.loadMessages();
+    await waitFor(() => expect(signal).toBeDefined());
+    unmount();
+    expect(signal?.aborted).toBe(true);
+
+    pending.resolve({ items: [message('stale', 'room-1')] });
+    await act(async () => {
+      await load;
+    });
+    expect(api).toHaveBeenCalledTimes(1);
   });
 
   it('reports load failures without retaining pagination state', async () => {

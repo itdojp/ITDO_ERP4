@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useRoomChatGlobalSearch } from './useRoomChatGlobalSearch';
 
@@ -189,5 +189,27 @@ describe('useRoomChatGlobalSearch', () => {
       await oldSearch;
     });
     expect(result.current.globalItems).toEqual([item('new-result')]);
+  });
+
+  it('aborts and invalidates an in-flight search on unmount', async () => {
+    const pending = deferred<{ items: ReturnType<typeof item>[] }>();
+    let signal: AbortSignal | undefined;
+    api.mockImplementation((_path: string, init?: RequestInit) => {
+      signal = init?.signal ?? undefined;
+      return pending.promise;
+    });
+    const { result, unmount } = renderHook(() => useRoomChatGlobalSearch());
+    act(() => result.current.setGlobalQuery('pending'));
+
+    const search = result.current.loadGlobalSearch();
+    await waitFor(() => expect(signal).toBeDefined());
+    unmount();
+    expect(signal?.aborted).toBe(true);
+
+    pending.resolve({ items: [item('stale')] });
+    await act(async () => {
+      await search;
+    });
+    expect(api).toHaveBeenCalledTimes(1);
   });
 });

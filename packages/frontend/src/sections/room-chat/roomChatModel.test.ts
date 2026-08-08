@@ -242,19 +242,70 @@ describe('roomChatModel', () => {
     ).toBeNull();
   });
 
-  it('uses timestamp and message id as the deterministic read boundary', () => {
+  it('uses the newest unique timestamp as the deterministic read boundary', () => {
     const root = normalizeChatMessage(message('root-1'));
     const reply = normalizeChatMessage(
       message('z-reply', {
         parentMessageId: 'root-1',
         threadRootId: 'root-1',
+        createdAt: '2026-08-09T00:00:01.000Z',
       }),
     );
     expect(
       root && reply ? newestVisibleMessageBoundary([root, reply]) : null,
     ).toEqual({
-      through: '2026-08-09T00:00:00.000Z',
+      through: '2026-08-09T00:00:01.000Z',
       throughMessageId: 'z-reply',
     });
+  });
+
+  it('does not order same-millisecond messages by random UUID', () => {
+    const older = normalizeChatMessage(
+      message('older', { createdAt: '2026-08-08T23:59:59.999Z' }),
+    );
+    const first = normalizeChatMessage(message('z-random-id'));
+    const second = normalizeChatMessage(
+      message('a-random-id', {
+        parentMessageId: 'z-random-id',
+        threadRootId: 'z-random-id',
+      }),
+    );
+    expect(
+      older && first && second
+        ? newestVisibleMessageBoundary([older, first, second])
+        : null,
+    ).toEqual({
+      through: '2026-08-08T23:59:59.999Z',
+      throughMessageId: 'older',
+    });
+    expect(
+      first && second ? newestVisibleMessageBoundary([first, second]) : null,
+    ).toBeNull();
+  });
+
+  it('stays before the newest timestamp while a later thread page exists', () => {
+    const older = normalizeChatMessage(
+      message('older', { createdAt: '2026-08-09T00:00:00.000Z' }),
+    );
+    const pageBoundary = normalizeChatMessage(
+      message('page-boundary', { createdAt: '2026-08-09T00:00:01.000Z' }),
+    );
+    expect(
+      older && pageBoundary
+        ? newestVisibleMessageBoundary([older, pageBoundary], {
+            excludeNewestTimestamp: true,
+          })
+        : null,
+    ).toEqual({
+      through: '2026-08-09T00:00:00.000Z',
+      throughMessageId: 'older',
+    });
+    expect(
+      pageBoundary
+        ? newestVisibleMessageBoundary([pageBoundary], {
+            excludeNewestTimestamp: true,
+          })
+        : null,
+    ).toBeNull();
   });
 });

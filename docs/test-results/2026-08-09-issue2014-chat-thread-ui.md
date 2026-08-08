@@ -16,32 +16,36 @@
 - replyの横断検索結果は親threadへ解決する。
 - API responseはallowlist normalizerで再構築し、unknown/provider/internal fieldをstateへ保持しない。
 - thread/search/reply responseは期待room・root・relationへbindし、不整合responseをstate/read mutationへ反映しない。
+- root timeline、root post、reaction、ack responseも要求room・message・request・root topologyへbindし、不整合な2xx responseをfail closedにする。
 - Chat API境界はshared clientの診断Errorを固定文言へ変換し、添付取得失敗はstatusだけを保持する。raw response bodyやrequest pathをbrowser console/E2E logへ複製しない。
+- 成功responseのwarningは既知の `POST_WITHOUT_VIEW` codeだけをfrontend所有の固定文言へ変換し、backend由来の任意messageを表示しない。
 - logical delete後は本文、tag、mention、reaction、ack、attachmentを表示しない。
-- timeline/threadとも、表示済みの最新 `(createdAt, messageId)` だけをroom read boundaryとして送信する。
+- timeline/threadとも、表示済みの最新 `(createdAt, messageId)` だけをroom read boundaryとして送信する。同一ミリ秒に複数messageがある場合はrandom UUIDで内部到着順を推測せず、直前の一意な表示時刻まで保守的に進める。threadに後続pageがある場合は、page境界の同一ミリ秒replyを跨がないよう現在pageの最新時刻も除外する。
+- thread replyの確認対象グループはcontrolled stateから`requiredGroupIds`へ接続し、未実装のreply添付操作は表示しない。
+- paginationとmutationを相互排他にし、後続pageとmutation refreshの競合による表示欠落を防ぐ。候補comboboxが消費した`Escape`ではpanelを閉じない。
 - global searchはserverの `(nextBefore, nextBeforeId)` を使い、stale requestをabort/破棄する。
 
 ## 自動テスト
 
 未実行項目を成功として扱わない。`release-readiness` はclean checkoutのexact headで実行し、repo-side gateと外部Go依存を区別する。
 
-| 検証                                     | 結果   | 証跡／補足                                                                         |
-| ---------------------------------------- | ------ | ---------------------------------------------------------------------------------- |
-| focused frontend unit                    | PASS   | 6 files / 44 tests                                                                 |
-| frontend full                            | PASS   | 92 files / 583 tests                                                               |
-| UI core coverage                         | PASS   | statements 70.65%、branches 63.81%、functions 69.95%、lines 73.10%（閾値変更なし） |
-| frontend build budget                    | PASS   | initial JS 516.3 KiB / gzip 157.8 KiB                                              |
-| backend full                             | PASS   | 2,040 tests                                                                        |
-| focused real-backend E2E                 | PASS   | `frontend-chat-thread.spec.ts` 1/1（core/full両scopeで成功）                       |
-| core E2E                                 | PASS   | 107 passed                                                                         |
-| full E2E                                 | PASS   | 153 passed / 34 expected conditional skips                                         |
-| PostgreSQL 15 integration                | PASS   | reply pagination、ACL、search、unread、ack、logical delete、raceを含む             |
-| old-application compatibility            | PASS   | baseline `4b3196a...`、old response/write/data保持                                 |
-| OpenAPI export / breaking diff           | PASS   | checked-in OpenAPIとの差分なし                                                     |
-| bounded-context / docs / image links     | PASS   | dependency 0 violation、coverage PASS、130 image links                             |
-| audit / secret scan                      | PASS   | npm audit high/critical 0、tracked-file secret scan 0（最終標準gateでも再確認）    |
-| lint / format / typecheck / build / test | PASS   | backend 2,040 / frontend 583、全標準gate成功                                       |
-| release-readiness core                   | PASS   | clean exact head、29/29 checks、core E2E 107/107（repo-side readiness）            |
+| 検証                                     | 結果 | 証跡／補足                                                                         |
+| ---------------------------------------- | ---- | ---------------------------------------------------------------------------------- |
+| focused frontend unit                    | PASS | 6 files / 62 tests                                                                 |
+| frontend full                            | PASS | 92 files / 601 tests                                                               |
+| UI core coverage                         | PASS | statements 70.93%、branches 64.14%、functions 70.28%、lines 73.43%（閾値変更なし） |
+| frontend build budget                    | PASS | initial JS 516.3 KiB / gzip 157.8 KiB                                              |
+| backend full                             | PASS | 2,040 tests                                                                        |
+| focused real-backend E2E                 | PASS | `frontend-chat-thread.spec.ts` 1/1（core/full両scopeで成功）                       |
+| core E2E                                 | PASS | 107 passed                                                                         |
+| full E2E                                 | PASS | 153 passed / 34 expected conditional skips                                         |
+| PostgreSQL 15 integration                | PASS | reply pagination、ACL、search、unread、ack、logical delete、raceを含む             |
+| old-application compatibility            | PASS | baseline `4b3196a...`、old response/write/data保持                                 |
+| OpenAPI export / breaking diff           | PASS | checked-in OpenAPIとの差分なし                                                     |
+| bounded-context / docs / image links     | PASS | dependency 0 violation、coverage PASS、130 image links                             |
+| audit / secret scan                      | PASS | npm audit high/critical 0、tracked-file secret scan 0（最終標準gateでも再確認）    |
+| lint / format / typecheck / build / test | PASS | backend 2,040 / frontend 601、全標準gate成功                                       |
+| release-readiness core                   | PASS | clean exact head、29/29 checks、core E2E 107/107（repo-side readiness）            |
 
 ## Real-backend E2E matrix
 
@@ -73,8 +77,13 @@
 - raw backend error body、parser stack、provider URL/key、unknown response fieldをUIへ表示しない。
 - mutation成功後のrefresh failureでは読み込み済みstateを保持し、「再送せず再読み込み」を表示する。
 - 後続pageのreaction/ackはmutation responseを対象messageへ局所適用し、先頭page refreshでstale化させない。
+- POST後のfresh refreshに同一replyの論理削除が含まれる場合はfresh content-free representationを優先し、POST response本文を再表示しない。
 - root削除成功時はrefresh失敗時も親timelineへcontent-freeな削除済み状態を通知する。
+- mutation中はclose button、Escape、backdrop closeを無効化し、commit結果の親timeline反映前にpanelを閉じない。
 - panel close/unmount後は完了したmutationから旧threadのrefresh/read副作用を開始しない。
+- 同一ミリ秒の表示messageはUUID辞書順を既読high-waterとして使用せず、曖昧な時刻や未取得pageと接する最新時刻を跨いだ既読更新を行わない。
+- paginationとmutationは相互排他とし、どちらかのin-flight中に他方のAPI mutation/queryを開始しない。
+- 確認対象グループは送信payloadへ接続し、未実装のreply添付pickerを操作可能に見せない。nested comboboxが`Escape`を消費した場合はdraftとpanelを維持する。
 - deleted message contentをclient state/renderから除去する。
 - 新規dependencyなし。外部API・credential・provider cutoverなし。
 

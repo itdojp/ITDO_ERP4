@@ -102,7 +102,15 @@ describe('roomChatApi command boundaries', () => {
       body: 'ack me',
       requiredUserIds: ['u1'],
     });
-    await postMessageReaction('m1', '👍');
+    await postMessageReaction(
+      {
+        id: 'm1',
+        roomId: 'room-1',
+        parentMessageId: null,
+        threadRootId: null,
+      },
+      '👍',
+    );
     await ackRequest('ack-1');
     await previewRoomAckTargets('room-1', {
       requiredUserIds: ['u1'],
@@ -147,6 +155,98 @@ describe('roomChatApi command boundaries', () => {
       notifyMentions: true,
       muteUntil: null,
     });
+  });
+
+  it('rejects wrong-room and reply rows from the root timeline', async () => {
+    api
+      .mockResolvedValueOnce({
+        items: [message('wrong-room', { roomId: 'room-2' })],
+      })
+      .mockResolvedValueOnce({
+        items: [
+          message('reply-1', {
+            parentMessageId: 'root-1',
+            threadRootId: 'root-1',
+          }),
+        ],
+      });
+
+    await expect(fetchRoomMessages('room-1', { limit: 50 })).rejects.toThrow(
+      'Invalid room message response',
+    );
+    await expect(fetchRoomMessages('room-1', { limit: 50 })).rejects.toThrow(
+      'Invalid room message response',
+    );
+  });
+
+  it('binds post, reaction, and ack responses to their requested identity', async () => {
+    api
+      .mockResolvedValueOnce(message('wrong-room', { roomId: 'room-2' }))
+      .mockResolvedValueOnce(
+        message('wrong-reply', {
+          parentMessageId: 'other-root',
+          threadRootId: 'other-root',
+        }),
+      )
+      .mockResolvedValueOnce(message('other-message'))
+      .mockResolvedValueOnce({ id: 'other-ack' });
+
+    await expect(postRoomMessage('room-1', { body: 'root' })).rejects.toThrow(
+      'Invalid posted chat message response',
+    );
+    await expect(
+      postRoomAckRequest('room-1', {
+        body: 'reply',
+        parentMessageId: 'root-1',
+      }),
+    ).rejects.toThrow('Invalid posted chat message response');
+    await expect(
+      postMessageReaction(
+        {
+          id: 'expected-message',
+          roomId: 'room-1',
+          parentMessageId: null,
+          threadRootId: null,
+        },
+        '👍',
+      ),
+    ).rejects.toThrow('Invalid chat reaction response');
+    await expect(ackRequest('ack-1')).rejects.toThrow(
+      'Invalid chat ack response',
+    );
+  });
+
+  it('maps only the known warning code to a frontend-owned fixed message', async () => {
+    api
+      .mockResolvedValueOnce({
+        ...message('m1'),
+        warning: {
+          code: 'POST_WITHOUT_VIEW',
+          message: 'providerKey=secret https://internal.invalid',
+        },
+      })
+      .mockResolvedValueOnce({
+        ...message('m2'),
+        warning: {
+          code: 'UNKNOWN_INTERNAL_WARNING',
+          message: 'providerKey=secret https://internal.invalid',
+        },
+      });
+
+    await expect(postRoomMessage('room-1', { body: 'known' })).resolves.toEqual(
+      expect.objectContaining({
+        warning: {
+          code: 'POST_WITHOUT_VIEW',
+          message:
+            '投稿後、このルームを閲覧できません。閲覧権限を管理者に確認してください。',
+        },
+      }),
+    );
+    const unknown = await postRoomMessage('room-1', { body: 'unknown' });
+    expect(unknown).not.toHaveProperty('warning');
+    expect(JSON.stringify(unknown)).not.toMatch(
+      /providerKey|internal\.invalid|secret/,
+    );
   });
 
   it('uses bounded thread, reply, delete, read, and search contracts', async () => {

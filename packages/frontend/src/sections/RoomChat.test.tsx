@@ -587,6 +587,48 @@ describe('RoomChat', () => {
     });
   });
 
+  it('does not display an unknown success warning or its backend-owned details', async () => {
+    const postedMessages: Array<{ roomId: string; body: unknown }> = [];
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' })],
+      messagesByRoom: { 'room-1': [] },
+      postedMessages,
+      postMessageResponse: {
+        ...makeMessage({
+          id: 'posted-warning',
+          roomId: 'room-1',
+          body: 'warning fixture',
+        }),
+        warning: {
+          code: 'UNKNOWN_INTERNAL_WARNING',
+          message: 'providerKey=secret https://internal.invalid',
+        },
+      },
+    });
+
+    render(<RoomChat />);
+    const roomSelect = screen.getByRole('combobox', { name: 'ルーム' });
+    fireEvent.change(roomSelect, {
+      target: { value: 'room-1' },
+    });
+    await waitFor(() => expect(roomSelect).toHaveValue('room-1'));
+    fireEvent.change(await screen.findByPlaceholderText('Markdownで入力'), {
+      target: { value: 'warning fixture' },
+    });
+    const submit = screen.getByRole('button', { name: '送信' });
+    await waitFor(() => expect(submit).toBeEnabled());
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(postedMessages).toHaveLength(1));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '送信' })).toBeEnabled(),
+    );
+    expect(
+      screen.queryByText(/providerKey|internal\.invalid|secret/),
+    ).toBeNull();
+    expect(screen.queryByText('UNKNOWN_INTERNAL_WARNING')).toBeNull();
+  });
+
   it('hides the general-affairs scope switch when the user is not authorized', async () => {
     vi.mocked(getAuthState).mockReturnValue({
       userId: 'demo-user',

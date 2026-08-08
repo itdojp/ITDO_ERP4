@@ -329,21 +329,33 @@ export function normalizeChatThread(value: unknown): ChatThread | null {
   };
 }
 
-export function newestVisibleMessageBoundary(messages: ChatMessage[]) {
-  let selected: ChatMessage | undefined;
+export function newestVisibleMessageBoundary(
+  messages: ChatMessage[],
+  options?: { excludeNewestTimestamp?: boolean },
+) {
+  const byTimestamp = new Map<number, ChatMessage[]>();
   for (const message of messages) {
     if (message.deleted) continue;
     const timestamp = Date.parse(message.createdAt);
     if (!Number.isFinite(timestamp)) continue;
-    const selectedTimestamp = selected ? Date.parse(selected.createdAt) : NaN;
-    if (
-      !selected ||
-      timestamp > selectedTimestamp ||
-      (timestamp === selectedTimestamp && message.id > selected.id)
-    ) {
-      selected = message;
-    }
+    const atTimestamp = byTimestamp.get(timestamp) ?? [];
+    atTimestamp.push(message);
+    byTimestamp.set(timestamp, atTimestamp);
   }
+
+  // Message IDs are random UUIDs and do not encode the server-assigned
+  // activitySequence. When multiple visible messages share a millisecond, no
+  // client-side ordering can safely identify the newest one. Skip ambiguous
+  // timestamp groups and advance only to the newest unique timestamp.
+  const orderedTimestamps = [...byTimestamp.entries()].sort(
+    ([left], [right]) => right - left,
+  );
+  const candidates = options?.excludeNewestTimestamp
+    ? orderedTimestamps.slice(1)
+    : orderedTimestamps;
+  const selected = candidates.find(
+    ([, atTimestamp]) => atTimestamp.length === 1,
+  )?.[1][0];
   return selected
     ? { through: selected.createdAt, throughMessageId: selected.id }
     : null;

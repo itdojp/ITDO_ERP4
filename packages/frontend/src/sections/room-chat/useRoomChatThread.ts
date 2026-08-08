@@ -102,6 +102,7 @@ function appendCreatedReply(
   aggregateIsFresh: boolean,
 ): ChatThread {
   const alreadyIncluded = thread.replies.some((item) => item.id === created.id);
+  if (aggregateIsFresh && alreadyIncluded) return thread;
   const replyCount = aggregateIsFresh
     ? thread.replyCount
     : thread.replyCount + (alreadyIncluded ? 0 : 1);
@@ -161,11 +162,19 @@ export function useRoomChatThread(input: {
   const abortRef = useRef<AbortController | null>(null);
   const rootIdRef = useRef('');
   const lifecycleSeqRef = useRef(0);
+  const mutationInFlightRef = useRef(false);
+  const loadMoreInFlightRef = useRef(false);
 
   useEffect(() => {
     return () => {
       lifecycleSeqRef.current += 1;
-      abortRef.current?.abort();
+      requestSeqRef.current += 1;
+      rootIdRef.current = '';
+      mutationInFlightRef.current = false;
+      loadMoreInFlightRef.current = false;
+      const controller = abortRef.current;
+      abortRef.current = null;
+      controller?.abort();
     };
   }, []);
 
@@ -175,6 +184,8 @@ export function useRoomChatThread(input: {
     abortRef.current?.abort();
     abortRef.current = null;
     rootIdRef.current = '';
+    mutationInFlightRef.current = false;
+    loadMoreInFlightRef.current = false;
     setThread(null);
     setMessage('');
     setIsLoading(false);
@@ -189,10 +200,12 @@ export function useRoomChatThread(input: {
 
   const markDisplayedThreadRead = useCallback(
     async (next: ChatThread) => {
-      const boundary = newestVisibleMessageBoundary([
-        next.root,
-        ...next.replies,
-      ]);
+      const boundary = newestVisibleMessageBoundary(
+        [next.root, ...next.replies],
+        {
+          excludeNewestTimestamp: Boolean(next.nextCursor),
+        },
+      );
       if (!boundary) return true;
       try {
         await markRoomRead(next.root.roomId, boundary);
@@ -219,9 +232,14 @@ export function useRoomChatThread(input: {
       if (!targetId || (append && !cursor)) return null;
 
       const requestSeq = ++requestSeqRef.current;
+      const lifecycleSeq = lifecycleSeqRef.current;
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
+      const isCurrentRequest = () =>
+        lifecycleSeqRef.current === lifecycleSeq &&
+        requestSeqRef.current === requestSeq &&
+        !controller.signal.aborted;
 
       try {
         setMessage('');
@@ -232,9 +250,7 @@ export function useRoomChatThread(input: {
           cursor: cursor || undefined,
           signal: controller.signal,
         });
-        if (controller.signal.aborted || requestSeqRef.current !== requestSeq) {
-          return null;
-        }
+        if (!isCurrentRequest()) return null;
         if (
           fetched.root.roomId !== input.roomId ||
           fetched.root.id !== input.expectedRootId ||
@@ -254,18 +270,19 @@ export function useRoomChatThread(input: {
         setThread(next);
         input.onRootUpdated?.(next.root);
         const readUpdated = await markDisplayedThreadRead(next);
+        if (!isCurrentRequest()) return next;
         if (!readUpdated) {
           setMessage('スレッドを表示しましたが既読更新に失敗しました');
         }
         return next;
       } catch {
-        if (controller.signal.aborted) return null;
+        if (!isCurrentRequest()) return null;
         console.error('Failed to load chat thread.');
         setMessage('スレッドを取得できませんでした');
         if (!append && !preserveLoaded) setThread(null);
         return null;
       } finally {
-        if (requestSeqRef.current === requestSeq) {
+        if (isCurrentRequest()) {
           setIsLoading(false);
           setIsLoadingMore(false);
         }
@@ -286,7 +303,14 @@ export function useRoomChatThread(input: {
       successMessage?: string,
       applyCommitted?: (current: ChatThread, result: T) => ChatThread,
     ) => {
-      if (!thread) return false;
+      if (
+        !thread ||
+        mutationInFlightRef.current ||
+        loadMoreInFlightRef.current
+      ) {
+        return false;
+      }
+      mutationInFlightRef.current = true;
       const lifecycleSeq = lifecycleSeqRef.current;
       try {
         setIsMutating(true);
@@ -316,11 +340,15 @@ export function useRoomChatThread(input: {
         }
         return true;
       } catch {
+        if (lifecycleSeqRef.current !== lifecycleSeq) return false;
         console.error('Failed to update chat thread.');
         setMessage('スレッドを更新できませんでした');
         return false;
       } finally {
-        setIsMutating(false);
+        if (lifecycleSeqRef.current === lifecycleSeq) {
+          mutationInFlightRef.current = false;
+          setIsMutating(false);
+        }
       }
     },
     [input, refreshThread, thread],
@@ -328,7 +356,14 @@ export function useRoomChatThread(input: {
 
   const postReply = useCallback(
     async (payload: ReplyPayload) => {
-      if (!thread) return false;
+      if (
+        !thread ||
+        mutationInFlightRef.current ||
+        loadMoreInFlightRef.current
+      ) {
+        return false;
+      }
+      mutationInFlightRef.current = true;
       const lifecycleSeq = lifecycleSeqRef.current;
       try {
         setIsMutating(true);
@@ -337,6 +372,7 @@ export function useRoomChatThread(input: {
         if (lifecycleSeqRef.current !== lifecycleSeq) return true;
         if (!isReplyForThread(created, thread)) {
           await refreshThread();
+          if (lifecycleSeqRef.current !== lifecycleSeq) return true;
           setMessage(
             '投稿結果を確認できません。再送せず再読み込みしてください',
           );
@@ -352,6 +388,7 @@ export function useRoomChatThread(input: {
         setThread(next);
         input.onRootUpdated?.(next.root);
         await markDisplayedThreadRead(next);
+        if (lifecycleSeqRef.current !== lifecycleSeq) return true;
         setMessage(
           refreshed
             ? '返信を投稿しました'
@@ -359,11 +396,15 @@ export function useRoomChatThread(input: {
         );
         return true;
       } catch {
+        if (lifecycleSeqRef.current !== lifecycleSeq) return false;
         console.error('Failed to post chat thread reply.');
         setMessage('スレッドを更新できませんでした');
         return false;
       } finally {
-        setIsMutating(false);
+        if (lifecycleSeqRef.current === lifecycleSeq) {
+          mutationInFlightRef.current = false;
+          setIsMutating(false);
+        }
       }
     },
     [input, markDisplayedThreadRead, refreshThread, thread],
@@ -371,7 +412,14 @@ export function useRoomChatThread(input: {
 
   const postAckReply = useCallback(
     async (payload: AckReplyPayload) => {
-      if (!thread) return false;
+      if (
+        !thread ||
+        mutationInFlightRef.current ||
+        loadMoreInFlightRef.current
+      ) {
+        return false;
+      }
+      mutationInFlightRef.current = true;
       const lifecycleSeq = lifecycleSeqRef.current;
       try {
         setIsMutating(true);
@@ -383,6 +431,7 @@ export function useRoomChatThread(input: {
         if (lifecycleSeqRef.current !== lifecycleSeq) return true;
         if (!isReplyForThread(created, thread)) {
           await refreshThread();
+          if (lifecycleSeqRef.current !== lifecycleSeq) return true;
           setMessage(
             '投稿結果を確認できません。再送せず再読み込みしてください',
           );
@@ -398,6 +447,7 @@ export function useRoomChatThread(input: {
         setThread(next);
         input.onRootUpdated?.(next.root);
         await markDisplayedThreadRead(next);
+        if (lifecycleSeqRef.current !== lifecycleSeq) return true;
         setMessage(
           refreshed
             ? '確認依頼付きの返信を投稿しました'
@@ -405,15 +455,34 @@ export function useRoomChatThread(input: {
         );
         return true;
       } catch {
+        if (lifecycleSeqRef.current !== lifecycleSeq) return false;
         console.error('Failed to post chat thread ack reply.');
         setMessage('スレッドを更新できませんでした');
         return false;
       } finally {
-        setIsMutating(false);
+        if (lifecycleSeqRef.current === lifecycleSeq) {
+          mutationInFlightRef.current = false;
+          setIsMutating(false);
+        }
       }
     },
     [input, markDisplayedThreadRead, refreshThread, thread],
   );
+
+  const loadMore = useCallback(async () => {
+    if (!thread || mutationInFlightRef.current || loadMoreInFlightRef.current) {
+      return null;
+    }
+    loadMoreInFlightRef.current = true;
+    const lifecycleSeq = lifecycleSeqRef.current;
+    try {
+      return await loadThread(thread.root.id, { append: true });
+    } finally {
+      if (lifecycleSeqRef.current === lifecycleSeq) {
+        loadMoreInFlightRef.current = false;
+      }
+    }
+  }, [loadThread, thread]);
 
   return {
     thread,
@@ -424,18 +493,24 @@ export function useRoomChatThread(input: {
     setMessage,
     openThread: loadThread,
     closeThread,
-    loadMore: () =>
-      thread ? loadThread(thread.root.id, { append: true }) : Promise.resolve(),
+    loadMore,
     refreshThread,
     postReply,
     postAckReply,
     addReaction: (messageId: string, emoji: string) =>
-      mutateAndRefresh(
-        () => postMessageReaction(messageId, emoji),
-        undefined,
-        (current, updated) =>
-          replaceThreadReaction(current, messageId, updated),
-      ),
+      (() => {
+        const expected =
+          messageId === thread?.root.id
+            ? thread.root
+            : thread?.replies.find((reply) => reply.id === messageId);
+        if (!expected) return Promise.resolve(false);
+        return mutateAndRefresh(
+          () => postMessageReaction(expected, emoji),
+          undefined,
+          (current, updated) =>
+            replaceThreadReaction(current, messageId, updated),
+        );
+      })(),
     ack: (requestId: string) =>
       mutateAndRefresh(
         () => ackRequest(requestId),
