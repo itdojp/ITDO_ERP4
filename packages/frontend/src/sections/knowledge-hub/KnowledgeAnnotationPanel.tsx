@@ -167,6 +167,7 @@ export function KnowledgeAnnotationPanel(props: {
   const mutationRequestRef = useRef(0);
   const historyRequestRef = useRef(0);
   const historySelectionRef = useRef<string | null>(null);
+  const canManageAnnotationsRef = useRef<boolean | null>(null);
 
   const loadAnnotations = useCallback(
     async (
@@ -177,11 +178,6 @@ export function KnowledgeAnnotationPanel(props: {
       const append = cursor !== null;
       const request = listRequestRef.current + 1;
       listRequestRef.current = request;
-      const capabilitiesPromise = append
-        ? null
-        : getKnowledgeAnnotationCapabilities(targetItemId).catch(() => ({
-            canManageAnnotations: false,
-          }));
       if (append) {
         setListLoadingMore(true);
         setListPageError('');
@@ -191,16 +187,19 @@ export function KnowledgeAnnotationPanel(props: {
         setListNextCursor(null);
         setListLoadingMore(false);
         setListPageError('');
+        canManageAnnotationsRef.current = null;
         setCanManageAnnotations(null);
       }
       try {
+        const capabilities = append
+          ? { canManageAnnotations: canManageAnnotationsRef.current === true }
+          : await getKnowledgeAnnotationCapabilities(targetItemId).catch(
+              () => ({ canManageAnnotations: false }),
+            );
         const page = await listKnowledgeAnnotations(targetItemId, {
           cursor,
-          includeDeleted: true,
+          includeDeleted: capabilities.canManageAnnotations,
         });
-        const capabilities = capabilitiesPromise
-          ? await capabilitiesPromise
-          : null;
         if (
           itemGenerationRef.current !== generation ||
           listRequestRef.current !== request
@@ -217,7 +216,8 @@ export function KnowledgeAnnotationPanel(props: {
         setAnnotations((current) =>
           mergeUniqueById(append ? current : [], page.items),
         );
-        if (capabilities) {
+        if (!append) {
+          canManageAnnotationsRef.current = capabilities.canManageAnnotations;
           setCanManageAnnotations(capabilities.canManageAnnotations);
         }
         setListNextCursor(page.nextCursor);
@@ -233,6 +233,7 @@ export function KnowledgeAnnotationPanel(props: {
           setListPageError(safeErrorMessage(error));
         } else {
           setAnnotations([]);
+          canManageAnnotationsRef.current = null;
           setCanManageAnnotations(null);
           setListNextCursor(null);
           setListStatus('error');
@@ -334,6 +335,7 @@ export function KnowledgeAnnotationPanel(props: {
     setListNextCursor(null);
     setListLoadingMore(false);
     setListPageError('');
+    canManageAnnotationsRef.current = null;
     setCanManageAnnotations(null);
     setNotice(null);
     setCreateDraft(emptyDraft());

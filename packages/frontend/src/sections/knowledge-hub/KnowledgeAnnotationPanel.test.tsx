@@ -598,9 +598,13 @@ describe('KnowledgeAnnotationPanel', () => {
     expect(
       screen.getByRole('button', { name: '改訂履歴' }),
     ).toBeInTheDocument();
+    expect(provenanceApi.listKnowledgeAnnotations).toHaveBeenCalledWith(
+      'item-1',
+      { cursor: null, includeDeleted: false },
+    );
   });
 
-  it('fails closed to read-only when the capability endpoint is unavailable', async () => {
+  it('keeps the old-backend list readable while failing closed when the capability endpoint is unavailable', async () => {
     provenanceApi.listKnowledgeAnnotations.mockResolvedValue(
       page([annotation()]),
     );
@@ -617,6 +621,16 @@ describe('KnowledgeAnnotationPanel', () => {
     expect(
       screen.queryByRole('form', { name: 'アノテーションを作成' }),
     ).not.toBeInTheDocument();
+    expect(provenanceApi.listKnowledgeAnnotations).toHaveBeenCalledWith(
+      'item-1',
+      { cursor: null, includeDeleted: false },
+    );
+    expect(
+      provenanceApi.getKnowledgeAnnotationCapabilities.mock
+        .invocationCallOrder[0],
+    ).toBeLessThan(
+      provenanceApi.listKnowledgeAnnotations.mock.invocationCallOrder[0],
+    );
   });
 
   it('does not let a stale list response overwrite a different item', async () => {
