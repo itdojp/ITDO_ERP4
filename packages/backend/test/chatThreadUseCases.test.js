@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { ChatThreadCursorError } from '../dist/application/chat/chatThreadCursor.js';
-import { createChatThreadService } from '../dist/application/chat/chatThreadUseCases.js';
+import {
+  createChatThreadMutationService,
+  createChatThreadService,
+} from '../dist/application/chat/chatThreadUseCases.js';
 
 const now = new Date('2026-08-08T00:00:00.000Z');
 const actor = {
@@ -189,4 +192,97 @@ test('chat thread does not emit a cursor when the page is complete', async () =>
   assert.equal(result.ok, true);
   assert.equal(result.value.nextCursor, null);
   assert.equal(state.encoded.length, 0);
+});
+
+test('reply mutation canonicalizes the actor and rechecks the expected room on create', async () => {
+  const calls = [];
+  const target = {
+    rootMessageId: 'root-1',
+    room: {
+      id: 'room-1',
+      type: 'project',
+      projectId: 'project-1',
+      isOfficial: true,
+      groupId: null,
+      allowExternalUsers: false,
+    },
+    postWithoutView: false,
+  };
+  const repository = {
+    listRootTimeline: async () => [],
+    withReadSnapshot: async () => null,
+    async prepareReply(input) {
+      calls.push(['prepare', input]);
+      return target;
+    },
+    async createReply(input) {
+      calls.push(['create', input]);
+      return { target, message: message({ id: 'reply-1' }) };
+    },
+  };
+  const service = createChatThreadMutationService({ repository });
+  const prepared = await service.prepareReply({
+    actor: {
+      ...actor,
+      roles: [' user ', 'user'],
+      groupIds: ['group-b', 'group-a', 'group-b'],
+    },
+    rootMessageId: ' root-1 ',
+    expectedRoomId: ' room-1 ',
+  });
+  assert.equal(prepared.ok, true);
+  assert.deepEqual(calls[0][1].actor.roles, ['user']);
+  assert.deepEqual(calls[0][1].actor.groupIds, ['group-a', 'group-b']);
+  assert.equal(calls[0][1].expectedRoomId, 'room-1');
+
+  const draft = {
+    body: 'Synthetic reply',
+    mentions: {},
+    mentionsAll: false,
+  };
+  const created = await service.createReply({
+    actor,
+    rootMessageId: 'root-1',
+    expectedRoomId: 'room-1',
+    draft,
+  });
+  assert.equal(created.ok, true);
+  assert.equal(calls[1][1].expectedRoomId, 'room-1');
+  assert.equal(calls[1][1].draft, draft);
+});
+
+test('reply mutation normalizes malformed and inaccessible roots to not_found', async () => {
+  let calls = 0;
+  const repository = {
+    listRootTimeline: async () => [],
+    withReadSnapshot: async () => null,
+    prepareReply: async () => {
+      calls += 1;
+      return null;
+    },
+    createReply: async () => {
+      calls += 1;
+      return null;
+    },
+  };
+  const service = createChatThreadMutationService({ repository });
+  assert.deepEqual(await service.prepareReply({ actor, rootMessageId: ' ' }), {
+    ok: false,
+    reason: 'not_found',
+  });
+  assert.deepEqual(
+    await service.createReply({
+      actor,
+      rootMessageId: 'root-1',
+      expectedRoomId: ' ',
+      draft: { body: 'x', mentions: {}, mentionsAll: false },
+    }),
+    { ok: false, reason: 'not_found' },
+  );
+  assert.equal(calls, 0);
+  assert.deepEqual(
+    await service.prepareReply({ actor, rootMessageId: 'hidden-root' }),
+    { ok: false, reason: 'not_found' },
+  );
+  assert.equal(calls, 1);
 });

@@ -3,6 +3,9 @@ import {
   chatThreadLimits,
   type ChatThreadActor,
   type ChatThreadCursorCodec,
+  type ChatReplyDraft,
+  type ChatReplyTarget,
+  type ChatThreadMessage,
   type ChatThreadRepository,
   type ChatThreadSnapshot,
 } from './chatThreadPorts.js';
@@ -13,6 +16,16 @@ export type ChatThreadResult =
       value: ChatThreadSnapshot & { nextCursor: string | null };
     }
   | { ok: false; reason: 'not_found' | 'invalid_cursor' };
+
+export type ChatReplyTargetResult =
+  { ok: true; value: ChatReplyTarget } | { ok: false; reason: 'not_found' };
+
+export type ChatReplyCreateResult =
+  | {
+      ok: true;
+      value: { target: ChatReplyTarget; message: ChatThreadMessage };
+    }
+  | { ok: false; reason: 'not_found' };
 
 function canonicalActor(actor: ChatThreadActor): ChatThreadActor | null {
   const userId = actor.userId.trim();
@@ -25,6 +38,66 @@ function canonicalActor(actor: ChatThreadActor): ChatThreadActor | null {
     projectIds: normalize(actor.projectIds),
     groupIds: normalize(actor.groupIds),
     groupAccountIds: normalize(actor.groupAccountIds),
+  };
+}
+
+export function createChatThreadMutationService(dependencies: {
+  repository: ChatThreadRepository;
+}) {
+  return {
+    async prepareReply(input: {
+      actor: ChatThreadActor;
+      rootMessageId: string;
+      expectedRoomId?: string;
+    }): Promise<ChatReplyTargetResult> {
+      const actor = canonicalActor(input.actor);
+      const rootMessageId = input.rootMessageId.trim();
+      const expectedRoomId = input.expectedRoomId?.trim();
+      if (
+        !actor ||
+        !rootMessageId ||
+        rootMessageId.length > chatThreadLimits.id ||
+        (input.expectedRoomId !== undefined && !expectedRoomId)
+      ) {
+        return { ok: false, reason: 'not_found' };
+      }
+      const target = await dependencies.repository.prepareReply({
+        actor,
+        rootMessageId,
+        expectedRoomId,
+      });
+      return target
+        ? { ok: true, value: target }
+        : { ok: false, reason: 'not_found' };
+    },
+
+    async createReply(input: {
+      actor: ChatThreadActor;
+      rootMessageId: string;
+      expectedRoomId?: string;
+      draft: ChatReplyDraft;
+    }): Promise<ChatReplyCreateResult> {
+      const actor = canonicalActor(input.actor);
+      const rootMessageId = input.rootMessageId.trim();
+      const expectedRoomId = input.expectedRoomId?.trim();
+      if (
+        !actor ||
+        !rootMessageId ||
+        rootMessageId.length > chatThreadLimits.id ||
+        (input.expectedRoomId !== undefined && !expectedRoomId)
+      ) {
+        return { ok: false, reason: 'not_found' };
+      }
+      const created = await dependencies.repository.createReply({
+        actor,
+        rootMessageId,
+        expectedRoomId,
+        draft: input.draft,
+      });
+      return created
+        ? { ok: true, value: created }
+        : { ok: false, reason: 'not_found' };
+    },
   };
 }
 

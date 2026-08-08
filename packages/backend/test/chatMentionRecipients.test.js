@@ -56,15 +56,26 @@ function createChatRoomMemberStub(members = []) {
   };
 }
 
+function createProjectMemberStub(members = []) {
+  return {
+    findMany: async ({ where }) =>
+      members
+        .filter((member) => member.projectId === where?.projectId)
+        .map((member) => ({ userId: member.userId })),
+  };
+}
+
 function createClient({
   groupAccounts = [],
   memberships = [],
   roomMembers = [],
+  projectMembers = [],
 } = {}) {
   return {
     groupAccount: createGroupAccountStub(groupAccounts),
     userGroup: createUserGroupStub(memberships),
     chatRoomMember: createChatRoomMemberStub(roomMembers),
+    projectMember: createProjectMemberStub(projectMembers),
   };
 }
 
@@ -122,7 +133,7 @@ test('resolveRoomAudienceUserIds: company uses viewerGroupIds when set', async (
   assert.deepEqual(Array.from(res), ['u1']);
 });
 
-test('expandRoomMentionRecipients: skips group members when audience empty', async () => {
+test('expandRoomMentionRecipients: rejects explicit and group recipients outside the room audience', async () => {
   const client = createClient({
     groupAccounts: [{ id: 'deptB-id', displayName: 'deptB' }],
     memberships: [{ groupId: 'deptB-id', userId: 'u2' }],
@@ -139,7 +150,7 @@ test('expandRoomMentionRecipients: skips group members when audience empty', asy
     mentionsAll: false,
     client,
   });
-  assert.deepEqual(res, ['u3']);
+  assert.deepEqual(res, []);
 });
 
 test('expandRoomMentionRecipients: intersects group mentions with audience', async () => {
@@ -165,7 +176,7 @@ test('expandRoomMentionRecipients: intersects group mentions with audience', asy
     mentionsAll: false,
     client,
   });
-  assert.deepEqual(res.sort(), ['u1', 'u3'].sort());
+  assert.deepEqual(res, ['u1']);
 });
 
 test('expandRoomMentionRecipients: @all adds room audience', async () => {
@@ -187,5 +198,34 @@ test('expandRoomMentionRecipients: @all adds room audience', async () => {
     mentionsAll: true,
     client,
   });
-  assert.deepEqual(res.sort(), ['u1', 'u2', 'u3'].sort());
+  assert.deepEqual(res.sort(), ['u1', 'u2']);
+});
+
+test('expandRoomMentionRecipients: project mentions are restricted to project and external room members', async () => {
+  const client = createClient({
+    projectMembers: [
+      { projectId: 'project-1', userId: 'project-user' },
+      { projectId: 'project-2', userId: 'other-project-user' },
+    ],
+    roomMembers: [{ roomId: 'project-room', userId: 'external-user' }],
+  });
+  const res = await expandRoomMentionRecipients({
+    room: {
+      id: 'project-room',
+      projectId: 'project-1',
+      type: 'project',
+      groupId: null,
+      allowExternalUsers: true,
+    },
+    mentionUserIds: [
+      'project-user',
+      'external-user',
+      'other-project-user',
+      'outsider',
+    ],
+    mentionGroupIds: [],
+    mentionsAll: false,
+    client,
+  });
+  assert.deepEqual(res.sort(), ['external-user', 'project-user']);
 });

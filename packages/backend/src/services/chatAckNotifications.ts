@@ -37,17 +37,11 @@ export async function logChatAckRequestCreated(
     targetTable: 'chat_ack_requests',
     targetId: options.ackRequestId,
     metadata: {
-      projectId: options.projectId,
-      roomId: options.roomId,
-      messageId: options.messageId,
       requestedUserCount: requestedUserIds.length,
-      requestedUserIds: requestedUserIds.slice(0, 20),
       requestedUsersTruncated: requestedUserIds.length > 20,
       requestedGroupCount: requestedGroupIds.length,
-      requestedGroupIds: requestedGroupIds.slice(0, 20),
       requestedGroupsTruncated: requestedGroupIds.length > 20,
       requestedRoleCount: requestedRoles.length,
-      requestedRoles: requestedRoles.slice(0, 20),
       requestedRolesTruncated: requestedRoles.length > 20,
       requiredUserCount: options.requiredUserIds.length,
       dueAt: options.dueAt ? options.dueAt.toISOString() : null,
@@ -90,14 +84,9 @@ export async function tryCreateChatAckRequiredNotificationsWithAudit(
     await logAudit({
       action: 'chat_ack_required_notifications_created',
       targetTable: 'chat_messages',
-      targetId: options.messageId,
       metadata: {
-        projectId: options.projectId,
-        roomId: options.roomId,
-        messageId: options.messageId,
         createdCount: notificationResult.created,
         recipientCount: notificationResult.recipients.length,
-        recipientUserIds: notificationResult.recipients.slice(0, 20),
         recipientsTruncated: notificationResult.truncated,
         requiredUserCount: options.requiredUserIds.length,
         senderExcluded:
@@ -107,13 +96,11 @@ export async function tryCreateChatAckRequiredNotificationsWithAudit(
       ...options.auditContext,
       userId: options.actorUserId,
     });
-  } catch (err) {
+  } catch {
     options.logger?.warn?.(
       {
-        err,
-        projectId: options.projectId,
-        roomId: options.roomId,
-        messageId: options.messageId,
+        phase: 'chat_ack_required_notification',
+        errorClass: 'notification_failure',
         requiredUserCount: options.requiredUserIds.length,
       },
       'Failed to create chat ack required notifications',

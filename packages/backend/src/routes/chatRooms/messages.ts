@@ -2,6 +2,8 @@ import { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
 
 import { defaultChatNotificationPort } from '../../adapters/notifications/chatNotificationAdapter.js';
+import { prismaChatThreadRepository } from '../../adapters/chat/prismaChatThreadAdapter.js';
+import { createChatThreadMutationService } from '../../application/chat/chatThreadUseCases.js';
 import {
   tryCreateChatMentionNotificationEffects,
   tryCreateChatMessageNotificationEffects,
@@ -18,6 +20,7 @@ import {
   tryCreateChatAckRequiredNotificationsWithAudit,
 } from '../../services/chatAckNotifications.js';
 import {
+  resolveChatAckProjectIdForRoom,
   resolveChatAckRequiredRecipientUserIds,
   validateChatAckRequiredRecipientsForRoom,
   previewChatAckRecipients,
@@ -50,6 +53,9 @@ import {
 
 export async function registerChatRoomMessageRoutes(app: FastifyInstance) {
   const chatRoles = CHAT_ROLES;
+  const threadMutationService = createChatThreadMutationService({
+    repository: prismaChatThreadRepository,
+  });
   const aiSummaryRateLimit = getRouteRateLimitOptions('RATE_LIMIT_AI_SUMMARY', {
     max: 20,
     timeWindow: '1 hour',
@@ -536,6 +542,7 @@ export async function registerChatRoomMessageRoutes(app: FastifyInstance) {
         dueAt?: string;
         tags?: string[];
         mentions?: unknown;
+        parentMessageId?: string;
       };
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
@@ -548,6 +555,26 @@ export async function registerChatRoomMessageRoutes(app: FastifyInstance) {
         accessLevel: 'post',
       });
       if (!access) return reply;
+
+      const threadActor = {
+        userId,
+        roles: req.user?.roles ?? [],
+        projectIds: req.user?.projectIds ?? [],
+        groupIds: req.user?.groupIds ?? [],
+        groupAccountIds: req.user?.groupAccountIds ?? [],
+      };
+      if (body.parentMessageId) {
+        const target = await threadMutationService.prepareReply({
+          actor: threadActor,
+          rootMessageId: body.parentMessageId,
+          expectedRoomId: access.room.id,
+        });
+        if (!target.ok) {
+          return reply.status(404).send({
+            error: { code: 'NOT_FOUND', message: 'Chat thread not found' },
+          });
+        }
+      }
 
       const limits = await getChatAckLimits();
       const requestedUserIds = normalizeStringArray(body.requiredUserIds, {
@@ -642,32 +669,59 @@ export async function registerChatRoomMessageRoutes(app: FastifyInstance) {
       }
       const validatedRequiredUserIds = recipientValidation.validUserIds;
 
-      const message = await prisma.chatMessage.create({
-        data: {
-          roomId: access.room.id,
-          userId,
-          body: body.body,
-          tags: normalizeStringArray(body.tags, { max: 8 }) || undefined,
-          mentions,
-          mentionsAll,
-          createdBy: userId,
-          updatedBy: userId,
-          ackRequest: {
-            create: {
-              roomId: access.room.id,
-              requiredUserIds: validatedRequiredUserIds,
-              requestedUserIds,
-              requestedGroupIds,
-              requestedRoles,
-              dueAt: dueAt ?? undefined,
-              createdBy: userId,
+      const replyCreation = body.parentMessageId
+        ? await threadMutationService.createReply({
+            actor: threadActor,
+            rootMessageId: body.parentMessageId,
+            expectedRoomId: access.room.id,
+            draft: {
+              body: body.body,
+              tags: normalizeStringArray(body.tags, { max: 8 }) || undefined,
+              mentions,
+              mentionsAll,
+              ackRequest: {
+                requiredUserIds: validatedRequiredUserIds,
+                requestedUserIds,
+                requestedGroupIds,
+                requestedRoles,
+                dueAt: dueAt ?? undefined,
+              },
             },
-          },
-        },
-        include: { ackRequest: { include: { acks: true } } },
-      });
+          })
+        : null;
+      if (body.parentMessageId && !replyCreation?.ok) {
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Chat thread not found' },
+        });
+      }
+      const message = replyCreation?.ok
+        ? replyCreation.value.message
+        : await prisma.chatMessage.create({
+            data: {
+              roomId: access.room.id,
+              userId,
+              body: body.body,
+              tags: normalizeStringArray(body.tags, { max: 8 }) || undefined,
+              mentions,
+              mentionsAll,
+              createdBy: userId,
+              updatedBy: userId,
+              ackRequest: {
+                create: {
+                  roomId: access.room.id,
+                  requiredUserIds: validatedRequiredUserIds,
+                  requestedUserIds,
+                  requestedGroupIds,
+                  requestedRoles,
+                  dueAt: dueAt ?? undefined,
+                  createdBy: userId,
+                },
+              },
+            },
+            include: { ackRequest: { include: { acks: true } } },
+          });
 
-      const projectId = access.room.type === 'project' ? access.room.id : null;
+      const projectId = resolveChatAckProjectIdForRoom(access.room);
 
       if (!message.ackRequest) {
         throw new Error('Expected ackRequest to be created for chat message');
@@ -694,10 +748,29 @@ export async function registerChatRoomMessageRoutes(app: FastifyInstance) {
         projectId,
         roomId: access.room.id,
         messageId: message.id,
-        messageBody: message.body,
+        messageBody: message.body ?? '',
         requiredUserIds: validatedRequiredUserIds,
         dueAt: message.ackRequest.dueAt,
       });
+
+      if (
+        body.parentMessageId &&
+        (mentionsAll || mentionUserIds.length || mentionGroupIds.length)
+      ) {
+        await tryCreateChatMentionNotificationEffects({
+          auditContext: auditContextFromRequest(req),
+          logger: req.log,
+          failureMessage: 'Failed to create chat reply mention notifications',
+          notificationPort: defaultChatNotificationPort,
+          room: access.room,
+          messageId: message.id,
+          messageBody: message.body ?? '',
+          senderUserId: userId,
+          mentionsAll,
+          mentionUserIds,
+          mentionGroupIds,
+        });
+      }
 
       if (mentionsAll || mentionUserIds.length || mentionGroupIds.length) {
         await logAudit({

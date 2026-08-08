@@ -152,6 +152,18 @@ function isGlobalMuteBypassKind(kind: string) {
   return resolveGlobalMuteBypassKinds().has(kind.trim());
 }
 
+export function buildNotificationPushFailureLog(kind: unknown) {
+  const normalizedKind =
+    typeof kind === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(kind)
+      ? kind
+      : 'unknown';
+  return {
+    phase: 'notification_push_dispatch',
+    errorClass: 'notification_failure',
+    kind: normalizedKind,
+  };
+}
+
 function dispatchNotificationPushesAsync(options: {
   kind: string;
   userIds: string[];
@@ -160,12 +172,11 @@ function dispatchNotificationPushesAsync(options: {
   projectId?: string | null;
   actorUserId?: string | null;
 }) {
-  void dispatchNotificationPushes(options).catch((err) => {
-    console.error('[notification push dispatch failed]', {
-      kind: options.kind,
-      messageId: options.messageId,
-      error: err instanceof Error ? err.message : String(err),
-    });
+  void dispatchNotificationPushes(options).catch(() => {
+    console.error(
+      '[notification push dispatch failed]',
+      buildNotificationPushFailureLog(options.kind),
+    );
   });
 }
 
@@ -437,18 +448,10 @@ export async function createChatMentionNotifications(
     if (trimmed) recipients.add(trimmed);
   });
 
-  const hasProjectFallback =
-    Boolean(options.projectId) &&
-    (options.mentionAll || options.mentionGroupIds.length > 0);
-  if (hasProjectFallback) {
-    const members = await prisma.projectMember.findMany({
-      where: { projectId: options.projectId ?? undefined },
-      select: { userId: true },
-    });
-    members.forEach((member) => {
-      if (member.userId) recipients.add(member.userId);
-    });
-  }
+  // The application layer already expands mentions and intersects every
+  // explicit/group/@all recipient with the current room audience. Re-expanding
+  // project recipients here would bypass that ACL boundary.
+  const hasProjectFallback = false;
 
   recipients.delete(options.senderUserId);
 

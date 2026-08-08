@@ -7,21 +7,25 @@ function buildRoom(overrides = {}) {
   return {
     id: 'room1',
     type: 'department',
+    projectId: null,
+    isOfficial: true,
     groupId: 'deptA',
+    viewerGroupIds: null,
+    posterGroupIds: null,
     deletedAt: null,
     allowExternalUsers: false,
     ...overrides,
   };
 }
 
-function createClient(room) {
+function createClient(room, member = null) {
   return {
     chatRoom: {
       findUnique: async ({ where }) =>
         where?.id === room.id ? { ...room } : null,
     },
     chatRoomMember: {
-      findFirst: async () => null,
+      findFirst: async () => member,
     },
   };
 }
@@ -40,6 +44,46 @@ test('ensureChatRoomContentAccess: department allows groupAccountIds match', asy
     client,
   });
 
+  assert.equal(res.ok, true);
+});
+
+test('ensureChatRoomContentAccess: exec does not bypass canonical project assignment', async () => {
+  const room = buildRoom({
+    id: 'project-room',
+    type: 'project',
+    projectId: 'project-1',
+    groupId: null,
+  });
+  const res = await ensureChatRoomContentAccess({
+    roomId: room.id,
+    userId: 'exec-user',
+    roles: ['exec'],
+    projectIds: [],
+    groupIds: [],
+    groupAccountIds: [],
+    client: createClient(room),
+  });
+  assert.equal(res.ok, false);
+  assert.equal(res.reason, 'forbidden_project');
+});
+
+test('ensureChatRoomContentAccess: official private room accepts a viewer-group grant without membership', async () => {
+  const room = buildRoom({
+    id: 'official-private',
+    type: 'private_group',
+    isOfficial: true,
+    groupId: null,
+    viewerGroupIds: ['group-a'],
+  });
+  const res = await ensureChatRoomContentAccess({
+    roomId: room.id,
+    userId: 'group-user',
+    roles: ['user'],
+    projectIds: [],
+    groupIds: ['group-a'],
+    groupAccountIds: [],
+    client: createClient(room),
+  });
   assert.equal(res.ok, true);
 });
 

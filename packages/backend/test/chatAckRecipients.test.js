@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { validateChatAckRequiredRecipientsForRoom } from '../dist/services/chatAckRecipients.js';
+import {
+  resolveChatAckProjectIdForRoom,
+  validateChatAckRequiredRecipientsForRoom,
+} from '../dist/services/chatAckRecipients.js';
 
 function buildRoom(overrides = {}) {
   return {
@@ -61,8 +64,53 @@ test('validateChatAckRequiredRecipientsForRoom: project rejects non-members', as
   assert.equal(res.reason, 'required_users_forbidden');
 });
 
+test('project ACK recipient validation uses canonical projectId and preserves legacy room-id aliases', async () => {
+  const projectQueries = [];
+  const client = {
+    userAccount: { findMany: async () => [{ userName: 'u1' }] },
+    chatRoomMember: { findMany: async () => [] },
+    groupAccount: createGroupAccountStub([]),
+    userGroup: { findMany: async () => [] },
+    projectMember: {
+      findMany: async ({ where }) => {
+        projectQueries.push(where);
+        return [{ userId: 'u1' }];
+      },
+    },
+  };
+
+  const aliasedRoom = buildRoom({
+    id: 'room-alias',
+    projectId: 'project-canonical',
+  });
+  const result = await validateChatAckRequiredRecipientsForRoom({
+    room: aliasedRoom,
+    requiredUserIds: ['u1'],
+    client,
+  });
+
+  assert.deepEqual(result, { ok: true, validUserIds: ['u1'] });
+  assert.equal(projectQueries[0].projectId, 'project-canonical');
+  assert.equal(
+    resolveChatAckProjectIdForRoom(aliasedRoom),
+    'project-canonical',
+  );
+  assert.equal(
+    resolveChatAckProjectIdForRoom(buildRoom({ id: 'legacy-project' })),
+    'legacy-project',
+  );
+  assert.equal(
+    resolveChatAckProjectIdForRoom(buildRoom({ type: 'company' })),
+    null,
+  );
+});
+
 test('validateChatAckRequiredRecipientsForRoom: project allowExternalUsers allows room members', async () => {
-  const room = buildRoom({ id: 'p1', type: 'project', allowExternalUsers: true });
+  const room = buildRoom({
+    id: 'p1',
+    type: 'project',
+    allowExternalUsers: true,
+  });
   const client = {
     userAccount: { findMany: async () => [{ userName: 'u2' }] },
     chatRoomMember: { findMany: async () => [{ userId: 'u2' }] },
@@ -92,7 +140,9 @@ test('validateChatAckRequiredRecipientsForRoom: project allows admin/mgmt via gr
         { id: 'admin-id', displayName: 'admin' },
       ]),
       userGroup: {
-        findMany: async () => [{ groupId: 'admin-id', user: { userName: 'u2' } }],
+        findMany: async () => [
+          { groupId: 'admin-id', user: { userName: 'u2' } },
+        ],
       },
     };
 
@@ -236,7 +286,9 @@ test('validateChatAckRequiredRecipientsForRoom: company with viewerGroupIds enfo
       { id: 'group-uuid', displayName: 'group-uuid' },
     ]),
     userGroup: {
-      findMany: async () => [{ groupId: 'group-uuid', user: { userName: 'u1' } }],
+      findMany: async () => [
+        { groupId: 'group-uuid', user: { userName: 'u1' } },
+      ],
     },
     projectMember: { findMany: async () => [] },
   };

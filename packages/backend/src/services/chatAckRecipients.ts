@@ -4,6 +4,7 @@ import { parseGroupToRoleMap } from '../utils/authGroupToRoleMap.js';
 type ChatRoomForAckValidation = {
   id: string;
   type: string;
+  projectId?: string | null;
   groupId: string | null;
   viewerGroupIds?: unknown;
   deletedAt: Date | null;
@@ -24,6 +25,15 @@ export type ChatAckRecipientPreviewResult = {
 
 function normalizeId(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+export function resolveChatAckProjectIdForRoom(room: {
+  id: string;
+  type: string;
+  projectId?: string | null;
+}): string | null {
+  if (room.type !== 'project') return null;
+  return normalizeId(room.projectId) || normalizeId(room.id) || null;
 }
 
 function normalizeIdList(values: unknown[]): string[] {
@@ -340,10 +350,13 @@ export async function validateChatAckRequiredRecipientsForRoom(options: {
       }
     }
 
-    const members = await client.projectMember.findMany({
-      where: { projectId: room.id, userId: { in: activeUserIds } },
-      select: { userId: true },
-    });
+    const projectId = resolveChatAckProjectIdForRoom(room);
+    const members = projectId
+      ? await client.projectMember.findMany({
+          where: { projectId, userId: { in: activeUserIds } },
+          select: { userId: true },
+        })
+      : [];
     normalizeIdList(members.map((m: { userId?: unknown }) => m.userId)).forEach(
       (id) => allowed.add(id),
     );

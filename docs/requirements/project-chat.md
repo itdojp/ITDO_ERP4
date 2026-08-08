@@ -213,7 +213,18 @@
 - root timelineのreply集約はpage単位の固定本数batch queryで算出し、messageごとのN+1 queryを行わない。root・reply・集約は`REPEATABLE READ`の同一snapshotで読む。
 - thread cursorはAES-256-GCMでpayloadを暗号化し、さらにHMAC-SHA256署名したopaque tokenとする。canonical actor、root、`createdAt + id`境界へbindし、raw user ID、room ID、root ID、reply IDをURLから復元できる形で格納しない。鍵は`KNOWLEDGE_CURSOR_SIGNING_SECRET`から暗号化・署名の用途別に導出し、鍵rotationまたはnon-production process再起動で既存cursorは失効する。
 - room membership、viewer group、project access、project alias、external user制限をthread取得時にserver側で再評価する。権限外IDと存在しないIDは同じ404 responseとし、本文、件数、cursor、root/reply関係を漏らさない。
-- PR Aはexpand-only schema、root-only timeline、thread read APIまでを提供する。reply投稿、mention/notification/reaction/search/unread/ack統合はPR B、UI/E2E/manualはPR Cで提供する。
+- PR Aはexpand-only schema、root-only timeline、thread read APIまでを提供する。PR Bはreply投稿と既存mention/notification/reaction/search/unread/ackのroot/reply共通化を提供し、UI/E2E/manualはPR Cで提供する。
+- reply投稿は`POST /chat-messages/:rootId/replies`を正規経路とし、root、room、現在のpost ACLを作成transaction内で再検査する。既存のroom/project message POSTはroot作成専用のまま維持する。
+- replyも既存mention parser、`@all` rate limit、room notification setting、mute、送信者除外を使用する。thread参加者全員への暗黙通知やthread followerは追加しない。
+- 永続化されたアプリ内chat通知は一覧取得時にactive messageとcurrent room read ACLをbatch再検査する。message削除またはACL失効時は本文excerptとroom/message識別子を返さず、通知自体はcontent unavailable状態として保持する。content unavailable通知は既に受信者本人へ作成された通知履歴であるため、readAtが記録されるまでは`/notifications/unread-count`の集計対象に維持するが、集計responseへchat参照や通知内訳は含めない。Web Pushとメールは外部配信の直前、ACK reminder/escalationは新規通知rowの作成直前に、active message/room、project alias、current room read ACLを再検査し、失効後のexcerpt・deep link・本文を配信しない。`chat_room_acl_mismatch`はmessage本文通知ではなくACL管理警告のため、active roomのcurrent owner/admin membershipを再検査し、一般memberまたは管理権限失効時は同様にredactする。配信済みPush通知は回収対象外とする。
+- chat通知の監査metadataは件数、有限enum、booleanだけを保存し、本文、room/message ID、recipient ID列を保存しない。chat検索の監査もquery本文を保存せず、文字数と結果件数だけを保存する。
+- reactionはroot/replyを同じmessage ACLで処理し、`FOR UPDATE`でJSON read-modify-writeを直列化する。POSTの既存full-message responseは維持し、DELETEは本人のreactionを冪等に除去する。
+- room timelineの`q`はactive reply本文にもDB predicateを適用するが、返すrowはcanonical rootだけとする。`GET /chat-messages/search`はroot/replyを検索し、`messageType`、`parentMessageId`、`threadRootId`をadditiveに返す。検索対象roomはcurrent actorのproject/group/direct membershipとviewer ACLをPostgreSQL predicateで評価し、全room/message取得後のapplication post-filterは行わない。`before + beforeId`を同時指定した場合は`createdAt + id`境界で安定ページングする。
+- `GET /chat-messages/:id`はroot/replyとも、missing、logical deletion、room deletion、current ACL拒否を同じ404 responseへ正規化する。
+- unreadはthread固有read stateを追加せず、active replyを既存room activityとして数える。read APIへ任意の`through`と`throughMessageId`をadditiveに追加し、新UIは表示済みmessageのIDと時刻を送信する。serverはserver時刻以下かつ同一roomのactive messageであることを検証し、DBが割り当てる`ChatMessage.activitySequence`をopaqueな到着順として`ChatReadState.lastReadActivitySequence`へ保持する。ランダムUUIDの辞書順へ依存せず、同一ミリ秒の後着replyを未読に保つ。旧clientのbodyなしPOSTおよび`through`だけのPOSTはtimestamp-only互換を維持する。
+- 確認依頼は既存room/project alias APIの任意`parentMessageId`でreplyへ作成できる。root、same-room、post ACLはcommit時に再検査し、replyとack requestを同一transactionで確定する。
+- ACK追加、取消、依頼cancelはrequest、active message、room、current direct membershipの順にlockし、current room ACL再検査とmutationを同一transactionへ含める。message削除、ACL失効、cancelとの競合はfail closedとし、missing/deleted/unauthorizedは同じ404へ正規化する。
+- message削除は`DELETE /chat-messages/:id`で論理削除のみを行う。本人の`user_retract`またはadmin/mgmtの`admin_moderation`を必須とし、root/reply topologyと既存replyを保持する。検索・未読は削除rowを除外し、thread readはcontent-free placeholderを返す。
 
 ## データモデル（後続案）
 
@@ -270,6 +281,24 @@
 - cursorはactorとcanonical rootへbindし、改ざん、別actor、別threadでの再利用を400とする
 - 権限外、存在しないmessage、壊れたtopologyは同じ404とする
 - 論理削除済みmessageは構造保持用placeholderとして返し、本文・tag・reaction・mention・ack・attachmentは返さない
+
+### POST `/chat-messages/:rootId/replies`
+
+- `rootId`はactive rootのみを受け付け、reply ID、別room root、削除済みroot、権限外IDは存在しないIDと同じ404にする。
+- request bodyは既存message投稿と同じ`body`、`tags`、`mentions`を使用する。
+- responseは既存message fieldへ`messageType=text`、`parentMessageId=rootId`、`threadRootId=rootId`をadditiveに返す。
+
+### DELETE `/chat-messages/:id/reactions`
+
+- bodyの`emoji`について、current actorが付与したreactionだけを冪等に除去する。
+- root/replyとも現在のroom read ACLを同一transaction内で再評価する。
+- POST `/chat-messages/:id/reactions`の既存full-message response契約は維持する。
+
+### DELETE `/chat-messages/:id`
+
+- bodyの`reason`は`user_retract`または`admin_moderation`のallowlistとする。
+- `user_retract`は投稿者本人、`admin_moderation`はadmin/mgmtだけが使用でき、いずれも現在のroom post ACLを満たす必要がある。
+- 物理削除、cascade、thread topology変更は行わない。
 - 成功時の監査metadataは件数等のallowlistのみとし、本文、mention、attachment、cursor、raw errorを記録しない
 
 ### POST `/chat-rooms/:roomId/messages`
@@ -302,6 +331,7 @@
 - `requiredUserIds` (1〜50件)
 - `dueAt` (任意: ISO日時)
 - `tags` (任意: 0〜8件、各32文字まで)
+- `parentMessageId` (任意: active root message ID。指定時は一段threadのreply確認依頼)
 - `mentions` (任意)
   - `userIds` (任意: 0〜50件)
   - `groupIds` (任意: 0〜20件)
@@ -310,6 +340,7 @@
 **挙動**
 
 - 通常メッセージ + `ChatAckRequest` を1トランザクションで作成する
+- `parentMessageId`指定時はreply + `ChatAckRequest`を同じtransactionで作成し、root/same-room/current post ACLを再検査する
 - `requiredUserIds` はトリムして重複排除する（API側で正規化）
 - `mentions.all=true` の場合は投稿回数制限（rate limit）を適用する（詳細は `POST /chat-messages` と同様）
 
@@ -358,9 +389,18 @@
 
 ### POST `/chat-rooms/:roomId/read`
 
+**Body**
+
+- `through` (任意: ISO日時。省略時はserver現在時刻)
+- `throughMessageId` (任意: `through` と組み合わせ、同一ミリ秒内の全順序境界を指定)
+- bodyなしの旧client、および`through`だけの旧clientを後方互換として受理する
+- 上記以外のfield、または`throughMessageId`だけの指定は拒否する
+
 **挙動**
 
-- 自分の `lastReadAt` を `now()` に更新する（MVPは「読み込み」時点で更新する運用）
+- 自分の `lastReadAt` を単調更新し、古い応答で後退させない
+- 未来の`through`はserver現在時刻へクランプする
+- `throughMessageId`指定時は、同一roomのactive messageかつ`createdAt=through`を検証し、response用IDとは別にDB割当`activitySequence`を内部の単調境界として更新する
 
 ### POST `/chat-rooms/:roomId/summary`
 

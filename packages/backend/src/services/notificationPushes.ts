@@ -1,6 +1,10 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 import { logAudit } from './audit.js';
+import {
+  filterVisibleChatNotificationRecipients,
+  isChatNotificationKind,
+} from './chatNotificationVisibility.js';
 import { isWebPushEnabled, sendWebPush } from './webPush.js';
 
 const DEFAULT_PUSH_ICON = '/icon.svg';
@@ -49,6 +53,7 @@ type DispatchNotificationPushDeps = {
   isWebPushEnabledFn?: () => boolean;
   sendWebPushFn?: typeof sendWebPush;
   logAuditFn?: typeof logAudit;
+  filterVisibleChatRecipientsFn?: typeof filterVisibleChatNotificationRecipients;
   pushKindsEnv?: string | undefined;
 };
 
@@ -268,7 +273,7 @@ export async function dispatchNotificationPushes(
   const sendWebPushFn = deps.sendWebPushFn ?? sendWebPush;
   const logAuditFn = deps.logAuditFn ?? logAudit;
   const kind = normalizeId(options.kind);
-  const recipients = normalizeUserIds(options.userIds || []);
+  let recipients = normalizeUserIds(options.userIds || []);
 
   if (!recipients.length) {
     return {
@@ -307,6 +312,31 @@ export async function dispatchNotificationPushes(
       failedCount: 0,
       disabledCount: 0,
     };
+  }
+
+  if (isChatNotificationKind(kind)) {
+    const filterVisibleChatRecipientsFn =
+      deps.filterVisibleChatRecipientsFn ??
+      filterVisibleChatNotificationRecipients;
+    recipients = await filterVisibleChatRecipientsFn({
+      kind,
+      userIds: recipients,
+      payload: options.payload,
+      messageId: options.messageId,
+      projectId: options.projectId,
+    });
+    if (!recipients.length) {
+      return {
+        attempted: false,
+        reason: 'no_recipients',
+        kind,
+        recipientCount: 0,
+        subscriptionCount: 0,
+        deliveredCount: 0,
+        failedCount: 0,
+        disabledCount: 0,
+      };
+    }
   }
 
   const subscriptions = await client.pushSubscription.findMany({
@@ -374,8 +404,6 @@ export async function dispatchNotificationPushes(
       deliveredCount,
       failedCount,
       disabledCount: disabledIds.length,
-      messageId: normalizeId(options.messageId) || undefined,
-      projectId: normalizeId(options.projectId) || undefined,
     } as Prisma.InputJsonValue,
   });
 

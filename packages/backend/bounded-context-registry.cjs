@@ -69,7 +69,7 @@ const contexts = [
       '^src/routes/chat[^/]*\\.ts$',
       '^src/routes/chat/.+\\.ts$',
       '^src/routes/chatRooms/.+\\.ts$',
-      '^src/services/(chatAckCandidates|chatAckLimits|chatAckLinkTargets|chatAckNotifications|chatAckRecipients|chatAckReminders|chatAckTemplates|chatAttachmentScan|chatExternalLlm|chatMentionCandidates|chatMentionRecipients|chatReadState|chatRoomAccess|chatRoomAclAlerts|chatRoomLifecycle|chatRoomMembership|chatRoomProvisioning|personalGaChatRoom)\\.ts$',
+      '^src/services/(chatAckCandidates|chatAckLimits|chatAckLinkTargets|chatAckNotifications|chatAckRecipients|chatAckReminders|chatAckTemplates|chatAttachmentScan|chatExternalLlm|chatMentionCandidates|chatMentionRecipients|chatMessageLifecycle|chatNotificationVisibility|chatReadState|chatRoomAccess|chatRoomAclAlerts|chatRoomLifecycle|chatRoomMembership|chatRoomProvisioning|chatSearchAccess|personalGaChatRoom)\\.ts$',
     ],
   },
   {

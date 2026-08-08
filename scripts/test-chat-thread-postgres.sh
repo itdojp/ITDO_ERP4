@@ -50,7 +50,7 @@ migration_diff="$(npx --prefix "$ROOT_DIR/packages/backend" prisma migrate diff 
   --from-config-datasource \
   --to-schema "$ROOT_DIR/packages/backend/prisma/schema.prisma" \
   --script)"
-chat_thread_drift_pattern='ChatMessage(Type|_thread|_parent|_roomId_parent|_threadRoot)|parentMessageId|threadRootId|messageType'
+chat_thread_drift_pattern='ChatMessage(Type|_thread|_parent|_roomId_parent|_threadRoot|_activitySequence)|ChatReadState|parentMessageId|threadRootId|messageType|activitySequence|lastReadMessageId|lastReadActivitySequence'
 if grep -Eq "$chat_thread_drift_pattern" <<<"$migration_diff"; then
   echo 'Chat thread migration/schema drift detected:' >&2
   grep -E "$chat_thread_drift_pattern" <<<"$migration_diff" >&2

@@ -1447,6 +1447,14 @@ test('chat_ack_escalation notifications: global mute bypass delivers notificatio
       },
     );
     await ensureOk(memberRes);
+    const escalationMemberRes = await request.post(
+      `${apiBase}/projects/${encodeURIComponent(projectId)}/members`,
+      {
+        data: { userId: adminHeaders['x-user-id'], role: 'member' },
+        headers: adminHeaders,
+      },
+    );
+    await ensureOk(escalationMemberRes);
     approvalRuleId = await createApprovalRuleForAmount(
       request,
       adminHeaders,

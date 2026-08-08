@@ -34,10 +34,16 @@ function message(overrides = {}) {
 
 function withStubs(snapshotRepository, run) {
   const originalSnapshot = prismaChatThreadRepository.withReadSnapshot;
+  const originalPrepareReply = prismaChatThreadRepository.prepareReply;
+  const originalCreateReply = prismaChatThreadRepository.createReply;
   const originalAuditCreate = prisma.auditLog.create;
   const auditEntries = [];
   prismaChatThreadRepository.withReadSnapshot = async (operation) =>
     operation(snapshotRepository);
+  prismaChatThreadRepository.prepareReply = async () =>
+    snapshotRepository.replyTarget ?? null;
+  prismaChatThreadRepository.createReply = async () =>
+    snapshotRepository.replyCreation ?? null;
   prisma.auditLog.create = async ({ data }) => {
     auditEntries.push(data);
     return { id: 'audit-1' };
@@ -46,6 +52,8 @@ function withStubs(snapshotRepository, run) {
     .then(() => run(auditEntries))
     .finally(() => {
       prismaChatThreadRepository.withReadSnapshot = originalSnapshot;
+      prismaChatThreadRepository.prepareReply = originalPrepareReply;
+      prismaChatThreadRepository.createReply = originalCreateReply;
       prisma.auditLog.create = originalAuditCreate;
     });
 }
@@ -211,4 +219,94 @@ test('GET thread returns deleted roots and replies as content-free placeholders'
       assert.equal(body.replies[0].body, null);
     },
   );
+});
+
+test('POST reply returns an allowlisted reply topology and content-free audit metadata', async () => {
+  const target = {
+    rootMessageId: 'root-1',
+    room: {
+      id: 'room-1',
+      type: 'private_group',
+      projectId: null,
+      isOfficial: false,
+      groupId: null,
+      viewerGroupIds: [],
+      posterGroupIds: [],
+      allowExternalUsers: false,
+    },
+    postWithoutView: false,
+  };
+  const replyMessage = message({
+    id: 'reply-created',
+    parentMessageId: 'root-1',
+    threadRootId: 'root-1',
+    body: 'Synthetic reply content',
+  });
+  await withServer(
+    readableRepository({
+      replyTarget: target,
+      replyCreation: { target, message: replyMessage },
+    }),
+    async (server, auditEntries) => {
+      const response = await server.inject({
+        method: 'POST',
+        url: '/chat-messages/root-1/replies',
+        headers,
+        payload: { body: 'Synthetic reply content' },
+      });
+      assert.equal(response.statusCode, 201, response.body);
+      const body = response.json();
+      assert.equal(body.id, 'reply-created');
+      assert.equal(body.parentMessageId, 'root-1');
+      assert.equal(body.threadRootId, 'root-1');
+      assert.equal(Object.hasOwn(body, 'room'), false);
+      const createdAudit = auditEntries.find(
+        (entry) => entry.action === 'chat_reply_created',
+      );
+      assert.ok(createdAudit);
+      assert.equal(createdAudit.metadata.mentionUserCount, 0);
+      assert.equal(
+        JSON.stringify(createdAudit.metadata).includes('room-1'),
+        false,
+      );
+      assert.equal(
+        JSON.stringify(createdAudit.metadata).includes('Synthetic reply'),
+        false,
+      );
+    },
+  );
+});
+
+test('POST reply normalizes missing and concurrently deleted roots to the same 404', async () => {
+  for (const repository of [
+    readableRepository({ replyTarget: null }),
+    readableRepository({
+      replyTarget: {
+        rootMessageId: 'root-1',
+        room: {
+          id: 'room-1',
+          type: 'private_group',
+          projectId: null,
+          isOfficial: false,
+          groupId: null,
+          allowExternalUsers: false,
+        },
+        postWithoutView: false,
+      },
+      replyCreation: null,
+    }),
+  ]) {
+    await withServer(repository, async (server) => {
+      const response = await server.inject({
+        method: 'POST',
+        url: '/chat-messages/hidden/replies',
+        headers,
+        payload: { body: 'Synthetic reply content' },
+      });
+      assert.equal(response.statusCode, 404, response.body);
+      assert.deepEqual(response.json(), {
+        error: { code: 'NOT_FOUND', message: 'Chat thread not found' },
+      });
+    });
+  }
 });

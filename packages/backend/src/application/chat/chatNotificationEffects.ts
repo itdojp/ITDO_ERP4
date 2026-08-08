@@ -18,6 +18,7 @@ type ChatNotificationLogger = {
 export type ChatNotificationRoom = {
   id: string;
   type: string;
+  projectId?: string | null;
   groupId: string | null;
   viewerGroupIds?: unknown;
   allowExternalUsers: boolean;
@@ -28,7 +29,7 @@ function resolveProjectId(
   projectId?: string | null,
 ) {
   if (projectId !== undefined) return projectId;
-  return room.type === 'project' ? room.id : null;
+  return room.type === 'project' ? room.projectId || room.id : null;
 }
 
 export async function tryCreateChatMentionNotificationEffects(options: {
@@ -53,6 +54,7 @@ export async function tryCreateChatMentionNotificationEffects(options: {
       mentionGroupIds: options.mentionGroupIds,
       mentionsAll: options.mentionsAll,
     });
+    if (mentionUserIds.length === 0) return [];
     const notificationResult =
       await options.notificationPort.createMentionNotifications({
         projectId,
@@ -71,14 +73,9 @@ export async function tryCreateChatMentionNotificationEffects(options: {
     await logAudit({
       action: 'chat_mention_notifications_created',
       targetTable: 'chat_messages',
-      targetId: options.messageId,
       metadata: {
-        roomId: options.room.id,
-        projectId,
-        messageId: options.messageId,
         createdCount: notificationResult.created,
         recipientCount: notificationResult.recipients.length,
-        recipientUserIds: notificationResult.recipients.slice(0, 20),
         recipientsTruncated: notificationResult.truncated,
         mentionAll: options.mentionsAll,
         mentionUserCount: mentionUserIds.length,
@@ -88,9 +85,12 @@ export async function tryCreateChatMentionNotificationEffects(options: {
       ...options.auditContext,
     });
     return notificationResult.recipients;
-  } catch (err) {
+  } catch {
     options.logger?.warn?.(
-      { err, roomId: options.room.id, messageId: options.messageId },
+      {
+        phase: 'chat_mention_notification',
+        errorClass: 'notification_failure',
+      },
       options.failureMessage ?? 'Failed to create chat mention notifications',
     );
   }
@@ -132,14 +132,9 @@ export async function tryCreateChatMessageNotificationEffects(options: {
     await logAudit({
       action: 'chat_message_notifications_created',
       targetTable: 'chat_messages',
-      targetId: options.messageId,
       metadata: {
-        roomId: options.room.id,
-        projectId,
-        messageId: options.messageId,
         createdCount: notificationResult.created,
         recipientCount: notificationResult.recipients.length,
-        recipientUserIds: notificationResult.recipients.slice(0, 20),
         recipientsTruncated: notificationResult.truncated,
         audienceCount: audience.size,
         excludedCount: options.excludeUserIds?.length ?? 0,
@@ -147,9 +142,12 @@ export async function tryCreateChatMessageNotificationEffects(options: {
       ...options.auditContext,
     });
     return notificationResult.recipients;
-  } catch (err) {
+  } catch {
     options.logger?.warn?.(
-      { err, roomId: options.room.id, messageId: options.messageId },
+      {
+        phase: 'chat_message_notification',
+        errorClass: 'notification_failure',
+      },
       options.failureMessage ?? 'Failed to create chat message notifications',
     );
   }

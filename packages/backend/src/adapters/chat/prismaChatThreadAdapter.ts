@@ -2,11 +2,13 @@ import { Prisma } from '@prisma/client';
 
 import type {
   ChatRootTimelineMessage,
+  ChatThreadActor,
   ChatThreadAck,
   ChatThreadAckRequest,
   ChatThreadAttachment,
   ChatThreadMessage,
   ChatThreadRepository,
+  ChatReplyTarget,
   ChatThreadSnapshotRepository,
 } from '../../application/chat/chatThreadPorts.js';
 import { ensureChatRoomContentAccess } from '../../services/chatRoomAccess.js';
@@ -337,6 +339,129 @@ function createSnapshotRepository(
   };
 }
 
+async function resolveReplyTarget(
+  tx: Prisma.TransactionClient,
+  input: {
+    rootMessageId: string;
+    expectedRoomId?: string;
+    actor: ChatThreadActor;
+  },
+): Promise<ChatReplyTarget | null> {
+  const root = await tx.chatMessage.findFirst({
+    where: {
+      id: input.rootMessageId,
+      parentMessageId: null,
+      threadRootId: null,
+      deletedAt: null,
+      ...(input.expectedRoomId ? { roomId: input.expectedRoomId } : {}),
+    },
+    select: { id: true, roomId: true },
+  });
+  if (!root) return null;
+
+  const access = await ensureChatRoomContentAccess({
+    roomId: root.roomId,
+    userId: input.actor.userId,
+    roles: input.actor.roles,
+    projectIds: input.actor.projectIds,
+    groupIds: input.actor.groupIds,
+    groupAccountIds: input.actor.groupAccountIds,
+    accessLevel: 'post',
+    client: tx as unknown as typeof prisma,
+  });
+  if (!access.ok) return null;
+  return {
+    rootMessageId: root.id,
+    room: access.room,
+    postWithoutView: access.postWithoutView === true,
+  };
+}
+
+async function lockReplyTarget(
+  tx: Prisma.TransactionClient,
+  input: {
+    rootMessageId: string;
+    expectedRoomId?: string;
+    actor: ChatThreadActor;
+  },
+): Promise<ChatReplyTarget | null> {
+  const roots = await tx.$queryRaw<Array<{ id: string; roomId: string }>>(
+    Prisma.sql`
+      SELECT root."id", root."roomId"
+      FROM "ChatMessage" AS root
+      WHERE root."id" = ${input.rootMessageId}
+        AND root."parentMessageId" IS NULL
+        AND root."threadRootId" IS NULL
+        AND root."deletedAt" IS NULL
+      FOR UPDATE
+    `,
+  );
+  const root = roots.length === 1 ? roots[0] : null;
+  if (!root || (input.expectedRoomId && root.roomId !== input.expectedRoomId)) {
+    return null;
+  }
+
+  const rooms = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT room."id"
+    FROM "ChatRoom" AS room
+    WHERE room."id" = ${root.roomId}
+      AND room."deletedAt" IS NULL
+    FOR SHARE
+  `);
+  if (rooms.length !== 1) return null;
+
+  // Lock a current direct membership when one exists. Project/group claims
+  // remain part of the canonical policy evaluation below; the room lock
+  // protects those persisted grant fields from concurrent changes.
+  await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT member."id"
+    FROM "ChatRoomMember" AS member
+    WHERE member."roomId" = ${root.roomId}
+      AND member."userId" = ${input.actor.userId}
+      AND member."deletedAt" IS NULL
+    FOR SHARE
+  `);
+
+  const access = await ensureChatRoomContentAccess({
+    roomId: root.roomId,
+    userId: input.actor.userId,
+    roles: input.actor.roles,
+    projectIds: input.actor.projectIds,
+    groupIds: input.actor.groupIds,
+    groupAccountIds: input.actor.groupAccountIds,
+    accessLevel: 'post',
+    client: tx as unknown as typeof prisma,
+  });
+  if (!access.ok) return null;
+  return {
+    rootMessageId: root.id,
+    room: access.room,
+    postWithoutView: access.postWithoutView === true,
+  };
+}
+
+function isConcurrentRootStateConflict(error: unknown) {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as {
+    code?: unknown;
+    message?: unknown;
+    meta?: {
+      code?: unknown;
+      message?: unknown;
+      database_error?: { code?: unknown; message?: unknown };
+    };
+  };
+  const message = `${String(candidate.message ?? '')} ${JSON.stringify(
+    candidate.meta ?? {},
+  )}`;
+  return (
+    message.includes('ChatMessage_reply_parent_active_root') ||
+    message.includes(
+      'chat reply parent must be an active root in the same room',
+    )
+  );
+}
+
 export function createPrismaChatThreadRepository(
   client: typeof prisma,
 ): ChatThreadRepository {
@@ -353,7 +478,17 @@ export function createPrismaChatThreadRepository(
           if (input.before) where.createdAt = { lt: input.before };
           if (input.tag) where.tags = { array_contains: [input.tag] };
           if (input.query) {
-            where.body = { contains: input.query, mode: 'insensitive' };
+            where.OR = [
+              { body: { contains: input.query, mode: 'insensitive' } },
+              {
+                threadReplies: {
+                  some: {
+                    deletedAt: null,
+                    body: { contains: input.query, mode: 'insensitive' },
+                  },
+                },
+              },
+            ];
           }
           const rows = await tx.chatMessage.findMany({
             where,
@@ -387,6 +522,64 @@ export function createPrismaChatThreadRepository(
         async (tx) => operation(createSnapshotRepository(tx)),
         { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
       );
+    },
+    async prepareReply(input) {
+      return client.$transaction((tx) => resolveReplyTarget(tx, input), {
+        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+      });
+    },
+    async createReply(input) {
+      try {
+        return await client.$transaction(
+          async (tx) => {
+            const target = await lockReplyTarget(tx, input);
+            if (!target) return null;
+            const row = await tx.chatMessage.create({
+              data: {
+                roomId: target.room.id,
+                userId: input.actor.userId,
+                messageType: 'text',
+                parentMessageId: target.rootMessageId,
+                threadRootId: target.rootMessageId,
+                body: input.draft.body,
+                tags: input.draft.tags,
+                mentions: input.draft.mentions as Prisma.InputJsonValue,
+                mentionsAll: input.draft.mentionsAll,
+                createdBy: input.actor.userId,
+                updatedBy: input.actor.userId,
+                ...(input.draft.ackRequest
+                  ? {
+                      ackRequest: {
+                        create: {
+                          roomId: target.room.id,
+                          requiredUserIds:
+                            input.draft.ackRequest.requiredUserIds,
+                          requestedUserIds:
+                            input.draft.ackRequest.requestedUserIds,
+                          requestedGroupIds:
+                            input.draft.ackRequest.requestedGroupIds,
+                          requestedRoles: input.draft.ackRequest.requestedRoles,
+                          dueAt: input.draft.ackRequest.dueAt,
+                          createdBy: input.actor.userId,
+                        },
+                      },
+                    }
+                  : {}),
+              },
+              select: messageSelect,
+            });
+            const [message] = await hydrateMessages(tx, [row]);
+            if (!message) {
+              throw new Error('Created chat reply was not readable');
+            }
+            return { target, message };
+          },
+          { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted },
+        );
+      } catch (error) {
+        if (isConcurrentRootStateConflict(error)) return null;
+        throw error;
+      }
     },
   };
 }

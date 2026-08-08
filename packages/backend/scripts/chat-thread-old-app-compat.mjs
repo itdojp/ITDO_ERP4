@@ -165,11 +165,11 @@ if (mode === 'seed') {
     assert.equal(legacyResponse.body, 'Old application updated root body');
     assert.equal(legacyResponse.ackRequest.id, 'old-app-ack-request');
     assert.equal(legacyResponse.attachments[0].id, 'old-app-attachment');
-    assert.equal(Object.hasOwn(legacyResponse, 'messageType'), false);
-    assert.equal(Object.hasOwn(legacyResponse, 'parentMessageId'), false);
-    assert.equal(Object.hasOwn(legacyResponse, 'threadRootId'), false);
-    assert.equal(Object.hasOwn(legacyResponse, 'replyCount'), false);
-    assert.equal(Object.hasOwn(legacyResponse, 'lastReplyAt'), false);
+    assert.equal(legacyResponse.messageType, 'text');
+    assert.equal(legacyResponse.parentMessageId, null);
+    assert.equal(legacyResponse.threadRootId, null);
+    assert.equal(legacyResponse.replyCount, 0);
+    assert.equal(legacyResponse.lastReplyAt, null);
     console.log(
       JSON.stringify({ mode, result: 'PASS', oldResponseStable: true }),
     );
@@ -178,10 +178,12 @@ if (mode === 'seed') {
     else await prisma.$disconnect();
   }
 } else {
-  const [{ prisma }, { prismaChatThreadRepository }] = await Promise.all([
-    load('packages/backend/dist/services/db.js'),
-    load('packages/backend/dist/adapters/chat/prismaChatThreadAdapter.js'),
-  ]);
+  const [{ prisma }, { prismaChatThreadRepository }, { chatReactionService }] =
+    await Promise.all([
+      load('packages/backend/dist/services/db.js'),
+      load('packages/backend/dist/adapters/chat/prismaChatThreadAdapter.js'),
+      load('packages/backend/dist/application/chat/chatReactionService.js'),
+    ]);
   try {
     const rows = await prisma.chatMessage.findMany({
       where: { id: { in: [rootId, postMigrationRootId] } },
@@ -194,6 +196,37 @@ if (mode === 'seed') {
       assert.equal(row.threadRootId, null);
     }
     assert.equal(rows[0].body, 'Old application updated root body');
+    await prisma.chatRoomMember.create({
+      data: {
+        roomId,
+        userId: 'current-app-reactor',
+      },
+    });
+    const reactionResult = await chatReactionService.add({
+      actor: {
+        userId: 'current-app-reactor',
+        roles: ['user'],
+        projectIds: [],
+        groupIds: [],
+        groupAccountIds: [],
+      },
+      messageId: rootId,
+      emoji: 'like',
+    });
+    assert.equal(reactionResult.ok, true);
+    assert.deepEqual(reactionResult.value.message.reactions.like, {
+      count: 3,
+      userIds: ['current-app-reactor', 'old-app-reactor', ownerId],
+    });
+    const persistedReaction = await prisma.chatMessage.findUniqueOrThrow({
+      where: { id: rootId },
+      select: { reactions: true },
+    });
+    assert.equal(persistedReaction.reactions.like.count, 3);
+    assert.deepEqual(
+      new Set(persistedReaction.reactions.like.userIds),
+      new Set(['current-app-reactor', 'old-app-reactor', ownerId]),
+    );
     const timeline = await prismaChatThreadRepository.listRootTimeline({
       roomId,
       limit: 20,
@@ -207,6 +240,7 @@ if (mode === 'seed') {
         mode,
         result: 'PASS',
         oldWritePreserved: true,
+        legacyReactionActorsPreserved: true,
         rootContractPreserved: true,
       }),
     );

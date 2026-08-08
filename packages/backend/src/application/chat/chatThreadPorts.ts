@@ -13,6 +13,39 @@ export type ChatThreadActor = {
   groupAccountIds: string[];
 };
 
+export type ChatThreadRoom = {
+  id: string;
+  type: string;
+  projectId?: string | null;
+  isOfficial: boolean;
+  groupId: string | null;
+  viewerGroupIds?: unknown;
+  posterGroupIds?: unknown;
+  allowExternalUsers: boolean;
+};
+
+export type ChatReplyTarget = {
+  rootMessageId: string;
+  room: ChatThreadRoom;
+  postWithoutView: boolean;
+};
+
+export type ChatReplyAckDraft = {
+  requiredUserIds: string[];
+  requestedUserIds: string[];
+  requestedGroupIds: string[];
+  requestedRoles: string[];
+  dueAt?: Date;
+};
+
+export type ChatReplyDraft = {
+  body: string;
+  tags?: string[];
+  mentions: unknown;
+  mentionsAll: boolean;
+  ackRequest?: ChatReplyAckDraft;
+};
+
 export type ChatThreadBoundary = {
   createdAt: Date;
   id: string;
@@ -123,6 +156,20 @@ export type ChatThreadRepository = {
   withReadSnapshot<T>(
     operation: (repository: ChatThreadSnapshotRepository) => Promise<T>,
   ): Promise<T>;
+  prepareReply(input: {
+    rootMessageId: string;
+    expectedRoomId?: string;
+    actor: ChatThreadActor;
+  }): Promise<ChatReplyTarget | null>;
+  createReply(input: {
+    rootMessageId: string;
+    expectedRoomId?: string;
+    actor: ChatThreadActor;
+    draft: ChatReplyDraft;
+  }): Promise<{
+    target: ChatReplyTarget;
+    message: ChatThreadMessage;
+  } | null>;
 };
 
 export type ChatThreadCursorCodec = {
