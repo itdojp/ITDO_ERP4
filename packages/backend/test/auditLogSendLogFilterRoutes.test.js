@@ -149,6 +149,84 @@ test('GET /audit-logs filters by metadata.sendLogId', async () => {
   );
 });
 
+test('GET /audit-logs masks a numeric-only UUID segment without hiding public row identity', async () => {
+  const sendLogId = '11111111-2222-4333-8444-123456789012';
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+    },
+    async () => {
+      await withPrismaStubs(
+        {
+          'auditLog.findMany': async () => [
+            {
+              id: 'audit-numeric-uuid',
+              action: 'document_send_completed',
+              userId: 'operator@example.com',
+              actorRole: 'admin',
+              actorGroupId: null,
+              requestId: 'request-123456789012',
+              ipAddress: '203.0.113.10',
+              userAgent: 'node-test',
+              source: 'api',
+              reasonCode: null,
+              reasonText: 'Contact 00000000000 for delivery status',
+              targetTable: 'estimates',
+              targetId: 'estimate-public-identity',
+              createdAt: new Date('2026-03-06T00:00:00Z'),
+              metadata: {
+                sendLogId,
+                recipientEmail: 'recipient@example.com',
+                phone: '00000000000',
+                provider: 'internal-provider-name',
+                credential: 'reflected-credential',
+                status: 'delivered',
+              },
+            },
+          ],
+          'auditLog.create': async ({ data }) => ({ id: data.action }),
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'GET',
+              url: `/audit-logs?format=json&sendLogId=${sendLogId}`,
+              headers: {
+                'x-user-id': 'admin-user',
+                'x-roles': 'admin,mgmt',
+              },
+            });
+            assert.equal(res.statusCode, 200, res.body);
+            const payload = JSON.parse(res.body);
+            const item = payload.items?.[0];
+
+            assert.equal(item?.action, 'document_send_completed');
+            assert.equal(item?.targetTable, 'estimates');
+            assert.equal(item?.targetId, 'estimate-public-identity');
+            assert.equal(
+              item?.metadata?.sendLogId,
+              '11111111-2222-4333-8444-1234********',
+            );
+            assert.equal(item?.metadata?.provider, '[REDACTED]');
+            assert.equal(item?.metadata?.credential, '[REDACTED]');
+
+            const serialized = JSON.stringify(item);
+            assert.doesNotMatch(serialized, /123456789012/);
+            assert.doesNotMatch(serialized, /recipient@example\.com/);
+            assert.doesNotMatch(serialized, /00000000000/);
+            assert.doesNotMatch(serialized, /internal-provider-name/);
+            assert.doesNotMatch(serialized, /reflected-credential/);
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    },
+  );
+});
+
 test('GET /audit-logs masks JSON output by default and redacts token metadata', async () => {
   await withEnv(
     {
