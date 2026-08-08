@@ -276,12 +276,37 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
         timeout: actionTimeout,
       },
     );
-    await expect(
-      auditLogSection
-        .getByRole('gridcell')
-        .filter({ hasText: sendLogId })
-        .first(),
-    ).toBeVisible({ timeout: actionTimeout });
+    const auditSummary = auditLogSection.getByRole('region', {
+      name: '監査ログサマリー',
+    });
+    await expect(auditSummary.getByText('取得済み')).toBeVisible({
+      timeout: actionTimeout,
+    });
+    await expect(auditSummary.getByText('2件を取得')).toBeVisible({
+      timeout: actionTimeout,
+    });
+
+    const requestedRow = auditLogSection
+      .getByRole('row')
+      .filter({ hasText: /document(?:_| )send(?:_| )requested/i });
+    const completedRow = auditLogSection
+      .getByRole('row')
+      .filter({ hasText: /document(?:_| )send(?:_| )completed/i });
+    await expect(requestedRow).toHaveCount(1);
+    await expect(completedRow).toHaveCount(1);
+    for (const auditRow of [requestedRow, completedRow]) {
+      await expect(
+        auditRow
+          .getByRole('gridcell')
+          .filter({ hasText: `estimates / ${estimateId}` }),
+      ).toHaveCount(1);
+      await expect(auditRow).not.toContainText(
+        /authorization|cookie|token|password|api[_-]?key|secret|credential/i,
+      );
+    }
+    await expect(completedRow.getByRole('gridcell').last()).toContainText(
+      '"providerMessageId":"[REDACTED]"',
+    );
   } else {
     await navigateToSection(page, '監査ログ');
     await auditLogSection.scrollIntoViewIfNeeded();
