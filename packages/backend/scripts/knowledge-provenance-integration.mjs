@@ -805,7 +805,14 @@ try {
     activeOrganizationAnnotations.items.map((entry) => entry.id),
     [activeOrganizationAnnotation.id],
   );
-  assert.equal(activeOrganizationAnnotations.canManageAnnotations, true);
+  const ownerAnnotationCapabilities = expectOk(
+    await annotationService.capabilities({
+      actor: owner,
+      itemId: orgItemA.id,
+    }),
+    'organization annotation owner capability',
+  );
+  assert.equal(ownerAnnotationCapabilities.canManageAnnotations, true);
 
   const ownerAnnotationIds = [];
   let ownerAnnotationBoundary;
@@ -820,7 +827,6 @@ try {
       }),
       `owner deleted annotation list page ${pageNumber + 1}`,
     );
-    assert.equal(page.canManageAnnotations, true);
     ownerAnnotationIds.push(...page.items.map((entry) => entry.id));
     ownerAnnotationBoundary = page.nextBoundary;
     if (!ownerAnnotationBoundary) break;
@@ -843,7 +849,14 @@ try {
     sharedReaderAnnotations.items.map((entry) => entry.id),
     [activeOrganizationAnnotation.id],
   );
-  assert.equal(sharedReaderAnnotations.canManageAnnotations, false);
+  const sharedAnnotationCapabilities = expectOk(
+    await annotationService.capabilities({
+      actor: bothGroups,
+      itemId: orgItemA.id,
+    }),
+    'organization annotation shared reader capability',
+  );
+  assert.equal(sharedAnnotationCapabilities.canManageAnnotations, false);
   expectFailure(
     await annotationService.list({
       actor: outsider,

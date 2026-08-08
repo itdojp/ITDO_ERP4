@@ -14,8 +14,8 @@ import {
   knowledgeProvenanceLimits,
   knowledgeProvenanceOrigins,
   type KnowledgeAnnotation,
-  type KnowledgeAnnotationPage,
   type KnowledgeAnnotationRevision,
+  type KnowledgePage,
 } from '../application/knowledge/knowledgeProvenancePorts.js';
 import {
   prismaKnowledgeAnnotationRepository,
@@ -219,6 +219,39 @@ export async function registerKnowledgeAnnotationRoutes(
   ];
 
   app.get(
+    '/knowledge/items/:itemId/annotations/capabilities',
+    {
+      preHandler,
+      schema: {
+        tags: ['knowledge'],
+        params: itemParamsSchema,
+        response: {
+          401: knowledgeProvenanceErrorResponseSchema,
+          200: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['canManageAnnotations'],
+            properties: {
+              canManageAnnotations: { type: 'boolean' },
+            },
+          },
+          403: knowledgeProvenanceErrorResponseSchema,
+          404: knowledgeProvenanceErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const result = await service.capabilities({
+        actor: knowledgeActorFromRequest(request),
+        itemId: (request.params as { itemId: string }).itemId,
+      });
+      return sendKnowledgeProvenanceResult(reply, result, (value) => ({
+        canManageAnnotations: value.canManageAnnotations,
+      }));
+    },
+  );
+
+  app.get(
     '/knowledge/items/:itemId/annotations',
     {
       preHandler,
@@ -231,11 +264,10 @@ export async function registerKnowledgeAnnotationRoutes(
           200: {
             type: 'object',
             additionalProperties: false,
-            required: ['items', 'nextCursor', 'canManageAnnotations'],
+            required: ['items', 'nextCursor'],
             properties: {
               items: { type: 'array', items: annotationResponseRef },
               nextCursor: nullableStringSchema,
-              canManageAnnotations: { type: 'boolean' },
             },
           },
           400: knowledgeProvenanceErrorResponseSchema,
@@ -282,7 +314,7 @@ export async function registerKnowledgeAnnotationRoutes(
       return sendKnowledgeProvenanceResult(
         reply,
         result,
-        (page: KnowledgeAnnotationPage) => ({
+        (page: KnowledgePage<KnowledgeAnnotation>) => ({
           items: page.items.map(annotationResponse),
           nextCursor: page.nextBoundary
             ? cursor.encodePage({
@@ -292,7 +324,6 @@ export async function registerKnowledgeAnnotationRoutes(
                 boundary: page.nextBoundary,
               })
             : null,
-          canManageAnnotations: page.canManageAnnotations,
         }),
       );
     },

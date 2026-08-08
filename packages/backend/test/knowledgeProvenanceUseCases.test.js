@@ -193,6 +193,7 @@ test('annotation and conversation reads always use a consistent snapshot', async
   const annotationSnapshotCalls = [];
   const annotationReader = {
     listVisible: async () => null,
+    capabilities: async () => null,
     findVisible: async () => null,
     listRevisionsVisible: async () => null,
   };
@@ -205,6 +206,7 @@ test('annotation and conversation reads always use a consistent snapshot', async
     unitOfWork: unitOfWork(transaction()),
   });
   await annotationService.list({ actor, itemId: 'item-1', limit: 20 });
+  await annotationService.capabilities({ actor, itemId: 'item-1' });
   await annotationService.detail({
     actor,
     itemId: 'item-1',
@@ -216,7 +218,7 @@ test('annotation and conversation reads always use a consistent snapshot', async
     annotationId: 'annotation-1',
     limit: 20,
   });
-  assert.equal(annotationSnapshotCalls.length, 3);
+  assert.equal(annotationSnapshotCalls.length, 4);
 
   const conversationSnapshotCalls = [];
   const conversationReader = {
@@ -254,7 +256,6 @@ test('annotation list passes the deleted view through one consistent snapshot', 
       return {
         items: input.includeDeleted ? [deleted] : [],
         nextBoundary: input.boundary ?? null,
-        canManageAnnotations: true,
       };
     },
   };

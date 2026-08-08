@@ -24,6 +24,7 @@ import {
 import {
   createKnowledgeAnnotation,
   deleteKnowledgeAnnotation,
+  getKnowledgeAnnotationCapabilities,
   listKnowledgeAnnotationRevisions,
   listKnowledgeAnnotations,
   reviseKnowledgeAnnotation,
@@ -176,6 +177,11 @@ export function KnowledgeAnnotationPanel(props: {
       const append = cursor !== null;
       const request = listRequestRef.current + 1;
       listRequestRef.current = request;
+      const capabilitiesPromise = append
+        ? null
+        : getKnowledgeAnnotationCapabilities(targetItemId).catch(() => ({
+            canManageAnnotations: false,
+          }));
       if (append) {
         setListLoadingMore(true);
         setListPageError('');
@@ -185,12 +191,16 @@ export function KnowledgeAnnotationPanel(props: {
         setListNextCursor(null);
         setListLoadingMore(false);
         setListPageError('');
+        setCanManageAnnotations(null);
       }
       try {
         const page = await listKnowledgeAnnotations(targetItemId, {
           cursor,
           includeDeleted: true,
         });
+        const capabilities = capabilitiesPromise
+          ? await capabilitiesPromise
+          : null;
         if (
           itemGenerationRef.current !== generation ||
           listRequestRef.current !== request
@@ -207,11 +217,9 @@ export function KnowledgeAnnotationPanel(props: {
         setAnnotations((current) =>
           mergeUniqueById(append ? current : [], page.items),
         );
-        setCanManageAnnotations((current) =>
-          append
-            ? current === true && page.canManageAnnotations
-            : page.canManageAnnotations,
-        );
+        if (capabilities) {
+          setCanManageAnnotations(capabilities.canManageAnnotations);
+        }
         setListNextCursor(page.nextCursor);
         setListStatus('success');
       } catch (error) {
@@ -961,7 +969,7 @@ export function KnowledgeAnnotationPanel(props: {
 
         {listStatus === 'success' && canManageAnnotations === false ? (
           <Alert variant="info">
-            この組織Knowledge
+            このKnowledge
             itemのアノテーションは閲覧のみです。作成、改訂、削除はitem
             ownerだけが実行できます。
           </Alert>

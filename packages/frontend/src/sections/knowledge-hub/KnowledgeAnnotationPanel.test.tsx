@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const provenanceApi = vi.hoisted(() => ({
   createKnowledgeAnnotation: vi.fn(),
   deleteKnowledgeAnnotation: vi.fn(),
+  getKnowledgeAnnotationCapabilities: vi.fn(),
   listKnowledgeAnnotationRevisions: vi.fn(),
   listKnowledgeAnnotations: vi.fn(),
   reviseKnowledgeAnnotation: vi.fn(),
@@ -85,17 +86,16 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function page<T>(
-  items: T[],
-  nextCursor: string | null = null,
-  canManageAnnotations = true,
-) {
-  return { items, nextCursor, canManageAnnotations };
+function page<T>(items: T[], nextCursor: string | null = null) {
+  return { items, nextCursor };
 }
 
 beforeEach(() => {
   vi.resetAllMocks();
   provenanceApi.listKnowledgeAnnotations.mockResolvedValue(page([]));
+  provenanceApi.getKnowledgeAnnotationCapabilities.mockResolvedValue({
+    canManageAnnotations: true,
+  });
   provenanceApi.listKnowledgeAnnotationRevisions.mockResolvedValue(page([]));
 });
 
@@ -571,17 +571,16 @@ describe('KnowledgeAnnotationPanel', () => {
 
   it('renders organization non-owners as read-only from the server capability', async () => {
     provenanceApi.listKnowledgeAnnotations.mockResolvedValue(
-      page(
-        [
-          annotation({
-            scope: 'organization',
-            revision: revision(1, { content: '共有された本人意見' }),
-          }),
-        ],
-        null,
-        false,
-      ),
+      page([
+        annotation({
+          scope: 'organization',
+          revision: revision(1, { content: '共有された本人意見' }),
+        }),
+      ]),
     );
+    provenanceApi.getKnowledgeAnnotationCapabilities.mockResolvedValue({
+      canManageAnnotations: false,
+    });
 
     render(
       <KnowledgeAnnotationPanel itemId="item-1" itemScope="organization" />,
@@ -589,7 +588,7 @@ describe('KnowledgeAnnotationPanel', () => {
 
     expect(await screen.findByText('共有された本人意見')).toBeInTheDocument();
     expect(
-      screen.getByText(/この組織Knowledge itemのアノテーションは閲覧のみ/u),
+      screen.getByText(/このKnowledge itemのアノテーションは閲覧のみ/u),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole('form', { name: 'アノテーションを作成' }),
@@ -599,6 +598,25 @@ describe('KnowledgeAnnotationPanel', () => {
     expect(
       screen.getByRole('button', { name: '改訂履歴' }),
     ).toBeInTheDocument();
+  });
+
+  it('fails closed to read-only when the capability endpoint is unavailable', async () => {
+    provenanceApi.listKnowledgeAnnotations.mockResolvedValue(
+      page([annotation()]),
+    );
+    provenanceApi.getKnowledgeAnnotationCapabilities.mockRejectedValue(
+      new KnowledgeHubApiError('not_found', 404),
+    );
+
+    render(<KnowledgeAnnotationPanel itemId="item-1" itemScope="personal" />);
+
+    expect(await screen.findByText('現在の内容')).toBeInTheDocument();
+    expect(
+      screen.getByText(/このKnowledge itemのアノテーションは閲覧のみ/u),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('form', { name: 'アノテーションを作成' }),
+    ).not.toBeInTheDocument();
   });
 
   it('does not let a stale list response overwrite a different item', async () => {

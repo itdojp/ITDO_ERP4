@@ -233,6 +233,10 @@ test('annotation list checks item visibility before querying annotation rows', a
     await repository.listVisible({ actor, itemId: 'hidden-item', limit: 20 }),
     null,
   );
+  assert.equal(
+    await repository.capabilities({ actor, itemId: 'hidden-item' }),
+    null,
+  );
   assert.equal(annotationQueries, 0);
 });
 
@@ -268,6 +272,10 @@ test('annotation list includes deleted rows only for the item and annotation own
     }),
   );
 
+  const ownerCapabilities = await repository.capabilities({
+    actor,
+    itemId: 'item-1',
+  });
   await repository.listVisible({ actor, itemId: 'item-1', limit: 1 });
   const ownerPage = await repository.listVisible({
     actor,
@@ -285,11 +293,15 @@ test('annotation list includes deleted rows only for the item and annotation own
     scope: 'organization',
     organizationId: 'org-1',
   };
-  const sharedPage = await repository.listVisible({
+  await repository.listVisible({
     actor,
     itemId: 'item-1',
     limit: 1,
     includeDeleted: true,
+  });
+  const sharedCapabilities = await repository.capabilities({
+    actor,
+    itemId: 'item-1',
   });
 
   assert.equal(queries[0].where.deletedAt, null);
@@ -305,7 +317,7 @@ test('annotation list includes deleted rows only for the item and annotation own
   assert.deepEqual(queries[1].orderBy, [{ updatedAt: 'desc' }, { id: 'desc' }]);
   assert.equal(queries[1].take, 2);
   assert.equal(ownerPage.items.length, 1);
-  assert.equal(ownerPage.canManageAnnotations, true);
+  assert.equal(ownerCapabilities.canManageAnnotations, true);
   assert.equal(ownerPage.items[0].deletedAt, deletedAt);
   assert.deepEqual(ownerPage.nextBoundary, {
     updatedAt: deletedAt,
@@ -314,7 +326,7 @@ test('annotation list includes deleted rows only for the item and annotation own
 
   assert.equal(queries[2].where.deletedAt, null);
   assert.equal(JSON.stringify(queries[2].where).includes('"not":null'), false);
-  assert.equal(sharedPage.canManageAnnotations, false);
+  assert.equal(sharedCapabilities.canManageAnnotations, false);
 });
 
 test('deleted annotation history remains reachable only through the owner predicate', async () => {

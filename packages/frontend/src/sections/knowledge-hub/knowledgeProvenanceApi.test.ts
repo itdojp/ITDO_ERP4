@@ -10,6 +10,7 @@ import {
   createKnowledgeAnnotation,
   createKnowledgeSynthesis,
   deleteKnowledgeAnnotation,
+  getKnowledgeAnnotationCapabilities,
   getKnowledgeSynthesis,
   listKnowledgeAnnotationRevisions,
   listKnowledgeAnnotations,
@@ -126,12 +127,7 @@ describe('knowledgeProvenanceApi annotations', () => {
   it('normalizes list/history and drops actor, provider, and unknown fields', async () => {
     apiResponse
       .mockResolvedValueOnce(
-        response({
-          items: [annotation],
-          nextCursor: null,
-          canManageAnnotations: true,
-          ownerUserId: 'must-drop',
-        }),
+        response({ items: [annotation], nextCursor: null }),
       )
       .mockResolvedValueOnce(response({ items: [revision], nextCursor: null }));
 
@@ -159,7 +155,6 @@ describe('knowledgeProvenanceApi annotations', () => {
         },
       ],
       nextCursor: null,
-      canManageAnnotations: true,
     });
     expect(
       (
@@ -175,20 +170,8 @@ describe('knowledgeProvenanceApi annotations', () => {
 
   it('forwards opaque cursors and the explicit deleted-history option', async () => {
     apiResponse
-      .mockResolvedValueOnce(
-        response({
-          items: [],
-          nextCursor: 'next-page',
-          canManageAnnotations: true,
-        }),
-      )
-      .mockResolvedValueOnce(
-        response({
-          items: [],
-          nextCursor: null,
-          canManageAnnotations: true,
-        }),
-      );
+      .mockResolvedValueOnce(response({ items: [], nextCursor: 'next-page' }))
+      .mockResolvedValueOnce(response({ items: [], nextCursor: null }));
 
     const first = await listKnowledgeAnnotations('item-1', {
       includeDeleted: true,
@@ -203,23 +186,20 @@ describe('knowledgeProvenanceApi annotations', () => {
     expect(apiResponse.mock.calls[1][0]).toContain('includeDeleted=true');
   });
 
-  it('fails closed for a missing capability and rejects a non-boolean value', async () => {
+  it('normalizes the separate management capability and rejects invalid values', async () => {
     apiResponse
-      .mockResolvedValueOnce(response({ items: [], nextCursor: null }))
-      .mockResolvedValueOnce(
-        response({
-          items: [],
-          nextCursor: null,
-          canManageAnnotations: 'true',
-        }),
-      );
+      .mockResolvedValueOnce(response({ canManageAnnotations: false }))
+      .mockResolvedValueOnce(response({ canManageAnnotations: 'true' }));
 
-    await expect(listKnowledgeAnnotations('item-1')).resolves.toEqual({
-      items: [],
-      nextCursor: null,
-      canManageAnnotations: false,
-    });
-    await expect(listKnowledgeAnnotations('item-1')).rejects.toMatchObject({
+    await expect(getKnowledgeAnnotationCapabilities('item/1')).resolves.toEqual(
+      {
+        canManageAnnotations: false,
+      },
+    );
+    expect(apiResponse.mock.calls[0][0]).toContain('item%2F1');
+    await expect(
+      getKnowledgeAnnotationCapabilities('item-1'),
+    ).rejects.toMatchObject({
       code: 'invalid_response',
     });
   });

@@ -63,6 +63,19 @@ export function createKnowledgeAnnotationService(dependencies: {
       return page ? provenanceOk(page) : provenanceNotFound();
     },
 
+    async capabilities(input: { actor: KnowledgeActor; itemId: string }) {
+      if (
+        !hasKnowledgePrincipal(input.actor) ||
+        !isBoundedKnowledgeId(input.itemId)
+      ) {
+        return provenanceNotFound();
+      }
+      const capabilities = await dependencies.reader.withConsistentSnapshot(
+        (reader) => reader.capabilities(input),
+      );
+      return capabilities ? provenanceOk(capabilities) : provenanceNotFound();
+    },
+
     async detail(input: {
       actor: KnowledgeActor;
       itemId: string;

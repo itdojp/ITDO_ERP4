@@ -437,8 +437,16 @@ export class PrismaKnowledgeAnnotationRepository implements KnowledgeAnnotationR
       items: selected.map(mapAnnotation),
       nextBoundary:
         hasMore && last ? { updatedAt: last.updatedAt, id: last.id } : null,
-      canManageAnnotations: item.ownerUserId === input.actor.userId,
     };
+  }
+
+  async capabilities(input: { actor: KnowledgeActor; itemId: string }) {
+    const item = await new PrismaKnowledgeAccessRepository(
+      this.client,
+    ).findVisibleItem(input.actor, input.itemId);
+    return item
+      ? { canManageAnnotations: item.ownerUserId === input.actor.userId }
+      : null;
   }
 
   async findVisible(input: {

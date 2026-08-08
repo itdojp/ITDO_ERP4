@@ -155,7 +155,7 @@ export type KnowledgeAnnotation = {
   revision: KnowledgeAnnotationRevision;
 };
 
-export type KnowledgeAnnotationPage = KnowledgePage<KnowledgeAnnotation> & {
+export type KnowledgeAnnotationCapabilities = {
   canManageAnnotations: boolean;
 };
 
@@ -331,7 +331,11 @@ export interface KnowledgeAnnotationRepository {
     limit: number;
     boundary?: KnowledgePageBoundary;
     includeDeleted?: boolean;
-  }): Promise<KnowledgeAnnotationPage | null>;
+  }): Promise<KnowledgePage<KnowledgeAnnotation> | null>;
+  capabilities(input: {
+    actor: KnowledgeActor;
+    itemId: string;
+  }): Promise<KnowledgeAnnotationCapabilities | null>;
   findVisible(input: {
     actor: KnowledgeActor;
     itemId: string;

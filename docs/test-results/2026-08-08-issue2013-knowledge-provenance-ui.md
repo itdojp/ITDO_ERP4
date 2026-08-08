@@ -11,7 +11,7 @@
 
 - snapshot、annotation revision、conversation turn、Synthesis version/sourceを別entityとして表示する。
 - annotation kind/origin、conversation role/origin、Synthesis/未解決事項/provenanceを色だけでなくtext labelとsemantic markupで区別する。
-- organization itemの非ownerには、annotation一覧のserver-side capabilityに基づいて閲覧専用状態を表示し、owner専用mutation操作を提示しない。
+- organization itemの非ownerには、annotation一覧と分離した管理可否APIのserver-side capabilityに基づいて閲覧専用状態を表示し、owner専用mutation操作を提示しない。管理可否APIが利用できない場合も安全側で閲覧専用とする。
 - importはmanual/strict JSON/限定Markdownをpreviewし、明示confirm後にだけcommitする。
 - preview tokenとCSPRNG request keyはcomponent memoryだけに保持し、画面、URL、localStorage、証跡へ出さない。
 - 一度開いたworkspace tabはitem選択中だけmountを維持し、tab切替で未保存draft、preview token、同一request keyの明示retry状態を失わない。
@@ -39,12 +39,12 @@ unknown provider fieldとraw backend errorを意図的に注入した境界検�
 
 | 対象                                                        | 結果                                                                                                                                                             |
 | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| frontend focused                                            | 9 files / 92 tests PASS                                                                                                                                          |
-| frontend full                                               | 91 files / 561 tests PASS                                                                                                                                        |
-| UI-core coverage                                            | statements 70.34%、branches 63.06%、functions 69.97%、lines 72.68%（全threshold PASS）                                                                           |
+| frontend focused                                            | 7 files / 80 tests PASS                                                                                                                                          |
+| frontend full                                               | 91 files / 564 tests PASS                                                                                                                                        |
+| UI-core coverage                                            | statements 70.37%、branches 63.15%、functions 69.99%、lines 72.70%（全threshold PASS）                                                                           |
 | frontend lint / format / typecheck / build / build budget   | PASS                                                                                                                                                             |
 | backend provenance focused                                  | 66 / 66 tests PASS                                                                                                                                               |
-| backend focused coverage                                    | statements 80.71%、branches 73.06%、functions 86.90%、lines 80.71%                                                                                               |
+| backend focused coverage                                    | statements 81.01%、branches 73.18%、functions 87.20%、lines 81.01%                                                                                               |
 | backend full                                                | 1,928 / 1,928 tests PASS、fail / cancelled / skipped / todo 0                                                                                                    |
 | backend lint / format / typecheck / build / Prisma generate | PASS                                                                                                                                                             |
 | PostgreSQL 15                                               | provenance integration（owner限定deleted list、active/deleted paginationを含む）、conversation import integrationともにPASS                                      |
@@ -76,4 +76,4 @@ focused E2Eではpersonal item、ready snapshot、annotation作成・改訂、JS
 
 ## Rollback
 
-PR Cはfrontend、manual、E2E、証跡に加え、annotation一覧へ後方互換な`includeDeleted` queryを追加する。既定値は`false`で、Prisma schema、migration、env契約は変更しない。問題時はPR Cのmerge commitをrevertし、PR A/Bで追加済みのbackend entity/import APIとdataを保持する。
+PR Cはfrontend、manual、E2E、証跡に加え、annotation一覧へ後方互換な`includeDeleted` queryと、既存responseを変更しない管理可否APIを追加する。`includeDeleted`の既定値は`false`で、Prisma schema、migration、env契約は変更しない。新frontendを旧backendへ戻した場合、管理可否APIが存在しないためannotation操作だけが安全側で閲覧専用になる。問題時はPR Cのmerge commitをrevertし、PR A/Bで追加済みのbackend entity/import APIとdataを保持する。

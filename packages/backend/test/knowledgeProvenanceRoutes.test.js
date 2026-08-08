@@ -200,10 +200,13 @@ test('annotation routes map canonical actor, serialize history, and issue actor-
             }),
           ],
           nextBoundary: { updatedAt: date, id: 'annotation-1' },
-          canManageAnnotations: true,
         },
       };
     },
+    capabilities: async () => ({
+      ok: true,
+      value: { canManageAnnotations: true },
+    }),
     detail: async () => ({ ok: true, value: annotation() }),
     history: async () => ({
       ok: true,
@@ -275,8 +278,14 @@ test('annotation routes map canonical actor, serialize history, and issue actor-
   assert.equal(listed.json().nextCursor.includes('annotation-1'), false);
   assert.equal(listed.json().items[0].deletedAt, null);
   assert.equal(listed.json().items[0].providerKey, undefined);
-  assert.equal(listed.json().canManageAnnotations, true);
   assert.equal(listInputs[0].includeDeleted, false);
+
+  const capabilities = await app.inject({
+    method: 'GET',
+    url: '/knowledge/items/item-1/annotations/capabilities',
+  });
+  assert.equal(capabilities.statusCode, 200, capabilities.body);
+  assert.deepEqual(capabilities.json(), { canManageAnnotations: true });
 
   const includeDeleted = await app.inject({
     method: 'GET',
@@ -650,6 +659,7 @@ test('synthesis access-budget exhaustion does not disclose list or ID existence'
 test('all provenance routes require a canonical account and normalize unauthorized IDs as not found', async (t) => {
   const service = {
     list: async () => ({ ok: true, value: { items: [], nextBoundary: null } }),
+    capabilities: async () => notFound(),
     detail: async () => notFound(),
     history: async () => notFound(),
     create: async () => notFound(),
@@ -690,6 +700,13 @@ test('all provenance routes require a canonical account and normalize unauthoriz
   });
   assert.equal(missing.statusCode, 404, missing.body);
   assert.equal(missing.json().error.message, 'Not found');
+
+  const missingCapabilities = await ownerApp.inject({
+    method: 'GET',
+    url: '/knowledge/items/hidden-item/annotations/capabilities',
+  });
+  assert.equal(missingCapabilities.statusCode, 404, missingCapabilities.body);
+  assert.equal(missingCapabilities.json().error.message, 'Not found');
 });
 
 test('provenance detail routes redact Fastify validation diagnostics', async (t) => {
