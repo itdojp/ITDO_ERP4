@@ -23,7 +23,7 @@
 
 ## 自動テスト
 
-未実行項目を成功として扱わない。`release-readiness` はclean checkoutを要求するため、commit後のexact headで実行し、結果はPR本文へ追記する。
+未実行項目を成功として扱わない。`release-readiness` はclean checkoutのexact headで実行し、repo-side gateと外部Go依存を区別する。
 
 | 検証                                     | 結果   | 証跡／補足                                                                         |
 | ---------------------------------------- | ------ | ---------------------------------------------------------------------------------- |
@@ -41,7 +41,7 @@
 | bounded-context / docs / image links     | PASS   | dependency 0 violation、coverage PASS、130 image links                             |
 | audit / secret scan                      | PASS   | npm audit high/critical 0、tracked-file secret scan 0（最終標準gateでも再確認）    |
 | lint / format / typecheck / build / test | PASS   | backend 2,040 / frontend 583、全標準gate成功                                       |
-| release-readiness core                   | 未実行 | clean exact headで実行しPR本文へ記録                                               |
+| release-readiness core                   | PASS   | clean exact head、29/29 checks、core E2E 107/107（repo-side readiness）            |
 
 ## Real-backend E2E matrix
 
