@@ -101,10 +101,7 @@ const auditActor = {
   source: 'api',
   principalUserId: 'knowledge-provenance-integration-user',
   actorUserId: 'knowledge-provenance-integration-user',
-  authScopes: [
-    'knowledge:write',
-    'https://idp.example/knowledge.write',
-  ],
+  authScopes: ['knowledge:write', 'https://idp.example/knowledge.write'],
 };
 
 function expectOk(result, context) {
@@ -808,6 +805,7 @@ try {
     activeOrganizationAnnotations.items.map((entry) => entry.id),
     [activeOrganizationAnnotation.id],
   );
+  assert.equal(activeOrganizationAnnotations.canManageAnnotations, true);
 
   const ownerAnnotationIds = [];
   let ownerAnnotationBoundary;
@@ -822,6 +820,7 @@ try {
       }),
       `owner deleted annotation list page ${pageNumber + 1}`,
     );
+    assert.equal(page.canManageAnnotations, true);
     ownerAnnotationIds.push(...page.items.map((entry) => entry.id));
     ownerAnnotationBoundary = page.nextBoundary;
     if (!ownerAnnotationBoundary) break;
@@ -844,6 +843,7 @@ try {
     sharedReaderAnnotations.items.map((entry) => entry.id),
     [activeOrganizationAnnotation.id],
   );
+  assert.equal(sharedReaderAnnotations.canManageAnnotations, false);
   expectFailure(
     await annotationService.list({
       actor: outsider,

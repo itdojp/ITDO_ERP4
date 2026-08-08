@@ -18078,6 +18078,9 @@
                 "schema": {
                   "additionalProperties": false,
                   "properties": {
+                    "canManageAnnotations": {
+                      "type": "boolean"
+                    },
                     "items": {
                       "items": {
                         "$ref": "#/components/schemas/def-1"
@@ -18091,7 +18094,8 @@
                   },
                   "required": [
                     "items",
-                    "nextCursor"
+                    "nextCursor",
+                    "canManageAnnotations"
                   ],
                   "type": "object"
                 }

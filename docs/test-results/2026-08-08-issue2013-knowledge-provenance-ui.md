@@ -11,6 +11,7 @@
 
 - snapshot、annotation revision、conversation turn、Synthesis version/sourceを別entityとして表示する。
 - annotation kind/origin、conversation role/origin、Synthesis/未解決事項/provenanceを色だけでなくtext labelとsemantic markupで区別する。
+- organization itemの非ownerには、annotation一覧のserver-side capabilityに基づいて閲覧専用状態を表示し、owner専用mutation操作を提示しない。
 - importはmanual/strict JSON/限定Markdownをpreviewし、明示confirm後にだけcommitする。
 - preview tokenとCSPRNG request keyはcomponent memoryだけに保持し、画面、URL、localStorage、証跡へ出さない。
 - 一度開いたworkspace tabはitem選択中だけmountを維持し、tab切替で未保存draft、preview token、同一request keyの明示retry状態を失わない。

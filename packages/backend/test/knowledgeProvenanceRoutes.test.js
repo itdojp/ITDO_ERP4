@@ -200,6 +200,7 @@ test('annotation routes map canonical actor, serialize history, and issue actor-
             }),
           ],
           nextBoundary: { updatedAt: date, id: 'annotation-1' },
+          canManageAnnotations: true,
         },
       };
     },
@@ -274,6 +275,7 @@ test('annotation routes map canonical actor, serialize history, and issue actor-
   assert.equal(listed.json().nextCursor.includes('annotation-1'), false);
   assert.equal(listed.json().items[0].deletedAt, null);
   assert.equal(listed.json().items[0].providerKey, undefined);
+  assert.equal(listed.json().canManageAnnotations, true);
   assert.equal(listInputs[0].includeDeleted, false);
 
   const includeDeleted = await app.inject({

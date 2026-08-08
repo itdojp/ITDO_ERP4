@@ -61,7 +61,7 @@ MVP で扱う入力は次の4種類です。
 5. 訂正する場合は対象annotationの`改訂`を選びます。旧本文はrevision履歴に残り、上書き消去されません。
 6. 不要になった場合は`削除`を選びます。論理削除のため、再読込後も削除済みであることと履歴を確認できます。
 
-annotation本文は元snapshotへ連結されません。種類とoriginは色だけでなくtext labelでも表示されます。organization項目でも、current item ACLをserver側で再検査します。一覧またはrevision履歴に続きがある場合は`さらに読み込む`操作が表示され、opaque cursorで次ページを取得します。
+annotation本文は元snapshotへ連結されません。種類とoriginは色だけでなくtext labelでも表示されます。organization項目でも、current item ACLをserver側で再検査します。作成・改訂・削除はitem ownerだけが実行でき、共有先の非ownerにはserver判定に基づく「閲覧のみ」を表示します。一覧またはrevision履歴に続きがある場合は`さらに読み込む`操作が表示され、opaque cursorで次ページを取得します。
 
 ## 会話をpreviewして取り込む
 

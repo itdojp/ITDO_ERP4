@@ -14,8 +14,8 @@ import {
   knowledgeProvenanceLimits,
   knowledgeProvenanceOrigins,
   type KnowledgeAnnotation,
+  type KnowledgeAnnotationPage,
   type KnowledgeAnnotationRevision,
-  type KnowledgePage,
 } from '../application/knowledge/knowledgeProvenancePorts.js';
 import {
   prismaKnowledgeAnnotationRepository,
@@ -231,10 +231,11 @@ export async function registerKnowledgeAnnotationRoutes(
           200: {
             type: 'object',
             additionalProperties: false,
-            required: ['items', 'nextCursor'],
+            required: ['items', 'nextCursor', 'canManageAnnotations'],
             properties: {
               items: { type: 'array', items: annotationResponseRef },
               nextCursor: nullableStringSchema,
+              canManageAnnotations: { type: 'boolean' },
             },
           },
           400: knowledgeProvenanceErrorResponseSchema,
@@ -281,7 +282,7 @@ export async function registerKnowledgeAnnotationRoutes(
       return sendKnowledgeProvenanceResult(
         reply,
         result,
-        (page: KnowledgePage<KnowledgeAnnotation>) => ({
+        (page: KnowledgeAnnotationPage) => ({
           items: page.items.map(annotationResponse),
           nextCursor: page.nextBoundary
             ? cursor.encodePage({
@@ -291,6 +292,7 @@ export async function registerKnowledgeAnnotationRoutes(
                 boundary: page.nextBoundary,
               })
             : null,
+          canManageAnnotations: page.canManageAnnotations,
         }),
       );
     },

@@ -139,6 +139,9 @@ export function KnowledgeAnnotationPanel(props: {
   const [listNextCursor, setListNextCursor] = useState<string | null>(null);
   const [listLoadingMore, setListLoadingMore] = useState(false);
   const [listPageError, setListPageError] = useState('');
+  const [canManageAnnotations, setCanManageAnnotations] = useState<
+    boolean | null
+  >(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [createDraft, setCreateDraft] = useState<AnnotationDraft>(emptyDraft);
   const [createContentError, setCreateContentError] = useState('');
@@ -204,6 +207,11 @@ export function KnowledgeAnnotationPanel(props: {
         setAnnotations((current) =>
           mergeUniqueById(append ? current : [], page.items),
         );
+        setCanManageAnnotations((current) =>
+          append
+            ? current === true && page.canManageAnnotations
+            : page.canManageAnnotations,
+        );
         setListNextCursor(page.nextCursor);
         setListStatus('success');
       } catch (error) {
@@ -217,6 +225,7 @@ export function KnowledgeAnnotationPanel(props: {
           setListPageError(safeErrorMessage(error));
         } else {
           setAnnotations([]);
+          setCanManageAnnotations(null);
           setListNextCursor(null);
           setListStatus('error');
           setListError(safeErrorMessage(error));
@@ -317,6 +326,7 @@ export function KnowledgeAnnotationPanel(props: {
     setListNextCursor(null);
     setListLoadingMore(false);
     setListPageError('');
+    setCanManageAnnotations(null);
     setNotice(null);
     setCreateDraft(emptyDraft());
     setCreateContentError('');
@@ -363,7 +373,7 @@ export function KnowledgeAnnotationPanel(props: {
     const validationMessage = contentValidationMessage(createDraft.content);
     setCreateContentError(validationMessage);
     setNotice(null);
-    if (validationMessage || mutation) return;
+    if (validationMessage || mutation || canManageAnnotations !== true) return;
 
     const generation = itemGenerationRef.current;
     const request = mutationRequestRef.current + 1;
@@ -414,7 +424,8 @@ export function KnowledgeAnnotationPanel(props: {
   };
 
   const startEditing = (annotation: KnowledgeAnnotation) => {
-    if (annotation.deletedAt || mutation) return;
+    if (annotation.deletedAt || mutation || canManageAnnotations !== true)
+      return;
     setNotice(null);
     setEditContentError('');
     setEditDraft({
@@ -434,6 +445,7 @@ export function KnowledgeAnnotationPanel(props: {
       !editDraft ||
       editDraft.annotationId !== annotation.id ||
       annotation.deletedAt ||
+      canManageAnnotations !== true ||
       mutation
     ) {
       return;
@@ -504,7 +516,8 @@ export function KnowledgeAnnotationPanel(props: {
   };
 
   const removeAnnotation = async (annotation: KnowledgeAnnotation) => {
-    if (annotation.deletedAt || mutation) return;
+    if (annotation.deletedAt || mutation || canManageAnnotations !== true)
+      return;
     setNotice(null);
     const generation = itemGenerationRef.current;
     const request = mutationRequestRef.current + 1;
@@ -843,15 +856,17 @@ export function KnowledgeAnnotationPanel(props: {
                   </form>
                 ) : (
                   <div className="knowledge-hub-snapshot-actions">
-                    <Button
-                      type="button"
-                      size="small"
-                      variant="secondary"
-                      disabled={deleted || Boolean(mutation)}
-                      onClick={() => startEditing(annotation)}
-                    >
-                      改訂
-                    </Button>
+                    {canManageAnnotations ? (
+                      <Button
+                        type="button"
+                        size="small"
+                        variant="secondary"
+                        disabled={deleted || Boolean(mutation)}
+                        onClick={() => startEditing(annotation)}
+                      >
+                        改訂
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       size="small"
@@ -870,16 +885,18 @@ export function KnowledgeAnnotationPanel(props: {
                     >
                       改訂履歴
                     </Button>
-                    <Button
-                      type="button"
-                      size="small"
-                      variant="danger"
-                      loading={deleting}
-                      disabled={deleted || Boolean(mutation)}
-                      onClick={() => void removeAnnotation(annotation)}
-                    >
-                      {deleted ? '削除済み' : '削除'}
-                    </Button>
+                    {canManageAnnotations ? (
+                      <Button
+                        type="button"
+                        size="small"
+                        variant="danger"
+                        loading={deleting}
+                        disabled={deleted || Boolean(mutation)}
+                        onClick={() => void removeAnnotation(annotation)}
+                      >
+                        {deleted ? '削除済み' : '削除'}
+                      </Button>
+                    ) : null}
                   </div>
                 )}
 
@@ -913,7 +930,10 @@ export function KnowledgeAnnotationPanel(props: {
     );
   })();
 
-  const createDisabled = listStatus !== 'success' || Boolean(mutation);
+  const createDisabled =
+    listStatus !== 'success' ||
+    canManageAnnotations !== true ||
+    Boolean(mutation);
 
   return (
     <section aria-labelledby={headingId}>
@@ -939,71 +959,81 @@ export function KnowledgeAnnotationPanel(props: {
           <Alert variant={notice.variant}>{notice.message}</Alert>
         ) : null}
 
-        <form
-          className="knowledge-hub-capture-form"
-          aria-label="アノテーションを作成"
-          onSubmit={(event) => void submitCreate(event)}
-        >
-          <Select
-            label="新規アノテーションの種別"
-            value={createDraft.kind}
-            disabled={createDisabled}
-            onChange={(event) =>
-              setCreateDraft((current) => ({
-                ...current,
-                kind: event.target.value as KnowledgeAnnotationKind,
-              }))
-            }
+        {listStatus === 'success' && canManageAnnotations === false ? (
+          <Alert variant="info">
+            この組織Knowledge
+            itemのアノテーションは閲覧のみです。作成、改訂、削除はitem
+            ownerだけが実行できます。
+          </Alert>
+        ) : null}
+
+        {canManageAnnotations === true ? (
+          <form
+            className="knowledge-hub-capture-form"
+            aria-label="アノテーションを作成"
+            onSubmit={(event) => void submitCreate(event)}
           >
-            {knowledgeAnnotationKinds.map((kind) => (
-              <option key={kind} value={kind}>
-                {knowledgeAnnotationKindLabels[kind]}
-              </option>
-            ))}
-          </Select>
-          <Select
-            label="新規アノテーションの由来"
-            value={createDraft.origin}
-            disabled={createDisabled}
-            onChange={(event) =>
-              setCreateDraft((current) => ({
-                ...current,
-                origin: event.target.value as KnowledgeProvenanceOrigin,
-              }))
-            }
-          >
-            {knowledgeProvenanceOrigins.map((origin) => (
-              <option key={origin} value={origin}>
-                {knowledgeOriginLabels[origin]}
-              </option>
-            ))}
-          </Select>
-          <Textarea
-            label="新規アノテーションの内容"
-            value={createDraft.content}
-            rows={5}
-            required
-            fullWidth
-            disabled={createDisabled}
-            error={createContentError || undefined}
-            onChange={(event) => {
-              setCreateDraft((current) => ({
-                ...current,
-                content: event.target.value,
-              }));
-              setCreateContentError('');
-            }}
-          />
-          <div className="knowledge-hub-form-actions">
-            <Button
-              type="submit"
-              loading={mutation?.kind === 'create'}
+            <Select
+              label="新規アノテーションの種別"
+              value={createDraft.kind}
               disabled={createDisabled}
+              onChange={(event) =>
+                setCreateDraft((current) => ({
+                  ...current,
+                  kind: event.target.value as KnowledgeAnnotationKind,
+                }))
+              }
             >
-              アノテーションを作成
-            </Button>
-          </div>
-        </form>
+              {knowledgeAnnotationKinds.map((kind) => (
+                <option key={kind} value={kind}>
+                  {knowledgeAnnotationKindLabels[kind]}
+                </option>
+              ))}
+            </Select>
+            <Select
+              label="新規アノテーションの由来"
+              value={createDraft.origin}
+              disabled={createDisabled}
+              onChange={(event) =>
+                setCreateDraft((current) => ({
+                  ...current,
+                  origin: event.target.value as KnowledgeProvenanceOrigin,
+                }))
+              }
+            >
+              {knowledgeProvenanceOrigins.map((origin) => (
+                <option key={origin} value={origin}>
+                  {knowledgeOriginLabels[origin]}
+                </option>
+              ))}
+            </Select>
+            <Textarea
+              label="新規アノテーションの内容"
+              value={createDraft.content}
+              rows={5}
+              required
+              fullWidth
+              disabled={createDisabled}
+              error={createContentError || undefined}
+              onChange={(event) => {
+                setCreateDraft((current) => ({
+                  ...current,
+                  content: event.target.value,
+                }));
+                setCreateContentError('');
+              }}
+            />
+            <div className="knowledge-hub-form-actions">
+              <Button
+                type="submit"
+                loading={mutation?.kind === 'create'}
+                disabled={createDisabled}
+              >
+                アノテーションを作成
+              </Button>
+            </div>
+          </form>
+        ) : null}
 
         {annotationList}
       </Card>

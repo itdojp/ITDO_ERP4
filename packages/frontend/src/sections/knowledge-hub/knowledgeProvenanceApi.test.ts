@@ -126,7 +126,12 @@ describe('knowledgeProvenanceApi annotations', () => {
   it('normalizes list/history and drops actor, provider, and unknown fields', async () => {
     apiResponse
       .mockResolvedValueOnce(
-        response({ items: [annotation], nextCursor: null }),
+        response({
+          items: [annotation],
+          nextCursor: null,
+          canManageAnnotations: true,
+          ownerUserId: 'must-drop',
+        }),
       )
       .mockResolvedValueOnce(response({ items: [revision], nextCursor: null }));
 
@@ -154,6 +159,7 @@ describe('knowledgeProvenanceApi annotations', () => {
         },
       ],
       nextCursor: null,
+      canManageAnnotations: true,
     });
     expect(
       (
@@ -169,8 +175,20 @@ describe('knowledgeProvenanceApi annotations', () => {
 
   it('forwards opaque cursors and the explicit deleted-history option', async () => {
     apiResponse
-      .mockResolvedValueOnce(response({ items: [], nextCursor: 'next-page' }))
-      .mockResolvedValueOnce(response({ items: [], nextCursor: null }));
+      .mockResolvedValueOnce(
+        response({
+          items: [],
+          nextCursor: 'next-page',
+          canManageAnnotations: true,
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          items: [],
+          nextCursor: null,
+          canManageAnnotations: true,
+        }),
+      );
 
     const first = await listKnowledgeAnnotations('item-1', {
       includeDeleted: true,
@@ -183,6 +201,27 @@ describe('knowledgeProvenanceApi annotations', () => {
     expect(apiResponse.mock.calls[0][0]).toContain('includeDeleted=true');
     expect(apiResponse.mock.calls[1][0]).toContain('cursor=next-page');
     expect(apiResponse.mock.calls[1][0]).toContain('includeDeleted=true');
+  });
+
+  it('fails closed for a missing capability and rejects a non-boolean value', async () => {
+    apiResponse
+      .mockResolvedValueOnce(response({ items: [], nextCursor: null }))
+      .mockResolvedValueOnce(
+        response({
+          items: [],
+          nextCursor: null,
+          canManageAnnotations: 'true',
+        }),
+      );
+
+    await expect(listKnowledgeAnnotations('item-1')).resolves.toEqual({
+      items: [],
+      nextCursor: null,
+      canManageAnnotations: false,
+    });
+    await expect(listKnowledgeAnnotations('item-1')).rejects.toMatchObject({
+      code: 'invalid_response',
+    });
   });
 
   it('sends exact create/revise/delete bodies and normalizes each response', async () => {

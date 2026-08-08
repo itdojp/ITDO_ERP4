@@ -254,6 +254,7 @@ test('annotation list passes the deleted view through one consistent snapshot', 
       return {
         items: input.includeDeleted ? [deleted] : [],
         nextBoundary: input.boundary ?? null,
+        canManageAnnotations: true,
       };
     },
   };

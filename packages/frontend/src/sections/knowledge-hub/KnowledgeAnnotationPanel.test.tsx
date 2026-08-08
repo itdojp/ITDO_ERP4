@@ -85,8 +85,12 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function page<T>(items: T[], nextCursor: string | null = null) {
-  return { items, nextCursor };
+function page<T>(
+  items: T[],
+  nextCursor: string | null = null,
+  canManageAnnotations = true,
+) {
+  return { items, nextCursor, canManageAnnotations };
 }
 
 beforeEach(() => {
@@ -165,7 +169,10 @@ describe('KnowledgeAnnotationPanel', () => {
         createdAt: '2026-08-08T01:00:00.000Z',
       },
     });
-    provenanceApi.reviseKnowledgeAnnotation.mockResolvedValue(revised);
+    const revisionRequest = deferred<KnowledgeAnnotation>();
+    provenanceApi.reviseKnowledgeAnnotation.mockReturnValue(
+      revisionRequest.promise,
+    );
 
     render(<KnowledgeAnnotationPanel itemId="item-1" itemScope="personal" />);
     const card = await screen.findByRole('article', {
@@ -200,7 +207,11 @@ describe('KnowledgeAnnotationPanel', () => {
         content: '改訂した内容',
       }),
     );
-    expect(await screen.findByText('改訂した内容')).toBeInTheDocument();
+    await act(async () => {
+      revisionRequest.resolve(revised);
+      await revisionRequest.promise;
+    });
+    expect(screen.getByText('改訂した内容')).toBeInTheDocument();
     expect(within(card).getByText('仮説')).toBeInTheDocument();
     expect(within(card).getByText('AI')).toBeInTheDocument();
     expect(screen.getByText('現在の改訂: 2')).toBeInTheDocument();
@@ -555,6 +566,38 @@ describe('KnowledgeAnnotationPanel', () => {
     expect(within(organizationCard).getByText('外部情報')).toBeInTheDocument();
     expect(
       within(organizationCard).getByText('organization（組織）'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders organization non-owners as read-only from the server capability', async () => {
+    provenanceApi.listKnowledgeAnnotations.mockResolvedValue(
+      page(
+        [
+          annotation({
+            scope: 'organization',
+            revision: revision(1, { content: '共有された本人意見' }),
+          }),
+        ],
+        null,
+        false,
+      ),
+    );
+
+    render(
+      <KnowledgeAnnotationPanel itemId="item-1" itemScope="organization" />,
+    );
+
+    expect(await screen.findByText('共有された本人意見')).toBeInTheDocument();
+    expect(
+      screen.getByText(/この組織Knowledge itemのアノテーションは閲覧のみ/u),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('form', { name: 'アノテーションを作成' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '改訂' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '削除' })).toBeNull();
+    expect(
+      screen.getByRole('button', { name: '改訂履歴' }),
     ).toBeInTheDocument();
   });
 

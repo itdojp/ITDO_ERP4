@@ -437,6 +437,7 @@ export class PrismaKnowledgeAnnotationRepository implements KnowledgeAnnotationR
       items: selected.map(mapAnnotation),
       nextBoundary:
         hasMore && last ? { updatedAt: last.updatedAt, id: last.id } : null,
+      canManageAnnotations: item.ownerUserId === input.actor.userId,
     };
   }
 

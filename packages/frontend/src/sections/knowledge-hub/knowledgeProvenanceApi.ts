@@ -101,6 +101,11 @@ export type KnowledgeProvenancePage<T> = {
   nextCursor: string | null;
 };
 
+export type KnowledgeAnnotationPage =
+  KnowledgeProvenancePage<KnowledgeAnnotation> & {
+    canManageAnnotations: boolean;
+  };
+
 function normalizePage<T>(
   payload: JsonRecord,
   normalize: (value: unknown) => T,
@@ -261,7 +266,7 @@ export async function listKnowledgeAnnotations(
     cursor?: string | null;
     includeDeleted?: boolean;
   } = {},
-) {
+): Promise<KnowledgeAnnotationPage> {
   const path = pagePath(
     `/knowledge/items/${encodeURIComponent(itemId)}/annotations`,
     options.cursor,
@@ -269,7 +274,13 @@ export async function listKnowledgeAnnotations(
   const payload = await requestProvenanceJson(
     options.includeDeleted ? `${path}&includeDeleted=true` : path,
   );
-  return normalizePage(payload, normalizeAnnotation);
+  return {
+    ...normalizePage(payload, normalizeAnnotation),
+    canManageAnnotations:
+      payload.canManageAnnotations === undefined
+        ? false
+        : booleanValue(payload.canManageAnnotations),
+  };
 }
 
 export async function createKnowledgeAnnotation(input: {
