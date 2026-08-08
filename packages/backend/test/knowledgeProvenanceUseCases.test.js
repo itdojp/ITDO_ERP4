@@ -247,6 +247,48 @@ test('annotation and conversation reads always use a consistent snapshot', async
   assert.equal(conversationSnapshotCalls.length, 3);
 });
 
+test('conversation item filter is evaluated in one snapshot and hidden items fail closed', async () => {
+  const listInputs = [];
+  let snapshotCalls = 0;
+  const conversationReader = {
+    listVisible: async (input) => {
+      listInputs.push(input);
+      return input.knowledgeItemId === 'hidden-item'
+        ? null
+        : { items: [], nextBoundary: input.boundary ?? null };
+    },
+  };
+  conversationReader.withConsistentSnapshot = async (read) => {
+    snapshotCalls += 1;
+    return read(conversationReader);
+  };
+  const service = createKnowledgeConversationService({
+    reader: conversationReader,
+    unitOfWork: unitOfWork(transaction()),
+  });
+  const boundary = { updatedAt: now, id: 'conversation-1' };
+  const visible = await service.list({
+    actor,
+    knowledgeItemId: 'item-1',
+    limit: 20,
+    boundary,
+  });
+  assert.equal(visible.ok, true);
+  assert.deepEqual(visible.value, { items: [], nextBoundary: boundary });
+  const hidden = await service.list({
+    actor,
+    knowledgeItemId: 'hidden-item',
+    limit: 20,
+  });
+  assert.equal(hidden.ok, false);
+  assert.equal(hidden.code, 'not_found');
+  assert.equal(snapshotCalls, 2);
+  assert.deepEqual(listInputs, [
+    { actor, knowledgeItemId: 'item-1', limit: 20, boundary },
+    { actor, knowledgeItemId: 'hidden-item', limit: 20 },
+  ]);
+});
+
 test('annotation list passes the deleted view through one consistent snapshot', async () => {
   const listInputs = [];
   const deleted = annotation({ deletedAt: now });

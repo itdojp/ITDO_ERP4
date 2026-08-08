@@ -433,6 +433,18 @@ test('OpenAPI publishes the bounded provenance foundation without internal idemp
     type: 'boolean',
   });
 
+  const conversationList = openapi.paths['/knowledge/conversations'].get;
+  const knowledgeItemFilter = conversationList.parameters.find(
+    (parameter) =>
+      parameter.in === 'query' && parameter.name === 'knowledgeItemId',
+  );
+  assert.deepEqual(knowledgeItemFilter?.schema, {
+    maxLength: 100,
+    minLength: 1,
+    type: 'string',
+  });
+  assert.ok(conversationList.responses['404']);
+
   const conversation =
     openapi.paths['/knowledge/conversations'].post.responses['201'].content[
       'application/json'

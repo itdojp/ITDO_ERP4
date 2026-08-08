@@ -247,7 +247,7 @@ test('Knowledge Hub snapshot, annotation, conversation import, and synthesis pro
   );
 
   const firstConversationListResponse = await request.get(
-    `${apiBase}/knowledge/conversations?limit=100`,
+    `${apiBase}/knowledge/conversations?knowledgeItemId=${encodeURIComponent(item!.id)}&limit=100`,
     { headers: requestHeaders() },
   );
   expect(firstConversationListResponse.ok()).toBeTruthy();
@@ -259,6 +259,51 @@ test('Knowledge Hub snapshot, annotation, conversation import, and synthesis pro
   expect(firstMatchingConversations).toHaveLength(1);
   const firstConversationId = firstMatchingConversations[0].id;
 
+  const unrelatedConversationCount = 101;
+  for (let offset = 0; offset < unrelatedConversationCount; offset += 20) {
+    const responses = await Promise.all(
+      Array.from(
+        { length: Math.min(20, unrelatedConversationCount - offset) },
+        (_, index) =>
+          request.post(`${apiBase}/knowledge/conversations`, {
+            headers: requestHeaders(),
+            data: {
+              title: `Synthetic unrelated conversation ${syntheticSuffix}-${offset + index + 1}`,
+              sourceType: 'manual',
+              capturedAt: null,
+            },
+          }),
+      ),
+    );
+    expect(responses.every((response) => response.status() === 201)).toBe(true);
+  }
+  const cappedGlobalListResponse = await request.get(
+    `${apiBase}/knowledge/conversations?limit=100`,
+    { headers: requestHeaders() },
+  );
+  expect(cappedGlobalListResponse.ok()).toBeTruthy();
+  const cappedGlobalList = (await cappedGlobalListResponse.json()) as {
+    items: { id: string }[];
+  };
+  expect(cappedGlobalList.items).toHaveLength(100);
+  expect(
+    cappedGlobalList.items.some((entry) => entry.id === firstConversationId),
+  ).toBe(false);
+
+  const scopedAfterGlobalCapResponse = await request.get(
+    `${apiBase}/knowledge/conversations?knowledgeItemId=${encodeURIComponent(item!.id)}&limit=100`,
+    { headers: requestHeaders() },
+  );
+  expect(scopedAfterGlobalCapResponse.ok()).toBeTruthy();
+  const scopedAfterGlobalCap = (await scopedAfterGlobalCapResponse.json()) as {
+    items: { id: string }[];
+  };
+  expect(
+    scopedAfterGlobalCap.items.some(
+      (entry) => entry.id === firstConversationId,
+    ),
+  ).toBe(true);
+
   await hub.getByRole('button', { name: '取込内容をプレビュー' }).click();
   await expect(
     hub.getByRole('heading', { name: '取込プレビュー' }),
@@ -269,7 +314,7 @@ test('Knowledge Hub snapshot, annotation, conversation import, and synthesis pro
   });
 
   const conversationListResponse = await request.get(
-    `${apiBase}/knowledge/conversations?limit=100`,
+    `${apiBase}/knowledge/conversations?knowledgeItemId=${encodeURIComponent(item!.id)}&limit=100`,
     { headers: requestHeaders() },
   );
   expect(conversationListResponse.ok()).toBeTruthy();

@@ -95,20 +95,27 @@ export function createKnowledgeConversationService(dependencies: {
   return {
     async list(input: {
       actor: KnowledgeActor;
+      knowledgeItemId?: string;
       limit: number;
       boundary?: KnowledgePageBoundary;
     }) {
       if (
         !hasKnowledgePrincipal(input.actor) ||
+        (input.knowledgeItemId !== undefined &&
+          !isBoundedKnowledgeId(input.knowledgeItemId)) ||
         !isValidKnowledgeListLimit(input.limit)
       ) {
-        return provenanceOk({ items: [], nextBoundary: null });
+        return input.knowledgeItemId === undefined
+          ? provenanceOk({ items: [], nextBoundary: null })
+          : provenanceNotFound();
       }
-      return provenanceOk(
-        await dependencies.reader.withConsistentSnapshot((reader) =>
-          reader.listVisible(input),
-        ),
+      const page = await dependencies.reader.withConsistentSnapshot((reader) =>
+        reader.listVisible(input),
       );
+      if (page) return provenanceOk(page);
+      return input.knowledgeItemId === undefined
+        ? provenanceOk({ items: [], nextBoundary: null })
+        : provenanceNotFound();
     },
 
     async detail(input: { actor: KnowledgeActor; conversationId: string }) {

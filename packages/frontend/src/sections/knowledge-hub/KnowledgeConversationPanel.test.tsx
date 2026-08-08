@@ -336,19 +336,6 @@ describe('KnowledgeConversationPanel', () => {
       rawContentHash: 'raw-hash-secret',
       actorId: 'actor-id-secret',
     } as KnowledgeConversation;
-    const unrelated = makeConversation({
-      id: 'conversation-other',
-      title: '別項目だけの会話',
-      items: [
-        {
-          id: 'relation-other',
-          knowledgeItemId: 'item-other',
-          relationType: 'supporting',
-          ordinal: 0,
-          createdAt: '2026-08-08T01:01:00.000Z',
-        },
-      ],
-    });
     const inertText =
       '**太字ではない本文** [取得しないlink](https://example.invalid/) <script>実行しない</script>';
     const turns = [
@@ -382,16 +369,17 @@ describe('KnowledgeConversationPanel', () => {
         rawContentHash: 'turn-raw-hash-secret',
       } as KnowledgeConversationTurn,
     ];
-    apiMocks.listKnowledgeConversations.mockResolvedValue(
-      page([unrelated, linked]),
-    );
+    apiMocks.listKnowledgeConversations.mockResolvedValue(page([linked]));
     apiMocks.listKnowledgeConversationTurns.mockResolvedValue(page(turns));
     render(<KnowledgeConversationPanel itemId="item-1" />);
 
     const conversationButton = await screen.findByRole('button', {
       name: /関連会話/,
     });
-    expect(screen.queryByText('別項目だけの会話')).not.toBeInTheDocument();
+    expect(apiMocks.listKnowledgeConversations).toHaveBeenCalledWith({
+      knowledgeItemId: 'item-1',
+      cursor: null,
+    });
     expect(screen.getByLabelText('relation 主根拠')).toBeVisible();
     expect(apiMocks.listKnowledgeConversationTurns).not.toHaveBeenCalled();
 
@@ -429,20 +417,7 @@ describe('KnowledgeConversationPanel', () => {
     }
   });
 
-  it('keeps global conversation pagination available when the first page has no item match and merges later pages without duplicates', async () => {
-    const unrelated = makeConversation({
-      id: 'conversation-unrelated',
-      title: '別項目の会話',
-      items: [
-        {
-          id: 'relation-unrelated',
-          knowledgeItemId: 'item-other',
-          relationType: 'context',
-          ordinal: 0,
-          createdAt: '2026-08-08T01:01:00.000Z',
-        },
-      ],
-    });
+  it('paginates the selected item on the server and merges later pages without duplicates', async () => {
     const firstLinked = makeConversation({
       id: 'conversation-linked-1',
       title: '二ページ目の会話',
@@ -452,11 +427,13 @@ describe('KnowledgeConversationPanel', () => {
       title: '三ページ目の会話',
     });
     apiMocks.listKnowledgeConversations.mockImplementation(
-      (cursor: string | null) => {
+      (input: { knowledgeItemId: string; cursor: string | null }) => {
+        expect(input.knowledgeItemId).toBe('item-1');
+        const { cursor } = input;
         if (cursor === null)
-          return Promise.resolve(page([unrelated], 'page-2'));
+          return Promise.resolve(page([firstLinked], 'page-2'));
         if (cursor === 'page-2') {
-          return Promise.resolve(page([firstLinked], 'page-3'));
+          return Promise.resolve(page([secondLinked], 'page-3'));
         }
         return Promise.resolve(
           page([
@@ -475,9 +452,7 @@ describe('KnowledgeConversationPanel', () => {
     render(<KnowledgeConversationPanel itemId="item-1" />);
 
     expect(
-      await screen.findByText(
-        '現在読み込んだ範囲には、この項目に関連する会話がありません。',
-      ),
+      await screen.findByRole('button', { name: /二ページ目の会話/ }),
     ).toBeVisible();
     const loadMore = screen.getByRole('button', {
       name: '関連する会話をさらに読み込む',
@@ -485,9 +460,8 @@ describe('KnowledgeConversationPanel', () => {
     fireEvent.click(loadMore);
 
     expect(
-      await screen.findByRole('button', { name: /二ページ目の会話/ }),
+      await screen.findByRole('button', { name: /三ページ目の会話/ }),
     ).toBeVisible();
-    expect(screen.queryByText('別項目の会話')).not.toBeInTheDocument();
     fireEvent.click(
       screen.getByRole('button', {
         name: '関連する会話をさらに読み込む',
@@ -495,18 +469,17 @@ describe('KnowledgeConversationPanel', () => {
     );
 
     expect(
-      await screen.findByRole('button', { name: /三ページ目の会話/ }),
-    ).toBeVisible();
-    expect(
-      screen.getAllByRole('button', { name: /更新された二ページ目の会話/ }),
+      await screen.findAllByRole('button', {
+        name: /更新された二ページ目の会話/,
+      }),
     ).toHaveLength(1);
     expect(
       screen.queryByRole('button', { name: /^二ページ目の会話/ }),
     ).not.toBeInTheDocument();
     expect(apiMocks.listKnowledgeConversations.mock.calls).toEqual([
-      [null],
-      ['page-2'],
-      ['page-3'],
+      [{ knowledgeItemId: 'item-1', cursor: null }],
+      [{ knowledgeItemId: 'item-1', cursor: 'page-2' }],
+      [{ knowledgeItemId: 'item-1', cursor: 'page-3' }],
     ]);
   });
 
@@ -626,6 +599,10 @@ describe('KnowledgeConversationPanel', () => {
     await waitFor(() =>
       expect(apiMocks.listKnowledgeConversations).toHaveBeenCalledTimes(2),
     );
+    expect(apiMocks.listKnowledgeConversations.mock.calls).toEqual([
+      [{ knowledgeItemId: 'item-old', cursor: null }],
+      [{ knowledgeItemId: 'item-new', cursor: null }],
+    ]);
 
     await act(async () => {
       newRequest.resolve(
@@ -778,6 +755,11 @@ describe('KnowledgeConversationPanel', () => {
     expect(
       await screen.findByRole('button', { name: /新項目の会話/ }),
     ).toBeVisible();
+    expect(apiMocks.listKnowledgeConversations.mock.calls).toEqual([
+      [{ knowledgeItemId: 'item-old', cursor: null }],
+      [{ knowledgeItemId: 'item-old', cursor: 'old-page-2' }],
+      [{ knowledgeItemId: 'item-new', cursor: null }],
+    ]);
 
     await act(async () => {
       oldMore.resolve(

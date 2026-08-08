@@ -5,6 +5,10 @@ import test from 'node:test';
 import { registerKnowledgeAnnotationRoutes } from '../dist/routes/knowledgeAnnotations.js';
 import { registerKnowledgeConversationRoutes } from '../dist/routes/knowledgeConversations.js';
 import { registerKnowledgeSynthesisRoutes } from '../dist/routes/knowledgeSyntheses.js';
+import {
+  createKnowledgeProvenanceCursorCodec,
+  KnowledgeProvenanceCursorError,
+} from '../dist/application/knowledge/knowledgeProvenanceCursor.js';
 import { createKnowledgeSynthesisService } from '../dist/application/knowledge/knowledgeSynthesisUseCases.js';
 import { KnowledgeSynthesisAccessBudgetError } from '../dist/application/knowledge/knowledgeSynthesisAccessContext.js';
 import { mapErrorToResponse } from '../dist/services/errors.js';
@@ -546,6 +550,93 @@ test('conversation routes preserve role/origin and return only allowlisted field
   });
   assert.equal(nameRejected.statusCode, 400, nameRejected.body);
   assert.equal(appendCalls, 1);
+});
+
+test('conversation list binds optional item filters to ACL-safe cursors and normalizes hidden items', async (t) => {
+  const inputs = [];
+  const service = {
+    list: async (input) => {
+      inputs.push(input);
+      if (input.knowledgeItemId === 'hidden-item') return notFound();
+      return {
+        ok: true,
+        value: {
+          items: [],
+          nextBoundary: input.boundary ?? {
+            updatedAt: date,
+            id: 'conversation-1',
+          },
+        },
+      };
+    },
+  };
+  const cursor = createKnowledgeProvenanceCursorCodec({
+    NODE_ENV: 'test',
+    KNOWLEDGE_CURSOR_SIGNING_SECRET:
+      'knowledge-conversation-filter-route-secret-0001',
+  });
+  const app = await build(registerKnowledgeConversationRoutes, {
+    service,
+    cursor,
+  });
+  t.after(() => app.close());
+
+  const first = await app.inject({
+    method: 'GET',
+    url: '/knowledge/conversations?knowledgeItemId=item-private-1&limit=20',
+  });
+  assert.equal(first.statusCode, 200, first.body);
+  const nextCursor = first.json().nextCursor;
+  assert.equal(typeof nextCursor, 'string');
+  assert.equal(nextCursor.includes('item-private-1'), false);
+  assert.throws(
+    () =>
+      cursor.decodePage({
+        cursor: nextCursor,
+        kind: 'conversations',
+        actor: {
+          userId: 'owner-1',
+          organizationId: 'org-1',
+          groupAccountIds: ['group-1'],
+        },
+      }),
+    KnowledgeProvenanceCursorError,
+  );
+
+  const continued = await app.inject({
+    method: 'GET',
+    url: `/knowledge/conversations?knowledgeItemId=item-private-1&limit=20&cursor=${encodeURIComponent(nextCursor)}`,
+  });
+  assert.equal(continued.statusCode, 200, continued.body);
+  assert.equal(inputs[0].knowledgeItemId, 'item-private-1');
+  assert.deepEqual(inputs[1].boundary, {
+    updatedAt: date,
+    id: 'conversation-1',
+  });
+
+  for (const url of [
+    `/knowledge/conversations?knowledgeItemId=item-private-2&cursor=${encodeURIComponent(nextCursor)}`,
+    `/knowledge/conversations?cursor=${encodeURIComponent(nextCursor)}`,
+  ]) {
+    const invalid = await app.inject({ method: 'GET', url });
+    assert.equal(invalid.statusCode, 400, invalid.body);
+    assert.equal(invalid.json().error.code, 'invalid_request');
+    assert.equal(invalid.body.includes('item-private-1'), false);
+  }
+
+  const hidden = await app.inject({
+    method: 'GET',
+    url: '/knowledge/conversations?knowledgeItemId=hidden-item',
+  });
+  assert.equal(hidden.statusCode, 404, hidden.body);
+  assert.equal(hidden.json().error.code, 'not_found');
+
+  const global = await app.inject({
+    method: 'GET',
+    url: '/knowledge/conversations?limit=20',
+  });
+  assert.equal(global.statusCode, 200, global.body);
+  assert.equal(inputs.at(-1).knowledgeItemId, undefined);
 });
 
 test('synthesis route keeps conclusion visible while fully redacting later-inaccessible provenance identity', async (t) => {

@@ -347,9 +347,17 @@ export async function listKnowledgeAnnotationRevisions(input: {
   return normalizePage(payload, normalizeAnnotationRevision);
 }
 
-export async function listKnowledgeConversations(cursor?: string | null) {
+export async function listKnowledgeConversations(input: {
+  knowledgeItemId: string;
+  cursor?: string | null;
+}) {
+  const query = new URLSearchParams({
+    knowledgeItemId: input.knowledgeItemId,
+    limit: '100',
+  });
+  if (input.cursor) query.set('cursor', input.cursor);
   const payload = await requestProvenanceJson(
-    pagePath('/knowledge/conversations', cursor),
+    `/knowledge/conversations?${query.toString()}`,
   );
   return normalizePage(payload, normalizeConversation);
 }

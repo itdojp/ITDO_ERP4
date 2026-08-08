@@ -46,6 +46,58 @@ test('provenance page cursor round-trips without exposing actor or parent IDs', 
   assert.equal(cursor.includes('org-1'), false);
 });
 
+test('conversation page cursors bind filtered and unfiltered lists separately', () => {
+  const codec = createKnowledgeProvenanceCursorCodec(env);
+  const boundary = {
+    updatedAt: new Date('2026-08-06T01:02:03.000Z'),
+    id: 'conversation-1',
+  };
+  const filtered = codec.encodePage({
+    kind: 'conversations',
+    parentId: 'item-private-1',
+    actor,
+    boundary,
+  });
+  assert.deepEqual(
+    codec.decodePage({
+      cursor: filtered,
+      kind: 'conversations',
+      parentId: 'item-private-1',
+      actor,
+    }),
+    boundary,
+  );
+  assert.equal(filtered.includes('item-private-1'), false);
+  for (const parentId of [undefined, 'item-private-2']) {
+    assert.throws(
+      () =>
+        codec.decodePage({
+          cursor: filtered,
+          kind: 'conversations',
+          parentId,
+          actor,
+        }),
+      KnowledgeProvenanceCursorError,
+    );
+  }
+
+  const unfiltered = codec.encodePage({
+    kind: 'conversations',
+    actor,
+    boundary,
+  });
+  assert.throws(
+    () =>
+      codec.decodePage({
+        cursor: unfiltered,
+        kind: 'conversations',
+        parentId: 'item-private-1',
+        actor,
+      }),
+    KnowledgeProvenanceCursorError,
+  );
+});
+
 test('annotation cursors bind the active and include-deleted views separately', () => {
   const codec = createKnowledgeProvenanceCursorCodec(env);
   const cursor = codec.encodePage({
