@@ -345,6 +345,7 @@ test('chat coverage scope includes current route, application, and Chat storage 
       .filter((name) => chatServicePattern.test(name))
       .map((name) => `src/services/${name}`),
     ...listSourceFilesRecursive('src/application/chat'),
+    'src/adapters/chat/prismaChatThreadAdapter.ts',
     'src/adapters/notifications/chatNotificationAdapter.ts',
     'src/adapters/storage/chatAttachmentStorageAdapter.ts',
     ...listSourceFilesRecursive('src/infrastructure/storage'),

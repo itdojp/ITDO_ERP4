@@ -33,6 +33,7 @@ import { registerTemplateSettingRoutes } from './templateSettings.js';
 import { registerChatRoutes } from './chat.js';
 import { registerChatBreakGlassRoutes } from './chatBreakGlass.js';
 import { registerChatRoomRoutes } from './chatRooms.js';
+import { registerChatThreadRoutes } from './chatThreads.js';
 import { registerChatSettingRoutes } from './chatSettings.js';
 import { registerChatAckLinkRoutes } from './chatAckLinks.js';
 import { registerChatAckTemplateRoutes } from './chatAckTemplates.js';
@@ -103,6 +104,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerChatSettingRoutes(app);
   await registerChatBreakGlassRoutes(app);
   await registerChatRoomRoutes(app);
+  await registerChatThreadRoutes(app);
   await registerChatAckLinkRoutes(app);
   await registerChatAckTemplateRoutes(app);
   await registerProjectRoutes(app);

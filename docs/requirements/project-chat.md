@@ -18,6 +18,7 @@
 - 添付（local/gdrive）+ 監査ログ（upload/download）
 - メンション通知（アプリ内 / `/notifications`）
 - ルーム内検索（`GET /chat-messages/search`）と ERP 横断検索（`GET /search`）
+- 一段threadの読み取り基盤（root timeline、reply集約、`GET /chat-messages/:id/thread`）。reply投稿と周辺機能統合は #2014 の後続PRで有効化する
 - 手動要約スタブ（UI: project/room）
 - 外部要約（公式ルームのみ、外部連携ON時。監査ログ必須）: `docs/requirements/chat-external-llm.md`
 
@@ -202,6 +203,18 @@
 - projectルームは `roomId = projectId`（`ChatRoom.id = Project.id`）
 - `ProjectChat*`（legacy）は Step 5 で削除済み（migration: `20260112030000_drop_legacy_project_chat`）
 
+### Thread/reply基盤（#2014）
+
+- `ChatMessage`の既存rowは、`parentMessageId = null`かつ`threadRootId = null`のrootとして扱う。migrationで既存rowを破壊的にbackfillしない。
+- replyは`parentMessageId = threadRootId = root.id`とし、rootと同じ`roomId`に固定する。一段threadのため、replyへのreply、自己参照、別room参照をDB制約とapplication契約の双方で拒否する。
+- `messageType`はadditive enumで、#2014では`text`のみを許可する。既存rowと旧clientから作成したrowはDB defaultにより`text`となる。Knowledge share card用type/payload/renderingは #2015 の責務とする。
+- topology（room、parent、root、message type）は作成後に変更しない。rootが論理削除されても既存replyは保持し、thread readでは本文・tag・reaction・mention・ack・attachmentを含まないdeleted placeholderを返す。削除済みrootへの新規replyは拒否する。
+- `replyCount`は論理削除済みplaceholderを含むreply row数、`lastReplyAt`はそれらを含む最新replyの`createdAt`とする。rootの`updatedAt`とは混同しない。
+- root timelineのreply集約はpage単位の固定本数batch queryで算出し、messageごとのN+1 queryを行わない。root・reply・集約は`REPEATABLE READ`の同一snapshotで読む。
+- thread cursorはAES-256-GCMでpayloadを暗号化し、さらにHMAC-SHA256署名したopaque tokenとする。canonical actor、root、`createdAt + id`境界へbindし、raw user ID、room ID、root ID、reply IDをURLから復元できる形で格納しない。鍵は`KNOWLEDGE_CURSOR_SIGNING_SECRET`から暗号化・署名の用途別に導出し、鍵rotationまたはnon-production process再起動で既存cursorは失効する。
+- room membership、viewer group、project access、project alias、external user制限をthread取得時にserver側で再評価する。権限外IDと存在しないIDは同じ404 responseとし、本文、件数、cursor、root/reply関係を漏らさない。
+- PR Aはexpand-only schema、root-only timeline、thread read APIまでを提供する。reply投稿、mention/notification/reaction/search/unread/ack統合はPR B、UI/E2E/manualはPR Cで提供する。
+
 ## データモデル（後続案）
 
 - ChatMention（メンションの正規化: `messageId`, `targetType`, `targetId`）
@@ -224,7 +237,8 @@
 
 **挙動**
 
-- `createdAt` 降順で取得
+- root message（`parentMessageId = null`かつ`threadRootId = null`）だけを`createdAt, id`降順で取得し、replyを通常messageとして重複表示しない
+- 既存fieldを維持したうえで、`messageType`、`parentMessageId`、`threadRootId`、`replyCount`、`lastReplyAt`をadditiveに返す
 - `tag` はトリム後の完全一致でフィルタ
 - `tag` が空/未指定の場合はフィルタなし
 
@@ -233,6 +247,30 @@
 - `limit` が正数でない場合は 400
 - `before` が不正な日付の場合は 400
 - `tag` が 32 文字超の場合は 400
+
+### GET `/chat-messages/:id/thread`
+
+`id`はrootまたはreplyのmessage IDを受け付ける。reply IDの場合もcanonical rootへ解決し、同じthreadを返す。
+
+**Query**
+
+- `limit`（default 50、max 200）
+- `cursor`（AES-256-GCM暗号化 + HMAC-SHA256署名付きopaque cursor）
+
+**Response**
+
+- `root`: root messageと`replyCount`、`lastReplyAt`
+- `replies`: `createdAt, id`昇順のreply page
+- `replyCount` / `lastReplyAt`: root summaryと同じ集約値
+- `nextCursor`: 次pageがある場合のみ返す
+
+**契約**
+
+- root、reply、room ACL、reply集約を同一consistent snapshotで評価する
+- cursorはactorとcanonical rootへbindし、改ざん、別actor、別threadでの再利用を400とする
+- 権限外、存在しないmessage、壊れたtopologyは同じ404とする
+- 論理削除済みmessageは構造保持用placeholderとして返し、本文・tag・reaction・mention・ack・attachmentは返さない
+- 成功時の監査metadataは件数等のallowlistのみとし、本文、mention、attachment、cursor、raw errorを記録しない
 
 ### POST `/chat-rooms/:roomId/messages`
 
