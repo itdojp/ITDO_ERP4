@@ -171,7 +171,7 @@ describe('ChatSettingsCard', () => {
       });
     });
 
-    expect(screen.getByText('保存しました')).toBeInTheDocument();
+    expect(await screen.findByText('保存しました')).toBeInTheDocument();
   });
 
   it('shows an error when initial load fails', async () => {
