@@ -519,7 +519,13 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
                   room: {
                     deletedAt: null,
                     type: 'project',
-                    projectId: { in: scopeProjectIds },
+                    OR: [
+                      { projectId: { in: scopeProjectIds } },
+                      {
+                        projectId: null,
+                        id: { in: scopeProjectIds },
+                      },
+                    ],
                   },
                 },
                 orderBy: { createdAt: 'desc' },
@@ -564,7 +570,7 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
                 id: message.id,
                 label: `Chat（${roomLabel} / ${createdLabel} / ${message.userId}）: ${excerpt}`,
                 url: buildOpenHash('chat_message', message.id),
-                projectId: message.room.projectId ?? null,
+                projectId: message.room.projectId ?? message.room.id,
                 projectLabel,
                 meta: {
                   roomId: message.roomId,

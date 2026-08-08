@@ -9410,7 +9410,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": false,
                 "properties": {
                   "emoji": {
                     "maxLength": 16,

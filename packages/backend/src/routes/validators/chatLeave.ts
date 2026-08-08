@@ -35,12 +35,9 @@ export const projectChatReactionSchema = {
     { id: Type.String({ minLength: 1, maxLength: 200 }) },
     { additionalProperties: false },
   ),
-  body: Type.Object(
-    {
-      emoji: Type.String({ minLength: 1, maxLength: 16 }),
-    },
-    { additionalProperties: false },
-  ),
+  body: Type.Object({
+    emoji: Type.String({ minLength: 1, maxLength: 16 }),
+  }),
   response: {
     200: chatReactionMessageResponseSchema,
     400: chatApiErrorResponseSchema,
