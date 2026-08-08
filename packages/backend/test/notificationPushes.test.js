@@ -8,7 +8,10 @@ import {
 
 test('isNotificationPushKindEnabled: uses default allowlist', () => {
   assert.equal(isNotificationPushKindEnabled('chat_mention', undefined), true);
-  assert.equal(isNotificationPushKindEnabled('project_created', undefined), false);
+  assert.equal(
+    isNotificationPushKindEnabled('project_created', undefined),
+    false,
+  );
 });
 
 test('isNotificationPushKindEnabled: wildcard enables all kinds', () => {
@@ -97,6 +100,7 @@ test('dispatchNotificationPushes: dispatches and disables stale subscriptions', 
       logAuditFn: async (entry) => {
         auditEntries.push(entry);
       },
+      filterVisibleChatRecipientsFn: async ({ userIds }) => userIds,
       now: new Date('2026-02-10T00:00:00.000Z'),
     },
   );
@@ -122,6 +126,8 @@ test('dispatchNotificationPushes: dispatches and disables stale subscriptions', 
   assert.equal(auditEntries[0].action, 'notification_push_dispatched');
   assert.equal(auditEntries[0].targetTable, 'app_notifications');
   assert.equal(auditEntries[0].targetId, 'msg_1');
+  assert.equal('messageId' in auditEntries[0].metadata, false);
+  assert.equal('projectId' in auditEntries[0].metadata, false);
 });
 
 test('dispatchNotificationPushes: supports app-notification kinds added by env', async () => {
@@ -204,6 +210,7 @@ test('dispatchNotificationPushes: supports app-notification kinds added by env',
           };
         },
         logAuditFn: async () => undefined,
+        filterVisibleChatRecipientsFn: async ({ userIds }) => userIds,
       },
     );
 
@@ -212,4 +219,41 @@ test('dispatchNotificationPushes: supports app-notification kinds added by env',
     assert.equal(capturedPayload.body, scenario.expected.body);
     assert.equal(capturedPayload.url, scenario.expected.url);
   }
+});
+
+test('dispatchNotificationPushes: revalidates chat visibility before reading subscriptions', async () => {
+  let subscriptionReads = 0;
+  let sends = 0;
+  const result = await dispatchNotificationPushes(
+    {
+      kind: 'chat_mention',
+      userIds: ['revoked-user'],
+      messageId: 'message-1',
+      payload: { roomId: 'room-1', excerpt: 'must not be delivered' },
+    },
+    {
+      pushKindsEnv: 'chat_mention',
+      isWebPushEnabledFn: () => true,
+      filterVisibleChatRecipientsFn: async () => [],
+      client: {
+        pushSubscription: {
+          findMany: async () => {
+            subscriptionReads += 1;
+            return [];
+          },
+          updateMany: async () => ({ count: 0 }),
+        },
+      },
+      sendWebPushFn: async () => {
+        sends += 1;
+        return { enabled: true, results: [] };
+      },
+      logAuditFn: async () => undefined,
+    },
+  );
+
+  assert.equal(result.attempted, false);
+  assert.equal(result.reason, 'no_recipients');
+  assert.equal(subscriptionReads, 0);
+  assert.equal(sends, 0);
 });

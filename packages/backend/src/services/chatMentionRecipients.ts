@@ -4,6 +4,7 @@ import { resolveChatAckRequiredRecipientUserIds } from './chatAckRecipients.js';
 type RoomForMention = {
   id: string;
   type: string;
+  projectId?: string | null;
   isOfficial?: boolean;
   groupId: string | null;
   viewerGroupIds?: unknown;
@@ -41,7 +42,7 @@ export async function resolveRoomAudienceUserIds(options: {
 
   if (room.type === 'project') {
     const members = await client.projectMember.findMany({
-      where: { projectId: room.id },
+      where: { projectId: room.projectId || room.id },
       select: { userId: true },
     });
     members.forEach((member) => {
@@ -121,35 +122,29 @@ export async function expandRoomMentionRecipients(options: {
   mentionsAll: boolean;
   client?: typeof prisma;
 }) {
+  const audience = await resolveRoomAudienceUserIds({
+    room: options.room,
+    client: options.client,
+  });
   const mentionSet = new Set(
-    options.mentionUserIds.map((userId) => normalizeId(userId)).filter(Boolean),
+    options.mentionUserIds
+      .map((userId) => normalizeId(userId))
+      .filter((userId) => userId && audience.has(userId)),
   );
 
-  if (
-    options.room.type !== 'project' &&
-    (options.mentionsAll || options.mentionGroupIds.length > 0)
-  ) {
-    const audience = await resolveRoomAudienceUserIds({
-      room: options.room,
+  if (options.mentionGroupIds.length > 0) {
+    const members = await resolveChatAckRequiredRecipientUserIds({
+      requiredUserIds: [],
+      requiredGroupIds: options.mentionGroupIds,
       client: options.client,
     });
+    members.forEach((userId) => {
+      if (audience.has(userId)) mentionSet.add(userId);
+    });
+  }
 
-    if (options.mentionGroupIds.length > 0) {
-      const members = await resolveChatAckRequiredRecipientUserIds({
-        requiredUserIds: [],
-        requiredGroupIds: options.mentionGroupIds,
-        client: options.client,
-      });
-      members.forEach((userId) => {
-        if (audience.has(userId)) {
-          mentionSet.add(userId);
-        }
-      });
-    }
-
-    if (options.mentionsAll) {
-      audience.forEach((userId) => mentionSet.add(userId));
-    }
+  if (options.mentionsAll) {
+    audience.forEach((userId) => mentionSet.add(userId));
   }
 
   return Array.from(mentionSet);

@@ -1,4 +1,8 @@
 import { Type } from '@sinclair/typebox';
+import {
+  chatApiErrorResponseSchema,
+  chatReactionMessageResponseSchema,
+} from '../chatThreadSchemas.js';
 
 const projectChatMentionsSchema = Type.Object(
   {
@@ -27,9 +31,36 @@ export const projectChatMessageSchema = {
 };
 
 export const projectChatReactionSchema = {
+  params: Type.Object(
+    { id: Type.String({ minLength: 1, maxLength: 200 }) },
+    { additionalProperties: false },
+  ),
   body: Type.Object({
     emoji: Type.String({ minLength: 1, maxLength: 16 }),
   }),
+  response: {
+    200: chatReactionMessageResponseSchema,
+    400: chatApiErrorResponseSchema,
+    404: chatApiErrorResponseSchema,
+  },
+};
+
+export const projectChatReactionDeleteSchema = {
+  params: Type.Object(
+    { id: Type.String({ minLength: 1, maxLength: 200 }) },
+    { additionalProperties: false },
+  ),
+  body: Type.Object(
+    {
+      emoji: Type.String({ minLength: 1, maxLength: 16 }),
+    },
+    { additionalProperties: false },
+  ),
+  response: {
+    200: chatReactionMessageResponseSchema,
+    400: chatApiErrorResponseSchema,
+    404: chatApiErrorResponseSchema,
+  },
 };
 
 export const projectChatAckRequestSchema = {
@@ -50,6 +81,9 @@ export const projectChatAckRequestSchema = {
         Type.Array(Type.String({ maxLength: 32 }), { maxItems: 8 }),
       ),
       mentions: Type.Optional(projectChatMentionsSchema),
+      parentMessageId: Type.Optional(
+        Type.String({ minLength: 1, maxLength: 200 }),
+      ),
     },
     { additionalProperties: false },
   ),

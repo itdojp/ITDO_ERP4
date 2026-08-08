@@ -19,6 +19,7 @@ export async function runChatRoomAclMismatchAlerts(options?: {
   dryRun?: boolean;
   limit?: number;
   actorId?: string | null;
+  client?: typeof prisma;
   notificationPort?: ChatNotificationPort;
 }) {
   const dryRun = options?.dryRun === true;
@@ -30,8 +31,9 @@ export async function runChatRoomAclMismatchAlerts(options?: {
 
   const notificationPort =
     options?.notificationPort ?? defaultChatNotificationPort;
+  const client = options?.client ?? prisma;
 
-  const rooms = await prisma.chatRoom.findMany({
+  const rooms = await client.chatRoom.findMany({
     where: { deletedAt: null },
     select: {
       id: true,
@@ -66,7 +68,7 @@ export async function runChatRoomAclMismatchAlerts(options?: {
   let roomsAlerted = 0;
 
   for (const candidate of selected) {
-    const members = await prisma.chatRoomMember.findMany({
+    const members = await client.chatRoomMember.findMany({
       where: {
         roomId: candidate.room.id,
         deletedAt: null,
@@ -91,7 +93,7 @@ export async function runChatRoomAclMismatchAlerts(options?: {
       recipients += filtered.allowed.length;
       continue;
     }
-    const existing = await prisma.appNotification.findMany({
+    const existing = await client.appNotification.findMany({
       where: {
         kind: 'chat_room_acl_mismatch',
         messageId: candidate.room.id,
@@ -106,11 +108,14 @@ export async function runChatRoomAclMismatchAlerts(options?: {
     if (!targets.length) continue;
     roomsAlerted += 1;
     recipients += targets.length;
-    const result = await prisma.appNotification.createMany({
+    const result = await client.appNotification.createMany({
       data: targets.map((userId) => ({
         userId,
         kind: 'chat_room_acl_mismatch',
-        projectId: candidate.room.projectId ?? undefined,
+        projectId:
+          candidate.room.type === 'project'
+            ? (candidate.room.projectId ?? candidate.room.id)
+            : undefined,
         messageId: candidate.room.id,
         payload: {
           roomId: candidate.room.id,

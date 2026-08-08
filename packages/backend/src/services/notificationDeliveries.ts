@@ -1,5 +1,9 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
+import {
+  isChatNotificationKind,
+  isChatNotificationVisibleForUser,
+} from './chatNotificationVisibility.js';
 import { sendEmail, type NotifyResult } from './notifier.js';
 
 const DEFAULT_DELIVERY_LIMIT = 50;
@@ -401,6 +405,25 @@ type DeliveryWithNotification = Prisma.AppNotificationDeliveryGetPayload<{
   };
 }>;
 
+type NotificationDeliveryVisibilityReference = Pick<
+  DeliveryWithNotification['notification'],
+  'kind' | 'userId' | 'projectId' | 'messageId' | 'payload'
+>;
+
+export async function isNotificationDeliveryContentVisible(
+  notification: NotificationDeliveryVisibilityReference,
+  chatVisibilityFn: typeof isChatNotificationVisibleForUser = isChatNotificationVisibleForUser,
+) {
+  if (!isChatNotificationKind(notification.kind)) return true;
+  return chatVisibilityFn({
+    kind: notification.kind,
+    userId: notification.userId,
+    projectId: notification.projectId,
+    messageId: notification.messageId,
+    payload: notification.payload,
+  });
+}
+
 export type NotificationDeliveryRunResult = {
   ok: true;
   dryRun: boolean;
@@ -554,11 +577,14 @@ export async function runNotificationEmailDeliveries(options: {
   actorId?: string;
   dryRun?: boolean;
   limit?: number;
+  chatVisibilityFn?: typeof isChatNotificationVisibleForUser;
 }): Promise<NotificationDeliveryRunResult> {
   const actorId = options.actorId;
   const dryRun = Boolean(options.dryRun);
   const limit = resolveDeliveryLimit(options.limit);
   const counts: Record<string, number> = {};
+  const chatVisibilityFn =
+    options.chatVisibilityFn ?? isChatNotificationVisibleForUser;
 
   const now = new Date();
   const lookbackDays = resolveLookbackDays();
@@ -732,6 +758,15 @@ export async function runNotificationEmailDeliveries(options: {
     const notification = delivery.notification;
     if (notification.readAt) {
       await markSkipped(delivery, 'already_read', sentAt);
+      continue;
+    }
+    if (
+      !(await isNotificationDeliveryContentVisible(
+        notification,
+        chatVisibilityFn,
+      ))
+    ) {
+      await markSkipped(delivery, 'chat_access_revoked', sentAt);
       continue;
     }
 
@@ -917,6 +952,16 @@ export async function runNotificationEmailDeliveries(options: {
           error: 'already_claimed',
         });
         incrementCount(counts, 'skipped');
+        continue;
+      }
+      const notification = delivery.notification;
+      if (
+        !(await isNotificationDeliveryContentVisible(
+          notification,
+          chatVisibilityFn,
+        ))
+      ) {
+        await markSkipped(delivery, 'chat_access_revoked', sentAt);
         continue;
       }
       eligibleDeliveries.push(delivery);

@@ -4,7 +4,7 @@ import { prisma } from '../services/db.js';
 import { requireUserContext } from '../services/authContext.js';
 import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { requireProjectAccess, requireRole } from '../services/rbac.js';
-import { ensureChatRoomContentAccess } from '../services/chatRoomAccess.js';
+import { resolveAccessibleChatSearchRoomIds } from '../services/chatSearchAccess.js';
 
 type RefCandidateKind =
   | 'invoice'
@@ -499,58 +499,56 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
         }
 
         if (type === 'chat_message') {
-          const messages = await prisma.chatMessage.findMany({
-            where: {
-              deletedAt: null,
-              body: { contains: trimmed, mode: 'insensitive' },
-              room: {
-                deletedAt: null,
-                type: 'project',
-                projectId: { in: scopeProjectIds },
-              },
-            },
-            orderBy: { createdAt: 'desc' },
-            take: takePerType,
-            include: {
-              room: {
-                select: {
-                  id: true,
-                  type: true,
-                  name: true,
-                  projectId: true,
-                  project: { select: { code: true, name: true } },
+          const messages = await prisma.$transaction(
+            async (tx) => {
+              const accessibleRoomIds =
+                await resolveAccessibleChatSearchRoomIds({
+                  userId,
+                  roles,
+                  projectIds,
+                  groupIds: req.user?.groupIds || [],
+                  groupAccountIds: req.user?.groupAccountIds || [],
+                  client: tx,
+                });
+              if (accessibleRoomIds.length === 0) return [];
+              return tx.chatMessage.findMany({
+                where: {
+                  roomId: { in: accessibleRoomIds },
+                  deletedAt: null,
+                  body: { contains: trimmed, mode: 'insensitive' },
+                  room: {
+                    deletedAt: null,
+                    type: 'project',
+                    OR: [
+                      { projectId: { in: scopeProjectIds } },
+                      {
+                        projectId: null,
+                        id: { in: scopeProjectIds },
+                      },
+                    ],
+                  },
                 },
-              },
-            },
-          });
-          const accessibleMessages = [];
-          const roomAccessCache = new Map<string, boolean>();
-          const userId = req.user?.userId ?? '';
-          const roles = req.user?.roles || [];
-          const projectIds = req.user?.projectIds || [];
-          const groupIds = req.user?.groupIds || [];
-          const groupAccountIds = req.user?.groupAccountIds || [];
-          for (const message of messages) {
-            let canRead = roomAccessCache.get(message.roomId);
-            if (canRead === undefined) {
-              const access = await ensureChatRoomContentAccess({
-                roomId: message.roomId,
-                userId,
-                roles,
-                projectIds,
-                groupIds,
-                groupAccountIds,
-                accessLevel: 'read',
+                orderBy: { createdAt: 'desc' },
+                take: takePerType,
+                include: {
+                  room: {
+                    select: {
+                      id: true,
+                      type: true,
+                      name: true,
+                      projectId: true,
+                      project: { select: { code: true, name: true } },
+                    },
+                  },
+                },
               });
-              canRead = access.ok;
-              roomAccessCache.set(message.roomId, canRead);
-            }
-            if (canRead) {
-              accessibleMessages.push(message);
-            }
-          }
+            },
+            {
+              isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+            },
+          );
           items.push(
-            ...accessibleMessages.map((message) => {
+            ...messages.map((message) => {
               const excerpt = message.body
                 .replace(/\s+/g, ' ')
                 .trim()
@@ -572,7 +570,7 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
                 id: message.id,
                 label: `Chat（${roomLabel} / ${createdLabel} / ${message.userId}）: ${excerpt}`,
                 url: buildOpenHash('chat_message', message.id),
-                projectId: message.room.projectId ?? null,
+                projectId: message.room.projectId ?? message.room.id,
                 projectLabel,
                 meta: {
                   roomId: message.roomId,
@@ -581,6 +579,9 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
                   userId: message.userId,
                   createdAt: message.createdAt,
                   excerpt,
+                  messageType: message.messageType,
+                  parentMessageId: message.parentMessageId,
+                  threadRootId: message.threadRootId,
                 },
               } satisfies RefCandidateItem;
             }),
@@ -594,7 +595,8 @@ export async function registerRefCandidateRoutes(app: FastifyInstance) {
         targetTable: 'ref_candidates',
         metadata: {
           projectId,
-          query: trimmed.slice(0, 100),
+          hasQuery: true,
+          queryLength: Array.from(trimmed).length,
           limit: take,
           types: effectiveTypes,
           scopeProjectCount: scopeProjectIds.length,

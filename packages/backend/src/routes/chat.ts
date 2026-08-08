@@ -1,7 +1,12 @@
-import { FastifyInstance } from 'fastify';
+import {
+  FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+} from 'fastify';
 import type { Prisma } from '@prisma/client';
 import {
   projectChatMessageSchema,
+  projectChatReactionDeleteSchema,
   projectChatReactionSchema,
   projectChatSummarySchema,
 } from './validators.js';
@@ -11,12 +16,14 @@ import { auditContextFromRequest, logAudit } from '../services/audit.js';
 import { searchChatAckCandidates } from '../services/chatAckCandidates.js';
 import { buildChatMentionCandidates } from '../services/chatMentionCandidates.js';
 import { defaultChatNotificationPort } from '../adapters/notifications/chatNotificationAdapter.js';
+import { chatReactionService } from '../application/chat/chatReactionService.js';
 import {
   tryCreateChatMentionNotificationEffects,
   tryCreateChatMessageNotificationEffects,
 } from '../application/chat/chatNotificationEffects.js';
 import {
   getChatUnreadSummary,
+  InvalidChatReadBoundaryError,
   markChatAsRead,
 } from '../services/chatReadState.js';
 import { CHAT_ROLES } from './chat/shared/constants.js';
@@ -33,11 +40,16 @@ import { normalizeMentions } from './chat/shared/mentions.js';
 import { ensureRoomAccessWithReasonError } from './chat/shared/roomAccessGuard.js';
 import { requireUserId } from './chat/shared/requireUserId.js';
 import { parseDateParam } from '../utils/date.js';
+import {
+  normalizeBodylessChatReadState,
+  parseChatReadStateInput,
+} from './chat/shared/readStateInput.js';
 import { prismaChatThreadRepository } from '../adapters/chat/prismaChatThreadAdapter.js';
 import { chatRootTimelineMessageResponse } from './chatThreadResponses.js';
 import {
   chatApiErrorResponseSchema,
   chatRootTimelineListResponseSchema,
+  projectChatReadStateSchema,
   projectChatTimelineParamsSchema,
   projectChatTimelineQuerySchema,
 } from './chatThreadSchemas.js';
@@ -528,7 +540,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
   app.post(
     '/projects/:projectId/chat-read',
     {
-      schema: { deprecated: true },
+      schema: { ...projectChatReadStateSchema, deprecated: true },
+      preValidation: normalizeBodylessChatReadState,
       preHandler: [
         requireRole(chatRoles),
         requireProjectAccess((req) => (req.params as any)?.projectId),
@@ -536,6 +549,12 @@ export async function registerChatRoutes(app: FastifyInstance) {
     },
     async (req, reply) => {
       const { projectId } = req.params as { projectId: string };
+      const readInput = parseChatReadStateInput(req.body);
+      if (!readInput.ok) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'Invalid read state input' },
+        });
+      }
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
       const room = await resolveActiveProjectRoom({
@@ -546,7 +565,24 @@ export async function registerChatRoutes(app: FastifyInstance) {
         accessLevel: 'read',
       });
       if (!room) return reply;
-      return markChatAsRead({ roomId: room.id, userId });
+      try {
+        return await markChatAsRead({
+          roomId: room.id,
+          userId,
+          through: readInput.through,
+          throughMessageId: readInput.throughMessageId,
+        });
+      } catch (error) {
+        if (error instanceof InvalidChatReadBoundaryError) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_READ_BOUNDARY',
+              message: 'Invalid read state input',
+            },
+          });
+        }
+        throw error;
+      }
     },
   );
 
@@ -644,79 +680,61 @@ export async function registerChatRoutes(app: FastifyInstance) {
     logChatMessageMentions,
   });
 
+  async function mutateReaction(
+    operation: 'add' | 'remove',
+    req: FastifyRequest,
+    reply: FastifyReply,
+  ) {
+    const { id } = req.params as { id: string };
+    const body = req.body as { emoji: string };
+    const userId = requireUserId(reply, req.user?.userId);
+    if (typeof userId !== 'string') return userId;
+    const result = await chatReactionService[operation]({
+      messageId: id,
+      emoji: body.emoji,
+      actor: {
+        userId,
+        roles: req.user?.roles ?? [],
+        projectIds: req.user?.projectIds ?? [],
+        groupIds: req.user?.groupIds ?? [],
+        groupAccountIds: req.user?.groupAccountIds ?? [],
+      },
+    });
+    if (!result.ok) {
+      return reply
+        .status(result.reason === 'invalid_reaction' ? 400 : 404)
+        .send({
+          error: {
+            code:
+              result.reason === 'invalid_reaction'
+                ? 'INVALID_EMOJI'
+                : 'NOT_FOUND',
+            message:
+              result.reason === 'invalid_reaction'
+                ? 'Invalid reaction'
+                : 'Message not found',
+          },
+        });
+    }
+    return result.value.message;
+  }
+
   app.post(
     '/chat-messages/:id/reactions',
     {
       schema: projectChatReactionSchema,
       preHandler: requireRole(chatRoles),
     },
-    async (req, reply) => {
-      const { id } = req.params as { id: string };
-      const body = req.body as { emoji: string };
-      const message = await prisma.chatMessage.findUnique({
-        where: { id },
-      });
-      if (!message || message.deletedAt) {
-        return reply.status(404).send({
-          error: { code: 'NOT_FOUND', message: 'Message not found' },
-        });
-      }
-      const userId = requireUserId(reply, req.user?.userId);
-      if (typeof userId !== 'string') return userId;
-      const access = await ensureRoomContentAccessFromRequest({
-        req,
-        reply,
-        roomId: message.roomId,
-        userId,
-      });
-      if (!access) {
-        return;
-      }
-      const trimmedEmoji = body.emoji.trim();
-      if (!trimmedEmoji) {
-        return reply.status(400).send({
-          error: { code: 'INVALID_EMOJI', message: 'emoji is required' },
-        });
-      }
-      const current =
-        (message.reactions as Record<string, unknown> | null | undefined) || {};
-      const existingEntry = current[trimmedEmoji] as
-        number | { count: number; userIds: string[] } | undefined;
-      let normalized = { count: 0, userIds: [] as string[] };
-      if (typeof existingEntry === 'number') {
-        normalized = { count: existingEntry, userIds: [] };
-      } else if (
-        existingEntry &&
-        typeof existingEntry === 'object' &&
-        'count' in existingEntry &&
-        'userIds' in existingEntry &&
-        Array.isArray((existingEntry as { userIds: unknown }).userIds)
-      ) {
-        normalized = {
-          count: (existingEntry as { count: number }).count,
-          userIds: (existingEntry as { userIds: string[] }).userIds,
-        };
-      }
-      if (normalized.userIds.includes(userId)) {
-        return message;
-      }
-      normalized = {
-        count: normalized.count + 1,
-        userIds: [...normalized.userIds, userId],
-      };
-      const next = {
-        ...current,
-        [trimmedEmoji]: normalized,
-      } as Prisma.InputJsonValue;
-      const updated = await prisma.chatMessage.update({
-        where: { id },
-        data: {
-          reactions: next,
-          updatedBy: userId,
-        },
-      });
-      return updated;
+    async (req, reply) => mutateReaction('add', req, reply),
+  );
+
+  app.delete(
+    '/chat-messages/:id/reactions',
+    {
+      schema: projectChatReactionDeleteSchema,
+      preHandler: requireRole(chatRoles),
     },
+    async (req, reply) => mutateReaction('remove', req, reply),
   );
 
   registerChatAttachmentRoutes(app, {

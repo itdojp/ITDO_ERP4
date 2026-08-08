@@ -9,8 +9,10 @@ const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
 function withPrismaStubs(stubs, fn) {
   const restores = [];
   for (const [path, stub] of Object.entries(stubs)) {
-    const [model, method] = path.split('.');
-    const target = prisma[model];
+    const [model, method] = path.startsWith('$')
+      ? [null, path]
+      : path.split('.');
+    const target = model ? prisma[model] : prisma;
     if (!target || typeof target[method] !== 'function') {
       throw new Error(`invalid stub target: ${path}`);
     }
@@ -232,6 +234,10 @@ test('GET /ref-candidates normalizes types, clamps limit and writes audit metada
   assert.equal(lastAudit?.action, 'ref_candidates_search');
   assert.equal(lastAudit?.targetTable, 'ref_candidates');
   assert.equal(lastAudit?.metadata?.projectId, 'proj-1');
+  assert.equal(lastAudit?.metadata?.hasQuery, true);
+  assert.equal(lastAudit?.metadata?.queryLength, 3);
+  assert.equal(Object.hasOwn(lastAudit?.metadata ?? {}, 'query'), false);
+  assert.equal(JSON.stringify(lastAudit).includes('INV'), false);
   assert.equal(lastAudit?.metadata?.limit, 50);
   assert.deepEqual(lastAudit?.metadata?.types, ['invoice']);
   assert.equal(lastAudit?.metadata?.scopeProjectCount, 1);
@@ -316,6 +322,7 @@ test('GET /ref-candidates filters chat_message candidates by room viewer groups'
   process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
   process.env.AUTH_MODE = 'header';
   const auditEntries = [];
+  let messageQueries = 0;
   await withPrismaStubs(
     {
       'project.findUnique': async ({ where }) => ({
@@ -325,33 +332,27 @@ test('GET /ref-candidates filters chat_message candidates by room viewer groups'
       }),
       'project.findMany': async () => [],
       'projectMember.findMany': async () => [],
-      'chatMessage.findMany': async () => [
+      $transaction: async (operation) => operation(prisma),
+      $queryRaw: async () => [],
+      'chatMessage.findMany': async () => {
+        messageQueries += 1;
+        return [];
+      },
+      'chatRoom.findMany': async () => [
         {
-          id: 'msg-1',
-          roomId: 'room-1',
-          userId: 'sender-1',
-          body: 'sensitive project update',
-          createdAt: new Date('2026-01-01T00:00:00.000Z'),
-          room: {
-            id: 'room-1',
-            type: 'project',
-            name: 'Restricted',
-            projectId: 'proj-1',
-            project: { code: 'P001', name: 'Alpha' },
-          },
+          id: 'proj-1',
+          type: 'project',
+          projectId: 'proj-1',
+          isOfficial: true,
+          groupId: null,
+          viewerGroupIds: ['group-allowed'],
+          posterGroupIds: null,
+          deletedAt: null,
+          allowExternalUsers: false,
+          members: [],
         },
       ],
-      'chatRoom.findUnique': async ({ where }) => ({
-        id: where.id,
-        type: 'project',
-        projectId: 'proj-1',
-        isOfficial: true,
-        groupId: null,
-        viewerGroupIds: ['group-allowed'],
-        posterGroupIds: [],
-        deletedAt: null,
-        allowExternalUsers: false,
-      }),
+      'chatRoomMember.findMany': async () => [],
       'auditLog.create': async ({ data }) => {
         auditEntries.push(data);
         return { id: `audit-${auditEntries.length}` };
@@ -376,5 +377,78 @@ test('GET /ref-candidates filters chat_message candidates by room viewer groups'
       }
     },
   );
+  assert.equal(messageQueries, 0);
   assert.equal(auditEntries.at(-1)?.metadata?.types?.[0], 'chat_message');
+});
+
+test('GET /ref-candidates preserves the legacy project room-id alias in the DB predicate', async () => {
+  process.env.DATABASE_URL = process.env.DATABASE_URL || MIN_DATABASE_URL;
+  process.env.AUTH_MODE = 'header';
+  let messageArgs;
+  await withPrismaStubs(
+    {
+      'project.findUnique': async ({ where }) => ({
+        id: where.id,
+        parentId: null,
+        deletedAt: null,
+      }),
+      'project.findMany': async () => [],
+      'projectMember.findMany': async () => [],
+      $transaction: async (operation) => operation(prisma),
+      $queryRaw: async () => [{ id: 'proj-1' }],
+      'chatMessage.findMany': async (args) => {
+        messageArgs = args;
+        return [
+          {
+            id: 'legacy-message-1',
+            roomId: 'proj-1',
+            userId: 'normal-user',
+            body: 'Synthetic project message',
+            createdAt: new Date('2026-08-09T00:00:00.000Z'),
+            room: {
+              id: 'proj-1',
+              type: 'project',
+              name: 'Legacy project room',
+              projectId: null,
+              project: null,
+            },
+          },
+        ];
+      },
+      'chatRoom.findMany': async () => [
+        {
+          id: 'proj-1',
+          type: 'project',
+          projectId: null,
+          isOfficial: true,
+          groupId: null,
+          viewerGroupIds: null,
+          posterGroupIds: null,
+          deletedAt: null,
+          allowExternalUsers: false,
+          members: [],
+        },
+      ],
+      'chatRoomMember.findMany': async () => [],
+      'auditLog.create': async () => ({ id: 'audit-legacy-alias' }),
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'GET',
+          url: '/ref-candidates?projectId=proj-1&q=Synthetic&types=chat_message',
+          headers: userHeaders('proj-1'),
+        });
+        assert.equal(res.statusCode, 200, res.body);
+        assert.equal(res.json().items[0]?.projectId, 'proj-1');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+  assert.deepEqual(messageArgs?.where?.room?.OR, [
+    { projectId: { in: ['proj-1'] } },
+    { projectId: null, id: { in: ['proj-1'] } },
+  ]);
 });

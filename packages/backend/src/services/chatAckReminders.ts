@@ -2,7 +2,11 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 import type { ChatNotificationPort } from '../application/chat/chatNotificationPort.js';
 import { defaultChatNotificationPort } from '../adapters/notifications/chatNotificationAdapter.js';
-import { resolveChatAckRequiredRecipientUserIds } from './chatAckRecipients.js';
+import {
+  resolveChatAckProjectIdForRoom,
+  resolveChatAckRequiredRecipientUserIds,
+} from './chatAckRecipients.js';
+import { filterVisibleChatNotificationRecipients } from './chatNotificationVisibility.js';
 
 const DEFAULT_LIMIT = 200;
 const DEFAULT_LOOKBACK_DAYS = 30;
@@ -15,6 +19,7 @@ type RunChatAckReminderOptions = {
   now?: Date;
   client?: typeof prisma;
   resolveRecipients?: typeof resolveChatAckRequiredRecipientUserIds;
+  filterVisibleRecipients?: typeof filterVisibleChatNotificationRecipients;
   notificationPort?: ChatNotificationPort;
 };
 
@@ -86,6 +91,8 @@ export async function runChatAckReminders(
     options.resolveRecipients ?? resolveChatAckRequiredRecipientUserIds;
   const notificationPort =
     options.notificationPort ?? defaultChatNotificationPort;
+  const filterVisibleRecipients =
+    options.filterVisibleRecipients ?? filterVisibleChatNotificationRecipients;
   const dryRun = Boolean(options.dryRun);
   const limit = Math.min(
     Math.max(1, Math.floor(options.limit ?? DEFAULT_LIMIT)),
@@ -119,8 +126,17 @@ export async function runChatAckReminders(
     take: limit,
     include: {
       acks: { select: { userId: true } },
-      message: { select: { userId: true, body: true } },
-      room: { select: { type: true } },
+      message: {
+        select: {
+          userId: true,
+          body: true,
+          roomId: true,
+          deletedAt: true,
+        },
+      },
+      room: {
+        select: { id: true, type: true, projectId: true, deletedAt: true },
+      },
     },
   });
 
@@ -147,6 +163,16 @@ export async function runChatAckReminders(
 
   for (const request of requests) {
     if (!request.dueAt) continue;
+    if (
+      !request.message ||
+      request.message.deletedAt ||
+      !request.room ||
+      request.room.deletedAt ||
+      request.message.roomId !== request.roomId ||
+      request.room.id !== request.roomId
+    ) {
+      continue;
+    }
     const requiredUserIds = normalizeStringArray(request.requiredUserIds, {
       dedupe: true,
       max: 50,
@@ -171,8 +197,8 @@ export async function runChatAckReminders(
     );
     maxIntervalHours = Math.max(maxIntervalHours, remindIntervalHours);
     const excerpt = buildExcerpt(request.message?.body ?? '');
-    const projectId = request.room.type === 'project' ? request.roomId : null;
     const roomId = normalizeString(request.roomId) || null;
+    const projectId = resolveChatAckProjectIdForRoom(request.room);
     for (const userId of incompleteUserIds) {
       candidates.push({
         userId,
@@ -360,11 +386,55 @@ export async function runChatAckReminders(
     return Boolean(allowed?.has(candidate.userId));
   });
 
+  const visibilityGroups = new Map<
+    string,
+    { candidate: Candidate; userIds: Set<string> }
+  >();
+  for (const candidate of filteredToCreate) {
+    const key = [
+      candidate.kind,
+      candidate.messageId,
+      candidate.projectId ?? '',
+      candidate.roomId ?? '',
+    ].join(':');
+    const current = visibilityGroups.get(key) ?? {
+      candidate,
+      userIds: new Set<string>(),
+    };
+    current.userIds.add(candidate.userId);
+    visibilityGroups.set(key, current);
+  }
+  const visibleUsersByGroup = new Map<string, Set<string>>();
+  await Promise.all(
+    Array.from(visibilityGroups.entries()).map(async ([key, group]) => {
+      const visible = await filterVisibleRecipients(
+        {
+          kind: group.candidate.kind,
+          userIds: Array.from(group.userIds),
+          projectId: group.candidate.projectId,
+          messageId: group.candidate.messageId,
+          payload: { roomId: group.candidate.roomId ?? undefined },
+        },
+        { client },
+      );
+      visibleUsersByGroup.set(key, new Set(visible));
+    }),
+  );
+  const visibleToCreate = filteredToCreate.filter((candidate) => {
+    const key = [
+      candidate.kind,
+      candidate.messageId,
+      candidate.projectId ?? '',
+      candidate.roomId ?? '',
+    ].join(':');
+    return visibleUsersByGroup.get(key)?.has(candidate.userId) === true;
+  });
+
   const createdNotifications = dryRun
-    ? filteredToCreate.length
+    ? visibleToCreate.length
     : (
         await client.appNotification.createMany({
-          data: filteredToCreate.map((item) => ({
+          data: visibleToCreate.map((item) => ({
             userId: item.userId,
             kind: item.kind,
             projectId: item.projectId ?? null,
@@ -395,7 +465,7 @@ export async function runChatAckReminders(
     candidateEscalations: escalationCandidates.length,
     skippedAlreadyNotified,
     createdNotifications,
-    createdEscalations: filteredToCreate.filter((item) => item.isEscalation)
+    createdEscalations: visibleToCreate.filter((item) => item.isEscalation)
       .length,
     sampleMessageIds: uniqueMessageIds.slice(0, 20),
   };

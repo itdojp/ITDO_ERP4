@@ -152,6 +152,30 @@ function isGlobalMuteBypassKind(kind: string) {
   return resolveGlobalMuteBypassKinds().has(kind.trim());
 }
 
+function classifyNotificationPushError(error: unknown) {
+  if (error instanceof TypeError) return 'type_error';
+  if (error instanceof RangeError) return 'range_error';
+  if (error instanceof SyntaxError) return 'syntax_error';
+  if (error instanceof Error) return 'error';
+  return error === undefined ? 'unknown_error' : 'non_error';
+}
+
+export function buildNotificationPushFailureLog(
+  kind: unknown,
+  error?: unknown,
+) {
+  const normalizedKind =
+    typeof kind === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(kind)
+      ? kind
+      : 'unknown';
+  return {
+    phase: 'notification_push_dispatch',
+    errorClass: 'notification_failure',
+    errorType: classifyNotificationPushError(error),
+    kind: normalizedKind,
+  };
+}
+
 function dispatchNotificationPushesAsync(options: {
   kind: string;
   userIds: string[];
@@ -160,12 +184,11 @@ function dispatchNotificationPushesAsync(options: {
   projectId?: string | null;
   actorUserId?: string | null;
 }) {
-  void dispatchNotificationPushes(options).catch((err) => {
-    console.error('[notification push dispatch failed]', {
-      kind: options.kind,
-      messageId: options.messageId,
-      error: err instanceof Error ? err.message : String(err),
-    });
+  void dispatchNotificationPushes(options).catch((error: unknown) => {
+    console.error(
+      '[notification push dispatch failed]',
+      buildNotificationPushFailureLog(options.kind, error),
+    );
   });
 }
 
@@ -437,18 +460,10 @@ export async function createChatMentionNotifications(
     if (trimmed) recipients.add(trimmed);
   });
 
-  const hasProjectFallback =
-    Boolean(options.projectId) &&
-    (options.mentionAll || options.mentionGroupIds.length > 0);
-  if (hasProjectFallback) {
-    const members = await prisma.projectMember.findMany({
-      where: { projectId: options.projectId ?? undefined },
-      select: { userId: true },
-    });
-    members.forEach((member) => {
-      if (member.userId) recipients.add(member.userId);
-    });
-  }
+  // The application layer already expands mentions and intersects every
+  // explicit/group/@all recipient with the current room audience. Re-expanding
+  // project recipients here would bypass that ACL boundary.
+  const hasProjectFallback = false;
 
   recipients.delete(options.senderUserId);
 

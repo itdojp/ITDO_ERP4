@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BASE_SHA="${CHAT_THREAD_OLD_APP_BASE_SHA:-c677225c7cec3677cd03e2ba4d7c04269518c4c5}"
-EXPECTED_BASE_SHA="c677225c7cec3677cd03e2ba4d7c04269518c4c5"
+BASE_SHA="${CHAT_THREAD_OLD_APP_BASE_SHA:-4b3196a8fda6341c2e6670e9d9cafb5a446dc039}"
+EXPECTED_BASE_SHA="4b3196a8fda6341c2e6670e9d9cafb5a446dc039"
 POSTGRES_IMAGE="${POSTGRES_IMAGE:-docker.io/library/postgres:15@sha256:6ab12ad4395ee49ab49fe19530f7e183c5a9c97fc47cf687b3e281bec5f91ee4}"
 CONTAINER_NAME="erp4-chat-thread-old-app-$$"
 SCRATCH_ROOT="$ROOT_DIR/.codex-local/tmp/chat-thread-old-app-$$"

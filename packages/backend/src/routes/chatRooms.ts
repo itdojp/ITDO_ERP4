@@ -8,6 +8,7 @@ import { buildChatMentionCandidates } from '../services/chatMentionCandidates.js
 import { ensureChatRoomContentAccess } from '../services/chatRoomAccess.js';
 import {
   getChatUnreadSummary,
+  InvalidChatReadBoundaryError,
   markChatAsRead,
 } from '../services/chatReadState.js';
 import {
@@ -41,10 +42,17 @@ import {
 } from './chat/shared/inputParsers.js';
 import { requireUserId } from './chat/shared/requireUserId.js';
 import { parseDateParam } from '../utils/date.js';
+import {
+  normalizeBodylessChatReadState,
+  parseChatReadStateInput,
+} from './chat/shared/readStateInput.js';
+import { resolveAccessibleChatSearchRoomIds } from '../services/chatSearchAccess.js';
 import { prismaChatThreadRepository } from '../adapters/chat/prismaChatThreadAdapter.js';
 import { chatRootTimelineMessageResponse } from './chatThreadResponses.js';
 import {
   chatApiErrorResponseSchema,
+  chatMessageSearchSchema,
+  chatRoomReadStateSchema,
   chatRoomTimelineParamsSchema,
   chatRoomTimelineQuerySchema,
   chatRootTimelineListResponseSchema,
@@ -54,129 +62,6 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
   const chatRoles = CHAT_ROLES;
   const chatSettingId = 'default';
   const companyRoomId = COMPANY_ROOM_ID;
-  async function resolveSearchRoomIds(options: {
-    userId: string;
-    roles: string[];
-    projectIds: string[];
-    groupIds: string[];
-    groupAccountIds: string[];
-  }) {
-    const roomIds = new Set<string>();
-    const groupSelectors = Array.from(
-      new Set(
-        [...options.groupIds, ...options.groupAccountIds]
-          .map((value) => value.trim())
-          .filter(Boolean),
-      ),
-    );
-    const groupAccessSet = new Set(groupSelectors);
-    const normalizeRoomGroupIds = (value: unknown) => {
-      if (!Array.isArray(value)) return [];
-      return value
-        .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
-        .filter(Boolean);
-    };
-    const hasViewerAccess = (value: unknown) => {
-      const viewerGroupIds = normalizeRoomGroupIds(value);
-      return (
-        viewerGroupIds.length === 0 ||
-        viewerGroupIds.some((groupId) => groupAccessSet.has(groupId))
-      );
-    };
-
-    const companyRoom = await prisma.chatRoom.findUnique({
-      where: { id: companyRoomId },
-      select: { id: true, deletedAt: true, viewerGroupIds: true },
-    });
-    if (companyRoom && !companyRoom.deletedAt) {
-      if (hasViewerAccess(companyRoom.viewerGroupIds)) {
-        roomIds.add(companyRoom.id);
-      }
-    }
-
-    if (groupSelectors.length > 0) {
-      const departmentRooms = await prisma.chatRoom.findMany({
-        where: {
-          type: 'department',
-          deletedAt: null,
-          groupId: { in: groupSelectors },
-        },
-        select: { id: true, viewerGroupIds: true },
-        take: 200,
-      });
-      departmentRooms.forEach((room) => {
-        if (hasViewerAccess(room.viewerGroupIds)) {
-          roomIds.add(room.id);
-        }
-      });
-    }
-
-    const canSeeAllProjects =
-      options.roles.includes('admin') ||
-      options.roles.includes('mgmt') ||
-      options.roles.includes('exec');
-    if (canSeeAllProjects) {
-      const projectRooms = await prisma.chatRoom.findMany({
-        where: { type: 'project', deletedAt: null },
-        select: { id: true, viewerGroupIds: true },
-        take: 500,
-      });
-      projectRooms.forEach((room) => {
-        if (hasViewerAccess(room.viewerGroupIds)) {
-          roomIds.add(room.id);
-        }
-      });
-    } else if (options.projectIds.length > 0) {
-      const projectRooms = await prisma.chatRoom.findMany({
-        where: {
-          type: 'project',
-          deletedAt: null,
-          id: { in: options.projectIds },
-        },
-        select: { id: true, viewerGroupIds: true },
-        take: 200,
-      });
-      projectRooms.forEach((room) => {
-        if (hasViewerAccess(room.viewerGroupIds)) {
-          roomIds.add(room.id);
-        }
-      });
-    }
-
-    const memberRooms = await prisma.chatRoomMember.findMany({
-      where: {
-        userId: options.userId,
-        deletedAt: null,
-        room: { deletedAt: null },
-      },
-      select: {
-        roomId: true,
-        room: {
-          select: {
-            type: true,
-            isOfficial: true,
-            allowExternalUsers: true,
-            viewerGroupIds: true,
-          },
-        },
-      },
-      take: 200,
-    });
-    memberRooms.forEach((row) => {
-      const room = row.room;
-      if (!room) return;
-      if (room.type === 'project' && !room.allowExternalUsers) return;
-      if (
-        !(room.type === 'private_group' && room.isOfficial) &&
-        !hasViewerAccess(room.viewerGroupIds)
-      ) {
-        return;
-      }
-      roomIds.add(row.roomId);
-    });
-
-    return Array.from(roomIds);
-  }
 
   async function getChatSettings() {
     const setting = await prisma.chatSetting.findUnique({
@@ -285,12 +170,13 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
 
   app.get(
     '/chat-messages/search',
-    { preHandler: requireRole(chatRoles) },
+    { schema: chatMessageSearchSchema, preHandler: requireRole(chatRoles) },
     async (req, reply) => {
-      const { q, limit, before } = req.query as {
+      const { q, limit, before, beforeId } = req.query as {
         q?: string;
         limit?: string;
         before?: string;
+        beforeId?: string;
       };
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
@@ -309,6 +195,14 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       if (before && !beforeDate) {
         return reply.status(400).send({
           error: { code: 'INVALID_DATE', message: 'Invalid before date' },
+        });
+      }
+      if ((beforeId && !beforeDate) || (beforeId && beforeId.length > 200)) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_CURSOR',
+            message: 'Invalid search boundary',
+          },
         });
       }
 
@@ -335,47 +229,56 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         dedupe: true,
       });
 
-      const roomIds = await resolveSearchRoomIds({
-        userId,
-        roles,
-        projectIds,
-        groupIds,
-        groupAccountIds,
-      });
-      if (roomIds.length === 0) {
-        return { items: [] };
-      }
+      const items = await prisma.$transaction(
+        async (tx) => {
+          const roomIds = await resolveAccessibleChatSearchRoomIds({
+            userId,
+            roles,
+            projectIds,
+            groupIds,
+            groupAccountIds,
+            client: tx,
+          });
+          if (roomIds.length === 0) return [];
 
-      const where: Prisma.ChatMessageWhereInput = {
-        roomId: { in: roomIds },
-        deletedAt: null,
-        body: { contains: trimmedQuery, mode: 'insensitive' },
-        room: { deletedAt: null },
-      };
-      if (beforeDate) {
-        where.createdAt = { lt: beforeDate };
-      }
+          const where: Prisma.ChatMessageWhereInput = {
+            roomId: { in: roomIds },
+            deletedAt: null,
+            body: { contains: trimmedQuery, mode: 'insensitive' },
+            room: { deletedAt: null },
+          };
+          if (beforeDate) {
+            where.OR = beforeId
+              ? [
+                  { createdAt: { lt: beforeDate } },
+                  { createdAt: beforeDate, id: { lt: beforeId } },
+                ]
+              : [{ createdAt: { lt: beforeDate } }];
+          }
 
-      const items = await prisma.chatMessage.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        take,
-        include: {
-          room: {
-            select: {
-              id: true,
-              type: true,
-              name: true,
-              isOfficial: true,
-              projectId: true,
-              groupId: true,
-              allowExternalUsers: true,
-              allowExternalIntegrations: true,
-              project: { select: { code: true, name: true } },
+          return tx.chatMessage.findMany({
+            where,
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take,
+            include: {
+              room: {
+                select: {
+                  id: true,
+                  type: true,
+                  name: true,
+                  isOfficial: true,
+                  projectId: true,
+                  groupId: true,
+                  allowExternalUsers: true,
+                  allowExternalIntegrations: true,
+                  project: { select: { code: true, name: true } },
+                },
+              },
             },
-          },
+          });
         },
-      });
+        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      );
 
       const responseItems = items.map((item) => {
         const room = item.room;
@@ -384,6 +287,9 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         return {
           id: item.id,
           roomId: item.roomId,
+          messageType: item.messageType,
+          parentMessageId: item.parentMessageId,
+          threadRootId: item.threadRootId,
           userId: item.userId,
           body: item.body,
           tags: item.tags,
@@ -407,14 +313,20 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         action: 'chat_messages_search',
         targetTable: 'chat_messages',
         metadata: {
-          query: trimmedQuery.slice(0, 100),
+          hasQuery: true,
+          queryLength: Array.from(trimmedQuery).length,
           resultCount: responseItems.length,
           limit: take,
         } as Prisma.InputJsonValue,
         ...auditContextFromRequest(req),
       });
 
-      return { items: responseItems };
+      const last = items[items.length - 1];
+      return {
+        items: responseItems,
+        nextBefore: last?.createdAt.toISOString() ?? null,
+        nextBeforeId: last?.id ?? null,
+      };
     },
   );
 
@@ -468,18 +380,8 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         groupAccountIds,
       });
       if (!access.ok) {
-        return reply.status(access.reason === 'not_found' ? 404 : 403).send({
-          error: {
-            code:
-              access.reason === 'not_found'
-                ? 'NOT_FOUND'
-                : access.reason === 'forbidden_project'
-                  ? 'FORBIDDEN_PROJECT'
-                  : access.reason === 'forbidden_external_room'
-                    ? 'FORBIDDEN_EXTERNAL_ROOM'
-                    : 'FORBIDDEN_ROOM_MEMBER',
-            message: 'Access to this room is forbidden',
-          },
+        return reply.status(404).send({
+          error: { code: 'NOT_FOUND', message: 'Chat message not found' },
         });
       }
 
@@ -488,9 +390,9 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       await logAudit({
         action: 'chat_message_deeplink_resolved',
         targetTable: 'chat_messages',
-        targetId: message.id,
         metadata: {
-          roomId: message.roomId,
+          messageType: message.messageType,
+          isReply: message.parentMessageId !== null,
         } as Prisma.InputJsonValue,
         ...auditContextFromRequest(req),
       });
@@ -498,6 +400,9 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       return {
         id: message.id,
         roomId: message.roomId,
+        messageType: message.messageType,
+        parentMessageId: message.parentMessageId,
+        threadRootId: message.threadRootId,
         createdAt: message.createdAt,
         excerpt,
         room: {
@@ -794,9 +699,19 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
 
   app.post(
     '/chat-rooms/:roomId/read',
-    { preHandler: requireRole(chatRoles) },
+    {
+      schema: chatRoomReadStateSchema,
+      preValidation: normalizeBodylessChatReadState,
+      preHandler: requireRole(chatRoles),
+    },
     async (req, reply) => {
       const { roomId } = req.params as { roomId: string };
+      const readInput = parseChatReadStateInput(req.body);
+      if (!readInput.ok) {
+        return reply.status(400).send({
+          error: { code: 'INVALID_DATE', message: 'Invalid read state input' },
+        });
+      }
       const userId = requireUserId(reply, req.user?.userId);
       if (typeof userId !== 'string') return userId;
       const accessContext = readRoomAccessContext(req);
@@ -808,7 +723,24 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         accessLevel: 'read',
       });
       if (!access) return reply;
-      return markChatAsRead({ roomId: access.room.id, userId });
+      try {
+        return await markChatAsRead({
+          roomId: access.room.id,
+          userId,
+          through: readInput.through,
+          throughMessageId: readInput.throughMessageId,
+        });
+      } catch (error) {
+        if (error instanceof InvalidChatReadBoundaryError) {
+          return reply.status(400).send({
+            error: {
+              code: 'INVALID_READ_BOUNDARY',
+              message: 'Invalid read state input',
+            },
+          });
+        }
+        throw error;
+      }
     },
   );
 
