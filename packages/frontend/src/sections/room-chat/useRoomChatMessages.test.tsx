@@ -32,9 +32,20 @@ function message(
   return {
     id,
     roomId,
+    messageType: 'text' as const,
+    parentMessageId: null,
+    threadRootId: null,
     userId: 'alice',
     body: `${id} body`,
+    tags: [],
+    mentions: null,
+    mentionsAll: false,
+    ackRequest: null,
+    attachments: [],
     createdAt,
+    deleted: false,
+    deletedAt: null,
+    deletedReason: null,
   };
 }
 
@@ -99,6 +110,11 @@ describe('useRoomChatMessages', () => {
     expect(result.current.message).toBe('');
     expect(api).toHaveBeenCalledWith('/chat-rooms/room-1/read', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        through: '2026-03-28T00:00:00.000Z',
+        throughMessageId: 'm1',
+      }),
     });
   });
 
@@ -118,6 +134,30 @@ describe('useRoomChatMessages', () => {
     expect(result.current.message).toBe('検索語は2文字以上で入力してください');
     expect(result.current.hasMore).toBe(false);
     expect(api).not.toHaveBeenCalled();
+  });
+
+  it('does not advance the read boundary when no message was displayed', async () => {
+    api.mockImplementation(async (path: string) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.pathname.endsWith('/messages')) return { items: [] };
+      if (url.pathname.endsWith('/unread')) {
+        return { unreadCount: 2, lastReadAt: null };
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+    const { result } = renderHook(() =>
+      useRoomChatMessages({ roomId: 'room-1', filterQuery: '', filterTag: '' }),
+    );
+
+    await act(async () => {
+      await result.current.loadMessages();
+    });
+
+    expect(result.current.items).toEqual([]);
+    expect(result.current.unreadCount).toBe(2);
+    expect(
+      api.mock.calls.some(([path]) => String(path).endsWith('/read')),
+    ).toBe(false);
   });
 
   it('does not let a stale room response overwrite the current room messages', async () => {

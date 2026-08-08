@@ -1,9 +1,17 @@
-import { api, apiResponse } from '../../api';
+import { api as requestApi, apiResponse } from '../../api';
 import type {
   ChatMessage,
   ChatRoom,
   ChatSearchItem,
+  ChatThread,
   MentionCandidates,
+} from './roomChatModel';
+import {
+  normalizeChatMessage,
+  normalizeChatRoom,
+  normalizeChatSearchItem,
+  normalizeChatThread,
+  normalizeAckRequest,
 } from './roomChatModel';
 
 export type NotificationSetting = {
@@ -27,9 +35,65 @@ export type RoomMessageQuery = {
   tag?: string;
 };
 
+export type MessageBoundary = {
+  through: string;
+  throughMessageId: string;
+};
+
+export type ChatSearchPage = {
+  items: ChatSearchItem[];
+  nextBefore: string | null;
+  nextBeforeId: string | null;
+};
+
+async function api<T>(path: string, options?: RequestInit): Promise<T> {
+  try {
+    return options
+      ? await requestApi<T>(path, options)
+      : await requestApi<T>(path);
+  } catch {
+    // Existing shared callers retain their diagnostics contract. The chat UI
+    // boundary never exposes request paths or backend bodies to its callers.
+    throw new Error('Chat request failed');
+  }
+}
+
+function normalizedMessageOrThrow(value: unknown): ChatMessage {
+  const normalized = normalizeChatMessage(value);
+  if (!normalized) throw new Error('Invalid chat message response');
+  return normalized;
+}
+
+function normalizedAckRequestOrThrow(value: unknown) {
+  const normalized = normalizeAckRequest(value);
+  if (!normalized) throw new Error('Invalid chat ack response');
+  return normalized;
+}
+
+function normalizedPostedMessageOrThrow(value: unknown) {
+  const message = normalizedMessageOrThrow(value);
+  const record = value as { warning?: unknown };
+  const warning =
+    record.warning && typeof record.warning === 'object'
+      ? (record.warning as Record<string, unknown>)
+      : null;
+  return {
+    ...message,
+    ...(warning &&
+    typeof warning.code === 'string' &&
+    typeof warning.message === 'string'
+      ? { warning: { code: warning.code, message: warning.message } }
+      : {}),
+  };
+}
+
 export async function fetchChatRooms() {
-  const res = await api<{ items?: ChatRoom[] }>('/chat-rooms');
-  return Array.isArray(res.items) ? res.items : [];
+  const res = await api<{ items?: unknown[] }>('/chat-rooms');
+  return Array.isArray(res.items)
+    ? res.items
+        .map(normalizeChatRoom)
+        .filter((room): room is ChatRoom => room !== null)
+    : [];
 }
 
 export async function fetchRoomNotificationSetting(
@@ -58,9 +122,13 @@ export async function patchRoomNotificationSetting(
   return normalizeNotificationSetting(res);
 }
 
-export async function fetchRoomUnreadState(roomId: string) {
+export async function fetchRoomUnreadState(
+  roomId: string,
+  signal?: AbortSignal,
+) {
   const res = await api<{ unreadCount?: number; lastReadAt?: string | null }>(
     `/chat-rooms/${roomId}/unread`,
+    { signal },
   );
   return {
     unreadCount: typeof res.unreadCount === 'number' ? res.unreadCount : 0,
@@ -68,13 +136,22 @@ export async function fetchRoomUnreadState(roomId: string) {
   };
 }
 
-export async function markRoomRead(roomId: string) {
-  await api(`/chat-rooms/${roomId}/read`, { method: 'POST' });
+export async function markRoomRead(roomId: string, boundary?: MessageBoundary) {
+  await api(`/chat-rooms/${roomId}/read`, {
+    method: 'POST',
+    ...(boundary
+      ? {
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(boundary),
+        }
+      : {}),
+  });
 }
 
 export async function fetchRoomMessages(
   roomId: string,
   input: RoomMessageQuery,
+  signal?: AbortSignal,
 ) {
   const query = new URLSearchParams();
   query.set('limit', String(input.limit));
@@ -82,25 +159,100 @@ export async function fetchRoomMessages(
   if (input.tag?.trim()) query.set('tag', input.tag.trim());
   if (input.query?.trim()) query.set('q', input.query.trim());
 
-  const res = await api<{ items?: ChatMessage[] }>(
-    `/chat-rooms/${roomId}/messages?${query.toString()}`,
-  );
-  return Array.isArray(res.items) ? res.items : [];
+  const path = `/chat-rooms/${roomId}/messages?${query.toString()}`;
+  const res = signal
+    ? await api<{ items?: unknown[] }>(path, { signal })
+    : await api<{ items?: unknown[] }>(path);
+  return Array.isArray(res.items)
+    ? res.items
+        .map(normalizeChatMessage)
+        .filter((message): message is ChatMessage => message !== null)
+    : [];
 }
 
 export async function searchChatMessages(input: {
   query: string;
   before?: string;
+  beforeId?: string;
   limit: number;
-}) {
+  signal?: AbortSignal;
+}): Promise<ChatSearchPage> {
   const query = new URLSearchParams();
   query.set('q', input.query.trim());
   query.set('limit', String(input.limit));
   if (input.before) query.set('before', input.before);
-  const res = await api<{ items?: ChatSearchItem[] }>(
-    `/chat-messages/search?${query.toString()}`,
+  if (input.beforeId) query.set('beforeId', input.beforeId);
+  const path = `/chat-messages/search?${query.toString()}`;
+  const res = input.signal
+    ? await api<{
+        items?: unknown[];
+        nextBefore?: unknown;
+        nextBeforeId?: unknown;
+      }>(path, { signal: input.signal })
+    : await api<{
+        items?: unknown[];
+        nextBefore?: unknown;
+        nextBeforeId?: unknown;
+      }>(path);
+  return {
+    items: Array.isArray(res.items)
+      ? res.items
+          .map(normalizeChatSearchItem)
+          .filter((item): item is ChatSearchItem => item !== null)
+      : [],
+    nextBefore: typeof res.nextBefore === 'string' ? res.nextBefore : null,
+    nextBeforeId:
+      typeof res.nextBeforeId === 'string' ? res.nextBeforeId : null,
+  };
+}
+
+export async function fetchChatThread(
+  messageId: string,
+  input: { limit: number; cursor?: string; signal?: AbortSignal },
+): Promise<ChatThread> {
+  const query = new URLSearchParams({ limit: String(input.limit) });
+  if (input.cursor) query.set('cursor', input.cursor);
+  const response = await api<unknown>(
+    `/chat-messages/${messageId}/thread?${query.toString()}`,
+    { signal: input.signal },
   );
-  return Array.isArray(res.items) ? res.items : [];
+  const normalized = normalizeChatThread(response);
+  if (!normalized) throw new Error('Invalid chat thread response');
+  return normalized;
+}
+
+export async function postThreadReply(
+  rootMessageId: string,
+  payload: {
+    body: string;
+    tags?: string[];
+    mentions?: {
+      userIds?: string[];
+      groupIds?: string[];
+      all?: boolean;
+    };
+  },
+) {
+  const response = await api<unknown>(
+    `/chat-messages/${rootMessageId}/replies`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  );
+  return normalizedMessageOrThrow(response);
+}
+
+export async function deleteChatMessage(
+  messageId: string,
+  reason: 'user_retract' | 'admin_moderation',
+) {
+  await api(`/chat-messages/${messageId}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  });
 }
 
 export async function fetchMentionCandidates(
@@ -149,14 +301,12 @@ export async function postRoomMessage(
     };
   },
 ) {
-  return api<ChatMessage & { warning?: { code?: string; message?: string } }>(
-    `/chat-rooms/${roomId}/messages`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    },
-  );
+  const response = await api<unknown>(`/chat-rooms/${roomId}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return normalizedPostedMessageOrThrow(response);
 }
 
 export async function postRoomAckRequest(
@@ -172,16 +322,15 @@ export async function postRoomAckRequest(
     requiredUserIds?: string[];
     requiredGroupIds?: string[];
     requiredRoles?: string[];
+    parentMessageId?: string;
   },
 ) {
-  return api<ChatMessage & { warning?: { code?: string; message?: string } }>(
-    `/chat-rooms/${roomId}/ack-requests`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    },
-  );
+  const response = await api<unknown>(`/chat-rooms/${roomId}/ack-requests`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return normalizedPostedMessageOrThrow(response);
 }
 
 export async function uploadMessageAttachment(messageId: string, file: File) {
@@ -198,28 +347,33 @@ export async function downloadMessageAttachment(attachmentId: string) {
 }
 
 export async function postMessageReaction(messageId: string, emoji: string) {
-  return api<ChatMessage>(`/chat-messages/${messageId}/reactions`, {
+  const response = await api<unknown>(`/chat-messages/${messageId}/reactions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ emoji }),
   });
+  return normalizedMessageOrThrow(response);
 }
 
 export async function ackRequest(requestId: string) {
-  return api<ChatMessage['ackRequest']>(`/chat-ack-requests/${requestId}/ack`, {
+  const response = await api<unknown>(`/chat-ack-requests/${requestId}/ack`, {
     method: 'POST',
   });
+  return normalizedAckRequestOrThrow(response);
 }
 
 export async function revokeAckRequest(requestId: string) {
-  return api<ChatMessage['ackRequest']>(
+  const response = await api<unknown>(
     `/chat-ack-requests/${requestId}/revoke`,
-    { method: 'POST' },
+    {
+      method: 'POST',
+    },
   );
+  return normalizedAckRequestOrThrow(response);
 }
 
 export async function cancelAckRequestById(requestId: string, reason?: string) {
-  return api<ChatMessage['ackRequest']>(
+  const response = await api<unknown>(
     `/chat-ack-requests/${requestId}/cancel`,
     {
       method: 'POST',
@@ -227,6 +381,7 @@ export async function cancelAckRequestById(requestId: string, reason?: string) {
       body: JSON.stringify({ reason }),
     },
   );
+  return normalizedAckRequestOrThrow(response);
 }
 
 export async function createPrivateGroupRoom(input: {

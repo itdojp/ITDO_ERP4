@@ -58,6 +58,7 @@ import {
   uploadMessageAttachment,
 } from './room-chat/roomChatApi';
 import { RoomGlobalSearch } from './room-chat/RoomGlobalSearch';
+import { ChatThreadPanel } from './room-chat/ChatThreadPanel';
 import { RoomMessageList } from './room-chat/RoomMessageList';
 import {
   useRoomChatAckCandidates,
@@ -147,6 +148,7 @@ export const RoomChat: React.FC = () => {
     setMessage,
     unreadCount,
     highlightSince,
+    refreshUnreadState,
     loadMessages,
   } = useRoomChatMessages({ roomId, filterQuery, filterTag });
   const [nowMs, setNowMs] = useState(0);
@@ -473,6 +475,12 @@ export const RoomChat: React.FC = () => {
 
   const [pendingScrollMessageId, setPendingScrollMessageId] = useState('');
   const [highlightMessageId, setHighlightMessageId] = useState('');
+  const [threadTarget, setThreadTarget] = useState<{
+    messageId: string;
+    roomId: string;
+    expectedRootId: string;
+  } | null>(null);
+  const threadReturnFocusRef = useRef<HTMLElement | null>(null);
 
   const {
     notificationSetting,
@@ -557,9 +565,32 @@ export const RoomChat: React.FC = () => {
     loadNotificationSetting(roomId);
   }, [clearNotificationSetting, roomId, loadNotificationSetting]);
 
-  const openSearchResult = (item: ChatSearchItem) => {
+  const openThread = (
+    item: Pick<ChatMessage, 'id' | 'roomId' | 'threadRootId'>,
+    trigger: HTMLElement | null,
+  ) => {
+    threadReturnFocusRef.current = trigger;
+    setThreadTarget({
+      messageId: item.id,
+      roomId: item.roomId,
+      expectedRootId: item.threadRootId ?? item.id,
+    });
+  };
+
+  const closeThread = () => {
+    setThreadTarget(null);
+    const trigger = threadReturnFocusRef.current;
+    threadReturnFocusRef.current = null;
+    window.setTimeout(() => trigger?.focus(), 0);
+  };
+
+  const openSearchResult = (
+    item: ChatSearchItem,
+    trigger: HTMLButtonElement | null,
+  ) => {
     setRoomId(item.room.id);
     setMessage('');
+    openThread(item, trigger);
   };
 
   const downloadAttachment = async (
@@ -568,8 +599,7 @@ export const RoomChat: React.FC = () => {
   ) => {
     const res = await downloadMessageAttachment(attachmentId);
     if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`download failed (${res.status}) ${text}`);
+      throw new Error(`Attachment download failed (${res.status})`);
     }
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
@@ -869,7 +899,11 @@ export const RoomChat: React.FC = () => {
   const addReaction = async (id: string, emoji: string) => {
     try {
       const updated = await postMessageReaction(id, emoji);
-      setItems((prev) => prev.map((item) => (item.id === id ? updated : item)));
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, reactions: updated.reactions } : item,
+        ),
+      );
     } catch (err) {
       console.error('Failed to add reaction.', err);
       setMessage('リアクションの更新に失敗しました');
@@ -1119,7 +1153,7 @@ export const RoomChat: React.FC = () => {
       ? formatRoomLabel(selectedRoom, currentUserId)
       : roomId;
     const label = escapeMarkdownLinkLabel(
-      `${roomLabel} ${new Date(item.createdAt).toLocaleString()} ${item.userId}: ${buildExcerpt(item.body, 80)}`.trim(),
+      `${roomLabel} ${new Date(item.createdAt).toLocaleString()} ${item.userId}: ${buildExcerpt(item.body ?? '', 80)}`.trim(),
     );
     const markdown = `[${label}](${url})`;
     const ok = await copyToClipboard(markdown);
@@ -1774,6 +1808,7 @@ export const RoomChat: React.FC = () => {
         currentUserId={currentUserId}
         roles={roles}
         renderMessageBody={renderMessageBody}
+        onOpenThread={openThread}
         copyMessageLink={copyMessageLink}
         addReaction={addReaction}
         ack={ack}
@@ -1798,6 +1833,26 @@ export const RoomChat: React.FC = () => {
         openSearchResult={openSearchResult}
         currentUserId={currentUserId}
       />
+      {threadTarget && (
+        <ChatThreadPanel
+          key={`${threadTarget.roomId}:${threadTarget.messageId}`}
+          messageId={threadTarget.messageId}
+          roomId={threadTarget.roomId}
+          expectedRootId={threadTarget.expectedRootId}
+          currentUserId={currentUserId}
+          roles={roles}
+          renderMessageBody={renderMessageBody}
+          onClose={closeThread}
+          onRootUpdated={(root) => {
+            setItems((current) =>
+              current.map((item) => (item.id === root.id ? root : item)),
+            );
+          }}
+          onReadUpdated={(targetRoomId) =>
+            refreshUnreadState(targetRoomId, { preserveHighlight: true })
+          }
+        />
+      )}
     </div>
   );
 };

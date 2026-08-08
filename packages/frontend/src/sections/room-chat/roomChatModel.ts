@@ -18,8 +18,11 @@ export type ChatRoom = {
 export type ChatMessage = {
   id: string;
   roomId: string;
+  messageType: 'text';
+  parentMessageId: string | null;
+  threadRootId: string | null;
   userId: string;
-  body: string;
+  body: string | null;
   tags?: string[];
   reactions?: Record<string, number | { count: number; userIds: string[] }>;
   mentions?: { userIds?: unknown; groupIds?: unknown } | null;
@@ -40,16 +43,32 @@ export type ChatMessage = {
     createdAt: string;
   }[];
   createdAt: string;
+  deleted: boolean;
+  deletedAt: string | null;
+  deletedReason: 'user_retract' | 'admin_moderation' | null;
+  replyCount?: number;
+  lastReplyAt?: string | null;
 };
 
 export type ChatSearchItem = {
   id: string;
   roomId: string;
+  messageType: 'text';
+  parentMessageId: string | null;
+  threadRootId: string | null;
   userId: string;
   body: string;
   tags?: string[];
   createdAt: string;
   room: ChatRoom;
+};
+
+export type ChatThread = {
+  root: ChatMessage & { replyCount: number; lastReplyAt: string | null };
+  replies: ChatMessage[];
+  replyCount: number;
+  lastReplyAt: string | null;
+  nextCursor: string | null;
 };
 
 export type MentionCandidates = {
@@ -60,6 +79,275 @@ export type MentionCandidates = {
 
 export const reactionOptions = ['👍', '🎉', '❤️', '😂', '🙏', '👀'];
 export const pageSize = 50;
+export const threadPageSize = 50;
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' ? value : '';
+}
+
+function nullableStringValue(value: unknown) {
+  return typeof value === 'string' ? value : null;
+}
+
+function booleanValue(value: unknown) {
+  return value === true;
+}
+
+function finiteNonNegativeInteger(value: unknown) {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : 0;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function normalizeReactions(value: unknown): ChatMessage['reactions'] {
+  const record = recordValue(value);
+  if (!record) return undefined;
+  const normalized: NonNullable<ChatMessage['reactions']> = {};
+  for (const [emoji, raw] of Object.entries(record)) {
+    if (!emoji || emoji.length > 32) continue;
+    if (typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0) {
+      normalized[emoji] = raw;
+      continue;
+    }
+    const reaction = recordValue(raw);
+    if (!reaction) continue;
+    const count = finiteNonNegativeInteger(reaction.count);
+    const userIds = normalizeStringArray(reaction.userIds).slice(0, 200);
+    normalized[emoji] = { count, userIds };
+  }
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+export function normalizeAckRequest(value: unknown): ChatMessage['ackRequest'] {
+  const ack = recordValue(value);
+  if (!ack || !stringValue(ack.id)) return null;
+  const acks = Array.isArray(ack.acks)
+    ? ack.acks
+        .map((entry) => {
+          const row = recordValue(entry);
+          if (!row) return null;
+          const userId = stringValue(row.userId);
+          const ackedAt = stringValue(row.ackedAt);
+          return userId && ackedAt ? { userId, ackedAt } : null;
+        })
+        .filter(
+          (entry): entry is { userId: string; ackedAt: string } => !!entry,
+        )
+    : [];
+  return {
+    id: stringValue(ack.id),
+    requiredUserIds: normalizeStringArray(ack.requiredUserIds),
+    dueAt: nullableStringValue(ack.dueAt),
+    canceledAt: nullableStringValue(ack.canceledAt),
+    canceledBy: nullableStringValue(ack.canceledBy),
+    acks,
+  };
+}
+
+function normalizeAttachments(value: unknown): ChatMessage['attachments'] {
+  if (!Array.isArray(value)) return [];
+  const normalized: NonNullable<ChatMessage['attachments']> = [];
+  for (const entry of value) {
+    const attachment = recordValue(entry);
+    if (!attachment) continue;
+    const id = stringValue(attachment.id);
+    const originalName = stringValue(attachment.originalName);
+    const createdAt = stringValue(attachment.createdAt);
+    if (!id || !originalName || !createdAt) continue;
+    normalized.push({
+      id,
+      originalName,
+      mimeType: nullableStringValue(attachment.mimeType),
+      sizeBytes:
+        typeof attachment.sizeBytes === 'number' &&
+        Number.isSafeInteger(attachment.sizeBytes) &&
+        attachment.sizeBytes >= 0
+          ? attachment.sizeBytes
+          : null,
+      createdAt,
+    });
+  }
+  return normalized;
+}
+
+export function normalizeChatRoom(value: unknown): ChatRoom | null {
+  const room = recordValue(value);
+  if (!room) return null;
+  const id = stringValue(room.id);
+  const type = stringValue(room.type);
+  const name = stringValue(room.name);
+  if (!id || !type || !name) return null;
+  return {
+    id,
+    type,
+    name,
+    isOfficial: typeof room.isOfficial === 'boolean' ? room.isOfficial : null,
+    projectId: nullableStringValue(room.projectId),
+    projectCode: nullableStringValue(room.projectCode),
+    projectName: nullableStringValue(room.projectName),
+    groupId: nullableStringValue(room.groupId),
+    allowExternalUsers:
+      typeof room.allowExternalUsers === 'boolean'
+        ? room.allowExternalUsers
+        : null,
+    allowExternalIntegrations:
+      typeof room.allowExternalIntegrations === 'boolean'
+        ? room.allowExternalIntegrations
+        : null,
+    isMember: typeof room.isMember === 'boolean' ? room.isMember : null,
+  };
+}
+
+export function normalizeChatMessage(value: unknown): ChatMessage | null {
+  const message = recordValue(value);
+  if (!message) return null;
+  const id = stringValue(message.id);
+  const roomId = stringValue(message.roomId);
+  const userId = stringValue(message.userId);
+  const createdAt = stringValue(message.createdAt);
+  if (!id || !roomId || !userId || !createdAt) return null;
+  // PR A added messageType additively. Omission remains compatible with
+  // pre-thread responses, while every explicit non-text type fails closed.
+  if (message.messageType !== undefined && message.messageType !== 'text') {
+    return null;
+  }
+  const deleted = booleanValue(message.deleted) || message.deletedAt != null;
+  if (!deleted && typeof message.body !== 'string') return null;
+  const deletedReason =
+    message.deletedReason === 'user_retract' ||
+    message.deletedReason === 'admin_moderation'
+      ? message.deletedReason
+      : null;
+  const normalized: ChatMessage = {
+    id,
+    roomId,
+    messageType: 'text',
+    parentMessageId: nullableStringValue(message.parentMessageId),
+    threadRootId: nullableStringValue(message.threadRootId),
+    userId,
+    body: deleted ? null : nullableStringValue(message.body),
+    tags: deleted ? [] : normalizeStringArray(message.tags),
+    reactions: deleted ? undefined : normalizeReactions(message.reactions),
+    mentions: deleted
+      ? null
+      : (() => {
+          const mentions = recordValue(message.mentions);
+          return mentions
+            ? {
+                userIds: normalizeStringArray(mentions.userIds),
+                groupIds: normalizeStringArray(mentions.groupIds),
+              }
+            : null;
+        })(),
+    mentionsAll: deleted ? false : booleanValue(message.mentionsAll),
+    ackRequest: deleted ? null : normalizeAckRequest(message.ackRequest),
+    attachments: deleted ? [] : normalizeAttachments(message.attachments),
+    createdAt,
+    deleted,
+    deletedAt: nullableStringValue(message.deletedAt),
+    deletedReason,
+  };
+  if ('replyCount' in message) {
+    normalized.replyCount = finiteNonNegativeInteger(message.replyCount);
+  }
+  if ('lastReplyAt' in message) {
+    normalized.lastReplyAt = nullableStringValue(message.lastReplyAt);
+  }
+  return normalized;
+}
+
+export function normalizeChatSearchItem(value: unknown): ChatSearchItem | null {
+  const item = recordValue(value);
+  if (!item) return null;
+  const room = normalizeChatRoom(item.room);
+  const id = stringValue(item.id);
+  const roomId = stringValue(item.roomId);
+  const userId = stringValue(item.userId);
+  const body = stringValue(item.body);
+  const createdAt = stringValue(item.createdAt);
+  if (!room || !id || !roomId || room.id !== roomId || !userId || !createdAt) {
+    return null;
+  }
+  if (item.messageType !== undefined && item.messageType !== 'text') {
+    return null;
+  }
+  return {
+    id,
+    roomId,
+    messageType: 'text',
+    parentMessageId: nullableStringValue(item.parentMessageId),
+    threadRootId: nullableStringValue(item.threadRootId),
+    userId,
+    body,
+    tags: normalizeStringArray(item.tags),
+    createdAt,
+    room,
+  };
+}
+
+export function normalizeChatThread(value: unknown): ChatThread | null {
+  const thread = recordValue(value);
+  if (!thread) return null;
+  const root = normalizeChatMessage(thread.root);
+  if (!root || root.parentMessageId !== null || root.threadRootId !== null) {
+    return null;
+  }
+  if (!Array.isArray(thread.replies)) return null;
+  const replies: ChatMessage[] = [];
+  for (const value of thread.replies) {
+    const reply = normalizeChatMessage(value);
+    if (
+      !reply ||
+      reply.parentMessageId !== root.id ||
+      reply.threadRootId !== root.id ||
+      reply.roomId !== root.roomId
+    ) {
+      return null;
+    }
+    replies.push(reply);
+  }
+  if (
+    typeof thread.replyCount !== 'number' ||
+    !Number.isSafeInteger(thread.replyCount) ||
+    thread.replyCount < replies.length
+  ) {
+    return null;
+  }
+  const replyCount = thread.replyCount;
+  const lastReplyAt = nullableStringValue(thread.lastReplyAt);
+  return {
+    root: { ...root, replyCount, lastReplyAt },
+    replies,
+    replyCount,
+    lastReplyAt,
+    nextCursor: nullableStringValue(thread.nextCursor),
+  };
+}
+
+export function newestVisibleMessageBoundary(messages: ChatMessage[]) {
+  let selected: ChatMessage | undefined;
+  for (const message of messages) {
+    if (message.deleted) continue;
+    const timestamp = Date.parse(message.createdAt);
+    if (!Number.isFinite(timestamp)) continue;
+    const selectedTimestamp = selected ? Date.parse(selected.createdAt) : NaN;
+    if (
+      !selected ||
+      timestamp > selectedTimestamp ||
+      (timestamp === selectedTimestamp && message.id > selected.id)
+    ) {
+      selected = message;
+    }
+  }
+  return selected
+    ? { through: selected.createdAt, throughMessageId: selected.id }
+    : null;
+}
 
 export function parseTags(value: string) {
   return value

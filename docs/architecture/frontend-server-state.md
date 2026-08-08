@@ -52,6 +52,7 @@ Issue #1923 では React Query 依存は追加せず、既存 `api` wrapper を�
 | room list query               | `room-chat/useRoomChatRooms.ts`               | `GET /chat-rooms`、初期ルーム選択、GA可視性フィルタ、案件 deep link 解決                                              |
 | message query                 | `room-chat/useRoomChatMessages.ts`            | `GET /chat-rooms/:roomId/messages`、pagination、filter/search、unread/read-state、loading/error、stale response guard |
 | global search query           | `room-chat/useRoomChatGlobalSearch.ts`        | `GET /chat-messages/search`、append pagination、loading/error                                                         |
+| thread query / mutation       | `room-chat/useRoomChatThread.ts`              | thread/reply pagination、表示済み既読境界、reply/reaction/ack/delete後の再取得、stale response guard                  |
 | notification setting resource | `room-chat/useRoomChatNotificationSetting.ts` | `GET/PATCH /chat-rooms/:roomId/notification-setting`、保存 feedback、mute datetime 変換                               |
 | candidate resources           | `room-chat/useRoomChatCandidates.ts`          | mention candidates、ack candidates、abort/debounce                                                                    |
 | mutation commands             | `room-chat/roomChatApi.ts`                    | message post、ack request、reaction、ack/revoke/cancel、attachment、room create/invite、summary、notification save    |
@@ -64,6 +65,11 @@ Issue #1923 では React Query 依存は追加せず、既存 `api` wrapper を�
 - notification setting 保存後は PATCH レスポンスで hook state を更新する。
 - mention candidates は room change 時に abort し、ack candidates は 200ms debounce + abort で stale candidate 反映を抑止する。
 - message load は request sequence と target room を照合し、遅延した旧 room response が現在 room の messages / unread / loading state を上書きしない。
+- global search はサーバが返す `(nextBefore, nextBeforeId)` の複合境界を再送し、同一時刻の検索結果を欠落させない。query変更時は旧requestをabortし、旧結果とpagination境界を破棄する。
+- thread load はopaque cursorをそのまま再送し、親・返信のsame-room topology、期待room、確定済みrootをstate更新・既読更新より前に検査する。mutation後は先頭ページを再取得し、既に読み込んだ後続ページを保持したままfresh responseを優先してmergeする。
+- mutation成功後の再取得だけが失敗した場合は、既存thread stateと確定済みreply/deletionを保持し、再送による二重処理を避けるため「再送せず再読み込み」を案内する。
+- 共通 `api` wrapper の非2xx errorはHTTP statusだけをcallerへ渡し、response bodyやrequest pathをError、browser console、CI logへ複製しない。
+- room timelineとthreadは、実際に表示した最新 `(createdAt, messageId)` を既読境界として送信する。空一覧や未取得返信をserver-nowで既読にしない。
 - duplicate submit は in-flight ref で抑止し、message / ack request の二重 POST を防止する。
 
 ### 行数とテスト

@@ -4,7 +4,11 @@ import {
   fetchRoomUnreadState,
   markRoomRead,
 } from './roomChatApi';
-import { pageSize, type ChatMessage } from './roomChatModel';
+import {
+  newestVisibleMessageBoundary,
+  pageSize,
+  type ChatMessage,
+} from './roomChatModel';
 
 export type LoadMessagesOptions = {
   append?: boolean;
@@ -32,6 +36,7 @@ export function useRoomChatMessages({
   const roomIdRef = useRef(roomId);
   const itemsRef = useRef(items);
   const requestSeqRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     roomIdRef.current = roomId;
@@ -41,20 +46,39 @@ export function useRoomChatMessages({
     itemsRef.current = items;
   }, [items]);
 
-  const fetchUnreadState = useCallback(async (targetRoomId: string) => {
-    const unread = await fetchRoomUnreadState(targetRoomId);
-    if (roomIdRef.current !== targetRoomId) return;
-    setUnreadCount(unread.unreadCount);
-    setHighlightSince(unread.lastReadAt ? new Date(unread.lastReadAt) : null);
+  useEffect(() => {
+    return () => abortRef.current?.abort();
   }, []);
 
-  const markRead = useCallback(async (targetRoomId: string) => {
-    try {
-      await markRoomRead(targetRoomId);
-    } catch (err) {
-      console.warn('Failed to mark read.', err);
-    }
-  }, []);
+  const fetchUnreadState = useCallback(
+    async (
+      targetRoomId: string,
+      options?: { preserveHighlight?: boolean; signal?: AbortSignal },
+    ) => {
+      const unread = await fetchRoomUnreadState(targetRoomId, options?.signal);
+      if (roomIdRef.current !== targetRoomId) return;
+      setUnreadCount(unread.unreadCount);
+      if (!options?.preserveHighlight) {
+        setHighlightSince(
+          unread.lastReadAt ? new Date(unread.lastReadAt) : null,
+        );
+      }
+    },
+    [],
+  );
+
+  const markRead = useCallback(
+    async (targetRoomId: string, messages: ChatMessage[]) => {
+      const boundary = newestVisibleMessageBoundary(messages);
+      if (!boundary) return;
+      try {
+        await markRoomRead(targetRoomId, boundary);
+      } catch {
+        console.warn('Failed to mark read.');
+      }
+    },
+    [],
+  );
 
   const loadMessages = useCallback(
     async (options?: LoadMessagesOptions) => {
@@ -63,9 +87,13 @@ export function useRoomChatMessages({
       if (roomIdRef.current !== targetRoomId) return;
       const append = options?.append === true;
       const requestSeq = ++requestSeqRef.current;
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
       const isCurrentRequest = () =>
         requestSeqRef.current === requestSeq &&
-        roomIdRef.current === targetRoomId;
+        roomIdRef.current === targetRoomId &&
+        !controller.signal.aborted;
 
       try {
         if (append) {
@@ -95,12 +123,16 @@ export function useRoomChatMessages({
           return;
         }
 
-        const fetched = await fetchRoomMessages(targetRoomId, {
-          before,
-          limit: pageSize,
-          query: trimmedQuery,
-          tag: effectiveTag,
-        });
+        const fetched = await fetchRoomMessages(
+          targetRoomId,
+          {
+            before,
+            limit: pageSize,
+            query: trimmedQuery,
+            tag: effectiveTag,
+          },
+          controller.signal,
+        );
         if (!isCurrentRequest()) return;
         if (append) {
           setItems((prev) => [...prev, ...fetched]);
@@ -109,21 +141,27 @@ export function useRoomChatMessages({
         }
         setHasMore(fetched.length === pageSize);
 
-        await fetchUnreadState(targetRoomId);
-        await markRead(targetRoomId);
-      } catch (err) {
-        if (!isCurrentRequest()) return;
-        console.error('Failed to load room messages.', err);
+        if (!append) {
+          await fetchUnreadState(targetRoomId, { signal: controller.signal });
+          if (!isCurrentRequest()) return;
+          await markRead(targetRoomId, fetched);
+          if (!isCurrentRequest()) return;
+          await fetchUnreadState(targetRoomId, {
+            preserveHighlight: true,
+            signal: controller.signal,
+          });
+        }
+      } catch {
+        if (controller.signal.aborted || !isCurrentRequest()) return;
+        console.error('Failed to load room messages.');
         setMessage('メッセージの取得に失敗しました');
         setHasMore(false);
       } finally {
-        if (isCurrentRequest()) {
-          setIsLoading(false);
-          setIsLoadingMore(false);
-        } else if (requestSeqRef.current === requestSeq) {
+        if (requestSeqRef.current === requestSeq) {
           setIsLoading(false);
           setIsLoadingMore(false);
         }
+        if (abortRef.current === controller) abortRef.current = null;
       }
     },
     [fetchUnreadState, filterQuery, filterTag, markRead, roomId],
@@ -139,6 +177,7 @@ export function useRoomChatMessages({
     setMessage,
     unreadCount,
     highlightSince,
+    refreshUnreadState: fetchUnreadState,
     loadMessages,
   };
 }

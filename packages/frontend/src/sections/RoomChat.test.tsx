@@ -24,6 +24,9 @@ type ChatRoom = {
 type ChatMessage = {
   id: string;
   roomId: string;
+  messageType?: 'text';
+  parentMessageId?: string | null;
+  threadRootId?: string | null;
   userId: string;
   body: string;
   createdAt: string;
@@ -31,6 +34,10 @@ type ChatMessage = {
 
 type ChatSearchItem = {
   id: string;
+  roomId: string;
+  messageType?: 'text';
+  parentMessageId?: string | null;
+  threadRootId?: string | null;
   userId: string;
   body: string;
   createdAt: string;
@@ -162,12 +169,17 @@ function makeMessage(overrides: Partial<ChatMessage>): ChatMessage {
 }
 
 function makeSearchItem(overrides: Partial<ChatSearchItem>): ChatSearchItem {
+  const room = overrides.room ?? makeRoom({ id: 'room-1' });
   return {
     id: 'search-1',
+    roomId: room.id,
+    messageType: 'text',
+    parentMessageId: null,
+    threadRootId: null,
     userId: 'alice',
     body: 'search result',
     createdAt: '2026-03-28T00:00:00.000Z',
-    room: makeRoom({ id: 'room-1' }),
+    room,
     ...overrides,
   };
 }
@@ -220,6 +232,16 @@ function installApiMock(options: {
   postMessagePromise?: Promise<
     ChatMessage & { warning?: { code?: string; message?: string } }
   >;
+  threadsByMessageId?: Record<
+    string,
+    {
+      root: ChatMessage;
+      replies: ChatMessage[];
+      replyCount: number;
+      lastReplyAt: string | null;
+      nextCursor: string | null;
+    }
+  >;
 }) {
   const failOnSearch = new Set(options.failOnSearch ?? []);
   const failOnGlobalSearch = new Set(options.failOnGlobalSearch ?? []);
@@ -241,10 +263,23 @@ function installApiMock(options: {
         if (failOnGlobalSearch.has(`${query}|${before}`)) {
           throw new Error(`global search failed for query: ${query}`);
         }
+        const items =
+          options.globalSearchResultsByQuery?.[`${query}|${before}`] ?? [];
+        const last = items.length === 50 ? items[items.length - 1] : undefined;
         return {
-          items:
-            options.globalSearchResultsByQuery?.[`${query}|${before}`] ?? [],
+          items,
+          nextBefore: last?.createdAt ?? null,
+          nextBeforeId: last?.id ?? null,
         } as never;
+      }
+
+      const threadMatch = url.pathname.match(
+        /^\/chat-messages\/([^/]+)\/thread$/,
+      );
+      if (threadMatch && method === 'GET') {
+        const thread = options.threadsByMessageId?.[threadMatch[1]];
+        if (!thread) throw new Error('thread not found');
+        return thread as never;
       }
 
       const roomMatch = url.pathname.match(
@@ -915,6 +950,30 @@ describe('RoomChat', () => {
         ],
       },
       failOnGlobalSearch: ['error|'],
+      threadsByMessageId: {
+        'search-51': {
+          root: makeMessage({
+            id: 'search-51',
+            roomId: 'room-2',
+            body: 'beta page2 result',
+            userId: 'alice',
+          }),
+          replies: [
+            makeMessage({
+              id: 'reply-51',
+              roomId: 'room-2',
+              parentMessageId: 'search-51',
+              threadRootId: 'search-51',
+              body: 'search result thread reply',
+              userId: 'bob',
+              createdAt: '2026-03-28T00:01:00.000Z',
+            }),
+          ],
+          replyCount: 1,
+          lastReplyAt: '2026-03-28T00:01:00.000Z',
+          nextCursor: null,
+        },
+      },
     });
 
     render(<RoomChat />);
@@ -940,7 +999,9 @@ describe('RoomChat', () => {
     let secondPageContainer: HTMLElement | null = secondPageCard.parentElement;
     while (
       secondPageContainer &&
-      !within(secondPageContainer).queryByRole('button', { name: '開く' })
+      !within(secondPageContainer).queryByRole('button', {
+        name: 'スレッドを開く',
+      })
     ) {
       secondPageContainer = secondPageContainer.parentElement;
     }
@@ -948,7 +1009,9 @@ describe('RoomChat', () => {
       throw new Error('search result container not found');
     }
     fireEvent.click(
-      within(secondPageContainer).getByRole('button', { name: '開く' }),
+      within(secondPageContainer).getByRole('button', {
+        name: 'スレッドを開く',
+      }),
     );
 
     await waitFor(() => {
@@ -957,6 +1020,11 @@ describe('RoomChat', () => {
       );
     });
     expect(await screen.findByText('room-2 first message')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('dialog', { name: 'スレッド' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('search result thread reply')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'スレッドを閉じる' }));
 
     fireEvent.change(screen.getByLabelText('横断検索（本文）'), {
       target: { value: 'error' },
