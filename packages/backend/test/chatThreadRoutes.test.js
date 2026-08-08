@@ -155,6 +155,12 @@ test('GET thread rejects invalid limit and cursor with sanitized errors', async 
       headers,
     });
     assert.equal(limitResponse.statusCode, 400, limitResponse.body);
+    const overLimitResponse = await server.inject({
+      method: 'GET',
+      url: '/chat-messages/root-1/thread?limit=201',
+      headers,
+    });
+    assert.equal(overLimitResponse.statusCode, 400, overLimitResponse.body);
     const cursorResponse = await server.inject({
       method: 'GET',
       url: '/chat-messages/root-1/thread?cursor=invalid',

@@ -150,10 +150,10 @@ export const chatThreadGetSchema = {
   querystring: Type.Object(
     {
       limit: Type.Optional(
-        Type.Union([
-          Type.Integer({ minimum: 1, maximum: 200 }),
-          Type.String({ pattern: '^[0-9]+$', maxLength: 3 }),
-        ]),
+        Type.String({
+          pattern: '^(?:[1-9]|[1-9][0-9]|1[0-9][0-9]|200)$',
+          maxLength: 3,
+        }),
       ),
       cursor: Type.Optional(Type.String({ minLength: 1, maxLength: 1024 })),
     },
