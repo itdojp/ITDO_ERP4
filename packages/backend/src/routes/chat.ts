@@ -33,6 +33,14 @@ import { normalizeMentions } from './chat/shared/mentions.js';
 import { ensureRoomAccessWithReasonError } from './chat/shared/roomAccessGuard.js';
 import { requireUserId } from './chat/shared/requireUserId.js';
 import { parseDateParam } from '../utils/date.js';
+import { prismaChatThreadRepository } from '../adapters/chat/prismaChatThreadAdapter.js';
+import { chatRootTimelineMessageResponse } from './chatThreadResponses.js';
+import {
+  chatApiErrorResponseSchema,
+  chatRootTimelineListResponseSchema,
+  projectChatTimelineParamsSchema,
+  projectChatTimelineQuerySchema,
+} from './chatThreadSchemas.js';
 
 import { registerChatAckRequestRoutes } from './chat/ackRequests.js';
 import { registerChatAttachmentRoutes } from './chat/attachments.js';
@@ -210,7 +218,15 @@ export async function registerChatRoutes(app: FastifyInstance) {
   app.get(
     '/projects/:projectId/chat-messages',
     {
-      schema: { deprecated: true },
+      schema: {
+        deprecated: true,
+        params: projectChatTimelineParamsSchema,
+        querystring: projectChatTimelineQuerySchema,
+        response: {
+          200: chatRootTimelineListResponseSchema,
+          400: chatApiErrorResponseSchema,
+        },
+      },
       preHandler: [
         requireRole(chatRoles),
         requireProjectAccess((req) => (req.params as any)?.projectId),
@@ -246,47 +262,19 @@ export async function registerChatRoutes(app: FastifyInstance) {
         accessLevel: 'read',
       });
       if (!room) return reply;
-      const where: Prisma.ChatMessageWhereInput = {
-        roomId: room.id,
-        deletedAt: null,
-      };
-      if (beforeDate) {
-        where.createdAt = { lt: beforeDate };
-      }
       const trimmedTag = typeof tag === 'string' ? tag.trim() : '';
       if (trimmedTag.length > 32) {
         return reply.status(400).send({
           error: { code: 'INVALID_TAG', message: 'Tag is too long' },
         });
       }
-      if (trimmedTag) {
-        where.tags = { array_contains: [trimmedTag] };
-      }
-      const items = await prisma.chatMessage.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        take,
-        include: {
-          ackRequest: {
-            include: {
-              acks: true,
-            },
-          },
-          attachments: {
-            select: {
-              id: true,
-              originalName: true,
-              mimeType: true,
-              sizeBytes: true,
-              createdAt: true,
-              createdBy: true,
-            },
-            where: { deletedAt: null },
-            orderBy: { createdAt: 'asc' },
-          },
-        },
+      const items = await prismaChatThreadRepository.listRootTimeline({
+        roomId: room.id,
+        limit: take,
+        before: beforeDate ?? undefined,
+        tag: trimmedTag || undefined,
       });
-      return { items };
+      return { items: items.map(chatRootTimelineMessageResponse) };
     },
   );
 

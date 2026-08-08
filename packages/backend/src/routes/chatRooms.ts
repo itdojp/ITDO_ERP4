@@ -41,6 +41,14 @@ import {
 } from './chat/shared/inputParsers.js';
 import { requireUserId } from './chat/shared/requireUserId.js';
 import { parseDateParam } from '../utils/date.js';
+import { prismaChatThreadRepository } from '../adapters/chat/prismaChatThreadAdapter.js';
+import { chatRootTimelineMessageResponse } from './chatThreadResponses.js';
+import {
+  chatApiErrorResponseSchema,
+  chatRoomTimelineParamsSchema,
+  chatRoomTimelineQuerySchema,
+  chatRootTimelineListResponseSchema,
+} from './chatThreadSchemas.js';
 
 export async function registerChatRoomRoutes(app: FastifyInstance) {
   const chatRoles = CHAT_ROLES;
@@ -961,7 +969,17 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
 
   app.get(
     '/chat-rooms/:roomId/messages',
-    { preHandler: requireRole(chatRoles) },
+    {
+      preHandler: requireRole(chatRoles),
+      schema: {
+        params: chatRoomTimelineParamsSchema,
+        querystring: chatRoomTimelineQuerySchema,
+        response: {
+          200: chatRootTimelineListResponseSchema,
+          400: chatApiErrorResponseSchema,
+        },
+      },
+    },
     async (req, reply) => {
       const { roomId } = req.params as { roomId: string };
       const { limit, before, tag, q } = req.query as {
@@ -997,21 +1015,11 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           error: { code: 'INVALID_DATE', message: 'Invalid before date' },
         });
       }
-      const where: Prisma.ChatMessageWhereInput = {
-        roomId: access.room.id,
-        deletedAt: null,
-      };
-      if (beforeDate) {
-        where.createdAt = { lt: beforeDate };
-      }
       const trimmedTag = typeof tag === 'string' ? tag.trim() : '';
       if (trimmedTag.length > 32) {
         return reply.status(400).send({
           error: { code: 'INVALID_TAG', message: 'Tag is too long' },
         });
-      }
-      if (trimmedTag) {
-        where.tags = { array_contains: [trimmedTag] };
       }
       const trimmedQuery = typeof q === 'string' ? q.trim() : '';
       if (trimmedQuery.length > 100) {
@@ -1024,34 +1032,14 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
           error: { code: 'INVALID_QUERY', message: 'query is too short' },
         });
       }
-      if (trimmedQuery) {
-        where.body = { contains: trimmedQuery, mode: 'insensitive' };
-      }
-      const items = await prisma.chatMessage.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        take,
-        include: {
-          ackRequest: {
-            include: {
-              acks: true,
-            },
-          },
-          attachments: {
-            select: {
-              id: true,
-              originalName: true,
-              mimeType: true,
-              sizeBytes: true,
-              createdAt: true,
-              createdBy: true,
-            },
-            where: { deletedAt: null },
-            orderBy: { createdAt: 'asc' },
-          },
-        },
+      const items = await prismaChatThreadRepository.listRootTimeline({
+        roomId: access.room.id,
+        limit: take,
+        before: beforeDate ?? undefined,
+        tag: trimmedTag || undefined,
+        query: trimmedQuery || undefined,
       });
-      return { items };
+      return { items: items.map(chatRootTimelineMessageResponse) };
     },
   );
 

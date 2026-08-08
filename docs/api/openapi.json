@@ -9106,6 +9106,623 @@
         }
       }
     },
+    "/chat-messages/{id}/thread": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "maxLength": 3,
+              "pattern": "^(?:[1-9]|[1-9][0-9]|1[0-9][0-9]|200)$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "lastReplyAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "nextCursor": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "replies": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "ackRequest": {
+                            "additionalProperties": false,
+                            "nullable": true,
+                            "properties": {
+                              "acks": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "ackedAt": {
+                                      "format": "date-time",
+                                      "type": "string"
+                                    },
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "requestId": {
+                                      "type": "string"
+                                    },
+                                    "userId": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "requestId",
+                                    "userId",
+                                    "ackedAt"
+                                  ],
+                                  "type": "object"
+                                },
+                                "type": "array"
+                              },
+                              "canceledAt": {
+                                "format": "date-time",
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "canceledBy": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "createdAt": {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              "createdBy": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "dueAt": {
+                                "format": "date-time",
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "escalationAfterHours": {
+                                "nullable": true,
+                                "type": "integer"
+                              },
+                              "escalationGroupIds": {},
+                              "escalationRoles": {},
+                              "escalationUserIds": {},
+                              "id": {
+                                "type": "string"
+                              },
+                              "messageId": {
+                                "type": "string"
+                              },
+                              "remindIntervalHours": {
+                                "nullable": true,
+                                "type": "integer"
+                              },
+                              "requestedGroupIds": {},
+                              "requestedRoles": {},
+                              "requestedUserIds": {},
+                              "requiredUserIds": {},
+                              "roomId": {
+                                "type": "string"
+                              },
+                              "templateId": {
+                                "nullable": true,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "messageId",
+                              "roomId",
+                              "requiredUserIds",
+                              "requestedUserIds",
+                              "requestedGroupIds",
+                              "requestedRoles",
+                              "dueAt",
+                              "remindIntervalHours",
+                              "escalationAfterHours",
+                              "escalationUserIds",
+                              "escalationGroupIds",
+                              "escalationRoles",
+                              "templateId",
+                              "canceledAt",
+                              "canceledBy",
+                              "createdAt",
+                              "createdBy",
+                              "acks"
+                            ],
+                            "type": "object"
+                          },
+                          "attachments": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "createdAt": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "createdBy": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "id": {
+                                  "type": "string"
+                                },
+                                "mimeType": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "originalName": {
+                                  "type": "string"
+                                },
+                                "sizeBytes": {
+                                  "nullable": true,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "originalName",
+                                "mimeType",
+                                "sizeBytes",
+                                "createdAt",
+                                "createdBy"
+                              ],
+                              "type": "object"
+                            },
+                            "type": "array"
+                          },
+                          "body": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "createdBy": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "deleted": {
+                            "type": "boolean"
+                          },
+                          "deletedAt": {
+                            "format": "date-time",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "deletedReason": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "mentions": {},
+                          "mentionsAll": {
+                            "type": "boolean"
+                          },
+                          "messageType": {
+                            "enum": [
+                              "text"
+                            ],
+                            "type": "string"
+                          },
+                          "parentMessageId": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "reactions": {},
+                          "roomId": {
+                            "type": "string"
+                          },
+                          "tags": {},
+                          "threadRootId": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "updatedBy": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "userId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "roomId",
+                          "messageType",
+                          "parentMessageId",
+                          "threadRootId",
+                          "userId",
+                          "body",
+                          "tags",
+                          "reactions",
+                          "mentions",
+                          "mentionsAll",
+                          "ackRequest",
+                          "attachments",
+                          "createdAt",
+                          "createdBy",
+                          "updatedAt",
+                          "updatedBy",
+                          "deletedAt",
+                          "deletedReason",
+                          "deleted"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "replyCount": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "root": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "ackRequest": {
+                          "additionalProperties": false,
+                          "nullable": true,
+                          "properties": {
+                            "acks": {
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "ackedAt": {
+                                    "format": "date-time",
+                                    "type": "string"
+                                  },
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "requestId": {
+                                    "type": "string"
+                                  },
+                                  "userId": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "requestId",
+                                  "userId",
+                                  "ackedAt"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
+                            "canceledAt": {
+                              "format": "date-time",
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "canceledBy": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "format": "date-time",
+                              "type": "string"
+                            },
+                            "createdBy": {
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "dueAt": {
+                              "format": "date-time",
+                              "nullable": true,
+                              "type": "string"
+                            },
+                            "escalationAfterHours": {
+                              "nullable": true,
+                              "type": "integer"
+                            },
+                            "escalationGroupIds": {},
+                            "escalationRoles": {},
+                            "escalationUserIds": {},
+                            "id": {
+                              "type": "string"
+                            },
+                            "messageId": {
+                              "type": "string"
+                            },
+                            "remindIntervalHours": {
+                              "nullable": true,
+                              "type": "integer"
+                            },
+                            "requestedGroupIds": {},
+                            "requestedRoles": {},
+                            "requestedUserIds": {},
+                            "requiredUserIds": {},
+                            "roomId": {
+                              "type": "string"
+                            },
+                            "templateId": {
+                              "nullable": true,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "messageId",
+                            "roomId",
+                            "requiredUserIds",
+                            "requestedUserIds",
+                            "requestedGroupIds",
+                            "requestedRoles",
+                            "dueAt",
+                            "remindIntervalHours",
+                            "escalationAfterHours",
+                            "escalationUserIds",
+                            "escalationGroupIds",
+                            "escalationRoles",
+                            "templateId",
+                            "canceledAt",
+                            "canceledBy",
+                            "createdAt",
+                            "createdBy",
+                            "acks"
+                          ],
+                          "type": "object"
+                        },
+                        "attachments": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "createdAt": {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              "createdBy": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "mimeType": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "originalName": {
+                                "type": "string"
+                              },
+                              "sizeBytes": {
+                                "nullable": true,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "originalName",
+                              "mimeType",
+                              "sizeBytes",
+                              "createdAt",
+                              "createdBy"
+                            ],
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "body": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "createdBy": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "deleted": {
+                          "type": "boolean"
+                        },
+                        "deletedAt": {
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "deletedReason": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "lastReplyAt": {
+                          "format": "date-time",
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "mentions": {},
+                        "mentionsAll": {
+                          "type": "boolean"
+                        },
+                        "messageType": {
+                          "enum": [
+                            "text"
+                          ],
+                          "type": "string"
+                        },
+                        "parentMessageId": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "reactions": {},
+                        "replyCount": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "roomId": {
+                          "type": "string"
+                        },
+                        "tags": {},
+                        "threadRootId": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "format": "date-time",
+                          "type": "string"
+                        },
+                        "updatedBy": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "userId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "roomId",
+                        "messageType",
+                        "parentMessageId",
+                        "threadRootId",
+                        "userId",
+                        "body",
+                        "tags",
+                        "reactions",
+                        "mentions",
+                        "mentionsAll",
+                        "ackRequest",
+                        "attachments",
+                        "createdAt",
+                        "createdBy",
+                        "updatedAt",
+                        "updatedBy",
+                        "deletedAt",
+                        "deletedReason",
+                        "deleted",
+                        "replyCount",
+                        "lastReplyAt"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "root",
+                    "replies",
+                    "replyCount",
+                    "lastReplyAt",
+                    "nextCursor"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/chat-messages/search": {
       "get": {
         "responses": {
@@ -9547,6 +10164,38 @@
       "get": {
         "parameters": [
           {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tag",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "in": "path",
             "name": "roomId",
             "required": true,
@@ -9557,6 +10206,295 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "ackRequest": {
+                            "additionalProperties": false,
+                            "nullable": true,
+                            "properties": {
+                              "acks": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "ackedAt": {
+                                      "format": "date-time",
+                                      "type": "string"
+                                    },
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "requestId": {
+                                      "type": "string"
+                                    },
+                                    "userId": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "requestId",
+                                    "userId",
+                                    "ackedAt"
+                                  ],
+                                  "type": "object"
+                                },
+                                "type": "array"
+                              },
+                              "canceledAt": {
+                                "format": "date-time",
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "canceledBy": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "createdAt": {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              "createdBy": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "dueAt": {
+                                "format": "date-time",
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "escalationAfterHours": {
+                                "nullable": true,
+                                "type": "integer"
+                              },
+                              "escalationGroupIds": {},
+                              "escalationRoles": {},
+                              "escalationUserIds": {},
+                              "id": {
+                                "type": "string"
+                              },
+                              "messageId": {
+                                "type": "string"
+                              },
+                              "remindIntervalHours": {
+                                "nullable": true,
+                                "type": "integer"
+                              },
+                              "requestedGroupIds": {},
+                              "requestedRoles": {},
+                              "requestedUserIds": {},
+                              "requiredUserIds": {},
+                              "roomId": {
+                                "type": "string"
+                              },
+                              "templateId": {
+                                "nullable": true,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "messageId",
+                              "roomId",
+                              "requiredUserIds",
+                              "requestedUserIds",
+                              "requestedGroupIds",
+                              "requestedRoles",
+                              "dueAt",
+                              "remindIntervalHours",
+                              "escalationAfterHours",
+                              "escalationUserIds",
+                              "escalationGroupIds",
+                              "escalationRoles",
+                              "templateId",
+                              "canceledAt",
+                              "canceledBy",
+                              "createdAt",
+                              "createdBy",
+                              "acks"
+                            ],
+                            "type": "object"
+                          },
+                          "attachments": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "createdAt": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "createdBy": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "id": {
+                                  "type": "string"
+                                },
+                                "mimeType": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "originalName": {
+                                  "type": "string"
+                                },
+                                "sizeBytes": {
+                                  "nullable": true,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "originalName",
+                                "mimeType",
+                                "sizeBytes",
+                                "createdAt",
+                                "createdBy"
+                              ],
+                              "type": "object"
+                            },
+                            "type": "array"
+                          },
+                          "body": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "createdBy": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "deletedAt": {
+                            "format": "date-time",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "deletedReason": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "lastReplyAt": {
+                            "format": "date-time",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "mentions": {},
+                          "mentionsAll": {
+                            "type": "boolean"
+                          },
+                          "messageType": {
+                            "enum": [
+                              "text"
+                            ],
+                            "type": "string"
+                          },
+                          "parentMessageId": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "reactions": {},
+                          "replyCount": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "roomId": {
+                            "type": "string"
+                          },
+                          "tags": {},
+                          "threadRootId": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "updatedBy": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "userId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "roomId",
+                          "messageType",
+                          "parentMessageId",
+                          "threadRootId",
+                          "userId",
+                          "body",
+                          "tags",
+                          "reactions",
+                          "mentions",
+                          "mentionsAll",
+                          "ackRequest",
+                          "attachments",
+                          "createdAt",
+                          "createdBy",
+                          "updatedAt",
+                          "updatedBy",
+                          "deletedAt",
+                          "deletedReason",
+                          "replyCount",
+                          "lastReplyAt"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
             "description": "Default Response"
           }
         }
@@ -30352,6 +31290,30 @@
         "deprecated": true,
         "parameters": [
           {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tag",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "in": "path",
             "name": "projectId",
             "required": true,
@@ -30362,6 +31324,295 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "items": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "ackRequest": {
+                            "additionalProperties": false,
+                            "nullable": true,
+                            "properties": {
+                              "acks": {
+                                "items": {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "ackedAt": {
+                                      "format": "date-time",
+                                      "type": "string"
+                                    },
+                                    "id": {
+                                      "type": "string"
+                                    },
+                                    "requestId": {
+                                      "type": "string"
+                                    },
+                                    "userId": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "requestId",
+                                    "userId",
+                                    "ackedAt"
+                                  ],
+                                  "type": "object"
+                                },
+                                "type": "array"
+                              },
+                              "canceledAt": {
+                                "format": "date-time",
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "canceledBy": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "createdAt": {
+                                "format": "date-time",
+                                "type": "string"
+                              },
+                              "createdBy": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "dueAt": {
+                                "format": "date-time",
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "escalationAfterHours": {
+                                "nullable": true,
+                                "type": "integer"
+                              },
+                              "escalationGroupIds": {},
+                              "escalationRoles": {},
+                              "escalationUserIds": {},
+                              "id": {
+                                "type": "string"
+                              },
+                              "messageId": {
+                                "type": "string"
+                              },
+                              "remindIntervalHours": {
+                                "nullable": true,
+                                "type": "integer"
+                              },
+                              "requestedGroupIds": {},
+                              "requestedRoles": {},
+                              "requestedUserIds": {},
+                              "requiredUserIds": {},
+                              "roomId": {
+                                "type": "string"
+                              },
+                              "templateId": {
+                                "nullable": true,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "messageId",
+                              "roomId",
+                              "requiredUserIds",
+                              "requestedUserIds",
+                              "requestedGroupIds",
+                              "requestedRoles",
+                              "dueAt",
+                              "remindIntervalHours",
+                              "escalationAfterHours",
+                              "escalationUserIds",
+                              "escalationGroupIds",
+                              "escalationRoles",
+                              "templateId",
+                              "canceledAt",
+                              "canceledBy",
+                              "createdAt",
+                              "createdBy",
+                              "acks"
+                            ],
+                            "type": "object"
+                          },
+                          "attachments": {
+                            "items": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "createdAt": {
+                                  "format": "date-time",
+                                  "type": "string"
+                                },
+                                "createdBy": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "id": {
+                                  "type": "string"
+                                },
+                                "mimeType": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "originalName": {
+                                  "type": "string"
+                                },
+                                "sizeBytes": {
+                                  "nullable": true,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "originalName",
+                                "mimeType",
+                                "sizeBytes",
+                                "createdAt",
+                                "createdBy"
+                              ],
+                              "type": "object"
+                            },
+                            "type": "array"
+                          },
+                          "body": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "createdBy": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "deletedAt": {
+                            "format": "date-time",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "deletedReason": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "lastReplyAt": {
+                            "format": "date-time",
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "mentions": {},
+                          "mentionsAll": {
+                            "type": "boolean"
+                          },
+                          "messageType": {
+                            "enum": [
+                              "text"
+                            ],
+                            "type": "string"
+                          },
+                          "parentMessageId": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "reactions": {},
+                          "replyCount": {
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "roomId": {
+                            "type": "string"
+                          },
+                          "tags": {},
+                          "threadRootId": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "updatedBy": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "userId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "roomId",
+                          "messageType",
+                          "parentMessageId",
+                          "threadRootId",
+                          "userId",
+                          "body",
+                          "tags",
+                          "reactions",
+                          "mentions",
+                          "mentionsAll",
+                          "ackRequest",
+                          "attachments",
+                          "createdAt",
+                          "createdBy",
+                          "updatedAt",
+                          "updatedBy",
+                          "deletedAt",
+                          "deletedReason",
+                          "replyCount",
+                          "lastReplyAt"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
             "description": "Default Response"
           }
         }

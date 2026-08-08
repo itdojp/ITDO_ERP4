@@ -566,26 +566,41 @@ model ChatRoomMember {
   @@index([roomId])
 }
 
-model ChatMessage {
-  id            String           @id @default(uuid())
-  room          ChatRoom         @relation(fields: [roomId], references: [id], onDelete: Restrict)
-  roomId        String
-  userId        String
-  body          String
-  tags          Json?
-  reactions     Json?
-  mentions      Json?
-  mentionsAll   Boolean          @default(false)
-  ackRequest    ChatAckRequest?
-  ackLinks      ChatAckLink[]
-  attachments   ChatAttachment[]
-  createdAt     DateTime         @default(now())
-  createdBy     String?
-  updatedAt     DateTime         @updatedAt
-  updatedBy     String?
-  deletedAt     DateTime?
-  deletedReason String?
+enum ChatMessageType {
+  text
+}
 
+model ChatMessage {
+  id              String           @id @default(uuid())
+  room            ChatRoom         @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  roomId          String
+  messageType     ChatMessageType  @default(text)
+  parentMessageId String?
+  threadRootId    String?
+  parentMessage   ChatMessage?     @relation("ChatMessageParent", fields: [parentMessageId, roomId], references: [id, roomId], onDelete: Restrict, onUpdate: NoAction)
+  replies         ChatMessage[]    @relation("ChatMessageParent")
+  threadRoot      ChatMessage?     @relation("ChatMessageRoot", fields: [threadRootId, roomId], references: [id, roomId], onDelete: Restrict, onUpdate: NoAction)
+  threadReplies   ChatMessage[]    @relation("ChatMessageRoot")
+  userId          String
+  body            String
+  tags            Json?
+  reactions       Json?
+  mentions        Json?
+  mentionsAll     Boolean          @default(false)
+  ackRequest      ChatAckRequest?
+  ackLinks        ChatAckLink[]
+  attachments     ChatAttachment[]
+  createdAt       DateTime         @default(now())
+  createdBy       String?
+  updatedAt       DateTime         @updatedAt
+  updatedBy       String?
+  deletedAt       DateTime?
+  deletedReason   String?
+
+  @@unique([id, roomId])
+  @@index([roomId, parentMessageId, createdAt, id])
+  @@index([threadRootId, createdAt, id])
+  @@index([threadRootId, deletedAt, createdAt, id])
   @@index([roomId, createdAt])
   @@index([roomId, userId, mentionsAll, createdAt])
   @@index([deletedAt, createdAt])
