@@ -347,15 +347,15 @@ export async function listKnowledgeAnnotationRevisions(input: {
   return normalizePage(payload, normalizeAnnotationRevision);
 }
 
-export async function listKnowledgeConversations(
-  knowledgeItemId: string,
-  cursor?: string | null,
-) {
+export async function listKnowledgeConversations(input: {
+  knowledgeItemId: string;
+  cursor?: string | null;
+}) {
   const query = new URLSearchParams({
-    knowledgeItemId,
+    knowledgeItemId: input.knowledgeItemId,
     limit: '100',
   });
-  if (cursor) query.set('cursor', cursor);
+  if (input.cursor) query.set('cursor', input.cursor);
   const payload = await requestProvenanceJson(
     `/knowledge/conversations?${query.toString()}`,
   );

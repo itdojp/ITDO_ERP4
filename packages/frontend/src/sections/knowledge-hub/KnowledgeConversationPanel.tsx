@@ -300,7 +300,10 @@ export function KnowledgeConversationPanel(props: {
       if (!targetItemId) return;
 
       try {
-        const page = await listKnowledgeConversations(targetItemId, cursor);
+        const page = await listKnowledgeConversations({
+          knowledgeItemId: targetItemId,
+          cursor,
+        });
         if (
           !mountedRef.current ||
           conversationLoadSequence.current !== sequence ||

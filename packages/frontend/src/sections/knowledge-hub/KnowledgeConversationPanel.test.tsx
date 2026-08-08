@@ -376,10 +376,10 @@ describe('KnowledgeConversationPanel', () => {
     const conversationButton = await screen.findByRole('button', {
       name: /関連会話/,
     });
-    expect(apiMocks.listKnowledgeConversations).toHaveBeenCalledWith(
-      'item-1',
-      null,
-    );
+    expect(apiMocks.listKnowledgeConversations).toHaveBeenCalledWith({
+      knowledgeItemId: 'item-1',
+      cursor: null,
+    });
     expect(screen.getByLabelText('relation 主根拠')).toBeVisible();
     expect(apiMocks.listKnowledgeConversationTurns).not.toHaveBeenCalled();
 
@@ -427,8 +427,9 @@ describe('KnowledgeConversationPanel', () => {
       title: '三ページ目の会話',
     });
     apiMocks.listKnowledgeConversations.mockImplementation(
-      (itemId: string, cursor: string | null) => {
-        expect(itemId).toBe('item-1');
+      (input: { knowledgeItemId: string; cursor: string | null }) => {
+        expect(input.knowledgeItemId).toBe('item-1');
+        const { cursor } = input;
         if (cursor === null)
           return Promise.resolve(page([firstLinked], 'page-2'));
         if (cursor === 'page-2') {
@@ -476,9 +477,9 @@ describe('KnowledgeConversationPanel', () => {
       screen.queryByRole('button', { name: /^二ページ目の会話/ }),
     ).not.toBeInTheDocument();
     expect(apiMocks.listKnowledgeConversations.mock.calls).toEqual([
-      ['item-1', null],
-      ['item-1', 'page-2'],
-      ['item-1', 'page-3'],
+      [{ knowledgeItemId: 'item-1', cursor: null }],
+      [{ knowledgeItemId: 'item-1', cursor: 'page-2' }],
+      [{ knowledgeItemId: 'item-1', cursor: 'page-3' }],
     ]);
   });
 
@@ -599,8 +600,8 @@ describe('KnowledgeConversationPanel', () => {
       expect(apiMocks.listKnowledgeConversations).toHaveBeenCalledTimes(2),
     );
     expect(apiMocks.listKnowledgeConversations.mock.calls).toEqual([
-      ['item-old', null],
-      ['item-new', null],
+      [{ knowledgeItemId: 'item-old', cursor: null }],
+      [{ knowledgeItemId: 'item-new', cursor: null }],
     ]);
 
     await act(async () => {
@@ -755,9 +756,9 @@ describe('KnowledgeConversationPanel', () => {
       await screen.findByRole('button', { name: /新項目の会話/ }),
     ).toBeVisible();
     expect(apiMocks.listKnowledgeConversations.mock.calls).toEqual([
-      ['item-old', null],
-      ['item-old', 'old-page-2'],
-      ['item-new', null],
+      [{ knowledgeItemId: 'item-old', cursor: null }],
+      [{ knowledgeItemId: 'item-old', cursor: 'old-page-2' }],
+      [{ knowledgeItemId: 'item-new', cursor: null }],
     ]);
 
     await act(async () => {

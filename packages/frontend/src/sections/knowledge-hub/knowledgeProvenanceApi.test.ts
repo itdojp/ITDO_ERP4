@@ -284,7 +284,9 @@ describe('knowledgeProvenanceApi conversations/import', () => {
         }),
       );
 
-    const conversations = await listKnowledgeConversations('item/1');
+    const conversations = await listKnowledgeConversations({
+      knowledgeItemId: 'item/1',
+    });
     const turns = await listKnowledgeConversationTurns('conversation-1');
     expect(conversations.items[0]).not.toHaveProperty('contentHash');
     expect(conversations.items[0]).not.toHaveProperty('ownerUserId');
@@ -364,9 +366,9 @@ describe('knowledgeProvenanceApi conversations/import', () => {
         nextCursor: null,
       }),
     );
-    await expect(listKnowledgeConversations('item-1')).rejects.toMatchObject({
-      code: 'invalid_response',
-    });
+    await expect(
+      listKnowledgeConversations({ knowledgeItemId: 'item-1' }),
+    ).rejects.toMatchObject({ code: 'invalid_response' });
   });
 
   it('preserves opaque page cursors and rejects an incomplete page envelope', async () => {
@@ -376,18 +378,18 @@ describe('knowledgeProvenanceApi conversations/import', () => {
       )
       .mockResolvedValueOnce(response({ items: [conversation] }));
 
-    const first = await listKnowledgeConversations(
-      'item/1',
-      'previous/cursor+=',
-    );
+    const first = await listKnowledgeConversations({
+      knowledgeItemId: 'item/1',
+      cursor: 'previous/cursor+=',
+    });
     expect(first.nextCursor).toBe('opaque/cursor+=');
     expect(apiResponse.mock.calls[0][0]).toContain('knowledgeItemId=item%2F1');
     expect(apiResponse.mock.calls[0][0]).toContain(
       'cursor=previous%2Fcursor%2B%3D',
     );
-    await expect(listKnowledgeConversations('item-1')).rejects.toMatchObject({
-      code: 'invalid_response',
-    });
+    await expect(
+      listKnowledgeConversations({ knowledgeItemId: 'item-1' }),
+    ).rejects.toMatchObject({ code: 'invalid_response' });
   });
 });
 
