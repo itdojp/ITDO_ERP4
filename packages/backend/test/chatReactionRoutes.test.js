@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { chatReactionService } from '../dist/application/chat/chatReactionService.js';
+import { projectChatReactionSchema } from '../dist/routes/validators/chatLeave.js';
 import { buildServer } from '../dist/server.js';
 
 const headers = {
@@ -57,6 +58,10 @@ async function withServer(result, run) {
     else process.env.AUTH_MODE = previousAuthMode;
   }
 }
+
+test('reaction add schema rejects unknown request fields', () => {
+  assert.equal(projectChatReactionSchema.body.additionalProperties, false);
+});
 
 test('reaction add preserves the legacy message response and supports reply IDs', async () => {
   await withServer(
