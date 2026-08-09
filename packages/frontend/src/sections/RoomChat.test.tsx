@@ -810,7 +810,7 @@ describe('RoomChat', () => {
     expect(
       await screen.findByRole('dialog', { name: 'スレッド' }),
     ).toBeInTheDocument();
-    fireEvent.change(screen.getByPlaceholderText('返信を入力'), {
+    fireEvent.change(await screen.findByPlaceholderText('返信を入力'), {
       target: { value: 'reply that revokes access' },
     });
     fireEvent.click(screen.getByRole('button', { name: '返信' }));
