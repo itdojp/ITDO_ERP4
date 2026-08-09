@@ -341,10 +341,12 @@ describe('useRoomChatMessages', () => {
     rerender({ roomId: 'room-2' });
     expect(result.current.unreadCount).toBe(0);
     expect(result.current.highlightSince).toBeNull();
+    let refreshed = false;
     await act(async () => {
-      await result.current.loadMessages();
+      refreshed = await result.current.loadMessages();
     });
 
+    expect(refreshed).toBe(true);
     expect(onAccessUnavailable).toHaveBeenCalledWith('room-2');
     expect(result.current.items).toEqual([message('room-2-message', 'room-2')]);
     expect(result.current.unreadCount).toBe(0);
@@ -385,10 +387,12 @@ describe('useRoomChatMessages', () => {
       }),
     );
 
+    let refreshed = false;
     await act(async () => {
-      await result.current.loadMessages();
+      refreshed = await result.current.loadMessages();
     });
 
+    expect(refreshed).toBe(true);
     expect(onAccessUnavailable).toHaveBeenCalledWith('room-1');
     expect(result.current.items).toEqual([
       message('visible-message', 'room-1'),

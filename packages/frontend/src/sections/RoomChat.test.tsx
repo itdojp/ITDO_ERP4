@@ -660,6 +660,49 @@ describe('RoomChat', () => {
     ).toBe(false);
   });
 
+  it('rejects self-referencing reply topology from runtime deep-link events', async () => {
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' })],
+      messagesByRoom: {
+        'room-1': [
+          makeMessage({
+            id: 'message-1',
+            roomId: 'room-1',
+            body: 'initial room message',
+          }),
+        ],
+      },
+    });
+
+    render(<RoomChat />);
+    expect(await screen.findByText('initial room message')).toBeInTheDocument();
+    vi.mocked(api).mockClear();
+
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent('erp4_open_chat_message', {
+          detail: {
+            messageId: 'self-referencing-message',
+            roomId: 'room-1',
+            createdAt: '2026-03-28T02:01:00.000Z',
+            parentMessageId: 'self-referencing-message',
+            threadRootId: 'self-referencing-message',
+          },
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole('dialog', { name: 'スレッド' })).toBeNull();
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.some(([path]) =>
+          String(path).includes('/self-referencing-message'),
+        ),
+    ).toBe(false);
+  });
+
   it('closes an existing cross-room thread before opening a root deep link', async () => {
     const roomOneRoot = makeMessage({
       id: 'room-1-root',

@@ -269,7 +269,7 @@ export function useRoomChatMessages({
               options?.onCurrentFailure?.();
             }
           }
-          return false;
+          return readable;
         }
         console.error('Failed to load room messages.');
         if (options?.failureMessage) {

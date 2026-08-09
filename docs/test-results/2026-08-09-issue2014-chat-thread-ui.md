@@ -31,6 +31,8 @@
 - timeline初回／追加page、既読前後のunread取得のいずれで403/404になっても、同じroom ACL再検証へ収束する。再検証失敗時はsummary/provider/model、notification setting、mention/ACK候補・previewもtimelineと同時に破棄し、各request sequenceで遅延responseの復元を拒否する。
 - global searchはserverの `(nextBefore, nextBeforeId)` を使い、stale requestをabort/破棄する。rootはparent/rootともnull、replyはparent/rootが同じ非self root IDであるcanonical topologyだけを受理し、欠損・不一致・self-reference・logical deleted resultをfail closedで除外する。
 - exact-head独立correctness/security review後、同一roomのACL再検証をsingle-flight化し、並行403/404が互いをabortして誤purgeしないようにした。unread stateをroom-bound化し、room切替またはunread endpointの403/404時に前room／既読更新前の値を消去する。
+- Copilot再レビューで、unread endpointの403/404後にroom ACL再検証が成功してもtimeline refreshの呼び出し元へ失敗を返す経路を検出した。再検証結果を返すよう修正し、投稿成功後に誤ったrefresh失敗表示へ遷移しない契約を固定した。
+- 独立correctness再レビューで、runtime custom eventだけがself-reference reply topologyを拒否していない経路を検出した。`messageId = parentMessageId = threadRootId`をfail closedで拒否し、thread／timeline取得を開始しないnegative testを追加した。
 - logical delete成功直後にglobal search excerptと生成済みsummary/provider/modelを無効化する。通常timeline/thread/deep-linkを含むruntime topologyは旧rootのfield省略互換を維持しつつ、明示的不正型、片側欠損、不一致、self-referenceをfail closedにする。mutation中にfocusable controlが0件となる場合はdialog自体をfallback focus targetにする。
 
 ## 自動テスト
@@ -39,8 +41,9 @@
 
 | 検証                                     | 結果 | 証跡／補足                                                                         |
 | ---------------------------------------- | ---- | ---------------------------------------------------------------------------------- |
-| focused frontend unit                    | PASS | review remediation 7 files / 186 tests、同一suiteを20回（3,720 tests）反復成功    |
-| frontend full                            | PASS | 95 files / 717 tests                                                               |
+| focused frontend unit                    | PASS | review remediation 7 files / 186 tests、同一suiteを20回（3,720 tests）反復成功     |
+| final Copilot/correctness remediation    | PASS | 2 files / 77 tests、20回（1,540 tests）反復成功                                    |
+| frontend full                            | PASS | 95 files / 718 tests                                                               |
 | UI core coverage                         | PASS | statements 73.13%、branches 66.19%、functions 72.12%、lines 75.75%（閾値変更なし） |
 | frontend build budget                    | PASS | initial JS 517.0 KiB / gzip 158.1 KiB                                              |
 | backend full                             | PASS | 2,040 tests                                                                        |

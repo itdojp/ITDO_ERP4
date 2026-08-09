@@ -541,7 +541,13 @@ export const RoomChat: React.FC<RoomChatProps> = ({
         ) {
           const parentMessageId = detail.parentMessageId.trim();
           const threadRootId = detail.threadRootId.trim();
-          if (!parentMessageId || parentMessageId !== threadRootId) return;
+          if (
+            !parentMessageId ||
+            parentMessageId !== threadRootId ||
+            parentMessageId === messageId
+          ) {
+            return;
+          }
           replyThreadRootId = threadRootId;
         } else {
           return;
