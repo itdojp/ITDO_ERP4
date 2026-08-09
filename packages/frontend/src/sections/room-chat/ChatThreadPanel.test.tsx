@@ -1433,6 +1433,51 @@ describe('ChatThreadPanel', () => {
     ).toBe(false);
   });
 
+  it('purges loaded thread content when an unavailable mutation is confirmed by refresh', async () => {
+    let threadReads = 0;
+    api.mockImplementation(async (path: string, init?: RequestInit) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.pathname === '/chat-rooms/room-1/mention-candidates') return {};
+      if (url.pathname.endsWith('/thread')) {
+        threadReads += 1;
+        if (threadReads === 1) return thread();
+        throw new Error(`Request failed: ${path} (404) NOT_FOUND`);
+      }
+      if (url.pathname === '/chat-rooms/room-1/read') return {};
+      if (
+        url.pathname === '/chat-messages/reply-1/reactions' &&
+        init?.method === 'POST'
+      ) {
+        throw new Error(`Request failed: ${path} (404) NOT_FOUND`);
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+
+    renderPanel();
+    const replyCard = await waitFor(() => {
+      const card = document.querySelector<HTMLElement>(
+        '[data-thread-message-id="reply-1"]',
+      );
+      expect(card).not.toBeNull();
+      return card as HTMLElement;
+    });
+    expect(screen.getByText('root-1 body')).toBeInTheDocument();
+    expect(screen.getByText('reply-1 body')).toBeInTheDocument();
+
+    fireEvent.click(
+      within(replyCard).getByRole('button', {
+        name: 'replyへ👍リアクション',
+      }),
+    );
+
+    expect(
+      await screen.findByText('スレッドを表示できません'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('root-1 body')).toBeNull();
+    expect(screen.queryByText('reply-1 body')).toBeNull();
+    expect(threadReads).toBe(2);
+  });
+
   it.each(definiteRetryCases)(
     'keeps retry enabled after a definite $mode POST rejection',
     async ({ submitLabel, message, postPath, prepare }) => {

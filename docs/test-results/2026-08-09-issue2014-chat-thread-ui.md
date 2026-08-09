@@ -24,7 +24,8 @@
 - thread replyの確認対象グループはcontrolled stateから`requiredGroupIds`へ接続し、未実装のreply添付操作は表示しない。
 - paginationとmutationを相互排他にし、後続pageとmutation refreshの競合による表示欠落を防ぐ。候補comboboxが消費した`Escape`ではpanelを閉じない。
 - reply通知deep linkはreturned message IDとtop-level/nested room IDをbindし、reply topologyをallowlist normalizeしてcanonical threadを直接開く。別room遷移では旧room timelineを先に破棄する。ACK relation/candidate responseはroom・message・requestへbindし、unknown fieldを破棄する。
-- non-idempotent POSTは明示的な4xx rejectionだけdraftを保持して再送可能とし、transport failure、5xx、不整合2xxで結果が不明な場合は再送をlockする。POST本文はfresh GETで同一reply IDを確認した場合だけ表示し、51件目以降、refresh failure、同時削除では暫定表示しない。root/replyの`POST_WITHOUT_VIEW`ではthreadとroom timelineを破棄し、後続refresh/read mutationを行わない。
+- non-idempotentなroot message / root確認依頼 / reply POSTは明示的な4xx rejectionだけdraftを保持して再送可能とし、transport failure、5xx、不整合2xxで結果が不明な場合は再送をlockする。root POST成功後の添付または一覧再取得失敗はmessage作成失敗と分離し、draftを消去して再送禁止を案内する。reply POST本文はfresh GETで同一reply IDを確認した場合だけ表示し、51件目以降、refresh failure、同時削除では暫定表示しない。root/replyの`POST_WITHOUT_VIEW`ではthreadとroom timelineを破棄し、後続refresh/read mutationを行わない。
+- 別roomのroot deep linkでも旧threadを先に閉じる。thread mutationが403/404になった場合はcurrent threadを再取得し、root/room access lossが確認された場合は表示済みthread本文を破棄する。対象replyだけの同時削除で再取得が成功した場合は最新threadを維持する。
 - 同じroomのunread responseもrequest sequenceで順序付け、遅延responseによる巻き戻しを防ぐ。候補0件/loading中の`Escape`でもpanelとdraftを維持する。
 - global searchはserverの `(nextBefore, nextBeforeId)` を使い、stale requestをabort/破棄する。
 
@@ -34,9 +35,9 @@
 
 | 検証                                     | 結果 | 証跡／補足                                                                         |
 | ---------------------------------------- | ---- | ---------------------------------------------------------------------------------- |
-| focused frontend unit                    | PASS | 6 files / 111 tests                                                                |
-| frontend full                            | PASS | 92 files / 629 tests                                                               |
-| UI core coverage                         | PASS | statements 71.54%、branches 64.86%、functions 70.58%、lines 74.11%（閾値変更なし） |
+| focused frontend unit                    | PASS | 7 files / 125 tests                                                                |
+| frontend full                            | PASS | 92 files / 637 tests                                                               |
+| UI core coverage                         | PASS | statements 71.71%、branches 65.02%、functions 70.74%、lines 74.28%（閾値変更なし） |
 | frontend build budget                    | PASS | initial JS 516.9 KiB / gzip 158.0 KiB                                              |
 | backend full                             | PASS | 2,040 tests                                                                        |
 | focused real-backend E2E                 | PASS | `frontend-chat-thread.spec.ts` 1/1（core/full両scopeで成功）                       |
@@ -79,8 +80,8 @@
 - room ACL、project alias、mention/notification/reaction/search/unread/ackのserver契約はPR A/Bの正本を維持する。
 - unauthorizedとmissingの外部表示を区別しない。
 - raw backend error body、parser stack、provider URL/key、unknown response fieldをUIへ表示しない。
-- mutation成功後のrefresh failureでは読み込み済みstateを保持し、「再送せず再読み込み」を表示する。
-- 明示的な4xx rejectionはdraftを保持して修正・再送を許可する。結果不明のnon-idempotent POSTはcomposerをlockして再送を防ぎ、fresh GETで確認できないPOST本文を表示しない。
+- thread mutation成功後の一時的なrefresh failureでは読み込み済みstateを保持し、「再送せず再読み込み」を表示する。ただし403/404を再取得でも確認した場合は権限外本文を保持せずthread stateを破棄する。
+- root/replyとも明示的な4xx rejectionはdraftを保持して修正・再送を許可する。結果不明のnon-idempotent POSTはcomposerをlockして再送を防ぎ、fresh GETで確認できないPOST本文を表示しない。root POST成功後の添付／refresh失敗ではdraftを消去し、同じmessageを再送しない固定案内を表示する。
 - `POST_WITHOUT_VIEW`受信時はbackend warning本文を破棄し、threadとroom timelineの表示済み本文を消去する。
 - reply notification deep link、ACK response、候補responseはallowlistされたtopology/relationだけをstateへ反映する。
 - 同じroomのunread queryもrequest sequenceへbindし、古いresponseを破棄する。

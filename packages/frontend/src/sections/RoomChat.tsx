@@ -48,6 +48,7 @@ import {
   createPrivateGroupRoom,
   downloadMessageAttachment,
   inviteChatRoomMembers,
+  isDefiniteChatRequestFailure,
   postMessageReaction,
   postRoomAckRequest,
   postRoomMessage,
@@ -96,6 +97,7 @@ export const RoomChat: React.FC = () => {
     resolveProjectRoom,
   } = useRoomChatRooms({ canSeeAllMeta });
   const [postWarning, setPostWarning] = useState('');
+  const [postSubmissionUncertain, setPostSubmissionUncertain] = useState(false);
   const [roomListScope, setRoomListScope] = useState<'all' | 'ga_personal'>(
     'all',
   );
@@ -125,6 +127,7 @@ export const RoomChat: React.FC = () => {
 
   useEffect(() => {
     setPostWarning('');
+    setPostSubmissionUncertain(false);
   }, [roomId]);
 
   useEffect(() => {
@@ -502,6 +505,8 @@ export const RoomChat: React.FC = () => {
         });
         return;
       }
+      setThreadTarget(null);
+      threadReturnFocusRef.current = null;
       setPendingOpenMessage({ roomId: targetRoomId, messageId, createdAt });
     };
 
@@ -578,7 +583,8 @@ export const RoomChat: React.FC = () => {
     setPendingOpenMessage(null);
     const before = buildBeforeForCreatedAt(createdAt);
     loadMessages({ before, query: '', tag: '' })
-      .then(() => {
+      .then((loaded) => {
+        if (!loaded) return;
         setPendingScrollMessageId(messageId);
         setHighlightMessageId(messageId);
         window.setTimeout(() => setHighlightMessageId(''), 10_000);
@@ -850,7 +856,7 @@ export const RoomChat: React.FC = () => {
 
   const postMessage = async (mode: 'message' | 'ack') => {
     if (!roomId) return;
-    if (isPostingRef.current) return;
+    if (isPostingRef.current || postSubmissionUncertain) return;
     if (!body.trim()) {
       setMessage('本文を入力してください');
       return;
@@ -916,10 +922,28 @@ export const RoomChat: React.FC = () => {
             })()
           : basePayload;
       if (!payload) return;
-      const created =
-        mode === 'ack'
-          ? await postRoomAckRequest(roomId, payload)
-          : await postRoomMessage(roomId, payload);
+      let created: Awaited<ReturnType<typeof postRoomMessage>>;
+      try {
+        created =
+          mode === 'ack'
+            ? await postRoomAckRequest(roomId, payload)
+            : await postRoomMessage(roomId, payload);
+      } catch (error) {
+        console.error('Failed to post message.');
+        if (isDefiniteChatRequestFailure(error)) {
+          setMessage(
+            mode === 'ack'
+              ? '確認依頼の投稿に失敗しました'
+              : '投稿に失敗しました',
+          );
+        } else {
+          setPostSubmissionUncertain(true);
+          setMessage(
+            '投稿結果を確認できません。重複防止のため再送せず、ページを再読み込みしてください',
+          );
+        }
+        return;
+      }
       if (created.warning?.code === 'POST_WITHOUT_VIEW') {
         const warning = created.warning.message;
         setPostWarning(warning);
@@ -931,19 +955,32 @@ export const RoomChat: React.FC = () => {
         purgeRoomState(roomId, warning);
         return;
       }
-      if (attachmentFile) {
-        await uploadMessageAttachment(created.id, attachmentFile);
-      }
-      setPostWarning(created.warning?.message || '');
       setBody('');
       setTags('');
       resetAckTargets();
       resetMentionTargets();
       setAttachmentFile(null);
-      await loadMessages();
-    } catch (err) {
-      console.error('Failed to post message.', err);
-      setMessage('投稿に失敗しました');
+      let attachmentUncertain = false;
+      if (attachmentFile) {
+        try {
+          await uploadMessageAttachment(created.id, attachmentFile);
+        } catch {
+          console.error('Failed to upload posted message attachment.');
+          attachmentUncertain = true;
+        }
+      }
+      const refreshed = await loadMessages();
+      if (attachmentUncertain) {
+        setPostWarning(
+          'メッセージは投稿されましたが添付結果を確認できません。メッセージを再送せず、再読み込みしてください',
+        );
+      } else if (!refreshed) {
+        setPostWarning(
+          '投稿は完了しましたが表示を更新できません。再送せず、再読み込みしてください',
+        );
+      } else {
+        setPostWarning('');
+      }
     } finally {
       isPostingRef.current = false;
       setIsPosting(false);
@@ -1569,7 +1606,7 @@ export const RoomChat: React.FC = () => {
               type="checkbox"
               checked={showPreview}
               onChange={(e) => setShowPreview(e.target.checked)}
-              disabled={isLoading || isPosting}
+              disabled={isLoading || isPosting || postSubmissionUncertain}
             />
             プレビュー
           </label>
@@ -1613,7 +1650,7 @@ export const RoomChat: React.FC = () => {
               submitLabel={isPosting ? '送信中...' : '送信'}
               cancelLabel="クリア"
               requiredSectionLabel="確認依頼の対象"
-              disabled={isLoading || isPosting}
+              disabled={isLoading || isPosting || postSubmissionUncertain}
               limits={{ maxBodyLength: 2000, maxMentions: 70, maxGroups: 20 }}
             />
             {(mentionCandidates.allowAll ?? true) && (
@@ -1832,7 +1869,7 @@ export const RoomChat: React.FC = () => {
               <button
                 className="button secondary"
                 onClick={() => postMessage('ack')}
-                disabled={isLoading || isPosting}
+                disabled={isLoading || isPosting || postSubmissionUncertain}
               >
                 確認依頼
               </button>

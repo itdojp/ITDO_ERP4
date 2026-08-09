@@ -60,23 +60,32 @@ const postWithoutViewWarning = {
 
 class ChatRequestError extends Error {
   readonly isDefiniteFailure: boolean;
+  readonly status: number | null;
 
-  constructor(isDefiniteFailure: boolean) {
+  constructor(status: number | null) {
     super('Chat request failed');
     this.name = 'ChatRequestError';
-    this.isDefiniteFailure = isDefiniteFailure;
+    this.status = status;
+    this.isDefiniteFailure = status !== null && status >= 400 && status < 500;
   }
 }
 
-function isDefiniteHttpFailure(error: unknown) {
+function httpStatusFromError(error: unknown): number | null {
   const message = error instanceof Error ? error.message : '';
   const statusMatch = message.match(/\((\d{3})\)/);
   const status = statusMatch ? Number(statusMatch[1]) : NaN;
-  return Number.isInteger(status) && status >= 400 && status < 500;
+  return Number.isInteger(status) ? status : null;
 }
 
 export function isDefiniteChatRequestFailure(error: unknown): boolean {
   return error instanceof ChatRequestError && error.isDefiniteFailure;
+}
+
+export function isUnavailableChatRequestFailure(error: unknown): boolean {
+  return (
+    error instanceof ChatRequestError &&
+    (error.status === 403 || error.status === 404)
+  );
 }
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
@@ -87,7 +96,7 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
   } catch (error) {
     // Existing shared callers retain their diagnostics contract. The chat UI
     // boundary never exposes request paths or backend bodies to its callers.
-    throw new ChatRequestError(isDefiniteHttpFailure(error));
+    throw new ChatRequestError(httpStatusFromError(error));
   }
 }
 

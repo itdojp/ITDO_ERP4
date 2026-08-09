@@ -111,6 +111,7 @@ vi.mock('../ui', () => ({
     cancelLabel,
     onSubmit,
     onCancel,
+    onAddFiles,
     disabled,
   }: {
     body: string;
@@ -120,6 +121,7 @@ vi.mock('../ui', () => ({
     cancelLabel: string;
     onSubmit?: () => void;
     onCancel?: () => void;
+    onAddFiles?: (files: File[]) => void;
     disabled?: boolean;
   }) => (
     <div>
@@ -136,6 +138,14 @@ vi.mock('../ui', () => ({
       <button type="button" onClick={onCancel} disabled={disabled}>
         {cancelLabel}
       </button>
+      <input
+        aria-label="添付ファイル"
+        type="file"
+        disabled={disabled}
+        onChange={(event) =>
+          onAddFiles?.(event.target.files ? Array.from(event.target.files) : [])
+        }
+      />
     </div>
   ),
   UndoToast: () => null,
@@ -229,9 +239,17 @@ function installApiMock(options: {
   postMessageResponse?: ChatMessage & {
     warning?: { code?: string; message?: string };
   };
+  postMessageResults?: Array<
+    (ChatMessage & { warning?: { code?: string; message?: string } }) | Error
+  >;
   postAckResponse?: ChatMessage & {
     warning?: { code?: string; message?: string };
   };
+  postAckResults?: Array<
+    (ChatMessage & { warning?: { code?: string; message?: string } }) | Error
+  >;
+  failMessageRefreshAfterPost?: boolean;
+  failAttachmentUpload?: boolean;
   postMessagePromise?: Promise<
     ChatMessage & { warning?: { code?: string; message?: string } }
   >;
@@ -253,6 +271,7 @@ function installApiMock(options: {
   const failOnGlobalSearch = new Set(options.failOnGlobalSearch ?? []);
   const failOnExternalSummary = new Set(options.failOnExternalSummary ?? []);
   const failOnNotificationSave = new Set(options.failOnNotificationSave ?? []);
+  let rootPostCompleted = false;
 
   vi.mocked(api).mockImplementation(
     async (path: string, init?: RequestInit) => {
@@ -298,6 +317,16 @@ function installApiMock(options: {
         return options.threadReplyResponse as never;
       }
 
+      if (
+        /^\/chat-messages\/[^/]+\/attachments$/.test(url.pathname) &&
+        method === 'POST'
+      ) {
+        if (options.failAttachmentUpload) {
+          throw new Error('attachment transport failure');
+        }
+        return {} as never;
+      }
+
       const roomMatch = url.pathname.match(
         /^\/chat-rooms\/([^/]+)\/(notification-setting|messages|ack-requests|mention-candidates|unread|read|ai-summary)$/,
       );
@@ -336,6 +365,9 @@ function installApiMock(options: {
           return {} as never;
         }
         if (resource === 'messages' && method === 'GET') {
+          if (rootPostCompleted && options.failMessageRefreshAfterPost) {
+            throw new Error('message refresh failed after post');
+          }
           const query = url.searchParams.get('q') ?? '';
           if (failOnSearch.has(query)) {
             throw new Error(`messages failed for query: ${query}`);
@@ -351,9 +383,15 @@ function installApiMock(options: {
           const body = JSON.parse(String(init?.body ?? '{}')) as unknown;
           options.postedMessages?.push({ roomId, body });
           if (options.postMessagePromise) {
-            return (await options.postMessagePromise) as never;
+            const result = await options.postMessagePromise;
+            rootPostCompleted = true;
+            return result as never;
           }
-          return (options.postMessageResponse ??
+          const queued = options.postMessageResults?.shift();
+          if (queued instanceof Error) throw queued;
+          rootPostCompleted = true;
+          return (queued ??
+            options.postMessageResponse ??
             makeMessage({
               id: 'posted-message',
               roomId,
@@ -364,7 +402,11 @@ function installApiMock(options: {
             })) as never;
         }
         if (resource === 'ack-requests' && method === 'POST') {
-          return (options.postAckResponse ??
+          const queued = options.postAckResults?.shift();
+          if (queued instanceof Error) throw queued;
+          rootPostCompleted = true;
+          return (queued ??
+            options.postAckResponse ??
             makeMessage({
               id: 'posted-ack-request',
               roomId,
@@ -663,6 +705,68 @@ describe('RoomChat', () => {
     ).toBe(false);
   });
 
+  it('closes an existing cross-room thread before opening a root deep link', async () => {
+    const roomOneRoot = makeMessage({
+      id: 'room-1-root',
+      roomId: 'room-1',
+      body: 'old room thread root',
+    });
+    const roomTwoRoot = makeMessage({
+      id: 'room-2-root',
+      roomId: 'room-2',
+      body: 'root deep-link destination',
+      createdAt: '2026-03-28T03:00:00.000Z',
+    });
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' }), makeRoom({ id: 'room-2' })],
+      messagesByRoom: {
+        'room-1': [roomOneRoot],
+        'room-2': [roomTwoRoot],
+      },
+      threadsByMessageId: {
+        'room-1-root': {
+          root: roomOneRoot,
+          replies: [],
+          replyCount: 0,
+          lastReplyAt: null,
+          nextCursor: null,
+        },
+      },
+    });
+
+    render(<RoomChat />);
+    expect(await screen.findByText('old room thread root')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^スレッドを開く/ }));
+    expect(
+      await screen.findByRole('dialog', { name: 'スレッド' }),
+    ).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('erp4_open_chat_message', {
+          detail: {
+            messageId: 'room-2-root',
+            roomId: 'room-2',
+            createdAt: '2026-03-28T03:00:00.000Z',
+            parentMessageId: null,
+            threadRootId: null,
+          },
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'スレッド' })).toBeNull();
+    });
+    expect(
+      await screen.findByText('root deep-link destination'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('old room thread root')).toBeNull();
+    expect(screen.getByRole('combobox', { name: 'ルーム' })).toHaveValue(
+      'room-2',
+    );
+  });
+
   it('purges the current timeline and keeps the thread panel open after access is revoked', async () => {
     const sanitizedWarning =
       '投稿後、このルームを閲覧できません。閲覧権限を管理者に確認してください。';
@@ -825,6 +929,197 @@ describe('RoomChat', () => {
       ]);
     },
   );
+
+  it.each([
+    ['message', '送信', '/chat-rooms/room-1/messages'],
+    ['ack', '確認依頼', '/chat-rooms/room-1/ack-requests'],
+  ] as const)(
+    'locks root %s resubmission when the non-idempotent POST result is uncertain',
+    async (mode, buttonName, postPath) => {
+      const uncertain = new Error(
+        `Request failed: ${postPath} (503) providerKey=must-not-leak`,
+      );
+      installApiMock({
+        rooms: [makeRoom({ id: 'room-1' })],
+        messagesByRoom: { 'room-1': [] },
+        ...(mode === 'message'
+          ? { postMessageResults: [uncertain] }
+          : { postAckResults: [uncertain] }),
+      });
+
+      render(<RoomChat />);
+      expect(await screen.findByText('メッセージなし')).toBeInTheDocument();
+      fireEvent.change(screen.getByPlaceholderText('Markdownで入力'), {
+        target: { value: 'uncertain root draft' },
+      });
+      if (mode === 'ack') {
+        fireEvent.change(screen.getByLabelText('確認対象(requiredUserIds)'), {
+          target: { value: 'synthetic-user' },
+        });
+      }
+      const submit = screen.getByRole('button', { name: buttonName });
+      await waitFor(() => expect(submit).toBeEnabled());
+      fireEvent.click(submit);
+
+      expect(
+        await screen.findByText(
+          '投稿結果を確認できません。重複防止のため再送せず、ページを再読み込みしてください',
+        ),
+      ).toBeInTheDocument();
+      expect(submit).toBeDisabled();
+      expect(screen.getByPlaceholderText('Markdownで入力')).toHaveValue(
+        'uncertain root draft',
+      );
+      expect(screen.queryByText(/providerKey|must-not-leak/)).toBeNull();
+      fireEvent.click(submit);
+      expect(
+        vi
+          .mocked(api)
+          .mock.calls.filter(
+            ([path, init]) =>
+              String(path) === postPath && init?.method === 'POST',
+          ),
+      ).toHaveLength(1);
+    },
+  );
+
+  it.each([
+    ['message', '送信', '/chat-rooms/room-1/messages'],
+    ['ack', '確認依頼', '/chat-rooms/room-1/ack-requests'],
+  ] as const)(
+    'keeps the root %s draft retryable after a definite 4xx rejection',
+    async (mode, buttonName, postPath) => {
+      const rejected = new Error(
+        `Request failed: ${postPath} (400) INVALID_INPUT`,
+      );
+      const accepted = makeMessage({
+        id: `accepted-root-${mode}`,
+        roomId: 'room-1',
+        body: 'retryable root draft',
+      });
+      installApiMock({
+        rooms: [makeRoom({ id: 'room-1' })],
+        messagesByRoom: { 'room-1': [accepted] },
+        ...(mode === 'message'
+          ? { postMessageResults: [rejected, accepted] }
+          : { postAckResults: [rejected, accepted] }),
+      });
+
+      render(<RoomChat />);
+      await screen.findByText('retryable root draft');
+      fireEvent.change(screen.getByPlaceholderText('Markdownで入力'), {
+        target: { value: 'retryable root draft' },
+      });
+      if (mode === 'ack') {
+        fireEvent.change(screen.getByLabelText('確認対象(requiredUserIds)'), {
+          target: { value: 'synthetic-user' },
+        });
+      }
+      const submit = screen.getByRole('button', { name: buttonName });
+      fireEvent.click(submit);
+
+      expect(
+        await screen.findByText(
+          mode === 'ack'
+            ? '確認依頼の投稿に失敗しました'
+            : '投稿に失敗しました',
+        ),
+      ).toBeInTheDocument();
+      await waitFor(() => expect(submit).toBeEnabled());
+      expect(screen.getByPlaceholderText('Markdownで入力')).toHaveValue(
+        'retryable root draft',
+      );
+
+      fireEvent.click(submit);
+      await waitFor(() =>
+        expect(screen.getByPlaceholderText('Markdownで入力')).toHaveValue(''),
+      );
+      expect(
+        vi
+          .mocked(api)
+          .mock.calls.filter(
+            ([path, init]) =>
+              String(path) === postPath && init?.method === 'POST',
+          ),
+      ).toHaveLength(2);
+    },
+  );
+
+  it('reports a committed root post separately when the follow-up refresh fails', async () => {
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' })],
+      messagesByRoom: { 'room-1': [] },
+      postMessageResponse: makeMessage({
+        id: 'committed-before-refresh-failure',
+        roomId: 'room-1',
+        body: 'committed root body',
+      }),
+      failMessageRefreshAfterPost: true,
+    });
+
+    render(<RoomChat />);
+    expect(await screen.findByText('メッセージなし')).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('Markdownで入力'), {
+      target: { value: 'committed root body' },
+    });
+    const submit = screen.getByRole('button', { name: '送信' });
+    await waitFor(() => expect(submit).toBeEnabled());
+    fireEvent.click(submit);
+
+    expect(
+      await screen.findByText(
+        '投稿は完了しましたが表示を更新できません。再送せず、再読み込みしてください',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Markdownで入力')).toHaveValue('');
+    expect(screen.queryByText('投稿に失敗しました')).toBeNull();
+  });
+
+  it('clears the committed root draft and warns without resending when attachment upload is uncertain', async () => {
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' })],
+      messagesByRoom: { 'room-1': [] },
+      postMessageResponse: makeMessage({
+        id: 'committed-before-attachment-failure',
+        roomId: 'room-1',
+        body: 'root with uncertain attachment',
+      }),
+      failAttachmentUpload: true,
+    });
+
+    render(<RoomChat />);
+    expect(await screen.findByText('メッセージなし')).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('Markdownで入力'), {
+      target: { value: 'root with uncertain attachment' },
+    });
+    const fileInput = screen.getByLabelText('添付ファイル');
+    fireEvent.change(fileInput, {
+      target: {
+        files: [
+          new File(['synthetic'], 'synthetic.txt', { type: 'text/plain' }),
+        ],
+      },
+    });
+    const submit = screen.getByRole('button', { name: '送信' });
+    await waitFor(() => expect(submit).toBeEnabled());
+    fireEvent.click(submit);
+
+    expect(
+      await screen.findByText(
+        'メッセージは投稿されましたが添付結果を確認できません。メッセージを再送せず、再読み込みしてください',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Markdownで入力')).toHaveValue('');
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(
+          ([path, init]) =>
+            String(path) === '/chat-rooms/room-1/messages' &&
+            init?.method === 'POST',
+        ),
+    ).toHaveLength(1);
+  });
 
   it('shows validation errors before posting or creating an ack request', async () => {
     installApiMock({

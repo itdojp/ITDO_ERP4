@@ -95,9 +95,9 @@ export function useRoomChatMessages({
 
   const loadMessages = useCallback(
     async (options?: LoadMessagesOptions) => {
-      if (!roomId) return;
+      if (!roomId) return false;
       const targetRoomId = roomId;
-      if (roomIdRef.current !== targetRoomId) return;
+      if (roomIdRef.current !== targetRoomId) return false;
       const append = options?.append === true;
       const requestSeq = ++requestSeqRef.current;
       abortRef.current?.abort();
@@ -133,7 +133,7 @@ export function useRoomChatMessages({
             setMessage('検索語は2文字以上で入力してください');
             setHasMore(false);
           }
-          return;
+          return false;
         }
 
         const fetched = await fetchRoomMessages(
@@ -146,7 +146,7 @@ export function useRoomChatMessages({
           },
           controller.signal,
         );
-        if (!isCurrentRequest()) return;
+        if (!isCurrentRequest()) return false;
         if (append) {
           setItems((prev) => [...prev, ...fetched]);
         } else {
@@ -156,19 +156,21 @@ export function useRoomChatMessages({
 
         if (!append) {
           await fetchUnreadState(targetRoomId, { signal: controller.signal });
-          if (!isCurrentRequest()) return;
+          if (!isCurrentRequest()) return false;
           await markRead(targetRoomId, fetched);
-          if (!isCurrentRequest()) return;
+          if (!isCurrentRequest()) return false;
           await fetchUnreadState(targetRoomId, {
             preserveHighlight: true,
             signal: controller.signal,
           });
         }
+        return isCurrentRequest();
       } catch {
-        if (controller.signal.aborted || !isCurrentRequest()) return;
+        if (controller.signal.aborted || !isCurrentRequest()) return false;
         console.error('Failed to load room messages.');
         setMessage('メッセージの取得に失敗しました');
         setHasMore(false);
+        return false;
       } finally {
         if (
           requestSeqRef.current === requestSeq &&

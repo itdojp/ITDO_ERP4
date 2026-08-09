@@ -5,6 +5,7 @@ import {
   deleteChatMessage,
   fetchChatThread,
   isDefiniteChatRequestFailure,
+  isUnavailableChatRequestFailure,
   markRoomRead,
   postMessageReaction,
   postRoomAckRequest,
@@ -255,11 +256,17 @@ export function useRoomChatThread(input: {
           setMessage('スレッドを表示しましたが既読更新に失敗しました');
         }
         return next;
-      } catch {
+      } catch (error) {
         if (!isCurrentRequest()) return null;
         console.error('Failed to load chat thread.');
-        setMessage('スレッドを取得できませんでした');
-        if (!append && !preserveLoaded) setThread(null);
+        if (isUnavailableChatRequestFailure(error)) {
+          rootIdRef.current = '';
+          setThread(null);
+          setMessage('スレッドを表示できません');
+        } else {
+          setMessage('スレッドを取得できませんでした');
+          if (!append && !preserveLoaded) setThread(null);
+        }
         return null;
       } finally {
         if (isCurrentRequest()) {
@@ -319,9 +326,17 @@ export function useRoomChatThread(input: {
           );
         }
         return true;
-      } catch {
+      } catch (error) {
         if (lifecycleSeqRef.current !== lifecycleSeq) return false;
         console.error('Failed to update chat thread.');
+        if (isUnavailableChatRequestFailure(error)) {
+          const refreshed = await refreshThread();
+          if (lifecycleSeqRef.current !== lifecycleSeq) return false;
+          if (refreshed) {
+            setMessage('対象を更新できませんでした。最新表示を再取得しました');
+          }
+          return false;
+        }
         setMessage('スレッドを更新できませんでした');
         return false;
       } finally {

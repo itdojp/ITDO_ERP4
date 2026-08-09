@@ -9,6 +9,7 @@ import {
   fetchMentionCandidates,
   fetchRoomMessages,
   isDefiniteChatRequestFailure,
+  isUnavailableChatRequestFailure,
   markRoomRead,
   patchRoomNotificationSetting,
   postMessageReaction,
@@ -99,6 +100,9 @@ describe('roomChatApi command boundaries', () => {
       )
       .mockRejectedValueOnce(
         new Error('Request failed: /chat-messages/root-1/replies (503) body'),
+      )
+      .mockRejectedValueOnce(
+        new Error('Request failed: /chat-messages/root-1/thread (404) body'),
       );
 
     const definite = await postRoomAckRequest('room-1', {
@@ -109,13 +113,22 @@ describe('roomChatApi command boundaries', () => {
       { rootMessageId: 'root-1', roomId: 'room-1' },
       { body: 'reply' },
     ).catch((reason: unknown) => reason);
+    const unavailable = await fetchChatThread('root-1', { limit: 50 }).catch(
+      (reason: unknown) => reason,
+    );
 
     expect(definite).toBeInstanceOf(Error);
     expect((definite as Error).message).toBe('Chat request failed');
     expect(isDefiniteChatRequestFailure(definite)).toBe(true);
+    expect(isUnavailableChatRequestFailure(definite)).toBe(false);
     expect(uncertain).toBeInstanceOf(Error);
     expect((uncertain as Error).message).toBe('Chat request failed');
     expect(isDefiniteChatRequestFailure(uncertain)).toBe(false);
+    expect(isUnavailableChatRequestFailure(uncertain)).toBe(false);
+    expect(unavailable).toBeInstanceOf(Error);
+    expect((unavailable as Error).message).toBe('Chat request failed');
+    expect(isDefiniteChatRequestFailure(unavailable)).toBe(true);
+    expect(isUnavailableChatRequestFailure(unavailable)).toBe(true);
   });
 
   it('builds message query keys from room, pagination, filter, and search inputs', async () => {

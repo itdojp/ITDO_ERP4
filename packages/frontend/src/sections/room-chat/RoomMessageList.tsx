@@ -24,7 +24,7 @@ export type RoomMessageListProps = {
   setFilterQuery: React.Dispatch<React.SetStateAction<string>>;
   filterTag: string;
   setFilterTag: React.Dispatch<React.SetStateAction<string>>;
-  loadMessages: (options?: LoadMessagesOptions) => Promise<void>;
+  loadMessages: (options?: LoadMessagesOptions) => Promise<boolean>;
   roomId: string;
   isLoading: boolean;
   items: ChatMessage[];
