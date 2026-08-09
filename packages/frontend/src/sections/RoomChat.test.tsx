@@ -1137,7 +1137,7 @@ describe('RoomChat', () => {
 
       render(<RoomChat />);
       expect(await screen.findByText('メッセージなし')).toBeInTheDocument();
-      fireEvent.change(screen.getByPlaceholderText('Markdownで入力'), {
+      fireEvent.change(await screen.findByPlaceholderText('Markdownで入力'), {
         target: { value: 'uncertain root draft' },
       });
       if (mode === 'ack') {
