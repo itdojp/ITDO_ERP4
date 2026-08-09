@@ -713,6 +713,10 @@ describe('App', () => {
     ['partial topology', { parentMessageId: 'MSG-ROOT-1' }],
     ['empty reply identifiers', { parentMessageId: ' ', threadRootId: ' ' }],
     [
+      'self-referential reply',
+      { parentMessageId: 'MSG-INVALID', threadRootId: 'MSG-INVALID' },
+    ],
+    [
       'mixed root and reply topology',
       { parentMessageId: null, threadRootId: 'MSG-ROOT-1' },
     ],

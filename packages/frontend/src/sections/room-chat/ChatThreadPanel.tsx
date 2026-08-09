@@ -25,6 +25,7 @@ type Props = {
   onReadUpdated: (roomId: string) => void | Promise<void>;
   onAccessRevoked: (roomId: string, message: string) => void;
   onAccessCheckRequired: (roomId: string) => Promise<boolean>;
+  onMessageDeleted?: (roomId: string, messageId: string) => void;
   postLifecycle?: ChatPostLifecycle;
   onPostLifecycleChange?: (lifecycle: ChatPostLifecycle) => void;
 };
@@ -259,6 +260,7 @@ export function ChatThreadPanel({
   onReadUpdated,
   onAccessRevoked,
   onAccessCheckRequired,
+  onMessageDeleted,
   postLifecycle,
   onPostLifecycleChange,
 }: Props) {
@@ -281,6 +283,7 @@ export function ChatThreadPanel({
     onReadUpdated,
     onAccessRevoked,
     onAccessCheckRequired,
+    onMessageDeleted,
     postLifecycle,
     onPostLifecycleChange,
   });
@@ -332,7 +335,11 @@ export function ChatThreadPanel({
           'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
         ) ?? [],
       ).filter((element) => !element.hidden);
-      if (focusable.length === 0) return;
+      if (focusable.length === 0) {
+        event.preventDefault();
+        panelRef.current?.focus();
+        return;
+      }
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
       if (event.shiftKey && document.activeElement === first) {
@@ -463,6 +470,7 @@ export function ChatThreadPanel({
       <section
         ref={panelRef}
         role="dialog"
+        tabIndex={-1}
         aria-modal="true"
         aria-labelledby="chat-thread-title"
         style={{

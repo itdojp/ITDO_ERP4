@@ -134,6 +134,7 @@ export function useRoomChatThread(input: {
   onReadUpdated?: (roomId: string) => void | Promise<void>;
   onAccessRevoked?: (roomId: string, message: string) => void;
   onAccessCheckRequired?: (roomId: string) => Promise<boolean>;
+  onMessageDeleted?: (roomId: string, messageId: string) => void;
   postLifecycle?: ChatPostLifecycle;
   onPostLifecycleChange?: (lifecycle: ChatPostLifecycle) => void;
 }) {
@@ -144,6 +145,7 @@ export function useRoomChatThread(input: {
     onReadUpdated,
     onAccessRevoked,
     onAccessCheckRequired,
+    onMessageDeleted,
   } = input;
   const [thread, setThread] = useState<ChatThread | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -365,6 +367,7 @@ export function useRoomChatThread(input: {
       operation: () => Promise<T>,
       successMessage?: string,
       applyCommitted?: (current: ChatThread, result: T) => ChatThread,
+      onCommitted?: (result: T) => void,
     ) => {
       if (
         !thread ||
@@ -379,6 +382,7 @@ export function useRoomChatThread(input: {
         setIsMutating(true);
         setMessage('');
         const result = await operation();
+        onCommitted?.(result);
         if (lifecycleSeqRef.current !== lifecycleSeq) return true;
         if (applyCommitted) {
           const committed = applyCommitted(thread, result);
@@ -747,6 +751,7 @@ export function useRoomChatThread(input: {
         () => deleteChatMessage(messageId, reason),
         'メッセージを削除しました',
         (current) => redactDeletedMessage(current, messageId, reason),
+        () => onMessageDeleted?.(roomId, messageId),
       ),
   };
 }

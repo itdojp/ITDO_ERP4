@@ -22,6 +22,18 @@ export type LoadMessagesOptions = {
   suppressAccessCheck?: boolean;
 };
 
+type RoomUnreadState = {
+  roomId: string;
+  unreadCount: number;
+  highlightSince: Date | null;
+};
+
+const emptyUnreadState: RoomUnreadState = {
+  roomId: '',
+  unreadCount: 0,
+  highlightSince: null,
+};
+
 export function useRoomChatMessages({
   roomId,
   filterQuery,
@@ -38,8 +50,8 @@ export function useRoomChatMessages({
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [message, setMessage] = useState('');
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [highlightSince, setHighlightSince] = useState<Date | null>(null);
+  const [unreadState, setUnreadState] =
+    useState<RoomUnreadState>(emptyUnreadState);
   const roomIdRef = useRef(roomId);
   const itemsRef = useRef(items);
   const requestSeqRef = useRef(0);
@@ -48,6 +60,8 @@ export function useRoomChatMessages({
 
   useEffect(() => {
     roomIdRef.current = roomId;
+    unreadRequestSeqRef.current += 1;
+    setUnreadState(emptyUnreadState);
   }, [roomId]);
 
   useEffect(() => {
@@ -70,18 +84,42 @@ export function useRoomChatMessages({
       options?: { preserveHighlight?: boolean; signal?: AbortSignal },
     ) => {
       const requestSeq = ++unreadRequestSeqRef.current;
-      const unread = await fetchRoomUnreadState(targetRoomId, options?.signal);
-      if (
-        options?.signal?.aborted ||
-        roomIdRef.current !== targetRoomId ||
-        unreadRequestSeqRef.current !== requestSeq
-      )
-        return;
-      setUnreadCount(unread.unreadCount);
-      if (!options?.preserveHighlight) {
-        setHighlightSince(
-          unread.lastReadAt ? new Date(unread.lastReadAt) : null,
+      try {
+        const unread = await fetchRoomUnreadState(
+          targetRoomId,
+          options?.signal,
         );
+        if (
+          options?.signal?.aborted ||
+          roomIdRef.current !== targetRoomId ||
+          unreadRequestSeqRef.current !== requestSeq
+        )
+          return;
+        setUnreadState((current) => ({
+          roomId: targetRoomId,
+          unreadCount: unread.unreadCount,
+          highlightSince: options?.preserveHighlight
+            ? current.roomId === targetRoomId
+              ? current.highlightSince
+              : null
+            : unread.lastReadAt
+              ? new Date(unread.lastReadAt)
+              : null,
+        }));
+      } catch (error) {
+        if (
+          isUnavailableChatRequestFailure(error) &&
+          !options?.signal?.aborted &&
+          roomIdRef.current === targetRoomId &&
+          unreadRequestSeqRef.current === requestSeq
+        ) {
+          setUnreadState({
+            roomId: targetRoomId,
+            unreadCount: 0,
+            highlightSince: null,
+          });
+        }
+        throw error;
       }
     },
     [],
@@ -122,8 +160,7 @@ export function useRoomChatMessages({
       setHasMore(false);
       setIsLoading(false);
       setIsLoadingMore(false);
-      setUnreadCount(0);
-      setHighlightSince(null);
+      setUnreadState(emptyUnreadState);
       setMessage(safeMessage);
       return true;
     },
@@ -267,6 +304,9 @@ export function useRoomChatMessages({
     ],
   );
 
+  const visibleUnreadState =
+    unreadState.roomId === roomId ? unreadState : emptyUnreadState;
+
   return {
     items,
     setItems,
@@ -275,8 +315,8 @@ export function useRoomChatMessages({
     isLoadingMore,
     message,
     setMessage,
-    unreadCount,
-    highlightSince,
+    unreadCount: visibleUnreadState.unreadCount,
+    highlightSince: visibleUnreadState.highlightSince,
     refreshUnreadState: fetchUnreadState,
     loadMessages,
     purgeRoomState,

@@ -229,6 +229,22 @@ describe('roomChatApi command boundaries', () => {
     );
   });
 
+  it('rejects a room timeline response with an explicitly malformed thread topology', async () => {
+    api.mockResolvedValueOnce({
+      items: [
+        {
+          ...message('malformed-root'),
+          parentMessageId: 1,
+          threadRootId: 1,
+        },
+      ],
+    });
+
+    await expect(fetchRoomMessages('room-1', { limit: 50 })).rejects.toThrow(
+      'Invalid room message response',
+    );
+  });
+
   it('keeps message, ack, reaction, preview, room, and notification mutations behind commands', async () => {
     api
       .mockResolvedValueOnce(message('m1'))

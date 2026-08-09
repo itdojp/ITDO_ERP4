@@ -246,6 +246,13 @@ function installApiMock(options: RoomChatApiMockOptions) {
       }
 
       if (
+        /^\/chat-messages\/[^/]+$/.test(url.pathname) &&
+        method === 'DELETE'
+      ) {
+        return {} as never;
+      }
+
+      if (
         /^\/chat-messages\/[^/]+\/attachments$/.test(url.pathname) &&
         method === 'POST'
       ) {

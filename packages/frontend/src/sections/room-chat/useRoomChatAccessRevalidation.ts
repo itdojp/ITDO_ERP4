@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useRef,
   type Dispatch,
   type SetStateAction,
 } from 'react';
@@ -26,21 +27,40 @@ export function useRoomChatAccessRevalidation(input: {
     setFilterQuery,
     setFilterTag,
   } = input;
+  const inFlightRef = useRef<{
+    roomId: string;
+    promise: Promise<boolean>;
+  } | null>(null);
   const revalidateRoomAccess = useCallback(
-    async (targetRoomId: string) => {
-      if (currentRoomIdRef.current !== targetRoomId) return false;
-      clearGlobalSearch();
-      setFilterQuery('');
-      setFilterTag('');
-      return loadMessages({
-        query: '',
-        tag: '',
-        skipReadState: true,
-        suppressAccessCheck: true,
-        failureMessage:
-          'ルームを表示できません。権限を確認して再読み込みしてください。',
-        onCurrentFailure: () => clearRoomBoundThreadState(targetRoomId),
-      });
+    (targetRoomId: string) => {
+      if (currentRoomIdRef.current !== targetRoomId) {
+        return Promise.resolve(false);
+      }
+      const existing = inFlightRef.current;
+      if (existing?.roomId === targetRoomId) return existing.promise;
+
+      const promise = (async () => {
+        clearGlobalSearch();
+        setFilterQuery('');
+        setFilterTag('');
+        return loadMessages({
+          query: '',
+          tag: '',
+          skipReadState: true,
+          suppressAccessCheck: true,
+          failureMessage:
+            'ルームを表示できません。権限を確認して再読み込みしてください。',
+          onCurrentFailure: () => clearRoomBoundThreadState(targetRoomId),
+        });
+      })();
+      inFlightRef.current = { roomId: targetRoomId, promise };
+      const clearCompleted = () => {
+        if (inFlightRef.current?.promise === promise) {
+          inFlightRef.current = null;
+        }
+      };
+      void promise.then(clearCompleted, clearCompleted);
+      return promise;
     },
     [
       clearGlobalSearch,

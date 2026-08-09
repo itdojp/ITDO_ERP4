@@ -459,6 +459,56 @@ describe('roomChatModel', () => {
     ).toBeNull();
   });
 
+  it.each([
+    { parentMessageId: 1, threadRootId: 1 },
+    { parentMessageId: {}, threadRootId: {} },
+    { parentMessageId: 'root-1', threadRootId: null },
+    {
+      parentMessageId: 'malformed-message',
+      threadRootId: 'malformed-message',
+    },
+  ])('rejects malformed message thread topology', (topology) => {
+    expect(
+      normalizeChatMessage({
+        ...message('malformed-message'),
+        ...topology,
+      }),
+    ).toBeNull();
+  });
+
+  it('keeps omitted topology backward compatible and removes an invalid last reply timestamp', () => {
+    const legacy = message('legacy-root') as Record<string, unknown>;
+    delete legacy.parentMessageId;
+    delete legacy.threadRootId;
+    legacy.lastReplyAt = 'not-a-date';
+
+    expect(normalizeChatMessage(legacy)).toEqual(
+      expect.objectContaining({
+        id: 'legacy-root',
+        parentMessageId: null,
+        threadRootId: null,
+        lastReplyAt: null,
+      }),
+    );
+  });
+
+  it('rejects a thread whose root has an explicitly malformed topology', () => {
+    const malformedRoot = {
+      ...message('malformed-root'),
+      parentMessageId: 1,
+      threadRootId: 1,
+    };
+    expect(
+      normalizeChatThread({
+        root: malformedRoot,
+        replies: [],
+        replyCount: 0,
+        lastReplyAt: null,
+        nextCursor: null,
+      }),
+    ).toBeNull();
+  });
+
   it.each([{ deleted: true }, { deletedAt: '2026-08-09T00:00:00.000Z' }])(
     'rejects deleted global search results without exposing body',
     (state) => {

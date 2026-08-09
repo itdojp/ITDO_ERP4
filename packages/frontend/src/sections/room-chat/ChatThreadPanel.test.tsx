@@ -161,6 +161,7 @@ function renderPanel(overrides?: {
   onReadUpdated?: () => void;
   onAccessRevoked?: (roomId: string, message: string) => void;
   onAccessCheckRequired?: (roomId: string) => Promise<boolean>;
+  onMessageDeleted?: (roomId: string, messageId: string) => void;
   postLifecycle?: 'idle' | 'in_flight' | 'uncertain';
   onPostLifecycleChange?: (
     lifecycle: 'idle' | 'in_flight' | 'uncertain',
@@ -181,6 +182,7 @@ function renderPanel(overrides?: {
       onAccessCheckRequired={
         overrides?.onAccessCheckRequired ?? vi.fn().mockResolvedValue(true)
       }
+      onMessageDeleted={overrides?.onMessageDeleted}
       postLifecycle={overrides?.postLifecycle}
       onPostLifecycleChange={overrides?.onPostLifecycleChange}
     />,
@@ -333,6 +335,7 @@ describe('ChatThreadPanel', () => {
   });
 
   it('supports reply reaction, ack, and logical delete without exposing deleted content', async () => {
+    const onMessageDeleted = vi.fn();
     let current = thread();
     api.mockImplementation(async (path: string, init?: RequestInit) => {
       const url = new URL(path, 'http://localhost');
@@ -376,7 +379,7 @@ describe('ChatThreadPanel', () => {
     });
     vi.spyOn(window, 'confirm').mockReturnValue(true);
 
-    renderPanel();
+    renderPanel({ onMessageDeleted });
     const replyCard = await waitFor(() => {
       const card = document.querySelector<HTMLElement>(
         '[data-thread-message-id="reply-1"]',
@@ -445,6 +448,7 @@ describe('ChatThreadPanel', () => {
     expect(JSON.parse(String(deleteCall?.[1]?.body))).toEqual({
       reason: 'user_retract',
     });
+    expect(onMessageDeleted).toHaveBeenCalledWith('room-1', 'reply-1');
   });
 
   it('shows a deleted-root placeholder, disables reply creation, and closes with Escape', async () => {
@@ -732,6 +736,8 @@ describe('ChatThreadPanel', () => {
       name: 'スレッドを閉じる',
     });
     await waitFor(() => expect(closeButton).toBeDisabled());
+    fireEvent.keyDown(window, { key: 'Tab' });
+    expect(screen.getByRole('dialog')).toHaveFocus();
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.mouseDown(
       screen.getByRole('dialog').parentElement as HTMLElement,
@@ -1246,6 +1252,7 @@ describe('ChatThreadPanel', () => {
 
   it('propagates a committed root deletion when the refresh fails', async () => {
     const onRootUpdated = vi.fn();
+    const onMessageDeleted = vi.fn();
     let threadReads = 0;
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -1271,7 +1278,7 @@ describe('ChatThreadPanel', () => {
       throw new Error(`Unhandled api path: ${path}`);
     });
 
-    renderPanel({ onRootUpdated });
+    renderPanel({ onRootUpdated, onMessageDeleted });
     const rootCard = await waitFor(() => {
       const card = document.querySelector<HTMLElement>(
         '[data-thread-message-id="root-1"]',
@@ -1291,6 +1298,7 @@ describe('ChatThreadPanel', () => {
     expect(onRootUpdated).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'root-1', deleted: true, body: null }),
     );
+    expect(onMessageDeleted).toHaveBeenCalledWith('room-1', 'root-1');
     expect(
       screen.getByText(
         '操作は完了しましたが表示更新に失敗しました。再送せず再読み込みしてください',

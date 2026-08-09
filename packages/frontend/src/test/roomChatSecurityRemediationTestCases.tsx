@@ -50,6 +50,116 @@ export function registerRoomChatSecurityRemediationTests({
   makeMessage,
   makeSearchItem,
 }: TestContext) {
+  it('purges loaded search excerpts and generated summary after a reply is logically deleted', async () => {
+    const root = makeMessage({
+      id: 'delete-cache-root',
+      roomId: 'room-1',
+      userId: 'demo-user',
+      body: 'delete cache root',
+      parentMessageId: null,
+      threadRootId: null,
+    });
+    const reply = makeMessage({
+      id: 'delete-cache-reply',
+      roomId: 'room-1',
+      userId: 'demo-user',
+      body: 'private excerpt removed after delete',
+      parentMessageId: root.id,
+      threadRootId: root.id,
+    });
+    const deletedReply = {
+      ...reply,
+      deleted: true,
+      deletedAt: '2026-08-09T00:02:00.000Z',
+      deletedReason: 'user_retract' as const,
+    };
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' })],
+      messagesByRoom: { 'room-1': [root] },
+      globalSearchResultsByQuery: {
+        'private excerpt|': [
+          makeSearchItem({
+            id: reply.id,
+            roomId: 'room-1',
+            body: reply.body,
+            parentMessageId: root.id,
+            threadRootId: root.id,
+          }),
+        ],
+      },
+      summaryResultsByRoom: {
+        'room-1': [{ summary: 'summary containing deleted content' }],
+      },
+      threadResultsByMessageId: {
+        [root.id]: [
+          {
+            root,
+            replies: [reply],
+            replyCount: 1,
+            lastReplyAt: reply.createdAt,
+            nextCursor: null,
+          },
+          {
+            root,
+            replies: [deletedReply],
+            replyCount: 0,
+            lastReplyAt: null,
+            nextCursor: null,
+          },
+        ],
+      },
+    });
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    try {
+      render(<RoomChat />);
+      expect(await screen.findByText(root.body)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '要約' }));
+      expect(
+        await screen.findByText('summary containing deleted content'),
+      ).toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText('横断検索（本文）'), {
+        target: { value: 'private excerpt' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: '検索' }));
+      expect(
+        await screen.findByText('private excerpt removed after delete'),
+      ).toBeInTheDocument();
+
+      const rootCard = document.getElementById(`chat-message-${root.id}`);
+      expect(rootCard).not.toBeNull();
+      fireEvent.click(
+        within(rootCard as HTMLElement).getByRole('button', {
+          name: /^スレッドを開く/,
+        }),
+      );
+      const replyCard = await waitFor(() => {
+        const card = document.querySelector<HTMLElement>(
+          `[data-thread-message-id="${reply.id}"]`,
+        );
+        expect(card).not.toBeNull();
+        return card as HTMLElement;
+      });
+      fireEvent.click(
+        within(replyCard).getByRole('button', { name: '返信を削除' }),
+      );
+
+      expect(
+        await screen.findByRole('status', { name: '削除済みの返信' }),
+      ).toBeInTheDocument();
+      await waitFor(() => {
+        expect(
+          screen.queryByText('private excerpt removed after delete'),
+        ).toBeNull();
+        expect(
+          screen.queryByText('summary containing deleted content'),
+        ).toBeNull();
+      });
+    } finally {
+      confirmSpy.mockRestore();
+    }
+  });
+
   it.each([
     { mode: 'reply', status: 400 },
     { mode: 'ack reply', status: 404 },

@@ -2030,6 +2030,10 @@ export const RoomChat: React.FC<RoomChatProps> = ({
             purgeRoomState(targetRoomId, warning);
           }}
           onAccessCheckRequired={revalidateRoomAccess}
+          onMessageDeleted={(targetRoomId) => {
+            clearGlobalSearch();
+            clearSummary(targetRoomId);
+          }}
           postLifecycle={rootPostLifecycle}
           onPostLifecycleChange={updateRootPostLifecycle}
         />

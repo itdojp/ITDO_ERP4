@@ -94,10 +94,58 @@ export const reactionOptions = ['👍', '🎉', '❤️', '😂', '🙏', '👀'
 export const pageSize = 50;
 export const threadPageSize = 50;
 
+type ChatMessageTopology = {
+  parentMessageId: string | null;
+  threadRootId: string | null;
+};
+
 const mentionCandidateUserLimit = 50;
 const mentionCandidateGroupLimit = 20;
 const mentionCandidateIdMaxLength = 200;
 const mentionCandidateDisplayNameMaxLength = 200;
+
+function normalizeChatMessageTopology(
+  message: Record<string, unknown>,
+  messageId: string,
+): ChatMessageTopology | null {
+  const hasParentMessageId = Object.prototype.hasOwnProperty.call(
+    message,
+    'parentMessageId',
+  );
+  const hasThreadRootId = Object.prototype.hasOwnProperty.call(
+    message,
+    'threadRootId',
+  );
+  if (!hasParentMessageId && !hasThreadRootId) {
+    return { parentMessageId: null, threadRootId: null };
+  }
+  if (!hasParentMessageId || !hasThreadRootId) return null;
+  if (message.parentMessageId === null && message.threadRootId === null) {
+    return { parentMessageId: null, threadRootId: null };
+  }
+  if (
+    typeof message.parentMessageId !== 'string' ||
+    typeof message.threadRootId !== 'string'
+  ) {
+    return null;
+  }
+  const parentMessageId = message.parentMessageId.trim();
+  const threadRootId = message.threadRootId.trim();
+  if (
+    !parentMessageId ||
+    parentMessageId !== threadRootId ||
+    parentMessageId === messageId
+  ) {
+    return null;
+  }
+  return { parentMessageId, threadRootId };
+}
+
+function nullableValidDateString(value: unknown) {
+  if (value == null || value === '') return null;
+  if (typeof value !== 'string') return null;
+  return Number.isNaN(new Date(value).getTime()) ? null : value;
+}
 
 function stringValue(value: unknown) {
   return typeof value === 'string' ? value : '';
@@ -336,6 +384,8 @@ export function normalizeChatMessage(value: unknown): ChatMessage | null {
   const userId = stringValue(message.userId);
   const createdAt = stringValue(message.createdAt);
   if (!id || !roomId || !userId || !createdAt) return null;
+  const topology = normalizeChatMessageTopology(message, id);
+  if (!topology) return null;
   // PR A added messageType additively. Omission remains compatible with
   // pre-thread responses, while every explicit non-text type fails closed.
   if (message.messageType !== undefined && message.messageType !== 'text') {
@@ -363,8 +413,8 @@ export function normalizeChatMessage(value: unknown): ChatMessage | null {
     id,
     roomId,
     messageType: 'text',
-    parentMessageId: nullableStringValue(message.parentMessageId),
-    threadRootId: nullableStringValue(message.threadRootId),
+    parentMessageId: topology.parentMessageId,
+    threadRootId: topology.threadRootId,
     userId,
     body: deleted ? null : nullableStringValue(message.body),
     tags: deleted ? [] : normalizeStringArray(message.tags),
@@ -392,7 +442,7 @@ export function normalizeChatMessage(value: unknown): ChatMessage | null {
     normalized.replyCount = finiteNonNegativeInteger(message.replyCount);
   }
   if ('lastReplyAt' in message) {
-    normalized.lastReplyAt = nullableStringValue(message.lastReplyAt);
+    normalized.lastReplyAt = nullableValidDateString(message.lastReplyAt);
   }
   return normalized;
 }
@@ -418,32 +468,14 @@ export function normalizeChatSearchItem(value: unknown): ChatSearchItem | null {
   ) {
     return null;
   }
-  if (
-    (item.parentMessageId !== undefined &&
-      item.parentMessageId !== null &&
-      typeof item.parentMessageId !== 'string') ||
-    (item.threadRootId !== undefined &&
-      item.threadRootId !== null &&
-      typeof item.threadRootId !== 'string')
-  ) {
-    return null;
-  }
-  const parentMessageId = nullableStringValue(item.parentMessageId);
-  const threadRootId = nullableStringValue(item.threadRootId);
-  const isRoot = parentMessageId === null && threadRootId === null;
-  const isCanonicalReply =
-    parentMessageId !== null &&
-    threadRootId !== null &&
-    parentMessageId.length > 0 &&
-    parentMessageId === threadRootId &&
-    parentMessageId !== id;
-  if (!isRoot && !isCanonicalReply) return null;
+  const topology = normalizeChatMessageTopology(item, id);
+  if (!topology) return null;
   return {
     id,
     roomId,
     messageType: 'text',
-    parentMessageId,
-    threadRootId,
+    parentMessageId: topology.parentMessageId,
+    threadRootId: topology.threadRootId,
     userId,
     body,
     tags: normalizeStringArray(item.tags),

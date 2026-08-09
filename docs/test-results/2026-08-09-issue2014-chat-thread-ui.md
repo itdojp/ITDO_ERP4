@@ -30,6 +30,8 @@
 - 同じroomのunread responseもrequest sequenceで順序付け、遅延responseによる巻き戻しを防ぐ。候補0件/loading中の`Escape`でもpanelとdraftを維持する。
 - timeline初回／追加page、既読前後のunread取得のいずれで403/404になっても、同じroom ACL再検証へ収束する。再検証失敗時はsummary/provider/model、notification setting、mention/ACK候補・previewもtimelineと同時に破棄し、各request sequenceで遅延responseの復元を拒否する。
 - global searchはserverの `(nextBefore, nextBeforeId)` を使い、stale requestをabort/破棄する。rootはparent/rootともnull、replyはparent/rootが同じ非self root IDであるcanonical topologyだけを受理し、欠損・不一致・self-reference・logical deleted resultをfail closedで除外する。
+- exact-head独立correctness/security review後、同一roomのACL再検証をsingle-flight化し、並行403/404が互いをabortして誤purgeしないようにした。unread stateをroom-bound化し、room切替またはunread endpointの403/404時に前room／既読更新前の値を消去する。
+- logical delete成功直後にglobal search excerptと生成済みsummary/provider/modelを無効化する。通常timeline/thread/deep-linkを含むruntime topologyは旧rootのfield省略互換を維持しつつ、明示的不正型、片側欠損、不一致、self-referenceをfail closedにする。mutation中にfocusable controlが0件となる場合はdialog自体をfallback focus targetにする。
 
 ## 自動テスト
 
@@ -37,9 +39,9 @@
 
 | 検証                                     | 結果 | 証跡／補足                                                                         |
 | ---------------------------------------- | ---- | ---------------------------------------------------------------------------------- |
-| focused frontend unit                    | PASS | 最終6 files / 120 tests、同一suiteを20回（2,400 tests）反復成功                    |
-| frontend full                            | PASS | 94 files / 705 tests                                                               |
-| UI core coverage                         | PASS | statements 73.03%、branches 66.08%、functions 72.06%、lines 75.66%（閾値変更なし） |
+| focused frontend unit                    | PASS | review remediation 7 files / 186 tests、同一suiteを20回（3,720 tests）反復成功    |
+| frontend full                            | PASS | 95 files / 717 tests                                                               |
+| UI core coverage                         | PASS | statements 73.13%、branches 66.19%、functions 72.12%、lines 75.75%（閾値変更なし） |
 | frontend build budget                    | PASS | initial JS 517.0 KiB / gzip 158.1 KiB                                              |
 | backend full                             | PASS | 2,040 tests                                                                        |
 | focused real-backend E2E                 | PASS | `frontend-chat-thread.spec.ts` 1/1（core/full両scopeで成功）                       |
@@ -87,15 +89,16 @@
 - root/replyとも明示的な4xx rejectionはdraftを保持して修正・再送を許可する。結果不明のnon-idempotent POSTはApp session上のroot/reply composerとroom変更経路をbrowser page reloadまでlockして再送・別room誤送信を防ぎ、fresh GETで確認できないPOST本文を表示しない。root POST成功後の添付／refresh失敗ではdraftを消去し、同じmessageを再送しない固定案内を表示する。
 - reply／確認依頼付きreplyは、送信後にsectionがunmountされてもHTTP結果を先に分類する。明示的な4xx rejectionはApp所有lifecycleを`idle`へ戻し、transport／5xx／不整合結果だけを`uncertain`に保つ。
 - `POST_WITHOUT_VIEW`受信時はbackend warning本文を破棄し、threadとroom timelineの表示済み本文を消去する。
+- logical delete成功時はrefresh成否にかかわらずglobal searchとsummary/provider/modelを消去し、削除済み本文を同一画面の別cacheへ残さない。
 - reply notification deep link、ACK response、候補・ACK preview responseはallowlistされたtopology/relation/scalarだけをstateへ反映する。
 - attachment upload/downloadの403/404はraw bodyを読まず、global searchを消去してcurrent room read ACLを再検証する。room read成功時だけ最新timelineを保持し、失敗時はroom-bound stateをpurgeする。
-- 同じroomのunread queryもrequest sequenceへbindし、古いresponseを破棄する。
+- unread stateはroom identityとrequest sequenceへbindし、古いresponseを破棄する。unread endpointが利用不可の場合、room ACL再検証が成功しても旧件数／highlightを表示しない。
 - timeline／unread／pagination／summary／ACK preview／通知設定／mention・ACK候補の403/404は同一のroom read ACL再検証へ収束する。失敗時は表示済みsummaryとprovider/model、通知設定、mention/ACK候補・previewを消去し、room切替・`POST_WITHOUT_VIEW`・access purge後に遅延responseを再適用しない。
 - global searchのparent/root topologyをallowlist検証し、parent-only、root-only、不一致、self-reference、logical deleted resultと本文をclient stateへ保持しない。
 - 後続pageのreaction/ackはmutation responseを対象messageへ局所適用し、先頭page refreshでstale化させない。
 - POST後のfresh refreshに同一replyの論理削除が含まれる場合はfresh content-free representationを優先し、POST response本文を再表示しない。
 - root削除成功時はrefresh失敗時も親timelineへcontent-freeな削除済み状態を通知する。
-- mutation中はclose button、Escape、backdrop closeを無効化し、commit結果の親timeline反映前にpanelを閉じない。
+- mutation中はclose button、Escape、backdrop closeを無効化し、commit結果の親timeline反映前にpanelを閉じない。操作可能要素が0件になった場合もTab focusをdialog内に保持する。
 - panel close/unmount後は完了したmutationから旧threadのrefresh/read副作用を開始しない。
 - 同一ミリ秒の表示messageはUUID辞書順を既読high-waterとして使用せず、曖昧な時刻や未取得pageと接する最新時刻を跨いだ既読更新を行わない。
 - paginationとmutationは相互排他とし、どちらかのin-flight中に他方のAPI mutation/queryを開始しない。

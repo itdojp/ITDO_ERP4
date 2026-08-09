@@ -296,6 +296,110 @@ describe('useRoomChatMessages', () => {
     );
   });
 
+  it('does not expose the previous room unread state while the selected room is changing', async () => {
+    api.mockImplementation(async (path: string, init?: RequestInit) => {
+      const url = new URL(path, 'http://localhost');
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (url.pathname === '/chat-rooms/room-1/messages') {
+        return { items: [message('room-1-message', 'room-1')] };
+      }
+      if (url.pathname === '/chat-rooms/room-2/messages') {
+        return { items: [message('room-2-message', 'room-2')] };
+      }
+      if (url.pathname === '/chat-rooms/room-1/unread') {
+        return {
+          unreadCount: 7,
+          lastReadAt: '2026-03-27T00:00:00.000Z',
+        };
+      }
+      if (url.pathname === '/chat-rooms/room-2/unread') {
+        throw new Error('Request failed (403) private-unread-detail');
+      }
+      if (url.pathname.endsWith('/read') && method === 'POST') return {};
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+    const onAccessUnavailable = vi.fn().mockResolvedValue(true);
+    const { result, rerender } = renderHook(
+      ({ roomId }) =>
+        useRoomChatMessages({
+          roomId,
+          filterQuery: '',
+          filterTag: '',
+          onAccessUnavailable,
+        }),
+      { initialProps: { roomId: 'room-1' } },
+    );
+
+    await act(async () => {
+      await result.current.loadMessages();
+    });
+    expect(result.current.unreadCount).toBe(7);
+    expect(result.current.highlightSince?.toISOString()).toBe(
+      '2026-03-27T00:00:00.000Z',
+    );
+
+    rerender({ roomId: 'room-2' });
+    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.highlightSince).toBeNull();
+    await act(async () => {
+      await result.current.loadMessages();
+    });
+
+    expect(onAccessUnavailable).toHaveBeenCalledWith('room-2');
+    expect(result.current.items).toEqual([message('room-2-message', 'room-2')]);
+    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.highlightSince).toBeNull();
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('private-unread-detail'),
+    );
+  });
+
+  it('clears the pre-read unread state when the post-read unread request is unavailable but room access remains', async () => {
+    let unreadCalls = 0;
+    api.mockImplementation(async (path: string, init?: RequestInit) => {
+      const url = new URL(path, 'http://localhost');
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (url.pathname.endsWith('/messages')) {
+        return { items: [message('visible-message', 'room-1')] };
+      }
+      if (url.pathname.endsWith('/unread')) {
+        unreadCalls += 1;
+        if (unreadCalls === 1) {
+          return {
+            unreadCount: 4,
+            lastReadAt: '2026-03-27T00:00:00.000Z',
+          };
+        }
+        throw new Error('Request failed (404) private-post-read-detail');
+      }
+      if (url.pathname.endsWith('/read') && method === 'POST') return {};
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+    const onAccessUnavailable = vi.fn().mockResolvedValue(true);
+    const { result } = renderHook(() =>
+      useRoomChatMessages({
+        roomId: 'room-1',
+        filterQuery: '',
+        filterTag: '',
+        onAccessUnavailable,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.loadMessages();
+    });
+
+    expect(onAccessUnavailable).toHaveBeenCalledWith('room-1');
+    expect(result.current.items).toEqual([
+      message('visible-message', 'room-1'),
+    ]);
+    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.highlightSince).toBeNull();
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('private-post-read-detail'),
+    );
+  });
+
   it('aborts and invalidates an in-flight message request on unmount', async () => {
     const pending = deferred<{ items: ReturnType<typeof message>[] }>();
     let signal: AbortSignal | undefined;

@@ -323,7 +323,13 @@ function normalizeChatMessageTopology(
   }
   const parentMessageId = payload.parentMessageId.trim();
   const threadRootId = payload.threadRootId.trim();
-  if (!parentMessageId || parentMessageId !== threadRootId) return undefined;
+  const messageId = typeof payload.id === 'string' ? payload.id.trim() : '';
+  if (
+    !parentMessageId ||
+    parentMessageId !== threadRootId ||
+    (messageId && parentMessageId === messageId)
+  )
+    return undefined;
   return { parentMessageId, threadRootId };
 }
 
