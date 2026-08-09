@@ -1534,7 +1534,7 @@ describe('RoomChat', () => {
 
     render(<RoomChat />);
     expect(await screen.findByText('メッセージなし')).toBeInTheDocument();
-    fireEvent.change(screen.getByPlaceholderText('Markdownで入力'), {
+    fireEvent.change(await screen.findByPlaceholderText('Markdownで入力'), {
       target: { value: 'committed root body' },
     });
     const submit = screen.getByRole('button', { name: '送信' });
@@ -1564,7 +1564,7 @@ describe('RoomChat', () => {
 
     render(<RoomChat />);
     expect(await screen.findByText('メッセージなし')).toBeInTheDocument();
-    fireEvent.change(screen.getByPlaceholderText('Markdownで入力'), {
+    fireEvent.change(await screen.findByPlaceholderText('Markdownで入力'), {
       target: { value: 'root with uncertain attachment' },
     });
     const fileInput = screen.getByLabelText('添付ファイル');
