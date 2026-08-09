@@ -1532,18 +1532,24 @@ describe('ChatThreadPanel', () => {
       });
       fireEvent.click(screen.getByRole('button', { name: submitLabel }));
 
-      await waitFor(() => expect(threadReads).toBe(roomReadable ? 2 : 1));
       if (roomReadable) {
-        expect(screen.getByText('root-1 body')).toBeInTheDocument();
-        expect(screen.getByText('reply-1 body')).toBeInTheDocument();
-        expect(screen.getByRole('textbox', { name: '返信を入力' })).toHaveValue(
-          'access-sensitive draft',
-        );
+        await waitFor(() => {
+          expect(threadReads).toBe(2);
+          expect(onAccessCheckRequired).toHaveBeenCalledWith('room-1');
+          expect(screen.getByText('root-1 body')).toBeInTheDocument();
+          expect(screen.getByText('reply-1 body')).toBeInTheDocument();
+          expect(
+            screen.getByRole('textbox', { name: '返信を入力' }),
+          ).toHaveValue('access-sensitive draft');
+        });
       } else {
-        expect(screen.queryByText('root-1 body')).toBeNull();
-        expect(screen.queryByText('reply-1 body')).toBeNull();
+        await waitFor(() => {
+          expect(threadReads).toBe(1);
+          expect(onAccessCheckRequired).toHaveBeenCalledWith('room-1');
+          expect(screen.queryByText('root-1 body')).toBeNull();
+          expect(screen.queryByText('reply-1 body')).toBeNull();
+        });
       }
-      expect(onAccessCheckRequired).toHaveBeenCalledWith('room-1');
     },
   );
 
