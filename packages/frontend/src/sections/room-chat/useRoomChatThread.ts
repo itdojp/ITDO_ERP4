@@ -4,6 +4,7 @@ import {
   cancelAckRequestById,
   deleteChatMessage,
   fetchChatThread,
+  isDefiniteChatRequestFailure,
   markRoomRead,
   postMessageReaction,
   postRoomAckRequest,
@@ -377,9 +378,13 @@ export function useRoomChatThread(input: {
             : '返信は投稿されましたが表示を確認できません。再送せず再読み込みしてください',
         );
         return true;
-      } catch {
+      } catch (error) {
         if (lifecycleSeqRef.current !== lifecycleSeq) return false;
         console.error('Failed to post chat thread reply.');
+        if (isDefiniteChatRequestFailure(error)) {
+          setMessage('返信の投稿に失敗しました');
+          return false;
+        }
         setSubmissionUncertain(true);
         setMessage(
           '返信結果を確認できません。重複防止のため再送せず、パネルを閉じて再読み込みしてください',
@@ -439,9 +444,13 @@ export function useRoomChatThread(input: {
             : '確認依頼付きの返信は投稿されましたが表示を確認できません。再送せず再読み込みしてください',
         );
         return true;
-      } catch {
+      } catch (error) {
         if (lifecycleSeqRef.current !== lifecycleSeq) return false;
         console.error('Failed to post chat thread ack reply.');
+        if (isDefiniteChatRequestFailure(error)) {
+          setMessage('確認依頼付き返信の投稿に失敗しました');
+          return false;
+        }
         setSubmissionUncertain(true);
         setMessage(
           '確認依頼の結果を確認できません。重複防止のため再送せず、パネルを閉じて再読み込みしてください',

@@ -58,15 +58,36 @@ const postWithoutViewWarning = {
     '投稿後、このルームを閲覧できません。閲覧権限を管理者に確認してください。',
 } as const;
 
+class ChatRequestError extends Error {
+  readonly isDefiniteFailure: boolean;
+
+  constructor(isDefiniteFailure: boolean) {
+    super('Chat request failed');
+    this.name = 'ChatRequestError';
+    this.isDefiniteFailure = isDefiniteFailure;
+  }
+}
+
+function isDefiniteHttpFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : '';
+  const statusMatch = message.match(/\((\d{3})\)/);
+  const status = statusMatch ? Number(statusMatch[1]) : NaN;
+  return Number.isInteger(status) && status >= 400 && status < 500;
+}
+
+export function isDefiniteChatRequestFailure(error: unknown): boolean {
+  return error instanceof ChatRequestError && error.isDefiniteFailure;
+}
+
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   try {
     return options
       ? await requestApi<T>(path, options)
       : await requestApi<T>(path);
-  } catch {
+  } catch (error) {
     // Existing shared callers retain their diagnostics contract. The chat UI
     // boundary never exposes request paths or backend bodies to its callers.
-    throw new Error('Chat request failed');
+    throw new ChatRequestError(isDefiniteHttpFailure(error));
   }
 }
 

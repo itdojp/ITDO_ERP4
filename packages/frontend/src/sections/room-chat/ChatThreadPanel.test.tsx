@@ -177,6 +177,36 @@ function renderPanel(overrides?: {
   );
 }
 
+const definiteRetryCases: Array<{
+  mode: 'standard' | 'ack';
+  submitLabel: string;
+  message: string;
+  postPath: string;
+  prepare: () => void;
+}> = [
+  {
+    mode: 'standard',
+    submitLabel: '返信',
+    message: '返信の投稿に失敗しました',
+    postPath: '/chat-messages/root-1/replies',
+    prepare: (): void => {},
+  },
+  {
+    mode: 'ack',
+    submitLabel: '確認依頼として返信',
+    message: '確認依頼付き返信の投稿に失敗しました',
+    postPath: '/chat-rooms/room-1/ack-requests',
+    prepare: (): void => {
+      fireEvent.click(
+        screen.getByRole('checkbox', { name: '確認依頼として返信' }),
+      );
+      fireEvent.change(screen.getByLabelText(/確認対象ユーザーID（カンマ区切り）/), {
+        target: { value: 'demo-user' },
+      });
+    },
+  },
+];
+
 describe('ChatThreadPanel', () => {
   beforeEach(() => {
     api.mockReset();
@@ -511,6 +541,37 @@ describe('ChatThreadPanel', () => {
     expect(JSON.parse(String(post?.[1]?.body))).toEqual(
       expect.objectContaining({ requiredGroupIds: ['group-1'] }),
     );
+  });
+
+  it('requires at least one acknowledgement recipient before posting a thread ack reply', async () => {
+    api.mockImplementation(async (path: string) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.pathname === '/chat-rooms/room-1/mention-candidates') return {};
+      if (url.pathname.endsWith('/thread')) return thread();
+      if (url.pathname === '/chat-rooms/room-1/read') return {};
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+
+    renderPanel();
+    await screen.findByText('reply-1 body');
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: '確認依頼として返信' }),
+    );
+    fireEvent.change(screen.getByRole('textbox', { name: '返信を入力' }), {
+      target: { value: 'ack body' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '確認依頼として返信' }));
+
+    expect(
+      await screen.findByText('確認対象（ユーザID/グループ）を入力してください'),
+    ).toBeInTheDocument();
+    expect(
+      api.mock.calls.some(
+        ([path, init]) =>
+          String(path) === '/chat-rooms/room-1/ack-requests' &&
+          init?.method === 'POST',
+      ),
+    ).toBe(false);
   });
 
   it.each([
@@ -1366,4 +1427,46 @@ describe('ChatThreadPanel', () => {
       ),
     ).toBe(false);
   });
+
+  it.each(definiteRetryCases)(
+    'keeps retry enabled after a definite $mode POST rejection',
+    async ({ submitLabel, message, postPath, prepare }) => {
+      const consoleError = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => undefined);
+      api.mockImplementation(async (path: string, init?: RequestInit) => {
+        const url = new URL(path, 'http://localhost');
+        if (url.pathname === '/chat-rooms/room-1/mention-candidates') return {};
+        if (url.pathname.endsWith('/thread')) return thread();
+        if (url.pathname === '/chat-rooms/room-1/read') return {};
+        if (url.pathname === postPath && init?.method === 'POST') {
+          throw new Error(`Request failed: ${postPath} (400) INVALID_INPUT`);
+        }
+        throw new Error(`Unhandled api path: ${path}`);
+      });
+
+      renderPanel();
+      await screen.findByText('reply-1 body');
+      prepare();
+      fireEvent.change(screen.getByRole('textbox', { name: '返信を入力' }), {
+        target: { value: 'retryable draft' },
+      });
+      const submit = screen.getByRole('button', { name: submitLabel });
+      fireEvent.click(submit);
+
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      await waitFor(() => expect(submit).toBeEnabled());
+      expect(screen.getByRole('textbox', { name: '返信を入力' })).toHaveValue(
+        'retryable draft',
+      );
+      fireEvent.click(submit);
+      expect(
+        api.mock.calls.filter(
+          ([path, init]) => String(path) === postPath && init?.method === 'POST',
+        ),
+      ).toHaveLength(2);
+      expect(screen.queryByText(/重複防止のため再送せず/)).toBeNull();
+      expect(consoleError).toHaveBeenCalled();
+    },
+  );
 });

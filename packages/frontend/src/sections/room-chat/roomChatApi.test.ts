@@ -8,6 +8,7 @@ import {
   fetchChatThread,
   fetchMentionCandidates,
   fetchRoomMessages,
+  isDefiniteChatRequestFailure,
   markRoomRead,
   patchRoomNotificationSetting,
   postMessageReaction,
@@ -89,6 +90,32 @@ describe('roomChatApi command boundaries', () => {
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toBe('Chat request failed');
     expect((error as Error).message).not.toMatch(/private|providerKey|secret/);
+  });
+
+  it('classifies only definite 4xx chat request failures as retry-safe', async () => {
+    api
+      .mockRejectedValueOnce(
+        new Error('Request failed: /chat-rooms/room-1/ack-requests (400) body'),
+      )
+      .mockRejectedValueOnce(
+        new Error('Request failed: /chat-messages/root-1/replies (503) body'),
+      );
+
+    const definite = await postRoomAckRequest('room-1', {
+      body: 'ack me',
+      requiredUserIds: ['u1'],
+    }).catch((reason: unknown) => reason);
+    const uncertain = await postThreadReply(
+      { rootMessageId: 'root-1', roomId: 'room-1' },
+      { body: 'reply' },
+    ).catch((reason: unknown) => reason);
+
+    expect(definite).toBeInstanceOf(Error);
+    expect((definite as Error).message).toBe('Chat request failed');
+    expect(isDefiniteChatRequestFailure(definite)).toBe(true);
+    expect(uncertain).toBeInstanceOf(Error);
+    expect((uncertain as Error).message).toBe('Chat request failed');
+    expect(isDefiniteChatRequestFailure(uncertain)).toBe(false);
   });
 
   it('builds message query keys from room, pagination, filter, and search inputs', async () => {

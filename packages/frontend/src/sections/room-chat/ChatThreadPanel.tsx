@@ -358,6 +358,21 @@ export function ChatThreadPanel({
       threadState.setMessage('返信本文を入力してください');
       return;
     }
+    const requiredUserIds = Array.from(new Set(parseUserIds(requiredUsers))).slice(
+      0,
+      50,
+    );
+    const requiredGroupIds = Array.from(
+      new Set(
+        ackGroups
+          .filter((target) => target.kind === 'group')
+          .map((target) => target.id),
+      ),
+    ).slice(0, 20);
+    if (ackMode && requiredUserIds.length === 0 && requiredGroupIds.length === 0) {
+      threadState.setMessage('確認対象（ユーザID/グループ）を入力してください');
+      return;
+    }
     const payload = {
       body: trimmed,
       tags: parseTags(tags).slice(0, 8),
@@ -366,16 +381,8 @@ export function ChatThreadPanel({
     const success = ackMode
       ? await threadState.postAckReply({
           ...payload,
-          requiredUserIds: Array.from(
-            new Set(parseUserIds(requiredUsers)),
-          ).slice(0, 50),
-          requiredGroupIds: Array.from(
-            new Set(
-              ackGroups
-                .filter((target) => target.kind === 'group')
-                .map((target) => target.id),
-            ),
-          ).slice(0, 20),
+          requiredUserIds,
+          requiredGroupIds,
         })
       : await threadState.postReply(payload);
     if (success) resetComposer();
