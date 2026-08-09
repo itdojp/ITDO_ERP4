@@ -166,6 +166,33 @@ describe('useRoomChatGlobalSearch', () => {
     expect(result.current.globalItems).toEqual([item('new-1')]);
   });
 
+  it('clears a stale server boundary when an initial search fails', async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) =>
+      item(`item-${index + 1}`),
+    );
+    api
+      .mockResolvedValueOnce({
+        items: firstPage,
+        nextBefore: '2026-03-28T00:00:00.000Z',
+        nextBeforeId: 'item-50',
+      })
+      .mockRejectedValueOnce(new Error('synthetic search failure'));
+    const { result } = renderHook(() => useRoomChatGlobalSearch());
+
+    act(() => result.current.setGlobalQuery('beta'));
+    await act(async () => result.current.loadGlobalSearch());
+    expect(result.current.globalItems).toEqual(firstPage);
+    expect(result.current.globalHasMore).toBe(true);
+
+    await act(async () => result.current.loadGlobalSearch());
+    expect(result.current.globalItems).toEqual([]);
+    expect(result.current.globalHasMore).toBe(false);
+    expect(result.current.globalMessage).toBe('検索に失敗しました');
+
+    await act(async () => result.current.loadGlobalSearch({ append: true }));
+    expect(api).toHaveBeenCalledTimes(2);
+  });
+
   it('ignores a stale response after the search query changes', async () => {
     const oldResult = deferred<{ items: ReturnType<typeof item>[] }>();
     api.mockImplementation((path: string) => {

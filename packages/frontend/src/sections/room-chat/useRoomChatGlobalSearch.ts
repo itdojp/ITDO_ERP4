@@ -85,7 +85,10 @@ export function useRoomChatGlobalSearch() {
         if (controller.signal.aborted) return;
         console.error('Failed to search chat messages.');
         setGlobalMessage('検索に失敗しました');
-        if (!append) setGlobalItems([]);
+        if (!append) {
+          boundaryRef.current = null;
+          setGlobalItems([]);
+        }
         setGlobalHasMore(false);
       } finally {
         if (
