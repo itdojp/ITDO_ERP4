@@ -36,6 +36,7 @@ export type ChatMessageNotificationEvent = {
   senderUserId: string;
   recipientUserIds: string[];
   excludeUserIds?: string[];
+  idempotencyDomain?: 'knowledge_share';
 };
 
 export type ChatAckRequiredNotificationEvent = {

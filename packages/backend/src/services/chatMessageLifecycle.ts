@@ -21,6 +21,7 @@ type LockedMessage = {
   userId: string;
   parentMessageId: string | null;
   threadRootId: string | null;
+  isKnowledgeShare: boolean;
 };
 
 async function lockActiveMessage(
@@ -33,7 +34,13 @@ async function lockActiveMessage(
       message."roomId",
       message."userId",
       message."parentMessageId",
-      message."threadRootId"
+      message."threadRootId",
+      EXISTS (
+        SELECT 1
+        FROM "KnowledgeShare" AS share
+        WHERE share."chatMessageId" = message."id"
+          AND share."status" IN ('posted', 'revoked')
+      ) AS "isKnowledgeShare"
     FROM "ChatMessage" AS message
     WHERE message."id" = ${messageId}
       AND message."deletedAt" IS NULL
@@ -110,6 +117,10 @@ export function createChatMessageLifecycleService(client: typeof prisma) {
           ) {
             return null;
           }
+          // Knowledge share roots have a dedicated revoke lifecycle. Treat
+          // them as unavailable to the generic Chat delete endpoint so a
+          // sender or moderator cannot bypass the mandatory share audit.
+          if (message.isKnowledgeShare) return null;
 
           const deletedAt = input.at ?? new Date();
           const updated = await tx.chatMessage.updateMany({
