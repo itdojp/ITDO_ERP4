@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildDisplayedRooms,
+  formatAckPreviewInvalidLabel,
+  formatAckPreviewReason,
   formatRoomLabel,
   newestVisibleMessageBoundary,
   normalizeChatMessage,
@@ -64,6 +66,17 @@ function ackRequest(messageId: string, extra: Record<string, unknown> = {}) {
 }
 
 describe('roomChatModel', () => {
+  it('formats acknowledgement preview messages without exposing extra data', () => {
+    expect(formatAckPreviewReason('required_users_forbidden')).toBe(
+      '閲覧権限のないユーザが含まれています',
+    );
+    expect(formatAckPreviewReason('unknown')).toBe('');
+    expect(formatAckPreviewInvalidLabel()).toBe('');
+    expect(
+      formatAckPreviewInvalidLabel(['u1', 'u2', 'u3', 'u4', 'u5', 'u6']),
+    ).toBe('u1, u2, u3, u4, u5...');
+  });
+
   it('formats direct-message labels for the current user', () => {
     const room: ChatRoom = {
       id: 'dm-1',

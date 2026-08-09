@@ -603,6 +603,32 @@ export function buildExcerpt(value: string, maxLength = 200) {
   return `${normalized.slice(0, maxLength)}…`;
 }
 
+export function formatAckPreviewReason(reason?: string) {
+  switch (reason) {
+    case 'required_users_empty':
+      return '確認対象が空です';
+    case 'required_users_inactive':
+      return '無効なユーザが含まれています';
+    case 'required_users_forbidden':
+      return '閲覧権限のないユーザが含まれています';
+    case 'required_users_invalid':
+      return '無効/権限外のユーザが含まれています';
+    case 'room_group_required':
+      return 'ルームのグループ設定が必要です';
+    case 'room_deleted':
+      return 'ルームが削除されています';
+    default:
+      return '';
+  }
+}
+
+export function formatAckPreviewInvalidLabel(invalidUserIds?: string[]) {
+  if (!invalidUserIds?.length) return '';
+  return invalidUserIds.length > 5
+    ? `${invalidUserIds.slice(0, 5).join(', ')}...`
+    : invalidUserIds.join(', ');
+}
+
 export function escapeMarkdownLinkLabel(value: string) {
   return value.replace(/\\/g, '\\\\').replace(/[[\]]/g, '\\$&');
 }

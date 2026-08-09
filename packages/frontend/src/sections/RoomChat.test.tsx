@@ -237,10 +237,12 @@ function installApiMock(options: RoomChatApiMockOptions) {
         /^\/chat-messages\/([^/]+)\/replies$/,
       );
       if (threadReplyMatch && method === 'POST') {
-        if (!options.threadReplyResponse) {
+        const queued = options.threadReplyResults?.shift();
+        if (queued instanceof Error) throw queued;
+        if (!queued && !options.threadReplyResponse) {
           throw new Error('thread reply response not found');
         }
-        return options.threadReplyResponse as never;
+        return (queued ? await queued : options.threadReplyResponse) as never;
       }
 
       if (
@@ -288,12 +290,14 @@ function installApiMock(options: RoomChatApiMockOptions) {
           }) as never;
         }
         if (resource === 'read' && method === 'POST') {
-          return {} as never;
+          const queued = options.readMutationResultsByRoom?.[roomId]?.shift();
+          if (queued instanceof Error) throw queued;
+          return (queued ? await queued : {}) as never;
         }
         if (resource === 'messages' && method === 'GET') {
           const queued = options.messageReadResultsByRoom?.[roomId]?.shift();
           if (queued instanceof Error) throw queued;
-          if (queued) return { items: queued } as never;
+          if (queued) return { items: await queued } as never;
           if (rootPostCompleted && options.failMessageRefreshAfterPost) {
             throw new Error('message refresh failed after post');
           }
@@ -334,13 +338,16 @@ function installApiMock(options: RoomChatApiMockOptions) {
           const queued = options.postAckResults?.shift();
           if (queued instanceof Error) throw queued;
           rootPostCompleted = true;
-          return (queued ??
-            options.postAckResponse ??
-            makeMessage({
-              id: 'posted-ack-request',
-              roomId,
-              body: 'posted ack request',
-            })) as never;
+          return (
+            queued
+              ? await queued
+              : (options.postAckResponse ??
+                makeMessage({
+                  id: 'posted-ack-request',
+                  roomId,
+                  body: 'posted ack request',
+                }))
+          ) as never;
         }
         if (resource === 'ai-summary' && method === 'POST') {
           if (failOnExternalSummary.has(roomId)) {

@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -12,8 +13,19 @@ import type {
   ChatMessageTestValue,
   ChatRoomTestValue,
   ChatSearchItemTestValue,
+  DeferredTestValue,
   RoomChatApiMockOptions,
 } from './roomChatTestTypes';
+
+function deferred<T>(): DeferredTestValue<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve;
+    reject = innerReject;
+  });
+  return { promise, resolve, reject };
+}
 
 type TestContext = {
   RoomChat: React.ComponentType<RoomChatProps>;
@@ -38,6 +50,142 @@ export function registerRoomChatSecurityRemediationTests({
   makeMessage,
   makeSearchItem,
 }: TestContext) {
+  it.each([
+    { mode: 'reply', status: 400 },
+    { mode: 'ack reply', status: 404 },
+  ] as const)(
+    'returns the App-session lifecycle to idle when an in-flight $mode is rejected after section unmount',
+    async ({ mode, status }) => {
+      const pending = deferred<ChatMessageTestValue>();
+      const postPath =
+        mode === 'reply'
+          ? '/chat-messages/unmounted-thread-root/replies'
+          : '/chat-rooms/room-1/ack-requests';
+      const root = makeMessage({
+        id: 'unmounted-thread-root',
+        roomId: 'room-1',
+        body: 'unmounted lifecycle root',
+        parentMessageId: null,
+        threadRootId: null,
+      });
+      const accepted = makeMessage({
+        id: `accepted-${mode.replace(' ', '-')}`,
+        roomId: 'room-1',
+        body: 'accepted after explicit rejection',
+        parentMessageId: root.id,
+        threadRootId: root.id,
+      });
+      const initialThread = {
+        root,
+        replies: [],
+        replyCount: 0,
+        lastReplyAt: null,
+        nextCursor: null,
+      };
+      const refreshedThread = {
+        root: { ...root, replyCount: 1, lastReplyAt: accepted.createdAt },
+        replies: [accepted],
+        replyCount: 1,
+        lastReplyAt: accepted.createdAt,
+        nextCursor: null,
+      };
+      installApiMock({
+        rooms: [makeRoom({ id: 'room-1' })],
+        messagesByRoom: { 'room-1': [root] },
+        threadResultsByMessageId: {
+          [root.id]: [initialThread, initialThread, refreshedThread],
+        },
+        ...(mode === 'reply'
+          ? { threadReplyResults: [pending.promise, accepted] }
+          : { postAckResults: [pending.promise, accepted] }),
+      });
+
+      function Harness() {
+        const [mounted, setMounted] = React.useState(true);
+        const [lifecycle, setLifecycle] =
+          React.useState<RootPostLifecycle>('idle');
+        return (
+          <>
+            <button type="button" onClick={() => setMounted((value) => !value)}>
+              toggle room chat
+            </button>
+            <span>{`chat lifecycle:${lifecycle}`}</span>
+            {mounted && (
+              <RoomChat
+                rootPostLifecycle={lifecycle}
+                onRootPostLifecycleChange={setLifecycle}
+              />
+            )}
+          </>
+        );
+      }
+
+      render(<Harness />);
+      expect(await screen.findByText(root.body)).toBeInTheDocument();
+      const openThread = () => {
+        const rootCard = document.getElementById(`chat-message-${root.id}`);
+        expect(rootCard).not.toBeNull();
+        fireEvent.click(
+          within(rootCard as HTMLElement).getByRole('button', {
+            name: /^スレッドを開く/,
+          }),
+        );
+      };
+      const prepareAndSubmit = async () => {
+        fireEvent.change(await screen.findByPlaceholderText('返信を入力'), {
+          target: { value: 'explicitly rejected reply' },
+        });
+        if (mode === 'ack reply') {
+          fireEvent.click(
+            screen.getByRole('checkbox', { name: '確認依頼として返信' }),
+          );
+          fireEvent.change(screen.getByLabelText(/確認対象ユーザーID/), {
+            target: { value: 'demo-user' },
+          });
+        }
+        fireEvent.click(
+          screen.getByRole('button', {
+            name: mode === 'reply' ? '返信' : '確認依頼として返信',
+          }),
+        );
+      };
+
+      openThread();
+      await prepareAndSubmit();
+      expect(
+        await screen.findByText('chat lifecycle:in_flight'),
+      ).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'toggle room chat' }));
+      await act(async () => {
+        pending.reject(
+          new Error(`Request failed: explicit rejection (${status}) hidden`),
+        );
+        await pending.promise.catch(() => undefined);
+      });
+      expect(
+        await screen.findByText('chat lifecycle:idle'),
+      ).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'toggle room chat' }));
+      expect(await screen.findByText(root.body)).toBeInTheDocument();
+      openThread();
+      await prepareAndSubmit();
+      expect(
+        await screen.findByText('accepted after explicit rejection'),
+      ).toBeInTheDocument();
+      expect(screen.getByText('chat lifecycle:idle')).toBeInTheDocument();
+      expect(
+        vi
+          .mocked(api)
+          .mock.calls.filter(
+            ([path, init]) =>
+              String(path) === postPath && init?.method === 'POST',
+          ),
+      ).toHaveLength(2);
+      expect(screen.queryByText('hidden')).toBeNull();
+    },
+  );
+
   it.each([
     { mode: 'reply', closeMethod: 'button' },
     { mode: 'reply', closeMethod: 'escape' },
@@ -286,6 +434,215 @@ export function registerRoomChatSecurityRemediationTests({
       ).toBeGreaterThanOrEqual(2);
     },
   );
+
+  it('keeps thread mutations locked until room revalidation fails closed', async () => {
+    const roomRevalidation = deferred<ChatMessageTestValue[]>();
+    const root = makeMessage({
+      id: 'deferred-access-root',
+      roomId: 'room-1',
+      body: 'deferred access root',
+      parentMessageId: null,
+      threadRootId: null,
+    });
+    const reply = makeMessage({
+      id: 'deferred-access-reply',
+      roomId: 'room-1',
+      body: 'deferred access reply',
+      parentMessageId: root.id,
+      threadRootId: root.id,
+    });
+    const thread = {
+      root,
+      replies: [reply],
+      replyCount: 1,
+      lastReplyAt: reply.createdAt,
+      nextCursor: null,
+    };
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' })],
+      messagesByRoom: { 'room-1': [] },
+      messageReadResultsByRoom: {
+        'room-1': [[root], roomRevalidation.promise],
+      },
+      readMutationResultsByRoom: { 'room-1': [{}, {}] },
+      threadResultsByMessageId: { [root.id]: [thread, thread] },
+      globalSearchResultsByQuery: {
+        'stale|': [makeSearchItem({ body: 'stale deferred search excerpt' })],
+      },
+      rootMutationErrors: {
+        [`/chat-messages/${reply.id}/reactions`]: new Error(
+          'Request failed: mutation unavailable (404) hidden',
+        ),
+      },
+    });
+
+    render(<RoomChat />);
+    expect(await screen.findByText(root.body)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('横断検索（本文）'), {
+      target: { value: 'stale' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '検索' }));
+    expect(
+      await screen.findByText('stale deferred search excerpt'),
+    ).toBeInTheDocument();
+    const rootCard = document.getElementById(`chat-message-${root.id}`);
+    expect(rootCard).not.toBeNull();
+    fireEvent.click(
+      within(rootCard as HTMLElement).getByRole('button', {
+        name: /^スレッドを開く/,
+      }),
+    );
+    const reaction = await waitFor(() => {
+      const replyCard = document.querySelector<HTMLElement>(
+        `[data-thread-message-id="${reply.id}"]`,
+      );
+      expect(replyCard).not.toBeNull();
+      return within(replyCard as HTMLElement).getByRole('button', {
+        name: 'replyへ👍リアクション',
+      });
+    });
+    fireEvent.click(reaction);
+
+    await waitFor(() => expect(reaction).toBeDisabled());
+    expect(screen.queryByText('stale deferred search excerpt')).toBeNull();
+    fireEvent.click(reaction);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(
+          ([path, init]) =>
+            String(path) === `/chat-messages/${reply.id}/reactions` &&
+            init?.method === 'POST',
+        ),
+    ).toHaveLength(1);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.filter(([path]) =>
+          new URL(String(path), 'http://localhost').pathname.endsWith(
+            '/thread',
+          ),
+        ),
+    ).toHaveLength(1);
+
+    await act(async () => {
+      roomRevalidation.reject(
+        new Error('Request failed: room revalidation (404) hidden'),
+      );
+      await roomRevalidation.promise.catch(() => undefined);
+    });
+    expect(
+      await screen.findByText(
+        'ルームを表示できません。権限を確認して再読み込みしてください。',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'スレッド' })).toBeNull();
+    expect(screen.queryByText(root.body)).toBeNull();
+    expect(screen.queryByText(/hidden/)).toBeNull();
+  });
+
+  it('purges room state when the root timeline read mutation detects lost access', async () => {
+    const root = makeMessage({
+      id: 'root-read-access-root',
+      roomId: 'room-1',
+      body: 'root read access body',
+    });
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' })],
+      messagesByRoom: { 'room-1': [] },
+      messageReadResultsByRoom: {
+        'room-1': [
+          [root],
+          new Error('Request failed: room read revalidation (404) hidden'),
+        ],
+      },
+      readMutationResultsByRoom: {
+        'room-1': [new Error('Request failed: mark read (404) private-detail')],
+      },
+    });
+
+    render(<RoomChat />);
+    expect(
+      await screen.findByText(
+        'ルームを表示できません。権限を確認して再読み込みしてください。',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(root.body)).toBeNull();
+    expect(screen.queryByText(/private-detail|hidden/)).toBeNull();
+  });
+
+  it('purges thread, timeline, and search when thread read mutation detects lost access', async () => {
+    const root = makeMessage({
+      id: 'thread-read-access-root',
+      roomId: 'room-1',
+      body: 'thread read access root',
+      parentMessageId: null,
+      threadRootId: null,
+    });
+    const reply = makeMessage({
+      id: 'thread-read-access-reply',
+      roomId: 'room-1',
+      body: 'thread read access reply',
+      createdAt: '2026-03-28T00:01:00.000Z',
+      parentMessageId: root.id,
+      threadRootId: root.id,
+    });
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' })],
+      messagesByRoom: { 'room-1': [] },
+      messageReadResultsByRoom: {
+        'room-1': [
+          [root],
+          new Error('Request failed: thread read revalidation (404) hidden'),
+        ],
+      },
+      readMutationResultsByRoom: {
+        'room-1': [
+          {},
+          new Error('Request failed: thread mark read (404) private-detail'),
+        ],
+      },
+      threadsByMessageId: {
+        [root.id]: {
+          root,
+          replies: [reply],
+          replyCount: 1,
+          lastReplyAt: reply.createdAt,
+          nextCursor: null,
+        },
+      },
+      globalSearchResultsByQuery: {
+        'stale|': [makeSearchItem({ body: 'stale read-state search excerpt' })],
+      },
+    });
+
+    render(<RoomChat />);
+    expect(await screen.findByText(root.body)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('横断検索（本文）'), {
+      target: { value: 'stale' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '検索' }));
+    expect(
+      await screen.findByText('stale read-state search excerpt'),
+    ).toBeInTheDocument();
+    const rootCard = document.getElementById(`chat-message-${root.id}`);
+    expect(rootCard).not.toBeNull();
+    fireEvent.click(
+      within(rootCard as HTMLElement).getByRole('button', {
+        name: /^スレッドを開く/,
+      }),
+    );
+
+    expect(
+      await screen.findByText(
+        'ルームを表示できません。権限を確認して再読み込みしてください。',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'スレッド' })).toBeNull();
+    expect(screen.queryByText(root.body)).toBeNull();
+    expect(screen.queryByText('stale read-state search excerpt')).toBeNull();
+    expect(screen.queryByText(/private-detail|hidden/)).toBeNull();
+  });
 
   it.each([
     { status: 403, roomReadable: true },

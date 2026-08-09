@@ -30,6 +30,8 @@ import {
   buildDisplayedRooms,
   buildExcerpt,
   escapeMarkdownLinkLabel,
+  formatAckPreviewInvalidLabel,
+  formatAckPreviewReason,
   formatRoomLabel,
   markdownAllowedElements,
   normalizeStringArray,
@@ -62,6 +64,7 @@ import {
   useRoomChatMentionCandidates,
 } from './room-chat/useRoomChatCandidates';
 import { useRoomChatGlobalSearch } from './room-chat/useRoomChatGlobalSearch';
+import { useRoomChatAccessRevalidation } from './room-chat/useRoomChatAccessRevalidation';
 import { useRoomChatMessages } from './room-chat/useRoomChatMessages';
 import { useRoomChatNotificationSetting } from './room-chat/useRoomChatNotificationSetting';
 import { useRoomChatRooms } from './room-chat/useRoomChatRooms';
@@ -191,6 +194,15 @@ export const RoomChat: React.FC<RoomChatProps> = ({
     };
   }, [setRoomId]);
 
+  const revalidateRoomAccessRef = useRef<
+    ((targetRoomId: string) => Promise<boolean>) | null
+  >(null);
+  const handleReadAccessUnavailable = useCallback(
+    (targetRoomId: string) =>
+      revalidateRoomAccessRef.current?.(targetRoomId) ?? Promise.resolve(false),
+    [],
+  );
+
   const {
     items,
     setItems,
@@ -204,7 +216,12 @@ export const RoomChat: React.FC<RoomChatProps> = ({
     refreshUnreadState,
     loadMessages,
     purgeRoomState,
-  } = useRoomChatMessages({ roomId, filterQuery, filterTag });
+  } = useRoomChatMessages({
+    roomId,
+    filterQuery,
+    filterTag,
+    onReadAccessUnavailable: handleReadAccessUnavailable,
+  });
   const currentRoomItems = useMemo(
     () => items.filter((item) => item.roomId === roomId),
     [items, roomId],
@@ -416,34 +433,12 @@ export const RoomChat: React.FC<RoomChatProps> = ({
     setAckPreviewMessage('');
   }, [ackTargets, ackTargetGroupIds, ackTargetRoles, roomId]);
 
-  const formatAckPreviewReason = (reason?: string) => {
-    switch (reason) {
-      case 'required_users_empty':
-        return '確認対象が空です';
-      case 'required_users_inactive':
-        return '無効なユーザが含まれています';
-      case 'required_users_forbidden':
-        return '閲覧権限のないユーザが含まれています';
-      case 'required_users_invalid':
-        return '無効/権限外のユーザが含まれています';
-      case 'room_group_required':
-        return 'ルームのグループ設定が必要です';
-      case 'room_deleted':
-        return 'ルームが削除されています';
-      default:
-        return '';
-    }
-  };
-
   const ackPreviewReasonLabel = ackPreview
     ? formatAckPreviewReason(ackPreview.reason)
     : '';
-  const ackPreviewInvalidLabel =
-    ackPreview && ackPreview.invalidUserIds.length > 0
-      ? ackPreview.invalidUserIds.length > 5
-        ? `${ackPreview.invalidUserIds.slice(0, 5).join(', ')}...`
-        : ackPreview.invalidUserIds.join(', ')
-      : '';
+  const ackPreviewInvalidLabel = formatAckPreviewInvalidLabel(
+    ackPreview?.invalidUserIds,
+  );
 
   const hasActiveAckDeadline = useMemo(() => {
     return currentRoomItems.some((item) => {
@@ -590,19 +585,15 @@ export const RoomChat: React.FC<RoomChatProps> = ({
     setHighlightMessageId('');
   }, []);
 
-  const revalidateRoomAccess = async (targetRoomId: string) => {
-    if (currentRoomIdRef.current !== targetRoomId) return false;
-    clearGlobalSearch();
-    setFilterQuery('');
-    setFilterTag('');
-    return loadMessages({
-      query: '',
-      tag: '',
-      failureMessage:
-        'ルームを表示できません。権限を確認して再読み込みしてください。',
-      onCurrentFailure: () => clearRoomBoundThreadState(targetRoomId),
-    });
-  };
+  const revalidateRoomAccess = useRoomChatAccessRevalidation({
+    currentRoomIdRef,
+    handlerRef: revalidateRoomAccessRef,
+    clearGlobalSearch,
+    clearRoomBoundThreadState,
+    loadMessages,
+    setFilterQuery,
+    setFilterTag,
+  });
   const isCurrentRoom = useCallback(
     (targetRoomId: string) => currentRoomIdRef.current === targetRoomId,
     [],

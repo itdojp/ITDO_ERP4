@@ -24,7 +24,7 @@ type Props = {
   onRootUpdated: (root: ChatThread['root']) => void;
   onReadUpdated: (roomId: string) => void | Promise<void>;
   onAccessRevoked: (roomId: string, message: string) => void;
-  onAccessCheckRequired: (roomId: string) => void;
+  onAccessCheckRequired: (roomId: string) => Promise<boolean>;
   postLifecycle?: ChatPostLifecycle;
   onPostLifecycleChange?: (lifecycle: ChatPostLifecycle) => void;
 };
@@ -440,6 +440,7 @@ export function ChatThreadPanel({
   const thread = threadState.thread;
   const interactionLocked =
     threadState.isMutating ||
+    threadState.isLoading ||
     threadState.isLoadingMore ||
     threadState.submissionBlocked;
   return (

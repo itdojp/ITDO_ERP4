@@ -183,6 +183,7 @@ test('chat thread UI preserves reply behavior, ACL, search, unread, ack, and del
   const rootCard = messageList.locator('.card', { hasText: fixture.rootBody });
   await expect(rootCard).toHaveCount(1, { timeout: actionTimeout });
   await expect(rootCard.getByText('返信 0件')).toBeVisible();
+  await expect(rootCard.getByText(/最終返信/)).toHaveCount(0);
   await rootCard.getByRole('button', { name: /スレッドを開く/ }).click();
 
   const dialog = page.getByRole('dialog', { name: 'スレッド' });
@@ -204,6 +205,8 @@ test('chat thread UI preserves reply behavior, ACL, search, unread, ack, and del
     timeout: actionTimeout,
   });
   await expect(dialog.getByText(/返信 1件/).first()).toBeVisible();
+  await expect(dialog.getByText(/最終更新/)).toBeVisible();
+  await expect(rootCard.getByText(/最終返信/)).toBeVisible();
 
   const mentionResponse = await request.post(
     `${apiBase}/chat-messages/${encodeURIComponent(fixture.rootId)}/replies`,

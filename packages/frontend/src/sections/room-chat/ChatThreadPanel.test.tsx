@@ -160,7 +160,7 @@ function renderPanel(overrides?: {
   onRootUpdated?: () => void;
   onReadUpdated?: () => void;
   onAccessRevoked?: (roomId: string, message: string) => void;
-  onAccessCheckRequired?: (roomId: string) => void;
+  onAccessCheckRequired?: (roomId: string) => Promise<boolean>;
   postLifecycle?: 'idle' | 'in_flight' | 'uncertain';
   onPostLifecycleChange?: (
     lifecycle: 'idle' | 'in_flight' | 'uncertain',
@@ -178,7 +178,9 @@ function renderPanel(overrides?: {
       onRootUpdated={overrides?.onRootUpdated ?? vi.fn()}
       onReadUpdated={overrides?.onReadUpdated ?? vi.fn()}
       onAccessRevoked={overrides?.onAccessRevoked ?? vi.fn()}
-      onAccessCheckRequired={overrides?.onAccessCheckRequired ?? vi.fn()}
+      onAccessCheckRequired={
+        overrides?.onAccessCheckRequired ?? vi.fn().mockResolvedValue(true)
+      }
       postLifecycle={overrides?.postLifecycle}
       onPostLifecycleChange={overrides?.onPostLifecycleChange}
     />,
@@ -1451,7 +1453,7 @@ describe('ChatThreadPanel', () => {
   });
 
   it('purges loaded thread content when an unavailable mutation is confirmed by refresh', async () => {
-    const onAccessCheckRequired = vi.fn();
+    const onAccessCheckRequired = vi.fn().mockResolvedValue(true);
     let threadReads = 0;
     api.mockImplementation(async (path: string, init?: RequestInit) => {
       const url = new URL(path, 'http://localhost');
@@ -1505,7 +1507,7 @@ describe('ChatThreadPanel', () => {
   )(
     'revalidates thread access after an unavailable $mode reply POST (roomReadable=$roomReadable)',
     async ({ postPath, prepare, submitLabel, roomReadable }) => {
-      const onAccessCheckRequired = vi.fn();
+      const onAccessCheckRequired = vi.fn().mockResolvedValue(roomReadable);
       let threadReads = 0;
       api.mockImplementation(async (path: string, init?: RequestInit) => {
         const url = new URL(path, 'http://localhost');
@@ -1530,7 +1532,7 @@ describe('ChatThreadPanel', () => {
       });
       fireEvent.click(screen.getByRole('button', { name: submitLabel }));
 
-      await waitFor(() => expect(threadReads).toBe(2));
+      await waitFor(() => expect(threadReads).toBe(roomReadable ? 2 : 1));
       if (roomReadable) {
         expect(screen.getByText('root-1 body')).toBeInTheDocument();
         expect(screen.getByText('reply-1 body')).toBeInTheDocument();

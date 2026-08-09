@@ -34,23 +34,23 @@
 
 未実行項目を成功として扱わない。`release-readiness` はclean checkoutのexact headで実行し、repo-side gateと外部Go依存を区別する。
 
-| 検証                                     | 結果    | 証跡／補足                                                                         |
-| ---------------------------------------- | ------- | ---------------------------------------------------------------------------------- |
-| focused frontend unit                    | PASS    | 7 files / 160 tests、reply/ACK reply uncertainty flow 20/20反復成功                |
-| frontend full                            | PASS    | 92 files / 672 tests                                                               |
-| UI core coverage                         | PASS    | statements 72.40%、branches 65.65%、functions 71.58%、lines 75.04%（閾値変更なし） |
-| frontend build budget                    | PASS    | initial JS 517.0 KiB / gzip 158.1 KiB                                              |
-| backend full                             | PASS    | 2,040 tests                                                                        |
-| focused real-backend E2E                 | PASS    | `frontend-chat-thread.spec.ts` 1/1（core/full両scopeで成功）                       |
-| core E2E                                 | PASS    | 107 passed                                                                         |
-| full E2E                                 | PASS    | 153 passed / 34 expected conditional skips                                         |
-| PostgreSQL 15 integration                | PASS    | reply pagination、ACL、search、unread、ack、logical delete、raceを含む             |
-| old-application compatibility            | PASS    | baseline `4b3196a...`、old response/write/data保持                                 |
-| OpenAPI export / breaking diff           | PASS    | checked-in OpenAPIとの差分なし                                                     |
-| bounded-context / docs / image links     | PASS    | dependency 0 violation、coverage PASS、130 image links                             |
-| audit / secret scan                      | PASS    | npm audit high/critical 0、tracked-file secret scan 0（最終標準gateでも再確認）    |
-| lint / format / typecheck / build / test | PASS    | backend 2,040 / frontend 672、全標準gate成功                                       |
-| release-readiness core                   | PASS    | clean exact implementation headでrepo-side 29/29、core E2E 107/107                 |
+| 検証                                     | 結果 | 証跡／補足                                                                         |
+| ---------------------------------------- | ---- | ---------------------------------------------------------------------------------- |
+| focused frontend unit                    | PASS | 7 files / 166 tests、ACL／unmount競合5ケースを20回（100実行）反復成功              |
+| frontend full                            | PASS | 92 files / 678 tests                                                               |
+| UI core coverage                         | PASS | statements 72.50%、branches 65.76%、functions 71.66%、lines 75.14%（閾値変更なし） |
+| frontend build budget                    | PASS | initial JS 517.0 KiB / gzip 158.1 KiB                                              |
+| backend full                             | PASS | 2,040 tests                                                                        |
+| focused real-backend E2E                 | PASS | `frontend-chat-thread.spec.ts` 1/1（core/full両scopeで成功）                       |
+| core E2E                                 | PASS | 107 passed                                                                         |
+| full E2E                                 | PASS | 153 passed / 34 expected conditional skips                                         |
+| PostgreSQL 15 integration                | PASS | reply pagination、ACL、search、unread、ack、logical delete、raceを含む             |
+| old-application compatibility            | PASS | baseline `4b3196a...`、old response/write/data保持                                 |
+| OpenAPI export / breaking diff           | PASS | checked-in OpenAPIとの差分なし                                                     |
+| bounded-context / docs / image links     | PASS | dependency 0 violation、coverage PASS、130 image links                             |
+| audit / secret scan                      | PASS | npm audit high/critical 0、tracked-file secret scan 0（最終標準gateでも再確認）    |
+| lint / format / typecheck / build / test | PASS | backend 2,040 / frontend 678、全標準gate成功                                       |
+| release-readiness core                   | PASS | clean exact implementation headでrepo-side 29/29、core E2E 107/107                 |
 
 ## Real-backend E2E matrix
 
@@ -79,10 +79,12 @@
 ## Security / privacy
 
 - room ACL、project alias、mention/notification/reaction/search/unread/ackのserver契約はPR A/Bの正本を維持する。
+- thread mutationと既読更新の403/404は、room ACL再検証が完了するまで操作lockを維持する。room read成功時だけthread再取得へ進み、失敗時はtimeline、thread、global searchを一括purgeする。再検証用のroom取得では既読更新を再帰実行しない。
 - unauthorizedとmissingの外部表示を区別しない。
 - raw backend error body、parser stack、provider URL/key、unknown response fieldをUIへ表示しない。
 - thread mutation成功後の一時的なrefresh failureでは読み込み済みstateを保持し、「再送せず再読み込み」を表示する。ただし403/404を再取得でも確認した場合は権限外本文を保持せずthread stateを破棄し、room readを再検証してtimelineとglobal searchを保持またはpurgeする。
 - root/replyとも明示的な4xx rejectionはdraftを保持して修正・再送を許可する。結果不明のnon-idempotent POSTはApp session上のroot/reply composerとroom変更経路をbrowser page reloadまでlockして再送・別room誤送信を防ぎ、fresh GETで確認できないPOST本文を表示しない。root POST成功後の添付／refresh失敗ではdraftを消去し、同じmessageを再送しない固定案内を表示する。
+- reply／確認依頼付きreplyは、送信後にsectionがunmountされてもHTTP結果を先に分類する。明示的な4xx rejectionはApp所有lifecycleを`idle`へ戻し、transport／5xx／不整合結果だけを`uncertain`に保つ。
 - `POST_WITHOUT_VIEW`受信時はbackend warning本文を破棄し、threadとroom timelineの表示済み本文を消去する。
 - reply notification deep link、ACK response、候補・ACK preview responseはallowlistされたtopology/relation/scalarだけをstateへ反映する。
 - attachment upload/downloadの403/404はraw bodyを読まず、global searchを消去してcurrent room read ACLを再検証する。room read成功時だけ最新timelineを保持し、失敗時はroom-bound stateをpurgeする。

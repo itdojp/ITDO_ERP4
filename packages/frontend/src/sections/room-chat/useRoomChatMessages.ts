@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   fetchRoomMessages,
   fetchRoomUnreadState,
+  isUnavailableChatRequestFailure,
   markRoomRead,
 } from './roomChatApi';
 import {
@@ -17,16 +18,19 @@ export type LoadMessagesOptions = {
   tag?: string;
   failureMessage?: string;
   onCurrentFailure?: () => void;
+  skipReadState?: boolean;
 };
 
 export function useRoomChatMessages({
   roomId,
   filterQuery,
   filterTag,
+  onReadAccessUnavailable,
 }: {
   roomId: string;
   filterQuery: string;
   filterTag: string;
+  onReadAccessUnavailable?: (roomId: string) => Promise<boolean>;
 }) {
   const [items, setItems] = useState<ChatMessage[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -85,14 +89,23 @@ export function useRoomChatMessages({
   const markRead = useCallback(
     async (targetRoomId: string, messages: ChatMessage[]) => {
       const boundary = newestVisibleMessageBoundary(messages);
-      if (!boundary) return;
+      if (!boundary) return true;
       try {
         await markRoomRead(targetRoomId, boundary);
-      } catch {
+        return true;
+      } catch (error) {
+        if (isUnavailableChatRequestFailure(error)) {
+          try {
+            return (await onReadAccessUnavailable?.(targetRoomId)) === true;
+          } catch {
+            return false;
+          }
+        }
         console.warn('Failed to mark read.');
+        return true;
       }
     },
-    [],
+    [onReadAccessUnavailable],
   );
 
   const purgeRoomState = useCallback(
@@ -177,10 +190,17 @@ export function useRoomChatMessages({
         }
         setHasMore(fetched.length === pageSize);
 
-        if (!append) {
+        if (!append && !options?.skipReadState) {
           await fetchUnreadState(targetRoomId, { signal: controller.signal });
           if (!isCurrentRequest()) return false;
-          await markRead(targetRoomId, fetched);
+          const readAccessValid = await markRead(targetRoomId, fetched);
+          if (!readAccessValid) {
+            purgeRoomState(
+              targetRoomId,
+              'ルームを表示できません。権限を確認して再読み込みしてください。',
+            );
+            return false;
+          }
           if (!isCurrentRequest()) return false;
           await fetchUnreadState(targetRoomId, {
             preserveHighlight: true,

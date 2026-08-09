@@ -133,10 +133,18 @@ export function useRoomChatThread(input: {
   onRootUpdated?: (root: ChatThread['root']) => void;
   onReadUpdated?: (roomId: string) => void | Promise<void>;
   onAccessRevoked?: (roomId: string, message: string) => void;
-  onAccessCheckRequired?: (roomId: string) => void;
+  onAccessCheckRequired?: (roomId: string) => Promise<boolean>;
   postLifecycle?: ChatPostLifecycle;
   onPostLifecycleChange?: (lifecycle: ChatPostLifecycle) => void;
 }) {
+  const {
+    roomId,
+    expectedRootId,
+    onRootUpdated,
+    onReadUpdated,
+    onAccessRevoked,
+    onAccessCheckRequired,
+  } = input;
   const [thread, setThread] = useState<ChatThread | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -171,6 +179,14 @@ export function useRoomChatThread(input: {
     [onPostLifecycleChange],
   );
 
+  const revalidateRoomAccess = useCallback(async () => {
+    try {
+      return (await onAccessCheckRequired?.(roomId)) === true;
+    } catch {
+      return false;
+    }
+  }, [onAccessCheckRequired, roomId]);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -202,9 +218,9 @@ export function useRoomChatThread(input: {
   }, []);
 
   useEffect(() => {
-    if (!thread || thread.root.roomId === input.roomId) return;
+    if (!thread || thread.root.roomId === roomId) return;
     closeThread();
-  }, [closeThread, input.roomId, thread]);
+  }, [closeThread, roomId, thread]);
 
   const markDisplayedThreadRead = useCallback(
     async (next: ChatThread) => {
@@ -217,14 +233,19 @@ export function useRoomChatThread(input: {
       if (!boundary) return true;
       try {
         await markRoomRead(next.root.roomId, boundary);
-        await input.onReadUpdated?.(next.root.roomId);
+        await onReadUpdated?.(next.root.roomId);
         return true;
-      } catch {
+      } catch (error) {
+        if (isUnavailableChatRequestFailure(error)) {
+          return (await revalidateRoomAccess())
+            ? ('failed' as const)
+            : ('access_revoked' as const);
+        }
         console.warn('Failed to mark chat thread read.');
-        return false;
+        return 'failed' as const;
       }
     },
-    [input],
+    [onReadUpdated, revalidateRoomAccess],
   );
 
   const loadThread = useCallback(
@@ -264,8 +285,8 @@ export function useRoomChatThread(input: {
         });
         if (!isCurrentRequest()) return null;
         if (
-          fetched.root.roomId !== input.roomId ||
-          fetched.root.id !== input.expectedRootId ||
+          fetched.root.roomId !== roomId ||
+          fetched.root.id !== expectedRootId ||
           (rootIdRef.current && fetched.root.id !== rootIdRef.current)
         ) {
           throw new Error('Invalid chat thread identity');
@@ -280,10 +301,16 @@ export function useRoomChatThread(input: {
               }
             : fetched;
         setThread(next);
-        input.onRootUpdated?.(next.root);
+        onRootUpdated?.(next.root);
         const readUpdated = await markDisplayedThreadRead(next);
         if (!isCurrentRequest()) return next;
-        if (!readUpdated) {
+        if (readUpdated === 'access_revoked') {
+          rootIdRef.current = '';
+          setThread(null);
+          setMessage('スレッドを表示できません');
+          return null;
+        }
+        if (readUpdated === 'failed') {
           setMessage('スレッドを表示しましたが既読更新に失敗しました');
         }
         return next;
@@ -294,9 +321,7 @@ export function useRoomChatThread(input: {
           rootIdRef.current = '';
           setThread(null);
           setMessage('スレッドを表示できません');
-          if (!options?.suppressAccessCheck) {
-            input.onAccessCheckRequired?.(input.roomId);
-          }
+          if (!options?.suppressAccessCheck) await revalidateRoomAccess();
         } else {
           setMessage('スレッドを取得できませんでした');
           if (!append && !preserveLoaded) setThread(null);
@@ -310,7 +335,14 @@ export function useRoomChatThread(input: {
         if (abortRef.current === controller) abortRef.current = null;
       }
     },
-    [input, markDisplayedThreadRead, thread],
+    [
+      expectedRootId,
+      onRootUpdated,
+      roomId,
+      markDisplayedThreadRead,
+      revalidateRoomAccess,
+      thread,
+    ],
   );
 
   const refreshThread = useCallback(
@@ -353,7 +385,7 @@ export function useRoomChatThread(input: {
           setThread((current) =>
             current ? applyCommitted(current, result) : current,
           );
-          input.onRootUpdated?.(committed.root);
+          onRootUpdated?.(committed.root);
         }
         const refreshed = await refreshThread();
         if (lifecycleSeqRef.current !== lifecycleSeq) return true;
@@ -361,7 +393,7 @@ export function useRoomChatThread(input: {
           if (applyCommitted) {
             const safe = applyCommitted(refreshed, result);
             setThread(safe);
-            input.onRootUpdated?.(safe.root);
+            onRootUpdated?.(safe.root);
           }
           if (successMessage) setMessage(successMessage);
         } else {
@@ -374,7 +406,14 @@ export function useRoomChatThread(input: {
         if (lifecycleSeqRef.current !== lifecycleSeq) return false;
         console.error('Failed to update chat thread.');
         if (isUnavailableChatRequestFailure(error)) {
-          input.onAccessCheckRequired?.(input.roomId);
+          const roomReadable = await revalidateRoomAccess();
+          if (lifecycleSeqRef.current !== lifecycleSeq) return false;
+          if (!roomReadable) {
+            rootIdRef.current = '';
+            setThread(null);
+            setMessage('スレッドを表示できません');
+            return false;
+          }
           const refreshed = await refreshThread({
             suppressAccessCheck: true,
           });
@@ -393,7 +432,7 @@ export function useRoomChatThread(input: {
         }
       }
     },
-    [input, refreshThread, thread],
+    [onRootUpdated, refreshThread, revalidateRoomAccess, thread],
   );
 
   const postReply = useCallback(
@@ -426,7 +465,7 @@ export function useRoomChatThread(input: {
           rootIdRef.current = '';
           setThread(null);
           setMessage(created.warning.message);
-          input.onAccessRevoked?.(thread.root.roomId, created.warning.message);
+          onAccessRevoked?.(thread.root.roomId, created.warning.message);
           return true;
         }
         const refreshed = await refreshThread();
@@ -435,7 +474,7 @@ export function useRoomChatThread(input: {
           refreshed?.replies.some((reply) => reply.id === created.id) === true;
         if (refreshed) {
           setThread(refreshed);
-          input.onRootUpdated?.(refreshed.root);
+          onRootUpdated?.(refreshed.root);
         }
         setMessage(
           confirmed
@@ -444,11 +483,23 @@ export function useRoomChatThread(input: {
         );
         return true;
       } catch (error) {
+        if (
+          isUnavailableChatRequestFailure(error) ||
+          isDefiniteChatRequestFailure(error)
+        ) {
+          finalPostLifecycle = 'idle';
+        }
         if (lifecycleSeqRef.current !== lifecycleSeq) return false;
         console.error('Failed to post chat thread reply.');
         if (isUnavailableChatRequestFailure(error)) {
-          finalPostLifecycle = 'idle';
-          input.onAccessCheckRequired?.(input.roomId);
+          const roomReadable = await revalidateRoomAccess();
+          if (lifecycleSeqRef.current !== lifecycleSeq) return false;
+          if (!roomReadable) {
+            rootIdRef.current = '';
+            setThread(null);
+            setMessage('スレッドを表示できません');
+            return false;
+          }
           const refreshed = await refreshThread({
             suppressAccessCheck: true,
           });
@@ -477,7 +528,14 @@ export function useRoomChatThread(input: {
         }
       }
     },
-    [input, refreshThread, thread, updatePostLifecycle],
+    [
+      onAccessRevoked,
+      onRootUpdated,
+      refreshThread,
+      revalidateRoomAccess,
+      thread,
+      updatePostLifecycle,
+    ],
   );
 
   const postAckReply = useCallback(
@@ -510,7 +568,7 @@ export function useRoomChatThread(input: {
           rootIdRef.current = '';
           setThread(null);
           setMessage(created.warning.message);
-          input.onAccessRevoked?.(thread.root.roomId, created.warning.message);
+          onAccessRevoked?.(thread.root.roomId, created.warning.message);
           return true;
         }
         const refreshed = await refreshThread();
@@ -519,7 +577,7 @@ export function useRoomChatThread(input: {
           refreshed?.replies.some((reply) => reply.id === created.id) === true;
         if (refreshed) {
           setThread(refreshed);
-          input.onRootUpdated?.(refreshed.root);
+          onRootUpdated?.(refreshed.root);
         }
         setMessage(
           confirmed
@@ -528,11 +586,23 @@ export function useRoomChatThread(input: {
         );
         return true;
       } catch (error) {
+        if (
+          isUnavailableChatRequestFailure(error) ||
+          isDefiniteChatRequestFailure(error)
+        ) {
+          finalPostLifecycle = 'idle';
+        }
         if (lifecycleSeqRef.current !== lifecycleSeq) return false;
         console.error('Failed to post chat thread ack reply.');
         if (isUnavailableChatRequestFailure(error)) {
-          finalPostLifecycle = 'idle';
-          input.onAccessCheckRequired?.(input.roomId);
+          const roomReadable = await revalidateRoomAccess();
+          if (lifecycleSeqRef.current !== lifecycleSeq) return false;
+          if (!roomReadable) {
+            rootIdRef.current = '';
+            setThread(null);
+            setMessage('スレッドを表示できません');
+            return false;
+          }
           const refreshed = await refreshThread({
             suppressAccessCheck: true,
           });
@@ -561,7 +631,14 @@ export function useRoomChatThread(input: {
         }
       }
     },
-    [input, refreshThread, thread, updatePostLifecycle],
+    [
+      onAccessRevoked,
+      onRootUpdated,
+      refreshThread,
+      revalidateRoomAccess,
+      thread,
+      updatePostLifecycle,
+    ],
   );
 
   const loadMore = useCallback(async () => {

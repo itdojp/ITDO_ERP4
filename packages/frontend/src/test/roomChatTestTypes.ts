@@ -60,7 +60,11 @@ export type RoomChatApiMockOptions = {
   messagesByRoom: Record<string, ChatMessageTestValue[]>;
   messageReadResultsByRoom?: Record<
     string,
-    Array<ChatMessageTestValue[] | Error>
+    Array<ChatMessageTestValue[] | Error | Promise<ChatMessageTestValue[]>>
+  >;
+  readMutationResultsByRoom?: Record<
+    string,
+    Array<unknown | Error | Promise<unknown>>
   >;
   unreadByRoom?: Record<
     string,
@@ -115,6 +119,11 @@ export type RoomChatApiMockOptions = {
         warning?: { code?: string; message?: string };
       })
     | Error
+    | Promise<
+        ChatMessageTestValue & {
+          warning?: { code?: string; message?: string };
+        }
+      >
   >;
   failMessageRefreshAfterPost?: boolean;
   failAttachmentUpload?: boolean;
@@ -147,6 +156,17 @@ export type RoomChatApiMockOptions = {
   threadReplyResponse?: ChatMessageTestValue & {
     warning?: { code?: string; message?: string };
   };
+  threadReplyResults?: Array<
+    | (ChatMessageTestValue & {
+        warning?: { code?: string; message?: string };
+      })
+    | Error
+    | Promise<
+        ChatMessageTestValue & {
+          warning?: { code?: string; message?: string };
+        }
+      >
+  >;
   rootMutationErrors?: Record<string, Error>;
 };
 
