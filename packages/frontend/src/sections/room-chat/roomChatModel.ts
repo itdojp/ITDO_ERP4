@@ -15,6 +15,12 @@ export type ChatRoom = {
   isMember?: boolean | null;
 };
 
+export type ChatAckRequestIdentity = {
+  requestId: string;
+  messageId: string;
+  roomId: string;
+};
+
 export type ChatMessage = {
   id: string;
   roomId: string;
@@ -29,11 +35,18 @@ export type ChatMessage = {
   mentionsAll?: boolean;
   ackRequest?: {
     id: string;
+    messageId: string;
+    roomId: string;
     requiredUserIds: unknown;
     dueAt?: string | null;
     canceledAt?: string | null;
     canceledBy?: string | null;
-    acks?: { userId: string; ackedAt: string }[];
+    acks?: {
+      id: string;
+      requestId: string;
+      userId: string;
+      ackedAt: string;
+    }[];
   } | null;
   attachments?: {
     id: string;
@@ -81,6 +94,11 @@ export const reactionOptions = ['👍', '🎉', '❤️', '😂', '🙏', '👀'
 export const pageSize = 50;
 export const threadPageSize = 50;
 
+const mentionCandidateUserLimit = 50;
+const mentionCandidateGroupLimit = 20;
+const mentionCandidateIdMaxLength = 200;
+const mentionCandidateDisplayNameMaxLength = 200;
+
 function stringValue(value: unknown) {
   return typeof value === 'string' ? value : '';
 }
@@ -123,29 +141,136 @@ function normalizeReactions(value: unknown): ChatMessage['reactions'] {
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
-export function normalizeAckRequest(value: unknown): ChatMessage['ackRequest'] {
+export function normalizeAckRequest(
+  value: unknown,
+  expected: ChatAckRequestIdentity,
+): ChatMessage['ackRequest'] {
   const ack = recordValue(value);
-  if (!ack || !stringValue(ack.id)) return null;
-  const acks = Array.isArray(ack.acks)
-    ? ack.acks
-        .map((entry) => {
-          const row = recordValue(entry);
-          if (!row) return null;
-          const userId = stringValue(row.userId);
-          const ackedAt = stringValue(row.ackedAt);
-          return userId && ackedAt ? { userId, ackedAt } : null;
-        })
-        .filter(
-          (entry): entry is { userId: string; ackedAt: string } => !!entry,
-        )
-    : [];
+  if (!ack) return null;
+  const id = stringValue(ack.id);
+  const messageId = stringValue(ack.messageId);
+  const roomId = stringValue(ack.roomId);
+  if (
+    !id ||
+    !messageId ||
+    !roomId ||
+    id !== expected.requestId ||
+    messageId !== expected.messageId ||
+    roomId !== expected.roomId
+  ) {
+    return null;
+  }
+
+  if (ack.acks !== undefined && ack.acks !== null && !Array.isArray(ack.acks)) {
+    return null;
+  }
+  const acks: NonNullable<NonNullable<ChatMessage['ackRequest']>['acks']> = [];
+  for (const entry of Array.isArray(ack.acks) ? ack.acks : []) {
+    const row = recordValue(entry);
+    if (!row) return null;
+    const ackId = stringValue(row.id);
+    const requestId = stringValue(row.requestId);
+    const userId = stringValue(row.userId);
+    const ackedAt = stringValue(row.ackedAt);
+    if (!ackId || requestId !== id || !userId || !ackedAt) return null;
+    acks.push({ id: ackId, requestId, userId, ackedAt });
+  }
   return {
-    id: stringValue(ack.id),
+    id,
+    messageId,
+    roomId,
     requiredUserIds: normalizeStringArray(ack.requiredUserIds),
     dueAt: nullableStringValue(ack.dueAt),
     canceledAt: nullableStringValue(ack.canceledAt),
     canceledBy: nullableStringValue(ack.canceledBy),
     acks,
+  };
+}
+
+function normalizeMentionCandidateString(
+  value: unknown,
+  maxLength: number,
+): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return normalized && normalized.length <= maxLength ? normalized : null;
+}
+
+function normalizeMentionCandidateDisplayName(
+  value: unknown,
+): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim();
+  if (!normalized) return null;
+  return normalized.length <= mentionCandidateDisplayNameMaxLength
+    ? normalized
+    : undefined;
+}
+
+export function normalizeMentionCandidates(value: unknown): MentionCandidates {
+  const candidates = recordValue(value);
+  if (!candidates) return { users: [], groups: [] };
+
+  const users: NonNullable<MentionCandidates['users']> = [];
+  if (Array.isArray(candidates.users)) {
+    for (const entry of candidates.users) {
+      if (users.length >= mentionCandidateUserLimit) break;
+      const user = recordValue(entry);
+      if (!user) continue;
+      const userId = normalizeMentionCandidateString(
+        user.userId,
+        mentionCandidateIdMaxLength,
+      );
+      const displayName = normalizeMentionCandidateDisplayName(
+        user.displayName,
+      );
+      if (
+        !userId ||
+        (user.displayName !== undefined && displayName === undefined)
+      ) {
+        continue;
+      }
+      users.push({
+        userId,
+        ...(displayName !== undefined ? { displayName } : {}),
+      });
+    }
+  }
+
+  const groups: NonNullable<MentionCandidates['groups']> = [];
+  if (Array.isArray(candidates.groups)) {
+    for (const entry of candidates.groups) {
+      if (groups.length >= mentionCandidateGroupLimit) break;
+      const group = recordValue(entry);
+      if (!group) continue;
+      const groupId = normalizeMentionCandidateString(
+        group.groupId,
+        mentionCandidateIdMaxLength,
+      );
+      const displayName = normalizeMentionCandidateDisplayName(
+        group.displayName,
+      );
+      if (
+        !groupId ||
+        (group.displayName !== undefined && displayName === undefined)
+      ) {
+        continue;
+      }
+      groups.push({
+        groupId,
+        ...(displayName !== undefined ? { displayName } : {}),
+      });
+    }
+  }
+
+  return {
+    users,
+    groups,
+    ...(typeof candidates.allowAll === 'boolean'
+      ? { allowAll: candidates.allowAll }
+      : {}),
   };
 }
 
@@ -223,6 +348,17 @@ export function normalizeChatMessage(value: unknown): ChatMessage | null {
     message.deletedReason === 'admin_moderation'
       ? message.deletedReason
       : null;
+  let ackRequest: ChatMessage['ackRequest'] = null;
+  if (!deleted && message.ackRequest != null) {
+    const rawAckRequest = recordValue(message.ackRequest);
+    const requestId = rawAckRequest ? stringValue(rawAckRequest.id) : '';
+    ackRequest = normalizeAckRequest(message.ackRequest, {
+      requestId,
+      messageId: id,
+      roomId,
+    });
+    if (!ackRequest) return null;
+  }
   const normalized: ChatMessage = {
     id,
     roomId,
@@ -245,7 +381,7 @@ export function normalizeChatMessage(value: unknown): ChatMessage | null {
             : null;
         })(),
     mentionsAll: deleted ? false : booleanValue(message.mentionsAll),
-    ackRequest: deleted ? null : normalizeAckRequest(message.ackRequest),
+    ackRequest,
     attachments: deleted ? [] : normalizeAttachments(message.attachments),
     createdAt,
     deleted,

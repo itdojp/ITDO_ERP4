@@ -5,6 +5,7 @@ import {
   formatRoomLabel,
   newestVisibleMessageBoundary,
   normalizeChatMessage,
+  normalizeMentionCandidates,
   normalizeChatSearchItem,
   normalizeChatThread,
   toAttachmentRecord,
@@ -35,6 +36,29 @@ function message(
     deletedReason: null,
     providerUrl: 'https://internal.invalid',
     rawError: 'must not survive normalization',
+    ...extra,
+  };
+}
+
+function ackRequest(messageId: string, extra: Record<string, unknown> = {}) {
+  return {
+    id: 'ack-1',
+    messageId,
+    roomId: 'room-1',
+    requiredUserIds: ['bob'],
+    dueAt: null,
+    canceledAt: null,
+    canceledBy: null,
+    acks: [
+      {
+        id: 'ack-row-1',
+        requestId: 'ack-1',
+        userId: 'bob',
+        ackedAt: '2026-08-09T00:01:00.000Z',
+        providerUser: 'must not survive normalization',
+      },
+    ],
+    providerRequest: 'must not survive normalization',
     ...extra,
   };
 }
@@ -146,6 +170,145 @@ describe('roomChatModel', () => {
         attachments: [],
       }),
     );
+  });
+
+  it('fails closed when nested ACK identities do not match the containing message', () => {
+    const normalized = normalizeChatMessage(
+      message('root-1', { ackRequest: ackRequest('root-1') }),
+    );
+    expect(normalized?.ackRequest).toEqual({
+      id: 'ack-1',
+      messageId: 'root-1',
+      roomId: 'room-1',
+      requiredUserIds: ['bob'],
+      dueAt: null,
+      canceledAt: null,
+      canceledBy: null,
+      acks: [
+        {
+          id: 'ack-row-1',
+          requestId: 'ack-1',
+          userId: 'bob',
+          ackedAt: '2026-08-09T00:01:00.000Z',
+        },
+      ],
+    });
+    expect(normalized?.ackRequest).not.toHaveProperty('providerRequest');
+    expect(normalized?.ackRequest?.acks?.[0]).not.toHaveProperty(
+      'providerUser',
+    );
+    expect(
+      normalizeChatMessage(
+        message('root-1', {
+          ackRequest: ackRequest('root-1', { acks: null }),
+        }),
+      )?.ackRequest?.acks,
+    ).toEqual([]);
+    expect(
+      normalizeChatMessage(
+        message('root-1', {
+          ackRequest: ackRequest('root-1', { acks: { userId: 'bob' } }),
+        }),
+      ),
+    ).toBeNull();
+
+    expect(
+      normalizeChatMessage(
+        message('root-1', {
+          ackRequest: ackRequest('other-message'),
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      normalizeChatMessage(
+        message('root-1', {
+          ackRequest: ackRequest('root-1', {
+            acks: [
+              {
+                requestId: 'ack-1',
+                userId: 'mallory',
+                ackedAt: '2026-08-09T00:01:00.000Z',
+              },
+            ],
+          }),
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      normalizeChatMessage(
+        message('root-1', {
+          ackRequest: ackRequest('root-1', { roomId: 'other-room' }),
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      normalizeChatMessage(
+        message('root-1', {
+          ackRequest: ackRequest('root-1', {
+            acks: [
+              {
+                id: 'ack-row-1',
+                requestId: 'other-request',
+                userId: 'mallory',
+                ackedAt: '2026-08-09T00:01:00.000Z',
+              },
+            ],
+          }),
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      normalizeChatMessage(
+        message('root-1', { ackRequest: { id: 'legacy-ack' } }),
+      ),
+    ).toBeNull();
+  });
+
+  it('allowlists and bounds mention candidates', () => {
+    const candidates = normalizeMentionCandidates({
+      users: [
+        {
+          userId: ' alice ',
+          displayName: ' Alice ',
+          providerProfile: 'hidden',
+        },
+        { userId: '', displayName: 'Missing ID' },
+        { userId: 'bad-display', displayName: { raw: 'hidden' } },
+        { userId: 'x'.repeat(201), displayName: 'Oversized ID' },
+        ...Array.from({ length: 60 }, (_, index) => ({
+          userId: `user-${index}`,
+        })),
+      ],
+      groups: [
+        {
+          groupId: ' group-1 ',
+          displayName: null,
+          providerGroup: 'hidden',
+        },
+        { groupId: 'bad-group', displayName: 'x'.repeat(201) },
+        ...Array.from({ length: 25 }, (_, index) => ({
+          groupId: `group-${index + 2}`,
+        })),
+      ],
+      allowAll: true,
+      providerCursor: 'hidden',
+    });
+
+    expect(candidates.users).toHaveLength(50);
+    expect(candidates.groups).toHaveLength(20);
+    expect(candidates.users?.[0]).toEqual({
+      userId: 'alice',
+      displayName: 'Alice',
+    });
+    expect(candidates.groups?.[0]).toEqual({
+      groupId: 'group-1',
+      displayName: null,
+    });
+    expect(candidates.allowAll).toBe(true);
+    expect(candidates).not.toHaveProperty('providerCursor');
+    expect(candidates.users?.[0]).not.toHaveProperty('providerProfile');
+    expect(candidates.groups?.[0]).not.toHaveProperty('providerGroup');
+    expect(JSON.stringify(candidates)).not.toMatch(/bad-display|bad-group/);
   });
 
   it('fails closed for unsupported message types and malformed thread topology', () => {

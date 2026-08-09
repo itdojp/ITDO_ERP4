@@ -36,6 +36,7 @@ export function useRoomChatMessages({
   const roomIdRef = useRef(roomId);
   const itemsRef = useRef(items);
   const requestSeqRef = useRef(0);
+  const unreadRequestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -49,6 +50,7 @@ export function useRoomChatMessages({
   useEffect(() => {
     return () => {
       requestSeqRef.current += 1;
+      unreadRequestSeqRef.current += 1;
       const controller = abortRef.current;
       abortRef.current = null;
       controller?.abort();
@@ -60,8 +62,13 @@ export function useRoomChatMessages({
       targetRoomId: string,
       options?: { preserveHighlight?: boolean; signal?: AbortSignal },
     ) => {
+      const requestSeq = ++unreadRequestSeqRef.current;
       const unread = await fetchRoomUnreadState(targetRoomId, options?.signal);
-      if (options?.signal?.aborted || roomIdRef.current !== targetRoomId)
+      if (
+        options?.signal?.aborted ||
+        roomIdRef.current !== targetRoomId ||
+        unreadRequestSeqRef.current !== requestSeq
+      )
         return;
       setUnreadCount(unread.unreadCount);
       if (!options?.preserveHighlight) {
@@ -177,6 +184,27 @@ export function useRoomChatMessages({
     [fetchUnreadState, filterQuery, filterTag, markRead, roomId],
   );
 
+  const purgeRoomState = useCallback(
+    (targetRoomId: string, safeMessage: string) => {
+      if (roomIdRef.current !== targetRoomId) return false;
+      requestSeqRef.current += 1;
+      unreadRequestSeqRef.current += 1;
+      const controller = abortRef.current;
+      abortRef.current = null;
+      controller?.abort();
+      itemsRef.current = [];
+      setItems([]);
+      setHasMore(false);
+      setIsLoading(false);
+      setIsLoadingMore(false);
+      setUnreadCount(0);
+      setHighlightSince(null);
+      setMessage(safeMessage);
+      return true;
+    },
+    [],
+  );
+
   return {
     items,
     setItems,
@@ -189,5 +217,6 @@ export function useRoomChatMessages({
     highlightSince,
     refreshUnreadState: fetchUnreadState,
     loadMessages,
+    purgeRoomState,
   };
 }

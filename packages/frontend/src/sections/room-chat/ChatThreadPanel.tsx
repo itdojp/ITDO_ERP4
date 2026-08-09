@@ -23,6 +23,7 @@ type Props = {
   onClose: () => void;
   onRootUpdated: (root: ChatThread['root']) => void;
   onReadUpdated: (roomId: string) => void | Promise<void>;
+  onAccessRevoked: (roomId: string, message: string) => void;
 };
 
 function safeDate(value: string | null | undefined) {
@@ -253,6 +254,7 @@ export function ChatThreadPanel({
   onClose,
   onRootUpdated,
   onReadUpdated,
+  onAccessRevoked,
 }: Props) {
   const panelRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -271,6 +273,7 @@ export function ChatThreadPanel({
     expectedRootId,
     onRootUpdated,
     onReadUpdated,
+    onAccessRevoked,
   });
 
   useEffect(() => {
@@ -290,6 +293,12 @@ export function ChatThreadPanel({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       if (event.key === 'Escape') {
+        const target =
+          event.target instanceof HTMLElement ? event.target : null;
+        if (target?.closest('[role="combobox"][aria-expanded="true"]')) {
+          event.preventDefault();
+          return;
+        }
         event.preventDefault();
         if (!threadState.isMutating) onClose();
         return;
@@ -396,7 +405,10 @@ export function ChatThreadPanel({
   };
 
   const thread = threadState.thread;
-  const interactionLocked = threadState.isMutating || threadState.isLoadingMore;
+  const interactionLocked =
+    threadState.isMutating ||
+    threadState.isLoadingMore ||
+    threadState.submissionUncertain;
   return (
     <div
       role="presentation"

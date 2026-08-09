@@ -1,10 +1,10 @@
 import { api as requestApi, apiResponse } from '../../api';
 import type {
+  ChatAckRequestIdentity,
   ChatMessage,
   ChatRoom,
   ChatSearchItem,
   ChatThread,
-  MentionCandidates,
 } from './roomChatModel';
 import {
   normalizeChatMessage,
@@ -12,6 +12,7 @@ import {
   normalizeChatSearchItem,
   normalizeChatThread,
   normalizeAckRequest,
+  normalizeMentionCandidates,
 } from './roomChatModel';
 
 export type NotificationSetting = {
@@ -75,9 +76,12 @@ function normalizedMessageOrThrow(value: unknown): ChatMessage {
   return normalized;
 }
 
-function normalizedAckRequestOrThrow(value: unknown, requestId: string) {
-  const normalized = normalizeAckRequest(value);
-  if (!normalized || normalized.id !== requestId) {
+function normalizedAckRequestOrThrow(
+  value: unknown,
+  expected: ChatAckRequestIdentity,
+) {
+  const normalized = normalizeAckRequest(value, expected);
+  if (!normalized) {
     throw new Error('Invalid chat ack response');
   }
   return normalized;
@@ -106,6 +110,7 @@ function isRootMessageForRoom(message: ChatMessage, roomId: string): boolean {
 function normalizedPostedMessageOrThrow(
   value: unknown,
   expected: { roomId: string; parentMessageId: string | null },
+  invalidResponseMessage = 'Invalid posted chat message response',
 ) {
   const message = normalizedMessageOrThrow(value);
   if (
@@ -113,7 +118,7 @@ function normalizedPostedMessageOrThrow(
     message.parentMessageId !== expected.parentMessageId ||
     message.threadRootId !== expected.parentMessageId
   ) {
-    throw new Error('Invalid posted chat message response');
+    throw new Error(invalidResponseMessage);
   }
   const record = value as { warning?: unknown };
   const warning =
@@ -266,7 +271,7 @@ export async function fetchChatThread(
 }
 
 export async function postThreadReply(
-  rootMessageId: string,
+  expected: { rootMessageId: string; roomId: string },
   payload: {
     body: string;
     tags?: string[];
@@ -278,21 +283,21 @@ export async function postThreadReply(
   },
 ) {
   const response = await api<unknown>(
-    `/chat-messages/${rootMessageId}/replies`,
+    `/chat-messages/${expected.rootMessageId}/replies`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     },
   );
-  const normalized = normalizedMessageOrThrow(response);
-  if (
-    normalized.parentMessageId !== rootMessageId ||
-    normalized.threadRootId !== rootMessageId
-  ) {
-    throw new Error('Invalid thread reply response');
-  }
-  return normalized;
+  return normalizedPostedMessageOrThrow(
+    response,
+    {
+      roomId: expected.roomId,
+      parentMessageId: expected.rootMessageId,
+    },
+    'Invalid thread reply response',
+  );
 }
 
 export async function deleteChatMessage(
@@ -310,9 +315,11 @@ export async function fetchMentionCandidates(
   roomId: string,
   signal?: AbortSignal,
 ) {
-  return api<MentionCandidates>(`/chat-rooms/${roomId}/mention-candidates`, {
-    signal,
-  });
+  const response = await api<unknown>(
+    `/chat-rooms/${roomId}/mention-candidates`,
+    { signal },
+  );
+  return normalizeMentionCandidates(response);
 }
 
 export async function fetchAckCandidates(
@@ -320,10 +327,11 @@ export async function fetchAckCandidates(
   query: string,
   signal?: AbortSignal,
 ) {
-  return api<MentionCandidates>(
+  const response = await api<unknown>(
     `/chat-rooms/${roomId}/ack-candidates?q=${encodeURIComponent(query)}`,
     { signal },
   );
+  return normalizeMentionCandidates(response);
 }
 
 export async function previewRoomAckTargets(
@@ -422,33 +430,39 @@ export async function postMessageReaction(
   return normalized;
 }
 
-export async function ackRequest(requestId: string) {
-  const response = await api<unknown>(`/chat-ack-requests/${requestId}/ack`, {
-    method: 'POST',
-  });
-  return normalizedAckRequestOrThrow(response, requestId);
-}
-
-export async function revokeAckRequest(requestId: string) {
+export async function ackRequest(expected: ChatAckRequestIdentity) {
   const response = await api<unknown>(
-    `/chat-ack-requests/${requestId}/revoke`,
+    `/chat-ack-requests/${expected.requestId}/ack`,
     {
       method: 'POST',
     },
   );
-  return normalizedAckRequestOrThrow(response, requestId);
+  return normalizedAckRequestOrThrow(response, expected);
 }
 
-export async function cancelAckRequestById(requestId: string, reason?: string) {
+export async function revokeAckRequest(expected: ChatAckRequestIdentity) {
   const response = await api<unknown>(
-    `/chat-ack-requests/${requestId}/cancel`,
+    `/chat-ack-requests/${expected.requestId}/revoke`,
+    {
+      method: 'POST',
+    },
+  );
+  return normalizedAckRequestOrThrow(response, expected);
+}
+
+export async function cancelAckRequestById(
+  expected: ChatAckRequestIdentity,
+  reason?: string,
+) {
+  const response = await api<unknown>(
+    `/chat-ack-requests/${expected.requestId}/cancel`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reason }),
     },
   );
-  return normalizedAckRequestOrThrow(response, requestId);
+  return normalizedAckRequestOrThrow(response, expected);
 }
 
 export async function createPrivateGroupRoom(input: {

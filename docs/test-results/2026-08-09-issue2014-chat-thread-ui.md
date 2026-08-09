@@ -23,6 +23,9 @@
 - timeline/threadとも、表示済みの最新 `(createdAt, messageId)` だけをroom read boundaryとして送信する。同一ミリ秒に複数messageがある場合はrandom UUIDで内部到着順を推測せず、直前の一意な表示時刻まで保守的に進める。threadに後続pageがある場合は、page境界の同一ミリ秒replyを跨がないよう現在pageの最新時刻も除外する。
 - thread replyの確認対象グループはcontrolled stateから`requiredGroupIds`へ接続し、未実装のreply添付操作は表示しない。
 - paginationとmutationを相互排他にし、後続pageとmutation refreshの競合による表示欠落を防ぐ。候補comboboxが消費した`Escape`ではpanelを閉じない。
+- reply通知deep linkはreply topologyをallowlist normalizeしてcanonical threadを直接開く。ACK relation/candidate responseはroom・message・requestへbindし、unknown fieldを破棄する。
+- non-idempotent POSTの結果が不明な場合は再送をlockする。POST本文はfresh GETで同一reply IDを確認した場合だけ表示し、51件目以降、refresh failure、同時削除では暫定表示しない。`POST_WITHOUT_VIEW`ではthreadとroom timelineを破棄する。
+- 同じroomのunread responseもrequest sequenceで順序付け、遅延responseによる巻き戻しを防ぐ。候補0件/loading中の`Escape`でもpanelとdraftを維持する。
 - global searchはserverの `(nextBefore, nextBeforeId)` を使い、stale requestをabort/破棄する。
 
 ## 自動テスト
@@ -31,10 +34,10 @@
 
 | 検証                                     | 結果 | 証跡／補足                                                                         |
 | ---------------------------------------- | ---- | ---------------------------------------------------------------------------------- |
-| focused frontend unit                    | PASS | 6 files / 62 tests                                                                 |
-| frontend full                            | PASS | 92 files / 601 tests                                                               |
-| UI core coverage                         | PASS | statements 70.93%、branches 64.14%、functions 70.28%、lines 73.43%（閾値変更なし） |
-| frontend build budget                    | PASS | initial JS 516.3 KiB / gzip 157.8 KiB                                              |
+| focused frontend unit                    | PASS | 6 files / 102 tests                                                                |
+| frontend full                            | PASS | 92 files / 620 tests                                                               |
+| UI core coverage                         | PASS | statements 71.40%、branches 64.65%、functions 70.46%、lines 73.97%（閾値変更なし） |
+| frontend build budget                    | PASS | initial JS 516.9 KiB / gzip 158.0 KiB                                              |
 | backend full                             | PASS | 2,040 tests                                                                        |
 | focused real-backend E2E                 | PASS | `frontend-chat-thread.spec.ts` 1/1（core/full両scopeで成功）                       |
 | core E2E                                 | PASS | 107 passed                                                                         |
@@ -44,7 +47,7 @@
 | OpenAPI export / breaking diff           | PASS | checked-in OpenAPIとの差分なし                                                     |
 | bounded-context / docs / image links     | PASS | dependency 0 violation、coverage PASS、130 image links                             |
 | audit / secret scan                      | PASS | npm audit high/critical 0、tracked-file secret scan 0（最終標準gateでも再確認）    |
-| lint / format / typecheck / build / test | PASS | backend 2,040 / frontend 601、全標準gate成功                                       |
+| lint / format / typecheck / build / test | PASS | backend 2,040 / frontend 620、全標準gate成功                                       |
 | release-readiness core                   | PASS | clean exact head、29/29 checks、core E2E 107/107（repo-side readiness）            |
 
 ## Real-backend E2E matrix
@@ -54,7 +57,7 @@
 1. private-group roomと旧互換root messageを作成
 2. UIからthreadを開き通常replyを投稿
 3. reply count / last activityを更新
-4. reply mentionとnotificationを確認
+4. reply mentionとnotificationを確認し、通知deep linkからcanonical threadを開く
 5. 確認依頼付きreplyを投稿してack
 6. reply reactionを追加
 7. global searchのreply結果からthreadを開く
@@ -62,7 +65,8 @@
 9. outsider thread accessが404であることを確認
 10. replyをlogical deleteし、本文非表示placeholderを確認
 11. room root timelineへreplyが重複しないことを確認
-12. 375 x 667 viewportで横overflowがないことを確認
+12. 候補0件の実`MentionComposer`で`Escape`後もpanelとdraftが残ることを確認
+13. 375 x 667 viewportで横overflowがないことを確認
 
 ## Screenshot
 
@@ -76,6 +80,10 @@
 - unauthorizedとmissingの外部表示を区別しない。
 - raw backend error body、parser stack、provider URL/key、unknown response fieldをUIへ表示しない。
 - mutation成功後のrefresh failureでは読み込み済みstateを保持し、「再送せず再読み込み」を表示する。
+- 結果不明のnon-idempotent POSTはcomposerをlockして再送を防ぎ、fresh GETで確認できないPOST本文を表示しない。
+- `POST_WITHOUT_VIEW`受信時はbackend warning本文を破棄し、threadとroom timelineの表示済み本文を消去する。
+- reply notification deep link、ACK response、候補responseはallowlistされたtopology/relationだけをstateへ反映する。
+- 同じroomのunread queryもrequest sequenceへbindし、古いresponseを破棄する。
 - 後続pageのreaction/ackはmutation responseを対象messageへ局所適用し、先頭page refreshでstale化させない。
 - POST後のfresh refreshに同一replyの論理削除が含まれる場合はfresh content-free representationを優先し、POST response本文を再表示しない。
 - root削除成功時はrefresh失敗時も親timelineへcontent-freeな削除済み状態を通知する。

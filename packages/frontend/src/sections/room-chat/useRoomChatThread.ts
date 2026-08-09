@@ -96,30 +96,6 @@ function replaceThreadAckRequest(
   };
 }
 
-function appendCreatedReply(
-  thread: ChatThread,
-  created: ChatMessage,
-  aggregateIsFresh: boolean,
-): ChatThread {
-  const alreadyIncluded = thread.replies.some((item) => item.id === created.id);
-  if (aggregateIsFresh && alreadyIncluded) return thread;
-  const replyCount = aggregateIsFresh
-    ? thread.replyCount
-    : thread.replyCount + (alreadyIncluded ? 0 : 1);
-  const lastReplyAt =
-    !thread.lastReplyAt ||
-    Date.parse(created.createdAt) > Date.parse(thread.lastReplyAt)
-      ? created.createdAt
-      : thread.lastReplyAt;
-  return {
-    ...thread,
-    root: { ...thread.root, replyCount, lastReplyAt },
-    replies: mergeReplies(thread.replies, [created]),
-    replyCount,
-    lastReplyAt,
-  };
-}
-
 function redactDeletedMessage(
   thread: ChatThread,
   messageId: string,
@@ -152,11 +128,13 @@ export function useRoomChatThread(input: {
   expectedRootId: string;
   onRootUpdated?: (root: ChatThread['root']) => void;
   onReadUpdated?: (roomId: string) => void | Promise<void>;
+  onAccessRevoked?: (roomId: string, message: string) => void;
 }) {
   const [thread, setThread] = useState<ChatThread | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
+  const [submissionUncertain, setSubmissionUncertain] = useState(false);
   const [message, setMessage] = useState('');
   const requestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -191,6 +169,7 @@ export function useRoomChatThread(input: {
     setIsLoading(false);
     setIsLoadingMore(false);
     setIsMutating(false);
+    setSubmissionUncertain(false);
   }, []);
 
   useEffect(() => {
@@ -358,6 +337,7 @@ export function useRoomChatThread(input: {
     async (payload: ReplyPayload) => {
       if (
         !thread ||
+        submissionUncertain ||
         mutationInFlightRef.current ||
         loadMoreInFlightRef.current
       ) {
@@ -368,37 +348,42 @@ export function useRoomChatThread(input: {
       try {
         setIsMutating(true);
         setMessage('');
-        const created = await postThreadReply(thread.root.id, payload);
+        const created = await postThreadReply(
+          { rootMessageId: thread.root.id, roomId: thread.root.roomId },
+          payload,
+        );
         if (lifecycleSeqRef.current !== lifecycleSeq) return true;
-        if (!isReplyForThread(created, thread)) {
-          await refreshThread();
-          if (lifecycleSeqRef.current !== lifecycleSeq) return true;
-          setMessage(
-            '投稿結果を確認できません。再送せず再読み込みしてください',
-          );
+        if (created.warning?.code === 'POST_WITHOUT_VIEW') {
+          requestSeqRef.current += 1;
+          abortRef.current?.abort();
+          abortRef.current = null;
+          rootIdRef.current = '';
+          setThread(null);
+          setMessage(created.warning.message);
+          input.onAccessRevoked?.(thread.root.roomId, created.warning.message);
           return true;
         }
         const refreshed = await refreshThread();
         if (lifecycleSeqRef.current !== lifecycleSeq) return true;
-        const next = appendCreatedReply(
-          refreshed ?? thread,
-          created,
-          refreshed !== null,
-        );
-        setThread(next);
-        input.onRootUpdated?.(next.root);
-        await markDisplayedThreadRead(next);
-        if (lifecycleSeqRef.current !== lifecycleSeq) return true;
+        const confirmed =
+          refreshed?.replies.some((reply) => reply.id === created.id) === true;
+        if (refreshed) {
+          setThread(refreshed);
+          input.onRootUpdated?.(refreshed.root);
+        }
         setMessage(
-          refreshed
+          confirmed
             ? '返信を投稿しました'
-            : '返信は投稿されましたが表示更新に失敗しました。再送せず再読み込みしてください',
+            : '返信は投稿されましたが表示を確認できません。再送せず再読み込みしてください',
         );
         return true;
       } catch {
         if (lifecycleSeqRef.current !== lifecycleSeq) return false;
         console.error('Failed to post chat thread reply.');
-        setMessage('スレッドを更新できませんでした');
+        setSubmissionUncertain(true);
+        setMessage(
+          '返信結果を確認できません。重複防止のため再送せず、パネルを閉じて再読み込みしてください',
+        );
         return false;
       } finally {
         if (lifecycleSeqRef.current === lifecycleSeq) {
@@ -407,13 +392,14 @@ export function useRoomChatThread(input: {
         }
       }
     },
-    [input, markDisplayedThreadRead, refreshThread, thread],
+    [input, refreshThread, submissionUncertain, thread],
   );
 
   const postAckReply = useCallback(
     async (payload: AckReplyPayload) => {
       if (
         !thread ||
+        submissionUncertain ||
         mutationInFlightRef.current ||
         loadMoreInFlightRef.current
       ) {
@@ -429,35 +415,37 @@ export function useRoomChatThread(input: {
           parentMessageId: thread.root.id,
         });
         if (lifecycleSeqRef.current !== lifecycleSeq) return true;
-        if (!isReplyForThread(created, thread)) {
-          await refreshThread();
-          if (lifecycleSeqRef.current !== lifecycleSeq) return true;
-          setMessage(
-            '投稿結果を確認できません。再送せず再読み込みしてください',
-          );
+        if (created.warning?.code === 'POST_WITHOUT_VIEW') {
+          requestSeqRef.current += 1;
+          abortRef.current?.abort();
+          abortRef.current = null;
+          rootIdRef.current = '';
+          setThread(null);
+          setMessage(created.warning.message);
+          input.onAccessRevoked?.(thread.root.roomId, created.warning.message);
           return true;
         }
         const refreshed = await refreshThread();
         if (lifecycleSeqRef.current !== lifecycleSeq) return true;
-        const next = appendCreatedReply(
-          refreshed ?? thread,
-          created,
-          refreshed !== null,
-        );
-        setThread(next);
-        input.onRootUpdated?.(next.root);
-        await markDisplayedThreadRead(next);
-        if (lifecycleSeqRef.current !== lifecycleSeq) return true;
+        const confirmed =
+          refreshed?.replies.some((reply) => reply.id === created.id) === true;
+        if (refreshed) {
+          setThread(refreshed);
+          input.onRootUpdated?.(refreshed.root);
+        }
         setMessage(
-          refreshed
+          confirmed
             ? '確認依頼付きの返信を投稿しました'
-            : '確認依頼付きの返信は投稿されましたが表示更新に失敗しました。再送せず再読み込みしてください',
+            : '確認依頼付きの返信は投稿されましたが表示を確認できません。再送せず再読み込みしてください',
         );
         return true;
       } catch {
         if (lifecycleSeqRef.current !== lifecycleSeq) return false;
         console.error('Failed to post chat thread ack reply.');
-        setMessage('スレッドを更新できませんでした');
+        setSubmissionUncertain(true);
+        setMessage(
+          '確認依頼の結果を確認できません。重複防止のため再送せず、パネルを閉じて再読み込みしてください',
+        );
         return false;
       } finally {
         if (lifecycleSeqRef.current === lifecycleSeq) {
@@ -466,7 +454,7 @@ export function useRoomChatThread(input: {
         }
       }
     },
-    [input, markDisplayedThreadRead, refreshThread, thread],
+    [input, refreshThread, submissionUncertain, thread],
   );
 
   const loadMore = useCallback(async () => {
@@ -489,6 +477,7 @@ export function useRoomChatThread(input: {
     isLoading,
     isLoadingMore,
     isMutating,
+    submissionUncertain,
     message,
     setMessage,
     openThread: loadThread,
@@ -511,27 +500,60 @@ export function useRoomChatThread(input: {
             replaceThreadReaction(current, messageId, updated),
         );
       })(),
-    ack: (requestId: string) =>
-      mutateAndRefresh(
-        () => ackRequest(requestId),
+    ack: (requestId: string) => {
+      const target = [thread?.root, ...(thread?.replies ?? [])].find(
+        (item) => item?.ackRequest?.id === requestId,
+      );
+      if (!target) return Promise.resolve(false);
+      return mutateAndRefresh(
+        () =>
+          ackRequest({
+            requestId,
+            messageId: target.id,
+            roomId: target.roomId,
+          }),
         '確認しました',
         (current, updated) =>
           replaceThreadAckRequest(current, requestId, updated),
-      ),
-    revokeAck: (requestId: string) =>
-      mutateAndRefresh(
-        () => revokeAckRequest(requestId),
+      );
+    },
+    revokeAck: (requestId: string) => {
+      const target = [thread?.root, ...(thread?.replies ?? [])].find(
+        (item) => item?.ackRequest?.id === requestId,
+      );
+      if (!target) return Promise.resolve(false);
+      return mutateAndRefresh(
+        () =>
+          revokeAckRequest({
+            requestId,
+            messageId: target.id,
+            roomId: target.roomId,
+          }),
         '確認を取り消しました',
         (current, updated) =>
           replaceThreadAckRequest(current, requestId, updated),
-      ),
-    cancelAck: (requestId: string, reason?: string) =>
-      mutateAndRefresh(
-        () => cancelAckRequestById(requestId, reason),
+      );
+    },
+    cancelAck: (requestId: string, reason?: string) => {
+      const target = [thread?.root, ...(thread?.replies ?? [])].find(
+        (item) => item?.ackRequest?.id === requestId,
+      );
+      if (!target) return Promise.resolve(false);
+      return mutateAndRefresh(
+        () =>
+          cancelAckRequestById(
+            {
+              requestId,
+              messageId: target.id,
+              roomId: target.roomId,
+            },
+            reason,
+          ),
         '確認依頼を撤回しました',
         (current, updated) =>
           replaceThreadAckRequest(current, requestId, updated),
-      ),
+      );
+    },
     deleteMessage: (
       messageId: string,
       reason: 'user_retract' | 'admin_moderation',

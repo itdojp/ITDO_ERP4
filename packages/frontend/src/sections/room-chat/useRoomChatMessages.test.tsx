@@ -256,6 +256,46 @@ describe('useRoomChatMessages', () => {
     expect(result.current.isLoadingMore).toBe(false);
   });
 
+  it('keeps the newest unread response when same-room requests complete out of order', async () => {
+    const older = deferred<{
+      unreadCount: number;
+      lastReadAt: string | null;
+    }>();
+    const newer = deferred<{
+      unreadCount: number;
+      lastReadAt: string | null;
+    }>();
+    let unreadCalls = 0;
+    api.mockImplementation((path: string) => {
+      const url = new URL(path, 'http://localhost');
+      if (!url.pathname.endsWith('/unread')) {
+        throw new Error(`Unhandled api path: ${path}`);
+      }
+      unreadCalls += 1;
+      return unreadCalls === 1 ? older.promise : newer.promise;
+    });
+    const { result } = renderHook(() =>
+      useRoomChatMessages({ roomId: 'room-1', filterQuery: '', filterTag: '' }),
+    );
+
+    const olderRequest = result.current.refreshUnreadState('room-1');
+    const newerRequest = result.current.refreshUnreadState('room-1');
+    newer.resolve({ unreadCount: 0, lastReadAt: '2026-03-28T00:00:00.000Z' });
+    await act(async () => {
+      await newerRequest;
+    });
+    expect(result.current.unreadCount).toBe(0);
+
+    older.resolve({ unreadCount: 5, lastReadAt: null });
+    await act(async () => {
+      await olderRequest;
+    });
+    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.highlightSince?.toISOString()).toBe(
+      '2026-03-28T00:00:00.000Z',
+    );
+  });
+
   it('aborts and invalidates an in-flight message request on unmount', async () => {
     const pending = deferred<{ items: ReturnType<typeof message>[] }>();
     let signal: AbortSignal | undefined;
@@ -281,6 +321,48 @@ describe('useRoomChatMessages', () => {
       await load;
     });
     expect(api).toHaveBeenCalledTimes(1);
+  });
+
+  it('purges visible room state and prevents an in-flight response from restoring revoked content', async () => {
+    const pending = deferred<{ items: ReturnType<typeof message>[] }>();
+    let signal: AbortSignal | undefined;
+    api.mockImplementation((path: string, init?: RequestInit) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.pathname.endsWith('/messages')) {
+        signal = init?.signal ?? undefined;
+        return pending.promise;
+      }
+      throw new Error(`Unexpected post-purge request: ${path}`);
+    });
+    const { result } = renderHook(() =>
+      useRoomChatMessages({ roomId: 'room-1', filterQuery: '', filterTag: '' }),
+    );
+    act(() => {
+      result.current.setItems([message('visible-before-revoke', 'room-1')]);
+    });
+    const load = result.current.loadMessages();
+    await waitFor(() => expect(signal).toBeDefined());
+
+    act(() => {
+      expect(
+        result.current.purgeRoomState(
+          'room-1',
+          '閲覧権限を管理者に確認してください。',
+        ),
+      ).toBe(true);
+    });
+    expect(signal?.aborted).toBe(true);
+    expect(result.current.items).toEqual([]);
+    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.highlightSince).toBeNull();
+    expect(result.current.message).toBe('閲覧権限を管理者に確認してください。');
+
+    pending.resolve({ items: [message('stale-after-revoke', 'room-1')] });
+    await act(async () => {
+      await load;
+    });
+    expect(result.current.items).toEqual([]);
+    expect(result.current.message).toBe('閲覧権限を管理者に確認してください。');
   });
 
   it('reports load failures without retaining pagination state', async () => {

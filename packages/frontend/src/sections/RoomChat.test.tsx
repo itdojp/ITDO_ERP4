@@ -242,6 +242,9 @@ function installApiMock(options: {
       nextCursor: string | null;
     }
   >;
+  threadReplyResponse?: ChatMessage & {
+    warning?: { code?: string; message?: string };
+  };
 }) {
   const failOnSearch = new Set(options.failOnSearch ?? []);
   const failOnGlobalSearch = new Set(options.failOnGlobalSearch ?? []);
@@ -280,6 +283,16 @@ function installApiMock(options: {
         const thread = options.threadsByMessageId?.[threadMatch[1]];
         if (!thread) throw new Error('thread not found');
         return thread as never;
+      }
+
+      const threadReplyMatch = url.pathname.match(
+        /^\/chat-messages\/([^/]+)\/replies$/,
+      );
+      if (threadReplyMatch && method === 'POST') {
+        if (!options.threadReplyResponse) {
+          throw new Error('thread reply response not found');
+        }
+        return options.threadReplyResponse as never;
       }
 
       const roomMatch = url.pathname.match(
@@ -495,6 +508,212 @@ describe('RoomChat', () => {
       ).not.toBeInTheDocument();
     });
     expect(screen.queryByText('room-1 first message')).not.toBeInTheDocument();
+  });
+
+  it('keeps legacy root deep-link events on the timeline loading flow', async () => {
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' })],
+      messagesByRoom: {
+        'room-1': [],
+      },
+    });
+
+    render(<RoomChat />);
+    expect(await screen.findByText('メッセージなし')).toBeInTheDocument();
+    vi.mocked(api).mockClear();
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('erp4_open_chat_message', {
+          detail: {
+            messageId: 'root-deep-link',
+            roomId: 'room-1',
+            createdAt: '2026-03-28T02:00:00.000Z',
+          },
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(
+        vi.mocked(api).mock.calls.some(([path]) => {
+          const value = String(path);
+          return (
+            value.startsWith('/chat-rooms/room-1/messages?') &&
+            new URL(value, 'http://localhost').searchParams.get('before') ===
+              '2026-03-28T02:00:00.001Z'
+          );
+        }),
+      ).toBe(true);
+    });
+    expect(screen.queryByRole('dialog', { name: 'スレッド' })).toBeNull();
+  });
+
+  it('opens reply deep links directly as their validated thread target', async () => {
+    installApiMock({
+      rooms: [
+        makeRoom({ id: 'room-1' }),
+        makeRoom({ id: 'room-2', name: 'room-2' }),
+      ],
+      messagesByRoom: {
+        'room-1': [
+          makeMessage({
+            id: 'message-1',
+            roomId: 'room-1',
+            body: 'initial room message',
+          }),
+        ],
+        'room-2': [
+          makeMessage({
+            id: 'reply-root',
+            roomId: 'room-2',
+            body: 'reply root timeline message',
+          }),
+        ],
+      },
+      threadsByMessageId: {
+        'reply-deep-link': {
+          root: makeMessage({
+            id: 'reply-root',
+            roomId: 'room-2',
+            body: 'reply thread root',
+            parentMessageId: null,
+            threadRootId: null,
+          }),
+          replies: [
+            makeMessage({
+              id: 'reply-deep-link',
+              roomId: 'room-2',
+              body: 'direct reply deep-link target',
+              parentMessageId: 'reply-root',
+              threadRootId: 'reply-root',
+              createdAt: '2026-03-28T02:01:00.000Z',
+            }),
+          ],
+          replyCount: 1,
+          lastReplyAt: '2026-03-28T02:01:00.000Z',
+          nextCursor: null,
+        },
+      },
+    });
+
+    render(<RoomChat />);
+    expect(await screen.findByText('initial room message')).toBeInTheDocument();
+    vi.mocked(api).mockClear();
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('erp4_open_chat_message', {
+          detail: {
+            messageId: 'reply-deep-link',
+            roomId: 'room-2',
+            createdAt: '2026-03-28T02:01:00.000Z',
+            parentMessageId: 'reply-root',
+            threadRootId: 'reply-root',
+          },
+        }),
+      );
+    });
+
+    expect(
+      await screen.findByRole('dialog', { name: 'スレッド' }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText('direct reply deep-link target'),
+    ).toBeInTheDocument();
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.some(
+          ([path]) =>
+            String(path) === '/chat-messages/reply-deep-link/thread?limit=50',
+        ),
+    ).toBe(true);
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.some(
+          ([path]) =>
+            String(path).startsWith('/chat-rooms/room-2/messages?') &&
+            new URL(String(path), 'http://localhost').searchParams.has(
+              'before',
+            ),
+        ),
+    ).toBe(false);
+  });
+
+  it('purges the current timeline and keeps the thread panel open after access is revoked', async () => {
+    const sanitizedWarning =
+      '投稿後、このルームを閲覧できません。閲覧権限を管理者に確認してください。';
+    const root = makeMessage({
+      id: 'access-root',
+      roomId: 'room-1',
+      body: 'access revocation timeline item',
+      parentMessageId: null,
+      threadRootId: null,
+    });
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' })],
+      messagesByRoom: { 'room-1': [root] },
+      threadsByMessageId: {
+        'access-root': {
+          root,
+          replies: [],
+          replyCount: 0,
+          lastReplyAt: null,
+          nextCursor: null,
+        },
+      },
+      threadReplyResponse: {
+        ...makeMessage({
+          id: 'access-reply',
+          roomId: 'room-1',
+          body: 'committed reply',
+          parentMessageId: 'access-root',
+          threadRootId: 'access-root',
+        }),
+        warning: {
+          code: 'POST_WITHOUT_VIEW',
+          message: 'raw backend detail must not be shown',
+        },
+      },
+    });
+
+    render(<RoomChat />);
+    expect(
+      await screen.findByText('access revocation timeline item'),
+    ).toBeInTheDocument();
+    const displayedMessagesMetric = screen
+      .getByText('表示メッセージ')
+      .closest('dl');
+    if (!displayedMessagesMetric) {
+      throw new Error('displayed messages metric not found');
+    }
+    expect(
+      within(displayedMessagesMetric).getByText('1件'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /^スレッドを開く/ }));
+    expect(
+      await screen.findByRole('dialog', { name: 'スレッド' }),
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText('返信を入力'), {
+      target: { value: 'reply that revokes access' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '返信' }));
+
+    await waitFor(() => {
+      expect(
+        within(displayedMessagesMetric).getByText('0件'),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getAllByText(sanitizedWarning).length).toBeGreaterThan(0);
+    expect(
+      screen.queryByText('raw backend detail must not be shown'),
+    ).toBeNull();
+    expect(
+      screen.getByRole('dialog', { name: 'スレッド' }),
+    ).toBeInTheDocument();
   });
 
   it('shows validation errors before posting or creating an ack request', async () => {

@@ -170,6 +170,17 @@ test('chat thread UI preserves reply behavior, ACL, search, unread, ack, and del
   const dialog = page.getByRole('dialog', { name: 'スレッド' });
   await expect(dialog).toBeVisible({ timeout: actionTimeout });
   await dialog.getByPlaceholder('返信を入力').fill(normalReplyBody);
+  const mentionSearch = dialog.getByPlaceholder('メンション対象を検索');
+  await mentionSearch.fill(`no-candidate-${suffix}`);
+  await expect(dialog.getByText('No candidate found.')).toBeVisible({
+    timeout: actionTimeout,
+  });
+  await mentionSearch.press('Escape');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByPlaceholder('返信を入力')).toHaveValue(
+    normalReplyBody,
+  );
+  await mentionSearch.fill('');
   await dialog.getByRole('button', { name: '返信', exact: true }).click();
   await expect(dialog.getByText(normalReplyBody)).toBeVisible({
     timeout: actionTimeout,
@@ -197,7 +208,10 @@ test('chat thread UI preserves reply behavior, ACL, search, unread, ack, and del
     .not.toBeUndefined();
 
   await dialog.getByRole('button', { name: 'スレッドを閉じる' }).click();
-  await rootCard.getByRole('button', { name: /スレッドを開く/ }).click();
+  await page.goto(
+    `${baseUrl}/#/open?kind=chat_message&id=${encodeURIComponent(mentionReplyId)}`,
+  );
+  await expect(dialog).toBeVisible({ timeout: actionTimeout });
   await expect(dialog.getByText(mentionReplyBody)).toBeVisible({
     timeout: actionTimeout,
   });

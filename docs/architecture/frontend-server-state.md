@@ -64,13 +64,15 @@ Issue #1923 では React Query 依存は追加せず、既存 `api` wrapper を�
 - room create 後は `loadRooms()` を明示的に再実行し、作成済み room を選択する。
 - notification setting 保存後は PATCH レスポンスで hook state を更新する。
 - mention candidates は room change 時に abort し、ack candidates は 200ms debounce + abort で stale candidate 反映を抑止する。
-- message load は request sequence と target room を照合し、遅延した旧 room response が現在 room の messages / unread / loading state を上書きしない。
+- message load は request sequence と target room を照合し、遅延した旧 room response が現在 room の messages / unread / loading state を上書きしない。unread queryもroom IDだけでなくrequest sequenceへbindし、同じroomに対する古いresponseが新しい既読状態を巻き戻さない。
 - global search はサーバが返す `(nextBefore, nextBeforeId)` の複合境界を再送し、同一時刻の検索結果を欠落させない。query変更時は旧requestをabortし、旧結果とpagination境界を破棄する。
 - thread load はopaque cursorをそのまま再送し、親・返信のsame-room topology、期待room、確定済みrootをstate更新・既読更新より前に検査する。mutation後は先頭ページを再取得し、既に読み込んだ後続ページを保持したままfresh responseを優先してmergeする。後続page取得とmutationはhook内のin-flight guardとUI disabled stateで相互排他にし、古いpage snapshotによる上書きを防ぐ。
-- root timelineとpost/reaction/ack command responseは要求room、root/reply topology、message ID、ack request IDへbindする。識別子が不一致の2xx responseは添付uploadやstate更新より前にfail closedとする。
-- message post warningは既知の `POST_WITHOUT_VIEW` codeだけをfrontend所有の固定文言へ変換する。backend由来の任意warning messageはstateへ保持しない。
-- mutation成功後の再取得だけが失敗した場合は、既存thread stateと確定済みreply/deletionを保持し、再送による二重処理を避けるため「再送せず再読み込み」を案内する。
+- root timelineとpost/reaction/ack command responseは要求room、root/reply topology、message ID、ack request IDへbindする。ACK responseはrequest・message・roomと子ackのrequest relationを全て検査し、候補responseもallowlist fieldと件数・長さ上限で再構築する。識別子が不一致の2xx responseは添付uploadやstate更新より前にfail closedとする。
+- message post warningは既知の `POST_WITHOUT_VIEW` codeだけをfrontend所有の固定文言へ変換する。backend由来の任意warning messageはstateへ保持しない。このwarning受信時はthread本文と現在room timelineを直ちに破棄し、再取得や既読mutationを行わない。
+- non-idempotentなreply POSTの結果を確認できない場合はcomposerをlockし、同じpanelからの再送を禁止する。mutation成功後はGETで同一reply IDを確認できた本文だけを表示し、後続page境界やrefresh failureで確認できないPOST response本文はstateへ合成しない。「再送せず再読み込み」を案内して二重投稿と削除済み本文の再表示を防ぐ。
 - reply POST後のfresh responseに同一replyのlogical deletionが含まれる場合はfresh content-free rowを優先する。mutation中はthread panelの明示closeを無効化し、root削除commitの親timeline反映を完了させる。
+- `chat_message` deep linkはallowlistされた`parentMessageId` / `threadRootId` topologyを解決し、replyの場合はroom timeline上のreplyとして扱わずcanonical threadを直接開く。不完全・不整合topologyはstateへdispatchしない。
+- thread panel内で`aria-expanded=true`の候補comboboxに届いた`Escape`は候補操作として扱い、候補がloading/0件でもpanel closeへ伝播させずreply draftを保持する。
 - 共通 `api` wrapper の非2xx errorはHTTP statusだけをcallerへ渡し、response bodyやrequest pathをError、browser console、CI logへ複製しない。
 - room timelineとthreadは、実際に表示した最新 `(createdAt, messageId)` を既読境界として送信する。空一覧や未取得返信をserver-nowで既読にしない。同一ミリ秒に複数messageがあり、random UUIDから内部`activitySequence`を一意に決められない場合は、その時刻を飛ばして直前の一意な表示時刻まで保守的に進める。threadに後続pageがある間は、page境界と同一ミリ秒の未取得replyがあり得るため、表示pageの最新時刻も境界候補から外す。
 - duplicate submit は in-flight ref で抑止し、message / ack request の二重 POST を防止する。

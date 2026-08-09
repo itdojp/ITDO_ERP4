@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   ackRequest,
+  cancelAckRequestById,
   createPrivateGroupRoom,
   deleteChatMessage,
+  fetchAckCandidates,
   fetchChatThread,
+  fetchMentionCandidates,
   fetchRoomMessages,
   markRoomRead,
   patchRoomNotificationSetting,
@@ -12,6 +15,7 @@ import {
   postRoomMessage,
   postThreadReply,
   previewRoomAckTargets,
+  revokeAckRequest,
   searchChatMessages,
 } from './roomChatApi';
 
@@ -38,6 +42,30 @@ function message(id: string, extra: Record<string, unknown> = {}) {
     createdAt: '2026-03-28T00:00:00.000Z',
     deletedAt: null,
     deletedReason: null,
+    ...extra,
+  };
+}
+
+function ackRequestResponse(
+  messageId = 'm2',
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    id: 'ack-1',
+    messageId,
+    roomId: 'room-1',
+    requiredUserIds: ['u1'],
+    dueAt: null,
+    canceledAt: null,
+    canceledBy: null,
+    acks: [
+      {
+        id: 'ack-row-1',
+        requestId: 'ack-1',
+        userId: 'u1',
+        ackedAt: '2026-03-28T00:01:00.000Z',
+      },
+    ],
     ...extra,
   };
 }
@@ -90,9 +118,11 @@ describe('roomChatApi command boundaries', () => {
   it('keeps message, ack, reaction, preview, room, and notification mutations behind commands', async () => {
     api
       .mockResolvedValueOnce(message('m1'))
-      .mockResolvedValueOnce(message('m2', { ackRequest: { id: 'ack-1' } }))
+      .mockResolvedValueOnce(
+        message('m2', { ackRequest: ackRequestResponse('m2') }),
+      )
       .mockResolvedValueOnce(message('m1', { reactions: { '👍': 1 } }))
-      .mockResolvedValueOnce({ id: 'ack-1' })
+      .mockResolvedValueOnce(ackRequestResponse())
       .mockResolvedValueOnce({ resolvedUserIds: ['u1'], resolvedCount: 1 })
       .mockResolvedValueOnce({ id: 'room-2' })
       .mockResolvedValueOnce({ notifyAllPosts: false, notifyMentions: true });
@@ -111,7 +141,11 @@ describe('roomChatApi command boundaries', () => {
       },
       '👍',
     );
-    await ackRequest('ack-1');
+    await ackRequest({
+      requestId: 'ack-1',
+      messageId: 'm2',
+      roomId: 'room-1',
+    });
     await previewRoomAckTargets('room-1', {
       requiredUserIds: ['u1'],
       requiredGroupIds: [],
@@ -189,7 +223,7 @@ describe('roomChatApi command boundaries', () => {
         }),
       )
       .mockResolvedValueOnce(message('other-message'))
-      .mockResolvedValueOnce({ id: 'other-ack' });
+      .mockResolvedValueOnce(ackRequestResponse('other-message'));
 
     await expect(postRoomMessage('room-1', { body: 'root' })).rejects.toThrow(
       'Invalid posted chat message response',
@@ -211,9 +245,41 @@ describe('roomChatApi command boundaries', () => {
         '👍',
       ),
     ).rejects.toThrow('Invalid chat reaction response');
-    await expect(ackRequest('ack-1')).rejects.toThrow(
+    await expect(
+      ackRequest({
+        requestId: 'ack-1',
+        messageId: 'm2',
+        roomId: 'room-1',
+      }),
+    ).rejects.toThrow('Invalid chat ack response');
+  });
+
+  it('rejects standalone ACK mutations when any expected relation mismatches', async () => {
+    const expected = {
+      requestId: 'ack-1',
+      messageId: 'm2',
+      roomId: 'room-1',
+    };
+    api
+      .mockResolvedValueOnce(ackRequestResponse('m2', { id: 'other-ack' }))
+      .mockResolvedValueOnce(ackRequestResponse('other-message'))
+      .mockResolvedValueOnce(ackRequestResponse('m2', { roomId: 'room-2' }));
+
+    await expect(ackRequest(expected)).rejects.toThrow(
       'Invalid chat ack response',
     );
+    await expect(revokeAckRequest(expected)).rejects.toThrow(
+      'Invalid chat ack response',
+    );
+    await expect(
+      cancelAckRequestById(expected, 'no longer needed'),
+    ).rejects.toThrow('Invalid chat ack response');
+
+    expect(api.mock.calls.map((call) => call[0])).toEqual([
+      '/chat-ack-requests/ack-1/ack',
+      '/chat-ack-requests/ack-1/revoke',
+      '/chat-ack-requests/ack-1/cancel',
+    ]);
   });
 
   it('maps only the known warning code to a frontend-owned fixed message', async () => {
@@ -246,6 +312,105 @@ describe('roomChatApi command boundaries', () => {
     expect(unknown).not.toHaveProperty('warning');
     expect(JSON.stringify(unknown)).not.toMatch(
       /providerKey|internal\.invalid|secret/,
+    );
+  });
+
+  it('allowlists thread warnings while binding the expected room and root', async () => {
+    const reply = (id: string, extra: Record<string, unknown> = {}) =>
+      message(id, {
+        parentMessageId: 'root-1',
+        threadRootId: 'root-1',
+        ...extra,
+      });
+    api
+      .mockResolvedValueOnce({
+        ...reply('known-reply'),
+        warning: {
+          code: 'POST_WITHOUT_VIEW',
+          message: 'providerKey=secret https://internal.invalid',
+        },
+      })
+      .mockResolvedValueOnce({
+        ...reply('unknown-reply'),
+        warning: {
+          code: 'UNKNOWN_INTERNAL_WARNING',
+          message: 'providerKey=secret https://internal.invalid',
+        },
+      })
+      .mockResolvedValueOnce(reply('wrong-room', { roomId: 'room-2' }))
+      .mockResolvedValueOnce(
+        reply('wrong-root', {
+          parentMessageId: 'other-root',
+          threadRootId: 'other-root',
+        }),
+      );
+
+    await expect(
+      postThreadReply(
+        { rootMessageId: 'root-1', roomId: 'room-1' },
+        { body: 'known' },
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        warning: {
+          code: 'POST_WITHOUT_VIEW',
+          message:
+            '投稿後、このルームを閲覧できません。閲覧権限を管理者に確認してください。',
+        },
+      }),
+    );
+    const unknown = await postThreadReply(
+      { rootMessageId: 'root-1', roomId: 'room-1' },
+      { body: 'unknown' },
+    );
+    expect(unknown).not.toHaveProperty('warning');
+    expect(JSON.stringify(unknown)).not.toMatch(
+      /providerKey|internal\.invalid|secret/,
+    );
+    await expect(
+      postThreadReply(
+        { rootMessageId: 'root-1', roomId: 'room-1' },
+        { body: 'wrong room' },
+      ),
+    ).rejects.toThrow('Invalid thread reply response');
+    await expect(
+      postThreadReply(
+        { rootMessageId: 'root-1', roomId: 'room-1' },
+        { body: 'wrong root' },
+      ),
+    ).rejects.toThrow('Invalid thread reply response');
+  });
+
+  it('allowlists mention and ACK candidate response fields and entries', async () => {
+    const rawCandidates = {
+      users: [
+        { userId: ' alice ', displayName: ' Alice ', providerToken: 'hidden' },
+        { userId: '', displayName: 'malformed' },
+      ],
+      groups: [
+        { groupId: ' group-1 ', displayName: ' Group 1 ', rawAcl: 'hidden' },
+        { groupId: 'bad-group', displayName: { raw: 'hidden' } },
+      ],
+      allowAll: true,
+      providerCursor: 'hidden',
+    };
+    api.mockResolvedValueOnce(rawCandidates).mockResolvedValueOnce({
+      ...rawCandidates,
+      allowAll: 'yes',
+    });
+
+    await expect(fetchMentionCandidates('room-1')).resolves.toEqual({
+      users: [{ userId: 'alice', displayName: 'Alice' }],
+      groups: [{ groupId: 'group-1', displayName: 'Group 1' }],
+      allowAll: true,
+    });
+    const ackCandidates = await fetchAckCandidates('room-1', 'al');
+    expect(ackCandidates).toEqual({
+      users: [{ userId: 'alice', displayName: 'Alice' }],
+      groups: [{ groupId: 'group-1', displayName: 'Group 1' }],
+    });
+    expect(JSON.stringify(ackCandidates)).not.toMatch(
+      /providerToken|providerCursor|rawAcl|bad-group/,
     );
   });
 
@@ -289,7 +454,10 @@ describe('roomChatApi command boundaries', () => {
       expect.objectContaining({ replyCount: 1, nextCursor: 'opaque' }),
     );
     await expect(
-      postThreadReply('root-1', { body: 'reply body' }),
+      postThreadReply(
+        { rootMessageId: 'root-1', roomId: 'room-1' },
+        { body: 'reply body' },
+      ),
     ).resolves.toEqual(expect.objectContaining({ id: 'reply-1' }));
     await deleteChatMessage('reply-1', 'user_retract');
     await markRoomRead('room-1', {

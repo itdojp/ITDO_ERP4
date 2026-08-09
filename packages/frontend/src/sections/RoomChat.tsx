@@ -107,6 +107,14 @@ export const RoomChat: React.FC = () => {
     messageId: string;
     createdAt: string;
   } | null>(null);
+  const [pendingScrollMessageId, setPendingScrollMessageId] = useState('');
+  const [highlightMessageId, setHighlightMessageId] = useState('');
+  const [threadTarget, setThreadTarget] = useState<{
+    messageId: string;
+    roomId: string;
+    expectedRootId: string;
+  } | null>(null);
+  const threadReturnFocusRef = useRef<HTMLElement | null>(null);
   const currentRoomIdRef = useRef('');
   const skipNextRoomAutoLoadRef = useRef(false);
   const isPostingRef = useRef(false);
@@ -150,6 +158,7 @@ export const RoomChat: React.FC = () => {
     highlightSince,
     refreshUnreadState,
     loadMessages,
+    purgeRoomState,
   } = useRoomChatMessages({ roomId, filterQuery, filterTag });
   const [nowMs, setNowMs] = useState(0);
   const [summary, setSummary] = useState('');
@@ -426,6 +435,8 @@ export const RoomChat: React.FC = () => {
           messageId?: unknown;
           roomId?: unknown;
           createdAt?: unknown;
+          parentMessageId?: unknown;
+          threadRootId?: unknown;
         }>
       ).detail;
       const messageId =
@@ -435,6 +446,32 @@ export const RoomChat: React.FC = () => {
       const createdAt =
         detail && typeof detail.createdAt === 'string' ? detail.createdAt : '';
       if (!messageId || !targetRoomId) return;
+
+      const hasParentMessageId = Object.prototype.hasOwnProperty.call(
+        detail,
+        'parentMessageId',
+      );
+      const hasThreadRootId = Object.prototype.hasOwnProperty.call(
+        detail,
+        'threadRootId',
+      );
+      let replyThreadRootId = '';
+      if (hasParentMessageId || hasThreadRootId) {
+        if (!hasParentMessageId || !hasThreadRootId) return;
+        if (detail.parentMessageId === null && detail.threadRootId === null) {
+          // Explicit root topology keeps the existing timeline deep-link flow.
+        } else if (
+          typeof detail.parentMessageId === 'string' &&
+          typeof detail.threadRootId === 'string'
+        ) {
+          const parentMessageId = detail.parentMessageId.trim();
+          const threadRootId = detail.threadRootId.trim();
+          if (!parentMessageId || parentMessageId !== threadRootId) return;
+          replyThreadRootId = threadRootId;
+        } else {
+          return;
+        }
+      }
 
       const currentRoomId = currentRoomIdRef.current;
       const isRoomChange = targetRoomId !== currentRoomId;
@@ -450,6 +487,18 @@ export const RoomChat: React.FC = () => {
       }
       setFilterQuery('');
       setFilterTag('');
+      if (replyThreadRootId) {
+        setPendingOpenMessage(null);
+        setPendingScrollMessageId('');
+        setHighlightMessageId('');
+        threadReturnFocusRef.current = null;
+        setThreadTarget({
+          roomId: targetRoomId,
+          messageId,
+          expectedRootId: replyThreadRootId,
+        });
+        return;
+      }
       setPendingOpenMessage({ roomId: targetRoomId, messageId, createdAt });
     };
 
@@ -472,15 +521,6 @@ export const RoomChat: React.FC = () => {
     loadGlobalSearch,
     clearGlobalSearch,
   } = useRoomChatGlobalSearch();
-
-  const [pendingScrollMessageId, setPendingScrollMessageId] = useState('');
-  const [highlightMessageId, setHighlightMessageId] = useState('');
-  const [threadTarget, setThreadTarget] = useState<{
-    messageId: string;
-    roomId: string;
-    expectedRootId: string;
-  } | null>(null);
-  const threadReturnFocusRef = useRef<HTMLElement | null>(null);
 
   const {
     notificationSetting,
@@ -914,7 +954,13 @@ export const RoomChat: React.FC = () => {
 
   const ack = async (requestId: string) => {
     try {
-      const updated = await ackRequest(requestId);
+      const target = items.find((item) => item.ackRequest?.id === requestId);
+      if (!target) return;
+      const updated = await ackRequest({
+        requestId,
+        messageId: target.id,
+        roomId: target.roomId,
+      });
       setItems((prev) =>
         prev.map((item) =>
           item.ackRequest?.id === requestId
@@ -933,7 +979,13 @@ export const RoomChat: React.FC = () => {
 
   const revokeAck = async (requestId: string) => {
     try {
-      const updated = await revokeAckRequest(requestId);
+      const target = items.find((item) => item.ackRequest?.id === requestId);
+      if (!target) return;
+      const updated = await revokeAckRequest({
+        requestId,
+        messageId: target.id,
+        roomId: target.roomId,
+      });
       setItems((prev) =>
         prev.map((item) =>
           item.ackRequest?.id === requestId
@@ -953,7 +1005,16 @@ export const RoomChat: React.FC = () => {
 
   const cancelAckRequest = async (requestId: string, reason?: string) => {
     try {
-      const updated = await cancelAckRequestById(requestId, reason);
+      const target = items.find((item) => item.ackRequest?.id === requestId);
+      if (!target) return;
+      const updated = await cancelAckRequestById(
+        {
+          requestId,
+          messageId: target.id,
+          roomId: target.roomId,
+        },
+        reason,
+      );
       setItems((prev) =>
         prev.map((item) =>
           item.ackRequest?.id === requestId
@@ -1853,6 +1914,9 @@ export const RoomChat: React.FC = () => {
           onReadUpdated={(targetRoomId) =>
             refreshUnreadState(targetRoomId, { preserveHighlight: true })
           }
+          onAccessRevoked={(targetRoomId, warning) => {
+            purgeRoomState(targetRoomId, warning);
+          }}
         />
       )}
     </div>

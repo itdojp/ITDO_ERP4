@@ -53,10 +53,8 @@ vi.mock('../../ui', () => ({
       <input
         role="combobox"
         aria-label={groupPlaceholder}
+        aria-expanded="true"
         disabled={disabled}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') event.preventDefault();
-        }}
       />
       <button
         type="button"
@@ -131,6 +129,8 @@ function thread(input?: { deletedRoot?: boolean; deletedReply?: boolean }) {
     createdAt: '2026-08-09T00:01:00.000Z',
     ackRequest: {
       id: 'ack-1',
+      messageId: 'reply-1',
+      roomId: 'room-1',
       requiredUserIds: ['demo-user'],
       dueAt: null,
       canceledAt: null,
@@ -159,6 +159,7 @@ function renderPanel(overrides?: {
   onClose?: () => void;
   onRootUpdated?: () => void;
   onReadUpdated?: () => void;
+  onAccessRevoked?: (roomId: string, message: string) => void;
 }) {
   return render(
     <ChatThreadPanel
@@ -171,6 +172,7 @@ function renderPanel(overrides?: {
       onClose={overrides?.onClose ?? vi.fn()}
       onRootUpdated={overrides?.onRootUpdated ?? vi.fn()}
       onReadUpdated={overrides?.onReadUpdated ?? vi.fn()}
+      onAccessRevoked={overrides?.onAccessRevoked ?? vi.fn()}
     />,
   );
 }
@@ -196,6 +198,7 @@ describe('ChatThreadPanel', () => {
     });
     const refreshedFirstPage = {
       ...thread(),
+      replies: [...thread().replies, createdReply],
       replyCount: 2,
       lastReplyAt: '2026-08-09T00:02:00.000Z',
     };
@@ -303,12 +306,16 @@ describe('ChatThreadPanel', () => {
       if (url.pathname === '/chat-ack-requests/ack-1/ack') {
         return {
           id: 'ack-1',
+          messageId: 'reply-1',
+          roomId: 'room-1',
           requiredUserIds: ['demo-user'],
           dueAt: null,
           canceledAt: null,
           canceledBy: null,
           acks: [
             {
+              id: 'ack-row-1',
+              requestId: 'ack-1',
               userId: 'demo-user',
               ackedAt: '2026-08-09T00:02:00.000Z',
             },
@@ -424,12 +431,21 @@ describe('ChatThreadPanel', () => {
 
     renderPanel({ onClose });
     await screen.findByText('reply-1 body');
+    fireEvent.change(screen.getByRole('textbox', { name: '返信を入力' }), {
+      target: { value: 'preserved reply draft' },
+    });
     fireEvent.keyDown(
       screen.getByRole('combobox', { name: '確認対象グループ' }),
       { key: 'Escape' },
     );
 
     expect(onClose).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('dialog', { name: 'スレッド' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: '返信を入力' })).toHaveValue(
+      'preserved reply draft',
+    );
   });
 
   it('posts selected acknowledgement groups and does not expose an attachment control', async () => {
@@ -441,6 +457,8 @@ describe('ChatThreadPanel', () => {
       createdAt: '2026-08-09T00:02:00.000Z',
       ackRequest: {
         id: 'ack-group',
+        messageId: 'reply-group',
+        roomId: 'room-1',
         requiredUserIds: [],
         dueAt: null,
         canceledAt: null,
@@ -448,10 +466,20 @@ describe('ChatThreadPanel', () => {
         acks: [],
       },
     });
+    const refreshed = {
+      ...thread(),
+      replies: [...thread().replies, created],
+      replyCount: 2,
+      lastReplyAt: '2026-08-09T00:02:00.000Z',
+    };
+    let threadReads = 0;
     api.mockImplementation(async (path: string, init?: RequestInit) => {
       const url = new URL(path, 'http://localhost');
       if (url.pathname === '/chat-rooms/room-1/mention-candidates') return {};
-      if (url.pathname.endsWith('/thread')) return thread();
+      if (url.pathname.endsWith('/thread')) {
+        threadReads += 1;
+        return threadReads === 1 ? thread() : refreshed;
+      }
       if (url.pathname === '/chat-rooms/room-1/read') return {};
       if (
         url.pathname === '/chat-rooms/room-1/ack-requests' &&
@@ -501,6 +529,8 @@ describe('ChatThreadPanel', () => {
           ? {
               ackRequest: {
                 id: 'ack-race',
+                messageId: 'reply-race',
+                roomId: 'room-1',
                 requiredUserIds: ['demo-user'],
                 dueAt: null,
                 canceledAt: null,
@@ -814,7 +844,7 @@ describe('ChatThreadPanel', () => {
     await waitFor(() => expect(reactionButton).toBeEnabled());
   });
 
-  it('keeps the thread and warns without raw error details when post-refresh fails', async () => {
+  it('does not render an unconfirmed POST body and warns without raw error details when refresh fails', async () => {
     const createdReply = message('reply-2', {
       parentMessageId: 'root-1',
       threadRootId: 'root-1',
@@ -853,11 +883,13 @@ describe('ChatThreadPanel', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: '返信' }));
 
-    expect(await screen.findByText('committed reply')).toBeInTheDocument();
+    expect(
+      document.querySelector('[data-thread-message-id="reply-2"]'),
+    ).toBeNull();
     expect(screen.getByText('reply-1 body')).toBeInTheDocument();
     expect(
-      screen.getByText(
-        '返信は投稿されましたが表示更新に失敗しました。再送せず再読み込みしてください',
+      await screen.findByText(
+        '返信は投稿されましたが表示を確認できません。再送せず再読み込みしてください',
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '返信を入力' })).toHaveValue('');
@@ -866,6 +898,195 @@ describe('ChatThreadPanel', () => {
       /providerKey|secret|backend stack/,
     );
   });
+
+  it.each([
+    { mode: 'standard' as const, label: '返信' },
+    { mode: 'ack' as const, label: '確認依頼として返信' },
+  ])(
+    'does not render an unconfirmed $mode POST body when a 51st reply is outside the refreshed first page',
+    async ({ mode, label }) => {
+      const oldReplies = Array.from({ length: 50 }, (_, index) =>
+        message(`old-reply-${index}`, {
+          parentMessageId: 'root-1',
+          threadRootId: 'root-1',
+          body: `old reply ${index}`,
+          createdAt: `2026-08-08T23:${String(index).padStart(2, '0')}:00.000Z`,
+        }),
+      );
+      const initial = {
+        ...thread(),
+        replies: oldReplies,
+        replyCount: 50,
+        lastReplyAt: '2026-08-08T23:49:00.000Z',
+        nextCursor: 'page-2',
+      };
+      const created = message('page-boundary-reply', {
+        parentMessageId: 'root-1',
+        threadRootId: 'root-1',
+        userId: 'demo-user',
+        body: 'unconfirmed page boundary body',
+        createdAt: '2026-08-09T00:02:00.000Z',
+        ...(mode === 'ack'
+          ? {
+              ackRequest: {
+                id: 'ack-page-boundary',
+                messageId: 'page-boundary-reply',
+                roomId: 'room-1',
+                requiredUserIds: ['demo-user'],
+                dueAt: null,
+                canceledAt: null,
+                canceledBy: null,
+                acks: [],
+              },
+            }
+          : {}),
+      });
+      let threadReads = 0;
+      api.mockImplementation(async (path: string, init?: RequestInit) => {
+        const url = new URL(path, 'http://localhost');
+        if (url.pathname === '/chat-rooms/room-1/mention-candidates') return {};
+        if (url.pathname.endsWith('/thread')) {
+          threadReads += 1;
+          return threadReads === 1
+            ? initial
+            : {
+                ...initial,
+                replyCount: 51,
+                lastReplyAt: '2026-08-09T00:02:00.000Z',
+              };
+        }
+        if (url.pathname === '/chat-rooms/room-1/read') return {};
+        if (
+          mode === 'standard' &&
+          url.pathname === '/chat-messages/root-1/replies' &&
+          init?.method === 'POST'
+        ) {
+          return created;
+        }
+        if (
+          mode === 'ack' &&
+          url.pathname === '/chat-rooms/room-1/ack-requests' &&
+          init?.method === 'POST'
+        ) {
+          return created;
+        }
+        throw new Error(`Unhandled api path: ${path}`);
+      });
+
+      renderPanel();
+      await screen.findByText('old reply 0');
+      if (mode === 'ack') {
+        fireEvent.click(
+          screen.getByRole('checkbox', { name: '確認依頼として返信' }),
+        );
+        fireEvent.change(screen.getByLabelText(/確認対象ユーザーID/), {
+          target: { value: 'demo-user' },
+        });
+      }
+      fireEvent.change(screen.getByRole('textbox', { name: '返信を入力' }), {
+        target: { value: 'unconfirmed page boundary body' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: label }));
+
+      expect(
+        await screen.findByText(
+          mode === 'ack'
+            ? '確認依頼付きの返信は投稿されましたが表示を確認できません。再送せず再読み込みしてください'
+            : '返信は投稿されましたが表示を確認できません。再送せず再読み込みしてください',
+        ),
+      ).toBeInTheDocument();
+      expect(screen.queryByText('unconfirmed page boundary body')).toBeNull();
+      expect(screen.getByRole('textbox', { name: '返信を入力' })).toHaveValue(
+        '',
+      );
+    },
+  );
+
+  it.each([
+    { mode: 'standard' as const, label: '返信' },
+    { mode: 'ack' as const, label: '確認依頼として返信' },
+  ])(
+    'purges thread content after a $mode POST_WITHOUT_VIEW response',
+    async ({ mode, label }) => {
+      const onAccessRevoked = vi.fn();
+      const created = message('revoked-reply', {
+        parentMessageId: 'root-1',
+        threadRootId: 'root-1',
+        userId: 'demo-user',
+        body: 'must be purged after access loss',
+        createdAt: '2026-08-09T00:02:00.000Z',
+        warning: {
+          code: 'POST_WITHOUT_VIEW',
+          message: 'raw backend warning must not be displayed',
+          providerKey: 'hidden',
+        },
+        ...(mode === 'ack'
+          ? {
+              ackRequest: {
+                id: 'ack-revoked',
+                messageId: 'revoked-reply',
+                roomId: 'room-1',
+                requiredUserIds: ['demo-user'],
+                dueAt: null,
+                canceledAt: null,
+                canceledBy: null,
+                acks: [],
+              },
+            }
+          : {}),
+      });
+      let threadReads = 0;
+      api.mockImplementation(async (path: string, init?: RequestInit) => {
+        const url = new URL(path, 'http://localhost');
+        if (url.pathname === '/chat-rooms/room-1/mention-candidates') return {};
+        if (url.pathname.endsWith('/thread')) {
+          threadReads += 1;
+          return thread();
+        }
+        if (url.pathname === '/chat-rooms/room-1/read') return {};
+        if (
+          mode === 'standard' &&
+          url.pathname === '/chat-messages/root-1/replies' &&
+          init?.method === 'POST'
+        ) {
+          return created;
+        }
+        if (
+          mode === 'ack' &&
+          url.pathname === '/chat-rooms/room-1/ack-requests' &&
+          init?.method === 'POST'
+        ) {
+          return created;
+        }
+        throw new Error(`Unhandled api path: ${path}`);
+      });
+
+      renderPanel({ onAccessRevoked });
+      await screen.findByText('root-1 body');
+      if (mode === 'ack') {
+        fireEvent.click(
+          screen.getByRole('checkbox', { name: '確認依頼として返信' }),
+        );
+        fireEvent.change(screen.getByLabelText(/確認対象ユーザーID/), {
+          target: { value: 'demo-user' },
+        });
+      }
+      fireEvent.change(screen.getByRole('textbox', { name: '返信を入力' }), {
+        target: { value: 'must be purged after access loss' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: label }));
+
+      const safeMessage =
+        '投稿後、このルームを閲覧できません。閲覧権限を管理者に確認してください。';
+      expect(await screen.findByText(safeMessage)).toBeInTheDocument();
+      expect(screen.queryByText('root-1 body')).toBeNull();
+      expect(screen.queryByText('reply-1 body')).toBeNull();
+      expect(screen.queryByText('must be purged after access loss')).toBeNull();
+      expect(screen.queryByText(/raw backend warning|providerKey/)).toBeNull();
+      expect(onAccessRevoked).toHaveBeenCalledWith('room-1', safeMessage);
+      expect(threadReads).toBe(1);
+    },
+  );
 
   it('rejects a thread response from a different room before marking it read', async () => {
     const consoleError = vi
@@ -1120,8 +1341,22 @@ describe('ChatThreadPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '返信' }));
 
     expect(
-      await screen.findByText('スレッドを更新できませんでした'),
+      await screen.findByText(
+        '返信結果を確認できません。重複防止のため再送せず、パネルを閉じて再読み込みしてください',
+      ),
     ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '返信' })).toBeDisabled();
+    expect(screen.getByRole('textbox', { name: '返信を入力' })).toHaveValue(
+      'must not be rendered',
+    );
+    fireEvent.click(screen.getByRole('button', { name: '返信' }));
+    expect(
+      api.mock.calls.filter(
+        ([path, init]) =>
+          String(path) === '/chat-messages/root-1/replies' &&
+          init?.method === 'POST',
+      ),
+    ).toHaveLength(1);
     expect(
       document.querySelector('[data-thread-message-id="reply-2"]'),
     ).toBeNull();
