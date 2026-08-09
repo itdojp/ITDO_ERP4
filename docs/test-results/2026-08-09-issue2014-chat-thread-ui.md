@@ -50,7 +50,7 @@
 | bounded-context / docs / image links     | PASS    | dependency 0 violation、coverage PASS、130 image links                             |
 | audit / secret scan                      | PASS    | npm audit high/critical 0、tracked-file secret scan 0（最終標準gateでも再確認）    |
 | lint / format / typecheck / build / test | PASS    | backend 2,040 / frontend 672、全標準gate成功                                       |
-| release-readiness core                   | PENDING | 最終実装commit後にclean exact headで再実行予定                                     |
+| release-readiness core                   | PASS    | clean exact implementation headでrepo-side 29/29、core E2E 107/107                 |
 
 ## Real-backend E2E matrix
 
