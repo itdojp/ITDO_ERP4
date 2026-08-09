@@ -44,7 +44,7 @@
 | focused frontend unit                    | PASS | review remediation 7 files / 186 tests、同一suiteを20回（3,720 tests）反復成功     |
 | final Copilot/correctness remediation    | PASS | 2 files / 77 tests、20回（1,540 tests）反復成功                                    |
 | frontend full                            | PASS | 95 files / 718 tests                                                               |
-| UI core coverage                         | PASS | statements 73.13%、branches 66.19%、functions 72.12%、lines 75.75%（閾値変更なし） |
+| UI core coverage                         | PASS | statements 73.02%、branches 66.16%、functions 71.89%、lines 75.66%（閾値変更なし） |
 | frontend build budget                    | PASS | initial JS 517.0 KiB / gzip 158.1 KiB                                              |
 | backend full                             | PASS | 2,040 tests                                                                        |
 | focused real-backend E2E                 | PASS | `frontend-chat-thread.spec.ts` 1/1（core/full両scopeで成功）                       |
