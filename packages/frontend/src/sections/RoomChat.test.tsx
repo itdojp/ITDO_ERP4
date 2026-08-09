@@ -197,6 +197,7 @@ function makeSearchItem(overrides: Partial<ChatSearchItem>): ChatSearchItem {
 function installApiMock(options: {
   rooms: ChatRoom[];
   messagesByRoom: Record<string, ChatMessage[]>;
+  messageReadResultsByRoom?: Record<string, Array<ChatMessage[] | Error>>;
   unreadByRoom?: Record<
     string,
     { unreadCount?: number; lastReadAt?: string | null }
@@ -263,6 +264,19 @@ function installApiMock(options: {
       nextCursor: string | null;
     }
   >;
+  threadResultsByMessageId?: Record<
+    string,
+    Array<
+      | {
+          root: ChatMessage;
+          replies: ChatMessage[];
+          replyCount: number;
+          lastReplyAt: string | null;
+          nextCursor: string | null;
+        }
+      | Error
+    >
+  >;
   threadReplyResponse?: ChatMessage & {
     warning?: { code?: string; message?: string };
   };
@@ -302,7 +316,10 @@ function installApiMock(options: {
         /^\/chat-messages\/([^/]+)\/thread$/,
       );
       if (threadMatch && method === 'GET') {
-        const thread = options.threadsByMessageId?.[threadMatch[1]];
+        const queued =
+          options.threadResultsByMessageId?.[threadMatch[1]]?.shift();
+        if (queued instanceof Error) throw queued;
+        const thread = queued ?? options.threadsByMessageId?.[threadMatch[1]];
         if (!thread) throw new Error('thread not found');
         return thread as never;
       }
@@ -365,6 +382,9 @@ function installApiMock(options: {
           return {} as never;
         }
         if (resource === 'messages' && method === 'GET') {
+          const queued = options.messageReadResultsByRoom?.[roomId]?.shift();
+          if (queued instanceof Error) throw queued;
+          if (queued) return { items: queued } as never;
           if (rootPostCompleted && options.failMessageRefreshAfterPost) {
             throw new Error('message refresh failed after post');
           }
@@ -767,6 +787,80 @@ describe('RoomChat', () => {
     );
   });
 
+  it.each(['select', 'room-event'] as const)(
+    'closes an old thread before changing rooms through $mode',
+    async (mode) => {
+      const roomOneRoot = makeMessage({
+        id: 'room-switch-root',
+        roomId: 'room-1',
+        body: 'room switch old thread body',
+      });
+      installApiMock({
+        rooms: [makeRoom({ id: 'room-1' }), makeRoom({ id: 'room-2' })],
+        messagesByRoom: {
+          'room-1': [roomOneRoot],
+          'room-2': [
+            makeMessage({
+              id: 'room-2-message',
+              roomId: 'room-2',
+              body: 'room switch destination body',
+            }),
+          ],
+        },
+        threadsByMessageId: {
+          'room-switch-root': {
+            root: roomOneRoot,
+            replies: [],
+            replyCount: 0,
+            lastReplyAt: null,
+            nextCursor: null,
+          },
+        },
+      });
+
+      render(<RoomChat />);
+      expect(
+        await screen.findByText('room switch old thread body'),
+      ).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /^スレッドを開く/ }));
+      expect(
+        await screen.findByRole('dialog', { name: 'スレッド' }),
+      ).toBeInTheDocument();
+      vi.mocked(api).mockClear();
+
+      if (mode === 'select') {
+        fireEvent.change(screen.getByRole('combobox', { name: 'ルーム' }), {
+          target: { value: 'room-2' },
+        });
+      } else {
+        act(() => {
+          window.dispatchEvent(
+            new CustomEvent('erp4_open_room_chat', {
+              detail: { roomId: 'room-2' },
+            }),
+          );
+        });
+      }
+
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog', { name: 'スレッド' })).toBeNull();
+      });
+      expect(
+        await screen.findByText('room switch destination body'),
+      ).toBeInTheDocument();
+      expect(screen.queryByText('room switch old thread body')).toBeNull();
+      expect(
+        vi
+          .mocked(api)
+          .mock.calls.some(
+            ([path, init]) =>
+              String(path) === '/chat-messages/room-switch-root/replies' &&
+              init?.method === 'POST',
+          ),
+      ).toBe(false);
+    },
+  );
+
   it('purges the current timeline and keeps the thread panel open after access is revoked', async () => {
     const sanitizedWarning =
       '投稿後、このルームを閲覧できません。閲覧権限を管理者に確認してください。';
@@ -840,6 +934,100 @@ describe('RoomChat', () => {
       screen.getByRole('dialog', { name: 'スレッド' }),
     ).toBeInTheDocument();
   });
+
+  it.each([
+    ['room-readable', true],
+    ['room-unavailable', false],
+  ] as const)(
+    'revalidates and minimizes room/search state after a thread 404: %s',
+    async (_mode, roomReadable) => {
+      const staleRoot = makeMessage({
+        id: 'stale-thread-root',
+        roomId: 'room-1',
+        body: 'stale room timeline body',
+      });
+      const latestRoot = makeMessage({
+        id: 'latest-readable-root',
+        roomId: 'room-1',
+        body: 'latest readable room body',
+      });
+      installApiMock({
+        rooms: [makeRoom({ id: 'room-1' })],
+        messagesByRoom: { 'room-1': [] },
+        messageReadResultsByRoom: {
+          'room-1': [
+            [staleRoot],
+            roomReadable
+              ? [latestRoot]
+              : new Error(
+                  'Request failed: /chat-rooms/room-1/messages (404) hidden',
+                ),
+          ],
+        },
+        globalSearchResultsByQuery: {
+          'stale|': [
+            makeSearchItem({
+              id: 'stale-search-result',
+              roomId: 'room-1',
+              body: 'stale global search excerpt',
+            }),
+          ],
+        },
+        threadResultsByMessageId: {
+          'stale-thread-root': [
+            new Error(
+              'Request failed: /chat-messages/stale-thread-root/thread (404) hidden',
+            ),
+          ],
+        },
+      });
+
+      render(<RoomChat />);
+      expect(
+        await screen.findByText('stale room timeline body'),
+      ).toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText('横断検索（本文）'), {
+        target: { value: 'stale' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: '検索' }));
+      expect(
+        await screen.findByText('stale global search excerpt'),
+      ).toBeInTheDocument();
+
+      const timelineCard = document.getElementById(
+        'chat-message-stale-thread-root',
+      );
+      if (!timelineCard) throw new Error('timeline card not found');
+      fireEvent.click(
+        within(timelineCard).getByRole('button', {
+          name: /^スレッドを開く/,
+        }),
+      );
+
+      expect(
+        await screen.findByText('スレッドを表示できません'),
+      ).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.queryByText('stale room timeline body')).toBeNull();
+        expect(screen.queryByText('stale global search excerpt')).toBeNull();
+      });
+      if (roomReadable) {
+        expect(
+          await screen.findByText('latest readable room body'),
+        ).toBeInTheDocument();
+        expect(
+          screen.queryByText(/ルームを表示できません。権限を確認/),
+        ).toBeNull();
+      } else {
+        expect(
+          await screen.findByText(
+            'ルームを表示できません。権限を確認して再読み込みしてください。',
+          ),
+        ).toBeInTheDocument();
+        expect(screen.queryByText(/hidden/)).toBeNull();
+      }
+    },
+  );
 
   it.each([
     ['message', '送信'],
@@ -940,8 +1128,8 @@ describe('RoomChat', () => {
         `Request failed: ${postPath} (503) providerKey=must-not-leak`,
       );
       installApiMock({
-        rooms: [makeRoom({ id: 'room-1' })],
-        messagesByRoom: { 'room-1': [] },
+        rooms: [makeRoom({ id: 'room-1' }), makeRoom({ id: 'room-2' })],
+        messagesByRoom: { 'room-1': [], 'room-2': [] },
         ...(mode === 'message'
           ? { postMessageResults: [uncertain] }
           : { postAckResults: [uncertain] }),
@@ -961,16 +1149,27 @@ describe('RoomChat', () => {
       await waitFor(() => expect(submit).toBeEnabled());
       fireEvent.click(submit);
 
-      expect(
-        await screen.findByText(
-          '投稿結果を確認できません。重複防止のため再送せず、ページを再読み込みしてください',
-        ),
-      ).toBeInTheDocument();
+      const warning = await screen.findByText(
+        '投稿結果を確認できません。重複防止のため再送せず、ページを再読み込みしてください',
+      );
+      expect(warning).toHaveAttribute('role', 'status');
+      expect(warning).toHaveAttribute('aria-live', 'polite');
       expect(submit).toBeDisabled();
+      const roomSelect = screen.getByRole('combobox', { name: 'ルーム' });
+      expect(roomSelect).toBeDisabled();
       expect(screen.getByPlaceholderText('Markdownで入力')).toHaveValue(
         'uncertain root draft',
       );
       expect(screen.queryByText(/providerKey|must-not-leak/)).toBeNull();
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent('erp4_open_room_chat', {
+            detail: { roomId: 'room-2' },
+          }),
+        );
+      });
+      expect(roomSelect).toHaveValue('room-1');
+      expect(roomSelect).toBeDisabled();
       fireEvent.click(submit);
       expect(
         vi
@@ -1042,6 +1241,77 @@ describe('RoomChat', () => {
               String(path) === postPath && init?.method === 'POST',
           ),
       ).toHaveLength(2);
+    },
+  );
+
+  it.each([
+    ['post-only-denial', true],
+    ['room-access-loss', false],
+  ] as const)(
+    'revalidates room read access after a root POST 403: %s',
+    async (_mode, roomReadable) => {
+      const visible = makeMessage({
+        id: 'root-before-post-denial',
+        roomId: 'room-1',
+        body: 'readable before post denial',
+      });
+      const refreshed = makeMessage({
+        id: 'root-after-post-denial',
+        roomId: 'room-1',
+        body: 'readable after post denial',
+      });
+      installApiMock({
+        rooms: [makeRoom({ id: 'room-1' })],
+        messagesByRoom: { 'room-1': [] },
+        messageReadResultsByRoom: {
+          'room-1': [
+            [visible],
+            roomReadable
+              ? [refreshed]
+              : new Error(
+                  'Request failed: /chat-rooms/room-1/messages (404) private-detail',
+                ),
+          ],
+        },
+        postMessageResults: [
+          new Error(
+            'Request failed: /chat-rooms/room-1/messages (403) private-detail',
+          ),
+        ],
+      });
+
+      render(<RoomChat />);
+      expect(
+        await screen.findByText('readable before post denial'),
+      ).toBeInTheDocument();
+      fireEvent.change(screen.getByPlaceholderText('Markdownで入力'), {
+        target: { value: 'denied root draft' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: '送信' }));
+
+      await waitFor(() => {
+        expect(screen.queryByText('readable before post denial')).toBeNull();
+      });
+      if (roomReadable) {
+        expect(
+          await screen.findByText('readable after post denial'),
+        ).toBeInTheDocument();
+        expect(await screen.findByText('投稿に失敗しました')).toHaveAttribute(
+          'role',
+          'status',
+        );
+      } else {
+        expect(
+          await screen.findByText(
+            'ルームを表示できません。権限を確認して再読み込みしてください。',
+          ),
+        ).toBeInTheDocument();
+        expect(screen.queryByText('readable after post denial')).toBeNull();
+      }
+      expect(screen.queryByText(/private-detail/)).toBeNull();
+      expect(screen.getByPlaceholderText('Markdownで入力')).toHaveValue(
+        'denied root draft',
+      );
     },
   );
 
@@ -1164,9 +1434,10 @@ describe('RoomChat', () => {
     const postedMessages: Array<{ roomId: string; body: unknown }> = [];
 
     installApiMock({
-      rooms: [makeRoom({ id: 'room-1' })],
+      rooms: [makeRoom({ id: 'room-1' }), makeRoom({ id: 'room-2' })],
       messagesByRoom: {
         'room-1': [],
+        'room-2': [],
       },
       postedMessages,
       postMessagePromise: post.promise,
@@ -1192,6 +1463,15 @@ describe('RoomChat', () => {
     fireEvent.click(submit);
 
     await waitFor(() => expect(postedMessages).toHaveLength(1));
+    expect(roomSelect).toBeDisabled();
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('erp4_open_room_chat', {
+          detail: { roomId: 'room-2' },
+        }),
+      );
+    });
+    expect(roomSelect).toHaveValue('room-1');
     expect(postedMessages[0]).toEqual({
       roomId: 'room-1',
       body: {
@@ -1209,6 +1489,8 @@ describe('RoomChat', () => {
       );
       await post.promise;
     });
+    await waitFor(() => expect(roomSelect).toBeEnabled());
+    expect(roomSelect).toHaveValue('room-1');
   });
 
   it('does not display an unknown success warning or its backend-owned details', async () => {

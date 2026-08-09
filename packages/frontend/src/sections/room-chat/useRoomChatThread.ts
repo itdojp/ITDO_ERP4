@@ -131,6 +131,7 @@ export function useRoomChatThread(input: {
   onRootUpdated?: (root: ChatThread['root']) => void;
   onReadUpdated?: (roomId: string) => void | Promise<void>;
   onAccessRevoked?: (roomId: string, message: string) => void;
+  onAccessCheckRequired?: (roomId: string) => void;
 }) {
   const [thread, setThread] = useState<ChatThread | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -263,6 +264,7 @@ export function useRoomChatThread(input: {
           rootIdRef.current = '';
           setThread(null);
           setMessage('スレッドを表示できません');
+          input.onAccessCheckRequired?.(input.roomId);
         } else {
           setMessage('スレッドを取得できませんでした');
           if (!append && !preserveLoaded) setThread(null);

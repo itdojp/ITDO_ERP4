@@ -24,6 +24,7 @@ type Props = {
   onRootUpdated: (root: ChatThread['root']) => void;
   onReadUpdated: (roomId: string) => void | Promise<void>;
   onAccessRevoked: (roomId: string, message: string) => void;
+  onAccessCheckRequired: (roomId: string) => void;
 };
 
 function safeDate(value: string | null | undefined) {
@@ -255,6 +256,7 @@ export function ChatThreadPanel({
   onRootUpdated,
   onReadUpdated,
   onAccessRevoked,
+  onAccessCheckRequired,
 }: Props) {
   const panelRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -274,7 +276,19 @@ export function ChatThreadPanel({
     onRootUpdated,
     onReadUpdated,
     onAccessRevoked,
+    onAccessCheckRequired,
   });
+
+  const onCloseRef = useRef(onClose);
+  const isMutatingRef = useRef(threadState.isMutating);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    isMutatingRef.current = threadState.isMutating;
+  }, [threadState.isMutating]);
 
   useEffect(() => {
     setNowMs(Date.now());
@@ -290,6 +304,9 @@ export function ChatThreadPanel({
 
   useEffect(() => {
     closeButtonRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       if (event.key === 'Escape') {
@@ -300,7 +317,7 @@ export function ChatThreadPanel({
           return;
         }
         event.preventDefault();
-        if (!threadState.isMutating) onClose();
+        if (!isMutatingRef.current) onCloseRef.current();
         return;
       }
       if (event.key !== 'Tab') return;
@@ -322,7 +339,7 @@ export function ChatThreadPanel({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, threadState.isMutating]);
+  }, []);
 
   const mentionPayload = useMemo(() => {
     const userIds = mentions

@@ -15,6 +15,7 @@ export type LoadMessagesOptions = {
   before?: string;
   query?: string;
   tag?: string;
+  failureMessage?: string;
 };
 
 export function useRoomChatMessages({
@@ -89,6 +90,27 @@ export function useRoomChatMessages({
       } catch {
         console.warn('Failed to mark read.');
       }
+    },
+    [],
+  );
+
+  const purgeRoomState = useCallback(
+    (targetRoomId: string, safeMessage: string) => {
+      if (roomIdRef.current !== targetRoomId) return false;
+      requestSeqRef.current += 1;
+      unreadRequestSeqRef.current += 1;
+      const controller = abortRef.current;
+      abortRef.current = null;
+      controller?.abort();
+      itemsRef.current = [];
+      setItems([]);
+      setHasMore(false);
+      setIsLoading(false);
+      setIsLoadingMore(false);
+      setUnreadCount(0);
+      setHighlightSince(null);
+      setMessage(safeMessage);
+      return true;
     },
     [],
   );
@@ -168,8 +190,12 @@ export function useRoomChatMessages({
       } catch {
         if (controller.signal.aborted || !isCurrentRequest()) return false;
         console.error('Failed to load room messages.');
-        setMessage('メッセージの取得に失敗しました');
-        setHasMore(false);
+        if (options?.failureMessage) {
+          purgeRoomState(targetRoomId, options.failureMessage);
+        } else {
+          setMessage('メッセージの取得に失敗しました');
+          setHasMore(false);
+        }
         return false;
       } finally {
         if (
@@ -183,28 +209,14 @@ export function useRoomChatMessages({
         if (abortRef.current === controller) abortRef.current = null;
       }
     },
-    [fetchUnreadState, filterQuery, filterTag, markRead, roomId],
-  );
-
-  const purgeRoomState = useCallback(
-    (targetRoomId: string, safeMessage: string) => {
-      if (roomIdRef.current !== targetRoomId) return false;
-      requestSeqRef.current += 1;
-      unreadRequestSeqRef.current += 1;
-      const controller = abortRef.current;
-      abortRef.current = null;
-      controller?.abort();
-      itemsRef.current = [];
-      setItems([]);
-      setHasMore(false);
-      setIsLoading(false);
-      setIsLoadingMore(false);
-      setUnreadCount(0);
-      setHighlightSince(null);
-      setMessage(safeMessage);
-      return true;
-    },
-    [],
+    [
+      fetchUnreadState,
+      filterQuery,
+      filterTag,
+      markRead,
+      purgeRoomState,
+      roomId,
+    ],
   );
 
   return {

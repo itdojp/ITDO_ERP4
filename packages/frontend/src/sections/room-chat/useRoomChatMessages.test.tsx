@@ -378,4 +378,69 @@ describe('useRoomChatMessages', () => {
     expect(result.current.message).toBe('メッセージの取得に失敗しました');
     expect(result.current.hasMore).toBe(false);
   });
+
+  it('purges room-bound state when a current access revalidation fails', async () => {
+    api.mockRejectedValueOnce(new Error('private access failure'));
+    const { result } = renderHook(() =>
+      useRoomChatMessages({ roomId: 'room-1', filterQuery: '', filterTag: '' }),
+    );
+    act(() => {
+      result.current.setItems([message('visible-before-check', 'room-1')]);
+    });
+
+    await act(async () => {
+      await result.current.loadMessages({
+        query: '',
+        tag: '',
+        failureMessage: 'ルームを表示できません',
+      });
+    });
+
+    expect(result.current.items).toEqual([]);
+    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.highlightSince).toBeNull();
+    expect(result.current.message).toBe('ルームを表示できません');
+  });
+
+  it('does not let an aborted access revalidation purge a newer successful load', async () => {
+    const accessCheck = deferred<{ items: ReturnType<typeof message>[] }>();
+    let messageReads = 0;
+    api.mockImplementation((path: string, init?: RequestInit) => {
+      const url = new URL(path, 'http://localhost');
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (url.pathname.endsWith('/messages')) {
+        messageReads += 1;
+        return messageReads === 1
+          ? accessCheck.promise
+          : Promise.resolve({ items: [message('newer', 'room-1')] });
+      }
+      if (url.pathname.endsWith('/unread')) {
+        return Promise.resolve({ unreadCount: 0, lastReadAt: null });
+      }
+      if (url.pathname.endsWith('/read') && method === 'POST') {
+        return Promise.resolve({});
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+    const { result } = renderHook(() =>
+      useRoomChatMessages({ roomId: 'room-1', filterQuery: '', filterTag: '' }),
+    );
+
+    const staleCheck = result.current.loadMessages({
+      query: '',
+      tag: '',
+      failureMessage: 'must not replace newer state',
+    });
+    await waitFor(() => expect(messageReads).toBe(1));
+    await act(async () => {
+      await result.current.loadMessages();
+    });
+    accessCheck.reject(new Error('stale access failure'));
+    await act(async () => {
+      await staleCheck;
+    });
+
+    expect(result.current.items).toEqual([message('newer', 'room-1')]);
+    expect(result.current.message).toBe('');
+  });
 });

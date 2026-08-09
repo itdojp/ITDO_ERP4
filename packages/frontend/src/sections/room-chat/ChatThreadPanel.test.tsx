@@ -160,6 +160,7 @@ function renderPanel(overrides?: {
   onRootUpdated?: () => void;
   onReadUpdated?: () => void;
   onAccessRevoked?: (roomId: string, message: string) => void;
+  onAccessCheckRequired?: (roomId: string) => void;
 }) {
   return render(
     <ChatThreadPanel
@@ -173,6 +174,7 @@ function renderPanel(overrides?: {
       onRootUpdated={overrides?.onRootUpdated ?? vi.fn()}
       onReadUpdated={overrides?.onReadUpdated ?? vi.fn()}
       onAccessRevoked={overrides?.onAccessRevoked ?? vi.fn()}
+      onAccessCheckRequired={overrides?.onAccessCheckRequired ?? vi.fn()}
     />,
   );
 }
@@ -375,9 +377,11 @@ describe('ChatThreadPanel', () => {
       return card as HTMLElement;
     });
 
-    fireEvent.click(
-      within(replyCard).getByRole('button', { name: 'replyへ👍リアクション' }),
-    );
+    const reactionButton = within(replyCard).getByRole('button', {
+      name: 'replyへ👍リアクション',
+    });
+    reactionButton.focus();
+    fireEvent.click(reactionButton);
     await waitFor(() =>
       expect(api).toHaveBeenCalledWith(
         '/chat-messages/reply-1/reactions',
@@ -393,6 +397,13 @@ describe('ChatThreadPanel', () => {
         ).getByRole('button', { name: 'replyへ👍リアクション' }),
       ).toHaveTextContent('1'),
     );
+    expect(
+      within(
+        document.querySelector<HTMLElement>(
+          '[data-thread-message-id="reply-1"]',
+        ) as HTMLElement,
+      ).getByRole('button', { name: 'replyへ👍リアクション' }),
+    ).toHaveFocus();
 
     fireEvent.click(
       within(
@@ -1434,6 +1445,7 @@ describe('ChatThreadPanel', () => {
   });
 
   it('purges loaded thread content when an unavailable mutation is confirmed by refresh', async () => {
+    const onAccessCheckRequired = vi.fn();
     let threadReads = 0;
     api.mockImplementation(async (path: string, init?: RequestInit) => {
       const url = new URL(path, 'http://localhost');
@@ -1453,7 +1465,7 @@ describe('ChatThreadPanel', () => {
       throw new Error(`Unhandled api path: ${path}`);
     });
 
-    renderPanel();
+    renderPanel({ onAccessCheckRequired });
     const replyCard = await waitFor(() => {
       const card = document.querySelector<HTMLElement>(
         '[data-thread-message-id="reply-1"]',
@@ -1476,6 +1488,7 @@ describe('ChatThreadPanel', () => {
     expect(screen.queryByText('root-1 body')).toBeNull();
     expect(screen.queryByText('reply-1 body')).toBeNull();
     expect(threadReads).toBe(2);
+    expect(onAccessCheckRequired).toHaveBeenCalledWith('room-1');
   });
 
   it.each(definiteRetryCases)(
