@@ -36,6 +36,8 @@ type AckReplyPayload = ReplyPayload & {
   requiredRoles?: string[];
 };
 
+export type ChatPostLifecycle = 'idle' | 'in_flight' | 'uncertain';
+
 function mergeReplies(current: ChatMessage[], next: ChatMessage[]) {
   const byId = new Map<string, ChatMessage>();
   for (const message of [...current, ...next]) byId.set(message.id, message);
@@ -132,12 +134,19 @@ export function useRoomChatThread(input: {
   onReadUpdated?: (roomId: string) => void | Promise<void>;
   onAccessRevoked?: (roomId: string, message: string) => void;
   onAccessCheckRequired?: (roomId: string) => void;
+  postLifecycle?: ChatPostLifecycle;
+  onPostLifecycleChange?: (lifecycle: ChatPostLifecycle) => void;
 }) {
   const [thread, setThread] = useState<ChatThread | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
-  const [submissionUncertain, setSubmissionUncertain] = useState(false);
+  const [localPostLifecycle, setLocalPostLifecycle] =
+    useState<ChatPostLifecycle>('idle');
+  const onPostLifecycleChange = input.onPostLifecycleChange;
+  const postLifecycle = input.postLifecycle ?? localPostLifecycle;
+  const postLifecycleRef = useRef(postLifecycle);
+  const mountedRef = useRef(true);
   const [message, setMessage] = useState('');
   const requestSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -147,7 +156,25 @@ export function useRoomChatThread(input: {
   const loadMoreInFlightRef = useRef(false);
 
   useEffect(() => {
+    postLifecycleRef.current = postLifecycle;
+  }, [postLifecycle]);
+
+  const updatePostLifecycle = useCallback(
+    (next: ChatPostLifecycle) => {
+      postLifecycleRef.current = next;
+      if (onPostLifecycleChange) {
+        onPostLifecycleChange(next);
+      } else if (mountedRef.current) {
+        setLocalPostLifecycle(next);
+      }
+    },
+    [onPostLifecycleChange],
+  );
+
+  useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       lifecycleSeqRef.current += 1;
       requestSeqRef.current += 1;
       rootIdRef.current = '';
@@ -172,7 +199,6 @@ export function useRoomChatThread(input: {
     setIsLoading(false);
     setIsLoadingMore(false);
     setIsMutating(false);
-    setSubmissionUncertain(false);
   }, []);
 
   useEffect(() => {
@@ -204,7 +230,11 @@ export function useRoomChatThread(input: {
   const loadThread = useCallback(
     async (
       messageId: string,
-      options?: { append?: boolean; preserveLoaded?: boolean },
+      options?: {
+        append?: boolean;
+        preserveLoaded?: boolean;
+        suppressAccessCheck?: boolean;
+      },
     ): Promise<ChatThread | null> => {
       const append = options?.append === true;
       const preserveLoaded = options?.preserveLoaded === true;
@@ -264,7 +294,9 @@ export function useRoomChatThread(input: {
           rootIdRef.current = '';
           setThread(null);
           setMessage('スレッドを表示できません');
-          input.onAccessCheckRequired?.(input.roomId);
+          if (!options?.suppressAccessCheck) {
+            input.onAccessCheckRequired?.(input.roomId);
+          }
         } else {
           setMessage('スレッドを取得できませんでした');
           if (!append && !preserveLoaded) setThread(null);
@@ -281,10 +313,20 @@ export function useRoomChatThread(input: {
     [input, markDisplayedThreadRead, thread],
   );
 
-  const refreshThread = useCallback(async () => {
-    const id = rootIdRef.current || thread?.root.id;
-    return id ? loadThread(id, { preserveLoaded: true }) : null;
-  }, [loadThread, thread?.root.id]);
+  const refreshThread = useCallback(
+    async (options?: { suppressAccessCheck?: boolean }) => {
+      const id = rootIdRef.current || thread?.root.id;
+      return id
+        ? loadThread(id, {
+            preserveLoaded: true,
+            ...(options?.suppressAccessCheck
+              ? { suppressAccessCheck: true }
+              : {}),
+          })
+        : null;
+    },
+    [loadThread, thread?.root.id],
+  );
 
   const mutateAndRefresh = useCallback(
     async <T>(
@@ -332,7 +374,10 @@ export function useRoomChatThread(input: {
         if (lifecycleSeqRef.current !== lifecycleSeq) return false;
         console.error('Failed to update chat thread.');
         if (isUnavailableChatRequestFailure(error)) {
-          const refreshed = await refreshThread();
+          input.onAccessCheckRequired?.(input.roomId);
+          const refreshed = await refreshThread({
+            suppressAccessCheck: true,
+          });
           if (lifecycleSeqRef.current !== lifecycleSeq) return false;
           if (refreshed) {
             setMessage('対象を更新できませんでした。最新表示を再取得しました');
@@ -355,13 +400,15 @@ export function useRoomChatThread(input: {
     async (payload: ReplyPayload) => {
       if (
         !thread ||
-        submissionUncertain ||
+        postLifecycleRef.current !== 'idle' ||
         mutationInFlightRef.current ||
         loadMoreInFlightRef.current
       ) {
         return false;
       }
       mutationInFlightRef.current = true;
+      updatePostLifecycle('in_flight');
+      let finalPostLifecycle: ChatPostLifecycle = 'uncertain';
       const lifecycleSeq = lifecycleSeqRef.current;
       try {
         setIsMutating(true);
@@ -370,6 +417,7 @@ export function useRoomChatThread(input: {
           { rootMessageId: thread.root.id, roomId: thread.root.roomId },
           payload,
         );
+        finalPostLifecycle = 'idle';
         if (lifecycleSeqRef.current !== lifecycleSeq) return true;
         if (created.warning?.code === 'POST_WITHOUT_VIEW') {
           requestSeqRef.current += 1;
@@ -399,7 +447,11 @@ export function useRoomChatThread(input: {
         if (lifecycleSeqRef.current !== lifecycleSeq) return false;
         console.error('Failed to post chat thread reply.');
         if (isUnavailableChatRequestFailure(error)) {
-          const refreshed = await refreshThread();
+          finalPostLifecycle = 'idle';
+          input.onAccessCheckRequired?.(input.roomId);
+          const refreshed = await refreshThread({
+            suppressAccessCheck: true,
+          });
           if (lifecycleSeqRef.current !== lifecycleSeq) return false;
           if (refreshed) {
             setMessage(
@@ -409,35 +461,38 @@ export function useRoomChatThread(input: {
           return false;
         }
         if (isDefiniteChatRequestFailure(error)) {
+          finalPostLifecycle = 'idle';
           setMessage('返信の投稿に失敗しました');
           return false;
         }
-        setSubmissionUncertain(true);
         setMessage(
-          '返信結果を確認できません。重複防止のため再送せず、パネルを閉じて再読み込みしてください',
+          '返信結果を確認できません。重複防止のため再送せず、ページを再読み込みしてください',
         );
         return false;
       } finally {
+        updatePostLifecycle(finalPostLifecycle);
         if (lifecycleSeqRef.current === lifecycleSeq) {
           mutationInFlightRef.current = false;
           setIsMutating(false);
         }
       }
     },
-    [input, refreshThread, submissionUncertain, thread],
+    [input, refreshThread, thread, updatePostLifecycle],
   );
 
   const postAckReply = useCallback(
     async (payload: AckReplyPayload) => {
       if (
         !thread ||
-        submissionUncertain ||
+        postLifecycleRef.current !== 'idle' ||
         mutationInFlightRef.current ||
         loadMoreInFlightRef.current
       ) {
         return false;
       }
       mutationInFlightRef.current = true;
+      updatePostLifecycle('in_flight');
+      let finalPostLifecycle: ChatPostLifecycle = 'uncertain';
       const lifecycleSeq = lifecycleSeqRef.current;
       try {
         setIsMutating(true);
@@ -446,6 +501,7 @@ export function useRoomChatThread(input: {
           ...payload,
           parentMessageId: thread.root.id,
         });
+        finalPostLifecycle = 'idle';
         if (lifecycleSeqRef.current !== lifecycleSeq) return true;
         if (created.warning?.code === 'POST_WITHOUT_VIEW') {
           requestSeqRef.current += 1;
@@ -475,7 +531,11 @@ export function useRoomChatThread(input: {
         if (lifecycleSeqRef.current !== lifecycleSeq) return false;
         console.error('Failed to post chat thread ack reply.');
         if (isUnavailableChatRequestFailure(error)) {
-          const refreshed = await refreshThread();
+          finalPostLifecycle = 'idle';
+          input.onAccessCheckRequired?.(input.roomId);
+          const refreshed = await refreshThread({
+            suppressAccessCheck: true,
+          });
           if (lifecycleSeqRef.current !== lifecycleSeq) return false;
           if (refreshed) {
             setMessage(
@@ -485,22 +545,23 @@ export function useRoomChatThread(input: {
           return false;
         }
         if (isDefiniteChatRequestFailure(error)) {
+          finalPostLifecycle = 'idle';
           setMessage('確認依頼付き返信の投稿に失敗しました');
           return false;
         }
-        setSubmissionUncertain(true);
         setMessage(
-          '確認依頼の結果を確認できません。重複防止のため再送せず、パネルを閉じて再読み込みしてください',
+          '確認依頼の結果を確認できません。重複防止のため再送せず、ページを再読み込みしてください',
         );
         return false;
       } finally {
+        updatePostLifecycle(finalPostLifecycle);
         if (lifecycleSeqRef.current === lifecycleSeq) {
           mutationInFlightRef.current = false;
           setIsMutating(false);
         }
       }
     },
-    [input, refreshThread, submissionUncertain, thread],
+    [input, refreshThread, thread, updatePostLifecycle],
   );
 
   const loadMore = useCallback(async () => {
@@ -523,7 +584,8 @@ export function useRoomChatThread(input: {
     isLoading,
     isLoadingMore,
     isMutating,
-    submissionUncertain,
+    submissionBlocked: postLifecycle !== 'idle',
+    submissionUncertain: postLifecycle === 'uncertain',
     message,
     setMessage,
     openThread: loadThread,

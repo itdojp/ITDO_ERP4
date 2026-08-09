@@ -729,9 +729,19 @@ export const RoomChat: React.FC<RoomChatProps> = ({
     attachmentId: string,
     originalName: string,
   ) => {
-    const res = await downloadMessageAttachment(attachmentId);
-    if (!res.ok) {
-      throw new Error(`Attachment download failed (${res.status})`);
+    const targetRoomId = currentRoomIdRef.current;
+    let res: Response;
+    try {
+      res = await downloadMessageAttachment(attachmentId);
+    } catch (error) {
+      if (isUnavailableChatRequestFailure(error)) {
+        const readable = await revalidateRoomAccess(targetRoomId);
+        if (readable) {
+          setMessage('添付のダウンロードに失敗しました');
+        }
+        return;
+      }
+      throw error;
     }
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
@@ -1062,17 +1072,31 @@ export const RoomChat: React.FC<RoomChatProps> = ({
       resetMentionTargets();
       setAttachmentFile(null);
       let attachmentUncertain = false;
+      let accessRefreshResult: boolean | null = null;
       if (attachmentFile) {
         try {
           await uploadMessageAttachment(created.id, attachmentFile);
-        } catch {
+        } catch (error) {
           console.error('Failed to upload posted message attachment.');
           attachmentUncertain = true;
+          if (isUnavailableChatRequestFailure(error)) {
+            accessRefreshResult = await revalidateRoomAccess(postingRoomId);
+          }
         }
       }
       if (!mountedRef.current) return;
       if (currentRoomIdRef.current !== postingRoomId) return;
-      const refreshed = await loadMessages();
+      const refreshed =
+        accessRefreshResult !== null
+          ? accessRefreshResult
+          : await loadMessages({
+              failureMessage:
+                '投稿後の表示を更新できません。権限を確認して再読み込みしてください。',
+              onCurrentFailure: () => {
+                clearGlobalSearch();
+                clearRoomBoundThreadState(postingRoomId);
+              },
+            });
       if (!mountedRef.current) return;
       if (attachmentUncertain) {
         setPostWarning(
@@ -2043,9 +2067,9 @@ export const RoomChat: React.FC<RoomChatProps> = ({
             clearRoomBoundThreadState(targetRoomId);
             purgeRoomState(targetRoomId, warning);
           }}
-          onAccessCheckRequired={(targetRoomId) => {
-            void revalidateRoomAccess(targetRoomId);
-          }}
+          onAccessCheckRequired={revalidateRoomAccess}
+          postLifecycle={rootPostLifecycle}
+          onPostLifecycleChange={updateRootPostLifecycle}
         />
       )}
     </div>

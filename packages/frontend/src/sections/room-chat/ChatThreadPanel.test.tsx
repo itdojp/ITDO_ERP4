@@ -161,6 +161,10 @@ function renderPanel(overrides?: {
   onReadUpdated?: () => void;
   onAccessRevoked?: (roomId: string, message: string) => void;
   onAccessCheckRequired?: (roomId: string) => void;
+  postLifecycle?: 'idle' | 'in_flight' | 'uncertain';
+  onPostLifecycleChange?: (
+    lifecycle: 'idle' | 'in_flight' | 'uncertain',
+  ) => void;
 }) {
   return render(
     <ChatThreadPanel
@@ -175,6 +179,8 @@ function renderPanel(overrides?: {
       onReadUpdated={overrides?.onReadUpdated ?? vi.fn()}
       onAccessRevoked={overrides?.onAccessRevoked ?? vi.fn()}
       onAccessCheckRequired={overrides?.onAccessCheckRequired ?? vi.fn()}
+      postLifecycle={overrides?.postLifecycle}
+      onPostLifecycleChange={overrides?.onPostLifecycleChange}
     />,
   );
 }
@@ -1419,7 +1425,7 @@ describe('ChatThreadPanel', () => {
 
     expect(
       await screen.findByText(
-        '返信結果を確認できません。重複防止のため再送せず、パネルを閉じて再読み込みしてください',
+        '返信結果を確認できません。重複防止のため再送せず、ページを再読み込みしてください',
       ),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '返信' })).toBeDisabled();
@@ -1528,15 +1534,14 @@ describe('ChatThreadPanel', () => {
       if (roomReadable) {
         expect(screen.getByText('root-1 body')).toBeInTheDocument();
         expect(screen.getByText('reply-1 body')).toBeInTheDocument();
-        expect(onAccessCheckRequired).not.toHaveBeenCalled();
         expect(screen.getByRole('textbox', { name: '返信を入力' })).toHaveValue(
           'access-sensitive draft',
         );
       } else {
         expect(screen.queryByText('root-1 body')).toBeNull();
         expect(screen.queryByText('reply-1 body')).toBeNull();
-        expect(onAccessCheckRequired).toHaveBeenCalledWith('room-1');
       }
+      expect(onAccessCheckRequired).toHaveBeenCalledWith('room-1');
     },
   );
 

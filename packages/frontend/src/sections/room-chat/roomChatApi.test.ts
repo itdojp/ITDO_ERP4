@@ -4,6 +4,7 @@ import {
   cancelAckRequestById,
   createPrivateGroupRoom,
   deleteChatMessage,
+  downloadMessageAttachment,
   fetchAckCandidates,
   fetchChatThread,
   fetchMentionCandidates,
@@ -21,11 +22,12 @@ import {
   searchChatMessages,
 } from './roomChatApi';
 
-const { api } = vi.hoisted(() => ({
+const { api, apiResponse } = vi.hoisted(() => ({
   api: vi.fn(),
+  apiResponse: vi.fn(),
 }));
 
-vi.mock('../../api', () => ({ api, apiResponse: vi.fn() }));
+vi.mock('../../api', () => ({ api, apiResponse }));
 
 function message(id: string, extra: Record<string, unknown> = {}) {
   return {
@@ -75,6 +77,7 @@ function ackRequestResponse(
 describe('roomChatApi command boundaries', () => {
   beforeEach(() => {
     api.mockReset();
+    apiResponse.mockReset();
   });
 
   it('sanitizes shared API failures at the chat boundary', async () => {
@@ -91,6 +94,77 @@ describe('roomChatApi command boundaries', () => {
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toBe('Chat request failed');
     expect((error as Error).message).not.toMatch(/private|providerKey|secret/);
+  });
+
+  it('normalizes attachment 403/404 responses without reading raw bodies', async () => {
+    apiResponse.mockResolvedValueOnce(
+      new Response('providerKey=must-not-be-read', { status: 403 }),
+    );
+
+    const error = await downloadMessageAttachment('attachment-1').catch(
+      (reason: unknown) => reason,
+    );
+
+    expect(isUnavailableChatRequestFailure(error)).toBe(true);
+    expect(String(error)).toBe('ChatRequestError: Chat request failed');
+    expect(String(error)).not.toContain('providerKey');
+  });
+
+  it('allowlists bounded ack preview fields and rejects malformed known values', async () => {
+    api
+      .mockResolvedValueOnce({
+        resolvedUserIds: Array.from({ length: 50 }, (_, index) => `u${index}`),
+        resolvedCount: 55,
+        exceedsLimit: true,
+        invalidUserIds: Array.from(
+          { length: 20 },
+          (_, index) => `invalid-${index}`,
+        ),
+        reason: 'internal_reason',
+        providerUrl: 'https://internal.invalid',
+      })
+      .mockResolvedValueOnce({
+        resolvedUserIds: Array.from({ length: 51 }, (_, index) => `u${index}`),
+        resolvedCount: 51,
+        exceedsLimit: true,
+        invalidUserIds: [],
+      })
+      .mockResolvedValueOnce({
+        resolvedUserIds: ['u1'],
+        resolvedCount: '1',
+        exceedsLimit: false,
+        invalidUserIds: [],
+      });
+
+    await expect(
+      previewRoomAckTargets('room-1', {
+        requiredUserIds: ['u1'],
+        requiredGroupIds: [],
+        requiredRoles: [],
+      }),
+    ).resolves.toEqual({
+      resolvedUserIds: Array.from({ length: 50 }, (_, index) => `u${index}`),
+      resolvedCount: 55,
+      exceedsLimit: true,
+      invalidUserIds: Array.from(
+        { length: 20 },
+        (_, index) => `invalid-${index}`,
+      ),
+    });
+    await expect(
+      previewRoomAckTargets('room-1', {
+        requiredUserIds: ['u1'],
+        requiredGroupIds: [],
+        requiredRoles: [],
+      }),
+    ).rejects.toThrow('Invalid ack preview response');
+    await expect(
+      previewRoomAckTargets('room-1', {
+        requiredUserIds: ['u1'],
+        requiredGroupIds: [],
+        requiredRoles: [],
+      }),
+    ).rejects.toThrow('Invalid ack preview response');
   });
 
   it('classifies only definite 4xx chat request failures as retry-safe', async () => {
@@ -163,7 +237,14 @@ describe('roomChatApi command boundaries', () => {
       )
       .mockResolvedValueOnce(message('m1', { reactions: { '👍': 1 } }))
       .mockResolvedValueOnce(ackRequestResponse())
-      .mockResolvedValueOnce({ resolvedUserIds: ['u1'], resolvedCount: 1 })
+      .mockResolvedValueOnce({
+        resolvedUserIds: ['u1'],
+        resolvedCount: 1,
+        exceedsLimit: false,
+        invalidUserIds: [],
+        providerKey: 'must-be-discarded',
+        diagnostics: { internal: true },
+      })
       .mockResolvedValueOnce({ id: 'room-2' })
       .mockResolvedValueOnce({ notifyAllPosts: false, notifyMentions: true });
 
@@ -186,10 +267,16 @@ describe('roomChatApi command boundaries', () => {
       messageId: 'm2',
       roomId: 'room-1',
     });
-    await previewRoomAckTargets('room-1', {
+    const preview = await previewRoomAckTargets('room-1', {
       requiredUserIds: ['u1'],
       requiredGroupIds: [],
       requiredRoles: [],
+    });
+    expect(preview).toEqual({
+      resolvedUserIds: ['u1'],
+      resolvedCount: 1,
+      exceedsLimit: false,
+      invalidUserIds: [],
     });
     await createPrivateGroupRoom({ name: 'Team', memberUserIds: ['u1'] });
     await patchRoomNotificationSetting('room-1', {

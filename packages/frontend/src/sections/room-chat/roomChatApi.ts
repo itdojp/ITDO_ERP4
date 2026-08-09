@@ -29,6 +29,57 @@ export type AckPreview = {
   reason?: string;
 };
 
+const ackPreviewReasons = new Set([
+  'required_users_empty',
+  'required_users_inactive',
+  'required_users_forbidden',
+  'required_users_invalid',
+  'room_group_required',
+  'room_deleted',
+]);
+
+function normalizeAckPreviewIds(value: unknown, limit: number): string[] {
+  if (!Array.isArray(value)) throw new Error('Invalid ack preview response');
+  if (value.length > limit) throw new Error('Invalid ack preview response');
+  const normalized = value.map((entry) => {
+    if (typeof entry !== 'string') {
+      throw new Error('Invalid ack preview response');
+    }
+    const id = entry.trim();
+    if (!id || Array.from(id).length > 200) {
+      throw new Error('Invalid ack preview response');
+    }
+    return id;
+  });
+  return Array.from(new Set(normalized));
+}
+
+function normalizeAckPreview(value: unknown): AckPreview {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Invalid ack preview response');
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.resolvedCount !== 'number' ||
+    !Number.isSafeInteger(record.resolvedCount) ||
+    record.resolvedCount < 0 ||
+    typeof record.exceedsLimit !== 'boolean'
+  ) {
+    throw new Error('Invalid ack preview response');
+  }
+  const reason =
+    typeof record.reason === 'string' && ackPreviewReasons.has(record.reason)
+      ? record.reason
+      : undefined;
+  return {
+    resolvedUserIds: normalizeAckPreviewIds(record.resolvedUserIds, 50),
+    resolvedCount: record.resolvedCount,
+    exceedsLimit: record.exceedsLimit,
+    invalidUserIds: normalizeAckPreviewIds(record.invalidUserIds, 20),
+    ...(reason ? { reason } : {}),
+  };
+}
+
 export type RoomMessageQuery = {
   before?: string;
   limit: number;
@@ -372,10 +423,14 @@ export async function previewRoomAckTargets(
     requiredRoles: string[];
   },
 ) {
-  return api<AckPreview>(`/chat-rooms/${roomId}/ack-requests/preview`, {
-    method: 'POST',
-    body: JSON.stringify(input),
-  });
+  const response = await api<unknown>(
+    `/chat-rooms/${roomId}/ack-requests/preview`,
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+  );
+  return normalizeAckPreview(response);
 }
 
 export async function postRoomMessage(
@@ -438,7 +493,14 @@ export async function uploadMessageAttachment(messageId: string, file: File) {
 }
 
 export async function downloadMessageAttachment(attachmentId: string) {
-  return apiResponse(`/chat-attachments/${attachmentId}`);
+  try {
+    const response = await apiResponse(`/chat-attachments/${attachmentId}`);
+    if (!response.ok) throw new ChatRequestError(response.status);
+    return response;
+  } catch (error) {
+    if (error instanceof ChatRequestError) throw error;
+    throw new ChatRequestError(httpStatusFromError(error));
+  }
 }
 
 export async function postMessageReaction(

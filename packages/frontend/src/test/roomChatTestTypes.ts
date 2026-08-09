@@ -19,6 +19,13 @@ export type ChatMessageTestValue = {
   body: string;
   createdAt: string;
   reactions?: Record<string, number>;
+  attachments?: Array<{
+    id: string;
+    originalName: string;
+    mimeType?: string | null;
+    sizeBytes?: number | null;
+    createdAt: string;
+  }>;
   ackRequest?: {
     id: string;
     messageId: string;

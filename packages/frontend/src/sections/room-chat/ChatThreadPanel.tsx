@@ -11,7 +11,7 @@ import {
   type ChatThread,
 } from './roomChatModel';
 import { useRoomChatMentionCandidates } from './useRoomChatCandidates';
-import { useRoomChatThread } from './useRoomChatThread';
+import { useRoomChatThread, type ChatPostLifecycle } from './useRoomChatThread';
 
 type Props = {
   messageId: string;
@@ -25,6 +25,8 @@ type Props = {
   onReadUpdated: (roomId: string) => void | Promise<void>;
   onAccessRevoked: (roomId: string, message: string) => void;
   onAccessCheckRequired: (roomId: string) => void;
+  postLifecycle?: ChatPostLifecycle;
+  onPostLifecycleChange?: (lifecycle: ChatPostLifecycle) => void;
 };
 
 function safeDate(value: string | null | undefined) {
@@ -257,6 +259,8 @@ export function ChatThreadPanel({
   onReadUpdated,
   onAccessRevoked,
   onAccessCheckRequired,
+  postLifecycle,
+  onPostLifecycleChange,
 }: Props) {
   const panelRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -277,6 +281,8 @@ export function ChatThreadPanel({
     onReadUpdated,
     onAccessRevoked,
     onAccessCheckRequired,
+    postLifecycle,
+    onPostLifecycleChange,
   });
 
   const onCloseRef = useRef(onClose);
@@ -435,7 +441,7 @@ export function ChatThreadPanel({
   const interactionLocked =
     threadState.isMutating ||
     threadState.isLoadingMore ||
-    threadState.submissionUncertain;
+    threadState.submissionBlocked;
   return (
     <div
       role="presentation"

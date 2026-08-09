@@ -51,7 +51,25 @@ vi.mock('../utils/clipboard', () => ({
 }));
 
 vi.mock('../ui', () => ({
-  AttachmentField: () => null,
+  AttachmentField: ({
+    attachments,
+    onSelectPreview,
+  }: {
+    attachments: Array<{ id: string; name: string }>;
+    onSelectPreview?: (id: string) => void;
+  }) => (
+    <div>
+      {attachments.map((attachment) => (
+        <button
+          key={attachment.id}
+          type="button"
+          onClick={() => onSelectPreview?.(attachment.id)}
+        >
+          {`添付をダウンロード:${attachment.name}`}
+        </button>
+      ))}
+    </div>
+  ),
   Combobox: ({
     placeholder,
     value,
@@ -124,6 +142,7 @@ vi.mock('../ui', () => ({
 
 import { RoomChat } from './RoomChat';
 import { registerRoomChatSearchAndSettingsTests } from '../test/roomChatSearchAndSettingsTestCases';
+import { registerRoomChatSecurityRemediationTests } from '../test/roomChatSecurityRemediationTestCases';
 
 function makeRoom(overrides: Partial<ChatRoom>): ChatRoom {
   return {
@@ -1872,6 +1891,16 @@ describe('RoomChat', () => {
     } finally {
       confirmSpy.mockRestore();
     }
+  });
+
+  registerRoomChatSecurityRemediationTests({
+    RoomChat,
+    api,
+    apiResponse,
+    installApiMock,
+    makeRoom,
+    makeMessage,
+    makeSearchItem,
   });
 
   registerRoomChatSearchAndSettingsTests({
