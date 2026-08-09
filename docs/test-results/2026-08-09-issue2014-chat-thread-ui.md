@@ -36,10 +36,10 @@
 
 | 検証                                     | 結果 | 証跡／補足                                                                         |
 | ---------------------------------------- | ---- | ---------------------------------------------------------------------------------- |
-| focused frontend unit                    | PASS | 7 files / 133 tests                                                                |
-| frontend full                            | PASS | 92 files / 645 tests                                                               |
-| UI core coverage                         | PASS | statements 71.74%、branches 65.06%、functions 70.82%、lines 74.33%（閾値変更なし） |
-| frontend build budget                    | PASS | initial JS 516.9 KiB / gzip 158.0 KiB                                              |
+| focused frontend unit                    | PASS | 7 files / 148 tests、root uncertainty flow 20/20反復成功                           |
+| frontend full                            | PASS | 92 files / 660 tests                                                               |
+| UI core coverage                         | PASS | statements 72.11%、branches 65.38%、functions 71.38%、lines 74.75%（閾値変更なし） |
+| frontend build budget                    | PASS | initial JS 517.0 KiB / gzip 158.1 KiB                                              |
 | backend full                             | PASS | 2,040 tests                                                                        |
 | focused real-backend E2E                 | PASS | `frontend-chat-thread.spec.ts` 1/1（core/full両scopeで成功）                       |
 | core E2E                                 | PASS | 107 passed                                                                         |
@@ -49,7 +49,7 @@
 | OpenAPI export / breaking diff           | PASS | checked-in OpenAPIとの差分なし                                                     |
 | bounded-context / docs / image links     | PASS | dependency 0 violation、coverage PASS、130 image links                             |
 | audit / secret scan                      | PASS | npm audit high/critical 0、tracked-file secret scan 0（最終標準gateでも再確認）    |
-| lint / format / typecheck / build / test | PASS | backend 2,040 / frontend 645、全標準gate成功                                       |
+| lint / format / typecheck / build / test | PASS | backend 2,040 / frontend 660、全標準gate成功                                       |
 | release-readiness core                   | PASS | clean exact head、29/29 checks、core E2E 107/107（repo-side readiness）            |
 
 ## Real-backend E2E matrix
