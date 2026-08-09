@@ -418,6 +418,61 @@ describe('roomChatModel', () => {
     ).toBeNull();
   });
 
+  it.each([
+    {
+      name: 'parent only',
+      parentMessageId: 'root-1',
+      threadRootId: null,
+    },
+    {
+      name: 'thread root only',
+      parentMessageId: null,
+      threadRootId: 'root-1',
+    },
+    {
+      name: 'mismatched roots',
+      parentMessageId: 'root-1',
+      threadRootId: 'root-2',
+    },
+    {
+      name: 'self-root reply',
+      parentMessageId: 'malformed-search',
+      threadRootId: 'malformed-search',
+    },
+    {
+      name: 'empty reply identity',
+      parentMessageId: '',
+      threadRootId: '',
+    },
+    {
+      name: 'non-string reply identity',
+      parentMessageId: 1,
+      threadRootId: 1,
+    },
+  ])('rejects malformed global search thread topology: $name', (topology) => {
+    expect(
+      normalizeChatSearchItem({
+        ...message('malformed-search'),
+        ...topology,
+        room: { id: 'room-1', type: 'project', name: 'Project room' },
+      }),
+    ).toBeNull();
+  });
+
+  it.each([{ deleted: true }, { deletedAt: '2026-08-09T00:00:00.000Z' }])(
+    'rejects deleted global search results without exposing body',
+    (state) => {
+      expect(
+        normalizeChatSearchItem({
+          ...message('deleted-search'),
+          body: 'deleted private body',
+          ...state,
+          room: { id: 'room-1', type: 'project', name: 'Project room' },
+        }),
+      ).toBeNull();
+    },
+  );
+
   it('uses the newest unique timestamp as the deterministic read boundary', () => {
     const root = normalizeChatMessage(message('root-1'));
     const reply = normalizeChatMessage(

@@ -51,9 +51,6 @@ import {
   isUnavailableChatRequestFailure,
   postRoomAckRequest,
   postRoomMessage,
-  previewRoomAckTargets,
-  summarizeRoomMessages,
-  summarizeRoomMessagesWithExternalAi,
   uploadMessageAttachment,
 } from './room-chat/roomChatApi';
 import { RoomGlobalSearch } from './room-chat/RoomGlobalSearch';
@@ -65,10 +62,12 @@ import {
 } from './room-chat/useRoomChatCandidates';
 import { useRoomChatGlobalSearch } from './room-chat/useRoomChatGlobalSearch';
 import { useRoomChatAccessRevalidation } from './room-chat/useRoomChatAccessRevalidation';
+import { useRoomChatAckPreview } from './room-chat/useRoomChatAckPreview';
 import { useRoomChatMessages } from './room-chat/useRoomChatMessages';
 import { useRoomChatNotificationSetting } from './room-chat/useRoomChatNotificationSetting';
 import { useRoomChatRooms } from './room-chat/useRoomChatRooms';
 import { useRoomChatRootTimelineMutations } from './room-chat/roomChatRootTimelineMutations';
+import { useRoomChatSummary } from './room-chat/useRoomChatSummary';
 
 export type RootPostLifecycle = 'idle' | 'in_flight' | 'uncertain';
 
@@ -197,7 +196,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
   const revalidateRoomAccessRef = useRef<
     ((targetRoomId: string) => Promise<boolean>) | null
   >(null);
-  const handleReadAccessUnavailable = useCallback(
+  const handleAccessUnavailable = useCallback(
     (targetRoomId: string) =>
       revalidateRoomAccessRef.current?.(targetRoomId) ?? Promise.resolve(false),
     [],
@@ -220,18 +219,28 @@ export const RoomChat: React.FC<RoomChatProps> = ({
     roomId,
     filterQuery,
     filterTag,
-    onReadAccessUnavailable: handleReadAccessUnavailable,
+    onAccessUnavailable: handleAccessUnavailable,
   });
   const currentRoomItems = useMemo(
     () => items.filter((item) => item.roomId === roomId),
     [items, roomId],
   );
   const [nowMs, setNowMs] = useState(0);
-  const [summary, setSummary] = useState('');
-  const [summaryProvider, setSummaryProvider] = useState('');
-  const [summaryModel, setSummaryModel] = useState('');
-  const [isSummarizing, setIsSummarizing] = useState(false);
-  const [isSummarizingExternal, setIsSummarizingExternal] = useState(false);
+  const {
+    summary,
+    summaryProvider,
+    summaryModel,
+    isSummarizing,
+    isSummarizingExternal,
+    summarize,
+    summarizeExternal,
+    clearSummary,
+  } = useRoomChatSummary({
+    roomId,
+    allowExternalIntegrations: selectedRoom?.allowExternalIntegrations === true,
+    setMessage,
+    onAccessUnavailable: handleAccessUnavailable,
+  });
   const [isPosting, setIsPosting] = useState(false);
 
   const [body, setBody] = useState('');
@@ -242,15 +251,6 @@ export const RoomChat: React.FC<RoomChatProps> = ({
   const [ackTargetGroupIds, setAckTargetGroupIds] = useState('');
   const [ackTargetRoles, setAckTargetRoles] = useState('');
   const [ackTargetRoleInput, setAckTargetRoleInput] = useState('');
-  const [ackPreview, setAckPreview] = useState<{
-    resolvedUserIds: string[];
-    resolvedCount: number;
-    exceedsLimit: boolean;
-    invalidUserIds: string[];
-    reason?: string;
-  } | null>(null);
-  const [ackPreviewMessage, setAckPreviewMessage] = useState('');
-  const [ackPreviewLoading, setAckPreviewLoading] = useState(false);
   const [mentionUserIds, setMentionUserIds] = useState<string[]>([]);
   const [mentionGroupIds, setMentionGroupIds] = useState<string[]>([]);
   const [mentionAll, setMentionAll] = useState(false);
@@ -263,10 +263,32 @@ export const RoomChat: React.FC<RoomChatProps> = ({
   const [ackGroupLabelOverrides, setAckGroupLabelOverrides] = useState<
     Record<string, string>
   >({});
-  const { mentionCandidates, fetchMentionComposerCandidates } =
-    useRoomChatMentionCandidates(roomId);
-  const { ackCandidates, ackCandidateQuery, setAckCandidateQuery } =
-    useRoomChatAckCandidates(roomId);
+  const {
+    mentionCandidates,
+    fetchMentionComposerCandidates,
+    clearMentionCandidates,
+  } = useRoomChatMentionCandidates(roomId, handleAccessUnavailable);
+  const {
+    ackCandidates,
+    ackCandidateQuery,
+    setAckCandidateQuery,
+    clearAckCandidates,
+  } = useRoomChatAckCandidates(roomId, handleAccessUnavailable);
+  const {
+    notificationSetting,
+    setNotificationSetting,
+    notificationSettingMessage,
+    isNotificationSettingLoading,
+    muteUntilInput,
+    setMuteUntilInput,
+    clearNotificationSetting,
+    loadNotificationSetting,
+    saveNotificationSetting,
+    applyMutePreset,
+  } = useRoomChatNotificationSetting({
+    roomId,
+    onAccessUnavailable: handleAccessUnavailable,
+  });
   const mentionUserLabelMap = useMemo(() => {
     return new Map(
       (mentionCandidates.users || []).map((user) => [
@@ -334,6 +356,19 @@ export const RoomChat: React.FC<RoomChatProps> = ({
     () => Array.from(new Set(parseUserIds(ackTargetRoles))),
     [ackTargetRoles],
   );
+  const {
+    ackPreview,
+    ackPreviewMessage,
+    ackPreviewLoading,
+    previewAckTargets,
+    clearAckPreview,
+  } = useRoomChatAckPreview({
+    roomId,
+    requiredUserIds: ackTargetUserIds,
+    requiredGroupIds: ackTargetGroupIdList,
+    requiredRoles: ackTargetRoleList,
+    onAccessUnavailable: handleAccessUnavailable,
+  });
   const mentionTargets = useMemo<MentionTarget[]>(
     () =>
       [
@@ -427,11 +462,6 @@ export const RoomChat: React.FC<RoomChatProps> = ({
         : [],
     [attachmentFile],
   );
-
-  useEffect(() => {
-    setAckPreview(null);
-    setAckPreviewMessage('');
-  }, [ackTargets, ackTargetGroupIds, ackTargetRoles, roomId]);
 
   const ackPreviewReasonLabel = ackPreview
     ? formatAckPreviewReason(ackPreview.reason)
@@ -572,18 +602,58 @@ export const RoomChat: React.FC<RoomChatProps> = ({
     clearGlobalSearch,
   } = useRoomChatGlobalSearch();
 
-  const clearRoomBoundThreadState = useCallback((targetRoomId: string) => {
-    setThreadTarget((current) =>
-      current?.roomId === targetRoomId ? null : current,
-    );
-    if (currentRoomIdRef.current !== targetRoomId) return;
-    threadReturnFocusRef.current = null;
-    setPendingOpenMessage((current) =>
-      current?.roomId === targetRoomId ? null : current,
-    );
-    setPendingScrollMessageId('');
-    setHighlightMessageId('');
-  }, []);
+  const clearRoomBoundThreadState = useCallback(
+    (targetRoomId: string) => {
+      setThreadTarget((current) =>
+        current?.roomId === targetRoomId ? null : current,
+      );
+      if (currentRoomIdRef.current !== targetRoomId) return;
+      threadReturnFocusRef.current = null;
+      setPendingOpenMessage((current) =>
+        current?.roomId === targetRoomId ? null : current,
+      );
+      setPendingScrollMessageId('');
+      setHighlightMessageId('');
+      clearSummary(targetRoomId);
+      clearMentionCandidates();
+      clearAckCandidates();
+      clearAckPreview(targetRoomId);
+      clearNotificationSetting(targetRoomId);
+      setMentionUserIds([]);
+      setMentionGroupIds([]);
+      setMentionUserLabelOverrides({});
+      setMentionGroupLabelOverrides({});
+      setMentionAll(false);
+      setAckTargets('');
+      setAckTargetInput('');
+      setAckTargetGroupIds('');
+      setAckGroupLabelOverrides({});
+      setAckTargetRoles('');
+      setAckTargetRoleInput('');
+    },
+    [
+      clearAckCandidates,
+      clearAckPreview,
+      clearMentionCandidates,
+      clearNotificationSetting,
+      clearSummary,
+      setAckGroupLabelOverrides,
+      setAckTargetGroupIds,
+      setAckTargetInput,
+      setAckTargetRoleInput,
+      setAckTargetRoles,
+      setAckTargets,
+      setHighlightMessageId,
+      setMentionAll,
+      setMentionGroupIds,
+      setMentionGroupLabelOverrides,
+      setMentionUserIds,
+      setMentionUserLabelOverrides,
+      setPendingOpenMessage,
+      setPendingScrollMessageId,
+      setThreadTarget,
+    ],
+  );
 
   const revalidateRoomAccess = useRoomChatAccessRevalidation({
     currentRoomIdRef,
@@ -599,19 +669,6 @@ export const RoomChat: React.FC<RoomChatProps> = ({
     [],
   );
   const isRoomChatMounted = useCallback(() => mountedRef.current, []);
-
-  const {
-    notificationSetting,
-    setNotificationSetting,
-    notificationSettingMessage,
-    isNotificationSettingLoading,
-    muteUntilInput,
-    setMuteUntilInput,
-    clearNotificationSetting,
-    loadNotificationSetting,
-    saveNotificationSetting,
-    applyMutePreset,
-  } = useRoomChatNotificationSetting({ roomId });
 
   const [createPrivateName, setCreatePrivateName] = useState('');
   const [createPrivateMembers, setCreatePrivateMembers] = useState('');
@@ -906,38 +963,6 @@ export const RoomChat: React.FC<RoomChatProps> = ({
     setAckCandidateQuery('');
   };
 
-  const previewAckTargets = useCallback(async () => {
-    if (!roomId) return;
-    setAckPreviewLoading(true);
-    setAckPreview(null);
-    setAckPreviewMessage('');
-    const uniqueTargets = ackTargetUserIds;
-    const uniqueGroupIds = ackTargetGroupIdList;
-    const uniqueRoles = ackTargetRoleList;
-    if (
-      uniqueTargets.length === 0 &&
-      uniqueGroupIds.length === 0 &&
-      uniqueRoles.length === 0
-    ) {
-      setAckPreviewLoading(false);
-      setAckPreviewMessage('確認対象を入力してください');
-      return;
-    }
-    try {
-      const res = await previewRoomAckTargets(roomId, {
-        requiredUserIds: uniqueTargets,
-        requiredGroupIds: uniqueGroupIds,
-        requiredRoles: uniqueRoles,
-      });
-      setAckPreview(res);
-    } catch (error) {
-      console.error('確認対象の展開に失敗しました', error);
-      setAckPreviewMessage('確認対象の展開に失敗しました');
-    } finally {
-      setAckPreviewLoading(false);
-    }
-  }, [ackTargetGroupIdList, ackTargetRoleList, ackTargetUserIds, roomId]);
-
   const postMessage = async (mode: 'message' | 'ack') => {
     if (!roomId || rootPostLifecycleRef.current !== 'idle') return;
     const postingRoomId = roomId;
@@ -1173,57 +1198,6 @@ export const RoomChat: React.FC<RoomChatProps> = ({
     }
   };
 
-  const summarize = async () => {
-    if (!roomId) return;
-    try {
-      setIsSummarizing(true);
-      setMessage('');
-      const summaryText = await summarizeRoomMessages(roomId);
-      setSummaryProvider('');
-      setSummaryModel('');
-      setSummary(summaryText);
-    } catch (err) {
-      console.error('Failed to summarize room messages.', err);
-      setMessage('要約の生成に失敗しました');
-    } finally {
-      setIsSummarizing(false);
-    }
-  };
-
-  const summarizeExternal = async () => {
-    if (!roomId) return;
-    if (selectedRoom?.allowExternalIntegrations !== true) return;
-
-    const ok = window.confirm(
-      [
-        '外部LLMへ送信して要約します（本文のみ。添付は送信しません）。',
-        '送信範囲: 直近120件 / 過去7日間',
-        '続行しますか？',
-      ].join('\n'),
-    );
-    if (!ok) return;
-
-    const now = new Date();
-    const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-
-    try {
-      setIsSummarizingExternal(true);
-      setMessage('');
-      const res = await summarizeRoomMessagesWithExternalAi(roomId, {
-        since: since.toISOString(),
-        until: now.toISOString(),
-      });
-      setSummaryProvider(res.provider);
-      setSummaryModel(res.model);
-      setSummary(res.summary);
-    } catch (err) {
-      console.error('Failed to generate external summary.', err);
-      setMessage('外部要約の生成に失敗しました');
-    } finally {
-      setIsSummarizingExternal(false);
-    }
-  };
-
   useEffect(() => {
     loadRooms().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1231,9 +1205,6 @@ export const RoomChat: React.FC<RoomChatProps> = ({
 
   useEffect(() => {
     if (!roomId) return;
-    setSummary('');
-    setSummaryProvider('');
-    setSummaryModel('');
     if (skipNextRoomAutoLoadRef.current) {
       skipNextRoomAutoLoadRef.current = false;
       return;
@@ -1437,7 +1408,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
           <button
             className="button secondary"
             onClick={summarize}
-            disabled={!roomId || isSummarizing}
+            disabled={!roomId || isSummarizing || isSummarizingExternal}
           >
             {isSummarizing ? '要約中...' : '要約'}
           </button>
@@ -1445,7 +1416,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
             <button
               className="button secondary"
               onClick={summarizeExternal}
-              disabled={!roomId || isSummarizingExternal}
+              disabled={!roomId || isSummarizing || isSummarizingExternal}
             >
               {isSummarizingExternal ? '外部要約中...' : '外部要約'}
             </button>

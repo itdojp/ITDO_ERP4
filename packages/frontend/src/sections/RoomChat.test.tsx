@@ -256,7 +256,7 @@ function installApiMock(options: RoomChatApiMockOptions) {
       }
 
       const roomMatch = url.pathname.match(
-        /^\/chat-rooms\/([^/]+)\/(notification-setting|messages|ack-requests|mention-candidates|unread|read|ai-summary)$/,
+        /^\/chat-rooms\/([^/]+)\/(notification-setting|messages|ack-requests|mention-candidates|unread|read|summary|ai-summary)$/,
       );
       if (roomMatch) {
         const [, roomId, resource] = roomMatch;
@@ -284,6 +284,9 @@ function installApiMock(options: RoomChatApiMockOptions) {
           return (options.mentionCandidatesByRoom?.[roomId] ?? {}) as never;
         }
         if (resource === 'unread' && method === 'GET') {
+          const queued = options.unreadResultsByRoom?.[roomId]?.shift();
+          if (queued instanceof Error) throw queued;
+          if (queued) return (await queued) as never;
           return (options.unreadByRoom?.[roomId] ?? {
             unreadCount: 0,
             lastReadAt: null,
@@ -349,7 +352,16 @@ function installApiMock(options: RoomChatApiMockOptions) {
                 }))
           ) as never;
         }
+        if (resource === 'summary' && method === 'POST') {
+          const queued = options.summaryResultsByRoom?.[roomId]?.shift();
+          if (queued instanceof Error) throw queued;
+          return (queued ? await queued : { summary: 'stub summary' }) as never;
+        }
         if (resource === 'ai-summary' && method === 'POST') {
+          const queued =
+            options.externalSummaryResultsByRoom?.[roomId]?.shift();
+          if (queued instanceof Error) throw queued;
+          if (queued) return (await queued) as never;
           if (failOnExternalSummary.has(roomId)) {
             throw new Error(`external summary failed for room: ${roomId}`);
           }

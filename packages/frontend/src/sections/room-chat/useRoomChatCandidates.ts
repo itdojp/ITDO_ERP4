@@ -1,44 +1,96 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MentionTarget } from '../../ui';
-import { fetchAckCandidates, fetchMentionCandidates } from './roomChatApi';
+import {
+  fetchAckCandidates,
+  fetchMentionCandidates,
+  isUnavailableChatRequestFailure,
+} from './roomChatApi';
 import type { MentionCandidates } from './roomChatModel';
 
-export function useRoomChatMentionCandidates(roomId: string) {
-  const [mentionCandidates, setMentionCandidates] = useState<MentionCandidates>(
-    {},
-  );
+export function useRoomChatMentionCandidates(
+  roomId: string,
+  onAccessUnavailable?: (roomId: string) => Promise<boolean>,
+) {
+  const [mentionState, setMentionState] = useState<{
+    roomId: string;
+    value: MentionCandidates;
+  }>({ roomId: '', value: {} });
+  const roomIdRef = useRef(roomId);
+  const requestSeqRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const mentionCandidates =
+    mentionState.roomId === roomId ? mentionState.value : {};
+
+  const clearMentionCandidates = useCallback(() => {
+    requestSeqRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setMentionState({ roomId: '', value: {} });
+  }, []);
 
   useEffect(() => {
+    roomIdRef.current = roomId;
+    clearMentionCandidates();
     if (!roomId) {
-      setMentionCandidates({});
       return;
     }
 
+    const requestSeq = ++requestSeqRef.current;
     const controller = new AbortController();
-    let cancelled = false;
+    abortRef.current = controller;
     const run = async () => {
       try {
         const res = await fetchMentionCandidates(roomId, controller.signal);
-        if (!cancelled) {
-          setMentionCandidates(res || {});
+        if (
+          !controller.signal.aborted &&
+          requestSeqRef.current === requestSeq &&
+          roomIdRef.current === roomId
+        ) {
+          setMentionState({ roomId, value: res || {} });
         }
       } catch (error) {
         if (controller.signal.aborted) return;
-        console.warn('メンション候補の取得に失敗しました', error);
-        if (!cancelled) setMentionCandidates({});
+        if (isUnavailableChatRequestFailure(error)) {
+          let readable = false;
+          try {
+            readable = (await onAccessUnavailable?.(roomId)) === true;
+          } catch {
+            // The parent access boundary owns the sanitized user-facing state.
+          }
+          if (
+            controller.signal.aborted ||
+            requestSeqRef.current !== requestSeq ||
+            roomIdRef.current !== roomId
+          ) {
+            return;
+          }
+          if (!readable) {
+            clearMentionCandidates();
+            return;
+          }
+        }
+        console.warn('メンション候補の取得に失敗しました');
+        if (
+          requestSeqRef.current === requestSeq &&
+          roomIdRef.current === roomId
+        ) {
+          setMentionState({ roomId, value: {} });
+        }
       }
     };
     run().catch(() => undefined);
     return () => {
-      cancelled = true;
       controller.abort();
+      if (abortRef.current === controller) abortRef.current = null;
     };
-  }, [roomId]);
+  }, [clearMentionCandidates, onAccessUnavailable, roomId]);
 
   const fetchMentionComposerCandidates = useCallback(
     async (query: string, kind: 'user' | 'group' | 'role') => {
       const keyword = query.trim().toLowerCase();
       if (!keyword || !roomId) return [];
+      const targetRoomId = roomId;
+      const requestSeq = requestSeqRef.current;
       if (kind === 'role') {
         return [];
       }
@@ -71,10 +123,38 @@ export function useRoomChatMentionCandidates(roomId: string) {
       }));
       let remoteGroups: { groupId: string; displayName?: string | null }[] = [];
       try {
-        const response = await fetchAckCandidates(roomId, query.trim());
+        const response = await fetchAckCandidates(targetRoomId, query.trim());
+        if (
+          requestSeqRef.current !== requestSeq ||
+          roomIdRef.current !== targetRoomId
+        ) {
+          return [];
+        }
         remoteGroups = response.groups || [];
       } catch (error) {
-        console.warn('確認対象グループ候補の取得に失敗しました', error);
+        if (isUnavailableChatRequestFailure(error)) {
+          let readable = false;
+          try {
+            readable = (await onAccessUnavailable?.(targetRoomId)) === true;
+          } catch {
+            // The parent access boundary owns the sanitized user-facing state.
+          }
+          if (
+            requestSeqRef.current !== requestSeq ||
+            roomIdRef.current !== targetRoomId
+          ) {
+            return [];
+          }
+          if (!readable) clearMentionCandidates();
+          return [];
+        }
+        console.warn('確認対象グループ候補の取得に失敗しました');
+      }
+      if (
+        requestSeqRef.current !== requestSeq ||
+        roomIdRef.current !== targetRoomId
+      ) {
+        return [];
       }
       const merged = new Map<string, string>();
       [...localGroups, ...remoteGroups].forEach((group) => {
@@ -102,42 +182,97 @@ export function useRoomChatMentionCandidates(roomId: string) {
           label: label === groupId ? groupId : `${label} (${groupId})`,
         }));
     },
-    [mentionCandidates.groups, mentionCandidates.users, roomId],
+    [
+      clearMentionCandidates,
+      mentionCandidates.groups,
+      mentionCandidates.users,
+      onAccessUnavailable,
+      roomId,
+    ],
   );
 
   return {
     mentionCandidates,
-    setMentionCandidates,
     fetchMentionComposerCandidates,
+    clearMentionCandidates,
   };
 }
 
-export function useRoomChatAckCandidates(roomId: string) {
-  const [ackCandidates, setAckCandidates] = useState<MentionCandidates>({});
+export function useRoomChatAckCandidates(
+  roomId: string,
+  onAccessUnavailable?: (roomId: string) => Promise<boolean>,
+) {
+  const [ackState, setAckState] = useState<{
+    roomId: string;
+    value: MentionCandidates;
+  }>({ roomId: '', value: {} });
   const [ackCandidateQuery, setAckCandidateQuery] = useState('');
+  const roomIdRef = useRef(roomId);
+  const requestSeqRef = useRef(0);
+  const ackCandidates = ackState.roomId === roomId ? ackState.value : {};
+
+  const clearAckCandidates = useCallback(() => {
+    requestSeqRef.current += 1;
+    setAckCandidateQuery('');
+    setAckState({ roomId: '', value: {} });
+  }, []);
 
   useEffect(() => {
-    setAckCandidateQuery('');
-    setAckCandidates({});
-  }, [roomId]);
+    roomIdRef.current = roomId;
+    clearAckCandidates();
+  }, [clearAckCandidates, roomId]);
 
   useEffect(() => {
     const keyword = ackCandidateQuery.trim();
     if (!roomId || keyword.length < 2) {
-      setAckCandidates({});
+      setAckState({ roomId: '', value: {} });
       return;
     }
+    const requestSeq = ++requestSeqRef.current;
+    const targetRoomId = roomId;
     let cancelled = false;
     const controller = new AbortController();
     const handle = window.setTimeout(() => {
-      fetchAckCandidates(roomId, keyword, controller.signal)
+      fetchAckCandidates(targetRoomId, keyword, controller.signal)
         .then((res) => {
-          if (!cancelled) setAckCandidates(res || {});
+          if (
+            !cancelled &&
+            requestSeqRef.current === requestSeq &&
+            roomIdRef.current === targetRoomId
+          ) {
+            setAckState({ roomId: targetRoomId, value: res || {} });
+          }
         })
-        .catch((error) => {
+        .catch(async (error) => {
           if (controller.signal.aborted) return;
-          console.warn('確認対象候補の取得に失敗しました', error);
-          if (!cancelled) setAckCandidates({});
+          if (isUnavailableChatRequestFailure(error)) {
+            let readable = false;
+            try {
+              readable = (await onAccessUnavailable?.(targetRoomId)) === true;
+            } catch {
+              // The parent access boundary owns the sanitized user-facing state.
+            }
+            if (
+              cancelled ||
+              controller.signal.aborted ||
+              requestSeqRef.current !== requestSeq ||
+              roomIdRef.current !== targetRoomId
+            ) {
+              return;
+            }
+            if (!readable) {
+              clearAckCandidates();
+              return;
+            }
+          }
+          console.warn('確認対象候補の取得に失敗しました');
+          if (
+            !cancelled &&
+            requestSeqRef.current === requestSeq &&
+            roomIdRef.current === targetRoomId
+          ) {
+            setAckState({ roomId: targetRoomId, value: {} });
+          }
         });
     }, 200);
     return () => {
@@ -145,12 +280,12 @@ export function useRoomChatAckCandidates(roomId: string) {
       controller.abort();
       window.clearTimeout(handle);
     };
-  }, [roomId, ackCandidateQuery]);
+  }, [ackCandidateQuery, clearAckCandidates, onAccessUnavailable, roomId]);
 
   return {
     ackCandidates,
-    setAckCandidates,
     ackCandidateQuery,
     setAckCandidateQuery,
+    clearAckCandidates,
   };
 }

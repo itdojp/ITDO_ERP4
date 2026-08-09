@@ -28,7 +28,8 @@
 - room selector、room event、別roomのroot deep linkの全経路で旧threadを先に閉じる。thread取得／mutation、reply/ACK reply POST、root POST、attachment upload/download、root timeline上のreaction/ACK/revoke/cancelが403/404になった場合は、current room identityを確認してからthreadとglobal searchを破棄し、無filterのroom再取得でread ACLを確認してtimelineを保持またはpurgeする。対象replyだけの同時削除で再取得が成功した場合は最新threadを維持し、遅延した旧roomのaccess callbackは現在roomへ影響させない。
 - root/reply/ACK reply POST lifecycleはApp sessionが所有し、thread panel close/reopenやsection unmount/remount後も送信中／結果不明lockを維持する。chat POST中と結果不明後はroom変更、timeline操作、新規thread openをlockし、requestを開始roomへ固定する。POST待機中にsectionがunmountされた場合はlifecycle結果だけを確定し、添付upload、timeline refresh、read mutationを新たに開始しない。mutation後にthread panelのfocusをclose buttonへ戻さず、root結果案内を独立したlive regionで通知する。
 - 同じroomのunread responseもrequest sequenceで順序付け、遅延responseによる巻き戻しを防ぐ。候補0件/loading中の`Escape`でもpanelとdraftを維持する。
-- global searchはserverの `(nextBefore, nextBeforeId)` を使い、stale requestをabort/破棄する。
+- timeline初回／追加page、既読前後のunread取得のいずれで403/404になっても、同じroom ACL再検証へ収束する。再検証失敗時はsummary/provider/model、notification setting、mention/ACK候補・previewもtimelineと同時に破棄し、各request sequenceで遅延responseの復元を拒否する。
+- global searchはserverの `(nextBefore, nextBeforeId)` を使い、stale requestをabort/破棄する。rootはparent/rootともnull、replyはparent/rootが同じ非self root IDであるcanonical topologyだけを受理し、欠損・不一致・self-reference・logical deleted resultをfail closedで除外する。
 
 ## 自動テスト
 
@@ -36,9 +37,9 @@
 
 | 検証                                     | 結果 | 証跡／補足                                                                         |
 | ---------------------------------------- | ---- | ---------------------------------------------------------------------------------- |
-| focused frontend unit                    | PASS | 7 files / 166 tests、ACL／unmount競合5ケースを20回（100実行）反復成功              |
-| frontend full                            | PASS | 92 files / 678 tests                                                               |
-| UI core coverage                         | PASS | statements 72.50%、branches 65.76%、functions 71.66%、lines 75.14%（閾値変更なし） |
+| focused frontend unit                    | PASS | 最終6 files / 120 tests、同一suiteを20回（2,400 tests）反復成功                    |
+| frontend full                            | PASS | 94 files / 705 tests                                                               |
+| UI core coverage                         | PASS | statements 73.03%、branches 66.08%、functions 72.06%、lines 75.66%（閾値変更なし） |
 | frontend build budget                    | PASS | initial JS 517.0 KiB / gzip 158.1 KiB                                              |
 | backend full                             | PASS | 2,040 tests                                                                        |
 | focused real-backend E2E                 | PASS | `frontend-chat-thread.spec.ts` 1/1（core/full両scopeで成功）                       |
@@ -49,7 +50,7 @@
 | OpenAPI export / breaking diff           | PASS | checked-in OpenAPIとの差分なし                                                     |
 | bounded-context / docs / image links     | PASS | dependency 0 violation、coverage PASS、130 image links                             |
 | audit / secret scan                      | PASS | npm audit high/critical 0、tracked-file secret scan 0（最終標準gateでも再確認）    |
-| lint / format / typecheck / build / test | PASS | backend 2,040 / frontend 678、全標準gate成功                                       |
+| lint / format / typecheck / build / test | PASS | backend 2,040 / frontend 705、全標準gate成功                                       |
 | release-readiness core                   | PASS | clean exact implementation headでrepo-side 29/29、core E2E 107/107                 |
 
 ## Real-backend E2E matrix
@@ -89,6 +90,8 @@
 - reply notification deep link、ACK response、候補・ACK preview responseはallowlistされたtopology/relation/scalarだけをstateへ反映する。
 - attachment upload/downloadの403/404はraw bodyを読まず、global searchを消去してcurrent room read ACLを再検証する。room read成功時だけ最新timelineを保持し、失敗時はroom-bound stateをpurgeする。
 - 同じroomのunread queryもrequest sequenceへbindし、古いresponseを破棄する。
+- timeline／unread／pagination／summary／ACK preview／通知設定／mention・ACK候補の403/404は同一のroom read ACL再検証へ収束する。失敗時は表示済みsummaryとprovider/model、通知設定、mention/ACK候補・previewを消去し、room切替・`POST_WITHOUT_VIEW`・access purge後に遅延responseを再適用しない。
+- global searchのparent/root topologyをallowlist検証し、parent-only、root-only、不一致、self-reference、logical deleted resultと本文をclient stateへ保持しない。
 - 後続pageのreaction/ackはmutation responseを対象messageへ局所適用し、先頭page refreshでstale化させない。
 - POST後のfresh refreshに同一replyの論理削除が含まれる場合はfresh content-free representationを優先し、POST response本文を再表示しない。
 - root削除成功時はrefresh失敗時も親timelineへcontent-freeな削除済み状態を通知する。

@@ -273,7 +273,7 @@ export function ChatThreadPanel({
   const [requiredUsers, setRequiredUsers] = useState('');
   const [nowMs, setNowMs] = useState(0);
   const { mentionCandidates, fetchMentionComposerCandidates } =
-    useRoomChatMentionCandidates(roomId);
+    useRoomChatMentionCandidates(roomId, onAccessCheckRequired);
   const threadState = useRoomChatThread({
     roomId,
     expectedRootId,

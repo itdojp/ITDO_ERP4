@@ -412,12 +412,38 @@ export function normalizeChatSearchItem(value: unknown): ChatSearchItem | null {
   if (item.messageType !== undefined && item.messageType !== 'text') {
     return null;
   }
+  if (
+    (item.deleted !== undefined && item.deleted !== false) ||
+    (item.deletedAt !== undefined && item.deletedAt !== null)
+  ) {
+    return null;
+  }
+  if (
+    (item.parentMessageId !== undefined &&
+      item.parentMessageId !== null &&
+      typeof item.parentMessageId !== 'string') ||
+    (item.threadRootId !== undefined &&
+      item.threadRootId !== null &&
+      typeof item.threadRootId !== 'string')
+  ) {
+    return null;
+  }
+  const parentMessageId = nullableStringValue(item.parentMessageId);
+  const threadRootId = nullableStringValue(item.threadRootId);
+  const isRoot = parentMessageId === null && threadRootId === null;
+  const isCanonicalReply =
+    parentMessageId !== null &&
+    threadRootId !== null &&
+    parentMessageId.length > 0 &&
+    parentMessageId === threadRootId &&
+    parentMessageId !== id;
+  if (!isRoot && !isCanonicalReply) return null;
   return {
     id,
     roomId,
     messageType: 'text',
-    parentMessageId: nullableStringValue(item.parentMessageId),
-    threadRootId: nullableStringValue(item.threadRootId),
+    parentMessageId,
+    threadRootId,
     userId,
     body,
     tags: normalizeStringArray(item.tags),

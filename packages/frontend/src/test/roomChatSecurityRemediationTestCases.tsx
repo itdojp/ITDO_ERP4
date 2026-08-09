@@ -823,4 +823,150 @@ export function registerRoomChatSecurityRemediationTests({
       ).toHaveLength(1);
     },
   );
+
+  it('clears displayed summary provenance after POST_WITHOUT_VIEW', async () => {
+    const root = makeMessage({
+      id: 'summary-post-root',
+      roomId: 'room-1',
+      body: 'summary before post access loss',
+    });
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1', allowExternalIntegrations: true })],
+      messagesByRoom: { 'room-1': [root] },
+      externalSummaryResultsByRoom: {
+        'room-1': [
+          {
+            summary: 'private displayed summary',
+            provider: 'stub-provider',
+            model: 'stub-model',
+            providerUrl: 'https://private.invalid',
+            internalTrace: 'private-trace',
+          },
+        ],
+      },
+      postMessageResponse: {
+        ...makeMessage({
+          id: 'summary-post-created',
+          roomId: 'room-1',
+          body: 'created without view',
+        }),
+        warning: {
+          code: 'POST_WITHOUT_VIEW',
+          message: 'raw warning must stay hidden',
+        },
+      },
+    });
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    try {
+      render(<RoomChat />);
+      expect(await screen.findByText(root.body)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: '外部要約' }));
+      expect(
+        await screen.findByText('private displayed summary'),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText('要約（外部: stub-provider / stub-model）'),
+      ).toBeInTheDocument();
+
+      fireEvent.change(screen.getByPlaceholderText('Markdownで入力'), {
+        target: { value: 'post revokes summary access' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: '送信' }));
+
+      await waitFor(() => {
+        expect(screen.queryByText('private displayed summary')).toBeNull();
+        expect(
+          screen.queryByText('要約（外部: stub-provider / stub-model）'),
+        ).toBeNull();
+      });
+      expect(screen.queryByText(/private\.invalid|private-trace/)).toBeNull();
+      expect(screen.queryByText('raw warning must stay hidden')).toBeNull();
+    } finally {
+      confirmSpy.mockRestore();
+    }
+  });
+
+  it('does not restore an old-room summary after room selection changes', async () => {
+    const pending = deferred<{ summary: string }>();
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' }), makeRoom({ id: 'room-2' })],
+      messagesByRoom: {
+        'room-1': [
+          makeMessage({ id: 'room-1-root', body: 'room one timeline' }),
+        ],
+        'room-2': [
+          makeMessage({
+            id: 'room-2-root',
+            roomId: 'room-2',
+            body: 'room two timeline',
+          }),
+        ],
+      },
+      summaryResultsByRoom: { 'room-1': [pending.promise] },
+    });
+
+    render(<RoomChat />);
+    expect(await screen.findByText('room one timeline')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '要約' }));
+    expect(
+      await screen.findByRole('button', { name: '要約中...' }),
+    ).toBeDisabled();
+    fireEvent.change(screen.getByRole('combobox', { name: 'ルーム' }), {
+      target: { value: 'room-2' },
+    });
+    expect(await screen.findByText('room two timeline')).toBeInTheDocument();
+
+    pending.resolve({ summary: 'stale room one summary' });
+    await act(async () => {
+      await pending.promise;
+    });
+    expect(screen.queryByText('stale room one summary')).toBeNull();
+    expect(screen.queryByText(/要約（外部:/)).toBeNull();
+  });
+
+  it('does not restore an in-flight summary after room access is purged', async () => {
+    const pending = deferred<{ summary: string }>();
+    const root = makeMessage({
+      id: 'summary-access-root',
+      roomId: 'room-1',
+      body: 'summary access root',
+    });
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' })],
+      messagesByRoom: { 'room-1': [] },
+      messageReadResultsByRoom: {
+        'room-1': [
+          [root],
+          new Error('Request failed: room unavailable (404) hidden'),
+        ],
+      },
+      summaryResultsByRoom: { 'room-1': [pending.promise] },
+      rootMutationErrors: {
+        [`/chat-messages/${root.id}/reactions`]: new Error(
+          'Request failed: reaction unavailable (404) private-detail',
+        ),
+      },
+    });
+
+    render(<RoomChat />);
+    expect(await screen.findByText(root.body)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '要約' }));
+    expect(
+      await screen.findByRole('button', { name: '要約中...' }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '👍' }));
+    expect(
+      await screen.findByText(
+        'ルームを表示できません。権限を確認して再読み込みしてください。',
+      ),
+    ).toBeInTheDocument();
+
+    pending.resolve({ summary: 'stale summary after access purge' });
+    await act(async () => {
+      await pending.promise;
+    });
+    expect(screen.queryByText('stale summary after access purge')).toBeNull();
+    expect(screen.queryByText(/private-detail|hidden/)).toBeNull();
+  });
 }

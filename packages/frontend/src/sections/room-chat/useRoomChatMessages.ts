@@ -19,18 +19,19 @@ export type LoadMessagesOptions = {
   failureMessage?: string;
   onCurrentFailure?: () => void;
   skipReadState?: boolean;
+  suppressAccessCheck?: boolean;
 };
 
 export function useRoomChatMessages({
   roomId,
   filterQuery,
   filterTag,
-  onReadAccessUnavailable,
+  onAccessUnavailable,
 }: {
   roomId: string;
   filterQuery: string;
   filterTag: string;
-  onReadAccessUnavailable?: (roomId: string) => Promise<boolean>;
+  onAccessUnavailable?: (roomId: string) => Promise<boolean>;
 }) {
   const [items, setItems] = useState<ChatMessage[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -96,7 +97,7 @@ export function useRoomChatMessages({
       } catch (error) {
         if (isUnavailableChatRequestFailure(error)) {
           try {
-            return (await onReadAccessUnavailable?.(targetRoomId)) === true;
+            return (await onAccessUnavailable?.(targetRoomId)) === true;
           } catch {
             return false;
           }
@@ -105,7 +106,7 @@ export function useRoomChatMessages({
         return true;
       }
     },
-    [onReadAccessUnavailable],
+    [onAccessUnavailable],
   );
 
   const purgeRoomState = useCallback(
@@ -208,8 +209,31 @@ export function useRoomChatMessages({
           });
         }
         return isCurrentRequest();
-      } catch {
+      } catch (error) {
         if (controller.signal.aborted || !isCurrentRequest()) return false;
+        if (
+          isUnavailableChatRequestFailure(error) &&
+          !options?.suppressAccessCheck
+        ) {
+          let readable = false;
+          try {
+            readable = (await onAccessUnavailable?.(targetRoomId)) === true;
+          } catch {
+            readable = false;
+          }
+          if (!readable && isCurrentRequest()) {
+            if (
+              purgeRoomState(
+                targetRoomId,
+                options?.failureMessage ??
+                  'ルームを表示できません。権限を確認して再読み込みしてください。',
+              )
+            ) {
+              options?.onCurrentFailure?.();
+            }
+          }
+          return false;
+        }
         console.error('Failed to load room messages.');
         if (options?.failureMessage) {
           if (purgeRoomState(targetRoomId, options.failureMessage)) {
@@ -237,6 +261,7 @@ export function useRoomChatMessages({
       filterQuery,
       filterTag,
       markRead,
+      onAccessUnavailable,
       purgeRoomState,
       roomId,
     ],

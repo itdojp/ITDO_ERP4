@@ -449,4 +449,87 @@ describe('useRoomChatMessages', () => {
     expect(result.current.message).toBe('');
     expect(onCurrentFailure).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['initial unread', 1, 403],
+    ['post-read unread', 2, 404],
+  ] as const)(
+    'fails closed when the %s request reports unavailable access',
+    async (_phase, failingUnreadCall, status) => {
+      let unreadCalls = 0;
+      api.mockImplementation(async (path: string, init?: RequestInit) => {
+        const url = new URL(path, 'http://localhost');
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (url.pathname.endsWith('/messages')) {
+          return { items: [message('private-timeline', 'room-1')] };
+        }
+        if (url.pathname.endsWith('/unread')) {
+          unreadCalls += 1;
+          if (unreadCalls === failingUnreadCall) {
+            throw new Error(`Request failed (${status}) private-detail`);
+          }
+          return { unreadCount: 1, lastReadAt: null };
+        }
+        if (url.pathname.endsWith('/read') && method === 'POST') return {};
+        throw new Error(`Unhandled api path: ${path}`);
+      });
+      const onAccessUnavailable = vi.fn().mockResolvedValue(false);
+      const { result } = renderHook(() =>
+        useRoomChatMessages({
+          roomId: 'room-1',
+          filterQuery: '',
+          filterTag: '',
+          onAccessUnavailable,
+        }),
+      );
+
+      await act(async () => {
+        await result.current.loadMessages();
+      });
+
+      expect(onAccessUnavailable).toHaveBeenCalledWith('room-1');
+      expect(result.current.items).toEqual([]);
+      expect(result.current.unreadCount).toBe(0);
+      expect(result.current.highlightSince).toBeNull();
+      expect(result.current.message).toBe(
+        'ルームを表示できません。権限を確認して再読み込みしてください。',
+      );
+      expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('private-detail'),
+      );
+    },
+  );
+
+  it('fails closed when append pagination reports unavailable access', async () => {
+    api.mockRejectedValueOnce(
+      new Error('Request failed (404) hidden-pagination-detail'),
+    );
+    const onAccessUnavailable = vi.fn().mockRejectedValue(new Error('hidden'));
+    const onCurrentFailure = vi.fn();
+    const { result } = renderHook(() =>
+      useRoomChatMessages({
+        roomId: 'room-1',
+        filterQuery: '',
+        filterTag: '',
+        onAccessUnavailable,
+      }),
+    );
+    act(() => {
+      result.current.setItems([message('visible-before-page', 'room-1')]);
+    });
+
+    await act(async () => {
+      await result.current.loadMessages({ append: true, onCurrentFailure });
+    });
+
+    expect(onAccessUnavailable).toHaveBeenCalledWith('room-1');
+    expect(onCurrentFailure).toHaveBeenCalledTimes(1);
+    expect(result.current.items).toEqual([]);
+    expect(result.current.message).toBe(
+      'ルームを表示できません。権限を確認して再読み込みしてください。',
+    );
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('hidden-pagination-detail'),
+    );
+  });
 });

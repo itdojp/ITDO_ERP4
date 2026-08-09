@@ -36,6 +36,7 @@ export function useRoomChatAccessRevalidation(input: {
         query: '',
         tag: '',
         skipReadState: true,
+        suppressAccessCheck: true,
         failureMessage:
           'ルームを表示できません。権限を確認して再読み込みしてください。',
         onCurrentFailure: () => clearRoomBoundThreadState(targetRoomId),

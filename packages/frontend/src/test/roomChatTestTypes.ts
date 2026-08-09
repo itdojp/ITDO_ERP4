@@ -70,6 +70,14 @@ export type RoomChatApiMockOptions = {
     string,
     { unreadCount?: number; lastReadAt?: string | null }
   >;
+  unreadResultsByRoom?: Record<
+    string,
+    Array<
+      | { unreadCount?: number; lastReadAt?: string | null }
+      | Error
+      | Promise<{ unreadCount?: number; lastReadAt?: string | null }>
+    >
+  >;
   notificationSettingsByRoom?: Record<
     string,
     {
@@ -84,6 +92,38 @@ export type RoomChatApiMockOptions = {
   failOnGlobalSearch?: string[];
   globalSearchResultsByQuery?: Record<string, ChatSearchItemTestValue[]>;
   failOnExternalSummary?: string[];
+  summaryResultsByRoom?: Record<
+    string,
+    Array<
+      | { summary?: string; providerUrl?: string; internalTrace?: string }
+      | Error
+      | Promise<{
+          summary?: string;
+          providerUrl?: string;
+          internalTrace?: string;
+        }>
+    >
+  >;
+  externalSummaryResultsByRoom?: Record<
+    string,
+    Array<
+      | {
+          summary?: string;
+          provider?: string;
+          model?: string;
+          providerUrl?: string;
+          internalTrace?: string;
+        }
+      | Error
+      | Promise<{
+          summary?: string;
+          provider?: string;
+          model?: string;
+          providerUrl?: string;
+          internalTrace?: string;
+        }>
+    >
+  >;
   notificationSettingPatchBodies?: Array<{
     roomId: string;
     body: {
