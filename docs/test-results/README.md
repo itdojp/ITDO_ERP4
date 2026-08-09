@@ -41,6 +41,11 @@
 - [Storage artifact migration evidence template](storage-artifact-migration-template.md)
 - [Storage／backup統合readiness 記録テンプレート](storage-readiness-template.md)
 
+### 2026-08-09
+
+- [Issue #2014 Chat thread UI / E2E verification（PR C）](2026-08-09-issue2014-chat-thread-ui.md)
+  - 証跡: [docs/test-results/2026-08-09-issue2014-chat-thread-ui/](2026-08-09-issue2014-chat-thread-ui/)
+
 ### 2026-08-08
 
 - [Issue #2013 bounded conversation import verification（PR B）](2026-08-08-issue2013-knowledge-conversation-import.md)

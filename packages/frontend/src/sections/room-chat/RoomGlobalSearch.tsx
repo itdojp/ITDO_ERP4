@@ -1,4 +1,4 @@
-import type React from 'react';
+import React from 'react';
 import {
   buildExcerpt,
   formatRoomLabel,
@@ -9,14 +9,17 @@ type AsyncVoid = void | Promise<void>;
 
 export type RoomGlobalSearchProps = {
   globalQuery: string;
-  setGlobalQuery: React.Dispatch<React.SetStateAction<string>>;
+  setGlobalQuery: (value: string) => void;
   loadGlobalSearch: (options?: { append?: boolean }) => AsyncVoid;
   globalLoading: boolean;
   clearGlobalSearch: () => void;
   globalMessage: string;
   globalItems: ChatSearchItem[];
   globalHasMore: boolean;
-  openSearchResult: (item: ChatSearchItem) => void;
+  openSearchResult: (
+    item: ChatSearchItem,
+    trigger: HTMLButtonElement | null,
+  ) => void;
   currentUserId: string;
 };
 
@@ -80,6 +83,9 @@ export function RoomGlobalSearch({
                 <div>
                   <strong>{roomLabel}</strong>
                   <div style={{ fontSize: 12, color: '#475569' }}>
+                    <span className="badge">
+                      {item.parentMessageId ? '返信' : '親メッセージ'}
+                    </span>{' '}
                     {createdAt} / {item.userId}
                   </div>
                   {excerpt && (
@@ -92,9 +98,11 @@ export function RoomGlobalSearch({
                 </div>
                 <button
                   className="button secondary"
-                  onClick={() => openSearchResult(item)}
+                  onClick={(event) =>
+                    openSearchResult(item, event.currentTarget)
+                  }
                 >
-                  開く
+                  スレッドを開く
                 </button>
               </div>
             </div>

@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -37,9 +38,38 @@ const {
   DocumentSendLogs,
   PdfFiles,
   KnowledgeHub,
+  completeRootPostAsUncertain,
 } = vi.hoisted(() => {
   const makeSectionMock = (testId: string, label: string) =>
     vi.fn(() => <div data-testid={testId}>{label}</div>);
+
+  const completeRootPostAsUncertain = vi.fn();
+  const RoomChat = vi.fn(
+    ({
+      rootPostLifecycle,
+      onRootPostLifecycleChange,
+    }: {
+      rootPostLifecycle?: 'idle' | 'in_flight' | 'uncertain';
+      onRootPostLifecycleChange?: (
+        lifecycle: 'idle' | 'in_flight' | 'uncertain',
+      ) => void;
+    }) => {
+      completeRootPostAsUncertain.mockImplementation(() =>
+        onRootPostLifecycleChange?.('uncertain'),
+      );
+      return (
+        <div data-testid="section-room-chat">
+          <span>{`RoomChat lifecycle:${rootPostLifecycle ?? 'idle'}`}</span>
+          <button
+            type="button"
+            onClick={() => onRootPostLifecycleChange?.('in_flight')}
+          >
+            root post開始
+          </button>
+        </div>
+      );
+    },
+  );
 
   return {
     apiResponse: vi.fn(),
@@ -57,7 +87,7 @@ const {
     Reports: makeSectionMock('section-reports', 'Reports'),
     AdminSettings: makeSectionMock('section-admin-settings', 'AdminSettings'),
     Approvals: makeSectionMock('section-approvals', 'Approvals'),
-    RoomChat: makeSectionMock('section-room-chat', 'RoomChat'),
+    RoomChat,
     ChatBreakGlass: makeSectionMock(
       'section-chat-break-glass',
       'ChatBreakGlass',
@@ -82,6 +112,7 @@ const {
     ),
     PdfFiles: makeSectionMock('section-pdf-files', 'PdfFiles'),
     KnowledgeHub: makeSectionMock('section-knowledge-hub', 'KnowledgeHub'),
+    completeRootPostAsUncertain,
   };
 });
 
@@ -206,6 +237,7 @@ beforeEach(() => {
   window.localStorage.clear();
   resetLocation();
   vi.mocked(apiResponse).mockReset();
+  completeRootPostAsUncertain.mockReset();
 });
 
 describe('App', () => {
@@ -282,6 +314,30 @@ describe('App', () => {
     expect(window.localStorage.getItem('erp4_active_section')).toBe(
       'room-chat',
     );
+  });
+
+  it('keeps a root POST uncertainty lock across RoomChat section remounts', async () => {
+    window.localStorage.setItem('erp4_active_section', 'room-chat');
+    render(<App />);
+
+    expect(
+      await screen.findByText('RoomChat lifecycle:idle'),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'root post開始' }));
+    expect(
+      await screen.findByText('RoomChat lifecycle:in_flight'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'ホーム' }));
+    await waitFor(() => {
+      expect(screen.queryByTestId('section-room-chat')).toBeNull();
+    });
+    act(() => completeRootPostAsUncertain());
+    fireEvent.click(screen.getByRole('button', { name: 'ルームチャット' }));
+
+    expect(
+      await screen.findByText('RoomChat lifecycle:uncertain'),
+    ).toBeInTheDocument();
   });
 
   it('falls back to the home section when the saved section is invalid', async () => {
@@ -526,13 +582,14 @@ describe('App', () => {
     }
   });
 
-  it('dispatches room and message events when chat_message deep link resolution succeeds', async () => {
+  it('keeps missing root topology backward-compatible and dispatches normalized root topology', async () => {
     const roomListener = vi.fn();
     const messageListener = vi.fn();
     vi.mocked(apiResponse).mockResolvedValue(
       makeJsonResponse({
         ok: true,
         payload: {
+          id: 'MSG-100',
           roomId: 'room-10',
           createdAt: '2026-03-31T10:00:00.000Z',
           excerpt: '確認本文',
@@ -580,6 +637,8 @@ describe('App', () => {
         projectId: 'PJ-100',
         createdAt: '2026-03-31T10:00:00.000Z',
         excerpt: '確認本文',
+        parentMessageId: null,
+        threadRootId: null,
       });
     } finally {
       window.removeEventListener(
@@ -592,6 +651,187 @@ describe('App', () => {
       );
     }
   });
+
+  it('dispatches allowlisted reply topology for a chat_message deep link', async () => {
+    const messageListener = vi.fn();
+    vi.mocked(apiResponse).mockResolvedValue(
+      makeJsonResponse({
+        ok: true,
+        payload: {
+          id: 'MSG-REPLY-20',
+          roomId: 'room-20',
+          createdAt: '2026-03-31T11:00:00.000Z',
+          excerpt: '返信本文',
+          parentMessageId: 'MSG-ROOT-20',
+          threadRootId: 'MSG-ROOT-20',
+          internalDebugContext: 'must-not-be-dispatched',
+          room: {
+            id: 'room-20',
+            type: 'project',
+            projectId: 'PJ-200',
+          },
+        },
+      }),
+    );
+    window.addEventListener(
+      'erp4_open_chat_message',
+      messageListener as EventListener,
+    );
+    window.location.hash = '#/open?kind=chat_message&id=MSG-REPLY-20';
+
+    try {
+      render(<App />);
+
+      await waitFor(() => {
+        expect(messageListener).toHaveBeenCalledTimes(1);
+      });
+      expect(
+        (messageListener.mock.calls[0]?.[0] as CustomEvent).detail,
+      ).toEqual({
+        messageId: 'MSG-REPLY-20',
+        roomId: 'room-20',
+        roomType: 'project',
+        projectId: 'PJ-200',
+        createdAt: '2026-03-31T11:00:00.000Z',
+        excerpt: '返信本文',
+        parentMessageId: 'MSG-ROOT-20',
+        threadRootId: 'MSG-ROOT-20',
+      });
+    } finally {
+      window.removeEventListener(
+        'erp4_open_chat_message',
+        messageListener as EventListener,
+      );
+    }
+  });
+
+  it.each([
+    [
+      'mismatched reply identifiers',
+      { parentMessageId: 'MSG-ROOT-1', threadRootId: 'MSG-ROOT-2' },
+    ],
+    ['partial topology', { parentMessageId: 'MSG-ROOT-1' }],
+    ['empty reply identifiers', { parentMessageId: ' ', threadRootId: ' ' }],
+    [
+      'self-referential reply',
+      { parentMessageId: 'MSG-INVALID', threadRootId: 'MSG-INVALID' },
+    ],
+    [
+      'mixed root and reply topology',
+      { parentMessageId: null, threadRootId: 'MSG-ROOT-1' },
+    ],
+  ] as const)(
+    'rejects malformed chat topology: %s',
+    async (_label, topology) => {
+      const messageListener = vi.fn();
+      vi.mocked(apiResponse).mockResolvedValue(
+        makeJsonResponse({
+          ok: true,
+          payload: {
+            id: 'MSG-INVALID',
+            roomId: 'room-invalid',
+            createdAt: '2026-03-31T12:00:00.000Z',
+            room: { id: 'room-invalid', type: 'project', projectId: null },
+            ...topology,
+          },
+        }),
+      );
+      window.addEventListener(
+        'erp4_open_chat_message',
+        messageListener as EventListener,
+      );
+      window.location.hash = '#/open?kind=chat_message&id=MSG-INVALID';
+
+      try {
+        render(<App />);
+
+        await waitFor(() => {
+          expect(screen.getByRole('alert')).toHaveTextContent(
+            'chat_message の deep link 解決に失敗しました',
+          );
+        });
+        expect(messageListener).not.toHaveBeenCalled();
+      } finally {
+        window.removeEventListener(
+          'erp4_open_chat_message',
+          messageListener as EventListener,
+        );
+      }
+    },
+  );
+
+  it.each([
+    [
+      'returned message ID',
+      {
+        id: 'MSG-OTHER',
+        roomId: 'room-bound',
+        room: { id: 'room-bound', type: 'project', projectId: null },
+      },
+    ],
+    [
+      'nested room ID',
+      {
+        id: 'MSG-BOUND',
+        roomId: 'room-bound',
+        room: { id: 'room-other', type: 'project', projectId: null },
+      },
+    ],
+    [
+      'missing returned message ID',
+      {
+        roomId: 'room-bound',
+        room: { id: 'room-bound', type: 'project', projectId: null },
+      },
+    ],
+  ] as const)(
+    'rejects a chat_message deep-link response with mismatched %s',
+    async (_label, identity) => {
+      const roomListener = vi.fn();
+      const messageListener = vi.fn();
+      vi.mocked(apiResponse).mockResolvedValue(
+        makeJsonResponse({
+          ok: true,
+          payload: {
+            ...identity,
+            createdAt: '2026-03-31T12:30:00.000Z',
+            parentMessageId: null,
+            threadRootId: null,
+          },
+        }),
+      );
+      window.addEventListener(
+        'erp4_open_room_chat',
+        roomListener as EventListener,
+      );
+      window.addEventListener(
+        'erp4_open_chat_message',
+        messageListener as EventListener,
+      );
+      window.location.hash = '#/open?kind=chat_message&id=MSG-BOUND';
+
+      try {
+        render(<App />);
+
+        await waitFor(() => {
+          expect(screen.getByRole('alert')).toHaveTextContent(
+            'chat_message の deep link 解決に失敗しました',
+          );
+        });
+        expect(roomListener).not.toHaveBeenCalled();
+        expect(messageListener).not.toHaveBeenCalled();
+      } finally {
+        window.removeEventListener(
+          'erp4_open_room_chat',
+          roomListener as EventListener,
+        );
+        window.removeEventListener(
+          'erp4_open_chat_message',
+          messageListener as EventListener,
+        );
+      }
+    },
+  );
 
   it('shows a room membership warning for forbidden chat_message deep links', async () => {
     vi.mocked(apiResponse).mockResolvedValue(

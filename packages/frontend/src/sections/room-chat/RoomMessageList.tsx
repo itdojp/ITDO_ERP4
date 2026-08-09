@@ -24,7 +24,7 @@ export type RoomMessageListProps = {
   setFilterQuery: React.Dispatch<React.SetStateAction<string>>;
   filterTag: string;
   setFilterTag: React.Dispatch<React.SetStateAction<string>>;
-  loadMessages: (options?: LoadMessagesOptions) => Promise<void>;
+  loadMessages: (options?: LoadMessagesOptions) => Promise<boolean>;
   roomId: string;
   isLoading: boolean;
   items: ChatMessage[];
@@ -34,6 +34,7 @@ export type RoomMessageListProps = {
   currentUserId: string;
   roles: string[];
   renderMessageBody: (text: string) => React.ReactNode;
+  onOpenThread: (item: ChatMessage, trigger: HTMLButtonElement | null) => void;
   copyMessageLink: (
     mode: 'url' | 'markdown',
     item: Pick<ChatMessage, 'id' | 'createdAt' | 'userId' | 'body'>,
@@ -66,6 +67,7 @@ export function RoomMessageList({
   currentUserId,
   roles,
   renderMessageBody,
+  onOpenThread,
   copyMessageLink,
   addReaction,
   ack,
@@ -202,75 +204,96 @@ export function RoomMessageList({
                   </span>
                 </div>
                 <div className="row" style={{ gap: 6 }}>
-                  <button
-                    type="button"
-                    className="button secondary"
-                    aria-label="発言リンクURLをコピー"
-                    onClick={() => copyMessageLink('url', item)}
-                    style={{ padding: '2px 8px' }}
-                  >
-                    URL
-                  </button>
-                  <button
-                    type="button"
-                    className="button secondary"
-                    aria-label="発言リンクMarkdownをコピー"
-                    onClick={() => copyMessageLink('markdown', item)}
-                    style={{ padding: '2px 8px' }}
-                  >
-                    MD
-                  </button>
-                  {reactionOptions.map((emoji) => (
-                    <button
-                      key={emoji}
-                      className="button secondary"
-                      onClick={() => addReaction(item.id, emoji)}
-                      style={{ padding: '2px 8px' }}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
+                  {!item.deleted && (
+                    <>
+                      <button
+                        type="button"
+                        className="button secondary"
+                        aria-label="発言リンクURLをコピー"
+                        onClick={() => copyMessageLink('url', item)}
+                        style={{ padding: '2px 8px' }}
+                      >
+                        URL
+                      </button>
+                      <button
+                        type="button"
+                        className="button secondary"
+                        aria-label="発言リンクMarkdownをコピー"
+                        onClick={() => copyMessageLink('markdown', item)}
+                        style={{ padding: '2px 8px' }}
+                      >
+                        MD
+                      </button>
+                      {reactionOptions.map((emoji) => (
+                        <button
+                          key={emoji}
+                          className="button secondary"
+                          onClick={() => addReaction(item.id, emoji)}
+                          style={{ padding: '2px 8px' }}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </>
+                  )}
                 </div>
               </div>
-              <div style={{ marginTop: 8 }}>{renderMessageBody(item.body)}</div>
-              {(mentionAllFlag ||
-                mentionedUserIds.length > 0 ||
-                mentionedGroupIds.length > 0) && (
+              {item.deleted ? (
                 <div
-                  className="row"
-                  style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}
+                  role="status"
+                  aria-label="削除済みの親メッセージ"
+                  style={{
+                    marginTop: 8,
+                    color: '#64748b',
+                    fontStyle: 'italic',
+                  }}
                 >
-                  {mentionAllFlag && (
-                    <span className="badge" aria-label="全員へのメンション">
-                      @all
-                    </span>
-                  )}
-                  {mentionedUserIds.map((userId) => (
-                    <span
-                      key={userId}
-                      className="badge"
-                      aria-label={`メンション対象ユーザ: ${userId}`}
-                    >
-                      @{userId}
-                    </span>
-                  ))}
-                  {mentionedGroupIds.map((groupId) => (
-                    <span
-                      key={groupId}
-                      className="badge"
-                      aria-label={`メンション対象グループ: ${groupId}`}
-                    >
-                      @{groupId}
-                    </span>
-                  ))}
+                  親メッセージは削除されています。返信履歴は保持されています。
+                </div>
+              ) : (
+                <div style={{ marginTop: 8 }}>
+                  {renderMessageBody(item.body ?? '')}
                 </div>
               )}
-              {tags.length > 0 && (
+              {!item.deleted &&
+                (mentionAllFlag ||
+                  mentionedUserIds.length > 0 ||
+                  mentionedGroupIds.length > 0) && (
+                  <div
+                    className="row"
+                    style={{ gap: 6, flexWrap: 'wrap', marginTop: 6 }}
+                  >
+                    {mentionAllFlag && (
+                      <span className="badge" aria-label="全員へのメンション">
+                        @all
+                      </span>
+                    )}
+                    {mentionedUserIds.map((userId) => (
+                      <span
+                        key={userId}
+                        className="badge"
+                        aria-label={`メンション対象ユーザ: ${userId}`}
+                      >
+                        @{userId}
+                      </span>
+                    ))}
+                    {mentionedGroupIds.map((groupId) => (
+                      <span
+                        key={groupId}
+                        className="badge"
+                        aria-label={`メンション対象グループ: ${groupId}`}
+                      >
+                        @{groupId}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              {!item.deleted && tags.length > 0 && (
                 <div style={{ marginTop: 8, fontSize: 12, color: '#475569' }}>
                   tags: {tags.map((tag) => `#${tag}`).join(' ')}
                 </div>
               )}
-              {item.reactions && (
+              {!item.deleted && item.reactions && (
                 <div style={{ marginTop: 8, fontSize: 12, color: '#475569' }}>
                   {Object.entries(item.reactions).map(([emoji, val]) => (
                     <span key={emoji} style={{ marginRight: 8 }}>
@@ -279,7 +302,7 @@ export function RoomMessageList({
                   ))}
                 </div>
               )}
-              {ackRequest && (
+              {!item.deleted && ackRequest && (
                 <div style={{ marginTop: 10 }}>
                   <div className="badge">確認依頼</div>
                   <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
@@ -363,7 +386,8 @@ export function RoomMessageList({
                   )}
                 </div>
               )}
-              {Array.isArray(item.attachments) &&
+              {!item.deleted &&
+                Array.isArray(item.attachments) &&
                 item.attachments.length > 0 && (
                   <div style={{ marginTop: 10 }}>
                     <AttachmentField
@@ -382,14 +406,33 @@ export function RoomMessageList({
                         downloadAttachment(
                           target.id,
                           target.originalName,
-                        ).catch((error: unknown) => {
-                          console.error(error);
+                        ).catch(() => {
+                          console.error('Failed to download chat attachment.');
                           setMessage('添付のダウンロードに失敗しました');
                         });
                       }}
                     />
                   </div>
                 )}
+              <div
+                className="row"
+                style={{ gap: 8, flexWrap: 'wrap', marginTop: 10 }}
+              >
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={(event) => onOpenThread(item, event.currentTarget)}
+                  aria-label={`スレッドを開く（返信${item.replyCount ?? 0}件）`}
+                >
+                  スレッドを開く
+                </button>
+                <span style={{ fontSize: 12, color: '#475569' }}>
+                  返信 {item.replyCount ?? 0}件
+                  {item.lastReplyAt
+                    ? ` / 最終返信 ${new Date(item.lastReplyAt).toLocaleString()}`
+                    : ''}
+                </span>
+              </div>
             </div>
           );
         })}

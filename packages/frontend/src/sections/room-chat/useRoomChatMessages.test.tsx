@@ -32,9 +32,20 @@ function message(
   return {
     id,
     roomId,
+    messageType: 'text' as const,
+    parentMessageId: null,
+    threadRootId: null,
     userId: 'alice',
     body: `${id} body`,
+    tags: [],
+    mentions: null,
+    mentionsAll: false,
+    ackRequest: null,
+    attachments: [],
     createdAt,
+    deleted: false,
+    deletedAt: null,
+    deletedReason: null,
   };
 }
 
@@ -99,6 +110,11 @@ describe('useRoomChatMessages', () => {
     expect(result.current.message).toBe('');
     expect(api).toHaveBeenCalledWith('/chat-rooms/room-1/read', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        through: '2026-03-28T00:00:00.000Z',
+        throughMessageId: 'm1',
+      }),
     });
   });
 
@@ -118,6 +134,60 @@ describe('useRoomChatMessages', () => {
     expect(result.current.message).toBe('検索語は2文字以上で入力してください');
     expect(result.current.hasMore).toBe(false);
     expect(api).not.toHaveBeenCalled();
+  });
+
+  it('does not advance the read boundary when no message was displayed', async () => {
+    api.mockImplementation(async (path: string) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.pathname.endsWith('/messages')) return { items: [] };
+      if (url.pathname.endsWith('/unread')) {
+        return { unreadCount: 2, lastReadAt: null };
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+    const { result } = renderHook(() =>
+      useRoomChatMessages({ roomId: 'room-1', filterQuery: '', filterTag: '' }),
+    );
+
+    await act(async () => {
+      await result.current.loadMessages();
+    });
+
+    expect(result.current.items).toEqual([]);
+    expect(result.current.unreadCount).toBe(2);
+    expect(
+      api.mock.calls.some(([path]) => String(path).endsWith('/read')),
+    ).toBe(false);
+  });
+
+  it('does not guess a read boundary from same-millisecond random IDs', async () => {
+    api.mockImplementation(async (path: string) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.pathname.endsWith('/messages')) {
+        return {
+          items: [
+            message('z-random-id', 'room-1'),
+            message('a-random-id', 'room-1'),
+          ],
+        };
+      }
+      if (url.pathname.endsWith('/unread')) {
+        return { unreadCount: 2, lastReadAt: null };
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+    const { result } = renderHook(() =>
+      useRoomChatMessages({ roomId: 'room-1', filterQuery: '', filterTag: '' }),
+    );
+
+    await act(async () => {
+      await result.current.loadMessages();
+    });
+
+    expect(result.current.items).toHaveLength(2);
+    expect(
+      api.mock.calls.some(([path]) => String(path).endsWith('/read')),
+    ).toBe(false);
   });
 
   it('does not let a stale room response overwrite the current room messages', async () => {
@@ -186,6 +256,223 @@ describe('useRoomChatMessages', () => {
     expect(result.current.isLoadingMore).toBe(false);
   });
 
+  it('keeps the newest unread response when same-room requests complete out of order', async () => {
+    const older = deferred<{
+      unreadCount: number;
+      lastReadAt: string | null;
+    }>();
+    const newer = deferred<{
+      unreadCount: number;
+      lastReadAt: string | null;
+    }>();
+    let unreadCalls = 0;
+    api.mockImplementation((path: string) => {
+      const url = new URL(path, 'http://localhost');
+      if (!url.pathname.endsWith('/unread')) {
+        throw new Error(`Unhandled api path: ${path}`);
+      }
+      unreadCalls += 1;
+      return unreadCalls === 1 ? older.promise : newer.promise;
+    });
+    const { result } = renderHook(() =>
+      useRoomChatMessages({ roomId: 'room-1', filterQuery: '', filterTag: '' }),
+    );
+
+    const olderRequest = result.current.refreshUnreadState('room-1');
+    const newerRequest = result.current.refreshUnreadState('room-1');
+    newer.resolve({ unreadCount: 0, lastReadAt: '2026-03-28T00:00:00.000Z' });
+    await act(async () => {
+      await newerRequest;
+    });
+    expect(result.current.unreadCount).toBe(0);
+
+    older.resolve({ unreadCount: 5, lastReadAt: null });
+    await act(async () => {
+      await olderRequest;
+    });
+    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.highlightSince?.toISOString()).toBe(
+      '2026-03-28T00:00:00.000Z',
+    );
+  });
+
+  it('does not expose the previous room unread state while the selected room is changing', async () => {
+    api.mockImplementation(async (path: string, init?: RequestInit) => {
+      const url = new URL(path, 'http://localhost');
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (url.pathname === '/chat-rooms/room-1/messages') {
+        return { items: [message('room-1-message', 'room-1')] };
+      }
+      if (url.pathname === '/chat-rooms/room-2/messages') {
+        return { items: [message('room-2-message', 'room-2')] };
+      }
+      if (url.pathname === '/chat-rooms/room-1/unread') {
+        return {
+          unreadCount: 7,
+          lastReadAt: '2026-03-27T00:00:00.000Z',
+        };
+      }
+      if (url.pathname === '/chat-rooms/room-2/unread') {
+        throw new Error('Request failed (403) private-unread-detail');
+      }
+      if (url.pathname.endsWith('/read') && method === 'POST') return {};
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+    const onAccessUnavailable = vi.fn().mockResolvedValue(true);
+    const { result, rerender } = renderHook(
+      ({ roomId }) =>
+        useRoomChatMessages({
+          roomId,
+          filterQuery: '',
+          filterTag: '',
+          onAccessUnavailable,
+        }),
+      { initialProps: { roomId: 'room-1' } },
+    );
+
+    await act(async () => {
+      await result.current.loadMessages();
+    });
+    expect(result.current.unreadCount).toBe(7);
+    expect(result.current.highlightSince?.toISOString()).toBe(
+      '2026-03-27T00:00:00.000Z',
+    );
+
+    rerender({ roomId: 'room-2' });
+    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.highlightSince).toBeNull();
+    let refreshed = false;
+    await act(async () => {
+      refreshed = await result.current.loadMessages();
+    });
+
+    expect(refreshed).toBe(true);
+    expect(onAccessUnavailable).toHaveBeenCalledWith('room-2');
+    expect(result.current.items).toEqual([message('room-2-message', 'room-2')]);
+    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.highlightSince).toBeNull();
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('private-unread-detail'),
+    );
+  });
+
+  it('clears the pre-read unread state when the post-read unread request is unavailable but room access remains', async () => {
+    let unreadCalls = 0;
+    api.mockImplementation(async (path: string, init?: RequestInit) => {
+      const url = new URL(path, 'http://localhost');
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (url.pathname.endsWith('/messages')) {
+        return { items: [message('visible-message', 'room-1')] };
+      }
+      if (url.pathname.endsWith('/unread')) {
+        unreadCalls += 1;
+        if (unreadCalls === 1) {
+          return {
+            unreadCount: 4,
+            lastReadAt: '2026-03-27T00:00:00.000Z',
+          };
+        }
+        throw new Error('Request failed (404) private-post-read-detail');
+      }
+      if (url.pathname.endsWith('/read') && method === 'POST') return {};
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+    const onAccessUnavailable = vi.fn().mockResolvedValue(true);
+    const { result } = renderHook(() =>
+      useRoomChatMessages({
+        roomId: 'room-1',
+        filterQuery: '',
+        filterTag: '',
+        onAccessUnavailable,
+      }),
+    );
+
+    let refreshed = false;
+    await act(async () => {
+      refreshed = await result.current.loadMessages();
+    });
+
+    expect(refreshed).toBe(true);
+    expect(onAccessUnavailable).toHaveBeenCalledWith('room-1');
+    expect(result.current.items).toEqual([
+      message('visible-message', 'room-1'),
+    ]);
+    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.highlightSince).toBeNull();
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('private-post-read-detail'),
+    );
+  });
+
+  it('aborts and invalidates an in-flight message request on unmount', async () => {
+    const pending = deferred<{ items: ReturnType<typeof message>[] }>();
+    let signal: AbortSignal | undefined;
+    api.mockImplementation((path: string, init?: RequestInit) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.pathname.endsWith('/messages')) {
+        signal = init?.signal ?? undefined;
+        return pending.promise;
+      }
+      throw new Error(`Unexpected post-unmount request: ${path}`);
+    });
+    const { result, unmount } = renderHook(() =>
+      useRoomChatMessages({ roomId: 'room-1', filterQuery: '', filterTag: '' }),
+    );
+
+    const load = result.current.loadMessages();
+    await waitFor(() => expect(signal).toBeDefined());
+    unmount();
+    expect(signal?.aborted).toBe(true);
+
+    pending.resolve({ items: [message('stale', 'room-1')] });
+    await act(async () => {
+      await load;
+    });
+    expect(api).toHaveBeenCalledTimes(1);
+  });
+
+  it('purges visible room state and prevents an in-flight response from restoring revoked content', async () => {
+    const pending = deferred<{ items: ReturnType<typeof message>[] }>();
+    let signal: AbortSignal | undefined;
+    api.mockImplementation((path: string, init?: RequestInit) => {
+      const url = new URL(path, 'http://localhost');
+      if (url.pathname.endsWith('/messages')) {
+        signal = init?.signal ?? undefined;
+        return pending.promise;
+      }
+      throw new Error(`Unexpected post-purge request: ${path}`);
+    });
+    const { result } = renderHook(() =>
+      useRoomChatMessages({ roomId: 'room-1', filterQuery: '', filterTag: '' }),
+    );
+    act(() => {
+      result.current.setItems([message('visible-before-revoke', 'room-1')]);
+    });
+    const load = result.current.loadMessages();
+    await waitFor(() => expect(signal).toBeDefined());
+
+    act(() => {
+      expect(
+        result.current.purgeRoomState(
+          'room-1',
+          '閲覧権限を管理者に確認してください。',
+        ),
+      ).toBe(true);
+    });
+    expect(signal?.aborted).toBe(true);
+    expect(result.current.items).toEqual([]);
+    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.highlightSince).toBeNull();
+    expect(result.current.message).toBe('閲覧権限を管理者に確認してください。');
+
+    pending.resolve({ items: [message('stale-after-revoke', 'room-1')] });
+    await act(async () => {
+      await load;
+    });
+    expect(result.current.items).toEqual([]);
+    expect(result.current.message).toBe('閲覧権限を管理者に確認してください。');
+  });
+
   it('reports load failures without retaining pagination state', async () => {
     api.mockRejectedValueOnce(new Error('network failed'));
     const { result } = renderHook(() =>
@@ -198,5 +485,159 @@ describe('useRoomChatMessages', () => {
 
     expect(result.current.message).toBe('メッセージの取得に失敗しました');
     expect(result.current.hasMore).toBe(false);
+  });
+
+  it('purges room-bound state when a current access revalidation fails', async () => {
+    api.mockRejectedValueOnce(new Error('private access failure'));
+    const onCurrentFailure = vi.fn();
+    const { result } = renderHook(() =>
+      useRoomChatMessages({ roomId: 'room-1', filterQuery: '', filterTag: '' }),
+    );
+    act(() => {
+      result.current.setItems([message('visible-before-check', 'room-1')]);
+    });
+
+    await act(async () => {
+      await result.current.loadMessages({
+        query: '',
+        tag: '',
+        failureMessage: 'ルームを表示できません',
+        onCurrentFailure,
+      });
+    });
+
+    expect(result.current.items).toEqual([]);
+    expect(result.current.unreadCount).toBe(0);
+    expect(result.current.highlightSince).toBeNull();
+    expect(result.current.message).toBe('ルームを表示できません');
+    expect(onCurrentFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let an aborted access revalidation purge a newer successful load', async () => {
+    const accessCheck = deferred<{ items: ReturnType<typeof message>[] }>();
+    let messageReads = 0;
+    api.mockImplementation((path: string, init?: RequestInit) => {
+      const url = new URL(path, 'http://localhost');
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (url.pathname.endsWith('/messages')) {
+        messageReads += 1;
+        return messageReads === 1
+          ? accessCheck.promise
+          : Promise.resolve({ items: [message('newer', 'room-1')] });
+      }
+      if (url.pathname.endsWith('/unread')) {
+        return Promise.resolve({ unreadCount: 0, lastReadAt: null });
+      }
+      if (url.pathname.endsWith('/read') && method === 'POST') {
+        return Promise.resolve({});
+      }
+      throw new Error(`Unhandled api path: ${path}`);
+    });
+    const { result } = renderHook(() =>
+      useRoomChatMessages({ roomId: 'room-1', filterQuery: '', filterTag: '' }),
+    );
+    const onCurrentFailure = vi.fn();
+
+    const staleCheck = result.current.loadMessages({
+      query: '',
+      tag: '',
+      failureMessage: 'must not replace newer state',
+      onCurrentFailure,
+    });
+    await waitFor(() => expect(messageReads).toBe(1));
+    await act(async () => {
+      await result.current.loadMessages();
+    });
+    accessCheck.reject(new Error('stale access failure'));
+    await act(async () => {
+      await staleCheck;
+    });
+
+    expect(result.current.items).toEqual([message('newer', 'room-1')]);
+    expect(result.current.message).toBe('');
+    expect(onCurrentFailure).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['initial unread', 1, 403],
+    ['post-read unread', 2, 404],
+  ] as const)(
+    'fails closed when the %s request reports unavailable access',
+    async (_phase, failingUnreadCall, status) => {
+      let unreadCalls = 0;
+      api.mockImplementation(async (path: string, init?: RequestInit) => {
+        const url = new URL(path, 'http://localhost');
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (url.pathname.endsWith('/messages')) {
+          return { items: [message('private-timeline', 'room-1')] };
+        }
+        if (url.pathname.endsWith('/unread')) {
+          unreadCalls += 1;
+          if (unreadCalls === failingUnreadCall) {
+            throw new Error(`Request failed (${status}) private-detail`);
+          }
+          return { unreadCount: 1, lastReadAt: null };
+        }
+        if (url.pathname.endsWith('/read') && method === 'POST') return {};
+        throw new Error(`Unhandled api path: ${path}`);
+      });
+      const onAccessUnavailable = vi.fn().mockResolvedValue(false);
+      const { result } = renderHook(() =>
+        useRoomChatMessages({
+          roomId: 'room-1',
+          filterQuery: '',
+          filterTag: '',
+          onAccessUnavailable,
+        }),
+      );
+
+      await act(async () => {
+        await result.current.loadMessages();
+      });
+
+      expect(onAccessUnavailable).toHaveBeenCalledWith('room-1');
+      expect(result.current.items).toEqual([]);
+      expect(result.current.unreadCount).toBe(0);
+      expect(result.current.highlightSince).toBeNull();
+      expect(result.current.message).toBe(
+        'ルームを表示できません。権限を確認して再読み込みしてください。',
+      );
+      expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('private-detail'),
+      );
+    },
+  );
+
+  it('fails closed when append pagination reports unavailable access', async () => {
+    api.mockRejectedValueOnce(
+      new Error('Request failed (404) hidden-pagination-detail'),
+    );
+    const onAccessUnavailable = vi.fn().mockRejectedValue(new Error('hidden'));
+    const onCurrentFailure = vi.fn();
+    const { result } = renderHook(() =>
+      useRoomChatMessages({
+        roomId: 'room-1',
+        filterQuery: '',
+        filterTag: '',
+        onAccessUnavailable,
+      }),
+    );
+    act(() => {
+      result.current.setItems([message('visible-before-page', 'room-1')]);
+    });
+
+    await act(async () => {
+      await result.current.loadMessages({ append: true, onCurrentFailure });
+    });
+
+    expect(onAccessUnavailable).toHaveBeenCalledWith('room-1');
+    expect(onCurrentFailure).toHaveBeenCalledTimes(1);
+    expect(result.current.items).toEqual([]);
+    expect(result.current.message).toBe(
+      'ルームを表示できません。権限を確認して再読み込みしてください。',
+    );
+    expect(consoleErrorSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('hidden-pagination-detail'),
+    );
   });
 });

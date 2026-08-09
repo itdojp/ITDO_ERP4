@@ -52,6 +52,7 @@ Issue #1923 では React Query 依存は追加せず、既存 `api` wrapper を�
 | room list query               | `room-chat/useRoomChatRooms.ts`               | `GET /chat-rooms`、初期ルーム選択、GA可視性フィルタ、案件 deep link 解決                                              |
 | message query                 | `room-chat/useRoomChatMessages.ts`            | `GET /chat-rooms/:roomId/messages`、pagination、filter/search、unread/read-state、loading/error、stale response guard |
 | global search query           | `room-chat/useRoomChatGlobalSearch.ts`        | `GET /chat-messages/search`、append pagination、loading/error                                                         |
+| thread query / mutation       | `room-chat/useRoomChatThread.ts`              | thread/reply pagination、表示済み既読境界、reply/reaction/ack/delete後の再取得、stale response guard                  |
 | notification setting resource | `room-chat/useRoomChatNotificationSetting.ts` | `GET/PATCH /chat-rooms/:roomId/notification-setting`、保存 feedback、mute datetime 変換                               |
 | candidate resources           | `room-chat/useRoomChatCandidates.ts`          | mention candidates、ack candidates、abort/debounce                                                                    |
 | mutation commands             | `room-chat/roomChatApi.ts`                    | message post、ack request、reaction、ack/revoke/cancel、attachment、room create/invite、summary、notification save    |
@@ -59,11 +60,23 @@ Issue #1923 では React Query 依存は追加せず、既存 `api` wrapper を�
 
 ### Query / refetch / invalidation 方針
 
-- message post / attachment upload 後は `loadMessages()` を明示的に再実行する。
+- message post / attachment upload 後は `loadMessages()` を明示的に再実行する。message POST成功後の添付uploadまたは再取得失敗はPOST失敗へ戻さず、draftを消去したまま固定の部分成功案内を表示してroot messageの再送を防ぐ。
 - room create 後は `loadRooms()` を明示的に再実行し、作成済み room を選択する。
 - notification setting 保存後は PATCH レスポンスで hook state を更新する。
 - mention candidates は room change 時に abort し、ack candidates は 200ms debounce + abort で stale candidate 反映を抑止する。
-- message load は request sequence と target room を照合し、遅延した旧 room response が現在 room の messages / unread / loading state を上書きしない。
+- message load は request sequence と target room を照合し、遅延した旧 room response が現在 room の messages / unread / loading state を上書きしない。unread state自体もroom identityとrequest sequenceへbindし、room切替直後またはunread endpointの403/404後は前room／既読更新前の値を表示しない。
+- global search はサーバが返す `(nextBefore, nextBeforeId)` の複合境界を再送し、同一時刻の検索結果を欠落させない。query変更時は旧requestをabortし、旧結果とpagination境界を破棄する。
+- thread load はopaque cursorをそのまま再送し、親・返信のsame-room topology、期待room、確定済みrootをstate更新・既読更新より前に検査する。mutation後は先頭ページを再取得し、既に読み込んだ後続ページを保持したままfresh responseを優先してmergeする。後続page取得とmutationはhook内のin-flight guardとUI disabled stateで相互排他にし、古いpage snapshotによる上書きを防ぐ。
+- root timelineとpost/reaction/ack command responseは要求room、root/reply topology、message ID、ack request IDへbindする。ACK responseはrequest・message・roomと子ackのrequest relationを全て検査し、候補responseとACK preview responseもruntimeで型、allowlist field、reason allowlist、件数・長さ上限を検査して再構築する。識別子が不一致の2xx responseは添付uploadやstate更新より前にfail closedとする。
+- message post warningは既知の `POST_WITHOUT_VIEW` codeだけをfrontend所有の固定文言へ変換する。backend由来の任意warning messageはstateへ保持しない。このwarning受信時はthread本文と現在room timelineを直ちに破棄し、再取得や既読mutationを行わない。
+- non-idempotentなroot message / root確認依頼 / reply POSTは、明示的な4xx rejectionの場合だけdraftを保持して修正・再送を許可する。transport failure、5xx、不整合2xxで結果を確認できない場合はcomposerをlockし、同じ画面からの再送を禁止する。non-idempotent chat POST lifecycleはApp sessionが所有し、thread panelのclose/reopen、`RoomChat` sectionのunmount/remount、room変更だけで解除しない。POST中と結果不明後はroot/reply composer、room selector、room deep link、room作成、root timeline操作と新規thread openを無効化する。requestは開始roomへ固定し、異なるroomで完了した非同期結果を現在stateへ適用しない。POST待機中にsectionがunmountされた場合はUI state更新、添付upload、timeline refresh、read mutation等の後続副作用を開始しない一方、HTTP結果分類とApp session lifecycle確定はmount状態から分離する。したがってunmount後に明示的4xxが返った場合は`idle`、transport/5xx/不整合2xxは`uncertain`へ決定的に遷移する。結果不明時はpage reloadを再開境界とする。mutation成功後はGETで同一reply IDを確認できた本文だけを表示し、後続page境界やrefresh failureで確認できないPOST response本文はstateへ合成しない。「再送せず再読み込み」を案内して二重投稿と削除済み本文の再表示を防ぐ。
+- reply POST後のfresh responseに同一replyのlogical deletionが含まれる場合はfresh content-free rowを優先する。mutation中はthread panelの明示closeを無効化し、root削除commitの親timeline反映を完了させる。
+- `chat_message` deep linkはreturned message IDを要求IDへ、top-level room IDをnested room IDへbindしてから、allowlistされた`parentMessageId` / `threadRootId` topologyを解決する。replyの場合は旧room timelineを先に破棄し、room timeline上のreplyとして扱わずcanonical threadを直接開く。不完全・identity不一致・不整合topologyはstateへdispatchしない。
+- room selector、room event、root deep linkの全room変更経路で旧thread stateとfocus/deep-link/highlight stateを破棄し、取得失敗時に前roomのthread本文を残さない。thread取得・thread mutation・reply/ACK reply POST・root POST・attachment upload/download・root timeline上のreaction/ACK/revoke/cancel・timeline初回／追加page・既読前後のunread取得・表示済み範囲の既読更新・要約・ACK preview・通知設定の取得／保存・mention/ACK候補取得が403/404になった場合は、操作開始時のroom identityが現在roomと一致することを先に確認する。一致する場合だけthreadとglobal searchを消去し、current roomを無filterかつ既読更新なしで再取得してread ACLを再検証する。同roomの並行revalidationはsingle-flight化して同じPromiseを共有し、先発検証のabort/supersedeをACL拒否へ誤変換しない。mutation/read validation中のinteraction lockは再検証終了まで保持し、room read成功後にだけthreadを再取得する。再取得成功時だけ最新timelineを保持し、失敗時はroom-bound timeline、thread、unread、filter、global search、summary/provider/model、notification setting、mention/ACK候補・previewをpurgeし、それぞれのrequest sequenceで先行responseの再適用を拒否する。遅延した旧roomのaccess callbackは現在room stateを変更しない。対象replyだけの同時削除で再取得が成功した場合は、最新threadを保持して対象単位の競合とroom/root access lossを区別する。logical delete成功時はrefresh成否より前にglobal searchとsummary provenanceを無効化し、削除済み本文を同一client sessionへ残さない。
+- thread panelの初期focusはmount時だけclose buttonへ移し、reaction/ACK/delete/reply mutation完了では操作中focusを不必要に戻さない。root composerの結果不明・部分成功・validation案内はlive regionで通知する。
+- thread panel内で`aria-expanded=true`の候補comboboxに届いた`Escape`は候補操作として扱い、候補がloading/0件でもpanel closeへ伝播させずreply draftを保持する。
+- 共通 `api` wrapperとattachment download境界の非2xx errorはHTTP statusだけをcallerへ渡し、response bodyを読まず、response bodyやrequest pathをError、browser console、CI logへ複製しない。attachmentの403/404もglobal searchを消去してcurrent room read ACLを再検証し、成功時だけ最新timelineを保持する。
+- room timelineとthreadは、実際に表示した最新 `(createdAt, messageId)` を既読境界として送信する。空一覧や未取得返信をserver-nowで既読にしない。同一ミリ秒に複数messageがあり、random UUIDから内部`activitySequence`を一意に決められない場合は、その時刻を飛ばして直前の一意な表示時刻まで保守的に進める。threadに後続pageがある間は、page境界と同一ミリ秒の未取得replyがあり得るため、表示pageの最新時刻も境界候補から外す。
 - duplicate submit は in-flight ref で抑止し、message / ack request の二重 POST を防止する。
 
 ### 行数とテスト

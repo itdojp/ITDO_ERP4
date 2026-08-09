@@ -237,6 +237,8 @@ type DeepLinkResolvedTarget = {
     projectId?: string | null;
     createdAt: string;
     excerpt?: string;
+    parentMessageId: string | null;
+    threadRootId: string | null;
   };
 };
 
@@ -286,6 +288,51 @@ type ApiErrorPayload = {
   error?: { code?: unknown; message?: unknown };
 };
 
+type ChatMessageTopology = {
+  parentMessageId: string | null;
+  threadRootId: string | null;
+};
+
+function normalizeChatMessageTopology(
+  payload: Record<string, unknown>,
+): ChatMessageTopology | undefined {
+  const hasParentMessageId = Object.prototype.hasOwnProperty.call(
+    payload,
+    'parentMessageId',
+  );
+  const hasThreadRootId = Object.prototype.hasOwnProperty.call(
+    payload,
+    'threadRootId',
+  );
+
+  // Backward compatibility for responses created before topology was exposed.
+  if (!hasParentMessageId && !hasThreadRootId) {
+    return { parentMessageId: null, threadRootId: null };
+  }
+  if (!hasParentMessageId || !hasThreadRootId) return undefined;
+
+  if (payload.parentMessageId === null && payload.threadRootId === null) {
+    return { parentMessageId: null, threadRootId: null };
+  }
+
+  if (
+    typeof payload.parentMessageId !== 'string' ||
+    typeof payload.threadRootId !== 'string'
+  ) {
+    return undefined;
+  }
+  const parentMessageId = payload.parentMessageId.trim();
+  const threadRootId = payload.threadRootId.trim();
+  const messageId = typeof payload.id === 'string' ? payload.id.trim() : '';
+  if (
+    !parentMessageId ||
+    parentMessageId !== threadRootId ||
+    (messageId && parentMessageId === messageId)
+  )
+    return undefined;
+  return { parentMessageId, threadRootId };
+}
+
 function buildChatMessageDeepLinkError(params: {
   status: number;
   payload?: ApiErrorPayload;
@@ -314,6 +361,9 @@ function buildChatMessageDeepLinkError(params: {
 
 export const App: React.FC = () => {
   const mainContentRef = useRef<HTMLElement>(null);
+  const [chatRootPostLifecycle, setChatRootPostLifecycle] = useState<
+    'idle' | 'in_flight' | 'uncertain'
+  >('idle');
   const sectionGroups = useMemo<SectionGroup[]>(
     () => [
       {
@@ -462,7 +512,10 @@ export const App: React.FC = () => {
             label: 'ルームチャット',
             render: () => (
               <Card>
-                <RoomChat />
+                <RoomChat
+                  rootPostLifecycle={chatRootPostLifecycle}
+                  onRootPostLifecycleChange={setChatRootPostLifecycle}
+                />
               </Card>
             ),
           },
@@ -592,7 +645,7 @@ export const App: React.FC = () => {
         ],
       },
     ],
-    [],
+    [chatRootPostLifecycle],
   );
   const sections = useMemo(
     () => sectionGroups.flatMap((group) => group.items),
@@ -696,9 +749,12 @@ export const App: React.FC = () => {
           const payload = (await res
             .json()
             .catch(() => ({}))) as ApiErrorPayload & {
+            id?: unknown;
             roomId?: unknown;
             createdAt?: unknown;
             excerpt?: unknown;
+            parentMessageId?: unknown;
+            threadRootId?: unknown;
             room?: { id?: unknown; type?: unknown; projectId?: unknown };
           };
           if (currentSeq !== requestSeq) return;
@@ -709,12 +765,12 @@ export const App: React.FC = () => {
             return;
           }
 
+          const returnedMessageId =
+            typeof payload.id === 'string' ? payload.id : '';
           const roomId =
-            typeof payload.roomId === 'string'
-              ? payload.roomId
-              : typeof payload.room?.id === 'string'
-                ? payload.room.id
-                : '';
+            typeof payload.roomId === 'string' ? payload.roomId : '';
+          const nestedRoomId =
+            typeof payload.room?.id === 'string' ? payload.room.id : '';
           const createdAt =
             typeof payload.createdAt === 'string' ? payload.createdAt : '';
           const roomType =
@@ -723,7 +779,16 @@ export const App: React.FC = () => {
             typeof payload.room?.projectId === 'string'
               ? payload.room.projectId
               : null;
-          if (!roomId || !createdAt || !roomType) {
+          const topology = normalizeChatMessageTopology(payload);
+          if (
+            returnedMessageId !== messageId ||
+            !roomId ||
+            !nestedRoomId ||
+            roomId !== nestedRoomId ||
+            !createdAt ||
+            !roomType ||
+            !topology
+          ) {
             setDeepLinkError('chat_message の deep link 解決に失敗しました');
             return;
           }
@@ -740,12 +805,13 @@ export const App: React.FC = () => {
               createdAt,
               excerpt:
                 typeof payload.excerpt === 'string' ? payload.excerpt : '',
+              parentMessageId: topology.parentMessageId,
+              threadRootId: topology.threadRootId,
             },
           });
           prepareActiveSectionChange(sectionId);
         };
-        run().catch((error) => {
-          console.error('chat_message deeplink resolve failed', error);
+        run().catch(() => {
           if (currentSeq !== requestSeq) return;
           setDeepLinkError('chat_message の deep link 解決に失敗しました');
         });
@@ -818,6 +884,8 @@ export const App: React.FC = () => {
             projectId: chatMessage.projectId,
             createdAt: chatMessage.createdAt,
             excerpt: chatMessage.excerpt,
+            parentMessageId: chatMessage.parentMessageId,
+            threadRootId: chatMessage.threadRootId,
           },
         }),
       );
