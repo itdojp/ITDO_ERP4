@@ -229,6 +229,9 @@ function installApiMock(options: {
   postMessageResponse?: ChatMessage & {
     warning?: { code?: string; message?: string };
   };
+  postAckResponse?: ChatMessage & {
+    warning?: { code?: string; message?: string };
+  };
   postMessagePromise?: Promise<
     ChatMessage & { warning?: { code?: string; message?: string } }
   >;
@@ -296,7 +299,7 @@ function installApiMock(options: {
       }
 
       const roomMatch = url.pathname.match(
-        /^\/chat-rooms\/([^/]+)\/(notification-setting|messages|mention-candidates|unread|read|ai-summary)$/,
+        /^\/chat-rooms\/([^/]+)\/(notification-setting|messages|ack-requests|mention-candidates|unread|read|ai-summary)$/,
       );
       if (roomMatch) {
         const [, roomId, resource] = roomMatch;
@@ -358,6 +361,14 @@ function installApiMock(options: {
                 body && typeof body === 'object' && 'body' in body
                   ? String((body as { body?: unknown }).body)
                   : 'posted',
+            })) as never;
+        }
+        if (resource === 'ack-requests' && method === 'POST') {
+          return (options.postAckResponse ??
+            makeMessage({
+              id: 'posted-ack-request',
+              roomId,
+              body: 'posted ack request',
             })) as never;
         }
         if (resource === 'ai-summary' && method === 'POST') {
@@ -621,6 +632,16 @@ describe('RoomChat', () => {
     expect(
       await screen.findByText('direct reply deep-link target'),
     ).toBeInTheDocument();
+    expect(screen.queryByText('initial room message')).toBeNull();
+    const displayedMessagesMetric = screen
+      .getByText('表示メッセージ')
+      .closest('dl');
+    if (!displayedMessagesMetric) {
+      throw new Error('displayed messages metric not found');
+    }
+    expect(
+      within(displayedMessagesMetric).getByText('0件'),
+    ).toBeInTheDocument();
     expect(
       vi
         .mocked(api)
@@ -715,6 +736,95 @@ describe('RoomChat', () => {
       screen.getByRole('dialog', { name: 'スレッド' }),
     ).toBeInTheDocument();
   });
+
+  it.each([
+    ['message', '送信'],
+    ['ack', '確認依頼'],
+  ] as const)(
+    'purges the room and stops follow-up reads after a root %s returns POST_WITHOUT_VIEW',
+    async (mode, buttonName) => {
+      const sanitizedWarning =
+        '投稿後、このルームを閲覧できません。閲覧権限を管理者に確認してください。';
+      const response = {
+        ...makeMessage({
+          id: `revoked-root-${mode}`,
+          roomId: 'room-1',
+          body: 'committed but inaccessible root',
+        }),
+        warning: {
+          code: 'POST_WITHOUT_VIEW',
+          message: 'raw backend detail must not be shown',
+        },
+      };
+      installApiMock({
+        rooms: [makeRoom({ id: 'room-1' })],
+        messagesByRoom: {
+          'room-1': [
+            makeMessage({
+              id: 'visible-before-revocation',
+              roomId: 'room-1',
+              body: 'visible before root post',
+            }),
+          ],
+        },
+        unreadByRoom: {
+          'room-1': {
+            unreadCount: 2,
+            lastReadAt: '2026-03-27T00:00:00.000Z',
+          },
+        },
+        ...(mode === 'message'
+          ? { postMessageResponse: response }
+          : { postAckResponse: response }),
+      });
+
+      render(<RoomChat />);
+      expect(
+        await screen.findByText('visible before root post'),
+      ).toBeInTheDocument();
+      const displayedMessagesMetric = screen
+        .getByText('表示メッセージ')
+        .closest('dl');
+      if (!displayedMessagesMetric) {
+        throw new Error('displayed messages metric not found');
+      }
+      vi.mocked(api).mockClear();
+
+      fireEvent.change(screen.getByPlaceholderText('Markdownで入力'), {
+        target: { value: 'root post that revokes access' },
+      });
+      if (mode === 'ack') {
+        fireEvent.change(screen.getByLabelText('確認対象(requiredUserIds)'), {
+          target: { value: 'synthetic-user' },
+        });
+      }
+      fireEvent.click(screen.getByRole('button', { name: buttonName }));
+
+      await waitFor(() => {
+        expect(
+          within(displayedMessagesMetric).getByText('0件'),
+        ).toBeInTheDocument();
+      });
+      expect(screen.queryByText('visible before root post')).toBeNull();
+      expect(screen.getAllByText(sanitizedWarning).length).toBeGreaterThan(0);
+      expect(
+        screen.queryByText('raw backend detail must not be shown'),
+      ).toBeNull();
+      const callsAfterPost = vi.mocked(api).mock.calls.map(([path, init]) => ({
+        path: String(path),
+        method: (init?.method ?? 'GET').toUpperCase(),
+      }));
+      expect(callsAfterPost).toEqual([
+        {
+          path:
+            mode === 'message'
+              ? '/chat-rooms/room-1/messages'
+              : '/chat-rooms/room-1/ack-requests',
+          method: 'POST',
+        },
+      ]);
+    },
+  );
 
   it('shows validation errors before posting or creating an ack request', async () => {
     installApiMock({

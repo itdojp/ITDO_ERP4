@@ -533,6 +533,7 @@ describe('App', () => {
       makeJsonResponse({
         ok: true,
         payload: {
+          id: 'MSG-100',
           roomId: 'room-10',
           createdAt: '2026-03-31T10:00:00.000Z',
           excerpt: '確認本文',
@@ -601,6 +602,7 @@ describe('App', () => {
       makeJsonResponse({
         ok: true,
         payload: {
+          id: 'MSG-REPLY-20',
           roomId: 'room-20',
           createdAt: '2026-03-31T11:00:00.000Z',
           excerpt: '返信本文',
@@ -666,6 +668,7 @@ describe('App', () => {
         makeJsonResponse({
           ok: true,
           payload: {
+            id: 'MSG-INVALID',
             roomId: 'room-invalid',
             createdAt: '2026-03-31T12:00:00.000Z',
             room: { id: 'room-invalid', type: 'project', projectId: null },
@@ -689,6 +692,79 @@ describe('App', () => {
         });
         expect(messageListener).not.toHaveBeenCalled();
       } finally {
+        window.removeEventListener(
+          'erp4_open_chat_message',
+          messageListener as EventListener,
+        );
+      }
+    },
+  );
+
+  it.each([
+    [
+      'returned message ID',
+      {
+        id: 'MSG-OTHER',
+        roomId: 'room-bound',
+        room: { id: 'room-bound', type: 'project', projectId: null },
+      },
+    ],
+    [
+      'nested room ID',
+      {
+        id: 'MSG-BOUND',
+        roomId: 'room-bound',
+        room: { id: 'room-other', type: 'project', projectId: null },
+      },
+    ],
+    [
+      'missing returned message ID',
+      {
+        roomId: 'room-bound',
+        room: { id: 'room-bound', type: 'project', projectId: null },
+      },
+    ],
+  ] as const)(
+    'rejects a chat_message deep-link response with mismatched %s',
+    async (_label, identity) => {
+      const roomListener = vi.fn();
+      const messageListener = vi.fn();
+      vi.mocked(apiResponse).mockResolvedValue(
+        makeJsonResponse({
+          ok: true,
+          payload: {
+            ...identity,
+            createdAt: '2026-03-31T12:30:00.000Z',
+            parentMessageId: null,
+            threadRootId: null,
+          },
+        }),
+      );
+      window.addEventListener(
+        'erp4_open_room_chat',
+        roomListener as EventListener,
+      );
+      window.addEventListener(
+        'erp4_open_chat_message',
+        messageListener as EventListener,
+      );
+      window.location.hash = '#/open?kind=chat_message&id=MSG-BOUND';
+
+      try {
+        render(<App />);
+
+        await waitFor(() => {
+          expect(screen.getByRole('alert')).toHaveTextContent(
+            'chat_message の deep link 解決に失敗しました',
+          );
+        });
+        expect(roomListener).not.toHaveBeenCalled();
+        expect(messageListener).not.toHaveBeenCalled();
+      } finally {
+        window.removeEventListener(
+          'erp4_open_room_chat',
+          roomListener as EventListener,
+        );
         window.removeEventListener(
           'erp4_open_chat_message',
           messageListener as EventListener,

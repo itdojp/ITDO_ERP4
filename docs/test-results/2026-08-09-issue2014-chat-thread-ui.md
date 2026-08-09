@@ -23,8 +23,8 @@
 - timeline/threadとも、表示済みの最新 `(createdAt, messageId)` だけをroom read boundaryとして送信する。同一ミリ秒に複数messageがある場合はrandom UUIDで内部到着順を推測せず、直前の一意な表示時刻まで保守的に進める。threadに後続pageがある場合は、page境界の同一ミリ秒replyを跨がないよう現在pageの最新時刻も除外する。
 - thread replyの確認対象グループはcontrolled stateから`requiredGroupIds`へ接続し、未実装のreply添付操作は表示しない。
 - paginationとmutationを相互排他にし、後続pageとmutation refreshの競合による表示欠落を防ぐ。候補comboboxが消費した`Escape`ではpanelを閉じない。
-- reply通知deep linkはreply topologyをallowlist normalizeしてcanonical threadを直接開く。ACK relation/candidate responseはroom・message・requestへbindし、unknown fieldを破棄する。
-- non-idempotent POSTの結果が不明な場合は再送をlockする。POST本文はfresh GETで同一reply IDを確認した場合だけ表示し、51件目以降、refresh failure、同時削除では暫定表示しない。`POST_WITHOUT_VIEW`ではthreadとroom timelineを破棄する。
+- reply通知deep linkはreturned message IDとtop-level/nested room IDをbindし、reply topologyをallowlist normalizeしてcanonical threadを直接開く。別room遷移では旧room timelineを先に破棄する。ACK relation/candidate responseはroom・message・requestへbindし、unknown fieldを破棄する。
+- non-idempotent POSTは明示的な4xx rejectionだけdraftを保持して再送可能とし、transport failure、5xx、不整合2xxで結果が不明な場合は再送をlockする。POST本文はfresh GETで同一reply IDを確認した場合だけ表示し、51件目以降、refresh failure、同時削除では暫定表示しない。root/replyの`POST_WITHOUT_VIEW`ではthreadとroom timelineを破棄し、後続refresh/read mutationを行わない。
 - 同じroomのunread responseもrequest sequenceで順序付け、遅延responseによる巻き戻しを防ぐ。候補0件/loading中の`Escape`でもpanelとdraftを維持する。
 - global searchはserverの `(nextBefore, nextBeforeId)` を使い、stale requestをabort/破棄する。
 
@@ -34,9 +34,9 @@
 
 | 検証                                     | 結果 | 証跡／補足                                                                         |
 | ---------------------------------------- | ---- | ---------------------------------------------------------------------------------- |
-| focused frontend unit                    | PASS | 6 files / 102 tests                                                                |
-| frontend full                            | PASS | 92 files / 620 tests                                                               |
-| UI core coverage                         | PASS | statements 71.40%、branches 64.65%、functions 70.46%、lines 73.97%（閾値変更なし） |
+| focused frontend unit                    | PASS | 6 files / 111 tests                                                                |
+| frontend full                            | PASS | 92 files / 629 tests                                                               |
+| UI core coverage                         | PASS | statements 71.54%、branches 64.86%、functions 70.58%、lines 74.11%（閾値変更なし） |
 | frontend build budget                    | PASS | initial JS 516.9 KiB / gzip 158.0 KiB                                              |
 | backend full                             | PASS | 2,040 tests                                                                        |
 | focused real-backend E2E                 | PASS | `frontend-chat-thread.spec.ts` 1/1（core/full両scopeで成功）                       |
@@ -47,7 +47,7 @@
 | OpenAPI export / breaking diff           | PASS | checked-in OpenAPIとの差分なし                                                     |
 | bounded-context / docs / image links     | PASS | dependency 0 violation、coverage PASS、130 image links                             |
 | audit / secret scan                      | PASS | npm audit high/critical 0、tracked-file secret scan 0（最終標準gateでも再確認）    |
-| lint / format / typecheck / build / test | PASS | backend 2,040 / frontend 620、全標準gate成功                                       |
+| lint / format / typecheck / build / test | PASS | backend 2,040 / frontend 629、全標準gate成功                                       |
 | release-readiness core                   | PASS | clean exact head、29/29 checks、core E2E 107/107（repo-side readiness）            |
 
 ## Real-backend E2E matrix
@@ -80,7 +80,7 @@
 - unauthorizedとmissingの外部表示を区別しない。
 - raw backend error body、parser stack、provider URL/key、unknown response fieldをUIへ表示しない。
 - mutation成功後のrefresh failureでは読み込み済みstateを保持し、「再送せず再読み込み」を表示する。
-- 結果不明のnon-idempotent POSTはcomposerをlockして再送を防ぎ、fresh GETで確認できないPOST本文を表示しない。
+- 明示的な4xx rejectionはdraftを保持して修正・再送を許可する。結果不明のnon-idempotent POSTはcomposerをlockして再送を防ぎ、fresh GETで確認できないPOST本文を表示しない。
 - `POST_WITHOUT_VIEW`受信時はbackend warning本文を破棄し、threadとroom timelineの表示済み本文を消去する。
 - reply notification deep link、ACK response、候補responseはallowlistされたtopology/relationだけをstateへ反映する。
 - 同じroomのunread queryもrequest sequenceへbindし、古いresponseを破棄する。

@@ -200,9 +200,12 @@ const definiteRetryCases: Array<{
       fireEvent.click(
         screen.getByRole('checkbox', { name: '確認依頼として返信' }),
       );
-      fireEvent.change(screen.getByLabelText(/確認対象ユーザーID（カンマ区切り）/), {
-        target: { value: 'demo-user' },
-      });
+      fireEvent.change(
+        screen.getByLabelText(/確認対象ユーザーID（カンマ区切り）/),
+        {
+          target: { value: 'demo-user' },
+        },
+      );
     },
   },
 ];
@@ -563,7 +566,9 @@ describe('ChatThreadPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '確認依頼として返信' }));
 
     expect(
-      await screen.findByText('確認対象（ユーザID/グループ）を入力してください'),
+      await screen.findByText(
+        '確認対象（ユーザID/グループ）を入力してください',
+      ),
     ).toBeInTheDocument();
     expect(
       api.mock.calls.some(
@@ -1462,7 +1467,8 @@ describe('ChatThreadPanel', () => {
       fireEvent.click(submit);
       expect(
         api.mock.calls.filter(
-          ([path, init]) => String(path) === postPath && init?.method === 'POST',
+          ([path, init]) =>
+            String(path) === postPath && init?.method === 'POST',
         ),
       ).toHaveLength(2);
       expect(screen.queryByText(/重複防止のため再送せず/)).toBeNull();

@@ -737,6 +737,7 @@ export const App: React.FC = () => {
           const payload = (await res
             .json()
             .catch(() => ({}))) as ApiErrorPayload & {
+            id?: unknown;
             roomId?: unknown;
             createdAt?: unknown;
             excerpt?: unknown;
@@ -752,12 +753,12 @@ export const App: React.FC = () => {
             return;
           }
 
+          const returnedMessageId =
+            typeof payload.id === 'string' ? payload.id : '';
           const roomId =
-            typeof payload.roomId === 'string'
-              ? payload.roomId
-              : typeof payload.room?.id === 'string'
-                ? payload.room.id
-                : '';
+            typeof payload.roomId === 'string' ? payload.roomId : '';
+          const nestedRoomId =
+            typeof payload.room?.id === 'string' ? payload.room.id : '';
           const createdAt =
             typeof payload.createdAt === 'string' ? payload.createdAt : '';
           const roomType =
@@ -767,7 +768,15 @@ export const App: React.FC = () => {
               ? payload.room.projectId
               : null;
           const topology = normalizeChatMessageTopology(payload);
-          if (!roomId || !createdAt || !roomType || !topology) {
+          if (
+            returnedMessageId !== messageId ||
+            !roomId ||
+            !nestedRoomId ||
+            roomId !== nestedRoomId ||
+            !createdAt ||
+            !roomType ||
+            !topology
+          ) {
             setDeepLinkError('chat_message の deep link 解決に失敗しました');
             return;
           }

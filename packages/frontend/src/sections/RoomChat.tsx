@@ -476,6 +476,9 @@ export const RoomChat: React.FC = () => {
       const currentRoomId = currentRoomIdRef.current;
       const isRoomChange = targetRoomId !== currentRoomId;
       if (isRoomChange) {
+        if (currentRoomId) {
+          purgeRoomState(currentRoomId, '');
+        }
         skipNextRoomAutoLoadRef.current = true;
         setRoomListScope('all');
         setRoomListQuery('');
@@ -509,7 +512,7 @@ export const RoomChat: React.FC = () => {
         handler as EventListener,
       );
     };
-  }, [setRoomId]);
+  }, [purgeRoomState, setRoomId]);
 
   const {
     globalQuery,
@@ -917,6 +920,17 @@ export const RoomChat: React.FC = () => {
         mode === 'ack'
           ? await postRoomAckRequest(roomId, payload)
           : await postRoomMessage(roomId, payload);
+      if (created.warning?.code === 'POST_WITHOUT_VIEW') {
+        const warning = created.warning.message;
+        setPostWarning(warning);
+        setBody('');
+        setTags('');
+        resetAckTargets();
+        resetMentionTargets();
+        setAttachmentFile(null);
+        purgeRoomState(roomId, warning);
+        return;
+      }
       if (attachmentFile) {
         await uploadMessageAttachment(created.id, attachmentFile);
       }

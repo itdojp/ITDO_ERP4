@@ -358,10 +358,9 @@ export function ChatThreadPanel({
       threadState.setMessage('返信本文を入力してください');
       return;
     }
-    const requiredUserIds = Array.from(new Set(parseUserIds(requiredUsers))).slice(
-      0,
-      50,
-    );
+    const requiredUserIds = Array.from(
+      new Set(parseUserIds(requiredUsers)),
+    ).slice(0, 50);
     const requiredGroupIds = Array.from(
       new Set(
         ackGroups
@@ -369,7 +368,11 @@ export function ChatThreadPanel({
           .map((target) => target.id),
       ),
     ).slice(0, 20);
-    if (ackMode && requiredUserIds.length === 0 && requiredGroupIds.length === 0) {
+    if (
+      ackMode &&
+      requiredUserIds.length === 0 &&
+      requiredGroupIds.length === 0
+    ) {
       threadState.setMessage('確認対象（ユーザID/グループ）を入力してください');
       return;
     }
