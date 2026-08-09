@@ -9,46 +9,13 @@ import {
 } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-type ChatRoom = {
-  id: string;
-  type: string;
-  name: string;
-  allowExternalIntegrations?: boolean | null;
-  isMember?: boolean | null;
-  isOfficial?: boolean | null;
-  projectCode?: string | null;
-  projectName?: string | null;
-};
-
-type ChatMessage = {
-  id: string;
-  roomId: string;
-  messageType?: 'text';
-  parentMessageId?: string | null;
-  threadRootId?: string | null;
-  userId: string;
-  body: string;
-  createdAt: string;
-};
-
-type ChatSearchItem = {
-  id: string;
-  roomId: string;
-  messageType?: 'text';
-  parentMessageId?: string | null;
-  threadRootId?: string | null;
-  userId: string;
-  body: string;
-  createdAt: string;
-  room: ChatRoom;
-};
-
-type Deferred<T> = {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-  reject: (reason?: unknown) => void;
-};
+import type {
+  ChatMessageTestValue as ChatMessage,
+  RoomChatApiMockOptions,
+  ChatRoomTestValue as ChatRoom,
+  ChatSearchItemTestValue as ChatSearchItem,
+  DeferredTestValue as Deferred,
+} from '../test/roomChatTestTypes';
 
 function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void;
@@ -148,10 +115,15 @@ vi.mock('../ui', () => ({
       />
     </div>
   ),
-  UndoToast: () => null,
+  UndoToast: ({ onCommit }: { onCommit: () => void }) => (
+    <button type="button" onClick={onCommit}>
+      保留操作を確定
+    </button>
+  ),
 }));
 
 import { RoomChat } from './RoomChat';
+import { registerRoomChatSearchAndSettingsTests } from '../test/roomChatSearchAndSettingsTestCases';
 
 function makeRoom(overrides: Partial<ChatRoom>): ChatRoom {
   return {
@@ -194,93 +166,7 @@ function makeSearchItem(overrides: Partial<ChatSearchItem>): ChatSearchItem {
   };
 }
 
-function installApiMock(options: {
-  rooms: ChatRoom[];
-  messagesByRoom: Record<string, ChatMessage[]>;
-  messageReadResultsByRoom?: Record<string, Array<ChatMessage[] | Error>>;
-  unreadByRoom?: Record<
-    string,
-    { unreadCount?: number; lastReadAt?: string | null }
-  >;
-  notificationSettingsByRoom?: Record<
-    string,
-    {
-      notifyAllPosts?: boolean;
-      notifyMentions?: boolean;
-      muteUntil?: string | null;
-    }
-  >;
-  mentionCandidatesByRoom?: Record<string, unknown>;
-  failOnSearch?: string[];
-  searchResultsByQuery?: Record<string, ChatMessage[]>;
-  failOnGlobalSearch?: string[];
-  globalSearchResultsByQuery?: Record<string, ChatSearchItem[]>;
-  failOnExternalSummary?: string[];
-  notificationSettingPatchBodies?: Array<{
-    roomId: string;
-    body: {
-      notifyAllPosts?: boolean;
-      notifyMentions?: boolean;
-      muteUntil?: string | null;
-    };
-  }>;
-  notificationSettingsSaveResponseByRoom?: Record<
-    string,
-    {
-      notifyAllPosts?: boolean;
-      notifyMentions?: boolean;
-      muteUntil?: string | null;
-    }
-  >;
-  failOnNotificationSave?: string[];
-  postedMessages?: Array<{
-    roomId: string;
-    body: unknown;
-  }>;
-  postMessageResponse?: ChatMessage & {
-    warning?: { code?: string; message?: string };
-  };
-  postMessageResults?: Array<
-    (ChatMessage & { warning?: { code?: string; message?: string } }) | Error
-  >;
-  postAckResponse?: ChatMessage & {
-    warning?: { code?: string; message?: string };
-  };
-  postAckResults?: Array<
-    (ChatMessage & { warning?: { code?: string; message?: string } }) | Error
-  >;
-  failMessageRefreshAfterPost?: boolean;
-  failAttachmentUpload?: boolean;
-  postMessagePromise?: Promise<
-    ChatMessage & { warning?: { code?: string; message?: string } }
-  >;
-  threadsByMessageId?: Record<
-    string,
-    {
-      root: ChatMessage;
-      replies: ChatMessage[];
-      replyCount: number;
-      lastReplyAt: string | null;
-      nextCursor: string | null;
-    }
-  >;
-  threadResultsByMessageId?: Record<
-    string,
-    Array<
-      | {
-          root: ChatMessage;
-          replies: ChatMessage[];
-          replyCount: number;
-          lastReplyAt: string | null;
-          nextCursor: string | null;
-        }
-      | Error
-    >
-  >;
-  threadReplyResponse?: ChatMessage & {
-    warning?: { code?: string; message?: string };
-  };
-}) {
+function installApiMock(options: RoomChatApiMockOptions) {
   const failOnSearch = new Set(options.failOnSearch ?? []);
   const failOnGlobalSearch = new Set(options.failOnGlobalSearch ?? []);
   const failOnExternalSummary = new Set(options.failOnExternalSummary ?? []);
@@ -291,6 +177,10 @@ function installApiMock(options: {
     async (path: string, init?: RequestInit) => {
       const url = new URL(path, 'http://localhost');
       const method = (init?.method ?? 'GET').toUpperCase();
+
+      if (method === 'POST' && options.rootMutationErrors?.[url.pathname]) {
+        throw options.rootMutationErrors[url.pathname];
+      }
 
       if (url.pathname === '/chat-rooms' && method === 'GET') {
         return { items: options.rooms } as never;
@@ -842,6 +732,10 @@ describe('RoomChat', () => {
         });
       }
 
+      expect(screen.queryByText('room switch old thread body')).toBeNull();
+      expect(
+        document.getElementById('chat-message-room-switch-root'),
+      ).toBeNull();
       await waitFor(() => {
         expect(screen.queryByRole('dialog', { name: 'スレッド' })).toBeNull();
       });
@@ -861,7 +755,7 @@ describe('RoomChat', () => {
     },
   );
 
-  it('purges the current timeline and keeps the thread panel open after access is revoked', async () => {
+  it('purges the current timeline and closes the thread panel after access is revoked', async () => {
     const sanitizedWarning =
       '投稿後、このルームを閲覧できません。閲覧権限を管理者に確認してください。';
     const root = makeMessage({
@@ -930,9 +824,7 @@ describe('RoomChat', () => {
     expect(
       screen.queryByText('raw backend detail must not be shown'),
     ).toBeNull();
-    expect(
-      screen.getByRole('dialog', { name: 'スレッド' }),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'スレッド' })).toBeNull();
   });
 
   it.each([
@@ -1004,9 +896,6 @@ describe('RoomChat', () => {
         }),
       );
 
-      expect(
-        await screen.findByText('スレッドを表示できません'),
-      ).toBeInTheDocument();
       await waitFor(() => {
         expect(screen.queryByText('stale room timeline body')).toBeNull();
         expect(screen.queryByText('stale global search excerpt')).toBeNull();
@@ -1037,6 +926,11 @@ describe('RoomChat', () => {
     async (mode, buttonName) => {
       const sanitizedWarning =
         '投稿後、このルームを閲覧できません。閲覧権限を管理者に確認してください。';
+      const visibleBefore = makeMessage({
+        id: 'visible-before-revocation',
+        roomId: 'room-1',
+        body: 'visible before root post',
+      });
       const response = {
         ...makeMessage({
           id: `revoked-root-${mode}`,
@@ -1051,13 +945,16 @@ describe('RoomChat', () => {
       installApiMock({
         rooms: [makeRoom({ id: 'room-1' })],
         messagesByRoom: {
-          'room-1': [
-            makeMessage({
-              id: 'visible-before-revocation',
-              roomId: 'room-1',
-              body: 'visible before root post',
-            }),
-          ],
+          'room-1': [visibleBefore],
+        },
+        threadsByMessageId: {
+          'visible-before-revocation': {
+            root: visibleBefore,
+            replies: [],
+            replyCount: 0,
+            lastReplyAt: null,
+            nextCursor: null,
+          },
         },
         unreadByRoom: {
           'room-1': {
@@ -1073,6 +970,10 @@ describe('RoomChat', () => {
       render(<RoomChat />);
       expect(
         await screen.findByText('visible before root post'),
+      ).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /^スレッドを開く/ }));
+      expect(
+        await screen.findByRole('dialog', { name: 'スレッド' }),
       ).toBeInTheDocument();
       const displayedMessagesMetric = screen
         .getByText('表示メッセージ')
@@ -1098,6 +999,7 @@ describe('RoomChat', () => {
         ).toBeInTheDocument();
       });
       expect(screen.queryByText('visible before root post')).toBeNull();
+      expect(screen.queryByRole('dialog', { name: 'スレッド' })).toBeNull();
       expect(screen.getAllByText(sanitizedWarning).length).toBeGreaterThan(0);
       expect(
         screen.queryByText('raw backend detail must not be shown'),
@@ -1170,6 +1072,11 @@ describe('RoomChat', () => {
       });
       expect(roomSelect).toHaveValue('room-1');
       expect(roomSelect).toBeDisabled();
+      expect(
+        screen
+          .getAllByRole('button', { name: '再読込' })
+          .every((button) => button.hasAttribute('disabled')),
+      ).toBe(true);
       fireEvent.click(submit);
       expect(
         vi
@@ -1179,6 +1086,134 @@ describe('RoomChat', () => {
               String(path) === postPath && init?.method === 'POST',
           ),
       ).toHaveLength(1);
+    },
+  );
+
+  it.each([
+    ['known', false],
+    ['unknown', true],
+  ] as const)(
+    'keeps root POST ownership above an unmounted RoomChat and blocks follow-up effects: %s',
+    async (_label, rejectPost) => {
+      const pending = deferred<ChatMessage>();
+      installApiMock({
+        rooms: [makeRoom({ id: 'room-1' })],
+        messagesByRoom: { 'room-1': [] },
+        postMessagePromise: pending.promise,
+      });
+
+      const Harness = () => {
+        const [shown, setShown] = React.useState(true);
+        const [lifecycle, setLifecycle] = React.useState<
+          'idle' | 'in_flight' | 'uncertain'
+        >('idle');
+        return (
+          <div>
+            <button type="button" onClick={() => setShown((value) => !value)}>
+              RoomChat表示切替
+            </button>
+            <span>{`root lifecycle:${lifecycle}`}</span>
+            {shown && (
+              <RoomChat
+                rootPostLifecycle={lifecycle}
+                onRootPostLifecycleChange={setLifecycle}
+              />
+            )}
+          </div>
+        );
+      };
+
+      render(<Harness />);
+      expect(await screen.findByText('メッセージなし')).toBeInTheDocument();
+      fireEvent.change(screen.getByPlaceholderText('Markdownで入力'), {
+        target: { value: 'root post across unmount' },
+      });
+      fireEvent.change(screen.getByLabelText('添付ファイル'), {
+        target: {
+          files: [
+            new File(['synthetic'], 'synthetic.txt', { type: 'text/plain' }),
+          ],
+        },
+      });
+      vi.mocked(api).mockClear();
+      const submit = screen.getByRole('button', { name: '送信' });
+      await waitFor(() => expect(submit).toBeEnabled());
+      fireEvent.click(submit);
+      await waitFor(() =>
+        expect(
+          vi
+            .mocked(api)
+            .mock.calls.filter(
+              ([path, init]) =>
+                String(path) === '/chat-rooms/room-1/messages' &&
+                init?.method === 'POST',
+            ),
+        ).toHaveLength(1),
+      );
+      expect(
+        await screen.findByText('root lifecycle:in_flight'),
+      ).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'RoomChat表示切替' }));
+      if (rejectPost) {
+        pending.reject(
+          new Error(
+            'Request failed: /chat-rooms/room-1/messages (503) private-detail',
+          ),
+        );
+      } else {
+        pending.resolve(
+          makeMessage({
+            id: 'known-after-unmount',
+            roomId: 'room-1',
+            body: 'known root response',
+          }),
+        );
+      }
+
+      expect(
+        await screen.findByText(
+          `root lifecycle:${rejectPost ? 'uncertain' : 'idle'}`,
+        ),
+      ).toBeInTheDocument();
+      const postUnmountCalls = vi
+        .mocked(api)
+        .mock.calls.map(([path, init]) => ({
+          path: String(path),
+          method: (init?.method ?? 'GET').toUpperCase(),
+        }));
+      expect(
+        postUnmountCalls.filter(
+          (call) =>
+            call.path === '/chat-rooms/room-1/messages' &&
+            call.method === 'POST',
+        ),
+      ).toHaveLength(1);
+      expect(
+        postUnmountCalls.some(
+          (call) =>
+            call.path === '/chat-rooms/room-1/messages' &&
+            call.method === 'GET',
+        ),
+      ).toBe(false);
+      expect(
+        postUnmountCalls.some((call) => call.path.endsWith('/attachments')),
+      ).toBe(false);
+      expect(
+        postUnmountCalls.some(
+          (call) => call.path.endsWith('/read') && call.method === 'POST',
+        ),
+      ).toBe(false);
+
+      fireEvent.click(screen.getByRole('button', { name: 'RoomChat表示切替' }));
+      if (rejectPost) {
+        expect(
+          await screen.findByText(
+            '投稿結果を確認できません。重複防止のため再送せず、ページを再読み込みしてください',
+          ),
+        ).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '送信' })).toBeDisabled();
+      }
     },
   );
 
@@ -1273,6 +1308,15 @@ describe('RoomChat', () => {
                 ),
           ],
         },
+        threadsByMessageId: {
+          'root-before-post-denial': {
+            root: visible,
+            replies: [],
+            replyCount: 0,
+            lastReplyAt: null,
+            nextCursor: null,
+          },
+        },
         postMessageResults: [
           new Error(
             'Request failed: /chat-rooms/room-1/messages (403) private-detail',
@@ -1284,13 +1328,19 @@ describe('RoomChat', () => {
       expect(
         await screen.findByText('readable before post denial'),
       ).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /^スレッドを開く/ }));
+      expect(
+        await screen.findByRole('dialog', { name: 'スレッド' }),
+      ).toBeInTheDocument();
       fireEvent.change(screen.getByPlaceholderText('Markdownで入力'), {
         target: { value: 'denied root draft' },
       });
       fireEvent.click(screen.getByRole('button', { name: '送信' }));
 
       await waitFor(() => {
-        expect(screen.queryByText('readable before post denial')).toBeNull();
+        expect(
+          document.getElementById('chat-message-root-before-post-denial'),
+        ).toBeNull();
       });
       if (roomReadable) {
         expect(
@@ -1307,11 +1357,147 @@ describe('RoomChat', () => {
           ),
         ).toBeInTheDocument();
         expect(screen.queryByText('readable after post denial')).toBeNull();
+        expect(screen.queryByRole('dialog', { name: 'スレッド' })).toBeNull();
       }
       expect(screen.queryByText(/private-detail/)).toBeNull();
       expect(screen.getByPlaceholderText('Markdownで入力')).toHaveValue(
         'denied root draft',
       );
+    },
+  );
+
+  it.each(
+    [
+      {
+        action: 'reaction',
+        path: '/chat-messages/access-root/reactions',
+        invoke: () =>
+          fireEvent.click(screen.getByRole('button', { name: '👍' })),
+        acked: false,
+      },
+      {
+        action: 'ack',
+        path: '/chat-ack-requests/access-ack/ack',
+        invoke: () =>
+          fireEvent.click(screen.getByRole('button', { name: 'OK' })),
+        acked: false,
+      },
+      {
+        action: 'revoke',
+        path: '/chat-ack-requests/access-ack/revoke',
+        invoke: async () => {
+          fireEvent.click(screen.getByRole('button', { name: 'OK取消' }));
+          fireEvent.click(
+            await screen.findByRole('button', { name: '保留操作を確定' }),
+          );
+        },
+        acked: true,
+      },
+      {
+        action: 'cancel',
+        path: '/chat-ack-requests/access-ack/cancel',
+        invoke: () => {
+          vi.spyOn(window, 'prompt').mockReturnValue('');
+          fireEvent.click(screen.getByRole('button', { name: '撤回' }));
+        },
+        acked: false,
+      },
+    ].flatMap((testCase) => [
+      { ...testCase, roomReadable: true },
+      { ...testCase, roomReadable: false },
+    ]),
+  )(
+    'revalidates room access after a root timeline $action 404 (roomReadable=$roomReadable)',
+    async ({ path, invoke, acked, roomReadable }) => {
+      const root = makeMessage({
+        id: 'access-root',
+        roomId: 'room-1',
+        userId: 'demo-user',
+        body: 'root visible before unavailable mutation',
+        ackRequest: {
+          id: 'access-ack',
+          messageId: 'access-root',
+          roomId: 'room-1',
+          requiredUserIds: ['demo-user'],
+          dueAt: null,
+          canceledAt: null,
+          canceledBy: null,
+          acks: acked
+            ? [
+                {
+                  id: 'access-ack-row',
+                  requestId: 'access-ack',
+                  userId: 'demo-user',
+                  ackedAt: '2026-08-09T00:00:00.000Z',
+                },
+              ]
+            : [],
+        },
+      });
+      const latest = makeMessage({
+        id: 'latest-root',
+        roomId: 'room-1',
+        body: 'latest room after unavailable mutation',
+      });
+      installApiMock({
+        rooms: [makeRoom({ id: 'room-1' })],
+        messagesByRoom: { 'room-1': [] },
+        messageReadResultsByRoom: {
+          'room-1': [
+            [root],
+            roomReadable
+              ? [latest]
+              : new Error(
+                  'Request failed: /chat-rooms/room-1/messages (404) private-detail',
+                ),
+          ],
+        },
+        globalSearchResultsByQuery: {
+          'stale|': [
+            makeSearchItem({
+              id: 'stale-root-search',
+              roomId: 'room-1',
+              body: 'stale root search excerpt',
+            }),
+          ],
+        },
+        rootMutationErrors: {
+          [path]: new Error(`Request failed: ${path} (404) private-detail`),
+        },
+      });
+
+      render(<RoomChat />);
+      expect(
+        await screen.findByText('root visible before unavailable mutation'),
+      ).toBeInTheDocument();
+      fireEvent.change(screen.getByLabelText('横断検索（本文）'), {
+        target: { value: 'stale' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: '検索' }));
+      expect(
+        await screen.findByText('stale root search excerpt'),
+      ).toBeInTheDocument();
+
+      await invoke();
+
+      await waitFor(() => {
+        expect(
+          screen.queryByText('root visible before unavailable mutation'),
+        ).toBeNull();
+        expect(screen.queryByText('stale root search excerpt')).toBeNull();
+      });
+      if (roomReadable) {
+        expect(
+          await screen.findByText('latest room after unavailable mutation'),
+        ).toBeInTheDocument();
+      } else {
+        expect(
+          await screen.findByText(
+            'ルームを表示できません。権限を確認して再読み込みしてください。',
+          ),
+        ).toBeInTheDocument();
+      }
+      expect(screen.queryByText(/private-detail/)).toBeNull();
     },
   );
 
@@ -1688,299 +1874,12 @@ describe('RoomChat', () => {
     }
   });
 
-  it('applies message search filters and validates short queries', async () => {
-    installApiMock({
-      rooms: [makeRoom({ id: 'room-1' })],
-      messagesByRoom: {
-        'room-1': [
-          makeMessage({
-            id: 'message-1',
-            roomId: 'room-1',
-            body: 'alpha message',
-            userId: 'alice',
-          }),
-          makeMessage({
-            id: 'message-2',
-            roomId: 'room-1',
-            body: 'beta message',
-            userId: 'bob',
-          }),
-        ],
-      },
-      searchResultsByQuery: {
-        'room-1|beta': [
-          makeMessage({
-            id: 'message-2',
-            roomId: 'room-1',
-            body: 'beta message',
-            userId: 'bob',
-          }),
-        ],
-      },
-    });
-
-    render(<RoomChat />);
-
-    expect(await screen.findByText('alpha message')).toBeInTheDocument();
-    expect(screen.getByText('beta message')).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText('検索（本文）'), {
-      target: { value: 'a' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: '適用' }));
-    expect(
-      await screen.findByText('検索語は2文字以上で入力してください'),
-    ).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText('検索（本文）'), {
-      target: { value: 'beta' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: '適用' }));
-
-    expect(await screen.findByText('beta message')).toBeInTheDocument();
-    expect(screen.queryByText('alpha message')).not.toBeInTheDocument();
-  });
-
-  it('shows a failure message when message loading fails', async () => {
-    installApiMock({
-      rooms: [makeRoom({ id: 'room-1' })],
-      messagesByRoom: {
-        'room-1': [
-          makeMessage({
-            id: 'message-1',
-            roomId: 'room-1',
-            body: 'alpha message',
-            userId: 'alice',
-          }),
-        ],
-      },
-      failOnSearch: ['fail'],
-    });
-
-    render(<RoomChat />);
-
-    expect(await screen.findByText('alpha message')).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText('検索（本文）'), {
-      target: { value: 'fail' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: '適用' }));
-
-    expect(
-      await screen.findByText('メッセージの取得に失敗しました'),
-    ).toBeInTheDocument();
-  });
-
-  it('saves notification settings and keeps local changes on save failure', async () => {
-    const notificationSettingPatchBodies: Array<{
-      roomId: string;
-      body: {
-        notifyAllPosts?: boolean;
-        notifyMentions?: boolean;
-        muteUntil?: string | null;
-      };
-    }> = [];
-
-    installApiMock({
-      rooms: [makeRoom({ id: 'room-1' })],
-      messagesByRoom: {
-        'room-1': [],
-      },
-      notificationSettingsByRoom: {
-        'room-1': {
-          notifyAllPosts: false,
-          notifyMentions: true,
-          muteUntil: '2026-03-28T01:00:00.000Z',
-        },
-      },
-      notificationSettingPatchBodies,
-      failOnNotificationSave: ['room-1'],
-    });
-
-    render(<RoomChat />);
-
-    const notifyAllPosts = await screen.findByRole('checkbox', {
-      name: '全投稿通知',
-    });
-    const notifyMentions = screen.getByRole('checkbox', {
-      name: 'メンション通知',
-    });
-    const muteUntil = screen.getByLabelText('ミュート期限（任意）');
-
-    expect(notifyAllPosts).not.toBeChecked();
-    expect(notifyMentions).toBeChecked();
-    expect(muteUntil).not.toHaveValue('');
-
-    fireEvent.click(notifyAllPosts);
-    fireEvent.click(notifyMentions);
-    fireEvent.click(screen.getByRole('button', { name: '解除' }));
-    fireEvent.click(screen.getByRole('button', { name: '保存' }));
-
-    expect(
-      await screen.findByText('通知設定の保存に失敗しました'),
-    ).toBeInTheDocument();
-    expect(notificationSettingPatchBodies).toEqual([
-      {
-        roomId: 'room-1',
-        body: {
-          notifyAllPosts: true,
-          notifyMentions: false,
-          muteUntil: null,
-        },
-      },
-    ]);
-    expect(notifyAllPosts).toBeChecked();
-    expect(notifyMentions).not.toBeChecked();
-    expect(muteUntil).toHaveValue('');
-  });
-
-  it('loads more global search results, opens a result, and clears prior results on failure', async () => {
-    const firstPage = Array.from({ length: 50 }, (_, index) =>
-      makeSearchItem({
-        id: `search-${index + 1}`,
-        body: `beta result ${index + 1}`,
-        createdAt: `2026-03-28T00:${String(49 - index).padStart(2, '0')}:00.000Z`,
-        room: makeRoom({
-          id: 'room-1',
-          projectCode: 'PRJ-1',
-          projectName: 'Alpha',
-        }),
-      }),
-    );
-    const secondPageItem = makeSearchItem({
-      id: 'search-51',
-      body: 'beta page2 result',
-      createdAt: '2026-03-27T23:59:00.000Z',
-      room: makeRoom({
-        id: 'room-2',
-        type: 'dm',
-        name: 'dm:demo-user:partner-user',
-        allowExternalIntegrations: false,
-      }),
-    });
-
-    installApiMock({
-      rooms: [
-        makeRoom({
-          id: 'room-1',
-          projectCode: 'PRJ-1',
-          projectName: 'Alpha',
-        }),
-        makeRoom({
-          id: 'room-2',
-          type: 'dm',
-          name: 'dm:demo-user:partner-user',
-          allowExternalIntegrations: false,
-        }),
-      ],
-      messagesByRoom: {
-        'room-1': [
-          makeMessage({
-            id: 'message-1',
-            roomId: 'room-1',
-            body: 'room-1 first message',
-            userId: 'alice',
-          }),
-        ],
-        'room-2': [
-          makeMessage({
-            id: 'message-2',
-            roomId: 'room-2',
-            body: 'room-2 first message',
-            userId: 'bob',
-          }),
-        ],
-      },
-      globalSearchResultsByQuery: {
-        'beta|': firstPage,
-        [`beta|${firstPage[firstPage.length - 1]?.createdAt ?? ''}`]: [
-          secondPageItem,
-        ],
-      },
-      failOnGlobalSearch: ['error|'],
-      threadsByMessageId: {
-        'search-51': {
-          root: makeMessage({
-            id: 'search-51',
-            roomId: 'room-2',
-            body: 'beta page2 result',
-            userId: 'alice',
-          }),
-          replies: [
-            makeMessage({
-              id: 'reply-51',
-              roomId: 'room-2',
-              parentMessageId: 'search-51',
-              threadRootId: 'search-51',
-              body: 'search result thread reply',
-              userId: 'bob',
-              createdAt: '2026-03-28T00:01:00.000Z',
-            }),
-          ],
-          replyCount: 1,
-          lastReplyAt: '2026-03-28T00:01:00.000Z',
-          nextCursor: null,
-        },
-      },
-    });
-
-    render(<RoomChat />);
-
-    expect(await screen.findByText('room-1 first message')).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText('横断検索（本文）'), {
-      target: { value: 'beta' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: '検索' }));
-
-    expect(await screen.findByText('beta result 1')).toBeInTheDocument();
-    expect(await screen.findByText('beta result 50')).toBeInTheDocument();
-    await waitFor(() => {
-      expect(
-        screen.getByRole('button', { name: 'さらに読み込む' }),
-      ).toBeEnabled();
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: 'さらに読み込む' }));
-
-    const secondPageCard = await screen.findByText('beta page2 result');
-    let secondPageContainer: HTMLElement | null = secondPageCard.parentElement;
-    while (
-      secondPageContainer &&
-      !within(secondPageContainer).queryByRole('button', {
-        name: 'スレッドを開く',
-      })
-    ) {
-      secondPageContainer = secondPageContainer.parentElement;
-    }
-    if (!secondPageContainer) {
-      throw new Error('search result container not found');
-    }
-    fireEvent.click(
-      within(secondPageContainer).getByRole('button', {
-        name: 'スレッドを開く',
-      }),
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole('combobox', { name: 'ルーム' })).toHaveValue(
-        'room-2',
-      );
-    });
-    expect(await screen.findByText('room-2 first message')).toBeInTheDocument();
-    expect(
-      await screen.findByRole('dialog', { name: 'スレッド' }),
-    ).toBeInTheDocument();
-    expect(screen.getByText('search result thread reply')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'スレッドを閉じる' }));
-
-    fireEvent.change(screen.getByLabelText('横断検索（本文）'), {
-      target: { value: 'error' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: '検索' }));
-
-    expect(await screen.findByText('検索に失敗しました')).toBeInTheDocument();
-    expect(screen.queryByText('beta result 1')).not.toBeInTheDocument();
-    expect(screen.queryByText('beta page2 result')).not.toBeInTheDocument();
+  registerRoomChatSearchAndSettingsTests({
+    RoomChat,
+    api,
+    installApiMock,
+    makeRoom,
+    makeMessage,
+    makeSearchItem,
   });
 });

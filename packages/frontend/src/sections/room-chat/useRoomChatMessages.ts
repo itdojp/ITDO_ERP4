@@ -16,6 +16,7 @@ export type LoadMessagesOptions = {
   query?: string;
   tag?: string;
   failureMessage?: string;
+  onCurrentFailure?: () => void;
 };
 
 export function useRoomChatMessages({
@@ -191,7 +192,9 @@ export function useRoomChatMessages({
         if (controller.signal.aborted || !isCurrentRequest()) return false;
         console.error('Failed to load room messages.');
         if (options?.failureMessage) {
-          purgeRoomState(targetRoomId, options.failureMessage);
+          if (purgeRoomState(targetRoomId, options.failureMessage)) {
+            options.onCurrentFailure?.();
+          }
         } else {
           setMessage('メッセージの取得に失敗しました');
           setHasMore(false);

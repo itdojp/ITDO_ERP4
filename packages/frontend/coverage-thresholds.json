@@ -83,6 +83,7 @@
       "src/sections/room-chat/RoomMessageList.tsx",
       "src/sections/room-chat/roomChatApi.ts",
       "src/sections/room-chat/roomChatModel.ts",
+      "src/sections/room-chat/roomChatRootTimelineMutations.ts",
       "src/sections/room-chat/useRoomChatCandidates.ts",
       "src/sections/room-chat/useRoomChatGlobalSearch.ts",
       "src/sections/room-chat/useRoomChatMessages.ts",

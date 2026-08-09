@@ -31,7 +31,6 @@ import {
   buildExcerpt,
   escapeMarkdownLinkLabel,
   formatRoomLabel,
-  isAckRequest,
   markdownAllowedElements,
   normalizeStringArray,
   parseTags,
@@ -42,19 +41,15 @@ import {
   type ChatSearchItem,
 } from './room-chat/roomChatModel';
 import {
-  ackRequest,
-  cancelAckRequestById,
   createDmRoom,
   createPrivateGroupRoom,
   downloadMessageAttachment,
   inviteChatRoomMembers,
   isDefiniteChatRequestFailure,
   isUnavailableChatRequestFailure,
-  postMessageReaction,
   postRoomAckRequest,
   postRoomMessage,
   previewRoomAckTargets,
-  revokeAckRequest,
   summarizeRoomMessages,
   summarizeRoomMessagesWithExternalAi,
   uploadMessageAttachment,
@@ -70,8 +65,47 @@ import { useRoomChatGlobalSearch } from './room-chat/useRoomChatGlobalSearch';
 import { useRoomChatMessages } from './room-chat/useRoomChatMessages';
 import { useRoomChatNotificationSetting } from './room-chat/useRoomChatNotificationSetting';
 import { useRoomChatRooms } from './room-chat/useRoomChatRooms';
+import { useRoomChatRootTimelineMutations } from './room-chat/roomChatRootTimelineMutations';
 
-export const RoomChat: React.FC = () => {
+export type RootPostLifecycle = 'idle' | 'in_flight' | 'uncertain';
+
+export type RoomChatProps = {
+  rootPostLifecycle?: RootPostLifecycle;
+  onRootPostLifecycleChange?: (lifecycle: RootPostLifecycle) => void;
+};
+
+export const RoomChat: React.FC<RoomChatProps> = ({
+  rootPostLifecycle: controlledRootPostLifecycle,
+  onRootPostLifecycleChange,
+}) => {
+  const mountedRef = useRef(true);
+  const [localRootPostLifecycle, setLocalRootPostLifecycle] =
+    useState<RootPostLifecycle>('idle');
+  const rootPostLifecycle =
+    controlledRootPostLifecycle ?? localRootPostLifecycle;
+  const rootPostLifecycleRef = useRef(rootPostLifecycle);
+  useEffect(() => {
+    rootPostLifecycleRef.current = rootPostLifecycle;
+  }, [rootPostLifecycle]);
+  const updateRootPostLifecycle = useCallback(
+    (next: RootPostLifecycle) => {
+      rootPostLifecycleRef.current = next;
+      if (onRootPostLifecycleChange) {
+        onRootPostLifecycleChange(next);
+      } else if (mountedRef.current) {
+        setLocalRootPostLifecycle(next);
+      }
+    },
+    [onRootPostLifecycleChange],
+  );
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const auth = getAuthState();
   const roles = auth?.roles || [];
   const authGroupIds = new Set(
@@ -98,7 +132,6 @@ export const RoomChat: React.FC = () => {
     resolveProjectRoom,
   } = useRoomChatRooms({ canSeeAllMeta });
   const [postWarning, setPostWarning] = useState('');
-  const [postSubmissionUncertain, setPostSubmissionUncertain] = useState(false);
   const [roomListScope, setRoomListScope] = useState<'all' | 'ga_personal'>(
     'all',
   );
@@ -121,8 +154,7 @@ export const RoomChat: React.FC = () => {
   const currentRoomIdRef = useRef('');
   const previousRoomIdRef = useRef('');
   const skipNextRoomAutoLoadRef = useRef(false);
-  const isPostingRef = useRef(false);
-  const postSubmissionUncertainRef = useRef(false);
+  const rootPostBlocked = rootPostLifecycle !== 'idle';
 
   useEffect(() => {
     const previousRoomId = previousRoomIdRef.current;
@@ -145,7 +177,7 @@ export const RoomChat: React.FC = () => {
       const nextRoomId =
         detail && typeof detail.roomId === 'string' ? detail.roomId : '';
       if (!nextRoomId) return;
-      if (isPostingRef.current || postSubmissionUncertainRef.current) return;
+      if (rootPostLifecycleRef.current !== 'idle') return;
       setRoomListScope('all');
       setRoomListQuery('');
       setRoomId(nextRoomId);
@@ -173,6 +205,10 @@ export const RoomChat: React.FC = () => {
     loadMessages,
     purgeRoomState,
   } = useRoomChatMessages({ roomId, filterQuery, filterTag });
+  const currentRoomItems = useMemo(
+    () => items.filter((item) => item.roomId === roomId),
+    [items, roomId],
+  );
   const [nowMs, setNowMs] = useState(0);
   const [summary, setSummary] = useState('');
   const [summaryProvider, setSummaryProvider] = useState('');
@@ -410,7 +446,7 @@ export const RoomChat: React.FC = () => {
       : '';
 
   const hasActiveAckDeadline = useMemo(() => {
-    return items.some((item) => {
+    return currentRoomItems.some((item) => {
       if (item.ackRequest?.canceledAt) return false;
       const dueAt = item.ackRequest?.dueAt
         ? new Date(item.ackRequest.dueAt)
@@ -429,7 +465,7 @@ export const RoomChat: React.FC = () => {
       ).length;
       return ackedCount < requiredCount;
     });
-  }, [items]);
+  }, [currentRoomItems]);
 
   useEffect(() => {
     if (!hasActiveAckDeadline) {
@@ -459,7 +495,7 @@ export const RoomChat: React.FC = () => {
       const createdAt =
         detail && typeof detail.createdAt === 'string' ? detail.createdAt : '';
       if (!messageId || !targetRoomId) return;
-      if (isPostingRef.current || postSubmissionUncertainRef.current) return;
+      if (rootPostLifecycleRef.current !== 'idle') return;
 
       const hasParentMessageId = Object.prototype.hasOwnProperty.call(
         detail,
@@ -541,9 +577,22 @@ export const RoomChat: React.FC = () => {
     clearGlobalSearch,
   } = useRoomChatGlobalSearch();
 
+  const clearRoomBoundThreadState = useCallback((targetRoomId: string) => {
+    setThreadTarget((current) =>
+      current?.roomId === targetRoomId ? null : current,
+    );
+    if (currentRoomIdRef.current !== targetRoomId) return;
+    threadReturnFocusRef.current = null;
+    setPendingOpenMessage((current) =>
+      current?.roomId === targetRoomId ? null : current,
+    );
+    setPendingScrollMessageId('');
+    setHighlightMessageId('');
+  }, []);
+
   const revalidateRoomAccess = async (targetRoomId: string) => {
-    clearGlobalSearch();
     if (currentRoomIdRef.current !== targetRoomId) return false;
+    clearGlobalSearch();
     setFilterQuery('');
     setFilterTag('');
     return loadMessages({
@@ -551,8 +600,14 @@ export const RoomChat: React.FC = () => {
       tag: '',
       failureMessage:
         'ルームを表示できません。権限を確認して再読み込みしてください。',
+      onCurrentFailure: () => clearRoomBoundThreadState(targetRoomId),
     });
   };
+  const isCurrentRoom = useCallback(
+    (targetRoomId: string) => currentRoomIdRef.current === targetRoomId,
+    [],
+  );
+  const isRoomChatMounted = useCallback(() => mountedRef.current, []);
 
   const {
     notificationSetting,
@@ -578,7 +633,7 @@ export const RoomChat: React.FC = () => {
       const projectId =
         detail && typeof detail.projectId === 'string' ? detail.projectId : '';
       if (!projectId) return;
-      if (isPostingRef.current || postSubmissionUncertainRef.current) return;
+      if (rootPostLifecycleRef.current !== 'idle') return;
       setRoomListScope('all');
       setRoomListQuery('');
       resolveProjectRoom(projectId)
@@ -620,7 +675,8 @@ export const RoomChat: React.FC = () => {
 
   useEffect(() => {
     if (!pendingScrollMessageId) return;
-    if (!items.some((item) => item.id === pendingScrollMessageId)) return;
+    if (!currentRoomItems.some((item) => item.id === pendingScrollMessageId))
+      return;
     const id = pendingScrollMessageId;
     setPendingScrollMessageId('');
     window.setTimeout(() => {
@@ -629,7 +685,7 @@ export const RoomChat: React.FC = () => {
         element.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }, 0);
-  }, [items, pendingScrollMessageId]);
+  }, [currentRoomItems, pendingScrollMessageId]);
 
   useEffect(() => {
     if (!roomId) {
@@ -643,6 +699,7 @@ export const RoomChat: React.FC = () => {
     item: Pick<ChatMessage, 'id' | 'roomId' | 'threadRootId'>,
     trigger: HTMLElement | null,
   ) => {
+    if (rootPostLifecycleRef.current !== 'idle') return;
     threadReturnFocusRef.current = trigger;
     setThreadTarget({
       messageId: item.id,
@@ -662,7 +719,7 @@ export const RoomChat: React.FC = () => {
     item: ChatSearchItem,
     trigger: HTMLButtonElement | null,
   ) => {
-    if (isPostingRef.current || postSubmissionUncertainRef.current) return;
+    if (rootPostLifecycleRef.current !== 'idle') return;
     setRoomId(item.room.id);
     setMessage('');
     openThread(item, trigger);
@@ -881,8 +938,7 @@ export const RoomChat: React.FC = () => {
   }, [ackTargetGroupIdList, ackTargetRoleList, ackTargetUserIds, roomId]);
 
   const postMessage = async (mode: 'message' | 'ack') => {
-    if (!roomId) return;
-    if (isPostingRef.current || postSubmissionUncertain) return;
+    if (!roomId || rootPostLifecycleRef.current !== 'idle') return;
     const postingRoomId = roomId;
     if (!body.trim()) {
       setMessage('本文を入力してください');
@@ -892,84 +948,83 @@ export const RoomChat: React.FC = () => {
       const ok = window.confirm('全員宛(@all)で投稿します。よろしいですか？');
       if (!ok) return;
     }
-    try {
-      isPostingRef.current = true;
-      setIsPosting(true);
-      setMessage('');
-      const mentions = buildMentionsPayload();
-      const basePayload: {
-        body: string;
-        tags?: string[];
-        mentions?: {
-          userIds?: string[];
-          groupIds?: string[];
-          all?: boolean;
-        };
-      } = {
-        body: body.trim(),
-        tags: tags.trim() ? parseTags(tags) : undefined,
-        mentions,
+
+    const mentions = buildMentionsPayload();
+    const basePayload: {
+      body: string;
+      tags?: string[];
+      mentions?: {
+        userIds?: string[];
+        groupIds?: string[];
+        all?: boolean;
       };
-      const payload =
-        mode === 'ack'
-          ? (() => {
-              const required = Array.from(new Set(parseUserIds(ackTargets)));
-              const groupIds = Array.from(
-                new Set(parseUserIds(ackTargetGroupIds)),
+    } = {
+      body: body.trim(),
+      tags: tags.trim() ? parseTags(tags) : undefined,
+      mentions,
+    };
+    const payload =
+      mode === 'ack'
+        ? (() => {
+            const required = Array.from(new Set(parseUserIds(ackTargets)));
+            const groupIds = Array.from(
+              new Set(parseUserIds(ackTargetGroupIds)),
+            );
+            const roles = Array.from(new Set(parseUserIds(ackTargetRoles)));
+            if (
+              required.length === 0 &&
+              groupIds.length === 0 &&
+              roles.length === 0
+            ) {
+              setMessage(
+                '確認対象（ユーザID/グループ/ロール）を入力してください',
               );
-              const roles = Array.from(new Set(parseUserIds(ackTargetRoles)));
-              if (
-                required.length === 0 &&
-                groupIds.length === 0 &&
-                roles.length === 0
-              ) {
-                setMessage(
-                  '確認対象（ユーザID/グループ/ロール）を入力してください',
-                );
-                return null;
-              }
-              if (required.length > 50) {
-                setMessage('確認対象は最大50件までです');
-                return null;
-              }
-              if (groupIds.length > 20) {
-                setMessage('確認対象グループは最大20件までです');
-                return null;
-              }
-              if (roles.length > 20) {
-                setMessage('確認対象ロールは最大20件までです');
-                return null;
-              }
-              return {
-                ...basePayload,
-                ...(required.length ? { requiredUserIds: required } : {}),
-                ...(groupIds.length ? { requiredGroupIds: groupIds } : {}),
-                ...(roles.length ? { requiredRoles: roles } : {}),
-              };
-            })()
-          : basePayload;
-      if (!payload) return;
+              return null;
+            }
+            if (required.length > 50) {
+              setMessage('確認対象は最大50件までです');
+              return null;
+            }
+            if (groupIds.length > 20) {
+              setMessage('確認対象グループは最大20件までです');
+              return null;
+            }
+            if (roles.length > 20) {
+              setMessage('確認対象ロールは最大20件までです');
+              return null;
+            }
+            return {
+              ...basePayload,
+              ...(required.length ? { requiredUserIds: required } : {}),
+              ...(groupIds.length ? { requiredGroupIds: groupIds } : {}),
+              ...(roles.length ? { requiredRoles: roles } : {}),
+            };
+          })()
+        : basePayload;
+    if (!payload) return;
+
+    let postOutcomeKnown = false;
+    let postOutcomeUncertain = false;
+    updateRootPostLifecycle('in_flight');
+    setIsPosting(true);
+    setMessage('');
+    try {
       let created: Awaited<ReturnType<typeof postRoomMessage>>;
       try {
         created =
           mode === 'ack'
             ? await postRoomAckRequest(postingRoomId, payload)
             : await postRoomMessage(postingRoomId, payload);
+        postOutcomeKnown = true;
       } catch (error) {
         console.error('Failed to post message.');
-        if (currentRoomIdRef.current !== postingRoomId) {
-          postSubmissionUncertainRef.current = true;
-          setPostSubmissionUncertain(true);
-          setMessage(
-            '投稿中にルームが変更されました。重複防止のため再送せず、ページを再読み込みしてください',
-          );
-          return;
-        }
         if (isDefiniteChatRequestFailure(error)) {
+          postOutcomeKnown = true;
+          if (!mountedRef.current) return;
           const readable = isUnavailableChatRequestFailure(error)
             ? await revalidateRoomAccess(postingRoomId)
             : true;
-          if (readable) {
+          if (readable && mountedRef.current) {
             setMessage(
               mode === 'ack'
                 ? '確認依頼の投稿に失敗しました'
@@ -977,20 +1032,14 @@ export const RoomChat: React.FC = () => {
             );
           }
         } else {
-          postSubmissionUncertainRef.current = true;
-          setPostSubmissionUncertain(true);
-          setMessage(
-            '投稿結果を確認できません。重複防止のため再送せず、ページを再読み込みしてください',
-          );
+          postOutcomeUncertain = true;
         }
         return;
       }
+
+      if (!mountedRef.current) return;
       if (currentRoomIdRef.current !== postingRoomId) {
-        postSubmissionUncertainRef.current = true;
-        setPostSubmissionUncertain(true);
-        setMessage(
-          '投稿中にルームが変更されました。重複防止のため再送せず、ページを再読み込みしてください',
-        );
+        postOutcomeUncertain = true;
         return;
       }
       if (created.warning?.code === 'POST_WITHOUT_VIEW') {
@@ -1002,9 +1051,11 @@ export const RoomChat: React.FC = () => {
         resetMentionTargets();
         setAttachmentFile(null);
         clearGlobalSearch();
+        clearRoomBoundThreadState(postingRoomId);
         purgeRoomState(postingRoomId, warning);
         return;
       }
+
       setBody('');
       setTags('');
       resetAckTargets();
@@ -1019,15 +1070,10 @@ export const RoomChat: React.FC = () => {
           attachmentUncertain = true;
         }
       }
-      if (currentRoomIdRef.current !== postingRoomId) {
-        postSubmissionUncertainRef.current = true;
-        setPostSubmissionUncertain(true);
-        setMessage(
-          '投稿中にルームが変更されました。重複防止のため再送せず、ページを再読み込みしてください',
-        );
-        return;
-      }
+      if (!mountedRef.current) return;
+      if (currentRoomIdRef.current !== postingRoomId) return;
       const refreshed = await loadMessages();
+      if (!mountedRef.current) return;
       if (attachmentUncertain) {
         setPostWarning(
           'メッセージは投稿されましたが添付結果を確認できません。メッセージを再送せず、再読み込みしてください',
@@ -1040,109 +1086,29 @@ export const RoomChat: React.FC = () => {
         setPostWarning('');
       }
     } finally {
-      isPostingRef.current = false;
-      setIsPosting(false);
+      updateRootPostLifecycle(
+        postOutcomeKnown && !postOutcomeUncertain ? 'idle' : 'uncertain',
+      );
+      if (mountedRef.current) setIsPosting(false);
     }
   };
 
-  const addReaction = async (id: string, emoji: string) => {
-    try {
-      const expected = items.find((item) => item.id === id);
-      if (!expected) return;
-      const updated = await postMessageReaction(expected, emoji);
-      setItems((prev) =>
-        prev.map((item) =>
-          item.id === id ? { ...item, reactions: updated.reactions } : item,
-        ),
-      );
-    } catch (err) {
-      console.error('Failed to add reaction.', err);
-      setMessage('リアクションの更新に失敗しました');
-    }
-  };
-
-  const ack = async (requestId: string) => {
-    try {
-      const target = items.find((item) => item.ackRequest?.id === requestId);
-      if (!target) return;
-      const updated = await ackRequest({
-        requestId,
-        messageId: target.id,
-        roomId: target.roomId,
-      });
-      setItems((prev) =>
-        prev.map((item) =>
-          item.ackRequest?.id === requestId
-            ? {
-                ...item,
-                ackRequest: isAckRequest(updated) ? updated : item.ackRequest,
-              }
-            : item,
-        ),
-      );
-    } catch (err) {
-      console.error('Failed to ack request.', err);
-      setMessage('OKの送信に失敗しました');
-    }
-  };
-
-  const revokeAck = async (requestId: string) => {
-    try {
-      const target = items.find((item) => item.ackRequest?.id === requestId);
-      if (!target) return;
-      const updated = await revokeAckRequest({
-        requestId,
-        messageId: target.id,
-        roomId: target.roomId,
-      });
-      setItems((prev) =>
-        prev.map((item) =>
-          item.ackRequest?.id === requestId
-            ? {
-                ...item,
-                ackRequest: isAckRequest(updated) ? updated : item.ackRequest,
-              }
-            : item,
-        ),
-      );
-      setMessage('OKを取り消しました');
-    } catch (err) {
-      console.error('Failed to revoke ack.', err);
-      setMessage('OKの取り消しに失敗しました');
-    }
-  };
-
-  const cancelAckRequest = async (requestId: string, reason?: string) => {
-    try {
-      const target = items.find((item) => item.ackRequest?.id === requestId);
-      if (!target) return;
-      const updated = await cancelAckRequestById(
-        {
-          requestId,
-          messageId: target.id,
-          roomId: target.roomId,
-        },
-        reason,
-      );
-      setItems((prev) =>
-        prev.map((item) =>
-          item.ackRequest?.id === requestId
-            ? {
-                ...item,
-                ackRequest: isAckRequest(updated) ? updated : item.ackRequest,
-              }
-            : item,
-        ),
-      );
-      setMessage('確認依頼を撤回しました');
-    } catch (err) {
-      console.error('Failed to cancel ack request.', err);
-      setMessage('確認依頼の撤回に失敗しました');
-    }
-  };
+  const {
+    addReaction,
+    acknowledge: ack,
+    revokeAck,
+    cancelAckRequest,
+  } = useRoomChatRootTimelineMutations({
+    currentRoomItems,
+    isCurrentRoom,
+    isMounted: isRoomChatMounted,
+    revalidateRoomAccess,
+    setItems,
+    setMessage,
+  });
 
   const createPrivateGroup = async () => {
-    if (isPostingRef.current || postSubmissionUncertainRef.current) return;
+    if (rootPostLifecycleRef.current !== 'idle') return;
     try {
       setRoomMessage('');
       const memberUserIds = parseUserIds(createPrivateMembers);
@@ -1161,7 +1127,7 @@ export const RoomChat: React.FC = () => {
   };
 
   const createDm = async () => {
-    if (isPostingRef.current || postSubmissionUncertainRef.current) return;
+    if (rootPostLifecycleRef.current !== 'idle') return;
     try {
       setRoomMessage('');
       const created = await createDmRoom(createDmPartner.trim());
@@ -1277,7 +1243,7 @@ export const RoomChat: React.FC = () => {
     if (!rooms.length) {
       return;
     }
-    if (isPostingRef.current || postSubmissionUncertainRef.current) return;
+    if (rootPostLifecycleRef.current !== 'idle') return;
     const nextDisplayedRooms = buildDisplayedRooms(
       rooms,
       currentUserId,
@@ -1361,7 +1327,7 @@ export const RoomChat: React.FC = () => {
     },
     {
       label: '表示メッセージ',
-      value: `${items.length}件`,
+      value: `${currentRoomItems.length}件`,
       helper: hasMore
         ? '追加読み込み可能です。'
         : '現在の条件で読み込んだ件数です。',
@@ -1382,6 +1348,12 @@ export const RoomChat: React.FC = () => {
         : 'チャット全体の検索結果件数です。',
     },
   ];
+  const rootPostLifecycleMessage =
+    rootPostLifecycle === 'uncertain'
+      ? '投稿結果を確認できません。重複防止のため再送せず、ページを再読み込みしてください'
+      : rootPostLifecycle === 'in_flight'
+        ? '投稿処理中です。結果が確定するまで再送しないでください'
+        : '';
 
   return (
     <div>
@@ -1429,7 +1401,7 @@ export const RoomChat: React.FC = () => {
             <select
               value={roomId}
               onChange={(e) => setRoomId(e.target.value)}
-              disabled={isPosting || postSubmissionUncertain}
+              disabled={rootPostBlocked}
             >
               <option value="">(未選択)</option>
               {displayedRooms.map((room) => (
@@ -1442,7 +1414,7 @@ export const RoomChat: React.FC = () => {
           <button
             className="button secondary"
             onClick={() => loadRooms()}
-            disabled={isPosting || postSubmissionUncertain}
+            disabled={rootPostBlocked}
           >
             再読込
           </button>
@@ -1605,9 +1577,7 @@ export const RoomChat: React.FC = () => {
           <button
             className="button"
             onClick={createPrivateGroup}
-            disabled={
-              !createPrivateName.trim() || isPosting || postSubmissionUncertain
-            }
+            disabled={!createPrivateName.trim() || rootPostBlocked}
           >
             private_group作成
           </button>
@@ -1628,9 +1598,7 @@ export const RoomChat: React.FC = () => {
           <button
             className="button"
             onClick={createDm}
-            disabled={
-              !createDmPartner.trim() || isPosting || postSubmissionUncertain
-            }
+            disabled={!createDmPartner.trim() || rootPostBlocked}
           >
             DM作成
           </button>
@@ -1667,6 +1635,16 @@ export const RoomChat: React.FC = () => {
       {roomId && (
         <div className="card" style={{ padding: 12, marginTop: 12 }}>
           <strong>投稿</strong>
+          {rootPostLifecycleMessage && (
+            <div
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              style={{ marginTop: 8, color: '#b45309' }}
+            >
+              {rootPostLifecycleMessage}
+            </div>
+          )}
           {message && (
             <div
               role="status"
@@ -1695,7 +1673,7 @@ export const RoomChat: React.FC = () => {
               type="checkbox"
               checked={showPreview}
               onChange={(e) => setShowPreview(e.target.checked)}
-              disabled={isLoading || isPosting || postSubmissionUncertain}
+              disabled={isLoading || rootPostBlocked}
             />
             プレビュー
           </label>
@@ -1739,7 +1717,7 @@ export const RoomChat: React.FC = () => {
               submitLabel={isPosting ? '送信中...' : '送信'}
               cancelLabel="クリア"
               requiredSectionLabel="確認依頼の対象"
-              disabled={isLoading || isPosting || postSubmissionUncertain}
+              disabled={isLoading || rootPostBlocked}
               limits={{ maxBodyLength: 2000, maxMentions: 70, maxGroups: 20 }}
             />
             {(mentionCandidates.allowAll ?? true) && (
@@ -1958,14 +1936,14 @@ export const RoomChat: React.FC = () => {
               <button
                 className="button secondary"
                 onClick={() => postMessage('ack')}
-                disabled={isLoading || isPosting || postSubmissionUncertain}
+                disabled={isLoading || rootPostBlocked}
               >
                 確認依頼
               </button>
               <button
                 className="button secondary"
                 onClick={() => loadMessages()}
-                disabled={isLoading}
+                disabled={isLoading || rootPostBlocked}
               >
                 再読込
               </button>
@@ -1996,33 +1974,39 @@ export const RoomChat: React.FC = () => {
         />
       )}
 
-      <RoomMessageList
-        filterQuery={filterQuery}
-        setFilterQuery={setFilterQuery}
-        filterTag={filterTag}
-        setFilterTag={setFilterTag}
-        loadMessages={loadMessages}
-        roomId={roomId}
-        isLoading={isLoading}
-        items={items}
-        highlightSince={highlightSince}
-        highlightMessageId={highlightMessageId}
-        nowMs={nowMs}
-        currentUserId={currentUserId}
-        roles={roles}
-        renderMessageBody={renderMessageBody}
-        onOpenThread={openThread}
-        copyMessageLink={copyMessageLink}
-        addReaction={addReaction}
-        ack={ack}
-        pendingUndoRevokeAck={pendingUndoRevokeAck}
-        setPendingUndoRevokeAck={setPendingUndoRevokeAck}
-        cancelAckRequest={cancelAckRequest}
-        downloadAttachment={downloadAttachment}
-        setMessage={setMessage}
-        hasMore={hasMore}
-        isLoadingMore={isLoadingMore}
-      />
+      <fieldset
+        disabled={rootPostBlocked}
+        aria-label="ルームタイムライン"
+        style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
+      >
+        <RoomMessageList
+          filterQuery={filterQuery}
+          setFilterQuery={setFilterQuery}
+          filterTag={filterTag}
+          setFilterTag={setFilterTag}
+          loadMessages={loadMessages}
+          roomId={roomId}
+          isLoading={isLoading}
+          items={currentRoomItems}
+          highlightSince={highlightSince}
+          highlightMessageId={highlightMessageId}
+          nowMs={nowMs}
+          currentUserId={currentUserId}
+          roles={roles}
+          renderMessageBody={renderMessageBody}
+          onOpenThread={openThread}
+          copyMessageLink={copyMessageLink}
+          addReaction={addReaction}
+          ack={ack}
+          pendingUndoRevokeAck={pendingUndoRevokeAck}
+          setPendingUndoRevokeAck={setPendingUndoRevokeAck}
+          cancelAckRequest={cancelAckRequest}
+          downloadAttachment={downloadAttachment}
+          setMessage={setMessage}
+          hasMore={hasMore}
+          isLoadingMore={isLoadingMore}
+        />
+      </fieldset>
 
       <RoomGlobalSearch
         globalQuery={globalQuery}
@@ -2056,6 +2040,7 @@ export const RoomChat: React.FC = () => {
           }
           onAccessRevoked={(targetRoomId, warning) => {
             clearGlobalSearch();
+            clearRoomBoundThreadState(targetRoomId);
             purgeRoomState(targetRoomId, warning);
           }}
           onAccessCheckRequired={(targetRoomId) => {

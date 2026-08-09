@@ -355,6 +355,9 @@ function buildChatMessageDeepLinkError(params: {
 
 export const App: React.FC = () => {
   const mainContentRef = useRef<HTMLElement>(null);
+  const [chatRootPostLifecycle, setChatRootPostLifecycle] = useState<
+    'idle' | 'in_flight' | 'uncertain'
+  >('idle');
   const sectionGroups = useMemo<SectionGroup[]>(
     () => [
       {
@@ -503,7 +506,10 @@ export const App: React.FC = () => {
             label: 'ルームチャット',
             render: () => (
               <Card>
-                <RoomChat />
+                <RoomChat
+                  rootPostLifecycle={chatRootPostLifecycle}
+                  onRootPostLifecycleChange={setChatRootPostLifecycle}
+                />
               </Card>
             ),
           },
@@ -633,7 +639,7 @@ export const App: React.FC = () => {
         ],
       },
     ],
-    [],
+    [chatRootPostLifecycle],
   );
   const sections = useMemo(
     () => sectionGroups.flatMap((group) => group.items),

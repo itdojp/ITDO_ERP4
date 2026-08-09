@@ -398,6 +398,16 @@ export function useRoomChatThread(input: {
       } catch (error) {
         if (lifecycleSeqRef.current !== lifecycleSeq) return false;
         console.error('Failed to post chat thread reply.');
+        if (isUnavailableChatRequestFailure(error)) {
+          const refreshed = await refreshThread();
+          if (lifecycleSeqRef.current !== lifecycleSeq) return false;
+          if (refreshed) {
+            setMessage(
+              '返信対象を更新できませんでした。最新表示を再取得しました',
+            );
+          }
+          return false;
+        }
         if (isDefiniteChatRequestFailure(error)) {
           setMessage('返信の投稿に失敗しました');
           return false;
@@ -464,6 +474,16 @@ export function useRoomChatThread(input: {
       } catch (error) {
         if (lifecycleSeqRef.current !== lifecycleSeq) return false;
         console.error('Failed to post chat thread ack reply.');
+        if (isUnavailableChatRequestFailure(error)) {
+          const refreshed = await refreshThread();
+          if (lifecycleSeqRef.current !== lifecycleSeq) return false;
+          if (refreshed) {
+            setMessage(
+              '確認依頼対象を更新できませんでした。最新表示を再取得しました',
+            );
+          }
+          return false;
+        }
         if (isDefiniteChatRequestFailure(error)) {
           setMessage('確認依頼付き返信の投稿に失敗しました');
           return false;

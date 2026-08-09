@@ -149,6 +149,24 @@ async function screenshot(locator: Locator, filename: string) {
   await locator.screenshot({ path: path.join(evidenceDir, filename) });
 }
 
+async function sanitizeEvidenceText(
+  locator: Locator,
+  replacements: Array<{ from: string; to: string }>,
+) {
+  await locator.evaluate((element, values) => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    while (node) {
+      let value = node.nodeValue ?? '';
+      for (const replacement of values) {
+        value = value.replaceAll(replacement.from, replacement.to);
+      }
+      node.nodeValue = value;
+      node = walker.nextNode();
+    }
+  }, replacements);
+}
+
 test('chat thread UI preserves reply behavior, ACL, search, unread, ack, and deletion @core', async ({
   page,
   request,
@@ -321,6 +339,11 @@ test('chat thread UI preserves reply behavior, ACL, search, unread, ack, and del
       (element) => element.scrollWidth <= element.clientWidth,
     ),
   ).toBe(true);
+  await sanitizeEvidenceText(dialog, [
+    { from: adminAuth.userId, to: '検証担当者' },
+    { from: recipientUserId, to: '検証メンバー' },
+    { from: suffix, to: '検証ケース' },
+  ]);
   await screenshot(dialog, '01-chat-thread-mobile.png');
 
   await dialog.getByRole('button', { name: 'スレッドを閉じる' }).click();

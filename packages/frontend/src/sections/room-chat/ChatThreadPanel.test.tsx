@@ -1491,6 +1491,55 @@ describe('ChatThreadPanel', () => {
     expect(onAccessCheckRequired).toHaveBeenCalledWith('room-1');
   });
 
+  it.each(
+    definiteRetryCases.flatMap((testCase) => [
+      { ...testCase, roomReadable: true },
+      { ...testCase, roomReadable: false },
+    ]),
+  )(
+    'revalidates thread access after an unavailable $mode reply POST (roomReadable=$roomReadable)',
+    async ({ postPath, prepare, submitLabel, roomReadable }) => {
+      const onAccessCheckRequired = vi.fn();
+      let threadReads = 0;
+      api.mockImplementation(async (path: string, init?: RequestInit) => {
+        const url = new URL(path, 'http://localhost');
+        if (url.pathname === '/chat-rooms/room-1/mention-candidates') return {};
+        if (url.pathname.endsWith('/thread')) {
+          threadReads += 1;
+          if (threadReads === 1 || roomReadable) return thread();
+          throw new Error(`Request failed: ${path} (404) NOT_FOUND`);
+        }
+        if (url.pathname === '/chat-rooms/room-1/read') return {};
+        if (url.pathname === postPath && init?.method === 'POST') {
+          throw new Error(`Request failed: ${postPath} (404) NOT_FOUND`);
+        }
+        throw new Error(`Unhandled api path: ${path}`);
+      });
+
+      renderPanel({ onAccessCheckRequired });
+      await screen.findByText('reply-1 body');
+      prepare();
+      fireEvent.change(screen.getByRole('textbox', { name: '返信を入力' }), {
+        target: { value: 'access-sensitive draft' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: submitLabel }));
+
+      await waitFor(() => expect(threadReads).toBe(2));
+      if (roomReadable) {
+        expect(screen.getByText('root-1 body')).toBeInTheDocument();
+        expect(screen.getByText('reply-1 body')).toBeInTheDocument();
+        expect(onAccessCheckRequired).not.toHaveBeenCalled();
+        expect(screen.getByRole('textbox', { name: '返信を入力' })).toHaveValue(
+          'access-sensitive draft',
+        );
+      } else {
+        expect(screen.queryByText('root-1 body')).toBeNull();
+        expect(screen.queryByText('reply-1 body')).toBeNull();
+        expect(onAccessCheckRequired).toHaveBeenCalledWith('room-1');
+      }
+    },
+  );
+
   it.each(definiteRetryCases)(
     'keeps retry enabled after a definite $mode POST rejection',
     async ({ submitLabel, message, postPath, prepare }) => {

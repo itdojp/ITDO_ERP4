@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -37,9 +38,38 @@ const {
   DocumentSendLogs,
   PdfFiles,
   KnowledgeHub,
+  completeRootPostAsUncertain,
 } = vi.hoisted(() => {
   const makeSectionMock = (testId: string, label: string) =>
     vi.fn(() => <div data-testid={testId}>{label}</div>);
+
+  const completeRootPostAsUncertain = vi.fn();
+  const RoomChat = vi.fn(
+    ({
+      rootPostLifecycle,
+      onRootPostLifecycleChange,
+    }: {
+      rootPostLifecycle?: 'idle' | 'in_flight' | 'uncertain';
+      onRootPostLifecycleChange?: (
+        lifecycle: 'idle' | 'in_flight' | 'uncertain',
+      ) => void;
+    }) => {
+      completeRootPostAsUncertain.mockImplementation(() =>
+        onRootPostLifecycleChange?.('uncertain'),
+      );
+      return (
+        <div data-testid="section-room-chat">
+          <span>{`RoomChat lifecycle:${rootPostLifecycle ?? 'idle'}`}</span>
+          <button
+            type="button"
+            onClick={() => onRootPostLifecycleChange?.('in_flight')}
+          >
+            root post開始
+          </button>
+        </div>
+      );
+    },
+  );
 
   return {
     apiResponse: vi.fn(),
@@ -57,7 +87,7 @@ const {
     Reports: makeSectionMock('section-reports', 'Reports'),
     AdminSettings: makeSectionMock('section-admin-settings', 'AdminSettings'),
     Approvals: makeSectionMock('section-approvals', 'Approvals'),
-    RoomChat: makeSectionMock('section-room-chat', 'RoomChat'),
+    RoomChat,
     ChatBreakGlass: makeSectionMock(
       'section-chat-break-glass',
       'ChatBreakGlass',
@@ -82,6 +112,7 @@ const {
     ),
     PdfFiles: makeSectionMock('section-pdf-files', 'PdfFiles'),
     KnowledgeHub: makeSectionMock('section-knowledge-hub', 'KnowledgeHub'),
+    completeRootPostAsUncertain,
   };
 });
 
@@ -206,6 +237,7 @@ beforeEach(() => {
   window.localStorage.clear();
   resetLocation();
   vi.mocked(apiResponse).mockReset();
+  completeRootPostAsUncertain.mockReset();
 });
 
 describe('App', () => {
@@ -282,6 +314,30 @@ describe('App', () => {
     expect(window.localStorage.getItem('erp4_active_section')).toBe(
       'room-chat',
     );
+  });
+
+  it('keeps a root POST uncertainty lock across RoomChat section remounts', async () => {
+    window.localStorage.setItem('erp4_active_section', 'room-chat');
+    render(<App />);
+
+    expect(
+      await screen.findByText('RoomChat lifecycle:idle'),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'root post開始' }));
+    expect(
+      await screen.findByText('RoomChat lifecycle:in_flight'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'ホーム' }));
+    await waitFor(() => {
+      expect(screen.queryByTestId('section-room-chat')).toBeNull();
+    });
+    act(() => completeRootPostAsUncertain());
+    fireEvent.click(screen.getByRole('button', { name: 'ルームチャット' }));
+
+    expect(
+      await screen.findByText('RoomChat lifecycle:uncertain'),
+    ).toBeInTheDocument();
   });
 
   it('falls back to the home section when the saved section is invalid', async () => {

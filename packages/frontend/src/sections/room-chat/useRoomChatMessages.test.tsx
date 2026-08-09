@@ -381,6 +381,7 @@ describe('useRoomChatMessages', () => {
 
   it('purges room-bound state when a current access revalidation fails', async () => {
     api.mockRejectedValueOnce(new Error('private access failure'));
+    const onCurrentFailure = vi.fn();
     const { result } = renderHook(() =>
       useRoomChatMessages({ roomId: 'room-1', filterQuery: '', filterTag: '' }),
     );
@@ -393,6 +394,7 @@ describe('useRoomChatMessages', () => {
         query: '',
         tag: '',
         failureMessage: 'ルームを表示できません',
+        onCurrentFailure,
       });
     });
 
@@ -400,6 +402,7 @@ describe('useRoomChatMessages', () => {
     expect(result.current.unreadCount).toBe(0);
     expect(result.current.highlightSince).toBeNull();
     expect(result.current.message).toBe('ルームを表示できません');
+    expect(onCurrentFailure).toHaveBeenCalledTimes(1);
   });
 
   it('does not let an aborted access revalidation purge a newer successful load', async () => {
@@ -425,11 +428,13 @@ describe('useRoomChatMessages', () => {
     const { result } = renderHook(() =>
       useRoomChatMessages({ roomId: 'room-1', filterQuery: '', filterTag: '' }),
     );
+    const onCurrentFailure = vi.fn();
 
     const staleCheck = result.current.loadMessages({
       query: '',
       tag: '',
       failureMessage: 'must not replace newer state',
+      onCurrentFailure,
     });
     await waitFor(() => expect(messageReads).toBe(1));
     await act(async () => {
@@ -442,5 +447,6 @@ describe('useRoomChatMessages', () => {
 
     expect(result.current.items).toEqual([message('newer', 'room-1')]);
     expect(result.current.message).toBe('');
+    expect(onCurrentFailure).not.toHaveBeenCalled();
   });
 });

@@ -25,8 +25,8 @@
 - paginationとmutationを相互排他にし、後続pageとmutation refreshの競合による表示欠落を防ぐ。候補comboboxが消費した`Escape`ではpanelを閉じない。
 - reply通知deep linkはreturned message IDとtop-level/nested room IDをbindし、reply topologyをallowlist normalizeしてcanonical threadを直接開く。別room遷移では旧room timelineを先に破棄する。ACK relation/candidate responseはroom・message・requestへbindし、unknown fieldを破棄する。
 - non-idempotentなroot message / root確認依頼 / reply POSTは明示的な4xx rejectionだけdraftを保持して再送可能とし、transport failure、5xx、不整合2xxで結果が不明な場合は再送をlockする。root POST成功後の添付または一覧再取得失敗はmessage作成失敗と分離し、draftを消去して再送禁止を案内する。reply POST本文はfresh GETで同一reply IDを確認した場合だけ表示し、51件目以降、refresh failure、同時削除では暫定表示しない。root/replyの`POST_WITHOUT_VIEW`ではthreadとroom timelineを破棄し、後続refresh/read mutationを行わない。
-- room selector、room event、別roomのroot deep linkの全経路で旧threadを先に閉じる。thread取得／mutationまたはroot POSTが403/404になった場合はthreadとglobal searchを破棄し、無filterのroom再取得でread ACLを確認してtimelineを保持またはpurgeする。対象replyだけの同時削除で再取得が成功した場合は最新threadを維持する。
-- root POST中と結果不明後はroom変更経路をlockし、requestを開始roomへ固定する。mutation後にthread panelのfocusをclose buttonへ戻さず、root結果案内をlive regionで通知する。
+- room selector、room event、別roomのroot deep linkの全経路で旧threadを先に閉じる。thread取得／mutation、reply/ACK reply POST、root POST、root timeline上のreaction/ACK/revoke/cancelが403/404になった場合は、current room identityを確認してからthreadとglobal searchを破棄し、無filterのroom再取得でread ACLを確認してtimelineを保持またはpurgeする。対象replyだけの同時削除で再取得が成功した場合は最新threadを維持し、遅延した旧roomのaccess callbackは現在roomへ影響させない。
+- root POST lifecycleはApp sessionが所有し、section unmount/remount後も送信中／結果不明lockを維持する。root POST中と結果不明後はroom変更、timeline操作、新規thread openをlockし、requestを開始roomへ固定する。POST待機中にsectionがunmountされた場合はlifecycle結果だけを確定し、添付upload、timeline refresh、read mutationを新たに開始しない。mutation後にthread panelのfocusをclose buttonへ戻さず、root結果案内を独立したlive regionで通知する。
 - 同じroomのunread responseもrequest sequenceで順序付け、遅延responseによる巻き戻しを防ぐ。候補0件/loading中の`Escape`でもpanelとdraftを維持する。
 - global searchはserverの `(nextBefore, nextBeforeId)` を使い、stale requestをabort/破棄する。
 
@@ -68,13 +68,13 @@
 10. replyをlogical deleteし、本文非表示placeholderを確認
 11. room root timelineへreplyが重複しないことを確認
 12. 候補0件の実`MentionComposer`で`Escape`後もpanelとdraftが残ることを確認
-13. 375 x 667 viewportで横overflowがないことを確認
+13. 375 x 667 viewportで横overflowがないことを確認し、functional assertion完了後の証跡DOMではsynthetic user/email/run suffixを中立な検証labelへ置換
 
 ## Screenshot
 
 ![Synthetic chat thread at 375px](2026-08-09-issue2014-chat-thread-ui/01-chat-thread-mobile.png)
 
-スクリーンショットはsynthetic fixtureだけを使用し、実ユーザ、実メール、顧客、credential、provider ID/URL、request keyを含めない。
+スクリーンショットはsynthetic fixtureだけを使用する。functional assertion完了後、証跡取得専用のDOM sanitizationでsynthetic user/email/run suffixも中立な検証labelへ置換し、実ユーザ、実メール、顧客、credential、provider ID/URL、request keyを含めない。
 
 ## Security / privacy
 
