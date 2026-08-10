@@ -284,7 +284,7 @@ describe('KnowledgeHub', () => {
       await screen.findByText('スナップショット version 1 を保存しました。'),
     ).toBeVisible();
     expect(
-      screen.getByRole('article', { name: 'version 1' }),
+      await screen.findByRole('article', { name: 'version 1' }),
     ).toHaveTextContent('a'.repeat(64));
     expect(screen.getByLabelText('保存するテキスト')).toHaveValue('');
   });
