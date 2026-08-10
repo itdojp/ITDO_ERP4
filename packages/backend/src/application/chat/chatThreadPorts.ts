@@ -89,6 +89,17 @@ export type ChatThreadAttachment = {
   createdBy: string | null;
 };
 
+export type ChatKnowledgeShareSummary = {
+  shareId: string;
+  status: 'posted' | 'revoked';
+  version: number;
+  schemaVersion: 1;
+};
+
+export type ChatKnowledgeShareMessageSummary = ChatKnowledgeShareSummary & {
+  messageId: string;
+};
+
 export type ChatThreadMessage = {
   id: string;
   roomId: string;
@@ -119,6 +130,7 @@ export type ChatRootTimelineMessage = ChatThreadMessage & {
 
 export type ChatRootTimelineInput = {
   roomId: string;
+  actor: ChatThreadActor;
   limit: number;
   before?: Date;
   tag?: string;
@@ -152,7 +164,12 @@ export type ChatThreadSnapshotRepository = {
 export type ChatThreadRepository = {
   listRootTimeline(
     input: ChatRootTimelineInput,
-  ): Promise<ChatRootTimelineMessage[]>;
+  ): Promise<ChatRootTimelineMessage[] | null>;
+  listKnowledgeShareSummaries(input: {
+    roomId: string;
+    actor: ChatThreadActor;
+    messageIds: string[];
+  }): Promise<ChatKnowledgeShareMessageSummary[] | null>;
   withReadSnapshot<T>(
     operation: (repository: ChatThreadSnapshotRepository) => Promise<T>,
   ): Promise<T>;

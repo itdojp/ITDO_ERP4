@@ -237,6 +237,7 @@ export async function registerChatRoutes(app: FastifyInstance) {
         response: {
           200: chatRootTimelineListResponseSchema,
           400: chatApiErrorResponseSchema,
+          404: chatApiErrorResponseSchema,
         },
       },
       preHandler: [
@@ -251,6 +252,8 @@ export async function registerChatRoutes(app: FastifyInstance) {
         before?: string;
         tag?: string;
       };
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return userId;
       const take = parseLimit(limit);
       if (!take) {
         return reply.status(400).send({
@@ -268,12 +271,12 @@ export async function registerChatRoutes(app: FastifyInstance) {
       }
       const room = await resolveActiveProjectRoom({
         projectId,
-        userId: req.user?.userId || null,
+        userId,
         reply,
         req,
         accessLevel: 'read',
       });
-      if (!room) return reply;
+      if (!room) return;
       const trimmedTag = typeof tag === 'string' ? tag.trim() : '';
       if (trimmedTag.length > 32) {
         return reply.status(400).send({
@@ -282,10 +285,25 @@ export async function registerChatRoutes(app: FastifyInstance) {
       }
       const items = await prismaChatThreadRepository.listRootTimeline({
         roomId: room.id,
+        actor: {
+          userId,
+          roles: req.user?.roles ?? [],
+          projectIds: req.user?.projectIds ?? [],
+          groupIds: req.user?.groupIds ?? [],
+          groupAccountIds: req.user?.groupAccountIds ?? [],
+        },
         limit: take,
         before: beforeDate ?? undefined,
         tag: trimmedTag || undefined,
       });
+      if (!items) {
+        return reply.status(404).send({
+          error: {
+            code: 'NOT_FOUND',
+            message: 'Project chat timeline not found',
+          },
+        });
+      }
       return { items: items.map(chatRootTimelineMessageResponse) };
     },
   );

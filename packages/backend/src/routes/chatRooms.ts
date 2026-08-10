@@ -1,4 +1,8 @@
-import { FastifyInstance } from 'fastify';
+import {
+  FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+} from 'fastify';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
@@ -48,15 +52,47 @@ import {
 } from './chat/shared/readStateInput.js';
 import { resolveAccessibleChatSearchRoomIds } from '../services/chatSearchAccess.js';
 import { prismaChatThreadRepository } from '../adapters/chat/prismaChatThreadAdapter.js';
-import { chatRootTimelineMessageResponse } from './chatThreadResponses.js';
+import {
+  chatKnowledgeShareSummaryResponse,
+  chatRootTimelineMessageResponse,
+} from './chatThreadResponses.js';
 import {
   chatApiErrorResponseSchema,
+  chatKnowledgeShareSummaryQuerySchema,
+  chatKnowledgeShareSummaryListResponseSchema,
   chatMessageSearchSchema,
   chatRoomReadStateSchema,
   chatRoomTimelineParamsSchema,
   chatRoomTimelineQuerySchema,
   chatRootTimelineListResponseSchema,
+  chatTimelineNotFoundResponseSchema,
 } from './chatThreadSchemas.js';
+
+const CHAT_MESSAGE_ID_DIRECTIONAL_CODE_POINTS = new Set([
+  0x061c, 0x200e, 0x200f, 0x2028, 0x2029, 0x202a, 0x202b, 0x202c, 0x202d,
+  0x202e, 0x2066, 0x2067, 0x2068, 0x2069, 0xfeff,
+]);
+
+function isValidChatMessageId(value: string) {
+  const codePoints = [...value];
+  if (
+    codePoints.length === 0 ||
+    codePoints.length > 200 ||
+    Buffer.byteLength(value, 'utf8') > 800
+  ) {
+    return false;
+  }
+  return codePoints.every((character) => {
+    const codePoint = character.codePointAt(0);
+    return (
+      codePoint !== undefined &&
+      codePoint >= 0x20 &&
+      !(codePoint >= 0x7f && codePoint <= 0x9f) &&
+      !(codePoint >= 0xd800 && codePoint <= 0xdfff) &&
+      !CHAT_MESSAGE_ID_DIRECTIONAL_CODE_POINTS.has(codePoint)
+    );
+  });
+}
 
 export async function registerChatRoomRoutes(app: FastifyInstance) {
   const chatRoles = CHAT_ROLES;
@@ -91,6 +127,84 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       });
     },
   );
+
+  async function readRootTimeline(req: FastifyRequest, reply: FastifyReply) {
+    const { roomId } = req.params as { roomId: string };
+    const { limit, before, tag, q } = req.query as {
+      limit?: string;
+      before?: string;
+      tag?: string;
+      q?: string;
+    };
+    const userId = requireUserId(reply, req.user?.userId);
+    if (typeof userId !== 'string') return null;
+    const accessContext = readRoomAccessContext(req);
+    const access = await ensureRoomAccessWithReasonError({
+      reply,
+      roomId,
+      userId,
+      accessContext,
+      accessLevel: 'read',
+    });
+    if (!access) return null;
+
+    const take = parseLimit(limit);
+    if (!take) {
+      reply.status(400).send({
+        error: {
+          code: 'INVALID_LIMIT',
+          message: 'limit must be a positive integer',
+        },
+      });
+      return null;
+    }
+    const beforeDate = parseDateParam(before);
+    if (before && !beforeDate) {
+      reply.status(400).send({
+        error: { code: 'INVALID_DATE', message: 'Invalid before date' },
+      });
+      return null;
+    }
+    const trimmedTag = typeof tag === 'string' ? tag.trim() : '';
+    if (trimmedTag.length > 32) {
+      reply.status(400).send({
+        error: { code: 'INVALID_TAG', message: 'Tag is too long' },
+      });
+      return null;
+    }
+    const trimmedQuery = typeof q === 'string' ? q.trim() : '';
+    if (trimmedQuery.length > 100) {
+      reply.status(400).send({
+        error: { code: 'INVALID_QUERY', message: 'query is too long' },
+      });
+      return null;
+    }
+    if (trimmedQuery && trimmedQuery.length < 2) {
+      reply.status(400).send({
+        error: { code: 'INVALID_QUERY', message: 'query is too short' },
+      });
+      return null;
+    }
+    const items = await prismaChatThreadRepository.listRootTimeline({
+      roomId: access.room.id,
+      actor: {
+        userId,
+        roles: accessContext.roles,
+        projectIds: accessContext.projectIds,
+        groupIds: accessContext.groupIds,
+        groupAccountIds: accessContext.groupAccountIds,
+      },
+      limit: take,
+      before: beforeDate ?? undefined,
+      tag: trimmedTag || undefined,
+      query: trimmedQuery || undefined,
+    });
+    if (!items) {
+      reply.status(404).send({ error: 'not_found' });
+      return null;
+    }
+    return items;
+  }
 
   app.get(
     '/chat-rooms/personal-general-affairs',
@@ -909,19 +1023,54 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         response: {
           200: chatRootTimelineListResponseSchema,
           400: chatApiErrorResponseSchema,
+          403: chatApiErrorResponseSchema,
+          404: chatTimelineNotFoundResponseSchema,
+        },
+      },
+    },
+    async (req, reply) => {
+      const items = await readRootTimeline(req, reply);
+      if (!items) return;
+      return { items: items.map(chatRootTimelineMessageResponse) };
+    },
+  );
+
+  app.get(
+    '/chat-rooms/:roomId/knowledge-share-messages',
+    {
+      preHandler: requireRole(chatRoles),
+      schema: {
+        tags: ['chat', 'knowledge'],
+        params: chatRoomTimelineParamsSchema,
+        querystring: chatKnowledgeShareSummaryQuerySchema,
+        response: {
+          200: chatKnowledgeShareSummaryListResponseSchema,
+          400: chatApiErrorResponseSchema,
+          403: chatApiErrorResponseSchema,
+          404: chatTimelineNotFoundResponseSchema,
         },
       },
     },
     async (req, reply) => {
       const { roomId } = req.params as { roomId: string };
-      const { limit, before, tag, q } = req.query as {
-        limit?: string;
-        before?: string;
-        tag?: string;
-        q?: string;
-      };
+      const rawMessageIds = (req.query as { messageIds: string }).messageIds;
+      const messageIds = [
+        ...new Set(rawMessageIds.split(',').map((value) => value.trim())),
+      ];
+      if (
+        messageIds.length === 0 ||
+        messageIds.length > 100 ||
+        messageIds.some((messageId) => !isValidChatMessageId(messageId))
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_MESSAGE_IDS',
+            message: 'messageIds must contain 1 to 100 valid identifiers',
+          },
+        });
+      }
       const userId = requireUserId(reply, req.user?.userId);
-      if (typeof userId !== 'string') return userId;
+      if (typeof userId !== 'string') return;
       const accessContext = readRoomAccessContext(req);
       const access = await ensureRoomAccessWithReasonError({
         reply,
@@ -930,48 +1079,25 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         accessContext,
         accessLevel: 'read',
       });
-      if (!access) return reply;
-
-      const take = parseLimit(limit);
-      if (!take) {
-        return reply.status(400).send({
-          error: {
-            code: 'INVALID_LIMIT',
-            message: 'limit must be a positive integer',
+      if (!access) return;
+      const summaries =
+        await prismaChatThreadRepository.listKnowledgeShareSummaries({
+          roomId: access.room.id,
+          actor: {
+            userId,
+            roles: accessContext.roles,
+            projectIds: accessContext.projectIds,
+            groupIds: accessContext.groupIds,
+            groupAccountIds: accessContext.groupAccountIds,
           },
+          messageIds,
         });
+      if (!summaries) {
+        return reply.status(404).send({ error: 'not_found' });
       }
-      const beforeDate = parseDateParam(before);
-      if (before && !beforeDate) {
-        return reply.status(400).send({
-          error: { code: 'INVALID_DATE', message: 'Invalid before date' },
-        });
-      }
-      const trimmedTag = typeof tag === 'string' ? tag.trim() : '';
-      if (trimmedTag.length > 32) {
-        return reply.status(400).send({
-          error: { code: 'INVALID_TAG', message: 'Tag is too long' },
-        });
-      }
-      const trimmedQuery = typeof q === 'string' ? q.trim() : '';
-      if (trimmedQuery.length > 100) {
-        return reply.status(400).send({
-          error: { code: 'INVALID_QUERY', message: 'query is too long' },
-        });
-      }
-      if (trimmedQuery && trimmedQuery.length < 2) {
-        return reply.status(400).send({
-          error: { code: 'INVALID_QUERY', message: 'query is too short' },
-        });
-      }
-      const items = await prismaChatThreadRepository.listRootTimeline({
-        roomId: access.room.id,
-        limit: take,
-        before: beforeDate ?? undefined,
-        tag: trimmedTag || undefined,
-        query: trimmedQuery || undefined,
-      });
-      return { items: items.map(chatRootTimelineMessageResponse) };
+      return {
+        items: summaries.map(chatKnowledgeShareSummaryResponse),
+      };
     },
   );
 

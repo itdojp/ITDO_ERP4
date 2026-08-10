@@ -1,4 +1,5 @@
 import type {
+  ChatKnowledgeShareMessageSummary,
   ChatRootTimelineMessage,
   ChatThreadMessage,
 } from '../application/chat/chatThreadPorts.js';
@@ -62,6 +63,18 @@ export function chatThreadMessageResponse(message: ChatThreadMessage) {
     deletedAt: message.deletedAt?.toISOString() ?? null,
     deletedReason: message.deletedReason,
     deleted: message.deletedAt !== null,
+  };
+}
+
+export function chatKnowledgeShareSummaryResponse(
+  summary: ChatKnowledgeShareMessageSummary,
+) {
+  return {
+    messageId: summary.messageId,
+    shareId: summary.shareId,
+    status: summary.status,
+    version: summary.version,
+    schemaVersion: 1 as const,
   };
 }
 

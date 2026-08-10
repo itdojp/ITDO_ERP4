@@ -178,6 +178,15 @@ export type KnowledgeShareStatusRecord = {
   revokedAt: Date | null;
 };
 
+export type KnowledgeShareRoomCardRecord = {
+  shareId: string;
+  status: 'posted' | 'revoked';
+  version: number;
+  schemaVersion: 1;
+  card: KnowledgeShareCardSnapshot | null;
+  canOpenSource: boolean;
+};
+
 export type KnowledgeShareCommitRecord = KnowledgeShareStatusRecord & {
   created: boolean;
 };
@@ -254,6 +263,12 @@ export interface KnowledgeShareStorePort {
     chatActor: KnowledgeShareChatActor;
     shareId: string;
   }): Promise<KnowledgeSharePortResult<{ knowledgeItemId: string }>>;
+
+  readRoomCard(input: {
+    actor: KnowledgeActor;
+    chatActor: KnowledgeShareChatActor;
+    messageId: string;
+  }): Promise<KnowledgeSharePortResult<KnowledgeShareRoomCardRecord>>;
 }
 
 export interface KnowledgeShareChatIntegrationPort {

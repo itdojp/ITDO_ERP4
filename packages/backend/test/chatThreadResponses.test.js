@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  chatKnowledgeShareSummaryResponse,
   chatRootTimelineMessageResponse,
   chatThreadMessageResponse,
 } from '../dist/routes/chatThreadResponses.js';
@@ -58,6 +59,70 @@ test('thread response exposes only the explicit additive topology contract', () 
     'userId',
   ]);
   assert.equal(response.createdAt, now.toISOString());
+  assert.equal(Object.hasOwn(response, 'knowledgeShare'), false);
+});
+
+test('the dedicated summary response exposes only the compact posted/revoked allowlist while old responses stay unchanged', () => {
+  for (const [status, version] of [
+    ['posted', 2],
+    ['revoked', 3],
+  ]) {
+    const knowledgeShare = {
+      shareId: `share-${status}`,
+      status,
+      version,
+      schemaVersion: 1,
+      body: 'must not leak',
+      selectedContent: 'must not leak',
+      sourceKnowledgeItemId: 'source-sensitive',
+      provider: 'provider-sensitive',
+    };
+    const threadResponse = chatThreadMessageResponse(
+      message({ knowledgeShare }),
+    );
+    assert.equal(Object.hasOwn(threadResponse, 'knowledgeShare'), false);
+    const root = {
+      ...message({ knowledgeShare }),
+      replyCount: 0,
+      lastReplyAt: null,
+    };
+    const timelineResponse = chatRootTimelineMessageResponse(root);
+    assert.equal(Object.hasOwn(timelineResponse, 'knowledgeShare'), false);
+    assert.deepEqual(
+      chatKnowledgeShareSummaryResponse({
+        messageId: 'message-1',
+        ...knowledgeShare,
+      }),
+      {
+        messageId: 'message-1',
+        shareId: `share-${status}`,
+        status,
+        version,
+        schemaVersion: 1,
+      },
+    );
+  }
+});
+
+test('dedicated summary response discards message content and internal source fields', () => {
+  const response = chatKnowledgeShareSummaryResponse({
+    messageId: 'message-1',
+    shareId: 'share-posted',
+    status: 'posted',
+    version: 2,
+    schemaVersion: 1,
+    body: 'must not leak',
+    sourceKnowledgeItemId: 'must not leak',
+    provider: 'must not leak',
+  });
+  assert.deepEqual(response, {
+    messageId: 'message-1',
+    shareId: 'share-posted',
+    status: 'posted',
+    version: 2,
+    schemaVersion: 1,
+  });
+  assert.equal(JSON.stringify(response).includes('must not leak'), false);
 });
 
 test('deleted thread placeholder contains no message content or child resources', () => {

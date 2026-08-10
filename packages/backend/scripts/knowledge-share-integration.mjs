@@ -30,15 +30,18 @@ const [
   { createKnowledgeShareUseCases },
   { createKnowledgeShareTokenCodec },
   { createChatMessageLifecycleService },
+  { createPrismaChatThreadRepository },
 ] = await Promise.all([
   import('../dist/services/db.js'),
   import('../dist/adapters/knowledge/prismaKnowledgeShareAdapter.js'),
   import('../dist/application/knowledge/knowledgeShareUseCases.js'),
   import('../dist/application/knowledge/knowledgeShareToken.js'),
   import('../dist/services/chatMessageLifecycle.js'),
+  import('../dist/adapters/chat/prismaChatThreadAdapter.js'),
 ]);
 
 const adapter = createPrismaKnowledgeShareAdapter(prisma);
+const prismaChatThreadRepository = createPrismaChatThreadRepository(prisma);
 const actor = {
   userId: 'knowledge-share-owner',
   organizationId: 'knowledge-share-org',
@@ -689,6 +692,55 @@ try {
   for (const canary of unselectedCanaries) {
     assert.equal(JSON.stringify(message).includes(canary), false);
   }
+  const cardService = createKnowledgeShareUseCases({
+    store: adapter,
+    chatIntegration: adapter,
+    tokenCodec: createKnowledgeShareTokenCodec({
+      env: {
+        NODE_ENV: 'test',
+        KNOWLEDGE_CURSOR_SIGNING_SECRET:
+          'knowledge-share-card-integration-secret-00001',
+      },
+      randomId: randomUUID,
+    }),
+  });
+  const ownerCard = expectOk(
+    await cardService.roomCard({
+      actor,
+      chatActor,
+      messageId: posted.chatMessageId,
+    }),
+    'source owner Chat card read',
+  );
+  assert.equal(ownerCard.status, 'posted');
+  assert.equal(ownerCard.canOpenSource, true);
+  assert.equal(ownerCard.card.annotations[0].content, selectedCanary);
+  assert.equal(ownerCard.card.canonicalUrl, 'https://example.test/article');
+  const roomOnlyCard = expectOk(
+    await cardService.roomCard({
+      actor: outsider,
+      chatActor: outsiderChatActor,
+      messageId: posted.chatMessageId,
+    }),
+    'room-only viewer Chat card read',
+  );
+  assert.equal(roomOnlyCard.status, 'posted');
+  assert.equal(roomOnlyCard.canOpenSource, false);
+  assert.equal(roomOnlyCard.card.annotations[0].content, selectedCanary);
+  const publicCardPayload = JSON.stringify(roomOnlyCard);
+  for (const canary of unselectedCanaries) {
+    assert.equal(publicCardPayload.includes(canary), false);
+  }
+  for (const internalValue of [
+    item.id,
+    sourceSnapshot.id,
+    selectedAnnotation.id,
+    conversation.turns[0].id,
+    selectedSynthesis.id,
+    sourceArtifact.providerKey,
+  ]) {
+    assert.equal(publicCardPayload.includes(internalValue), false);
+  }
   for (const data of [
     { body: 'PRIVATE_CARD_CONTENT' },
     { userId: outsider.userId },
@@ -1071,7 +1123,7 @@ try {
     data: {
       id: randomUUID(),
       code: `KS-${randomUUID()}`,
-      name: 'Synthetic current-membership project',
+      name: 'Synthetic project-claim compatibility project',
       createdBy: actor.userId,
       updatedBy: actor.userId,
     },
@@ -1088,16 +1140,7 @@ try {
       updatedBy: actor.userId,
     },
   });
-  await prisma.projectMember.create({
-    data: {
-      projectId: project.id,
-      userId: actor.userId,
-      role: 'member',
-      createdBy: actor.userId,
-      updatedBy: actor.userId,
-    },
-  });
-  const staleProjectChatActor = {
+  const projectClaimChatActor = {
     ...chatActor,
     projectIds: [project.id],
   };
@@ -1108,7 +1151,7 @@ try {
       env: {
         NODE_ENV: 'test',
         KNOWLEDGE_CURSOR_SIGNING_SECRET:
-          'knowledge-share-membership-secret-000000001',
+          'knowledge-share-project-claim-secret-0000001',
       },
       randomId: randomUUID,
     }),
@@ -1127,7 +1170,7 @@ try {
   const projectPreview = expectOk(
     await membershipService.preview({
       actor,
-      chatActor: staleProjectChatActor,
+      chatActor: projectClaimChatActor,
       auditActor,
       itemId: item.id,
       body: {
@@ -1135,12 +1178,12 @@ try {
         selection: projectSelection,
       },
     }),
-    'current project member preview',
+    'current project-claim preview',
   );
   const sourceOpenPreview = expectOk(
     await membershipService.preview({
       actor,
-      chatActor: staleProjectChatActor,
+      chatActor: projectClaimChatActor,
       auditActor,
       itemId: item.id,
       body: {
@@ -1148,12 +1191,12 @@ try {
         selection: projectSelection,
       },
     }),
-    'current project member source-open preview',
+    'current project-claim source-open preview',
   );
   const sourceOpenShare = expectOk(
     await membershipService.commit({
       actor,
-      chatActor: staleProjectChatActor,
+      chatActor: projectClaimChatActor,
       auditActor,
       itemId: item.id,
       body: {
@@ -1164,33 +1207,30 @@ try {
         confirmed: true,
       },
     }),
-    'current project member source-open commit',
+    'current project-claim source-open commit',
   );
   assert.equal(sourceOpenShare.status, 'posted');
   assert.equal(
     expectOk(
       await adapter.openSource({
         actor,
-        chatActor: staleProjectChatActor,
+        chatActor: projectClaimChatActor,
         shareId: sourceOpenShare.shareId,
       }),
-      'current project member source-open',
+      'current project-claim source-open',
     ).knowledgeItemId,
     item.id,
   );
-  await prisma.projectMember.delete({
-    where: {
-      projectId_userId: { projectId: project.id, userId: actor.userId },
-    },
-  });
-  expectFailure(
-    await adapter.openSource({
-      actor,
-      chatActor: staleProjectChatActor,
-      shareId: sourceOpenShare.shareId,
-    }),
-    'not_found',
-    'stale project claim cannot retain source-open access',
+  assert.equal(
+    expectOk(
+      await adapter.openSource({
+        actor,
+        chatActor: projectClaimChatActor,
+        shareId: sourceOpenShare.shareId,
+      }),
+      'project claim remains the canonical Chat room policy without a ProjectMember row',
+    ).knowledgeItemId,
+    item.id,
   );
   const requestedBefore = await prisma.auditLog.count({
     where: { action: 'knowledge_share_requested' },
@@ -1201,47 +1241,39 @@ try {
   const projectMessageCountBefore = await prisma.chatMessage.count({
     where: { roomId: projectRoom.id },
   });
-  const deniedProjectCommit = await membershipService.commit({
-    actor,
-    chatActor: staleProjectChatActor,
-    auditActor,
-    itemId: item.id,
-    body: {
-      destinationRoomId: projectRoom.id,
-      selection: projectSelection,
-      previewToken: projectPreview.previewToken,
-      requestKey: 'stale-project-membership-request',
-      confirmed: true,
-    },
-  });
-  assert.equal(deniedProjectCommit.ok, false);
-  assert.equal(deniedProjectCommit.code, 'not_found');
-  assert.equal(deniedProjectCommit.statusCode, 404);
+  const projectCommit = expectOk(
+    await membershipService.commit({
+      actor,
+      chatActor: projectClaimChatActor,
+      auditActor,
+      itemId: item.id,
+      body: {
+        destinationRoomId: projectRoom.id,
+        selection: projectSelection,
+        previewToken: projectPreview.previewToken,
+        requestKey: 'project-claim-request',
+        confirmed: true,
+      },
+    }),
+    'project claim commit without ProjectMember row',
+  );
+  assert.equal(projectCommit.status, 'posted');
   assert.equal(
     await prisma.knowledgeShare.count({
       where: { destinationRoomId: projectRoom.id },
     }),
-    sharesBefore,
+    sharesBefore + 1,
   );
   assert.equal(
     await prisma.auditLog.count({
       where: { action: 'knowledge_share_requested' },
     }),
-    requestedBefore,
+    requestedBefore + 1,
   );
   assert.equal(
     await prisma.chatMessage.count({ where: { roomId: projectRoom.id } }),
-    projectMessageCountBefore,
+    projectMessageCountBefore + 1,
   );
-  await prisma.projectMember.create({
-    data: {
-      projectId: project.id,
-      userId: actor.userId,
-      role: 'member',
-      createdBy: actor.userId,
-      updatedBy: actor.userId,
-    },
-  });
   await prisma.project.update({
     where: { id: project.id },
     data: {
@@ -1253,7 +1285,7 @@ try {
   expectFailure(
     await adapter.openSource({
       actor,
-      chatActor: staleProjectChatActor,
+      chatActor: projectClaimChatActor,
       shareId: sourceOpenShare.shareId,
     }),
     'not_found',
@@ -1261,7 +1293,7 @@ try {
   );
   const deletedProjectPreview = await membershipService.preview({
     actor,
-    chatActor: staleProjectChatActor,
+    chatActor: projectClaimChatActor,
     auditActor,
     itemId: item.id,
     body: {
@@ -1300,6 +1332,32 @@ try {
     where: { id: roomId },
     data: { allowExternalUsers: true, updatedBy: actor.userId },
   });
+  const externalizedCard = await cardService.roomCard({
+    actor: outsider,
+    chatActor: outsiderChatActor,
+    messageId: posted.chatMessageId,
+  });
+  assert.equal(externalizedCard.ok, false);
+  assert.equal(externalizedCard.code, 'not_found');
+  assert.equal(externalizedCard.statusCode, 404);
+  assert.equal(
+    await prismaChatThreadRepository.listKnowledgeShareSummaries({
+      actor: chatActor,
+      roomId,
+      messageIds: [posted.chatMessageId],
+    }),
+    null,
+    'externalized room cannot reveal compact share metadata',
+  );
+  expectFailure(
+    await adapter.openSource({
+      actor,
+      chatActor,
+      shareId: posted.shareId,
+    }),
+    'not_found',
+    'externalized room cannot reveal source identity',
+  );
   expectFailure(
     await adapter.postPending({
       actor,
@@ -1568,6 +1626,17 @@ try {
   });
   assert.equal(retained.status, 'posted');
   assert.equal(retained.annotations[0].content, selectedCanary);
+  const deletedSourceCard = expectOk(
+    await cardService.roomCard({
+      actor,
+      chatActor,
+      messageId: posted.chatMessageId,
+    }),
+    'deleted source retains immutable room card',
+  );
+  assert.equal(deletedSourceCard.status, 'posted');
+  assert.equal(deletedSourceCard.canOpenSource, false);
+  assert.equal(deletedSourceCard.card.annotations[0].content, selectedCanary);
   expectFailure(
     await adapter.openSource({
       actor,
@@ -1583,6 +1652,22 @@ try {
     'explicit revoke',
   );
   assert.equal(revoked.status, 'revoked');
+  const revokedCard = expectOk(
+    await cardService.roomCard({
+      actor,
+      chatActor,
+      messageId: posted.chatMessageId,
+    }),
+    'revoked room card placeholder',
+  );
+  assert.deepEqual(revokedCard, {
+    shareId: posted.shareId,
+    status: 'revoked',
+    version: revoked.version,
+    schemaVersion: 1,
+    card: null,
+    canOpenSource: false,
+  });
   assert.equal(
     await prisma.chatMessage.count({ where: { id: posted.chatMessageId } }),
     1,
@@ -1632,8 +1717,8 @@ try {
       genericRootConstraint: 'verified',
       genericRootReverseGuard: 'verified',
       reconcileRootMutationRace: 'fail-closed',
-      currentProjectMembership: 'revalidated',
-      currentSourceOpenMembership: 'revalidated',
+      currentProjectClaimPolicy: 'preserved',
+      activeProjectBoundary: 'revalidated',
       deletedProjectAccess: 'rejected-for-nonprivileged',
       genericNotification: 'verified',
       concurrentNotification: 'deduplicated',

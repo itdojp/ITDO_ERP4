@@ -29,6 +29,36 @@ export type ChatRoomContentAccessResult =
         | 'forbidden_external_room';
     };
 
+export function chatRoomProjectId(
+  room: Pick<ChatRoomAccessRoom, 'id' | 'type' | 'projectId' | 'isOfficial'>,
+): string | null {
+  return room.type === 'project'
+    ? (room.projectId ?? (room.isOfficial ? room.id : null))
+    : null;
+}
+
+/**
+ * Revalidates that the project backing a project Chat room is still active.
+ *
+ * The ordinary room policy remains the canonical authorization contract for
+ * project claims. Call this after that policy, with the same transaction
+ * client as the message/share projection, so a logically deleted project
+ * cannot retain an accessible room through a stale alias.
+ */
+export async function hasActiveChatProject(options: {
+  room: Pick<ChatRoomAccessRoom, 'id' | 'type' | 'projectId' | 'isOfficial'>;
+  client?: typeof prisma;
+}): Promise<boolean> {
+  const projectId = chatRoomProjectId(options.room);
+  if (!projectId) return true;
+  const client = options.client ?? prisma;
+  const project = await client.project.findFirst({
+    where: { id: projectId, deletedAt: null },
+    select: { id: true },
+  });
+  return project !== null;
+}
+
 type ChatRoomContentAccessEvaluation =
   ChatRoomContentAccessResult | { ok: false; reason: 'membership_required' };
 

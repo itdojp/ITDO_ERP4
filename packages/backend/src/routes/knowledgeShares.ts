@@ -18,6 +18,7 @@ import {
   type KnowledgeShareChatActor,
 } from '../application/knowledge/knowledgeSharePorts.js';
 import { prismaKnowledgeShareAdapter } from '../adapters/knowledge/prismaKnowledgeShareAdapter.js';
+import { safeCanonicalUrl } from '../adapters/knowledge/knowledgeShareSanitizers.js';
 import { createApiErrorResponse } from '../services/errors.js';
 import { requireRole } from '../services/rbac.js';
 import {
@@ -26,6 +27,7 @@ import {
   requireCanonicalKnowledgeActor,
 } from './knowledgeRouteContext.js';
 import { knowledgeProvenanceErrorResponseSchema } from './knowledgeProvenanceSchemas.js';
+import { CHAT_ROLES } from './chat/shared/constants.js';
 
 const allowedRoles = ['admin', 'mgmt', 'exec', 'user'] as const;
 
@@ -107,6 +109,15 @@ type KnowledgeSharePublicCommit = KnowledgeSharePublicStatus & {
   resultUnknown: boolean;
 };
 
+type KnowledgeShareRoomCardValue = {
+  shareId: string;
+  status: 'posted' | 'revoked';
+  version: number;
+  schemaVersion: 1;
+  card: KnowledgeSharePublicCard | null;
+  canOpenSource: boolean;
+};
+
 type PreviewBody = {
   destinationRoomId: string;
   selection: {
@@ -150,6 +161,13 @@ const shareParamsSchema = {
   additionalProperties: false,
   required: ['shareId'],
   properties: { shareId: idSchema },
+} as const;
+
+const messageParamsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['messageId'],
+  properties: { messageId: idSchema },
 } as const;
 
 const selectionSchema = {
@@ -513,6 +531,27 @@ const sourceResponseSchema = {
   properties: { knowledgeItemId: { type: 'string' } },
 } as const;
 
+const roomCardResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'shareId',
+    'status',
+    'version',
+    'schemaVersion',
+    'card',
+    'canOpenSource',
+  ],
+  properties: {
+    shareId: { type: 'string' },
+    status: { type: 'string', enum: ['posted', 'revoked'] },
+    version: { type: 'integer', minimum: 1 },
+    schemaVersion: { type: 'integer', enum: [1] },
+    card: { anyOf: [publicCardSchema, { type: 'null' }] },
+    canOpenSource: { type: 'boolean' },
+  },
+} as const;
+
 function dateTime(value: Date | string) {
   return value instanceof Date ? value.toISOString() : value;
 }
@@ -522,11 +561,15 @@ function nullableDateTime(value: Date | string | null) {
 }
 
 export function knowledgeShareCardResponse(snapshot: KnowledgeSharePublicCard) {
+  const canonicalUrl =
+    snapshot.canonicalUrl === undefined
+      ? undefined
+      : safeCanonicalUrl(snapshot.canonicalUrl);
   return {
     schemaVersion: 1 as const,
     title: snapshot.title ?? null,
     sourceType: snapshot.sourceType ?? null,
-    canonicalUrl: snapshot.canonicalUrl ?? null,
+    canonicalUrl: canonicalUrl ?? null,
     snapshot: snapshot.snapshot
       ? {
           ...(snapshot.snapshot.version === undefined
@@ -611,6 +654,25 @@ export function knowledgeShareCommitResponse(
     created: value.created,
     reused: value.reused,
     resultUnknown: value.resultUnknown,
+  };
+}
+
+export function knowledgeShareRoomCardResponse(
+  value: KnowledgeShareRoomCardValue,
+) {
+  return {
+    shareId: value.shareId,
+    status: value.status,
+    version: value.version,
+    schemaVersion: 1 as const,
+    card:
+      value.status === 'revoked' || value.card === null
+        ? null
+        : knowledgeShareCardResponse(value.card),
+    canOpenSource:
+      value.status === 'posted' && value.card !== null
+        ? value.canOpenSource === true
+        : false,
   };
 }
 
@@ -763,6 +825,10 @@ export async function registerKnowledgeShareRoutes(
   const preHandler = [
     requireCanonicalKnowledgeActor,
     requireRole(allowedRoles),
+  ];
+  const chatViewerPreHandler = [
+    requireCanonicalKnowledgeActor,
+    requireRole(CHAT_ROLES),
   ];
 
   app.post(
@@ -937,9 +1003,34 @@ export async function registerKnowledgeShareRoutes(
   );
 
   app.get(
+    '/chat-messages/:messageId/knowledge-share',
+    {
+      preHandler: chatViewerPreHandler,
+      schema: {
+        tags: ['chat', 'knowledge'],
+        params: messageParamsSchema,
+        response: {
+          200: roomCardResponseSchema,
+          400: knowledgeProvenanceErrorResponseSchema,
+          401: knowledgeProvenanceErrorResponseSchema,
+          403: knowledgeProvenanceErrorResponseSchema,
+          404: knowledgeProvenanceErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const result = (await service.roomCard({
+        ...requestActors(request),
+        messageId: (request.params as { messageId: string }).messageId,
+      })) as RouteResult<KnowledgeShareRoomCardValue>;
+      return sendResult(reply, result, knowledgeShareRoomCardResponse);
+    },
+  );
+
+  app.get(
     '/knowledge/shares/:shareId/source',
     {
-      preHandler,
+      preHandler: chatViewerPreHandler,
       schema: {
         tags: ['knowledge'],
         params: shareParamsSchema,

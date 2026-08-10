@@ -207,14 +207,17 @@
 
 - `ChatMessage`の既存rowは、`parentMessageId = null`かつ`threadRootId = null`のrootとして扱う。migrationで既存rowを破壊的にbackfillしない。
 - replyは`parentMessageId = threadRootId = root.id`とし、rootと同じ`roomId`に固定する。一段threadのため、replyへのreply、自己参照、別room参照をDB制約とapplication契約の双方で拒否する。
-- `messageType`はadditive enumで、#2014では`text`のみを許可する。既存rowと旧clientから作成したrowはDB defaultにより`text`となる。Knowledge share card用type/payload/renderingは #2015 の責務とする。
+- `messageType`はadditive enumだが、#2014および#2015のexpand段階では`text`のみを許可する。既存rowと旧clientから作成したrowはDB defaultにより`text`となる。Knowledge share cardはgeneric fallback本文と一対一side-table relationをdiscriminatorにし、旧applicationが新DBを読める状態を維持する。
 - topology（room、parent、root、message type）は作成後に変更しない。rootが論理削除されても既存replyは保持し、thread readでは本文・tag・reaction・mention・ack・attachmentを含まないdeleted placeholderを返す。削除済みrootへの新規replyは拒否する。
 - `replyCount`は論理削除済みplaceholderを含むreply row数、`lastReplyAt`はそれらを含む最新replyの`createdAt`とする。rootの`updatedAt`とは混同しない。
 - root timelineのreply集約はpage単位の固定本数batch queryで算出し、messageごとのN+1 queryを行わない。root・reply・集約は`REPEATABLE READ`の同一snapshotで読む。
 - thread cursorはAES-256-GCMでpayloadを暗号化し、さらにHMAC-SHA256署名したopaque tokenとする。canonical actor、root、`createdAt + id`境界へbindし、raw user ID、room ID、root ID、reply IDをURLから復元できる形で格納しない。鍵は`KNOWLEDGE_CURSOR_SIGNING_SECRET`から暗号化・署名の用途別に導出し、鍵rotationまたはnon-production process再起動で既存cursorは失効する。
 - room membership、viewer group、project access、project alias、external user制限をthread取得時にserver側で再評価する。権限外IDと存在しないIDは同じ404 responseとし、本文、件数、cursor、root/reply関係を漏らさない。
 - PR Aはexpand-only schema、root-only timeline、thread read APIまでを提供する。PR Bはreply投稿と既存mention/notification/reaction/search/unread/ackのroot/reply共通化を提供し、UI/E2E/manualはPR Cで提供する。
-- reply投稿は`POST /chat-messages/:rootId/replies`を正規経路とし、root、room、現在のpost ACLを作成transaction内で再検査する。既存のroom/project message POSTはroot作成専用のまま維持する。
+- reply投稿は`POST /chat-messages/:rootId/replies`を正規経路とし、root、room、現在のpost ACL、project
+  roomのactive backing projectを作成transaction内で再検査する。作成経路はroom、active `Project`、
+  direct membershipの順でrow lockを取得し、project論理削除との競合を直列化して削除確定後のreplyを
+  fail closedにする。既存のroom/project message POSTはroot作成専用のまま維持する。
 - replyも既存mention parser、`@all` rate limit、room notification setting、mute、送信者除外を使用する。thread参加者全員への暗黙通知やthread followerは追加しない。
 - 永続化されたアプリ内chat通知は一覧取得時にactive messageとcurrent room read ACLをbatch再検査する。message削除またはACL失効時は本文excerptとroom/message識別子を返さず、通知自体はcontent unavailable状態として保持する。content unavailable通知は既に受信者本人へ作成された通知履歴であるため、readAtが記録されるまでは`/notifications/unread-count`の集計対象に維持するが、集計responseへchat参照や通知内訳は含めない。Web Pushとメールは外部配信の直前、ACK reminder/escalationは新規通知rowの作成直前に、active message/room、project alias、current room read ACLを再検査し、失効後のexcerpt・deep link・本文を配信しない。`chat_room_acl_mismatch`はmessage本文通知ではなくACL管理警告のため、active roomのcurrent owner/admin membershipを再検査し、一般memberまたは管理権限失効時は同様にredactする。配信済みPush通知は回収対象外とする。
 - chat通知の監査metadataは件数、有限enum、booleanだけを保存し、本文、room/message ID、recipient ID列を保存しない。chat検索の監査もquery本文を保存せず、文字数と結果件数だけを保存する。

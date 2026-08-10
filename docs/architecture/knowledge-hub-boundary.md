@@ -85,9 +85,9 @@ typed immutable snapshot row だけから表示する。旧 client は relation 
   10分の期限へ HMAC で束縛し、本文、生 ID 一覧、request key を token へ格納しない。
 - commit は current source read と destination post ACL を再検査し、外部参加者を許可する
   room は初期実装で fail closed とする。preview 結果だけを認可根拠にしない。
-- project roomではJWTのproject claimをcurrent membershipの正本にせず、非privileged actorの
-  `ProjectMember`をpreview/commit transaction内で再照会し、commit時は対象rowをlockする。
-  DB membershipが失効した後のstale claimはdestination post権限を復活させない。
+- project roomでは既存Chat room policyのcanonical project claimをpreview/commit transaction内で
+  再評価する。active `Project` rowも再照会し、commit時は対象rowをlockする。既存APIが要求しない
+  `ProjectMember` rowを新たな認可条件にせず、削除済みprojectのroom aliasだけをfail closedにする。
 - Knowledge の owner/sharer/audit には canonical `UserAccount.id`、Chat room ACL と
   `ChatMessage.userId` には同じ認証要求から server-side に解決した既存 Chat identity
   (`externalId` または `userName`) を使用する。両者を同一文字列と仮定せず、share row の
@@ -118,6 +118,24 @@ typed immutable snapshot row だけから表示する。旧 client は relation 
   本文変更やlogical deleteとの競合後にposted+invalid rootが成立しないようにする。
 - room-only viewer の card read は current Chat room ACL、元 item を開く導線は current room ACL と
   current Knowledge ACL を別々に再評価する。card responseに元 item/source rowの内部IDを含めない。
+- 旧root timeline/thread responseはstrict OpenAPI clientとの互換のためshapeを変更しない。
+  card-aware clientはtimelineで受信した1〜100件のexact message IDを
+  `GET /chat-rooms/{roomId}/knowledge-share-messages?messageIds=...`へ渡し、`messageId`、`shareId`、
+  `posted|revoked`、optimistic `version`、schema versionだけのcompact discriminatorを固定本数の
+  batch queryで読む。timeline query、ACK、attachment、reply aggregateを再実行せず、並行投稿による
+  page driftを避ける。通常messageはこの専用responseへ含めない。roomがexternal-enabledへ変化した
+  場合はsummaryも404とし、share存在とstable share IDを公開しない。
+- card本文は`GET /chat-messages/{messageId}/knowledge-share`から単体取得する。active rootと
+  current room ACL、active project、share状態を同一`REPEATABLE READ`
+  snapshotで検査する。missing、unauthorized、non-share、pending、failedは同じ404、revokedは
+  content-free placeholderとし、postedだけがtyped immutable snapshotを返す。
+- roomが投稿後に`allowExternalUsers=true`へ変わった場合、明示的なexternal audience契約がない
+  MVPではcard本文をfail closedとする。固定Chat fallback、search、notification、unread、ACKから
+  selected contentを再構成できる形にはしない。
+- source-openはshareと未削除Chat rootのexact binding、current room ACL、active projectを同一
+  snapshotで再検査する。cardの`canOpenSource`はこれらに加えてcurrent Knowledge ACLを再検査した
+  結果である。source logical delete/ACL失効後もposted snapshotは表示するが、source identityとopen
+  capabilityは返さない。保存済みcanonical URLもresponse時に再sanitizeする。
 
 ### 4. すべての read surface での認可
 

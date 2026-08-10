@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ensureChatRoomContentAccess } from '../dist/services/chatRoomAccess.js';
+import {
+  ensureChatRoomContentAccess,
+  hasActiveChatProject,
+} from '../dist/services/chatRoomAccess.js';
 
 function buildRoom(overrides = {}) {
   return {
@@ -29,6 +32,49 @@ function createClient(room, member = null) {
     },
   };
 }
+
+test('hasActiveChatProject preserves project-claim authorization while rejecting an inactive project', async () => {
+  const projectRoom = buildRoom({
+    id: 'project-room',
+    type: 'project',
+    projectId: 'project-1',
+    groupId: null,
+  });
+  const queries = [];
+  const client = {
+    project: {
+      async findFirst(query) {
+        queries.push(['project', query]);
+        return { id: 'project-1' };
+      },
+    },
+  };
+  assert.equal(
+    await hasActiveChatProject({
+      room: projectRoom,
+      client,
+    }),
+    true,
+  );
+  assert.deepEqual(queries, [
+    [
+      'project',
+      {
+        where: { id: 'project-1', deletedAt: null },
+        select: { id: true },
+      },
+    ],
+  ]);
+  assert.equal(
+    await hasActiveChatProject({
+      room: projectRoom,
+      client: {
+        project: { findFirst: async () => null },
+      },
+    }),
+    false,
+  );
+});
 
 test('ensureChatRoomContentAccess: department allows groupAccountIds match', async () => {
   const room = buildRoom({ groupId: 'group-uuid-1' });

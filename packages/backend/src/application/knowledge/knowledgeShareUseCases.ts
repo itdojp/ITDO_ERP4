@@ -809,6 +809,38 @@ export function createKnowledgeShareUseCases(dependencies: {
       });
       return result.ok ? ok(result.value) : portFailure(result.error);
     },
+
+    async roomCard(input: {
+      actor: KnowledgeActor;
+      chatActor: KnowledgeShareChatActor;
+      messageId: unknown;
+    }): Promise<KnowledgeShareUseCaseResult<unknown>> {
+      const contextFailure = validateContext(input);
+      if (contextFailure) return contextFailure;
+      let messageId: string;
+      try {
+        messageId = boundedId(input.messageId);
+      } catch (error) {
+        if (error instanceof InvalidKnowledgeShareInput) {
+          return failure(400, 'invalid_request');
+        }
+        throw error;
+      }
+      const result = await dependencies.store.readRoomCard({
+        actor: input.actor,
+        chatActor: input.chatActor,
+        messageId,
+      });
+      if (!result.ok) return portFailure(result.error);
+      return ok({
+        shareId: result.value.shareId,
+        status: result.value.status,
+        version: result.value.version,
+        schemaVersion: result.value.schemaVersion,
+        card: result.value.card === null ? null : publicCard(result.value.card),
+        canOpenSource: result.value.canOpenSource,
+      });
+    },
   };
 }
 
