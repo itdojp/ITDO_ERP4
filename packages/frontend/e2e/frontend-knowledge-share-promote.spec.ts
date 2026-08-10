@@ -426,9 +426,9 @@ test('selective share card and selected-reply promotion preserve ACL and omitted
   await promoteDialog
     .getByRole('button', { name: 'ナレッジ化内容をプレビュー' })
     .click();
-  const promotionPreview = promoteDialog.locator(
-    'section[aria-labelledby="knowledge-thread-promotion-preview-title"]',
-  );
+  const promotionPreview = promoteDialog.getByRole('region', {
+    name: 'ナレッジ化プレビュー',
+  });
   await expect(promotionPreview).toContainText(selectedReply, {
     timeout: actionTimeout,
   });
