@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import type {
+  ChatKnowledgeShareSummary,
   ChatRootTimelineMessage,
   ChatThreadActor,
   ChatThreadAck,
@@ -11,7 +12,10 @@ import type {
   ChatReplyTarget,
   ChatThreadSnapshotRepository,
 } from '../../application/chat/chatThreadPorts.js';
-import { ensureChatRoomContentAccess } from '../../services/chatRoomAccess.js';
+import {
+  ensureChatRoomContentAccess,
+  hasActiveChatProject,
+} from '../../services/chatRoomAccess.js';
 import { prisma } from '../../services/db.js';
 
 const messageSelect = {
@@ -72,6 +76,13 @@ const attachmentSelect = {
   createdBy: true,
 } satisfies Prisma.ChatAttachmentSelect;
 
+const knowledgeShareSummarySelect = {
+  id: true,
+  chatMessageId: true,
+  status: true,
+  version: true,
+} satisfies Prisma.KnowledgeShareSelect;
+
 type MessageRow = Prisma.ChatMessageGetPayload<{
   select: typeof messageSelect;
 }>;
@@ -82,10 +93,14 @@ type AckRow = Prisma.ChatAckGetPayload<{ select: typeof ackSelect }>;
 type AttachmentRow = Prisma.ChatAttachmentGetPayload<{
   select: typeof attachmentSelect;
 }>;
+type KnowledgeShareSummaryRow = Prisma.KnowledgeShareGetPayload<{
+  select: typeof knowledgeShareSummarySelect;
+}>;
 
 type MessageRelations = {
   ackRequest: ChatThreadAckRequest | null;
   attachments: ChatThreadAttachment[];
+  knowledgeShare?: ChatKnowledgeShareSummary;
 };
 
 function mapAck(row: AckRow): ChatThreadAck {
@@ -135,6 +150,18 @@ function mapAttachment(row: AttachmentRow): ChatThreadAttachment {
   };
 }
 
+function mapKnowledgeShareSummary(
+  row: KnowledgeShareSummaryRow,
+): ChatKnowledgeShareSummary | null {
+  if (row.status !== 'posted' && row.status !== 'revoked') return null;
+  return {
+    shareId: row.id,
+    status: row.status,
+    version: row.version,
+    schemaVersion: 1,
+  };
+}
+
 function mapMessage(
   row: MessageRow,
   relations: MessageRelations,
@@ -154,6 +181,9 @@ function mapMessage(
     mentionsAll: deleted ? false : row.mentionsAll,
     ackRequest: deleted ? null : relations.ackRequest,
     attachments: deleted ? [] : relations.attachments,
+    ...(!deleted && relations.knowledgeShare
+      ? { knowledgeShare: relations.knowledgeShare }
+      : {}),
     createdAt: row.createdAt,
     createdBy: row.createdBy,
     updatedAt: row.updatedAt,
@@ -166,6 +196,7 @@ function mapMessage(
 async function hydrateMessages(
   tx: Prisma.TransactionClient,
   rows: MessageRow[],
+  options: { includeRootKnowledgeShares?: boolean } = {},
 ): Promise<ChatThreadMessage[]> {
   const visibleMessageIds = rows
     .filter((row) => row.deletedAt === null)
@@ -195,6 +226,26 @@ async function hydrateMessages(
     orderBy: [{ messageId: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
     select: attachmentSelect,
   });
+  const knowledgeShareMessageIds = options.includeRootKnowledgeShares
+    ? rows
+        .filter(
+          (row) =>
+            row.deletedAt === null &&
+            row.parentMessageId === null &&
+            row.threadRootId === null,
+        )
+        .map((row) => row.id)
+    : [];
+  const knowledgeShareRows =
+    knowledgeShareMessageIds.length === 0
+      ? []
+      : await tx.knowledgeShare.findMany({
+          where: {
+            chatMessageId: { in: knowledgeShareMessageIds },
+            status: { in: ['posted', 'revoked'] },
+          },
+          select: knowledgeShareSummarySelect,
+        });
 
   const acksByRequest = new Map<string, ChatThreadAck[]>();
   for (const ack of ackRows) {
@@ -215,11 +266,20 @@ async function hydrateMessages(
     list.push(mapAttachment(attachment));
     attachmentsByMessage.set(attachment.messageId, list);
   }
+  const knowledgeShareByMessage = new Map<string, ChatKnowledgeShareSummary>();
+  for (const row of knowledgeShareRows) {
+    if (!row.chatMessageId) continue;
+    const summary = mapKnowledgeShareSummary(row);
+    if (summary) knowledgeShareByMessage.set(row.chatMessageId, summary);
+  }
 
   return rows.map((row) =>
     mapMessage(row, {
       ackRequest: ackByMessage.get(row.id) ?? null,
       attachments: attachmentsByMessage.get(row.id) ?? [],
+      ...(knowledgeShareByMessage.has(row.id)
+        ? { knowledgeShare: knowledgeShareByMessage.get(row.id) }
+        : {}),
     }),
   );
 }
@@ -280,7 +340,11 @@ function createSnapshotRepository(
         accessLevel: 'read',
         client: tx as unknown as typeof prisma,
       });
-      return access.ok;
+      if (!access.ok) return false;
+      return hasActiveChatProject({
+        room: access.room,
+        client: tx as unknown as typeof prisma,
+      });
     },
     async readThread(input) {
       const rootRow = await tx.chatMessage.findFirst({
@@ -469,6 +533,26 @@ export function createPrismaChatThreadRepository(
     async listRootTimeline(input) {
       return client.$transaction(
         async (tx) => {
+          const access = await ensureChatRoomContentAccess({
+            roomId: input.roomId,
+            userId: input.actor.userId,
+            roles: input.actor.roles,
+            projectIds: input.actor.projectIds,
+            groupIds: input.actor.groupIds,
+            groupAccountIds: input.actor.groupAccountIds,
+            accessLevel: 'read',
+            client: tx as unknown as typeof prisma,
+          });
+          if (!access.ok) return null;
+          if (
+            !(await hasActiveChatProject({
+              room: access.room,
+              client: tx as unknown as typeof prisma,
+            }))
+          ) {
+            return null;
+          }
+
           const where: Prisma.ChatMessageWhereInput = {
             roomId: input.roomId,
             parentMessageId: null,
@@ -496,7 +580,9 @@ export function createPrismaChatThreadRepository(
             take: input.limit,
             select: messageSelect,
           });
-          const messages = await hydrateMessages(tx, rows);
+          const messages = await hydrateMessages(tx, rows, {
+            includeRootKnowledgeShares: input.includeKnowledgeShares === true,
+          });
           const aggregates = await readThreadAggregates(
             tx,
             rows.map((row) => row.id),

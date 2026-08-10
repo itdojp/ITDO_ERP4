@@ -35,6 +35,13 @@ const projectId = 'thread-project';
 const projectAliasId = 'thread-project-canonical';
 const projectAliasRoomId = 'thread-project-room-alias';
 const ownerId = 'thread-owner';
+const ownerThreadActor = {
+  userId: ownerId,
+  roles: ['user'],
+  projectIds: [],
+  groupIds: [],
+  groupAccountIds: [],
+};
 const rootId = 'thread-root';
 const deletedRootId = 'thread-deleted-root';
 const deleteRaceRootId = 'thread-delete-race-root';
@@ -379,6 +386,7 @@ try {
   );
 
   const roots = await prismaChatThreadRepository.listRootTimeline({
+    actor: ownerThreadActor,
     roomId,
     limit: 20,
   });

@@ -185,6 +185,32 @@ describe('roomChatModel', () => {
     );
   });
 
+  it('keeps the generic fallback while discarding an additive knowledge-share discriminator', () => {
+    const normalized = normalizeChatMessage(
+      message('share-root', {
+        body: 'Knowledge was shared.',
+        knowledgeShare: {
+          shareId: 'share-internal-id',
+          status: 'posted',
+          version: 1,
+          schemaVersion: 1,
+          selectedContent:
+            'private content must not cross the old-client boundary',
+        },
+      }),
+    );
+
+    expect(normalized).toEqual(
+      expect.objectContaining({
+        id: 'share-root',
+        body: 'Knowledge was shared.',
+        messageType: 'text',
+      }),
+    );
+    expect(normalized).not.toHaveProperty('knowledgeShare');
+    expect(JSON.stringify(normalized)).not.toContain('private content');
+  });
+
   it('fails closed when nested ACK identities do not match the containing message', () => {
     const normalized = normalizeChatMessage(
       message('root-1', { ackRequest: ackRequest('root-1') }),

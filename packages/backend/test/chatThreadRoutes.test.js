@@ -33,11 +33,19 @@ function message(overrides = {}) {
 }
 
 function withStubs(snapshotRepository, run) {
+  const originalListRootTimeline = prismaChatThreadRepository.listRootTimeline;
   const originalSnapshot = prismaChatThreadRepository.withReadSnapshot;
   const originalPrepareReply = prismaChatThreadRepository.prepareReply;
   const originalCreateReply = prismaChatThreadRepository.createReply;
   const originalAuditCreate = prisma.auditLog.create;
+  const originalChatRoomFindUnique = prisma.chatRoom.findUnique;
   const auditEntries = [];
+  prismaChatThreadRepository.listRootTimeline = async (input) => {
+    snapshotRepository.timelineInputs?.push(input);
+    return Object.hasOwn(snapshotRepository, 'timelineResult')
+      ? snapshotRepository.timelineResult
+      : [];
+  };
   prismaChatThreadRepository.withReadSnapshot = async (operation) =>
     operation(snapshotRepository);
   prismaChatThreadRepository.prepareReply = async () =>
@@ -48,13 +56,19 @@ function withStubs(snapshotRepository, run) {
     auditEntries.push(data);
     return { id: 'audit-1' };
   };
+  if (snapshotRepository.accessRooms) {
+    prisma.chatRoom.findUnique = async ({ where }) =>
+      snapshotRepository.accessRooms[where.id] ?? null;
+  }
   return Promise.resolve()
     .then(() => run(auditEntries))
     .finally(() => {
+      prismaChatThreadRepository.listRootTimeline = originalListRootTimeline;
       prismaChatThreadRepository.withReadSnapshot = originalSnapshot;
       prismaChatThreadRepository.prepareReply = originalPrepareReply;
       prismaChatThreadRepository.createReply = originalCreateReply;
       prisma.auditLog.create = originalAuditCreate;
+      prisma.chatRoom.findUnique = originalChatRoomFindUnique;
     });
 }
 
@@ -134,6 +148,196 @@ test('GET thread returns explicit root, reply, aggregate, and pagination fields'
     assert.equal(JSON.stringify(auditEntries).includes('room-1'), false);
     assert.equal(JSON.stringify(auditEntries).includes('Synthetic'), false);
   });
+});
+
+test('GET thread keeps the old response shape when an internal share relation exists', async () => {
+  const repository = readableRepository();
+  const originalReadThread = repository.readThread;
+  repository.readThread = async (input) => {
+    const snapshot = await originalReadThread(input);
+    snapshot.root.knowledgeShare = {
+      shareId: 'share-posted',
+      status: 'posted',
+      version: 2,
+      schemaVersion: 1,
+      selectedContent: 'must not leak',
+      sourceKnowledgeItemId: 'source-sensitive',
+      provider: 'provider-sensitive',
+    };
+    return snapshot;
+  };
+  await withServer(repository, async (server) => {
+    const response = await server.inject({
+      method: 'GET',
+      url: '/chat-messages/root-1/thread',
+      headers,
+    });
+    assert.equal(response.statusCode, 200, response.body);
+    const body = response.json();
+    assert.equal(Object.hasOwn(body.root, 'knowledgeShare'), false);
+    assert.equal(Object.hasOwn(body.replies[0], 'knowledgeShare'), false);
+    assert.equal(response.body.includes('source-sensitive'), false);
+    assert.equal(response.body.includes('provider-sensitive'), false);
+    assert.equal(response.body.includes('must not leak'), false);
+  });
+});
+
+test('dedicated room summary route exposes compact share metadata without changing the old timeline response', async () => {
+  const timelineInputs = [];
+  const shareRoot = {
+    ...message({
+      knowledgeShare: {
+        shareId: 'share-posted',
+        status: 'posted',
+        version: 2,
+        schemaVersion: 1,
+        selectedContent: 'must not leak',
+        sourceKnowledgeItemId: 'source-sensitive',
+      },
+    }),
+    replyCount: 0,
+    lastReplyAt: null,
+  };
+  const room = {
+    id: 'room-1',
+    type: 'company',
+    projectId: null,
+    isOfficial: true,
+    groupId: null,
+    viewerGroupIds: null,
+    posterGroupIds: null,
+    deletedAt: null,
+    allowExternalUsers: false,
+  };
+  await withServer(
+    readableRepository({
+      timelineInputs,
+      timelineResult: [shareRoot],
+      accessRooms: { 'room-1': room },
+    }),
+    async (server) => {
+      const oldTimeline = await server.inject({
+        method: 'GET',
+        url: '/chat-rooms/room-1/messages',
+        headers,
+      });
+      assert.equal(oldTimeline.statusCode, 200, oldTimeline.body);
+      assert.equal(
+        Object.hasOwn(oldTimeline.json().items[0], 'knowledgeShare'),
+        false,
+      );
+
+      const summary = await server.inject({
+        method: 'GET',
+        url: '/chat-rooms/room-1/knowledge-share-messages',
+        headers,
+      });
+      assert.equal(summary.statusCode, 200, summary.body);
+      assert.deepEqual(summary.json(), {
+        items: [
+          {
+            messageId: 'root-1',
+            shareId: 'share-posted',
+            status: 'posted',
+            version: 2,
+            schemaVersion: 1,
+          },
+        ],
+      });
+      assert.equal(summary.body.includes('source-sensitive'), false);
+      assert.equal(summary.body.includes('must not leak'), false);
+    },
+  );
+  assert.equal(timelineInputs[0].includeKnowledgeShares, false);
+  assert.equal(timelineInputs[1].includeKnowledgeShares, true);
+});
+
+test('timeline routes pass the current actor and normalize same-snapshot ACL denial to 404', async () => {
+  const cases = [
+    {
+      url: '/chat-rooms/room-1/messages',
+      roomId: 'room-1',
+      expectedBody: { error: 'not_found' },
+      room: {
+        id: 'room-1',
+        type: 'company',
+        projectId: null,
+        isOfficial: true,
+        groupId: null,
+        viewerGroupIds: null,
+        posterGroupIds: null,
+        deletedAt: null,
+        allowExternalUsers: false,
+      },
+    },
+    {
+      url: '/projects/project-1/chat-messages',
+      roomId: 'project-1',
+      expectedBody: {
+        error: {
+          code: 'NOT_FOUND',
+          message: 'Project chat timeline not found',
+        },
+      },
+      room: {
+        id: 'project-1',
+        type: 'project',
+        projectId: 'project-1',
+        isOfficial: true,
+        groupId: null,
+        viewerGroupIds: null,
+        posterGroupIds: null,
+        deletedAt: null,
+        allowExternalUsers: false,
+      },
+    },
+  ];
+
+  for (const testCase of cases) {
+    const timelineInputs = [];
+    await withServer(
+      readableRepository({
+        timelineInputs,
+        timelineResult: null,
+        accessRooms: { [testCase.roomId]: testCase.room },
+      }),
+      async (server) => {
+        const response = await server.inject({
+          method: 'GET',
+          url: testCase.url,
+          headers,
+        });
+        assert.equal(response.statusCode, 404, response.body);
+        assert.deepEqual(response.json(), testCase.expectedBody);
+      },
+    );
+    assert.equal(timelineInputs.length, 1);
+    assert.equal(timelineInputs[0].roomId, testCase.roomId);
+    assert.deepEqual(timelineInputs[0].actor, {
+      userId: 'user-1',
+      roles: ['user'],
+      projectIds: ['project-1'],
+      groupIds: [],
+      groupAccountIds: [],
+    });
+  }
+});
+
+test('room timeline preserves the existing not-found access response under the additive 404 schema', async () => {
+  const timelineInputs = [];
+  await withServer(
+    readableRepository({ timelineInputs, accessRooms: {} }),
+    async (server) => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/chat-rooms/missing/messages',
+        headers,
+      });
+      assert.equal(response.statusCode, 404, response.body);
+      assert.deepEqual(response.json(), { error: 'not_found' });
+    },
+  );
+  assert.deepEqual(timelineInputs, []);
 });
 
 test('GET thread normalizes missing and unauthorized messages to the same 404', async () => {

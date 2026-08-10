@@ -354,6 +354,21 @@ if (mode === 'seed') {
     await prisma.$disconnect();
   }
 } else {
+  const [
+    { createPrismaKnowledgeShareAdapter },
+    { createPrismaChatThreadRepository },
+  ] = await Promise.all([
+    import(
+      pathToFileURL(
+        `${currentRoot}/packages/backend/dist/adapters/knowledge/prismaKnowledgeShareAdapter.js`,
+      ).href
+    ),
+    import(
+      pathToFileURL(
+        `${currentRoot}/packages/backend/dist/adapters/chat/prismaChatThreadAdapter.js`,
+      ).href
+    ),
+  ]);
   const prisma = currentPrisma();
   try {
     const share = await prisma.knowledgeShare.findUniqueOrThrow({
@@ -367,6 +382,48 @@ if (mode === 'seed') {
     assert.equal(share.selectedTitle, null);
     assert.equal(share.selectedCanonicalUrl, null);
     assert.equal(share.selectedSharerNote, null);
+
+    const viewerChatActor = {
+      canonicalUserId: viewerId,
+      userId: viewerId,
+      roles: ['user'],
+      projectIds: [],
+      groupIds: [],
+      groupAccountIds: [],
+    };
+    const card = await createPrismaKnowledgeShareAdapter({
+      $transaction: (...args) => prisma.$transaction(...args),
+    }).readRoomCard({
+      actor: { userId: viewerId, groupAccountIds: [] },
+      chatActor: viewerChatActor,
+      messageId: shareMessageId,
+    });
+    assert.equal(card.ok, true, JSON.stringify(card));
+    assert.equal(card.value.status, 'posted');
+    assert.equal(card.value.canOpenSource, false);
+    assert.equal(card.value.card.sourceType, 'manual');
+    assert.equal(card.value.card.title, undefined);
+    assert.equal(JSON.stringify(card.value).includes(privateCanary), false);
+
+    const timeline = await createPrismaChatThreadRepository(
+      prisma,
+    ).listRootTimeline({
+      actor: viewerChatActor,
+      includeKnowledgeShares: true,
+      roomId,
+      limit: 20,
+    });
+    assert.ok(timeline);
+    const currentShareRoot = timeline.find(
+      (message) => message.id === shareMessageId,
+    );
+    assert.ok(currentShareRoot);
+    assert.deepEqual(currentShareRoot.knowledgeShare, {
+      shareId,
+      status: 'posted',
+      version: 2,
+      schemaVersion: 1,
+    });
 
     const oldWrite = await prisma.chatMessage.findUniqueOrThrow({
       where: { id: oldWriteMessageId },
@@ -586,6 +643,8 @@ if (mode === 'seed') {
         postedReferenceRetained: true,
         oldApplicationDefaultRetained: true,
         selectedPrivateCanaryStored: false,
+        roomOnlyCardRead: true,
+        compactTimelineDiscriminator: true,
         staleAnnotationRevisionRejected: true,
         staleSynthesisVersionRejected: true,
         auditTargetConstraint: true,

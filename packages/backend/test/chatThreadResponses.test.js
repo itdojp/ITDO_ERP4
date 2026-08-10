@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  chatKnowledgeShareSummaryResponse,
   chatRootTimelineMessageResponse,
   chatThreadMessageResponse,
 } from '../dist/routes/chatThreadResponses.js';
@@ -58,6 +59,86 @@ test('thread response exposes only the explicit additive topology contract', () 
     'userId',
   ]);
   assert.equal(response.createdAt, now.toISOString());
+  assert.equal(Object.hasOwn(response, 'knowledgeShare'), false);
+});
+
+test('the dedicated summary response exposes only the compact posted/revoked allowlist while old responses stay unchanged', () => {
+  for (const [status, version] of [
+    ['posted', 2],
+    ['revoked', 3],
+  ]) {
+    const knowledgeShare = {
+      shareId: `share-${status}`,
+      status,
+      version,
+      schemaVersion: 1,
+      body: 'must not leak',
+      selectedContent: 'must not leak',
+      sourceKnowledgeItemId: 'source-sensitive',
+      provider: 'provider-sensitive',
+    };
+    const threadResponse = chatThreadMessageResponse(
+      message({ knowledgeShare }),
+    );
+    assert.equal(Object.hasOwn(threadResponse, 'knowledgeShare'), false);
+    const root = {
+      ...message({ knowledgeShare }),
+      replyCount: 0,
+      lastReplyAt: null,
+    };
+    const timelineResponse = chatRootTimelineMessageResponse(root);
+    assert.equal(Object.hasOwn(timelineResponse, 'knowledgeShare'), false);
+    assert.deepEqual(chatKnowledgeShareSummaryResponse(root), {
+      messageId: 'message-1',
+      shareId: `share-${status}`,
+      status,
+      version,
+      schemaVersion: 1,
+    });
+  }
+});
+
+test('pending, failed, reply, and deleted messages omit knowledge-share metadata', () => {
+  for (const candidate of [
+    message({
+      knowledgeShare: {
+        shareId: 'share-pending',
+        status: 'pending',
+        version: 1,
+        schemaVersion: 1,
+      },
+    }),
+    message({
+      knowledgeShare: {
+        shareId: 'share-failed',
+        status: 'failed',
+        version: 1,
+        schemaVersion: 1,
+      },
+    }),
+    message({
+      parentMessageId: 'root-1',
+      threadRootId: 'root-1',
+      knowledgeShare: {
+        shareId: 'share-reply',
+        status: 'posted',
+        version: 1,
+        schemaVersion: 1,
+      },
+    }),
+    message({
+      body: null,
+      deletedAt: now,
+      knowledgeShare: {
+        shareId: 'share-deleted',
+        status: 'posted',
+        version: 1,
+        schemaVersion: 1,
+      },
+    }),
+  ]) {
+    assert.equal(chatKnowledgeShareSummaryResponse(candidate), null);
+  }
 });
 
 test('deleted thread placeholder contains no message content or child resources', () => {

@@ -207,7 +207,7 @@
 
 - `ChatMessage`の既存rowは、`parentMessageId = null`かつ`threadRootId = null`のrootとして扱う。migrationで既存rowを破壊的にbackfillしない。
 - replyは`parentMessageId = threadRootId = root.id`とし、rootと同じ`roomId`に固定する。一段threadのため、replyへのreply、自己参照、別room参照をDB制約とapplication契約の双方で拒否する。
-- `messageType`はadditive enumで、#2014では`text`のみを許可する。既存rowと旧clientから作成したrowはDB defaultにより`text`となる。Knowledge share card用type/payload/renderingは #2015 の責務とする。
+- `messageType`はadditive enumだが、#2014および#2015のexpand段階では`text`のみを許可する。既存rowと旧clientから作成したrowはDB defaultにより`text`となる。Knowledge share cardはgeneric fallback本文と一対一side-table relationをdiscriminatorにし、旧applicationが新DBを読める状態を維持する。
 - topology（room、parent、root、message type）は作成後に変更しない。rootが論理削除されても既存replyは保持し、thread readでは本文・tag・reaction・mention・ack・attachmentを含まないdeleted placeholderを返す。削除済みrootへの新規replyは拒否する。
 - `replyCount`は論理削除済みplaceholderを含むreply row数、`lastReplyAt`はそれらを含む最新replyの`createdAt`とする。rootの`updatedAt`とは混同しない。
 - root timelineのreply集約はpage単位の固定本数batch queryで算出し、messageごとのN+1 queryを行わない。root・reply・集約は`REPEATABLE READ`の同一snapshotで読む。

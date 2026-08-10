@@ -53,6 +53,16 @@ const attachmentSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const knowledgeShareSummarySchema = Type.Object(
+  {
+    shareId: Type.String(),
+    status: Type.Union([Type.Literal('posted'), Type.Literal('revoked')]),
+    version: Type.Integer({ minimum: 1 }),
+    schemaVersion: Type.Literal(1),
+  },
+  { additionalProperties: false },
+);
+
 const messageProperties = {
   id: Type.String(),
   roomId: Type.String(),
@@ -122,6 +132,21 @@ export const chatRootTimelineListResponseSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const chatKnowledgeShareSummaryListResponseSchema = Type.Object(
+  {
+    items: Type.Array(
+      Type.Object(
+        {
+          messageId: Type.String(),
+          ...knowledgeShareSummarySchema.properties,
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
+
 export const projectChatTimelineParamsSchema = Type.Object(
   { projectId: Type.String() },
   { additionalProperties: false },
@@ -155,6 +180,11 @@ export const chatApiErrorResponseSchema = Type.Object(
       { additionalProperties: false },
     ),
   },
+  { additionalProperties: false },
+);
+
+export const chatTimelineNotFoundResponseSchema = Type.Object(
+  { error: Type.Literal('not_found') },
   { additionalProperties: false },
 );
 

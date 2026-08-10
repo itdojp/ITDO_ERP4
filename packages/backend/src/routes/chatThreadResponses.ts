@@ -65,6 +65,27 @@ export function chatThreadMessageResponse(message: ChatThreadMessage) {
   };
 }
 
+export function chatKnowledgeShareSummaryResponse(
+  message: ChatRootTimelineMessage,
+) {
+  const summary =
+    message.deletedAt === null &&
+    message.parentMessageId === null &&
+    message.threadRootId === null &&
+    (message.knowledgeShare?.status === 'posted' ||
+      message.knowledgeShare?.status === 'revoked')
+      ? message.knowledgeShare
+      : null;
+  if (!summary) return null;
+  return {
+    messageId: message.id,
+    shareId: summary.shareId,
+    status: summary.status,
+    version: summary.version,
+    schemaVersion: 1 as const,
+  };
+}
+
 export function chatRootTimelineMessageResponse(
   message: ChatRootTimelineMessage,
 ) {

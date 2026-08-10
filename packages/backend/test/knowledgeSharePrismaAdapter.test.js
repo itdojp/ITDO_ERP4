@@ -108,6 +108,35 @@ function pendingShare(resolved, overrides = {}) {
   };
 }
 
+function postedCardShare(overrides = {}) {
+  return pendingShare(
+    {
+      sourceItemId: 'item-1',
+      sourceOwnerUserId: 'owner-1',
+      sourceItemVersion: 3,
+      sourceItemUpdatedAt: now,
+      destinationRoomId: 'room-1',
+      selectionHash: 'a'.repeat(64),
+      snapshot: {
+        title: 'Selected title',
+        sourceType: 'web',
+        canonicalUrl:
+          'https://example.test/selected?private=query#private-fragment',
+        contentHash: 'b'.repeat(64),
+      },
+    },
+    {
+      status: 'posted',
+      chatMessageId: 'share-1',
+      version: 2,
+      postedAt: now,
+      selectedCanonicalUrl:
+        'https://example.test/selected?private=query#private-fragment',
+      ...overrides,
+    },
+  );
+}
+
 function basicTransaction(overrides = {}) {
   const auditRows = [];
   const sourceItem = item(overrides.item);
@@ -345,12 +374,12 @@ test('preview rejects an existing synthesis with an empty unresolved question be
   assert.deepEqual(transaction.auditRows, []);
 });
 
-test('project share requires a current ProjectMember row even when the Chat actor has a stale project claim', async () => {
+test('project share preserves the canonical project-claim room policy without inventing a ProjectMember requirement', async () => {
   const destinationRoom = room({
     type: 'project',
     projectId: 'project-1',
   });
-  const staleProjectActor = { ...chatActor, projectIds: ['project-1'] };
+  const projectActor = { ...chatActor, projectIds: ['project-1'] };
   const transaction = basicTransaction({
     room: destinationRoom,
     transaction: {
@@ -358,23 +387,23 @@ test('project share requires a current ProjectMember row even when the Chat acto
         findUnique: async () => destinationRoom,
         findFirst: async () => destinationRoom,
       },
-      projectMember: { findFirst: async () => null },
+      project: { findFirst: async () => ({ id: 'project-1' }) },
     },
   });
   const result = await createPrismaKnowledgeShareAdapter(
     host(transaction),
   ).preview({
     actor,
-    chatActor: staleProjectActor,
+    chatActor: projectActor,
     auditActor,
     shareId: '11111111-2222-4333-8444-123456789012',
     itemId: 'item-1',
     destinationRoomId: 'room-1',
     selection: titleSelection,
   });
-  assert.equal(result.ok, false);
-  assert.equal(result.error.code, 'not_found');
-  assert.deepEqual(transaction.auditRows, []);
+  assert.equal(result.ok, true);
+  assert.equal(result.value.snapshot.title, 'Selected title');
+  assert.equal(transaction.auditRows.length, 1);
 });
 
 test('findIdempotent returns an exact stored result before live source checks and audits conflicts', async () => {
@@ -854,7 +883,7 @@ test('openSource requires both current room read ACL and current Knowledge visib
   assert.equal(result.error.code, 'not_found');
 });
 
-test('openSource rejects a stale project claim after current ProjectMember access is revoked', async () => {
+test('openSource preserves current project-claim room access without requiring a ProjectMember row', async () => {
   const destinationRoom = room({
     type: 'project',
     projectId: 'project-1',
@@ -872,10 +901,13 @@ test('openSource rejects a stale project claim after current ProjectMember acces
       findUnique: async () => destinationRoom,
     },
     chatRoomMember: { findFirst: async () => null },
-    projectMember: {
+    project: {
       findFirst: async (query) => {
-        assert.deepEqual(query.where.project, { deletedAt: null });
-        return null;
+        assert.deepEqual(query.where, {
+          id: 'project-1',
+          deletedAt: null,
+        });
+        return { id: 'project-1' };
       },
     },
     knowledgeItem: {
@@ -892,9 +924,186 @@ test('openSource rejects a stale project claim after current ProjectMember acces
     chatActor: { ...chatActor, projectIds: ['project-1'] },
     shareId: 'share-1',
   });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.knowledgeItemId, visibleItem.id);
+  assert.equal(knowledgeLookupCount, 1);
+});
+
+test('readRoomCard returns only the immutable selected snapshot for a current room viewer', async () => {
+  const posted = postedCardShare();
+  let shareReads = 0;
+  const transaction = {
+    knowledgeShare: {
+      findFirst: async (query) => {
+        shareReads += 1;
+        if (query.select) {
+          return {
+            id: posted.id,
+            status: posted.status,
+            version: posted.version,
+            selectionSchemaVersion: posted.selectionSchemaVersion,
+            sourceKnowledgeItemId: posted.sourceKnowledgeItemId,
+            destinationRoomId: posted.destinationRoomId,
+          };
+        }
+        return posted;
+      },
+    },
+    chatRoom: { findUnique: async () => room() },
+    chatRoomMember: { findFirst: async () => null },
+    knowledgeItem: { findFirst: async () => null },
+  };
+  const result = await createPrismaKnowledgeShareAdapter(
+    host(transaction),
+  ).readRoomCard({ actor, chatActor, messageId: posted.chatMessageId });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.status, 'posted');
+  assert.equal(result.value.version, 2);
+  assert.equal(result.value.canOpenSource, false);
+  assert.equal(result.value.card.title, 'Selected title');
+  assert.equal(result.value.card.canonicalUrl, 'https://example.test/selected');
+  assert.deepEqual(result.value.card.labels, []);
+  assert.deepEqual(result.value.card.annotations, []);
+  assert.deepEqual(result.value.card.turns, []);
+  assert.deepEqual(result.value.card.syntheses, []);
+  assert.equal(shareReads, 2);
+  assert.equal(
+    JSON.stringify(result).includes('private-query-unselected-canary'),
+    false,
+  );
+});
+
+test('readRoomCard returns a content-free revoked placeholder without loading snapshot children', async () => {
+  const revoked = postedCardShare({
+    status: 'revoked',
+    version: 3,
+    revokedAt: now,
+  });
+  let shareReads = 0;
+  let sourceReads = 0;
+  const transaction = {
+    knowledgeShare: {
+      findFirst: async () => {
+        shareReads += 1;
+        return {
+          id: revoked.id,
+          status: revoked.status,
+          version: revoked.version,
+          selectionSchemaVersion: revoked.selectionSchemaVersion,
+          sourceKnowledgeItemId: revoked.sourceKnowledgeItemId,
+          destinationRoomId: revoked.destinationRoomId,
+        };
+      },
+    },
+    chatRoom: { findUnique: async () => room() },
+    chatRoomMember: { findFirst: async () => null },
+    knowledgeItem: {
+      findFirst: async () => {
+        sourceReads += 1;
+        return item();
+      },
+    },
+  };
+  const result = await createPrismaKnowledgeShareAdapter(
+    host(transaction),
+  ).readRoomCard({ actor, chatActor, messageId: revoked.chatMessageId });
+  assert.deepEqual(result, {
+    ok: true,
+    value: {
+      shareId: revoked.id,
+      status: 'revoked',
+      version: 3,
+      schemaVersion: 1,
+      card: null,
+      canOpenSource: false,
+    },
+  });
+  assert.equal(shareReads, 1);
+  assert.equal(sourceReads, 0);
+});
+
+test('readRoomCard fails closed after a room becomes external-facing', async () => {
+  const posted = postedCardShare();
+  let detailReads = 0;
+  const transaction = {
+    knowledgeShare: {
+      findFirst: async (query) => {
+        if (query.select) {
+          return {
+            id: posted.id,
+            status: posted.status,
+            version: posted.version,
+            selectionSchemaVersion: posted.selectionSchemaVersion,
+            sourceKnowledgeItemId: posted.sourceKnowledgeItemId,
+            destinationRoomId: posted.destinationRoomId,
+          };
+        }
+        detailReads += 1;
+        return posted;
+      },
+    },
+    chatRoom: {
+      findUnique: async () => room({ allowExternalUsers: true }),
+    },
+    chatRoomMember: { findFirst: async () => ({ role: 'member' }) },
+  };
+  const result = await createPrismaKnowledgeShareAdapter(
+    host(transaction),
+  ).readRoomCard({ actor, chatActor, messageId: posted.chatMessageId });
   assert.equal(result.ok, false);
   assert.equal(result.error.code, 'not_found');
-  assert.equal(knowledgeLookupCount, 0);
+  assert.equal(detailReads, 0);
+});
+
+test('readRoomCard preserves current project-claim room access without requiring a ProjectMember row', async () => {
+  const posted = postedCardShare({ destinationRoomId: 'project-room' });
+  let detailReads = 0;
+  let sourceReads = 0;
+  const transaction = {
+    knowledgeShare: {
+      findFirst: async (query) => {
+        if (query.select) {
+          return {
+            id: posted.id,
+            status: posted.status,
+            version: posted.version,
+            selectionSchemaVersion: posted.selectionSchemaVersion,
+            sourceKnowledgeItemId: posted.sourceKnowledgeItemId,
+            destinationRoomId: posted.destinationRoomId,
+          };
+        }
+        detailReads += 1;
+        return posted;
+      },
+    },
+    chatRoom: {
+      findUnique: async () =>
+        room({
+          id: 'project-room',
+          type: 'project',
+          projectId: 'project-1',
+        }),
+    },
+    chatRoomMember: { findFirst: async () => null },
+    project: { findFirst: async () => ({ id: 'project-1' }) },
+    knowledgeItem: {
+      findFirst: async () => {
+        sourceReads += 1;
+        return item();
+      },
+    },
+  };
+  const result = await createPrismaKnowledgeShareAdapter(
+    host(transaction),
+  ).readRoomCard({
+    actor,
+    chatActor: { ...chatActor, projectIds: ['project-1'] },
+    messageId: posted.chatMessageId,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.card.title, 'Selected title');
+  assert.equal(detailReads, 1);
+  assert.equal(sourceReads, 1);
 });
 
 test('serializable mutations retry bounded transaction conflicts and propagate permanent failures', async () => {

@@ -1,4 +1,8 @@
-import { FastifyInstance } from 'fastify';
+import {
+  FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+} from 'fastify';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
@@ -48,14 +52,19 @@ import {
 } from './chat/shared/readStateInput.js';
 import { resolveAccessibleChatSearchRoomIds } from '../services/chatSearchAccess.js';
 import { prismaChatThreadRepository } from '../adapters/chat/prismaChatThreadAdapter.js';
-import { chatRootTimelineMessageResponse } from './chatThreadResponses.js';
+import {
+  chatKnowledgeShareSummaryResponse,
+  chatRootTimelineMessageResponse,
+} from './chatThreadResponses.js';
 import {
   chatApiErrorResponseSchema,
+  chatKnowledgeShareSummaryListResponseSchema,
   chatMessageSearchSchema,
   chatRoomReadStateSchema,
   chatRoomTimelineParamsSchema,
   chatRoomTimelineQuerySchema,
   chatRootTimelineListResponseSchema,
+  chatTimelineNotFoundResponseSchema,
 } from './chatThreadSchemas.js';
 
 export async function registerChatRoomRoutes(app: FastifyInstance) {
@@ -91,6 +100,89 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       });
     },
   );
+
+  async function readRootTimeline(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    includeKnowledgeShares: boolean,
+  ) {
+    const { roomId } = req.params as { roomId: string };
+    const { limit, before, tag, q } = req.query as {
+      limit?: string;
+      before?: string;
+      tag?: string;
+      q?: string;
+    };
+    const userId = requireUserId(reply, req.user?.userId);
+    if (typeof userId !== 'string') return null;
+    const accessContext = readRoomAccessContext(req);
+    const access = await ensureRoomAccessWithReasonError({
+      reply,
+      roomId,
+      userId,
+      accessContext,
+      accessLevel: 'read',
+    });
+    if (!access) return null;
+
+    const take = parseLimit(limit);
+    if (!take) {
+      reply.status(400).send({
+        error: {
+          code: 'INVALID_LIMIT',
+          message: 'limit must be a positive integer',
+        },
+      });
+      return null;
+    }
+    const beforeDate = parseDateParam(before);
+    if (before && !beforeDate) {
+      reply.status(400).send({
+        error: { code: 'INVALID_DATE', message: 'Invalid before date' },
+      });
+      return null;
+    }
+    const trimmedTag = typeof tag === 'string' ? tag.trim() : '';
+    if (trimmedTag.length > 32) {
+      reply.status(400).send({
+        error: { code: 'INVALID_TAG', message: 'Tag is too long' },
+      });
+      return null;
+    }
+    const trimmedQuery = typeof q === 'string' ? q.trim() : '';
+    if (trimmedQuery.length > 100) {
+      reply.status(400).send({
+        error: { code: 'INVALID_QUERY', message: 'query is too long' },
+      });
+      return null;
+    }
+    if (trimmedQuery && trimmedQuery.length < 2) {
+      reply.status(400).send({
+        error: { code: 'INVALID_QUERY', message: 'query is too short' },
+      });
+      return null;
+    }
+    const items = await prismaChatThreadRepository.listRootTimeline({
+      roomId: access.room.id,
+      actor: {
+        userId,
+        roles: accessContext.roles,
+        projectIds: accessContext.projectIds,
+        groupIds: accessContext.groupIds,
+        groupAccountIds: accessContext.groupAccountIds,
+      },
+      includeKnowledgeShares,
+      limit: take,
+      before: beforeDate ?? undefined,
+      tag: trimmedTag || undefined,
+      query: trimmedQuery || undefined,
+    });
+    if (!items) {
+      reply.status(404).send({ error: 'not_found' });
+      return null;
+    }
+    return items;
+  }
 
   app.get(
     '/chat-rooms/personal-general-affairs',
@@ -909,69 +1001,40 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         response: {
           200: chatRootTimelineListResponseSchema,
           400: chatApiErrorResponseSchema,
+          404: chatTimelineNotFoundResponseSchema,
         },
       },
     },
     async (req, reply) => {
-      const { roomId } = req.params as { roomId: string };
-      const { limit, before, tag, q } = req.query as {
-        limit?: string;
-        before?: string;
-        tag?: string;
-        q?: string;
-      };
-      const userId = requireUserId(reply, req.user?.userId);
-      if (typeof userId !== 'string') return userId;
-      const accessContext = readRoomAccessContext(req);
-      const access = await ensureRoomAccessWithReasonError({
-        reply,
-        roomId,
-        userId,
-        accessContext,
-        accessLevel: 'read',
-      });
-      if (!access) return reply;
-
-      const take = parseLimit(limit);
-      if (!take) {
-        return reply.status(400).send({
-          error: {
-            code: 'INVALID_LIMIT',
-            message: 'limit must be a positive integer',
-          },
-        });
-      }
-      const beforeDate = parseDateParam(before);
-      if (before && !beforeDate) {
-        return reply.status(400).send({
-          error: { code: 'INVALID_DATE', message: 'Invalid before date' },
-        });
-      }
-      const trimmedTag = typeof tag === 'string' ? tag.trim() : '';
-      if (trimmedTag.length > 32) {
-        return reply.status(400).send({
-          error: { code: 'INVALID_TAG', message: 'Tag is too long' },
-        });
-      }
-      const trimmedQuery = typeof q === 'string' ? q.trim() : '';
-      if (trimmedQuery.length > 100) {
-        return reply.status(400).send({
-          error: { code: 'INVALID_QUERY', message: 'query is too long' },
-        });
-      }
-      if (trimmedQuery && trimmedQuery.length < 2) {
-        return reply.status(400).send({
-          error: { code: 'INVALID_QUERY', message: 'query is too short' },
-        });
-      }
-      const items = await prismaChatThreadRepository.listRootTimeline({
-        roomId: access.room.id,
-        limit: take,
-        before: beforeDate ?? undefined,
-        tag: trimmedTag || undefined,
-        query: trimmedQuery || undefined,
-      });
+      const items = await readRootTimeline(req, reply, false);
+      if (!items) return;
       return { items: items.map(chatRootTimelineMessageResponse) };
+    },
+  );
+
+  app.get(
+    '/chat-rooms/:roomId/knowledge-share-messages',
+    {
+      preHandler: requireRole(chatRoles),
+      schema: {
+        tags: ['chat', 'knowledge'],
+        params: chatRoomTimelineParamsSchema,
+        querystring: chatRoomTimelineQuerySchema,
+        response: {
+          200: chatKnowledgeShareSummaryListResponseSchema,
+          400: chatApiErrorResponseSchema,
+          404: chatTimelineNotFoundResponseSchema,
+        },
+      },
+    },
+    async (req, reply) => {
+      const roots = await readRootTimeline(req, reply, true);
+      if (!roots) return;
+      return {
+        items: roots
+          .map(chatKnowledgeShareSummaryResponse)
+          .filter((summary) => summary !== null),
+      };
     },
   );
 

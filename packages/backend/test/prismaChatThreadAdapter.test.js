@@ -4,6 +4,13 @@ import test from 'node:test';
 import { createPrismaChatThreadRepository } from '../dist/adapters/chat/prismaChatThreadAdapter.js';
 
 const now = new Date('2026-08-08T00:00:00.000Z');
+const actor = {
+  userId: 'user-1',
+  roles: ['user'],
+  projectIds: ['project-1'],
+  groupIds: [],
+  groupAccountIds: [],
+};
 
 function root(id, replies = []) {
   return {
@@ -36,8 +43,27 @@ test('root timeline applies root/deletion predicates before the bounded query wi
   const rows = [
     root('root-1', [new Date('2026-08-08T00:01:00.000Z')]),
     root('root-2'),
+    root('root-3'),
+    root('root-4'),
+    root('root-5'),
   ];
   const tx = {
+    chatRoom: {
+      async findUnique() {
+        calls.push(['roomAcl']);
+        return {
+          id: 'room-1',
+          type: 'company',
+          projectId: null,
+          isOfficial: true,
+          groupId: null,
+          viewerGroupIds: null,
+          posterGroupIds: null,
+          deletedAt: null,
+          allowExternalUsers: false,
+        };
+      },
+    },
     chatMessage: {
       async findMany(input) {
         calls.push(['roots', input]);
@@ -71,6 +97,37 @@ test('root timeline applies root/deletion predicates before the bounded query wi
         return [];
       },
     },
+    knowledgeShare: {
+      async findMany(input) {
+        calls.push(['knowledgeShares', input]);
+        return [
+          {
+            id: 'share-posted',
+            chatMessageId: 'root-1',
+            status: 'posted',
+            version: 2,
+          },
+          {
+            id: 'share-revoked',
+            chatMessageId: 'root-2',
+            status: 'revoked',
+            version: 3,
+          },
+          {
+            id: 'share-pending',
+            chatMessageId: 'root-3',
+            status: 'pending',
+            version: 1,
+          },
+          {
+            id: 'share-failed',
+            chatMessageId: 'root-4',
+            status: 'failed',
+            version: 4,
+          },
+        ];
+      },
+    },
   };
   const host = {
     async $transaction(operation, options) {
@@ -81,6 +138,8 @@ test('root timeline applies root/deletion predicates before the bounded query wi
   const repository = createPrismaChatThreadRepository(host);
   const result = await repository.listRootTimeline({
     roomId: 'room-1',
+    actor,
+    includeKnowledgeShares: true,
     limit: 50,
     before: new Date('2026-08-09T00:00:00.000Z'),
     tag: 'tag-a',
@@ -88,9 +147,16 @@ test('root timeline applies root/deletion predicates before the bounded query wi
   });
   assert.deepEqual(
     calls.map(([kind]) => kind),
-    ['roots', 'ackRequests', 'attachments', 'aggregates'],
+    [
+      'roomAcl',
+      'roots',
+      'ackRequests',
+      'attachments',
+      'knowledgeShares',
+      'aggregates',
+    ],
   );
-  assert.deepEqual(calls[0][1].where, {
+  assert.deepEqual(calls[1][1].where, {
     roomId: 'room-1',
     parentMessageId: null,
     threadRootId: null,
@@ -109,11 +175,160 @@ test('root timeline applies root/deletion predicates before the bounded query wi
       },
     ],
   });
-  assert.equal(calls[0][1].take, 50);
+  assert.equal(calls[1][1].take, 50);
+  assert.deepEqual(calls[4][1], {
+    where: {
+      chatMessageId: {
+        in: ['root-1', 'root-2', 'root-3', 'root-4', 'root-5'],
+      },
+      status: { in: ['posted', 'revoked'] },
+    },
+    select: {
+      id: true,
+      chatMessageId: true,
+      status: true,
+      version: true,
+    },
+  });
   assert.deepEqual(
     result.map((entry) => entry.replyCount),
-    [1, 0],
+    [1, 0, 0, 0, 0],
   );
+  assert.deepEqual(result[0].knowledgeShare, {
+    shareId: 'share-posted',
+    status: 'posted',
+    version: 2,
+    schemaVersion: 1,
+  });
+  assert.deepEqual(result[1].knowledgeShare, {
+    shareId: 'share-revoked',
+    status: 'revoked',
+    version: 3,
+    schemaVersion: 1,
+  });
+  for (const index of [2, 3, 4]) {
+    assert.equal(Object.hasOwn(result[index], 'knowledgeShare'), false);
+  }
+});
+
+test('root timeline returns null before reading messages when same-snapshot read ACL is denied', async () => {
+  const calls = [];
+  const tx = {
+    chatRoom: {
+      async findUnique() {
+        calls.push('roomAcl');
+        return {
+          id: 'room-1',
+          type: 'company',
+          projectId: null,
+          isOfficial: true,
+          groupId: null,
+          viewerGroupIds: ['group-hidden'],
+          posterGroupIds: null,
+          deletedAt: null,
+          allowExternalUsers: false,
+        };
+      },
+    },
+    chatMessage: {
+      async findMany() {
+        calls.push('roots');
+        return [];
+      },
+    },
+  };
+  const repository = createPrismaChatThreadRepository({
+    async $transaction(operation, options) {
+      assert.equal(options.isolationLevel, 'RepeatableRead');
+      return operation(tx);
+    },
+  });
+
+  const result = await repository.listRootTimeline({
+    roomId: 'room-1',
+    actor,
+    limit: 50,
+  });
+
+  assert.equal(result, null);
+  assert.deepEqual(calls, ['roomAcl']);
+});
+
+test('project root timeline preserves canonical project claims and requires an active project before message/share reads', async () => {
+  const testCases = [
+    {
+      label: 'canonical project claim without a ProjectMember row',
+      requestActor: actor,
+      project: { id: 'project-1' },
+      expected: [],
+      expectedCalls: ['roomAcl', 'activeProject', 'roots'],
+    },
+    {
+      label: 'admin with deleted project',
+      requestActor: { ...actor, roles: ['admin'], projectIds: [] },
+      project: null,
+      expected: null,
+      expectedCalls: ['roomAcl', 'activeProject'],
+    },
+  ];
+
+  for (const testCase of testCases) {
+    const calls = [];
+    const tx = {
+      chatRoom: {
+        async findUnique() {
+          calls.push('roomAcl');
+          return {
+            id: 'room-1',
+            type: 'project',
+            projectId: 'project-1',
+            isOfficial: true,
+            groupId: null,
+            viewerGroupIds: null,
+            posterGroupIds: null,
+            deletedAt: null,
+            allowExternalUsers: false,
+          };
+        },
+      },
+      project: {
+        async findFirst(input) {
+          calls.push('activeProject');
+          assert.deepEqual(input.where, {
+            id: 'project-1',
+            deletedAt: null,
+          });
+          return testCase.project;
+        },
+      },
+      chatMessage: {
+        async findMany() {
+          calls.push('roots');
+          return [];
+        },
+      },
+      knowledgeShare: {
+        async findMany() {
+          throw new Error('empty pages must not query KnowledgeShare');
+        },
+      },
+    };
+    const repository = createPrismaChatThreadRepository({
+      async $transaction(operation, options) {
+        assert.equal(options.isolationLevel, 'RepeatableRead');
+        return operation(tx);
+      },
+    });
+
+    const result = await repository.listRootTimeline({
+      roomId: 'room-1',
+      actor: testCase.requestActor,
+      limit: 50,
+    });
+
+    assert.deepEqual(result, testCase.expected, testCase.label);
+    assert.deepEqual(calls, testCase.expectedCalls, testCase.label);
+  }
 });
 
 test('reply creation rechecks the active root, same room, and post ACL in one transaction', async () => {
@@ -433,6 +648,11 @@ test('thread page uses one read snapshot for identity, access, root, and replies
         return [];
       },
     },
+    knowledgeShare: {
+      async findMany() {
+        throw new Error('the legacy thread response must not hydrate shares');
+      },
+    },
   };
   const host = {
     async $transaction(operation, options) {
@@ -461,7 +681,9 @@ test('thread page uses one read snapshot for identity, access, root, and replies
     });
   });
   assert.equal(result.root.id, 'root-1');
+  assert.equal(Object.hasOwn(result.root, 'knowledgeShare'), false);
   assert.equal(result.replies.length, 1);
+  assert.equal(Object.hasOwn(result.replies[0], 'knowledgeShare'), false);
   assert.deepEqual(
     calls.map(([kind]) => kind),
     [
@@ -474,4 +696,73 @@ test('thread page uses one read snapshot for identity, access, root, and replies
       'aggregates',
     ],
   );
+});
+
+test('thread snapshot rejects an inactive project before root/share hydration', async () => {
+  const calls = [];
+  const tx = {
+    chatMessage: {
+      async findUnique() {
+        calls.push('identity');
+        return {
+          id: 'root-1',
+          roomId: 'room-1',
+          parentMessageId: null,
+          threadRootId: null,
+        };
+      },
+      async findFirst() {
+        calls.push('root');
+        throw new Error('root must not be read after membership revocation');
+      },
+    },
+    chatRoom: {
+      async findUnique() {
+        calls.push('roomAcl');
+        return {
+          id: 'room-1',
+          type: 'project',
+          projectId: 'project-1',
+          isOfficial: true,
+          groupId: null,
+          viewerGroupIds: null,
+          posterGroupIds: null,
+          deletedAt: null,
+          allowExternalUsers: false,
+        };
+      },
+    },
+    project: {
+      async findFirst() {
+        calls.push('activeProject');
+        return null;
+      },
+    },
+    knowledgeShare: {
+      async findMany() {
+        calls.push('knowledgeShares');
+        throw new Error('KnowledgeShare must not be read after revocation');
+      },
+    },
+  };
+  const repository = createPrismaChatThreadRepository({
+    async $transaction(operation, options) {
+      assert.equal(options.isolationLevel, 'RepeatableRead');
+      return operation(tx);
+    },
+  });
+
+  const result = await repository.withReadSnapshot(async (snapshot) => {
+    const identity = await snapshot.resolveMessage('root-1');
+    assert.equal(identity.id, 'root-1');
+    if (!(await snapshot.canReadRoom(identity.roomId, actor))) return null;
+    return snapshot.readThread({
+      roomId: identity.roomId,
+      rootMessageId: identity.id,
+      limit: 10,
+    });
+  });
+
+  assert.equal(result, null);
+  assert.deepEqual(calls, ['identity', 'roomAcl', 'activeProject']);
 });

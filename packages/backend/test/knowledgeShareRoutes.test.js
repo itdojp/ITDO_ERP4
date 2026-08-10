@@ -7,6 +7,7 @@ import {
   knowledgeShareChatActorFromRequest,
   knowledgeShareCommitResponse,
   knowledgeSharePreviewResponse,
+  knowledgeShareRoomCardResponse,
   knowledgeShareStatusResponse,
   registerKnowledgeShareRoutes,
 } from '../dist/routes/knowledgeShares.js';
@@ -209,6 +210,21 @@ function service(overrides = {}) {
         },
       };
     },
+    async roomCard() {
+      return {
+        ok: true,
+        value: {
+          shareId: 'share-1',
+          status: 'posted',
+          version: 2,
+          schemaVersion: 1,
+          card: card(),
+          canOpenSource: false,
+          sourceKnowledgeItemId: 'must-not-leak',
+          providerKey: 'must-not-leak',
+        },
+      };
+    },
     ...overrides,
   };
 }
@@ -359,6 +375,81 @@ test('response mappers discard source identities, internal hashes, provider fiel
       resultUnknown: false,
     },
   );
+
+  const roomCard = knowledgeShareRoomCardResponse({
+    shareId: 'share-1',
+    status: 'posted',
+    version: 2,
+    schemaVersion: 1,
+    card: card(),
+    canOpenSource: true,
+    sourceKnowledgeItemId: 'must-not-leak',
+    providerKey: 'must-not-leak',
+  });
+  const serializedRoomCard = JSON.stringify(roomCard);
+  assert.equal(serializedRoomCard.includes('sourceKnowledgeItemId'), false);
+  assert.equal(serializedRoomCard.includes('providerKey'), false);
+  assert.equal(roomCard.canOpenSource, true);
+
+  assert.deepEqual(
+    knowledgeShareRoomCardResponse({
+      shareId: 'share-1',
+      status: 'revoked',
+      version: 3,
+      schemaVersion: 1,
+      card: card(),
+      canOpenSource: true,
+    }),
+    {
+      shareId: 'share-1',
+      status: 'revoked',
+      version: 3,
+      schemaVersion: 1,
+      card: null,
+      canOpenSource: false,
+    },
+  );
+});
+
+test('room card endpoint uses current canonical actors and an allowlisted response', async (t) => {
+  const calls = [];
+  const app = await build(
+    service({
+      async roomCard(input) {
+        calls.push(input);
+        return {
+          ok: true,
+          value: {
+            shareId: 'share-1',
+            status: 'posted',
+            version: 2,
+            schemaVersion: 1,
+            card: card(),
+            canOpenSource: false,
+            sourceKnowledgeItemId: 'must-not-leak',
+          },
+        };
+      },
+    }),
+  );
+  t.after(() => app.close());
+
+  const response = await app.inject({
+    method: 'GET',
+    url: '/chat-messages/message-1/knowledge-share',
+  });
+  assert.equal(response.statusCode, 200);
+  const body = response.json();
+  assert.equal(body.shareId, 'share-1');
+  assert.equal(body.status, 'posted');
+  assert.equal(body.version, 2);
+  assert.equal(body.card.title, 'Selected title');
+  assert.equal(body.canOpenSource, false);
+  assert.equal(response.body.includes('sourceKnowledgeItemId'), false);
+  assert.equal(response.body.includes('providerKey'), false);
+  assert.equal(calls[0].actor.userId, 'owner-1');
+  assert.equal(calls[0].chatActor.canonicalUserId, 'owner-1');
+  assert.equal(calls[0].messageId, 'message-1');
 });
 
 test('snapshot preview serializes only the explicitly selected provenance or excerpt fields', async (t) => {

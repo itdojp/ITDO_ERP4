@@ -179,6 +179,7 @@ function createHarness() {
     statusInputs: [],
     revokeInputs: [],
     openInputs: [],
+    cardInputs: [],
     requests: new Map(),
     shares: new Map(),
     resolved: resolved(),
@@ -270,6 +271,20 @@ function createHarness() {
     async openSource(input) {
       state.openInputs.push(structuredClone(input));
       return { ok: true, value: { knowledgeItemId: itemId } };
+    },
+    async readRoomCard(input) {
+      state.cardInputs.push(structuredClone(input));
+      return {
+        ok: true,
+        value: {
+          shareId: 'share-card-synthetic',
+          status: 'posted',
+          version: 2,
+          schemaVersion: 1,
+          card: card(),
+          canOpenSource: false,
+        },
+      };
     },
   };
 
@@ -851,6 +866,45 @@ test('status, revoke and source-open delegate through bounded fail-closed ports'
   });
   assert.equal(invalid.ok, false);
   assert.equal(invalid.code, 'invalid_request');
+});
+
+test('room card returns only the public immutable card contract and validates message identity', async () => {
+  const harness = createHarness();
+  const result = await harness.service.roomCard({
+    actor,
+    chatActor,
+    messageId: 'message-synthetic',
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.shareId, 'share-card-synthetic');
+  assert.equal(result.value.status, 'posted');
+  assert.equal(result.value.version, 2);
+  assert.equal(result.value.canOpenSource, false);
+  assert.equal(result.value.card.title, 'Selected title');
+  const serialized = JSON.stringify(result.value);
+  for (const privateValue of [
+    'snapshot-synthetic',
+    'assignment-selected',
+    'annotation-selected',
+    'turn-selected',
+    'synthesis-selected',
+  ]) {
+    assert.equal(serialized.includes(privateValue), false);
+  }
+  assert.deepEqual(harness.state.cardInputs[0], {
+    actor,
+    chatActor,
+    messageId: 'message-synthetic',
+  });
+
+  const invalid = await harness.service.roomCard({
+    actor,
+    chatActor,
+    messageId: 'message\u202ebad',
+  });
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.code, 'invalid_request');
+  assert.equal(harness.state.cardInputs.length, 1);
 });
 
 test('reconcile invokes only the read-only reconciliation port and never reposts', async () => {

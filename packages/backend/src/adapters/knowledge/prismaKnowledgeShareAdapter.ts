@@ -26,7 +26,11 @@ import {
   KnowledgeSynthesisAccessBudgetError,
 } from '../../application/knowledge/knowledgeSynthesisAccessContext.js';
 import { knowledgeProvenanceAuditActor } from '../../application/knowledge/knowledgeProvenanceValidation.js';
-import { ensureChatRoomContentAccess } from '../../services/chatRoomAccess.js';
+import {
+  chatRoomProjectId,
+  ensureChatRoomContentAccess,
+  hasActiveChatProject,
+} from '../../services/chatRoomAccess.js';
 import { prisma } from '../../services/db.js';
 import { defaultChatNotificationPort } from '../notifications/chatNotificationAdapter.js';
 import {
@@ -38,6 +42,10 @@ import { buildKnowledgeVisibilityWhere } from './prismaKnowledgeItemAdapter.js';
 import { buildKnowledgeLabelVisibilityWhere } from './prismaKnowledgeLabelAdapter.js';
 import { PrismaKnowledgeSynthesisRepository } from './prismaKnowledgeProvenanceAdapter.js';
 import { PrismaKnowledgeShareAuditWriter } from './prismaKnowledgeShareAuditAdapter.js';
+import {
+  openPrismaKnowledgeShareSource,
+  readPrismaKnowledgeShareRoomCard,
+} from './prismaKnowledgeShareCardReader.js';
 
 const genericShareBody = 'Knowledge was shared.';
 const serializableAttempts = 3;
@@ -114,39 +122,6 @@ function stableJson(value: unknown): string {
 
 function uniqueSorted(values: readonly string[]): string[] {
   return [...new Set(values)].sort((left, right) => left.localeCompare(right));
-}
-
-function projectIdForCurrentMembership(room: {
-  id: string;
-  type: string;
-  projectId?: string | null;
-  isOfficial: boolean;
-}): string | null {
-  return room.type === 'project'
-    ? (room.projectId ?? (room.isOfficial ? room.id : null))
-    : null;
-}
-
-function bypassesProjectMembership(chatActor: KnowledgeShareChatActor) {
-  return chatActor.roles.includes('admin') || chatActor.roles.includes('mgmt');
-}
-
-async function hasCurrentProjectMembership(
-  transaction: Prisma.TransactionClient,
-  chatActor: KnowledgeShareChatActor,
-  projectId: string | null,
-): Promise<boolean> {
-  if (!projectId || bypassesProjectMembership(chatActor)) return true;
-  return Boolean(
-    await transaction.projectMember.findFirst({
-      where: {
-        projectId,
-        userId: chatActor.userId,
-        project: { deletedAt: null },
-      },
-      select: { id: true },
-    }),
-  );
 }
 
 function isKnowledgeShareIdempotencyUniqueConflict(error: unknown): boolean {
@@ -356,16 +331,13 @@ async function lockRows(
       AND room."deletedAt" IS NULL
     FOR SHARE
   `);
-  if (destinationProjectId && !bypassesProjectMembership(chatActor)) {
+  if (destinationProjectId) {
     await transaction.$queryRaw(Prisma.sql`
-      SELECT membership."id"
-      FROM "ProjectMember" AS membership
-      INNER JOIN "Project" AS project
-        ON project."id" = membership."projectId"
-       AND project."deletedAt" IS NULL
-      WHERE membership."projectId" = ${destinationProjectId}
-        AND membership."userId" = ${chatActor.userId}
-      FOR SHARE OF membership, project
+      SELECT project."id"
+      FROM "Project" AS project
+      WHERE project."id" = ${destinationProjectId}
+        AND project."deletedAt" IS NULL
+      FOR SHARE
     `);
   }
   await transaction.$queryRaw(Prisma.sql`
@@ -478,13 +450,12 @@ async function resolveMaterial(
       'post_rejected',
     );
   }
-  const destinationProjectId = projectIdForCurrentMembership(roomAccess.room);
+  const destinationProjectId = chatRoomProjectId(roomAccess.room);
   if (
-    !(await hasCurrentProjectMembership(
-      transaction,
-      input.chatActor,
-      destinationProjectId,
-    ))
+    !(await hasActiveChatProject({
+      room: roomAccess.room,
+      client: transaction as unknown as typeof prisma,
+    }))
   ) {
     return resolveFailure(404, 'not_found', 'room_unavailable');
   }
@@ -1463,61 +1434,16 @@ export class PrismaKnowledgeShareAdapter
     }
   }
 
+  async readRoomCard(
+    input: Parameters<KnowledgeShareStorePort['readRoomCard']>[0],
+  ) {
+    return readPrismaKnowledgeShareRoomCard(this.host, input);
+  }
+
   async openSource(
     input: Parameters<KnowledgeShareStorePort['openSource']>[0],
   ) {
-    return this.host.$transaction(
-      async (transaction) => {
-        const share = await transaction.knowledgeShare.findFirst({
-          where: {
-            id: input.shareId,
-            status: 'posted',
-            revokedAt: null,
-          },
-          select: {
-            sourceKnowledgeItemId: true,
-            destinationRoomId: true,
-          },
-        });
-        if (!share) return failure(404, 'not_found');
-        const roomAccess = await ensureChatRoomContentAccess({
-          roomId: share.destinationRoomId,
-          userId: input.chatActor.userId,
-          roles: input.chatActor.roles,
-          projectIds: input.chatActor.projectIds,
-          groupIds: input.chatActor.groupIds,
-          groupAccountIds: input.chatActor.groupAccountIds,
-          accessLevel: 'read',
-          client: transaction as unknown as typeof prisma,
-        });
-        if (!roomAccess.ok) return failure(404, 'not_found');
-        const destinationProjectId = projectIdForCurrentMembership(
-          roomAccess.room,
-        );
-        if (
-          !(await hasCurrentProjectMembership(
-            transaction,
-            input.chatActor,
-            destinationProjectId,
-          ))
-        ) {
-          return failure(404, 'not_found');
-        }
-        const item = await transaction.knowledgeItem.findFirst({
-          where: {
-            AND: [
-              { id: share.sourceKnowledgeItemId },
-              buildKnowledgeVisibilityWhere(input.actor),
-            ],
-          },
-          select: { id: true },
-        });
-        return item
-          ? success({ knowledgeItemId: item.id })
-          : failure(404, 'not_found');
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
-    );
+    return openPrismaKnowledgeShareSource(this.host, input);
   }
 }
 

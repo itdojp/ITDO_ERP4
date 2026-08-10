@@ -36,6 +36,13 @@ const roomId = 'old-app-thread-room';
 const rootId = 'old-app-thread-root';
 const postMigrationRootId = 'old-app-post-migration-root';
 const ownerId = 'old-app-thread-owner';
+const ownerThreadActor = {
+  userId: ownerId,
+  roles: ['user'],
+  projectIds: [],
+  groupIds: [],
+  groupAccountIds: [],
+};
 const backfillRoomId = 'old-app-sequence-backfill-room';
 const backfillRows = [
   {
@@ -156,6 +163,7 @@ if (mode === 'seed') {
     assert.equal(root.ackRequest.id, 'old-app-ack-request');
     assert.equal(root.attachments[0].id, 'old-app-attachment');
     const timeline = await prismaChatThreadRepository.listRootTimeline({
+      actor: ownerThreadActor,
       roomId,
       limit: 20,
     });
@@ -315,6 +323,7 @@ if (mode === 'seed') {
       new Set(['current-app-reactor', 'old-app-reactor', ownerId]),
     );
     const timeline = await prismaChatThreadRepository.listRootTimeline({
+      actor: ownerThreadActor,
       roomId,
       limit: 20,
     });

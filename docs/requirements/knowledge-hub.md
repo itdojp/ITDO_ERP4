@@ -481,8 +481,9 @@ mutationする。
 - Knowledge actorのcanonical `UserAccount.id`と既存Chat identityを分離して同じ認証要求から
   server-sideに解決し、share rowの`chatPosterUserId`、固定fallback本文、active rootをDB制約で
   検証する。source ownerまたはsharerだけがrevokeでき、outsiderには存在を返さない。
-- project destinationでは非privileged actorのcurrent `ProjectMember` rowをpreview/commit transactionで
-  再照会・lockし、DB membership失効後のstale JWT project claimを認可根拠にしない。
+- project destinationでは既存Chat room policyのcanonical project claimを維持し、そのpolicyを
+  preview/commit transactionで再評価する。加えてactive `Project` rowを再照会・lockし、削除済み
+  projectのroom aliasを認可根拠にしない。`ProjectMember` rowを新しい必須条件として追加しない。
 - preview audit target、signed preview token、commit aggregateは同じ予約share IDへ相関させる。
   同じpreviewを別request keyへ再束縛する操作はsanitized conflictとし、Chat rootを作成しない。
 - 投稿確定後のnotification/Web Push/emailには固定fallbackだけを渡し、選択内容やprovider URLを
@@ -493,6 +494,17 @@ mutationする。
   DB triggerとChat削除serviceの両方で逆方向の本文/投稿者/room/thread/deleted state変更および物理削除を
   禁止し、表示停止は明示的なshare revokeだけで行う。pending→posted bindingはChat rootを
   `FOR UPDATE`で直列化し、reconcileと本文変更/logical deleteの競合はposted+invalid rootへ収束させない。
+- strict旧clientとの互換のため既存Chat timeline/thread response shapeは変更しない。card-aware clientは
+  `GET /chat-rooms/{roomId}/knowledge-share-messages`から、同じtimeline条件内のmessage ID、share ID、
+  posted/revoked、optimistic version、schema versionだけを固定本数batchで取得する。通常text message、
+  search、notification、unread、ACKは従来のgeneric本文契約を維持する。
+- full cardは`GET /chat-messages/{messageId}/knowledge-share`で単体取得する。active root、current room
+  read ACL、active project、share statusを同一consistent snapshotで再検査し、
+  postedのみselected typed snapshot、revokedはcontent-free placeholder、pending/failed/non-share/
+  unauthorized/missingは同じ404とする。roomがexternal-enabledへ変わった場合は本文を返さない。
+- room-only viewerにはselected snapshotを返してもsource内部IDを返さない。`canOpenSource`はcurrent
+  Knowledge ACLを独立再検査し、source削除/ACL失効後はfalseとする。canonical URLは保存値を信頼せず
+  response時にもcredential/query/fragment/provider hostを再sanitizeする。
 
 ### 08. External LLM common boundary / AI dialogue / cost guard
 
