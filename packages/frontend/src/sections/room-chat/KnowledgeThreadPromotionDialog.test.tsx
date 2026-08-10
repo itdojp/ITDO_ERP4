@@ -504,6 +504,74 @@ describe('KnowledgeThreadPromotionDialog', () => {
     ).toBeDisabled();
   });
 
+  it('owns Escape during a non-abortable commit so the parent thread stays mounted', async () => {
+    previewKnowledgeThreadPromotion.mockImplementation(
+      ({ request }: { request: KnowledgeThreadPromotionRequest }) =>
+        Promise.resolve(previewFor(request)),
+    );
+    const pending = deferred<{
+      promotionId: string;
+      synthesisId: string;
+      synthesisVersionId: string;
+      synthesisVersion: number;
+      scope: 'personal';
+      selectedMessageCount: number;
+      includesSharedCard: boolean;
+      createdAt: string;
+      created: boolean;
+      reused: boolean;
+    }>();
+    commitKnowledgeThreadPromotion.mockReturnValueOnce(pending.promise);
+    const parentClose = vi.fn();
+    const parentEscapeHandler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) parentClose();
+    };
+    window.addEventListener('keydown', parentEscapeHandler);
+    const { props } = renderDialog();
+
+    fireEvent.click(screen.getByRole('checkbox', { name: '返信 1を選択' }));
+    fillRequiredDraft();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'ナレッジ化内容をプレビュー' }),
+    );
+    const previewSection = (
+      await screen.findByRole('heading', { name: 'ナレッジ化プレビュー' })
+    ).closest('section') as HTMLElement;
+    fireEvent.click(
+      within(previewSection).getByRole('checkbox', {
+        name: '選択・省略・保存内容を確認しました',
+      }),
+    );
+    fireEvent.click(
+      within(previewSection).getByRole('button', { name: 'ナレッジ化を確定' }),
+    );
+    await waitFor(() =>
+      expect(commitKnowledgeThreadPromotion).toHaveBeenCalledTimes(1),
+    );
+
+    const dialog = screen.getByRole('dialog', { name: 'スレッドをナレッジ化' });
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(props.onClose).not.toHaveBeenCalled();
+    expect(parentClose).not.toHaveBeenCalled();
+    expect(dialog).toBeVisible();
+
+    pending.resolve({
+      promotionId: 'private-promotion-id',
+      synthesisId: 'private-synthesis-id',
+      synthesisVersionId: 'private-version-id',
+      synthesisVersion: 1,
+      scope: 'personal',
+      selectedMessageCount: 1,
+      includesSharedCard: false,
+      createdAt: '2026-08-10T01:00:00.000Z',
+      created: true,
+      reused: false,
+    });
+    await screen.findByRole('heading', { name: 'ナレッジ化結果と来歴' });
+    window.removeEventListener('keydown', parentEscapeHandler);
+    expect(props.onCommitted).toHaveBeenCalledTimes(1);
+  });
+
   it('provides modal focus, mobile width, and Escape close behavior', () => {
     const outside = document.createElement('button');
     document.body.append(outside);

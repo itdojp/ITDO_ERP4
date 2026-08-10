@@ -27,7 +27,7 @@ export function selectVisibleKnowledgeShareRootMessageIds(
   return [...ids].slice(0, maximumVisibleKnowledgeShareRoots);
 }
 
-function KnowledgeThreadPromotionLauncher({
+export function KnowledgeThreadPromotionLauncher({
   thread,
   share,
 }: {

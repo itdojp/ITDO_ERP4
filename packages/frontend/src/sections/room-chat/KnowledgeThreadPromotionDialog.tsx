@@ -329,8 +329,12 @@ export function KnowledgeThreadPromotionDialog(props: {
 
   const handleDialogKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === 'Escape') {
+      // This dialog is nested inside ChatThreadPanel. Always consume Escape so
+      // the parent thread cannot unmount an in-flight, non-abortable commit and
+      // discard its idempotency/result ownership.
+      event.preventDefault();
+      event.stopPropagation();
       if (!commitInFlightRef.current) {
-        event.preventDefault();
         closeDialog();
       }
       return;

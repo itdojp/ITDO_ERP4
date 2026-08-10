@@ -22,10 +22,17 @@ vi.mock('./KnowledgeSharePanel', () => ({
     itemLabel: string;
     itemScope: string;
     snapshots: Array<{ id: string }>;
+    onCommitBusyChange?: (busy: boolean) => void;
   }) => (
     <div>
       share panel / {props.itemId} / {props.itemLabel} / {props.itemScope} /{' '}
       {props.snapshots.map((snapshot) => snapshot.id).join(',')}
+      <button type="button" onClick={() => props.onCommitBusyChange?.(true)}>
+        共有確定を開始
+      </button>
+      <button type="button" onClick={() => props.onCommitBusyChange?.(false)}>
+        共有確定を完了
+      </button>
     </div>
   ),
 }));
@@ -116,5 +123,34 @@ describe('KnowledgeProvenanceWorkspace', () => {
     );
     expect(screen.getByText('組織scope', { exact: false })).toBeVisible();
     expect(document.body).not.toHaveTextContent('sensitive-item-id');
+  });
+
+  it('keeps the share panel mounted and locks other tabs during a non-abortable commit', () => {
+    const onShareCommitBusyChange = vi.fn();
+    render(
+      <KnowledgeProvenanceWorkspace
+        itemId="item-1"
+        itemLabel="確定中Knowledge"
+        itemScope="personal"
+        snapshots={[]}
+        onShareCommitBusyChange={onShareCommitBusyChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Chatへ共有' }));
+    fireEvent.click(screen.getByRole('button', { name: '共有確定を開始' }));
+
+    expect(onShareCommitBusyChange).toHaveBeenLastCalledWith(true);
+    expect(screen.getByRole('tab', { name: '本人annotation' })).toBeDisabled();
+    expect(screen.getByRole('tab', { name: '会話・取込' })).toBeDisabled();
+    expect(screen.getByRole('tab', { name: 'Synthesis・結論' })).toBeDisabled();
+    expect(screen.getByText(/確定結果を保持するため/)).toBeVisible();
+    expect(screen.getByText(/share panel \/ item-1/)).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: '共有確定を完了' }));
+    expect(onShareCommitBusyChange).toHaveBeenLastCalledWith(false);
+    expect(screen.getByRole('tab', { name: '本人annotation' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('tab', { name: '本人annotation' }));
+    expect(screen.queryByText(/share panel \/ item-1/)).toBeNull();
   });
 });

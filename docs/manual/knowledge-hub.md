@@ -125,7 +125,7 @@ Synthesis一覧はcurrent actorが参照可能なglobal一覧です。選択中i
 3. 共有するfieldを個別に選択します。初期状態で選択されるのはタイトルだけです。
 4. 必要な場合だけ、ready snapshotのversion／SHA-256／抜粋、active label assignment、current annotation revision、conversation turn、current Synthesis version、共有者メモを選択します。
 5. `共有内容をプレビュー`を選択し、保存されるcard、共有先、省略カテゴリ、有効期限を確認します。この時点ではChatへ投稿されません。
-6. `このpreviewの共有先と選択内容を確認しました`を明示的に選択し、`1回だけChatへ共有`を実行します。
+6. `上記の共有先と共有内容が完全に一致することを確認しました`を明示的に選択し、`確認した内容をChatへ共有`を実行します。
 
 private label、annotation、AI／System／Tool turn、Synthesis、snapshot全文、URLは既定で未選択です。非選択fieldはcardで隠すだけではなく、share snapshotへ保存しません。preview後に元version、選択field、ACL、room post権限が変わった場合は確定せず、再previewが必要です。preview tokenとrequest keyはcomponent memoryだけに保持し、localStorage、画面、logへ表示しません。
 

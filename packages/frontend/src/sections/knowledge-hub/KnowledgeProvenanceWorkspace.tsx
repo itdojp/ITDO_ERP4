@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 
 import { Alert, Card, Tabs } from '../../ui';
 import type { KnowledgeScope, KnowledgeSnapshot } from './knowledgeHubModel';
@@ -25,20 +25,32 @@ export function KnowledgeProvenanceWorkspace(props: {
   itemLabel: string;
   itemScope: KnowledgeScope;
   snapshots: readonly KnowledgeSnapshot[];
+  onShareCommitBusyChange?: (busy: boolean) => void;
 }) {
+  const { onShareCommitBusyChange } = props;
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('annotations');
+  const [shareCommitBusy, setShareCommitBusy] = useState(false);
   const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<WorkspaceTab>>(
     () => new Set(['annotations']),
   );
 
   const selectTab = (value: string) => {
     if (!isWorkspaceTab(value)) return;
+    if (shareCommitBusy && value !== 'share') return;
     setActiveTab(value);
     setVisitedTabs((current) => {
       if (current.has(value)) return current;
       return new Set([...current, value]);
     });
   };
+
+  const handleShareCommitBusyChange = useCallback(
+    (busy: boolean) => {
+      setShareCommitBusy(busy);
+      onShareCommitBusyChange?.(busy);
+    },
+    [onShareCommitBusyChange],
+  );
 
   return (
     <Card className="knowledge-provenance-workspace" padding="small">
@@ -55,12 +67,21 @@ export function KnowledgeProvenanceWorkspace(props: {
         元snapshot、本人annotation、会話turn、Synthesisは別entityとして履歴を保持します。
         外部情報・引用・本人意見・AI・System・Tool・結論をlabelでも区別します。
       </Alert>
+      {shareCommitBusy ? (
+        <Alert variant="warning">
+          Chat共有の確定結果を保持するため、完了するまでtabとKnowledge
+          itemの切り替えを停止しています。
+        </Alert>
+      ) : null}
       <Tabs
         className="knowledge-provenance-workspace-tabs"
         value={activeTab}
         onValueChange={selectTab}
         ariaLabel="Knowledge provenance機能"
-        items={workspaceTabs.map((tab) => ({ ...tab }))}
+        items={workspaceTabs.map((tab) => ({
+          ...tab,
+          disabled: shareCommitBusy && tab.id !== 'share',
+        }))}
         renderPanel={() => (
           <div className="knowledge-provenance-retained-panels">
             {visitedTabs.has('annotations') ? (
@@ -101,6 +122,7 @@ export function KnowledgeProvenanceWorkspace(props: {
                   itemLabel={props.itemLabel}
                   itemScope={props.itemScope}
                   snapshots={props.snapshots}
+                  onCommitBusyChange={handleShareCommitBusyChange}
                 />
               </div>
             ) : null}

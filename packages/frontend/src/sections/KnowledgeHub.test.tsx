@@ -28,8 +28,22 @@ vi.mock('./knowledge-hub/knowledgeHubApi', async (importOriginal) => ({
 }));
 vi.mock('../utils/download', () => ({ downloadResponseAsFile }));
 vi.mock('./knowledge-hub/KnowledgeProvenanceWorkspace', () => ({
-  KnowledgeProvenanceWorkspace: ({ itemLabel }: { itemLabel: string }) => (
-    <div>provenance workspace: {itemLabel}</div>
+  KnowledgeProvenanceWorkspace: ({
+    itemLabel,
+    onShareCommitBusyChange,
+  }: {
+    itemLabel: string;
+    onShareCommitBusyChange?: (busy: boolean) => void;
+  }) => (
+    <div>
+      provenance workspace: {itemLabel}
+      <button type="button" onClick={() => onShareCommitBusyChange?.(true)}>
+        共有確定を開始
+      </button>
+      <button type="button" onClick={() => onShareCommitBusyChange?.(false)}>
+        共有確定を完了
+      </button>
+    </div>
   ),
 }));
 
@@ -123,6 +137,43 @@ describe('KnowledgeHub', () => {
     expect(
       await screen.findByRole('button', { name: /共有元ナレッジ/ }),
     ).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('keeps the selected item mounted while a share commit owns its in-memory result', async () => {
+    const first = makeItem({ id: 'item-1', title: '共有確定元' });
+    const second = makeItem({ id: 'item-2', title: '切替候補' });
+    apiMocks.listKnowledgeInbox.mockResolvedValue([first, second]);
+    apiMocks.listKnowledgeSnapshots.mockResolvedValue([makeSnapshot()]);
+    render(<KnowledgeHub />);
+
+    expect(
+      await screen.findByText('provenance workspace: 共有確定元'),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '共有確定を開始' }));
+
+    const secondItem = screen.getByRole('button', { name: /切替候補/ });
+    expect(secondItem).toBeDisabled();
+    fireEvent.click(secondItem);
+    expect(screen.getByText('provenance workspace: 共有確定元')).toBeVisible();
+
+    window.dispatchEvent(
+      new CustomEvent('erp4_open_entity', {
+        detail: { kind: 'knowledge_item', id: 'item-deep-link' },
+      }),
+    );
+    expect(apiMocks.getKnowledgeItem).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText(
+        /確定結果を確認するまでKnowledge itemを切り替えられません/,
+      ),
+    ).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: '共有確定を完了' }));
+    expect(secondItem).toBeEnabled();
+    fireEvent.click(secondItem);
+    expect(
+      await screen.findByText('provenance workspace: 切替候補'),
+    ).toBeVisible();
   });
 
   it('loads an empty Inbox with personal/new/text as the safe defaults', async () => {

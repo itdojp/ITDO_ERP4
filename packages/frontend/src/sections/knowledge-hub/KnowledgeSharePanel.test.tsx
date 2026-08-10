@@ -598,6 +598,50 @@ describe('KnowledgeSharePanel', () => {
     );
   });
 
+  it('reports the full non-abortable commit lifetime to its navigation owner', async () => {
+    const onCommitBusyChange = vi.fn();
+    let resolveCommit!: (value: ReturnType<typeof commit>) => void;
+    apiMocks.commitKnowledgeShare.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCommit = resolve;
+      }),
+    );
+    renderPanel({ onCommitBusyChange });
+    await waitForCandidates();
+    fireEvent.change(screen.getByLabelText('共有先Chatルーム'), {
+      target: { value: 'room-1' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: '共有内容をプレビュー' }),
+    );
+    await screen.findByRole('heading', { name: '共有内容の最終確認' });
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: '上記の共有先と共有内容が完全に一致することを確認しました',
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: '確認した内容をChatへ共有' }),
+    );
+
+    await waitFor(() =>
+      expect(onCommitBusyChange).toHaveBeenLastCalledWith(true),
+    );
+    expect(
+      screen.getByRole('button', { name: '確認した内容をChatへ共有' }),
+    ).toBeDisabled();
+
+    await act(async () => {
+      resolveCommit(commit());
+      await Promise.resolve();
+    });
+    await screen.findByRole('heading', { name: '投稿済み' });
+    expect(onCommitBusyChange.mock.calls.map(([busy]) => busy)).toEqual([
+      true,
+      false,
+    ]);
+  });
+
   it('offers explicit read-only pending reconcile and explicit revoke', async () => {
     apiMocks.commitKnowledgeShare.mockResolvedValue(commit('pending'));
     renderPanel();

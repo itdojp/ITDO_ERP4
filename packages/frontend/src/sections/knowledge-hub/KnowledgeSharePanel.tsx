@@ -433,6 +433,7 @@ export function KnowledgeSharePanel(props: {
   itemLabel: string;
   itemScope: KnowledgeScope;
   snapshots: readonly KnowledgeSnapshot[];
+  onCommitBusyChange?: (busy: boolean) => void;
 }): JSX.Element {
   const { itemId, itemLabel, itemScope, snapshots } = props;
   const contextKey = JSON.stringify([itemId, itemScope]);
@@ -449,6 +450,7 @@ export function KnowledgeSharePanel(props: {
   const candidateAbortRef = useRef<AbortController | null>(null);
   const previewAbortRef = useRef<AbortController | null>(null);
   const statusAbortRef = useRef<AbortController | null>(null);
+  const onCommitBusyChangeRef = useRef(props.onCommitBusyChange);
 
   const [candidateReload, setCandidateReload] = useState(0);
   const [stateContextKey, setStateContextKey] = useState(contextKey);
@@ -482,6 +484,10 @@ export function KnowledgeSharePanel(props: {
   useLayoutEffect(() => {
     activeContextRef.current = contextKey;
   }, [contextKey]);
+
+  useLayoutEffect(() => {
+    onCommitBusyChangeRef.current = props.onCommitBusyChange;
+  }, [props.onCommitBusyChange]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -1083,6 +1089,7 @@ export function KnowledgeSharePanel(props: {
     commitSequenceRef.current = sequence;
     setCommitAttempted(true);
     setCommitBusy(true);
+    onCommitBusyChangeRef.current?.(true);
     setNotice(null);
     try {
       const result: KnowledgeShareCommit = await commitKnowledgeShare({
@@ -1141,6 +1148,7 @@ export function KnowledgeSharePanel(props: {
           : safeShareErrorMessage(error, 'commit'),
       });
     } finally {
+      onCommitBusyChangeRef.current?.(false);
       if (
         isCurrentContext(requestContext, generation) &&
         commitSequenceRef.current === sequence
