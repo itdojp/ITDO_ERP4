@@ -255,7 +255,11 @@ const previewResponseSchema = {
       required: ['scope', 'organizationGroupCount'],
       properties: {
         scope: { type: 'string', enum: ['personal', 'organization'] },
-        organizationGroupCount: { type: 'integer', minimum: 0, maximum: 100 },
+        organizationGroupCount: {
+          type: 'integer',
+          minimum: 0,
+          maximum: knowledgeThreadPromotionLimits.organizationGroupAccountIds,
+        },
       },
     },
     synthesis: synthesisSchema,

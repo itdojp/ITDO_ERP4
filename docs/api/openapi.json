@@ -11644,7 +11644,7 @@
                       "additionalProperties": false,
                       "properties": {
                         "organizationGroupCount": {
-                          "maximum": 100,
+                          "maximum": 20,
                           "minimum": 0,
                           "type": "integer"
                         },
