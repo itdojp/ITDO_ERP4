@@ -883,6 +883,47 @@ test('openSource requires both current room read ACL and current Knowledge visib
   assert.equal(result.error.code, 'not_found');
 });
 
+test('openSource requires the share to remain bound to an active Chat root', async () => {
+  let roomLookupCount = 0;
+  let knowledgeLookupCount = 0;
+  const transaction = {
+    knowledgeShare: {
+      findFirst: async (query) => {
+        assert.deepEqual(query.where.chatMessage, {
+          is: {
+            parentMessageId: null,
+            threadRootId: null,
+            deletedAt: null,
+          },
+        });
+        return null;
+      },
+    },
+    chatRoom: {
+      findUnique: async () => {
+        roomLookupCount += 1;
+        return room();
+      },
+    },
+    chatRoomMember: { findFirst: async () => null },
+    knowledgeItem: {
+      findFirst: async () => {
+        knowledgeLookupCount += 1;
+        return item();
+      },
+    },
+  };
+
+  const result = await createPrismaKnowledgeShareAdapter(
+    host(transaction),
+  ).openSource({ actor, chatActor, shareId: 'cached-share-id' });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'not_found');
+  assert.equal(roomLookupCount, 0);
+  assert.equal(knowledgeLookupCount, 0);
+});
+
 test('openSource fails closed after a room becomes external-facing', async () => {
   let knowledgeLookupCount = 0;
   const transaction = {

@@ -132,9 +132,10 @@ typed immutable snapshot row だけから表示する。旧 client は relation 
 - roomが投稿後に`allowExternalUsers=true`へ変わった場合、明示的なexternal audience契約がない
   MVPではcard本文をfail closedとする。固定Chat fallback、search、notification、unread、ACKから
   selected contentを再構成できる形にはしない。
-- cardの`canOpenSource`はcard readとは別にcurrent Knowledge ACLを再検査した結果である。
-  source logical delete/ACL失効後もposted snapshotは表示するが、source identityとopen capabilityは
-  返さない。保存済みcanonical URLもresponse時に再sanitizeする。
+- source-openはshareと未削除Chat rootのexact binding、current room ACL、active projectを同一
+  snapshotで再検査する。cardの`canOpenSource`はこれらに加えてcurrent Knowledge ACLを再検査した
+  結果である。source logical delete/ACL失効後もposted snapshotは表示するが、source identityとopen
+  capabilityは返さない。保存済みcanonical URLもresponse時に再sanitizeする。
 
 ### 4. すべての read surface での認可
 

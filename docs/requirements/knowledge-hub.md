@@ -505,8 +505,9 @@ mutationする。
   read ACL、active project、share statusを同一consistent snapshotで再検査し、
   postedのみselected typed snapshot、revokedはcontent-free placeholder、pending/failed/non-share/
   unauthorized/missingは同じ404とする。roomがexternal-enabledへ変わった場合は本文を返さない。
-- room-only viewerにはselected snapshotを返してもsource内部IDを返さない。`canOpenSource`はcurrent
-  Knowledge ACLを独立再検査し、source削除/ACL失効後はfalseとする。canonical URLは保存値を信頼せず
+- room-only viewerにはselected snapshotを返してもsource内部IDを返さない。source-openはshareが現在も
+  未削除のChat rootへbindされていることを同じsnapshotで再検査し、`canOpenSource`はcurrent Knowledge
+  ACLを独立再検査する。source削除/ACL失効後はfalseとする。canonical URLは保存値を信頼せず
   response時にもcredential/query/fragment/provider hostを再sanitizeする。
 
 ### 08. External LLM common boundary / AI dialogue / cost guard

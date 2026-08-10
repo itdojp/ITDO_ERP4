@@ -302,6 +302,13 @@ export async function openPrismaKnowledgeShareSource(
           id: input.shareId,
           status: 'posted',
           revokedAt: null,
+          chatMessage: {
+            is: {
+              parentMessageId: null,
+              threadRootId: null,
+              deletedAt: null,
+            },
+          },
         },
         select: {
           sourceKnowledgeItemId: true,
