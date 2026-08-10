@@ -119,9 +119,11 @@ typed immutable snapshot row だけから表示する。旧 client は relation 
 - room-only viewer の card read は current Chat room ACL、元 item を開く導線は current room ACL と
   current Knowledge ACL を別々に再評価する。card responseに元 item/source rowの内部IDを含めない。
 - 旧root timeline/thread responseはstrict OpenAPI clientとの互換のためshapeを変更しない。
-  card-aware clientは`GET /chat-rooms/{roomId}/knowledge-share-messages`から、同じtimeline条件に対応する
-  `messageId`、`shareId`、`posted|revoked`、optimistic `version`、schema versionだけのcompact
-  discriminatorを固定本数のbatch queryで読む。通常messageはこの専用responseへ含めない。
+  card-aware clientはtimelineで受信した1〜100件のexact message IDを
+  `GET /chat-rooms/{roomId}/knowledge-share-messages?messageIds=...`へ渡し、`messageId`、`shareId`、
+  `posted|revoked`、optimistic `version`、schema versionだけのcompact discriminatorを固定本数の
+  batch queryで読む。timeline query、ACK、attachment、reply aggregateを再実行せず、並行投稿による
+  page driftを避ける。通常messageはこの専用responseへ含めない。
 - card本文は`GET /chat-messages/{messageId}/knowledge-share`から単体取得する。active rootと
   current room ACL、active project、share状態を同一`REPEATABLE READ`
   snapshotで検査する。missing、unauthorized、non-share、pending、failedは同じ404、revokedは

@@ -405,20 +405,20 @@ if (mode === 'seed') {
     assert.equal(card.value.card.title, undefined);
     assert.equal(JSON.stringify(card.value).includes(privateCanary), false);
 
-    const timeline = await createPrismaChatThreadRepository(
+    const summaries = await createPrismaChatThreadRepository(
       prisma,
-    ).listRootTimeline({
+    ).listKnowledgeShareSummaries({
       actor: viewerChatActor,
-      includeKnowledgeShares: true,
       roomId,
-      limit: 20,
+      messageIds: [legacyMessageId, shareMessageId, oldWriteMessageId],
     });
-    assert.ok(timeline);
-    const currentShareRoot = timeline.find(
-      (message) => message.id === shareMessageId,
+    assert.ok(summaries);
+    const currentShareRoot = summaries.find(
+      (message) => message.messageId === shareMessageId,
     );
     assert.ok(currentShareRoot);
-    assert.deepEqual(currentShareRoot.knowledgeShare, {
+    assert.deepEqual(currentShareRoot, {
+      messageId: shareMessageId,
       shareId,
       status: 'posted',
       version: 2,

@@ -58,6 +58,7 @@ import {
 } from './chatThreadResponses.js';
 import {
   chatApiErrorResponseSchema,
+  chatKnowledgeShareSummaryQuerySchema,
   chatKnowledgeShareSummaryListResponseSchema,
   chatMessageSearchSchema,
   chatRoomReadStateSchema,
@@ -101,11 +102,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
     },
   );
 
-  async function readRootTimeline(
-    req: FastifyRequest,
-    reply: FastifyReply,
-    includeKnowledgeShares: boolean,
-  ) {
+  async function readRootTimeline(req: FastifyRequest, reply: FastifyReply) {
     const { roomId } = req.params as { roomId: string };
     const { limit, before, tag, q } = req.query as {
       limit?: string;
@@ -171,7 +168,6 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         groupIds: accessContext.groupIds,
         groupAccountIds: accessContext.groupAccountIds,
       },
-      includeKnowledgeShares,
       limit: take,
       before: beforeDate ?? undefined,
       tag: trimmedTag || undefined,
@@ -1006,7 +1002,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       },
     },
     async (req, reply) => {
-      const items = await readRootTimeline(req, reply, false);
+      const items = await readRootTimeline(req, reply);
       if (!items) return;
       return { items: items.map(chatRootTimelineMessageResponse) };
     },
@@ -1019,7 +1015,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       schema: {
         tags: ['chat', 'knowledge'],
         params: chatRoomTimelineParamsSchema,
-        querystring: chatRoomTimelineQuerySchema,
+        querystring: chatKnowledgeShareSummaryQuerySchema,
         response: {
           200: chatKnowledgeShareSummaryListResponseSchema,
           400: chatApiErrorResponseSchema,
@@ -1028,12 +1024,53 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       },
     },
     async (req, reply) => {
-      const roots = await readRootTimeline(req, reply, true);
-      if (!roots) return;
+      const { roomId } = req.params as { roomId: string };
+      const rawMessageIds = (req.query as { messageIds: string }).messageIds;
+      const messageIds = [
+        ...new Set(rawMessageIds.split(',').map((value) => value.trim())),
+      ];
+      if (
+        messageIds.length === 0 ||
+        messageIds.length > 100 ||
+        messageIds.some(
+          (messageId) => messageId.length === 0 || messageId.length > 200,
+        )
+      ) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_MESSAGE_IDS',
+            message: 'messageIds must contain 1 to 100 valid identifiers',
+          },
+        });
+      }
+      const userId = requireUserId(reply, req.user?.userId);
+      if (typeof userId !== 'string') return;
+      const accessContext = readRoomAccessContext(req);
+      const access = await ensureRoomAccessWithReasonError({
+        reply,
+        roomId,
+        userId,
+        accessContext,
+        accessLevel: 'read',
+      });
+      if (!access) return;
+      const summaries =
+        await prismaChatThreadRepository.listKnowledgeShareSummaries({
+          roomId: access.room.id,
+          actor: {
+            userId,
+            roles: accessContext.roles,
+            projectIds: accessContext.projectIds,
+            groupIds: accessContext.groupIds,
+            groupAccountIds: accessContext.groupAccountIds,
+          },
+          messageIds,
+        });
+      if (!summaries) {
+        return reply.status(404).send({ error: 'not_found' });
+      }
       return {
-        items: roots
-          .map(chatKnowledgeShareSummaryResponse)
-          .filter((summary) => summary !== null),
+        items: summaries.map(chatKnowledgeShareSummaryResponse),
       };
     },
   );

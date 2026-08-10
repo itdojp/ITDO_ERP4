@@ -320,6 +320,7 @@ export async function openPrismaKnowledgeShareSource(
         client: transaction as unknown as typeof prisma,
       });
       if (!roomAccess.ok) return notFound();
+      if (roomAccess.room.allowExternalUsers) return notFound();
       if (
         !(await hasActiveChatProject({
           room: roomAccess.room,

@@ -452,6 +452,54 @@ test('room card endpoint uses current canonical actors and an allowlisted respon
   assert.equal(calls[0].messageId, 'message-1');
 });
 
+for (const role of ['hr', 'external_chat']) {
+  test(`Chat viewer role ${role} reaches room card and source-open services`, async (t) => {
+    const calls = [];
+    const app = await build(
+      service({
+        async roomCard(input) {
+          calls.push(['roomCard', input]);
+          return {
+            ok: true,
+            value: {
+              shareId: 'share-1',
+              status: 'posted',
+              version: 2,
+              schemaVersion: 1,
+              card: card(),
+              canOpenSource: true,
+            },
+          };
+        },
+        async openSource(input) {
+          calls.push(['openSource', input]);
+          return { ok: true, value: { knowledgeItemId: 'item-1' } };
+        },
+      }),
+      requestUser({ roles: [role] }),
+    );
+    t.after(() => app.close());
+
+    const roomCard = await app.inject({
+      method: 'GET',
+      url: '/chat-messages/message-1/knowledge-share',
+    });
+    const source = await app.inject({
+      method: 'GET',
+      url: '/knowledge/shares/share-1/source',
+    });
+
+    assert.equal(roomCard.statusCode, 200);
+    assert.equal(source.statusCode, 200);
+    assert.deepEqual(
+      calls.map(([name]) => name),
+      ['roomCard', 'openSource'],
+    );
+    assert.deepEqual(calls[0][1].chatActor.roles, [role]);
+    assert.equal(calls[0][1].actor.userId, 'owner-1');
+  });
+}
+
 test('snapshot preview serializes only the explicitly selected provenance or excerpt fields', async (t) => {
   let previewCount = 0;
   const app = await build(

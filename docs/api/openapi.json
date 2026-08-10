@@ -11651,33 +11651,11 @@
         "parameters": [
           {
             "in": "query",
-            "name": "limit",
-            "required": false,
+            "name": "messageIds",
+            "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "before",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "tag",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "q",
-            "required": false,
-            "schema": {
+              "maxLength": 20099,
+              "minLength": 1,
               "type": "string"
             }
           },

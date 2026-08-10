@@ -1338,6 +1338,15 @@ try {
   assert.equal(externalizedCard.code, 'not_found');
   assert.equal(externalizedCard.statusCode, 404);
   expectFailure(
+    await adapter.openSource({
+      actor,
+      chatActor,
+      shareId: posted.shareId,
+    }),
+    'not_found',
+    'externalized room cannot reveal source identity',
+  );
+  expectFailure(
     await adapter.postPending({
       actor,
       chatActor,

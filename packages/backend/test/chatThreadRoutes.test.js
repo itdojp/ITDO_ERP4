@@ -34,6 +34,8 @@ function message(overrides = {}) {
 
 function withStubs(snapshotRepository, run) {
   const originalListRootTimeline = prismaChatThreadRepository.listRootTimeline;
+  const originalListKnowledgeShareSummaries =
+    prismaChatThreadRepository.listKnowledgeShareSummaries;
   const originalSnapshot = prismaChatThreadRepository.withReadSnapshot;
   const originalPrepareReply = prismaChatThreadRepository.prepareReply;
   const originalCreateReply = prismaChatThreadRepository.createReply;
@@ -44,6 +46,12 @@ function withStubs(snapshotRepository, run) {
     snapshotRepository.timelineInputs?.push(input);
     return Object.hasOwn(snapshotRepository, 'timelineResult')
       ? snapshotRepository.timelineResult
+      : [];
+  };
+  prismaChatThreadRepository.listKnowledgeShareSummaries = async (input) => {
+    snapshotRepository.summaryInputs?.push(input);
+    return Object.hasOwn(snapshotRepository, 'summaryResult')
+      ? snapshotRepository.summaryResult
       : [];
   };
   prismaChatThreadRepository.withReadSnapshot = async (operation) =>
@@ -64,6 +72,8 @@ function withStubs(snapshotRepository, run) {
     .then(() => run(auditEntries))
     .finally(() => {
       prismaChatThreadRepository.listRootTimeline = originalListRootTimeline;
+      prismaChatThreadRepository.listKnowledgeShareSummaries =
+        originalListKnowledgeShareSummaries;
       prismaChatThreadRepository.withReadSnapshot = originalSnapshot;
       prismaChatThreadRepository.prepareReply = originalPrepareReply;
       prismaChatThreadRepository.createReply = originalCreateReply;
@@ -184,20 +194,8 @@ test('GET thread keeps the old response shape when an internal share relation ex
 
 test('dedicated room summary route exposes compact share metadata without changing the old timeline response', async () => {
   const timelineInputs = [];
-  const shareRoot = {
-    ...message({
-      knowledgeShare: {
-        shareId: 'share-posted',
-        status: 'posted',
-        version: 2,
-        schemaVersion: 1,
-        selectedContent: 'must not leak',
-        sourceKnowledgeItemId: 'source-sensitive',
-      },
-    }),
-    replyCount: 0,
-    lastReplyAt: null,
-  };
+  const summaryInputs = [];
+  const shareRoot = { ...message(), replyCount: 0, lastReplyAt: null };
   const room = {
     id: 'room-1',
     type: 'company',
@@ -213,6 +211,18 @@ test('dedicated room summary route exposes compact share metadata without changi
     readableRepository({
       timelineInputs,
       timelineResult: [shareRoot],
+      summaryInputs,
+      summaryResult: [
+        {
+          messageId: 'root-1',
+          shareId: 'share-posted',
+          status: 'posted',
+          version: 2,
+          schemaVersion: 1,
+          selectedContent: 'must not leak',
+          sourceKnowledgeItemId: 'source-sensitive',
+        },
+      ],
       accessRooms: { 'room-1': room },
     }),
     async (server) => {
@@ -229,7 +239,7 @@ test('dedicated room summary route exposes compact share metadata without changi
 
       const summary = await server.inject({
         method: 'GET',
-        url: '/chat-rooms/room-1/knowledge-share-messages',
+        url: '/chat-rooms/room-1/knowledge-share-messages?messageIds=root-1,root-2,root-1',
         headers,
       });
       assert.equal(summary.statusCode, 200, summary.body);
@@ -248,8 +258,43 @@ test('dedicated room summary route exposes compact share metadata without changi
       assert.equal(summary.body.includes('must not leak'), false);
     },
   );
-  assert.equal(timelineInputs[0].includeKnowledgeShares, false);
-  assert.equal(timelineInputs[1].includeKnowledgeShares, true);
+  assert.equal(timelineInputs.length, 1);
+  assert.deepEqual(summaryInputs[0].messageIds, ['root-1', 'root-2']);
+  assert.equal(summaryInputs[0].roomId, 'room-1');
+});
+
+test('knowledge-share summary route rejects missing, empty, oversized, and over-count message ID sets', async () => {
+  const room = {
+    id: 'room-1',
+    type: 'company',
+    projectId: null,
+    isOfficial: true,
+    groupId: null,
+    viewerGroupIds: null,
+    posterGroupIds: null,
+    deletedAt: null,
+    allowExternalUsers: false,
+  };
+  const summaryInputs = [];
+  await withServer(
+    readableRepository({
+      summaryInputs,
+      accessRooms: { 'room-1': room },
+    }),
+    async (server) => {
+      const cases = [
+        '/chat-rooms/room-1/knowledge-share-messages',
+        '/chat-rooms/room-1/knowledge-share-messages?messageIds=%20',
+        `/chat-rooms/room-1/knowledge-share-messages?messageIds=${'x'.repeat(201)}`,
+        `/chat-rooms/room-1/knowledge-share-messages?messageIds=${Array.from({ length: 101 }, (_, index) => `root-${index}`).join(',')}`,
+      ];
+      for (const url of cases) {
+        const response = await server.inject({ method: 'GET', url, headers });
+        assert.equal(response.statusCode, 400, response.body);
+      }
+    },
+  );
+  assert.deepEqual(summaryInputs, []);
 });
 
 test('timeline routes pass the current actor and normalize same-snapshot ACL denial to 404', async () => {

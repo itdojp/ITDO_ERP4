@@ -27,6 +27,7 @@ import {
   requireCanonicalKnowledgeActor,
 } from './knowledgeRouteContext.js';
 import { knowledgeProvenanceErrorResponseSchema } from './knowledgeProvenanceSchemas.js';
+import { CHAT_ROLES } from './chat/shared/constants.js';
 
 const allowedRoles = ['admin', 'mgmt', 'exec', 'user'] as const;
 
@@ -825,6 +826,10 @@ export async function registerKnowledgeShareRoutes(
     requireCanonicalKnowledgeActor,
     requireRole(allowedRoles),
   ];
+  const chatViewerPreHandler = [
+    requireCanonicalKnowledgeActor,
+    requireRole(CHAT_ROLES),
+  ];
 
   app.post(
     '/knowledge/items/:itemId/shares/preview',
@@ -1000,7 +1005,7 @@ export async function registerKnowledgeShareRoutes(
   app.get(
     '/chat-messages/:messageId/knowledge-share',
     {
-      preHandler,
+      preHandler: chatViewerPreHandler,
       schema: {
         tags: ['chat', 'knowledge'],
         params: messageParamsSchema,
@@ -1025,7 +1030,7 @@ export async function registerKnowledgeShareRoutes(
   app.get(
     '/knowledge/shares/:shareId/source',
     {
-      preHandler,
+      preHandler: chatViewerPreHandler,
       schema: {
         tags: ['knowledge'],
         params: shareParamsSchema,

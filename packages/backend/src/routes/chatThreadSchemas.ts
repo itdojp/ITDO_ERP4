@@ -170,6 +170,13 @@ export const chatRoomTimelineQuerySchema = Type.Object({
   q: Type.Optional(Type.String()),
 });
 
+export const chatKnowledgeShareSummaryQuerySchema = Type.Object(
+  {
+    messageIds: Type.String({ minLength: 1, maxLength: 20_099 }),
+  },
+  { additionalProperties: false },
+);
+
 export const chatApiErrorResponseSchema = Type.Object(
   {
     error: Type.Object(

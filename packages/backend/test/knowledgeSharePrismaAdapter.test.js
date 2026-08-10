@@ -883,6 +883,36 @@ test('openSource requires both current room read ACL and current Knowledge visib
   assert.equal(result.error.code, 'not_found');
 });
 
+test('openSource fails closed after a room becomes external-facing', async () => {
+  let knowledgeLookupCount = 0;
+  const transaction = {
+    knowledgeShare: {
+      findFirst: async () => ({
+        sourceKnowledgeItemId: 'item-1',
+        destinationRoomId: 'room-1',
+      }),
+    },
+    chatRoom: {
+      findUnique: async () => room({ allowExternalUsers: true }),
+    },
+    chatRoomMember: { findFirst: async () => ({ role: 'member' }) },
+    knowledgeItem: {
+      findFirst: async () => {
+        knowledgeLookupCount += 1;
+        return item();
+      },
+    },
+  };
+
+  const result = await createPrismaKnowledgeShareAdapter(
+    host(transaction),
+  ).openSource({ actor, chatActor, shareId: 'share-1' });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'not_found');
+  assert.equal(knowledgeLookupCount, 0);
+});
+
 test('openSource preserves current project-claim room access without requiring a ProjectMember row', async () => {
   const destinationRoom = room({
     type: 'project',

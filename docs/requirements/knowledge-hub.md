@@ -495,8 +495,10 @@ mutationする。
   禁止し、表示停止は明示的なshare revokeだけで行う。pending→posted bindingはChat rootを
   `FOR UPDATE`で直列化し、reconcileと本文変更/logical deleteの競合はposted+invalid rootへ収束させない。
 - strict旧clientとの互換のため既存Chat timeline/thread response shapeは変更しない。card-aware clientは
-  `GET /chat-rooms/{roomId}/knowledge-share-messages`から、同じtimeline条件内のmessage ID、share ID、
-  posted/revoked、optimistic version、schema versionだけを固定本数batchで取得する。通常text message、
+  timelineで実際に受信した1〜100件のmessage IDを
+  `GET /chat-rooms/{roomId}/knowledge-share-messages?messageIds=...`へ渡し、そのexact集合に対応する
+  message ID、share ID、posted/revoked、optimistic version、schema versionだけを固定本数batchで取得する。
+  別時点のtimeline条件を再評価しないため、並行投稿によるpage driftを起こさない。通常text message、
   search、notification、unread、ACKは従来のgeneric本文契約を維持する。
 - full cardは`GET /chat-messages/{messageId}/knowledge-share`で単体取得する。active root、current room
   read ACL、active project、share statusを同一consistent snapshotで再検査し、

@@ -97,37 +97,6 @@ test('root timeline applies root/deletion predicates before the bounded query wi
         return [];
       },
     },
-    knowledgeShare: {
-      async findMany(input) {
-        calls.push(['knowledgeShares', input]);
-        return [
-          {
-            id: 'share-posted',
-            chatMessageId: 'root-1',
-            status: 'posted',
-            version: 2,
-          },
-          {
-            id: 'share-revoked',
-            chatMessageId: 'root-2',
-            status: 'revoked',
-            version: 3,
-          },
-          {
-            id: 'share-pending',
-            chatMessageId: 'root-3',
-            status: 'pending',
-            version: 1,
-          },
-          {
-            id: 'share-failed',
-            chatMessageId: 'root-4',
-            status: 'failed',
-            version: 4,
-          },
-        ];
-      },
-    },
   };
   const host = {
     async $transaction(operation, options) {
@@ -139,7 +108,6 @@ test('root timeline applies root/deletion predicates before the bounded query wi
   const result = await repository.listRootTimeline({
     roomId: 'room-1',
     actor,
-    includeKnowledgeShares: true,
     limit: 50,
     before: new Date('2026-08-09T00:00:00.000Z'),
     tag: 'tag-a',
@@ -147,14 +115,7 @@ test('root timeline applies root/deletion predicates before the bounded query wi
   });
   assert.deepEqual(
     calls.map(([kind]) => kind),
-    [
-      'roomAcl',
-      'roots',
-      'ackRequests',
-      'attachments',
-      'knowledgeShares',
-      'aggregates',
-    ],
+    ['roomAcl', 'roots', 'ackRequests', 'attachments', 'aggregates'],
   );
   assert.deepEqual(calls[1][1].where, {
     roomId: 'room-1',
@@ -176,12 +137,99 @@ test('root timeline applies root/deletion predicates before the bounded query wi
     ],
   });
   assert.equal(calls[1][1].take, 50);
-  assert.deepEqual(calls[4][1], {
-    where: {
-      chatMessageId: {
-        in: ['root-1', 'root-2', 'root-3', 'root-4', 'root-5'],
+  assert.deepEqual(
+    result.map((entry) => entry.replyCount),
+    [1, 0, 0, 0, 0],
+  );
+});
+
+test('knowledge-share summaries bind to exact requested root IDs without timeline hydration', async () => {
+  const calls = [];
+  const tx = {
+    chatRoom: {
+      async findUnique() {
+        calls.push(['roomAcl']);
+        return {
+          id: 'room-1',
+          type: 'company',
+          projectId: null,
+          isOfficial: true,
+          groupId: null,
+          viewerGroupIds: null,
+          posterGroupIds: null,
+          deletedAt: null,
+          allowExternalUsers: false,
+        };
       },
+    },
+    knowledgeShare: {
+      async findMany(input) {
+        calls.push(['knowledgeShares', input]);
+        return [
+          {
+            id: 'share-revoked',
+            chatMessageId: 'root-2',
+            status: 'revoked',
+            version: 3,
+          },
+          {
+            id: 'share-posted',
+            chatMessageId: 'root-1',
+            status: 'posted',
+            version: 2,
+          },
+        ];
+      },
+    },
+    chatAckRequest: {
+      async findMany() {
+        throw new Error('summary lookup must not hydrate ACK requests');
+      },
+    },
+    chatAttachment: {
+      async findMany() {
+        throw new Error('summary lookup must not hydrate attachments');
+      },
+    },
+    chatMessage: {
+      async findMany() {
+        throw new Error('summary lookup must not rerun the timeline query');
+      },
+      async groupBy() {
+        throw new Error('summary lookup must not aggregate replies');
+      },
+    },
+  };
+  const repository = createPrismaChatThreadRepository({
+    async $transaction(operation, options) {
+      assert.equal(options.isolationLevel, 'RepeatableRead');
+      return operation(tx);
+    },
+  });
+
+  const result = await repository.listKnowledgeShareSummaries({
+    roomId: 'room-1',
+    actor,
+    messageIds: ['root-1', 'root-3', 'root-2'],
+  });
+
+  assert.deepEqual(
+    calls.map(([kind]) => kind),
+    ['roomAcl', 'knowledgeShares'],
+  );
+  assert.deepEqual(calls[1][1], {
+    where: {
+      destinationRoomId: 'room-1',
+      chatMessageId: { in: ['root-1', 'root-3', 'root-2'] },
       status: { in: ['posted', 'revoked'] },
+      chatMessage: {
+        is: {
+          roomId: 'room-1',
+          parentMessageId: null,
+          threadRootId: null,
+          deletedAt: null,
+        },
+      },
     },
     select: {
       id: true,
@@ -190,25 +238,22 @@ test('root timeline applies root/deletion predicates before the bounded query wi
       version: true,
     },
   });
-  assert.deepEqual(
-    result.map((entry) => entry.replyCount),
-    [1, 0, 0, 0, 0],
-  );
-  assert.deepEqual(result[0].knowledgeShare, {
-    shareId: 'share-posted',
-    status: 'posted',
-    version: 2,
-    schemaVersion: 1,
-  });
-  assert.deepEqual(result[1].knowledgeShare, {
-    shareId: 'share-revoked',
-    status: 'revoked',
-    version: 3,
-    schemaVersion: 1,
-  });
-  for (const index of [2, 3, 4]) {
-    assert.equal(Object.hasOwn(result[index], 'knowledgeShare'), false);
-  }
+  assert.deepEqual(result, [
+    {
+      messageId: 'root-1',
+      shareId: 'share-posted',
+      status: 'posted',
+      version: 2,
+      schemaVersion: 1,
+    },
+    {
+      messageId: 'root-2',
+      shareId: 'share-revoked',
+      status: 'revoked',
+      version: 3,
+      schemaVersion: 1,
+    },
+  ]);
 });
 
 test('root timeline returns null before reading messages when same-snapshot read ACL is denied', async () => {

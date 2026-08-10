@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 
 import type {
   ChatKnowledgeShareSummary,
+  ChatKnowledgeShareMessageSummary,
   ChatRootTimelineMessage,
   ChatThreadActor,
   ChatThreadAck,
@@ -100,7 +101,6 @@ type KnowledgeShareSummaryRow = Prisma.KnowledgeShareGetPayload<{
 type MessageRelations = {
   ackRequest: ChatThreadAckRequest | null;
   attachments: ChatThreadAttachment[];
-  knowledgeShare?: ChatKnowledgeShareSummary;
 };
 
 function mapAck(row: AckRow): ChatThreadAck {
@@ -181,9 +181,6 @@ function mapMessage(
     mentionsAll: deleted ? false : row.mentionsAll,
     ackRequest: deleted ? null : relations.ackRequest,
     attachments: deleted ? [] : relations.attachments,
-    ...(!deleted && relations.knowledgeShare
-      ? { knowledgeShare: relations.knowledgeShare }
-      : {}),
     createdAt: row.createdAt,
     createdBy: row.createdBy,
     updatedAt: row.updatedAt,
@@ -196,7 +193,6 @@ function mapMessage(
 async function hydrateMessages(
   tx: Prisma.TransactionClient,
   rows: MessageRow[],
-  options: { includeRootKnowledgeShares?: boolean } = {},
 ): Promise<ChatThreadMessage[]> {
   const visibleMessageIds = rows
     .filter((row) => row.deletedAt === null)
@@ -226,27 +222,6 @@ async function hydrateMessages(
     orderBy: [{ messageId: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
     select: attachmentSelect,
   });
-  const knowledgeShareMessageIds = options.includeRootKnowledgeShares
-    ? rows
-        .filter(
-          (row) =>
-            row.deletedAt === null &&
-            row.parentMessageId === null &&
-            row.threadRootId === null,
-        )
-        .map((row) => row.id)
-    : [];
-  const knowledgeShareRows =
-    knowledgeShareMessageIds.length === 0
-      ? []
-      : await tx.knowledgeShare.findMany({
-          where: {
-            chatMessageId: { in: knowledgeShareMessageIds },
-            status: { in: ['posted', 'revoked'] },
-          },
-          select: knowledgeShareSummarySelect,
-        });
-
   const acksByRequest = new Map<string, ChatThreadAck[]>();
   for (const ack of ackRows) {
     const list = acksByRequest.get(ack.requestId) ?? [];
@@ -266,20 +241,10 @@ async function hydrateMessages(
     list.push(mapAttachment(attachment));
     attachmentsByMessage.set(attachment.messageId, list);
   }
-  const knowledgeShareByMessage = new Map<string, ChatKnowledgeShareSummary>();
-  for (const row of knowledgeShareRows) {
-    if (!row.chatMessageId) continue;
-    const summary = mapKnowledgeShareSummary(row);
-    if (summary) knowledgeShareByMessage.set(row.chatMessageId, summary);
-  }
-
   return rows.map((row) =>
     mapMessage(row, {
       ackRequest: ackByMessage.get(row.id) ?? null,
       attachments: attachmentsByMessage.get(row.id) ?? [],
-      ...(knowledgeShareByMessage.has(row.id)
-        ? { knowledgeShare: knowledgeShareByMessage.get(row.id) }
-        : {}),
     }),
   );
 }
@@ -580,9 +545,7 @@ export function createPrismaChatThreadRepository(
             take: input.limit,
             select: messageSelect,
           });
-          const messages = await hydrateMessages(tx, rows, {
-            includeRootKnowledgeShares: input.includeKnowledgeShares === true,
-          });
+          const messages = await hydrateMessages(tx, rows);
           const aggregates = await readThreadAggregates(
             tx,
             rows.map((row) => row.id),
@@ -598,6 +561,65 @@ export function createPrismaChatThreadRepository(
               replyCount: aggregate.replyCount,
               lastReplyAt: aggregate.lastReplyAt,
             };
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      );
+    },
+    async listKnowledgeShareSummaries(input) {
+      return client.$transaction(
+        async (tx) => {
+          const access = await ensureChatRoomContentAccess({
+            roomId: input.roomId,
+            userId: input.actor.userId,
+            roles: input.actor.roles,
+            projectIds: input.actor.projectIds,
+            groupIds: input.actor.groupIds,
+            groupAccountIds: input.actor.groupAccountIds,
+            accessLevel: 'read',
+            client: tx as unknown as typeof prisma,
+          });
+          if (!access.ok) return null;
+          if (
+            !(await hasActiveChatProject({
+              room: access.room,
+              client: tx as unknown as typeof prisma,
+            }))
+          ) {
+            return null;
+          }
+
+          const rows = await tx.knowledgeShare.findMany({
+            where: {
+              destinationRoomId: input.roomId,
+              chatMessageId: { in: input.messageIds },
+              status: { in: ['posted', 'revoked'] },
+              chatMessage: {
+                is: {
+                  roomId: input.roomId,
+                  parentMessageId: null,
+                  threadRootId: null,
+                  deletedAt: null,
+                },
+              },
+            },
+            select: knowledgeShareSummarySelect,
+          });
+          const byMessageId = new Map<
+            string,
+            ChatKnowledgeShareMessageSummary
+          >();
+          for (const row of rows) {
+            const summary = mapKnowledgeShareSummary(row);
+            if (!summary || !row.chatMessageId) continue;
+            byMessageId.set(row.chatMessageId, {
+              messageId: row.chatMessageId,
+              ...summary,
+            });
+          }
+          return input.messageIds.flatMap((messageId) => {
+            const summary = byMessageId.get(messageId);
+            return summary ? [summary] : [];
           });
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
