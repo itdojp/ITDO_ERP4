@@ -1354,7 +1354,7 @@ describe('RoomChat', () => {
 
       render(<Harness />);
       expect(await screen.findByText('メッセージなし')).toBeInTheDocument();
-      fireEvent.change(screen.getByPlaceholderText('Markdownで入力'), {
+      fireEvent.change(await screen.findByPlaceholderText('Markdownで入力'), {
         target: { value: 'root post across unmount' },
       });
       fireEvent.change(screen.getByLabelText('添付ファイル'), {
