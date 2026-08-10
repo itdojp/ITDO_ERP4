@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
 
 import { Alert, Card, Tabs } from '../../ui';
-import type { KnowledgeScope } from './knowledgeHubModel';
+import type { KnowledgeScope, KnowledgeSnapshot } from './knowledgeHubModel';
 import { KnowledgeAnnotationPanel } from './KnowledgeAnnotationPanel';
 import { KnowledgeConversationPanel } from './KnowledgeConversationPanel';
+import { KnowledgeSharePanel } from './KnowledgeSharePanel';
 import { KnowledgeSynthesisPanel } from './KnowledgeSynthesisPanel';
 
-type WorkspaceTab = 'annotations' | 'conversations' | 'syntheses';
+type WorkspaceTab = 'annotations' | 'conversations' | 'syntheses' | 'share';
 
 const workspaceTabs = [
   { id: 'annotations', label: '本人annotation' },
   { id: 'conversations', label: '会話・取込' },
   { id: 'syntheses', label: 'Synthesis・結論' },
+  { id: 'share', label: 'Chatへ共有' },
 ] as const;
 
 function isWorkspaceTab(value: string): value is WorkspaceTab {
@@ -22,6 +24,7 @@ export function KnowledgeProvenanceWorkspace(props: {
   itemId: string;
   itemLabel: string;
   itemScope: KnowledgeScope;
+  snapshots: readonly KnowledgeSnapshot[];
 }) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('annotations');
   const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<WorkspaceTab>>(
@@ -87,6 +90,20 @@ export function KnowledgeProvenanceWorkspace(props: {
                 <KnowledgeSynthesisPanel
                   itemId={props.itemId}
                   itemScope={props.itemScope}
+                />
+              </div>
+            ) : null}
+            {visitedTabs.has('share') ? (
+              <div
+                className="knowledge-provenance-retained-panel"
+                hidden={activeTab !== 'share'}
+              >
+                <KnowledgeSharePanel
+                  key={props.itemId}
+                  itemId={props.itemId}
+                  itemLabel={props.itemLabel}
+                  itemScope={props.itemScope}
+                  snapshots={props.snapshots}
                 />
               </div>
             ) : null}

@@ -7,6 +7,7 @@ vi.mock('../../api', () => ({ apiResponse }));
 import {
   captureKnowledgeTextOrUrl,
   createKnowledgeItem,
+  getKnowledgeItem,
   KnowledgeHubApiError,
   listKnowledgeInbox,
   listKnowledgeSnapshots,
@@ -60,6 +61,25 @@ beforeEach(() => {
 });
 
 describe('knowledgeHubApi', () => {
+  it('loads one item with an encoded ID and allowlist normalization', async () => {
+    apiResponse.mockResolvedValueOnce(
+      jsonResponse({
+        ...itemPayload,
+        id: 'item/one',
+        providerKey: 'must-not-survive',
+      }),
+    );
+    const controller = new AbortController();
+
+    const result = await getKnowledgeItem('item/one', controller.signal);
+
+    expect(apiResponse).toHaveBeenCalledWith('/knowledge/items/item%2Fone', {
+      signal: controller.signal,
+    });
+    expect(result.id).toBe('item/one');
+    expect(result).not.toHaveProperty('providerKey');
+  });
+
   it('normalizes allowlisted item fields and drops provider-only response data', async () => {
     apiResponse.mockResolvedValueOnce(
       jsonResponse({

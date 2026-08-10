@@ -479,6 +479,12 @@ describe('App', () => {
       'section-vendor-documents',
       { kind: 'vendor_invoice', id: 'VI-789' },
     ],
+    [
+      'dispatches Knowledge item deep links to Knowledge Hub',
+      '#/open?kind=knowledge_item&id=knowledge-789',
+      'section-knowledge-hub',
+      { kind: 'knowledge_item', id: 'knowledge-789' },
+    ],
   ] as const)('%s', async (_label, hash, sectionTestId, expectedDetail) => {
     const listener = vi.fn();
     window.addEventListener('erp4_open_entity', listener as EventListener);

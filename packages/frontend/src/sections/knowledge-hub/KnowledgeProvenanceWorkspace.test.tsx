@@ -16,18 +16,52 @@ vi.mock('./KnowledgeConversationPanel', () => ({
 vi.mock('./KnowledgeSynthesisPanel', () => ({
   KnowledgeSynthesisPanel: () => <div>synthesis panel</div>,
 }));
+vi.mock('./KnowledgeSharePanel', () => ({
+  KnowledgeSharePanel: (props: {
+    itemId: string;
+    itemLabel: string;
+    itemScope: string;
+    snapshots: Array<{ id: string }>;
+  }) => (
+    <div>
+      share panel / {props.itemId} / {props.itemLabel} / {props.itemScope} /{' '}
+      {props.snapshots.map((snapshot) => snapshot.id).join(',')}
+    </div>
+  ),
+}));
 
 import { KnowledgeProvenanceWorkspace } from './KnowledgeProvenanceWorkspace';
 
 afterEach(cleanup);
 
 describe('KnowledgeProvenanceWorkspace', () => {
-  it('separates the three provenance workflows with accessible keyboard tabs', () => {
+  it('separates the four provenance/share workflows with accessible keyboard tabs', () => {
     render(
       <KnowledgeProvenanceWorkspace
         itemId="item-1"
         itemLabel="検証Knowledge"
         itemScope="personal"
+        snapshots={[
+          {
+            id: 'snapshot-1',
+            knowledgeItemId: 'item-1',
+            version: 1,
+            status: 'ready',
+            captureMethod: 'text',
+            sourceUrl: null,
+            originalName: 'snapshot.txt',
+            contentType: 'text/plain',
+            sizeBytes: 10,
+            sha256: 'a'.repeat(64),
+            failureCode: null,
+            capturedAt: '2026-08-10T01:00:00.000Z',
+            capturedBy: 'user-1',
+            readyAt: '2026-08-10T01:00:00.000Z',
+            failedAt: null,
+            createdAt: '2026-08-10T01:00:00.000Z',
+            updatedAt: '2026-08-10T01:00:00.000Z',
+          },
+        ]}
       />,
     );
     expect(screen.getByText('個人scope', { exact: false })).toBeVisible();
@@ -54,6 +88,14 @@ describe('KnowledgeProvenanceWorkspace', () => {
     expect(screen.getByLabelText('conversation draft')).toHaveValue(
       'draft value',
     );
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Chatへ共有' }));
+    expect(
+      screen.getByText(
+        'share panel / item-1 / 検証Knowledge / personal / snapshot-1',
+      ),
+    ).toBeVisible();
+    expect(screen.getByText('conversation panel')).not.toBeVisible();
   });
 
   it('labels organization scope without exposing identifiers', () => {
@@ -62,6 +104,7 @@ describe('KnowledgeProvenanceWorkspace', () => {
         itemId="sensitive-item-id"
         itemLabel="組織ナレッジ"
         itemScope="organization"
+        snapshots={[]}
       />,
     );
     expect(screen.getByText('組織scope', { exact: false })).toBeVisible();

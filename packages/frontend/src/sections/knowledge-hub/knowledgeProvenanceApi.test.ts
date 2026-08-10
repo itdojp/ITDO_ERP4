@@ -169,6 +169,7 @@ describe('knowledgeProvenanceApi annotations', () => {
   });
 
   it('forwards opaque cursors and the explicit deleted-history option', async () => {
+    const controller = new AbortController();
     apiResponse
       .mockResolvedValueOnce(response({ items: [], nextCursor: 'next-page' }))
       .mockResolvedValueOnce(response({ items: [], nextCursor: null }));
@@ -179,11 +180,15 @@ describe('knowledgeProvenanceApi annotations', () => {
     await listKnowledgeAnnotations('item-1', {
       includeDeleted: true,
       cursor: first.nextCursor,
+      signal: controller.signal,
     });
 
     expect(apiResponse.mock.calls[0][0]).toContain('includeDeleted=true');
     expect(apiResponse.mock.calls[1][0]).toContain('cursor=next-page');
     expect(apiResponse.mock.calls[1][0]).toContain('includeDeleted=true');
+    expect(apiResponse.mock.calls[1][1]).toEqual({
+      signal: controller.signal,
+    });
   });
 
   it('normalizes the separate management capability and rejects invalid values', async () => {

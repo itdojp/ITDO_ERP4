@@ -162,6 +162,15 @@ export async function listKnowledgeInbox() {
   return payload.items.map(normalizeItem);
 }
 
+export async function getKnowledgeItem(itemId: string, signal?: AbortSignal) {
+  return normalizeItem(
+    await requestKnowledgeJson(
+      `/knowledge/items/${encodeURIComponent(itemId)}`,
+      signal ? { signal } : undefined,
+    ),
+  );
+}
+
 export async function createKnowledgeItem(input: {
   canonicalUrl?: string;
   organizationGroupIds: string[];

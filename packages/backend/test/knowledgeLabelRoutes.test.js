@@ -65,9 +65,20 @@ function assignment() {
   };
 }
 
+function selectionOption(overrides = {}) {
+  return {
+    assignmentId: 'assignment-1',
+    displayName: 'Architecture',
+    scope: 'personal',
+    labelVersion: 1,
+    ...overrides,
+  };
+}
+
 function serviceStub(overrides = {}) {
   return {
     list: async () => [],
+    listAssignments: async () => ({ ok: true, value: [] }),
     detail: async () => ({ ok: true, value: label() }),
     aliases: async () => ({ ok: true, value: [] }),
     grants: async () => ({ ok: true, value: [] }),
@@ -230,6 +241,10 @@ test('all label surfaces reject a non-header actor without canonical account res
         calls += 1;
         return [];
       },
+      listAssignments: async () => {
+        calls += 1;
+        return { ok: true, value: [] };
+      },
       detail: called,
       aliases: async () => {
         calls += 1;
@@ -262,6 +277,10 @@ test('all label surfaces reject a non-header actor without canonical account res
   t.after(() => app.close());
   const requests = [
     { method: 'GET', url: '/knowledge/labels' },
+    {
+      method: 'GET',
+      url: '/knowledge/items/item-1/label-assignments',
+    },
     { method: 'GET', url: '/knowledge/labels/label-1' },
     { method: 'GET', url: '/knowledge/labels/label-1/aliases' },
     { method: 'GET', url: '/knowledge/labels/label-1/group-grants' },
@@ -418,6 +437,86 @@ test('hidden/deleted/revoked/absent labels share the generic not_found response'
     bodies.push(response.body);
   }
   assert.equal(new Set(bodies).size, 1);
+});
+
+test('assignment selection route returns only the bounded share-selection allowlist in service order', async (t) => {
+  let captured;
+  const options = Array.from({ length: 105 }, (_, index) =>
+    selectionOption({
+      assignmentId: `assignment-${String(index).padStart(3, '0')}`,
+      ownerUserId: 'must-not-pass-through',
+      internalGrant: { id: 'must-not-pass-through' },
+      providerData: 'must-not-pass-through',
+    }),
+  );
+  const app = await buildServer(
+    serviceStub({
+      listAssignments: async (input) => {
+        captured = input;
+        return { ok: true, value: options };
+      },
+    }),
+  );
+  t.after(() => app.close());
+
+  const response = await app.inject({
+    method: 'GET',
+    url: '/knowledge/items/item-1/label-assignments',
+  });
+
+  assert.equal(response.statusCode, 200, response.body);
+  assert.deepEqual(captured, {
+    actor: {
+      userId: 'owner-1',
+      organizationId: 'org-1',
+      groupAccountIds: ['group-1'],
+    },
+    itemId: 'item-1',
+  });
+  const body = response.json();
+  assert.equal(body.items.length, 100);
+  assert.deepEqual(body.items[0], {
+    assignmentId: 'assignment-000',
+    displayName: 'Architecture',
+    scope: 'personal',
+    labelVersion: 1,
+  });
+  assert.equal(body.items[99].assignmentId, 'assignment-099');
+  assert.deepEqual(Object.keys(body.items[0]).sort(), [
+    'assignmentId',
+    'displayName',
+    'labelVersion',
+    'scope',
+  ]);
+  assert.equal(response.body.includes('must-not-pass-through'), false);
+});
+
+test('assignment selection route makes missing and unauthorized items identical 404 responses', async (t) => {
+  const app = await buildServer(
+    serviceStub({
+      listAssignments: async () => ({
+        ok: false,
+        statusCode: 404,
+        code: 'not_found',
+        message: 'Not found',
+      }),
+    }),
+  );
+  t.after(() => app.close());
+
+  const unauthorized = await app.inject({
+    method: 'GET',
+    url: '/knowledge/items/existing-but-hidden/label-assignments',
+  });
+  const missing = await app.inject({
+    method: 'GET',
+    url: '/knowledge/items/missing/label-assignments',
+  });
+
+  assert.equal(unauthorized.statusCode, 404);
+  assert.equal(missing.statusCode, 404);
+  assert.equal(unauthorized.body, missing.body);
+  assert.equal(missing.json().error.code, 'not_found');
 });
 
 test('list/alias/grant/assignment responses use documented ISO and capability contracts', async (t) => {

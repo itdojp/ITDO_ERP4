@@ -116,6 +116,36 @@ confidenceは0〜100%で入力し、未設定と0%を区別します。未解決
 
 Synthesis一覧はcurrent actorが参照可能なglobal一覧です。選択中itemをcurrent versionのaccessibleなitem sourceとして持たないSynthesis、またはcurrent sourceの一部が参照不可のSynthesisは参照専用となり、不完全なprovenanceでversionを置き換える操作はできません。version追加時はcurrent sourceの種類・関係・順序を維持します。一覧またはversion履歴に続きがある場合は`さらに読み込む`操作で次ページを取得します。
 
+## Chatへ必要なfieldだけを共有する
+
+`Chatへ選択共有` tabでは、元Knowledge itemの閲覧権限を移譲せず、選択したfieldだけをimmutable cardとしてChat roomへ共有します。
+
+1. `Knowledge Inbox`から対象itemを選択し、`Chatへ選択共有` tabを開きます。
+2. 共有先Chat roomを選択します。外部参加者を許可するroomはMVPではfail closedです。
+3. 共有するfieldを個別に選択します。初期状態で選択されるのはタイトルだけです。
+4. 必要な場合だけ、ready snapshotのversion／SHA-256／抜粋、active label assignment、current annotation revision、conversation turn、current Synthesis version、共有者メモを選択します。
+5. `共有内容をプレビュー`を選択し、保存されるcard、共有先、省略カテゴリ、有効期限を確認します。この時点ではChatへ投稿されません。
+6. `このpreviewの共有先と選択内容を確認しました`を明示的に選択し、`1回だけChatへ共有`を実行します。
+
+private label、annotation、AI／System／Tool turn、Synthesis、snapshot全文、URLは既定で未選択です。非選択fieldはcardで隠すだけではなく、share snapshotへ保存しません。preview後に元version、選択field、ACL、room post権限が変わった場合は確定せず、再previewが必要です。preview tokenとrequest keyはcomponent memoryだけに保持し、localStorage、画面、logへ表示しません。
+
+共有結果が`投稿確認中`の場合、同じ投稿を自動再送せず、`既存投稿を読取専用で照合`を実行します。照合は既存Chat messageとの対応だけを確認し、新しいmessageを作りません。`投稿失敗`は自動retryせず、新しいpreviewから明示的にやり直します。同じrequest keyと同じ内容は既存shareを再利用し、内容が異なる場合は競合として確定しません。
+
+`共有を取り消す`と、Chat rootとreply履歴は監査のため残り、cardは内容を含まない取消placeholderになります。元itemの論理削除やACL変更だけでは、共有時に許可されたcard snapshotは自動的に書き換わりません。
+
+## 共有スレッドの選択返信をSynthesisへ昇格する
+
+Knowledge share cardのthreadでは、選択したactive direct replyだけを新しいKnowledge Synthesisへ明示的にpromoteできます。自動要約やthread全文の暗黙コピーは行いません。
+
+1. Room ChatでKnowledge share cardの`スレッドを開く`を選択します。
+2. `選択した返信をナレッジへ`を開きます。返信は初期状態で1件も選択されません。
+3. 必要な返信だけを選び、選択順を確認します。削除済みreplyや別threadのmessageは対象外です。
+4. 保存先scopeを確認します。既定はpersonalです。organizationを選ぶ場合はgroup accountを指定し、追加のaudience確認が必要です。
+5. Synthesisのタイトル、結論、任意のconfidence、未解決事項を入力します。
+6. previewでselected／omitted件数、exact reply本文、保存先scopeを確認し、明示confirm後に1回だけ確定します。
+
+promote後のSynthesis本文とimmutable selected-message snapshotはdestination Knowledge ACLで保持されます。後からroom accessが失効した場合、live Chat identityやsource provenanceはredactされますが、room accessをKnowledge write権限へ昇格させることはありません。
+
 ![本人annotationの改訂履歴](../test-results/2026-08-08-issue2013-knowledge-provenance-ui/01-annotation-revision-history.png)
 
 ![会話のroleとorigin timeline](../test-results/2026-08-08-issue2013-knowledge-provenance-ui/02-conversation-role-timeline.png)
@@ -153,3 +183,4 @@ Synthesis一覧はcurrent actorが参照可能なglobal一覧です。選択中i
 - [Knowledge Hub 境界 ADR](../architecture/knowledge-hub-boundary.md)
 - [Issue #2012 UI/E2E 検証結果](../test-results/2026-08-06-issue2012-knowledge-snapshot-ui.md)
 - [Issue #2013 annotation／会話／Synthesis UI検証結果](../test-results/2026-08-08-issue2013-knowledge-provenance-ui.md)
+- [Issue #2015 選択共有／Chat card／promote UI検証結果](../test-results/2026-08-10-issue2015-knowledge-share-promote-ui.md)

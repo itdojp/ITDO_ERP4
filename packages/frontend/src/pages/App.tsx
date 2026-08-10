@@ -274,6 +274,8 @@ function resolveDeepLinkTarget(
       return { sectionId: 'time-entries', payload };
     case 'daily_report':
       return { sectionId: 'daily-report', payload };
+    case 'knowledge_item':
+      return { sectionId: 'knowledge-hub', payload };
     case 'leave_request':
       return { sectionId: 'leave-requests', payload };
     case 'customer':

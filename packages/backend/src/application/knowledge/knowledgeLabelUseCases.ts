@@ -3,6 +3,7 @@ import {
   knowledgeLabelCapabilities,
   knowledgeLabelInputLimits,
   type KnowledgeItemLabelAssignment,
+  type KnowledgeItemLabelSelectionOption,
   type KnowledgeLabel,
   type KnowledgeLabelAlias,
   type KnowledgeLabelGrantInput,
@@ -308,6 +309,29 @@ export function createKnowledgeLabelService(dependencies: {
     }) {
       if (!hasPrincipal(input.actor) || !validListQuery(input.query)) return [];
       return dependencies.reader.listVisible(input.actor, input.query);
+    },
+
+    async listAssignments(input: {
+      actor: KnowledgeActor;
+      itemId: string;
+    }): Promise<
+      KnowledgeLabelApplicationResult<KnowledgeItemLabelSelectionOption[]>
+    > {
+      if (
+        !hasPrincipal(input.actor) ||
+        !validId(input.itemId, knowledgeLabelInputLimits.itemId)
+      ) {
+        return notFound();
+      }
+      const assignments =
+        await dependencies.reader.listActiveAssignmentsForVisibleItem({
+          actor: input.actor,
+          itemId: input.itemId,
+          limit: knowledgeLabelInputLimits.listLimit,
+        });
+      return assignments
+        ? ok(assignments.slice(0, knowledgeLabelInputLimits.listLimit))
+        : notFound();
     },
 
     async detail(input: { actor: KnowledgeActor; labelId: string }) {

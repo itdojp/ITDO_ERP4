@@ -27,6 +27,7 @@ import {
 import {
   captureKnowledgeTextOrUrl,
   createKnowledgeItem,
+  getKnowledgeItem,
   KnowledgeHubApiError,
   listKnowledgeInbox,
   listKnowledgeSnapshots,
@@ -127,6 +128,8 @@ export const KnowledgeHub: React.FC = () => {
 
   const itemLoadSequence = useRef(0);
   const snapshotLoadSequence = useRef(0);
+  const deepLinkLoadSequence = useRef(0);
+  const deepLinkAbortRef = useRef<AbortController | null>(null);
 
   const selectedItem = useMemo(
     () => items.find((item) => item.id === selectedItemId) ?? null,
@@ -186,6 +189,56 @@ export const KnowledgeHub: React.FC = () => {
   useEffect(() => {
     void loadItems();
   }, [loadItems]);
+
+  useEffect(() => {
+    const handleOpenEntity = (event: Event) => {
+      if (!(event instanceof CustomEvent)) return;
+      const detail = event.detail as { kind?: unknown; id?: unknown } | null;
+      if (
+        detail?.kind !== 'knowledge_item' ||
+        typeof detail.id !== 'string' ||
+        !detail.id.trim() ||
+        [...detail.id.trim()].length > 200
+      ) {
+        return;
+      }
+      const itemId = detail.id.trim();
+      const sequence = deepLinkLoadSequence.current + 1;
+      deepLinkLoadSequence.current = sequence;
+      itemLoadSequence.current += 1;
+      deepLinkAbortRef.current?.abort();
+      const controller = new AbortController();
+      deepLinkAbortRef.current = controller;
+      setNotice(null);
+      getKnowledgeItem(itemId, controller.signal)
+        .then((item) => {
+          if (deepLinkLoadSequence.current !== sequence) return;
+          setItems((current) => [
+            item,
+            ...current.filter((candidate) => candidate.id !== item.id),
+          ]);
+          setSelectedItemId(item.id);
+          setItemsStatus('success');
+          setItemsError('');
+        })
+        .catch((error) => {
+          if (
+            deepLinkLoadSequence.current !== sequence ||
+            (error instanceof DOMException && error.name === 'AbortError')
+          ) {
+            return;
+          }
+          setNotice({ tone: 'error', text: toSafeErrorMessage(error) });
+        });
+    };
+    window.addEventListener('erp4_open_entity', handleOpenEntity);
+    return () => {
+      deepLinkLoadSequence.current += 1;
+      deepLinkAbortRef.current?.abort();
+      deepLinkAbortRef.current = null;
+      window.removeEventListener('erp4_open_entity', handleOpenEntity);
+    };
+  }, []);
 
   useEffect(() => {
     void loadSnapshots(selectedItemId);
@@ -861,6 +914,7 @@ export const KnowledgeHub: React.FC = () => {
             itemId={selectedItem.id}
             itemLabel={itemLabel(selectedItem)}
             itemScope={selectedItem.scope}
+            snapshots={snapshots}
           />
         ) : (
           <AsyncStatePanel

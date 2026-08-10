@@ -41,6 +41,12 @@
 - [Storage artifact migration evidence template](storage-artifact-migration-template.md)
 - [Storage／backup統合readiness 記録テンプレート](storage-readiness-template.md)
 
+### 2026-08-10
+
+- [証跡ディレクトリ: 2026-08-10-frontend-e2e](2026-08-10-frontend-e2e/)
+- [Issue #2015 Knowledge selective share / Chat card / promote UI 検証](2026-08-10-issue2015-knowledge-share-promote-ui.md)
+  - 証跡: [docs/test-results/2026-08-10-issue2015-knowledge-share-promote-ui/](2026-08-10-issue2015-knowledge-share-promote-ui/)
+
 ### 2026-08-09
 
 - [Issue #2014 Chat thread UI / E2E verification（PR C）](2026-08-09-issue2014-chat-thread-ui.md)

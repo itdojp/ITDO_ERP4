@@ -34,6 +34,7 @@ export type RoomMessageListProps = {
   currentUserId: string;
   roles: string[];
   renderMessageBody: (text: string) => React.ReactNode;
+  renderKnowledgeShare?: (message: ChatMessage) => React.ReactNode | null;
   onOpenThread: (item: ChatMessage, trigger: HTMLButtonElement | null) => void;
   copyMessageLink: (
     mode: 'url' | 'markdown',
@@ -67,6 +68,7 @@ export function RoomMessageList({
   currentUserId,
   roles,
   renderMessageBody,
+  renderKnowledgeShare,
   onOpenThread,
   copyMessageLink,
   addReaction,
@@ -127,6 +129,9 @@ export function RoomMessageList({
       )}
       <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
         {items.map((item) => {
+          const knowledgeShare = item.deleted
+            ? null
+            : (renderKnowledgeShare?.(item) ?? null);
           const tags = Array.isArray(item.tags) ? item.tags : [];
           const mentionedUserIds = normalizeStringArray(item.mentions?.userIds);
           const mentionedGroupIds = normalizeStringArray(
@@ -252,7 +257,7 @@ export function RoomMessageList({
                 </div>
               ) : (
                 <div style={{ marginTop: 8 }}>
-                  {renderMessageBody(item.body ?? '')}
+                  {knowledgeShare ?? renderMessageBody(item.body ?? '')}
                 </div>
               )}
               {!item.deleted &&

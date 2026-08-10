@@ -96,6 +96,16 @@
 - ルーム一覧、ルーム通知、別ルームの親message deep linkのいずれから移動する場合も、現在のthreadを閉じてから対象ルームへ移動します。thread操作または添付upload/download中に権限が失効した場合はthread本文と横断検索結果を消去し、ルーム一覧を再取得して閲覧可能なら最新timelineへ置換します。ルーム自体を閲覧できない場合はtimelineと横断検索結果も消去し、権限外本文を画面へ残しません。
 - スレッド内のreaction、確認、削除等が完了しても、keyboard focusを不必要に「閉じる」へ移動しません。親投稿の結果不明・部分成功案内はscreen readerにも通知されます。
 
+### Knowledge share cardと選択返信のpromote
+
+- `共有されたナレッジ` cardは、共有者がpreviewで明示選択したfieldだけを表示します。元personal itemの閲覧権限はroom memberへ移譲されません。
+- `元のナレッジを開く`は表示時点のroom ACLとKnowledge ACLをserver側で再評価します。権限がない利用者にはsource IDや直接URLを返しません。
+- shareが取り消された場合、card本文は即時に画面stateから消え、内容を含まないplaceholderへ変わります。root messageとreply履歴は保持されます。
+- selected fieldは通知、検索snippet、旧client fallbackへ複製しません。旧clientには一定の汎用本文だけが表示されます。
+- posted cardのthreadでは`選択した返信をナレッジへ`からpromoteできます。返信は初期状態で未選択であり、必要なactive direct replyだけを個別に選びます。
+- promoteは自動要約ではありません。Synthesisのタイトル、結論、confidence、未解決事項を利用者が入力し、exact previewと明示confirm後に確定します。
+- 保存先はpersonalが既定です。organizationへ保存する場合はgroup accountとaudienceを追加確認し、room accessをKnowledge write権限へ暗黙昇格しません。
+
 ## 添付
 
 ### 保存先

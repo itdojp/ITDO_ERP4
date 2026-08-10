@@ -50,6 +50,14 @@ vi.mock('../utils/clipboard', () => ({
   copyToClipboard,
 }));
 
+const { useRoomKnowledgeShares } = vi.hoisted(() => ({
+  useRoomKnowledgeShares: vi.fn(),
+}));
+
+vi.mock('./room-chat/useRoomKnowledgeShares', () => ({
+  useRoomKnowledgeShares,
+}));
+
 vi.mock('../ui', () => ({
   AttachmentField: ({
     attachments,
@@ -387,6 +395,16 @@ function installApiMock(options: RoomChatApiMockOptions) {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(useRoomKnowledgeShares).mockReturnValue({
+    summariesByMessageId: new Map(),
+    cardsByMessageId: new Map(),
+    loadingByMessageId: new Map(),
+    errorsByMessageId: new Map(),
+    isLoadingSummaries: false,
+    knowledgeShares: new Map(),
+    isLoading: false,
+    purgeKnowledgeShares: vi.fn(() => true),
+  });
   vi.mocked(getAuthState).mockReturnValue({
     userId: 'demo-user',
     roles: ['member'],
@@ -449,6 +467,86 @@ describe('RoomChat', () => {
 
     expect(await screen.findByText('workflow message')).toBeInTheDocument();
     expect(screen.getByText('Unread 1')).toBeInTheDocument();
+  });
+
+  it('replaces the generic fallback with the selected Knowledge share card only', async () => {
+    installApiMock({
+      rooms: [makeRoom({ id: 'room-1' })],
+      messagesByRoom: {
+        'room-1': [
+          makeMessage({
+            id: 'message-1',
+            roomId: 'room-1',
+            body: 'Knowledge was shared.',
+          }),
+        ],
+      },
+      unreadByRoom: {
+        'room-1': { unreadCount: 0, lastReadAt: null },
+      },
+    });
+    vi.mocked(useRoomKnowledgeShares).mockReturnValue({
+      summariesByMessageId: new Map([
+        [
+          'message-1',
+          {
+            messageId: 'message-1',
+            shareId: 'share-1',
+            status: 'posted',
+            version: 1,
+            schemaVersion: 1,
+          },
+        ],
+      ]),
+      cardsByMessageId: new Map([
+        [
+          'message-1',
+          {
+            shareId: 'share-1',
+            status: 'posted',
+            version: 1,
+            schemaVersion: 1,
+            canOpenSource: false,
+            card: {
+              schemaVersion: 1,
+              title: '選択済みタイトル',
+              sourceType: null,
+              canonicalUrl: null,
+              snapshot: null,
+              sharerNote: null,
+              labels: [],
+              annotations: [],
+              turns: [],
+              syntheses: [],
+              selectedCategories: ['title'],
+              omittedCategories: [
+                'source_type',
+                'canonical_url',
+                'snapshot_provenance',
+                'snapshot_excerpt',
+                'label',
+                'annotation',
+                'conversation_turn',
+                'synthesis',
+                'sharer_note',
+              ],
+            },
+          },
+        ],
+      ]),
+      loadingByMessageId: new Map([['message-1', false]]),
+      errorsByMessageId: new Map(),
+      isLoadingSummaries: false,
+      knowledgeShares: new Map(),
+      isLoading: false,
+      purgeKnowledgeShares: vi.fn(() => true),
+    });
+
+    render(<RoomChat />);
+
+    expect(await screen.findByText('選択済みタイトル')).toBeInTheDocument();
+    expect(screen.queryByText('Knowledge was shared.')).not.toBeInTheDocument();
+    expect(screen.queryByText('非選択canary')).not.toBeInTheDocument();
   });
 
   it('loads the first room on mount and switches to another room', async () => {

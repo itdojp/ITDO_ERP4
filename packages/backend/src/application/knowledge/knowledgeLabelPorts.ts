@@ -82,6 +82,13 @@ export type KnowledgeItemLabelAssignment = {
   updatedAt: Date;
 };
 
+export type KnowledgeItemLabelSelectionOption = {
+  assignmentId: string;
+  displayName: string;
+  scope: KnowledgeItemScope;
+  labelVersion: number;
+};
+
 export type KnowledgeItemLabelMutationTarget = {
   id: string;
   ownerUserId: string;
@@ -149,6 +156,11 @@ export interface KnowledgeLabelReadRepository {
     actor: KnowledgeActor,
     query: KnowledgeLabelListQuery,
   ): Promise<KnowledgeLabel[]>;
+  listActiveAssignmentsForVisibleItem(input: {
+    actor: KnowledgeActor;
+    itemId: string;
+    limit: number;
+  }): Promise<KnowledgeItemLabelSelectionOption[] | null>;
   findVisibleById(
     actor: KnowledgeActor,
     labelId: string,

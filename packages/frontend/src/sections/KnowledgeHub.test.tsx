@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const apiMocks = vi.hoisted(() => ({
   captureKnowledgeTextOrUrl: vi.fn(),
   createKnowledgeItem: vi.fn(),
+  getKnowledgeItem: vi.fn(),
   listKnowledgeInbox: vi.fn(),
   listKnowledgeSnapshots: vi.fn(),
   openKnowledgeSnapshotDownload: vi.fn(),
@@ -86,6 +87,7 @@ beforeEach(() => {
   apiMocks.listKnowledgeInbox.mockResolvedValue([]);
   apiMocks.listKnowledgeSnapshots.mockResolvedValue([]);
   apiMocks.createKnowledgeItem.mockResolvedValue(makeItem());
+  apiMocks.getKnowledgeItem.mockResolvedValue(makeItem());
   apiMocks.captureKnowledgeTextOrUrl.mockResolvedValue(makeSnapshot());
   apiMocks.uploadKnowledgeSnapshot.mockResolvedValue(
     makeSnapshot({ captureMethod: 'upload' }),
@@ -100,6 +102,29 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('KnowledgeHub', () => {
+  it('opens an authorized Knowledge item from a sanitized deep link event', async () => {
+    apiMocks.getKnowledgeItem.mockResolvedValue(
+      makeItem({ id: 'item-deep-link', title: '共有元ナレッジ' }),
+    );
+    render(<KnowledgeHub />);
+
+    window.dispatchEvent(
+      new CustomEvent('erp4_open_entity', {
+        detail: { kind: 'knowledge_item', id: 'item-deep-link' },
+      }),
+    );
+
+    await waitFor(() =>
+      expect(apiMocks.getKnowledgeItem).toHaveBeenCalledWith(
+        'item-deep-link',
+        expect.any(AbortSignal),
+      ),
+    );
+    expect(
+      await screen.findByRole('button', { name: /共有元ナレッジ/ }),
+    ).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('loads an empty Inbox with personal/new/text as the safe defaults', async () => {
     render(<KnowledgeHub />);
 

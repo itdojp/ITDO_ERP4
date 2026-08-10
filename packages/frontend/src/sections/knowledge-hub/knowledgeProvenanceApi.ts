@@ -260,6 +260,7 @@ export async function listKnowledgeAnnotations(
   options: {
     cursor?: string | null;
     includeDeleted?: boolean;
+    signal?: AbortSignal;
   } = {},
 ) {
   const path = pagePath(
@@ -268,6 +269,7 @@ export async function listKnowledgeAnnotations(
   );
   const payload = await requestProvenanceJson(
     options.includeDeleted ? `${path}&includeDeleted=true` : path,
+    options.signal ? { signal: options.signal } : undefined,
   );
   return normalizePage(payload, normalizeAnnotation);
 }
@@ -350,6 +352,7 @@ export async function listKnowledgeAnnotationRevisions(input: {
 export async function listKnowledgeConversations(input: {
   knowledgeItemId: string;
   cursor?: string | null;
+  signal?: AbortSignal;
 }) {
   const query = new URLSearchParams({
     knowledgeItemId: input.knowledgeItemId,
@@ -358,6 +361,7 @@ export async function listKnowledgeConversations(input: {
   if (input.cursor) query.set('cursor', input.cursor);
   const payload = await requestProvenanceJson(
     `/knowledge/conversations?${query.toString()}`,
+    input.signal ? { signal: input.signal } : undefined,
   );
   return normalizePage(payload, normalizeConversation);
 }
@@ -365,12 +369,14 @@ export async function listKnowledgeConversations(input: {
 export async function listKnowledgeConversationTurns(
   conversationId: string,
   cursor?: string | null,
+  signal?: AbortSignal,
 ) {
   const payload = await requestProvenanceJson(
     pagePath(
       `/knowledge/conversations/${encodeURIComponent(conversationId)}/turns`,
       cursor,
     ),
+    signal ? { signal } : undefined,
   );
   return normalizePage(payload, normalizeConversationTurn);
 }
@@ -455,17 +461,25 @@ export async function commitKnowledgeConversationImport(
   );
 }
 
-export async function listKnowledgeSyntheses(cursor?: string | null) {
+export async function listKnowledgeSyntheses(
+  cursor?: string | null,
+  signal?: AbortSignal,
+) {
   const payload = await requestProvenanceJson(
     pagePath('/knowledge/syntheses', cursor),
+    signal ? { signal } : undefined,
   );
   return normalizePage(payload, normalizeSynthesis);
 }
 
-export async function getKnowledgeSynthesis(synthesisId: string) {
+export async function getKnowledgeSynthesis(
+  synthesisId: string,
+  signal?: AbortSignal,
+) {
   return normalizeSynthesisDetail(
     await requestProvenanceJson(
       `/knowledge/syntheses/${encodeURIComponent(synthesisId)}`,
+      signal ? { signal } : undefined,
     ),
   );
 }

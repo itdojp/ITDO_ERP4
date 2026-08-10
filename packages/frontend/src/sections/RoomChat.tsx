@@ -5,9 +5,6 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkBreaks from 'remark-breaks';
-import remarkGfm from 'remark-gfm';
 import { getAuthState } from '../api';
 import {
   Combobox,
@@ -17,8 +14,6 @@ import {
   type MentionTarget,
   UndoToast,
 } from '../ui';
-import { copyToClipboard } from '../utils/clipboard';
-import { buildOpenHash } from '../utils/deepLink';
 import { resolveAttachmentKind } from '../utils/attachments';
 import {
   WorkflowMetricGrid,
@@ -28,17 +23,13 @@ import {
 import {
   buildBeforeForCreatedAt,
   buildDisplayedRooms,
-  buildExcerpt,
-  escapeMarkdownLinkLabel,
   formatAckPreviewInvalidLabel,
   formatAckPreviewReason,
   formatRoomLabel,
-  markdownAllowedElements,
   normalizeStringArray,
   parseTags,
   parseUserIds,
   sanitizeFilename,
-  transformLinkUri,
   type ChatMessage,
   type ChatSearchItem,
 } from './room-chat/roomChatModel';
@@ -68,6 +59,13 @@ import { useRoomChatNotificationSetting } from './room-chat/useRoomChatNotificat
 import { useRoomChatRooms } from './room-chat/useRoomChatRooms';
 import { useRoomChatRootTimelineMutations } from './room-chat/roomChatRootTimelineMutations';
 import { useRoomChatSummary } from './room-chat/useRoomChatSummary';
+import { useRoomKnowledgeShareIntegration } from './room-chat/RoomKnowledgeShareIntegration';
+import {
+  buildRoomChatSummaryItems,
+  copyRoomChatMessageLink,
+  getRootPostLifecycleMessage,
+  renderRoomChatMessageBody,
+} from './room-chat/roomChatPresentation';
 
 export type RootPostLifecycle = 'idle' | 'in_flight' | 'uncertain';
 
@@ -225,6 +223,13 @@ export const RoomChat: React.FC<RoomChatProps> = ({
     () => items.filter((item) => item.roomId === roomId),
     [items, roomId],
   );
+  const knowledgeShares = useRoomKnowledgeShareIntegration({
+    roomId,
+    currentRoomItems,
+    threadRootMessageId:
+      threadTarget?.roomId === roomId ? threadTarget.expectedRootId : undefined,
+    hasAccess: Boolean(roomId && selectedRoom?.isMember !== false),
+  });
   const [nowMs, setNowMs] = useState(0);
   const {
     summary,
@@ -1259,93 +1264,36 @@ export const RoomChat: React.FC<RoomChatProps> = ({
     }
   }, [currentUserId, roomId, roomListQuery, roomListScope, rooms, setRoomId]);
 
-  const renderMessageBody = (text: string) => (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkBreaks]}
-      allowedElements={markdownAllowedElements}
-      urlTransform={transformLinkUri}
-    >
-      {text}
-    </ReactMarkdown>
-  );
-
   const copyMessageLink = async (
     mode: 'url' | 'markdown',
     item: Pick<ChatMessage, 'id' | 'createdAt' | 'userId' | 'body'>,
-  ) => {
-    const hash = buildOpenHash({ kind: 'chat_message', id: item.id });
-    const url = `/${hash}`;
-
-    if (mode === 'url') {
-      const ok = await copyToClipboard(url);
-      setMessage(ok ? 'リンクURLをコピーしました' : 'コピーに失敗しました');
-      return;
-    }
-
-    const roomLabel = selectedRoom
-      ? formatRoomLabel(selectedRoom, currentUserId)
-      : roomId;
-    const label = escapeMarkdownLinkLabel(
-      `${roomLabel} ${new Date(item.createdAt).toLocaleString()} ${item.userId}: ${buildExcerpt(item.body ?? '', 80)}`.trim(),
-    );
-    const markdown = `[${label}](${url})`;
-    const ok = await copyToClipboard(markdown);
-    setMessage(ok ? 'Markdownリンクをコピーしました' : 'コピーに失敗しました');
-  };
-
-  const selectedRoomLabel = selectedRoom
-    ? formatRoomLabel(selectedRoom, currentUserId)
-    : roomId || '未選択';
+  ) =>
+    copyRoomChatMessageLink({
+      mode,
+      item,
+      room: selectedRoom,
+      roomId,
+      currentUserId,
+      onMessage: setMessage,
+    });
   const activeAckTargetCount =
     ackTargetUserIds.length +
     ackTargetGroupIdList.length +
     ackTargetRoleList.length;
-  const chatSummaryItems = [
-    {
-      label: '選択中ルーム',
-      value: selectedRoomLabel,
-      helper: selectedRoom
-        ? `${selectedRoom.type}${selectedRoom.isMember === false ? ' / 非参加' : ''}`
-        : 'ルームを選択すると投稿・検索・通知設定を操作できます。',
-      tone: selectedRoom ? ('success' as const) : ('warning' as const),
-    },
-    {
-      label: '未読',
-      value: `${unreadCount}件`,
-      helper: highlightSince
-        ? `最終既読: ${highlightSince.toLocaleString()}`
-        : '未読状態を読み込み中または未設定です。',
-      tone: unreadCount > 0 ? ('warning' as const) : ('default' as const),
-    },
-    {
-      label: '表示メッセージ',
-      value: `${currentRoomItems.length}件`,
-      helper: hasMore
-        ? '追加読み込み可能です。'
-        : '現在の条件で読み込んだ件数です。',
-    },
-    {
-      label: '確認対象',
-      value: `${activeAckTargetCount}件`,
-      helper:
-        activeAckTargetCount > 0
-          ? '確認依頼の対象が設定されています。'
-          : '必要に応じてユーザ・グループ・ロールを指定します。',
-    },
-    {
-      label: '横断検索結果',
-      value: `${globalItems.length}件`,
-      helper: globalHasMore
-        ? '横断検索に続きがあります。'
-        : 'チャット全体の検索結果件数です。',
-    },
-  ];
+  const chatSummaryItems = buildRoomChatSummaryItems({
+    room: selectedRoom,
+    roomId,
+    currentUserId,
+    unreadCount,
+    highlightSince,
+    displayedMessageCount: currentRoomItems.length,
+    hasMore,
+    ackTargetCount: activeAckTargetCount,
+    globalResultCount: globalItems.length,
+    globalHasMore,
+  });
   const rootPostLifecycleMessage =
-    rootPostLifecycle === 'uncertain'
-      ? '投稿結果を確認できません。重複防止のため再送せず、ページを再読み込みしてください'
-      : rootPostLifecycle === 'in_flight'
-        ? '投稿処理中です。結果が確定するまで再送しないでください'
-        : '';
+    getRootPostLifecycleMessage(rootPostLifecycle);
 
   return (
     <div>
@@ -1683,7 +1631,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
             >
               <div style={{ fontSize: 12, color: '#64748b' }}>プレビュー</div>
               <div style={{ marginTop: 6 }}>
-                {renderMessageBody(body.trim() ? body : '（空）')}
+                {renderRoomChatMessageBody(body.trim() ? body : '（空）')}
               </div>
             </div>
           )}
@@ -1985,7 +1933,8 @@ export const RoomChat: React.FC<RoomChatProps> = ({
           nowMs={nowMs}
           currentUserId={currentUserId}
           roles={roles}
-          renderMessageBody={renderMessageBody}
+          renderMessageBody={renderRoomChatMessageBody}
+          renderKnowledgeShare={knowledgeShares.renderKnowledgeShare}
           onOpenThread={openThread}
           copyMessageLink={copyMessageLink}
           addReaction={addReaction}
@@ -2020,7 +1969,9 @@ export const RoomChat: React.FC<RoomChatProps> = ({
           expectedRootId={threadTarget.expectedRootId}
           currentUserId={currentUserId}
           roles={roles}
-          renderMessageBody={renderMessageBody}
+          renderMessageBody={renderRoomChatMessageBody}
+          renderKnowledgeShareRoot={knowledgeShares.renderKnowledgeShare}
+          renderPromotion={knowledgeShares.renderPromotion}
           onClose={closeThread}
           onRootUpdated={(root) => {
             setItems((current) =>
@@ -2033,6 +1984,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
           onAccessRevoked={(targetRoomId, warning) => {
             clearGlobalSearch();
             clearRoomBoundThreadState(targetRoomId);
+            knowledgeShares.purgeKnowledgeShares();
             purgeRoomState(targetRoomId, warning);
           }}
           onAccessCheckRequired={revalidateRoomAccess}
