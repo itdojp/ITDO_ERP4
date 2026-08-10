@@ -73,6 +73,52 @@ Google Drive / local storage infrastructure
 - share snapshot から storage provider key、Drive URL、内部 folder/Shared Drive ID を返さない。
 - 元 item を logical delete しても、監査上必要な既存 share snapshot は自動削除・自動更新しない。表示停止が必要な場合は別の revoke event とする。
 
+Issue #2015 の expand 段階では、既存 application rollback を維持するため
+`ChatMessageType` に未知値を追加しない。share card の Chat root は引き続き
+`messageType=text` とし、本文は内容を含まない固定 fallback
+`Knowledge was shared.` だけを保存する。新 client は、Chat message と一対一の
+`KnowledgeShare` relation を additive discriminator として扱い、選択済み内容は
+typed immutable snapshot row だけから表示する。旧 client は relation を知らなくても
+固定 fallback を通常 text として安全に表示できる。
+
+- preview は source、destination room、選択 field、exact source version/hash、actor、
+  10分の期限へ HMAC で束縛し、本文、生 ID 一覧、request key を token へ格納しない。
+- commit は current source read と destination post ACL を再検査し、外部参加者を許可する
+  room は初期実装で fail closed とする。preview 結果だけを認可根拠にしない。
+- project roomではJWTのproject claimをcurrent membershipの正本にせず、非privileged actorの
+  `ProjectMember`をpreview/commit transaction内で再照会し、commit時は対象rowをlockする。
+  DB membershipが失効した後のstale claimはdestination post権限を復活させない。
+- Knowledge の owner/sharer/audit には canonical `UserAccount.id`、Chat room ACL と
+  `ChatMessage.userId` には同じ認証要求から server-side に解決した既存 Chat identity
+  (`externalId` または `userName`) を使用する。両者を同一文字列と仮定せず、share row の
+  immutable `chatPosterUserId` で generic root の投稿者を DB でも検証する。
+- canonical URL は credential/query/fragment を除去するだけでなく、Google Drive/Docs と
+  storage/provider host を共有対象外として fail closed にする。provider object identifier を
+  path から card snapshot へ移送しない。host allow/deny 判定前に末尾ドットを拒否し、
+  DNS absolute-name 表記で provider host 判定を迂回できないようにする。
+- share は `pending → posted|failed|revoked` および `posted → revoked` だけを許可し、
+  結果不明時は `pending` を維持する。reconciliation は既存 message/reference の照合だけを
+  行い、新しい Chat message を作成しない。
+- revoke 後も root/thread と immutable snapshot row は監査履歴として保持するが、card read は
+  内容を返さず revoked placeholder だけを返す。source delete/ACL失効は自動 revoke ではない。
+- revoke は sharer または source owner の明示操作だけを許可し、その他の actor には
+  missing と同じ `not_found` を返す。Chat 投稿後の通知は固定 fallback だけを受け取る
+  fail-open side effect とし、通知失敗で committed `posted` 状態を巻き戻さない。official room
+  と viewer group を既存 Chat audience policy と同じ条件で解決し、share notification だけは
+  message/recipient を domain-separated SHA-256 で束縛した nullable unique key により、並行実行と
+  retryを一件へ収束させる。既存 notification producer はこの nullable key を使用しない。
+- 同じ actor/request key/payload の replay は、署名済み token の actor/source/room/payload bindingを
+  検証した後、現在の source/room ACL や token expiry より先に既存確定結果を返す。これは新しい
+  mutation の許可ではなく、既に確定した結果の回収だけに限定する。新規 commit は従来どおり
+  token expiry、current ACL、exact source versionを全て再検査する。
+- `posted`/`revoked` share に紐付く generic Chat root は、本文、投稿者、room、thread topology、
+  logical-delete状態の直接変更と物理削除をDB triggerで拒否する。通常のChat削除APIもこのrootを
+  削除せず、表示停止はKnowledge share revoke endpointだけが担う。pending shareを既存rootへ
+  reconcileする際はrootを`FOR UPDATE`でlockしてexact fallback/topology/deleted stateを再検査し、
+  本文変更やlogical deleteとの競合後にposted+invalid rootが成立しないようにする。
+- room-only viewer の card read は current Chat room ACL、元 item を開く導線は current room ACL と
+  current Knowledge ACL を別々に再評価する。card responseに元 item/source rowの内部IDを含めない。
+
 ### 4. すべての read surface での認可
 
 同じ authorization policy を少なくとも以下から呼び、件数や候補から personal item の存在を推測できないようにする。

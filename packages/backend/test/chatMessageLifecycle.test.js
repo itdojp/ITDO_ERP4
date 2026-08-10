@@ -21,6 +21,7 @@ function harness(overrides = {}) {
     userId: 'user-1',
     parentMessageId: 'root-1',
     threadRootId: 'root-1',
+    isKnowledgeShare: false,
   };
   const tx = {
     async $queryRaw(query) {
@@ -151,6 +152,7 @@ test('moderation requires a moderator role while an outsider and a deleted row a
         userId: 'user-2',
         parentMessageId: 'root-1',
         threadRootId: 'root-1',
+        isKnowledgeShare: false,
       },
     ],
   }).service;
@@ -175,6 +177,41 @@ test('moderation requires a moderator role while an outsider and a deleted row a
     }),
     null,
   );
+});
+
+test('generic sender and moderator deletion cannot bypass a Knowledge share revoke', async () => {
+  const shareRoot = {
+    id: 'share-root-1',
+    roomId: 'room-1',
+    userId: 'user-1',
+    parentMessageId: null,
+    threadRootId: null,
+    isKnowledgeShare: true,
+  };
+  for (const input of [
+    { actor, reason: 'user_retract' },
+    {
+      actor: { ...actor, userId: 'admin-1', roles: ['admin'] },
+      reason: 'admin_moderation',
+    },
+  ]) {
+    const { calls, service, updates } = harness({
+      messageRows: [shareRoot],
+    });
+    assert.equal(
+      await service.deleteMessage({
+        messageId: shareRoot.id,
+        actor: input.actor,
+        reason: input.reason,
+      }),
+      null,
+    );
+    assert.equal(updates.length, 0);
+    assert.deepEqual(
+      calls.map(([kind]) => kind),
+      ['transaction', 'messageLock', 'roomLock', 'memberLock', 'accessRoom'],
+    );
+  }
 });
 
 test('stale room ACL fails closed after all locks without deleting the message', async () => {

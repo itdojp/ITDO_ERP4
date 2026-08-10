@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type { Prisma } from '@prisma/client';
 import { prisma } from './db.js';
 import { dispatchNotificationPushes } from './notificationPushes.js';
@@ -622,6 +624,7 @@ export async function createChatMessageNotifications(options: {
   senderUserId: string;
   recipientUserIds: string[];
   excludeUserIds?: string[];
+  idempotencyDomain?: 'knowledge_share';
 }) {
   const recipients = new Set<string>();
   options.recipientUserIds.forEach((userId) => {
@@ -655,21 +658,42 @@ export async function createChatMessageNotifications(options: {
     excerpt: options.messageBody.replace(/\s+/g, ' ').trim().slice(0, 140),
   };
 
-  const created = await prisma.appNotification.createMany({
-    data: filtered.allowed.map((userId) => ({
-      userId,
-      kind: 'chat_message',
-      projectId: options.projectId ?? null,
-      messageId: options.messageId,
-      payload,
-      createdBy: options.senderUserId,
-      updatedBy: options.senderUserId,
-    })),
-  });
+  const data = filtered.allowed.map((userId) => ({
+    userId,
+    kind: 'chat_message',
+    projectId: options.projectId ?? null,
+    messageId: options.messageId,
+    payload,
+    dedupeKey:
+      options.idempotencyDomain === 'knowledge_share'
+        ? createHash('sha256')
+            .update('erp4:notification:knowledge-share:v1\0', 'utf8')
+            .update(options.messageId, 'utf8')
+            .update('\0', 'utf8')
+            .update(userId, 'utf8')
+            .digest('hex')
+        : undefined,
+    createdBy: options.senderUserId,
+    updatedBy: options.senderUserId,
+  }));
+  const createdUserIds =
+    options.idempotencyDomain === 'knowledge_share'
+      ? (
+          await prisma.appNotification.createManyAndReturn({
+            data,
+            skipDuplicates: true,
+            select: { userId: true },
+          })
+        ).map((entry) => entry.userId)
+      : null;
+  const created =
+    createdUserIds === null
+      ? await prisma.appNotification.createMany({ data })
+      : { count: createdUserIds.length };
   if (created.count > 0) {
     dispatchNotificationPushesAsync({
       kind: 'chat_message',
-      userIds: filtered.allowed,
+      userIds: createdUserIds ?? filtered.allowed,
       payload,
       messageId: options.messageId,
       projectId: options.projectId ?? null,
@@ -679,7 +703,7 @@ export async function createChatMessageNotifications(options: {
 
   return {
     created: created.count,
-    recipients: filtered.allowed,
+    recipients: createdUserIds ?? filtered.allowed,
     truncated,
   };
 }

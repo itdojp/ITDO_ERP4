@@ -19,6 +19,7 @@ export type ChatNotificationRoom = {
   id: string;
   type: string;
   projectId?: string | null;
+  isOfficial?: boolean;
   groupId: string | null;
   viewerGroupIds?: unknown;
   allowExternalUsers: boolean;
@@ -108,6 +109,7 @@ export async function tryCreateChatMessageNotificationEffects(options: {
   messageBody: string;
   senderUserId: string;
   excludeUserIds?: string[];
+  idempotencyDomain?: 'knowledge_share';
 }) {
   const projectId = resolveProjectId(options.room, options.projectId);
   try {
@@ -124,6 +126,7 @@ export async function tryCreateChatMessageNotificationEffects(options: {
         senderUserId: options.senderUserId,
         recipientUserIds: Array.from(audience),
         excludeUserIds: options.excludeUserIds,
+        idempotencyDomain: options.idempotencyDomain,
       });
     if (notificationResult.created <= 0) {
       return notificationResult.recipients;

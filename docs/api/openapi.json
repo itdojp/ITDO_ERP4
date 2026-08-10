@@ -21678,6 +21678,1308 @@
         ]
       }
     },
+    "/knowledge/items/{itemId}/shares": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "confirmed": {
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "destinationRoomId": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "previewToken": {
+                    "maxLength": 4096,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "requestKey": {
+                    "description": "Opaque client operation key. The raw value is not persisted or returned.",
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "selection": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "annotations": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "annotationId": {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "revision": {
+                              "minimum": 1,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "annotationId",
+                            "revision"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 20,
+                        "type": "array"
+                      },
+                      "conversationTurnIds": {
+                        "items": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 50,
+                        "type": "array",
+                        "uniqueItems": true
+                      },
+                      "includeCanonicalUrl": {
+                        "type": "boolean"
+                      },
+                      "includeSourceType": {
+                        "type": "boolean"
+                      },
+                      "includeTitle": {
+                        "type": "boolean"
+                      },
+                      "labelAssignmentIds": {
+                        "items": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 20,
+                        "type": "array",
+                        "uniqueItems": true
+                      },
+                      "sharerNote": {
+                        "description": "Maximum 4,096 UTF-8 bytes; the application layer enforces the byte limit.",
+                        "maxLength": 4096,
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "snapshot": {
+                        "additionalProperties": false,
+                        "nullable": true,
+                        "properties": {
+                          "includeExcerpt": {
+                            "type": "boolean"
+                          },
+                          "includeProvenance": {
+                            "type": "boolean"
+                          },
+                          "snapshotId": {
+                            "maxLength": 200,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "snapshotId",
+                          "includeProvenance",
+                          "includeExcerpt"
+                        ],
+                        "type": "object"
+                      },
+                      "syntheses": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "synthesisId": {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "version": {
+                              "minimum": 1,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "synthesisId",
+                            "version"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 10,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "includeTitle",
+                      "includeSourceType",
+                      "includeCanonicalUrl",
+                      "snapshot",
+                      "labelAssignmentIds",
+                      "annotations",
+                      "conversationTurnIds",
+                      "syntheses",
+                      "sharerNote"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "destinationRoomId",
+                  "selection",
+                  "confirmed",
+                  "previewToken",
+                  "requestKey"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "chatMessageId": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "failedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "failureCode": {
+                      "enum": [
+                        "source_unavailable",
+                        "room_unavailable",
+                        "post_rejected"
+                      ],
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "postedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "resultUnknown": {
+                      "type": "boolean"
+                    },
+                    "reused": {
+                      "type": "boolean"
+                    },
+                    "revokedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "shareId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "pending",
+                        "posted",
+                        "failed",
+                        "revoked"
+                      ],
+                      "type": "string"
+                    },
+                    "version": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "shareId",
+                    "status",
+                    "version",
+                    "chatMessageId",
+                    "failureCode",
+                    "createdAt",
+                    "postedAt",
+                    "failedAt",
+                    "revokedAt",
+                    "created",
+                    "reused",
+                    "resultUnknown"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "chatMessageId": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "failedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "failureCode": {
+                      "enum": [
+                        "source_unavailable",
+                        "room_unavailable",
+                        "post_rejected"
+                      ],
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "postedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "resultUnknown": {
+                      "type": "boolean"
+                    },
+                    "reused": {
+                      "type": "boolean"
+                    },
+                    "revokedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "shareId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "pending",
+                        "posted",
+                        "failed",
+                        "revoked"
+                      ],
+                      "type": "string"
+                    },
+                    "version": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "shareId",
+                    "status",
+                    "version",
+                    "chatMessageId",
+                    "failureCode",
+                    "createdAt",
+                    "postedAt",
+                    "failedAt",
+                    "revokedAt",
+                    "created",
+                    "reused",
+                    "resultUnknown"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "chatMessageId": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "failedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "failureCode": {
+                      "enum": [
+                        "source_unavailable",
+                        "room_unavailable",
+                        "post_rejected"
+                      ],
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "postedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "resultUnknown": {
+                      "type": "boolean"
+                    },
+                    "reused": {
+                      "type": "boolean"
+                    },
+                    "revokedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "shareId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "pending",
+                        "posted",
+                        "failed",
+                        "revoked"
+                      ],
+                      "type": "string"
+                    },
+                    "version": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "shareId",
+                    "status",
+                    "version",
+                    "chatMessageId",
+                    "failureCode",
+                    "createdAt",
+                    "postedAt",
+                    "failedAt",
+                    "revokedAt",
+                    "created",
+                    "reused",
+                    "resultUnknown"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/knowledge/items/{itemId}/shares/preview": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "itemId",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "destinationRoomId": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "selection": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "annotations": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "annotationId": {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "revision": {
+                              "minimum": 1,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "annotationId",
+                            "revision"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 20,
+                        "type": "array"
+                      },
+                      "conversationTurnIds": {
+                        "items": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 50,
+                        "type": "array",
+                        "uniqueItems": true
+                      },
+                      "includeCanonicalUrl": {
+                        "type": "boolean"
+                      },
+                      "includeSourceType": {
+                        "type": "boolean"
+                      },
+                      "includeTitle": {
+                        "type": "boolean"
+                      },
+                      "labelAssignmentIds": {
+                        "items": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 20,
+                        "type": "array",
+                        "uniqueItems": true
+                      },
+                      "sharerNote": {
+                        "description": "Maximum 4,096 UTF-8 bytes; the application layer enforces the byte limit.",
+                        "maxLength": 4096,
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "snapshot": {
+                        "additionalProperties": false,
+                        "nullable": true,
+                        "properties": {
+                          "includeExcerpt": {
+                            "type": "boolean"
+                          },
+                          "includeProvenance": {
+                            "type": "boolean"
+                          },
+                          "snapshotId": {
+                            "maxLength": 200,
+                            "minLength": 1,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "snapshotId",
+                          "includeProvenance",
+                          "includeExcerpt"
+                        ],
+                        "type": "object"
+                      },
+                      "syntheses": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "synthesisId": {
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "version": {
+                              "minimum": 1,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "synthesisId",
+                            "version"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 10,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "includeTitle",
+                      "includeSourceType",
+                      "includeCanonicalUrl",
+                      "snapshot",
+                      "labelAssignmentIds",
+                      "annotations",
+                      "conversationTurnIds",
+                      "syntheses",
+                      "sharerNote"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "destinationRoomId",
+                  "selection"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "card": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "annotations": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "content": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "note",
+                                  "question",
+                                  "hypothesis",
+                                  "quote",
+                                  "todo"
+                                ],
+                                "type": "string"
+                              },
+                              "origin": {
+                                "enum": [
+                                  "user",
+                                  "external",
+                                  "ai",
+                                  "system",
+                                  "tool"
+                                ],
+                                "type": "string"
+                              },
+                              "revision": {
+                                "minimum": 1,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "revision",
+                              "kind",
+                              "origin",
+                              "content"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "canonicalUrl": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "labels": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "displayName": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "displayName"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "omittedCategories": {
+                          "items": {
+                            "enum": [
+                              "title",
+                              "source_type",
+                              "canonical_url",
+                              "snapshot_provenance",
+                              "snapshot_excerpt",
+                              "label",
+                              "annotation",
+                              "conversation_turn",
+                              "synthesis",
+                              "sharer_note"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array",
+                          "uniqueItems": true
+                        },
+                        "schemaVersion": {
+                          "enum": [
+                            1
+                          ],
+                          "type": "integer"
+                        },
+                        "selectedCategories": {
+                          "items": {
+                            "enum": [
+                              "title",
+                              "source_type",
+                              "canonical_url",
+                              "snapshot_provenance",
+                              "snapshot_excerpt",
+                              "label",
+                              "annotation",
+                              "conversation_turn",
+                              "synthesis",
+                              "sharer_note"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array",
+                          "uniqueItems": true
+                        },
+                        "sharerNote": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "snapshot": {
+                          "additionalProperties": false,
+                          "anyOf": [
+                            {
+                              "required": [
+                                "version",
+                                "sha256"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "required": [
+                                "excerpt"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "nullable": true,
+                          "properties": {
+                            "excerpt": {
+                              "type": "string"
+                            },
+                            "sha256": {
+                              "pattern": "^[a-f0-9]{64}$",
+                              "type": "string"
+                            },
+                            "version": {
+                              "minimum": 1,
+                              "type": "integer"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "sourceType": {
+                          "enum": [
+                            "x",
+                            "threads",
+                            "news",
+                            "web",
+                            "pdf",
+                            "image",
+                            "manual",
+                            "other"
+                          ],
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "syntheses": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "confidenceBasisPoints": {
+                                "maximum": 10000,
+                                "minimum": 0,
+                                "nullable": true,
+                                "type": "integer"
+                              },
+                              "content": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "unresolvedQuestions": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "maxItems": 50,
+                                "type": "array"
+                              },
+                              "version": {
+                                "minimum": 1,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "version",
+                              "title",
+                              "content",
+                              "confidenceBasisPoints",
+                              "unresolvedQuestions"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 10,
+                          "type": "array"
+                        },
+                        "title": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "turns": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "content": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "occurredAt": {
+                                "format": "date-time",
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "origin": {
+                                "enum": [
+                                  "user",
+                                  "external",
+                                  "ai",
+                                  "system",
+                                  "tool"
+                                ],
+                                "type": "string"
+                              },
+                              "role": {
+                                "enum": [
+                                  "user",
+                                  "assistant",
+                                  "system",
+                                  "tool"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "role",
+                              "origin",
+                              "content",
+                              "name",
+                              "occurredAt"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 50,
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "schemaVersion",
+                        "title",
+                        "sourceType",
+                        "canonicalUrl",
+                        "snapshot",
+                        "sharerNote",
+                        "labels",
+                        "annotations",
+                        "turns",
+                        "syntheses",
+                        "selectedCategories",
+                        "omittedCategories"
+                      ],
+                      "type": "object"
+                    },
+                    "destinationRoom": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "type"
+                      ],
+                      "type": "object"
+                    },
+                    "expiresAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "previewToken": {
+                      "type": "string"
+                    },
+                    "requiresConfirmation": {
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "card",
+                    "destinationRoom",
+                    "previewToken",
+                    "expiresAt",
+                    "requiresConfirmation"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
     "/knowledge/items/{itemId}/snapshots": {
       "get": {
         "parameters": [
@@ -28994,6 +30296,1027 @@
                   "properties": {
                     "error": {
                       "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/knowledge/shares/{shareId}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shareId",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "chatMessageId": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "failedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "failureCode": {
+                      "enum": [
+                        "source_unavailable",
+                        "room_unavailable",
+                        "post_rejected"
+                      ],
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "postedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "revokedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "shareId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "pending",
+                        "posted",
+                        "failed",
+                        "revoked"
+                      ],
+                      "type": "string"
+                    },
+                    "version": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "shareId",
+                    "status",
+                    "version",
+                    "chatMessageId",
+                    "failureCode",
+                    "createdAt",
+                    "postedAt",
+                    "failedAt",
+                    "revokedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/knowledge/shares/{shareId}/reconcile": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shareId",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "chatMessageId": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "failedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "failureCode": {
+                      "enum": [
+                        "source_unavailable",
+                        "room_unavailable",
+                        "post_rejected"
+                      ],
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "postedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "revokedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "shareId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "pending",
+                        "posted",
+                        "failed",
+                        "revoked"
+                      ],
+                      "type": "string"
+                    },
+                    "version": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "shareId",
+                    "status",
+                    "version",
+                    "chatMessageId",
+                    "failureCode",
+                    "createdAt",
+                    "postedAt",
+                    "failedAt",
+                    "revokedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "chatMessageId": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "failedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "failureCode": {
+                      "enum": [
+                        "source_unavailable",
+                        "room_unavailable",
+                        "post_rejected"
+                      ],
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "postedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "revokedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "shareId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "pending",
+                        "posted",
+                        "failed",
+                        "revoked"
+                      ],
+                      "type": "string"
+                    },
+                    "version": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "shareId",
+                    "status",
+                    "version",
+                    "chatMessageId",
+                    "failureCode",
+                    "createdAt",
+                    "postedAt",
+                    "failedAt",
+                    "revokedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/knowledge/shares/{shareId}/revoke": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shareId",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "chatMessageId": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "failedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "failureCode": {
+                      "enum": [
+                        "source_unavailable",
+                        "room_unavailable",
+                        "post_rejected"
+                      ],
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "postedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "revokedAt": {
+                      "format": "date-time",
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "shareId": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "enum": [
+                        "pending",
+                        "posted",
+                        "failed",
+                        "revoked"
+                      ],
+                      "type": "string"
+                    },
+                    "version": {
+                      "minimum": 1,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "shareId",
+                    "status",
+                    "version",
+                    "chatMessageId",
+                    "failureCode",
+                    "createdAt",
+                    "postedAt",
+                    "failedAt",
+                    "revokedAt"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/knowledge/shares/{shareId}/source": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "shareId",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "knowledgeItemId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "knowledgeItemId"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
                       "properties": {
                         "category": {
                           "type": "string"

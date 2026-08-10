@@ -265,6 +265,7 @@ test('tryCreateChatMessageNotificationEffects resolves audience and excludes men
       messageBody: '案件メッセージ本文',
       senderUserId: 'actor',
       excludeUserIds: ['mentioned-user'],
+      idempotencyDomain: 'knowledge_share',
     });
 
     assert.deepEqual(recipients, ['audience-user']);
@@ -277,6 +278,7 @@ test('tryCreateChatMessageNotificationEffects resolves audience and excludes men
       ['actor', 'audience-user', 'mentioned-user'].sort(),
     );
     assert.deepEqual(events[0].excludeUserIds, ['mentioned-user']);
+    assert.equal(events[0].idempotencyDomain, 'knowledge_share');
     assert.equal(auditLogs.length, 1);
     assert.equal(auditLogs[0].action, 'chat_message_notifications_created');
     assert.equal(auditLogs[0].metadata.audienceCount, 3);

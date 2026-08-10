@@ -464,6 +464,35 @@ mutationする。
 - 非対象: automatic share/post、元 personal item の権限移譲。
 - 受け入れ: preview/confirm、source read + destination post、非共有field 0、room-only viewer、revoke event、selected messages/version provenance。
 - rollback/test: source削除/権限変更後card、cross-room access、personal label/AI turn leakage、Chat failure pending/failed、E2E/UI evidence。
+- application rollbackを維持するため、初期段階では`ChatMessageType=text`を維持し、
+  fixed generic fallbackと一対一share relationをcard discriminatorにする。selected contentを
+  `ChatMessage.body`、notification、search、auditへ複製しない。
+- share snapshotはtitle/source type/safe canonical URL/ready snapshot version+hashとbounded excerpt/
+  active label assignment/exact annotation revision/exact conversation turn/exact synthesis version/
+  bounded sharer noteのtyped rowだけを許可する。非選択field用の汎用JSON metadataを正本にしない。
+- previewはmutationなし、commitは`confirmed=true`を必須とし、sourceとroom ACLおよびexact versionを
+  再検査する。raw request keyは保存せずactor-scoped hashを使い、same key+same payloadは既存share、
+  same key+different payloadはmutationなしのsanitized conflictとする。
+- same key+same payloadの既存結果回収は、署名済みpreviewのactor/source/room/payload bindingを
+  再検証した上でtoken expiryや後続のsource削除/ACL失効後も許可する。新規mutationはこの経路を
+  使用できず、期限、current ACL、exact source versionの検査を必須とする。
+- share post結果不明時は`pending`を保持し、read-only reconcileで既存referenceだけを照合する。
+  failed/revoked shareを自動再投稿しない。revokeはcontent-free placeholderを返し、threadを物理削除しない。
+- Knowledge actorのcanonical `UserAccount.id`と既存Chat identityを分離して同じ認証要求から
+  server-sideに解決し、share rowの`chatPosterUserId`、固定fallback本文、active rootをDB制約で
+  検証する。source ownerまたはsharerだけがrevokeでき、outsiderには存在を返さない。
+- project destinationでは非privileged actorのcurrent `ProjectMember` rowをpreview/commit transactionで
+  再照会・lockし、DB membership失効後のstale JWT project claimを認可根拠にしない。
+- preview audit target、signed preview token、commit aggregateは同じ予約share IDへ相関させる。
+  同じpreviewを別request keyへ再束縛する操作はsanitized conflictとし、Chat rootを作成しない。
+- 投稿確定後のnotification/Web Push/emailには固定fallbackだけを渡し、選択内容やprovider URLを
+  複製しない。official room/viewer groupを既存Chat audience契約どおり対象にし、share notificationの
+  並行実行/retryはopaque unique dedupe keyで一件へ収束させる。通知失敗はsanitized logへ記録するが、
+  確定済みmessage/shareを失敗へ戻さない。
+- provider hostの末尾ドットによるdeny-list迂回を拒否する。posted/revoked shareのgeneric Chat rootは
+  DB triggerとChat削除serviceの両方で逆方向の本文/投稿者/room/thread/deleted state変更および物理削除を
+  禁止し、表示停止は明示的なshare revokeだけで行う。pending→posted bindingはChat rootを
+  `FOR UPDATE`で直列化し、reconcileと本文変更/logical deleteの競合はposted+invalid rootへ収束させない。
 
 ### 08. External LLM common boundary / AI dialogue / cost guard
 
