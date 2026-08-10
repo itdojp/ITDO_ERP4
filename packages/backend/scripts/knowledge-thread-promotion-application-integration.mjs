@@ -364,17 +364,23 @@ try {
     },
   );
   const differentKeyRacePersisted = await client.query(
-    `SELECT COUNT(p."id")::int AS "promotionCount",
-            COUNT(r."id")::int AS "requestCount"
-       FROM "KnowledgeThreadPromotion" p
-       JOIN "KnowledgeSynthesis" s
-         ON s."id" = p."destinationSynthesisId"
+    `SELECT COUNT(DISTINCT s."id")::int AS "synthesisCount",
+            COUNT(DISTINCT v."id")::int AS "versionCount",
+            COUNT(DISTINCT p."id")::int AS "promotionCount",
+            COUNT(DISTINCT r."id")::int AS "requestCount"
+       FROM "KnowledgeSynthesis" s
+       LEFT JOIN "KnowledgeSynthesisVersion" v
+         ON v."synthesisId" = s."id"
+       LEFT JOIN "KnowledgeThreadPromotion" p
+         ON p."destinationSynthesisId" = s."id"
        LEFT JOIN "KnowledgeThreadPromotionRequest" r
          ON r."promotionId" = p."id"
       WHERE s."title" = $1`,
     [differentKeyRaceRequest.synthesis.title],
   );
   assert.deepEqual(differentKeyRacePersisted.rows[0], {
+    synthesisCount: 1,
+    versionCount: 1,
     promotionCount: 1,
     requestCount: 1,
   });
@@ -619,6 +625,30 @@ try {
   );
   assert.equal(rollbackRows.rows[0].count, 0);
 
+  const shareRevokedAt = new Date(Date.now() + 2_000);
+  await client.query(
+    `UPDATE "KnowledgeShare"
+        SET "status" = 'revoked', "revokedAt" = $2, "revokedBy" = $3,
+            "version" = 3, "updatedAt" = $2, "updatedBy" = $3
+      WHERE "id" = $1`,
+    [ids.share, shareRevokedAt, ids.actor],
+  );
+  const visibleAfterShareRevoke = await synthesisRepository.findVisible({
+    actor,
+    synthesisId: committed.value.synthesisId,
+    accessContext: createSynthesisAccessContext(),
+  });
+  assert.ok(visibleAfterShareRevoke);
+  assert.equal(visibleAfterShareRevoke.currentVersion.content, selectedContent);
+  assert.equal(
+    visibleAfterShareRevoke.currentVersion.sources[0].accessible,
+    false,
+  );
+  assert.equal(
+    visibleAfterShareRevoke.currentVersion.sources[0].sourceId,
+    null,
+  );
+
   console.log(
     JSON.stringify({
       result: 'PASS',
@@ -633,6 +663,7 @@ try {
       revokedGrantDenied: true,
       roomLossRedactsProvenanceOnly: true,
       externalizedRoomRedactsProvenanceOnly: true,
+      shareRevokeRedactsProvenanceOnly: true,
       auditFailureRollsBack: true,
     }),
   );
