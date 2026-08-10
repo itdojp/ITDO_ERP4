@@ -43,7 +43,6 @@
 
 ### 2026-08-10
 
-- [証跡ディレクトリ: 2026-08-10-frontend-e2e](2026-08-10-frontend-e2e/)
 - [Issue #2015 Knowledge selective share / Chat card / promote UI 検証](2026-08-10-issue2015-knowledge-share-promote-ui.md)
   - 証跡: [docs/test-results/2026-08-10-issue2015-knowledge-share-promote-ui/](2026-08-10-issue2015-knowledge-share-promote-ui/)
 
