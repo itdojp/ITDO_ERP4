@@ -286,6 +286,8 @@ test('knowledge-share summary route rejects missing, empty, oversized, and over-
         '/chat-rooms/room-1/knowledge-share-messages',
         '/chat-rooms/room-1/knowledge-share-messages?messageIds=%20',
         `/chat-rooms/room-1/knowledge-share-messages?messageIds=${'x'.repeat(201)}`,
+        '/chat-rooms/room-1/knowledge-share-messages?messageIds=root-%01-control',
+        '/chat-rooms/room-1/knowledge-share-messages?messageIds=root-%E2%80%AE-spoof',
         `/chat-rooms/room-1/knowledge-share-messages?messageIds=${Array.from({ length: 101 }, (_, index) => `root-${index}`).join(',')}`,
       ];
       for (const url of cases) {
@@ -295,6 +297,37 @@ test('knowledge-share summary route rejects missing, empty, oversized, and over-
     },
   );
   assert.deepEqual(summaryInputs, []);
+});
+
+test('knowledge-share summary route measures identifier limits by Unicode code point', async () => {
+  const room = {
+    id: 'room-1',
+    type: 'company',
+    projectId: null,
+    isOfficial: true,
+    groupId: null,
+    viewerGroupIds: null,
+    posterGroupIds: null,
+    deletedAt: null,
+    allowExternalUsers: false,
+  };
+  const summaryInputs = [];
+  const messageId = '😀'.repeat(200);
+  await withServer(
+    readableRepository({
+      summaryInputs,
+      accessRooms: { 'room-1': room },
+    }),
+    async (server) => {
+      const response = await server.inject({
+        method: 'GET',
+        url: `/chat-rooms/room-1/knowledge-share-messages?messageIds=${encodeURIComponent(messageId)}`,
+        headers,
+      });
+      assert.equal(response.statusCode, 200, response.body);
+    },
+  );
+  assert.deepEqual(summaryInputs[0].messageIds, [messageId]);
 });
 
 test('knowledge-share summary route normalizes same-snapshot access revocation to 404', async () => {

@@ -214,7 +214,8 @@
 - thread cursorはAES-256-GCMでpayloadを暗号化し、さらにHMAC-SHA256署名したopaque tokenとする。canonical actor、root、`createdAt + id`境界へbindし、raw user ID、room ID、root ID、reply IDをURLから復元できる形で格納しない。鍵は`KNOWLEDGE_CURSOR_SIGNING_SECRET`から暗号化・署名の用途別に導出し、鍵rotationまたはnon-production process再起動で既存cursorは失効する。
 - room membership、viewer group、project access、project alias、external user制限をthread取得時にserver側で再評価する。権限外IDと存在しないIDは同じ404 responseとし、本文、件数、cursor、root/reply関係を漏らさない。
 - PR Aはexpand-only schema、root-only timeline、thread read APIまでを提供する。PR Bはreply投稿と既存mention/notification/reaction/search/unread/ackのroot/reply共通化を提供し、UI/E2E/manualはPR Cで提供する。
-- reply投稿は`POST /chat-messages/:rootId/replies`を正規経路とし、root、room、現在のpost ACLを作成transaction内で再検査する。既存のroom/project message POSTはroot作成専用のまま維持する。
+- reply投稿は`POST /chat-messages/:rootId/replies`を正規経路とし、root、room、現在のpost ACL、project
+  roomのactive backing projectを作成transaction内で再検査する。既存のroom/project message POSTはroot作成専用のまま維持する。
 - replyも既存mention parser、`@all` rate limit、room notification setting、mute、送信者除外を使用する。thread参加者全員への暗黙通知やthread followerは追加しない。
 - 永続化されたアプリ内chat通知は一覧取得時にactive messageとcurrent room read ACLをbatch再検査する。message削除またはACL失効時は本文excerptとroom/message識別子を返さず、通知自体はcontent unavailable状態として保持する。content unavailable通知は既に受信者本人へ作成された通知履歴であるため、readAtが記録されるまでは`/notifications/unread-count`の集計対象に維持するが、集計responseへchat参照や通知内訳は含めない。Web Pushとメールは外部配信の直前、ACK reminder/escalationは新規通知rowの作成直前に、active message/room、project alias、current room read ACLを再検査し、失効後のexcerpt・deep link・本文を配信しない。`chat_room_acl_mismatch`はmessage本文通知ではなくACL管理警告のため、active roomのcurrent owner/admin membershipを再検査し、一般memberまたは管理権限失効時は同様にredactする。配信済みPush通知は回収対象外とする。
 - chat通知の監査metadataは件数、有限enum、booleanだけを保存し、本文、room/message ID、recipient ID列を保存しない。chat検索の監査もquery本文を保存せず、文字数と結果件数だけを保存する。

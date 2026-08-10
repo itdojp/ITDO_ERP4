@@ -68,6 +68,32 @@ import {
   chatTimelineNotFoundResponseSchema,
 } from './chatThreadSchemas.js';
 
+const CHAT_MESSAGE_ID_DIRECTIONAL_CODE_POINTS = new Set([
+  0x061c, 0x200e, 0x200f, 0x2028, 0x2029, 0x202a, 0x202b, 0x202c, 0x202d,
+  0x202e, 0x2066, 0x2067, 0x2068, 0x2069, 0xfeff,
+]);
+
+function isValidChatMessageId(value: string) {
+  const codePoints = [...value];
+  if (
+    codePoints.length === 0 ||
+    codePoints.length > 200 ||
+    Buffer.byteLength(value, 'utf8') > 800
+  ) {
+    return false;
+  }
+  return codePoints.every((character) => {
+    const codePoint = character.codePointAt(0);
+    return (
+      codePoint !== undefined &&
+      codePoint >= 0x20 &&
+      !(codePoint >= 0x7f && codePoint <= 0x9f) &&
+      !(codePoint >= 0xd800 && codePoint <= 0xdfff) &&
+      !CHAT_MESSAGE_ID_DIRECTIONAL_CODE_POINTS.has(codePoint)
+    );
+  });
+}
+
 export async function registerChatRoomRoutes(app: FastifyInstance) {
   const chatRoles = CHAT_ROLES;
   const chatSettingId = 'default';
@@ -1034,9 +1060,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
       if (
         messageIds.length === 0 ||
         messageIds.length > 100 ||
-        messageIds.some(
-          (messageId) => messageId.length === 0 || messageId.length > 200,
-        )
+        messageIds.some((messageId) => !isValidChatMessageId(messageId))
       ) {
         return reply.status(400).send({
           error: {

@@ -464,6 +464,12 @@ test('reply creation rechecks the active root, same room, and post ACL in one tr
         };
       },
     },
+    project: {
+      async findFirst(input) {
+        calls.push(['activeProject', input]);
+        return { id: 'project-1' };
+      },
+    },
     chatAckRequest: { findMany: async () => [] },
     chatAck: { findMany: async () => [] },
     chatAttachment: { findMany: async () => [] },
@@ -494,8 +500,15 @@ test('reply creation rechecks the active root, same room, and post ACL in one tr
   assert.equal(result.message.parentMessageId, 'root-1');
   assert.equal(result.message.threadRootId, 'root-1');
   assert.deepEqual(
-    calls.slice(0, 5).map(([kind]) => kind),
-    ['rootLock', 'roomLock', 'memberLock', 'accessRoom', 'create'],
+    calls.slice(0, 6).map(([kind]) => kind),
+    [
+      'rootLock',
+      'roomLock',
+      'memberLock',
+      'accessRoom',
+      'activeProject',
+      'create',
+    ],
   );
   const [rootLock, roomLock, memberLock] = calls;
   assert.match(rootLock[1].text, /FROM "ChatMessage" AS root/);
@@ -512,8 +525,12 @@ test('reply creation rechecks the active root, same room, and post ACL in one tr
   assert.match(memberLock[1].text, /member\."deletedAt" IS NULL/);
   assert.match(memberLock[1].text, /FOR SHARE/);
   assert.deepEqual(memberLock[1].values, ['room-1', 'user-1']);
-  assert.equal(calls[4][1].data.roomId, 'room-1');
-  assert.equal(calls[4][1].data.parentMessageId, 'root-1');
+  assert.deepEqual(calls[4][1].where, {
+    id: 'project-1',
+    deletedAt: null,
+  });
+  assert.equal(calls[5][1].data.roomId, 'room-1');
+  assert.equal(calls[5][1].data.parentMessageId, 'root-1');
 });
 
 test('reply creation fails closed after locks when the root, room, or current post ACL is unavailable', async () => {
@@ -521,6 +538,7 @@ test('reply creation fails closed after locks when the root, room, or current po
     { label: 'missing root', rootRows: [] },
     { label: 'inactive room', roomRows: [] },
     { label: 'stale post ACL', accessProjectId: 'project-2' },
+    { label: 'inactive project', activeProject: null },
   ]) {
     let created = false;
     const calls = [];
@@ -559,6 +577,14 @@ test('reply creation fails closed after locks when the root, room, or current po
           allowExternalUsers: false,
         }),
       },
+      project: {
+        findFirst: async () => {
+          calls.push('activeProject');
+          return Object.hasOwn(testCase, 'activeProject')
+            ? testCase.activeProject
+            : { id: 'project-1' };
+        },
+      },
     };
     const repository = createPrismaChatThreadRepository({
       $transaction: async (operation) => operation(tx),
@@ -580,7 +606,64 @@ test('reply creation fails closed after locks when the root, room, or current po
     if (testCase.label === 'stale post ACL') {
       assert.deepEqual(calls, ['rootLock', 'roomLock', 'memberLock']);
     }
+    if (testCase.label === 'inactive project') {
+      assert.deepEqual(calls, [
+        'rootLock',
+        'roomLock',
+        'memberLock',
+        'activeProject',
+      ]);
+    }
   }
+});
+
+test('reply preparation rejects an inactive project before returning a target', async () => {
+  const calls = [];
+  const tx = {
+    chatMessage: {
+      async findFirst() {
+        calls.push('root');
+        return { id: 'root-1', roomId: 'room-1' };
+      },
+    },
+    chatRoom: {
+      async findUnique() {
+        calls.push('roomAcl');
+        return {
+          id: 'room-1',
+          type: 'project',
+          projectId: 'project-1',
+          isOfficial: true,
+          groupId: null,
+          viewerGroupIds: null,
+          posterGroupIds: null,
+          deletedAt: null,
+          allowExternalUsers: false,
+        };
+      },
+    },
+    project: {
+      async findFirst() {
+        calls.push('activeProject');
+        return null;
+      },
+    },
+  };
+  const repository = createPrismaChatThreadRepository({
+    async $transaction(operation, options) {
+      assert.equal(options.isolationLevel, 'RepeatableRead');
+      return operation(tx);
+    },
+  });
+
+  const result = await repository.prepareReply({
+    rootMessageId: 'root-1',
+    expectedRoomId: 'room-1',
+    actor,
+  });
+
+  assert.equal(result, null);
+  assert.deepEqual(calls, ['root', 'roomAcl', 'activeProject']);
 });
 
 test('reply creation normalizes a concurrent root-state check violation', async () => {

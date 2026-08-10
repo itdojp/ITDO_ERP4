@@ -498,6 +498,8 @@ mutationする。
   timelineで実際に受信した1〜100件のmessage IDを
   `GET /chat-rooms/{roomId}/knowledge-share-messages?messageIds=...`へ渡し、そのexact集合に対応する
   message ID、share ID、posted/revoked、optimistic version、schema versionだけを固定本数batchで取得する。
+  message IDは最大200 Unicode code point/800 UTF-8 byteとし、controlおよびbidi-directional code pointを
+  拒否する。
   別時点のtimeline条件を再評価しないため、並行投稿によるpage driftを起こさない。通常text message、
   search、notification、unread、ACKは従来のgeneric本文契約を維持する。roomがexternal-enabledへ
   変化した場合はcompact discriminatorも404とし、shareの存在とstable share IDを公開しない。

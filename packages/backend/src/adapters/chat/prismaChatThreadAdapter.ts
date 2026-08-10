@@ -399,6 +399,14 @@ async function resolveReplyTarget(
     client: tx as unknown as typeof prisma,
   });
   if (!access.ok) return null;
+  if (
+    !(await hasActiveChatProject({
+      room: access.room,
+      client: tx as unknown as typeof prisma,
+    }))
+  ) {
+    return null;
+  }
   return {
     rootMessageId: root.id,
     room: access.room,
@@ -462,6 +470,14 @@ async function lockReplyTarget(
     client: tx as unknown as typeof prisma,
   });
   if (!access.ok) return null;
+  if (
+    !(await hasActiveChatProject({
+      room: access.room,
+      client: tx as unknown as typeof prisma,
+    }))
+  ) {
+    return null;
+  }
   return {
     rootMessageId: root.id,
     room: access.room,
