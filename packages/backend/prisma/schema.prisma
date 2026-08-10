@@ -235,8 +235,6 @@ enum KnowledgeShareFailureCode {
 
 enum KnowledgeThreadPromotionAuthorCategory {
   user
-  external
-  system
 }
 
 model Customer {

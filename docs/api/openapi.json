@@ -11692,9 +11692,7 @@
                         "properties": {
                           "authorCategory": {
                             "enum": [
-                              "user",
-                              "external",
-                              "system"
+                              "user"
                             ],
                             "type": "string"
                           },

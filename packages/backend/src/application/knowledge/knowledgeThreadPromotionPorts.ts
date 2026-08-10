@@ -11,11 +11,7 @@ import type {
   KnowledgeProvenanceOrigin,
 } from './knowledgeProvenancePorts.js';
 
-export const knowledgeThreadPromotionAuthorCategories = [
-  'user',
-  'external',
-  'system',
-] as const;
+export const knowledgeThreadPromotionAuthorCategories = ['user'] as const;
 export type KnowledgeThreadPromotionAuthorCategory =
   (typeof knowledgeThreadPromotionAuthorCategories)[number];
 

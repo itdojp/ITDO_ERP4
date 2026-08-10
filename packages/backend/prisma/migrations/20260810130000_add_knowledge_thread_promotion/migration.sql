@@ -3,9 +3,7 @@
 -- rewritten nor deleted; old applications can continue to ignore these tables.
 
 CREATE TYPE "KnowledgeThreadPromotionAuthorCategory" AS ENUM (
-  'user',
-  'external',
-  'system'
+  'user'
 );
 
 ALTER TABLE "KnowledgeSynthesisSource"
@@ -462,6 +460,15 @@ DECLARE
   promotion_row "KnowledgeThreadPromotion"%ROWTYPE;
 BEGIN
   IF NEW."sourceThreadPromotionId" IS NULL THEN
+    IF EXISTS (
+      SELECT 1
+      FROM "KnowledgeThreadPromotion"
+      WHERE "destinationSynthesisVersionId" = NEW."synthesisVersionId"
+    ) THEN
+      RAISE EXCEPTION 'promotion destination version accepts only its immutable promotion source'
+        USING ERRCODE = '23514',
+              CONSTRAINT = 'KnowledgeSynthesisSource_thread_promotion_exclusive_check';
+    END IF;
     RETURN NEW;
   END IF;
 

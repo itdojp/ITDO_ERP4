@@ -259,6 +259,7 @@ async function resolveMaterial(
   const share = await transaction.knowledgeShare.findFirst({
     where: {
       status: 'posted',
+      revokedAt: null,
       chatMessageId: input.rootMessageId,
       chatMessage: {
         is: {
@@ -430,9 +431,11 @@ async function resolveMaterial(
         }),
       ),
       createdAt: row.createdAt,
-      // Knowledge shares cannot be posted to external-enabled rooms. The
-      // persisted category therefore remains an allowlisted, non-identifying
-      // internal user category rather than copying an author identity.
+      // The current Chat contract has only user-authored text messages. Share
+      // rooms with external users are rejected above, and system/tool message
+      // types are outside this text-reply MVP. Persist the bounded category
+      // without copying any author identity; future categories require an
+      // explicit source discriminator and additive migration.
       authorCategory: 'user',
       sourceActivitySequence: row.activitySequence,
     });
@@ -453,7 +456,6 @@ async function resolveMaterial(
   }
   const destination = input.request.destination;
   const canonical = {
-    promotionId: input.promotionId,
     sourceShareId: share.id,
     sourceShareVersion: share.version,
     sourceShareContentHash: share.contentHash,

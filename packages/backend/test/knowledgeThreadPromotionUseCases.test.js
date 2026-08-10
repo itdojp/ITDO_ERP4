@@ -121,7 +121,7 @@ function resolved(request = personalRequest(), overrides = {}) {
         content: 'First reply selected second',
         contentHash: 'e'.repeat(64),
         createdAt: new Date('2026-08-10T05:35:00.000Z'),
-        authorCategory: 'external',
+        authorCategory: 'user',
       },
     ],
     selectedShareCard: request.includeSharedCard ? selectedCard() : null,
@@ -286,7 +286,7 @@ test('preview preserves explicit reply order and returns only safe exact content
       ordinal: 1,
       content: 'First reply selected second',
       createdAt: '2026-08-10T05:35:00.000Z',
-      authorCategory: 'external',
+      authorCategory: 'user',
     },
   ]);
   assert.equal(result.value.selectedMessageCount, 2);

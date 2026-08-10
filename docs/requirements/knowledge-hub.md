@@ -528,6 +528,8 @@ mutationする。
   activity boundary、sanitized author categoryを固定する。`KnowledgeSynthesisSource`はpromotion FKを
   exactly-one source制約へ追加し、自由文字列source type/idを正本にしない。後からChat ACLまたはshare
   状態が失効してもsynthesis本文はdestination ACLで保持するが、live thread identityはredactする。
+  現行MVPのChat text replyは内部user categoryだけを受け入れる。external-enabled share roomはfail closed、
+  system/tool message typeは非対象とし、識別可能なsource discriminatorなしにcategoryを推測しない。
 - organization promotionで作成するsynthesisは明示`KnowledgeSynthesisGroupGrant`を持つ。migration前の
   organization synthesisはgrant row 0件の既存organization-wide契約を維持し、new promotionだけを
   grant必須にするexpand段階とする。

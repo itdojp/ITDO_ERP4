@@ -49,10 +49,8 @@ test('thread promotion is an independent typed aggregate with selected-only snap
     assert.match(migration, new RegExp(`CREATE TABLE "${model}"`));
   }
 
-  for (const value of ['user', 'external', 'system']) {
-    assert.match(authorCategory, new RegExp(`\\b${value}\\b`));
-  }
-  assert.doesNotMatch(authorCategory, /\b(?:ai|tool)\b/);
+  assert.match(authorCategory, /\buser\b/);
+  assert.doesNotMatch(authorCategory, /\b(?:external|system|ai|tool)\b/);
 
   for (const field of [
     'sourceShareId',
@@ -129,6 +127,10 @@ test('promotion source extends the existing exactly-one FK provenance contract',
   assert.match(
     migration,
     /"relationType" <> 'primary'[\s\S]*?"ordinal" <> 0[\s\S]*?KnowledgeSynthesisSource_thread_promotion_check/,
+  );
+  assert.match(
+    migration,
+    /"destinationSynthesisVersionId" = NEW\."synthesisVersionId"[\s\S]*?KnowledgeSynthesisSource_thread_promotion_exclusive_check/,
   );
   assert.match(
     migration,

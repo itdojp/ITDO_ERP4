@@ -279,6 +279,28 @@ try {
     committed.value.synthesisVersionId,
   );
 
+  const repeatedPreview = await service.preview({
+    actor,
+    auditActor,
+    rootMessageId: ids.root,
+    body: request,
+  });
+  assert.equal(repeatedPreview.ok, true);
+  const repeatedPreviewReplay = await service.commit({
+    ...commitInput,
+    body: {
+      ...commitInput.body,
+      previewToken: repeatedPreview.value.previewToken,
+    },
+  });
+  assert.equal(repeatedPreviewReplay.ok, true);
+  assert.equal(repeatedPreviewReplay.value.created, false);
+  assert.equal(repeatedPreviewReplay.value.reused, true);
+  assert.equal(
+    repeatedPreviewReplay.value.promotionId,
+    committed.value.promotionId,
+  );
+
   const concurrentRequest = {
     ...request,
     synthesis: {
@@ -496,6 +518,7 @@ try {
       result: 'PASS',
       selectedOnly: true,
       idempotentReplay: true,
+      repeatedPreviewReplay: true,
       concurrentReplayConverges: true,
       idempotencyConflict: true,
       organizationGrant: true,

@@ -22,6 +22,7 @@ const ids = Object.fromEntries(
     'selected',
     'request',
     'source',
+    'secondSource',
     'incompleteSynthesis',
     'incompleteVersion',
     'incompletePromotion',
@@ -198,6 +199,18 @@ try {
     sourceCount: 1,
   });
 
+  await expectDatabaseError(
+    () =>
+      client.query(
+        `INSERT INTO "KnowledgeSynthesisSource" (
+           "id", "synthesisVersionId", "relationType", "ordinal",
+           "sourceKnowledgeItemId", "createdAt", "createdBy"
+         ) VALUES ($1, $2, 'supporting', 1, $3, $4, $5)`,
+        [ids.secondSource, ids.version, ids.item, now, actor],
+      ),
+    '23514',
+  );
+
   await client.query('BEGIN');
   await client.query(
     `INSERT INTO "KnowledgeSynthesis" (
@@ -275,6 +288,7 @@ try {
       includesSharedCard: true,
       selectedOnly: true,
       deferredCompleteRejectsIncomplete: true,
+      promotionDestinationRejectsSecondSource: true,
       immutablePromotion: true,
       sourceRevokePreservesSnapshot: true,
     }),
