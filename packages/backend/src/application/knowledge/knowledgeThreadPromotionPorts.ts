@@ -10,6 +10,7 @@ import type {
   KnowledgeConversationRole,
   KnowledgeProvenanceOrigin,
 } from './knowledgeProvenancePorts.js';
+import type { KnowledgeShareSelectionCategory } from './knowledgeSharePorts.js';
 
 export const knowledgeThreadPromotionAuthorCategories = ['user'] as const;
 export type KnowledgeThreadPromotionAuthorCategory =
@@ -108,7 +109,8 @@ export type KnowledgeThreadPromotionShareCardPreview = {
     unresolvedQuestions: string[];
     ordinal: number;
   }>;
-  selectedCategories: string[];
+  selectedCategories: KnowledgeShareSelectionCategory[];
+  omittedCategories: KnowledgeShareSelectionCategory[];
 };
 
 export type KnowledgeThreadPromotionResolvedPreview = {

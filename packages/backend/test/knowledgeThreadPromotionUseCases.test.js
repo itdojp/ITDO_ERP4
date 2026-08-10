@@ -91,7 +91,18 @@ function selectedCard() {
         ordinal: 0,
       },
     ],
-    selectedCategories: ['title', 'annotation', 'conversation_turn'],
+    selectedCategories: [
+      'title',
+      'source_type',
+      'snapshot_provenance',
+      'snapshot_excerpt',
+      'label',
+      'annotation',
+      'conversation_turn',
+      'synthesis',
+      'sharer_note',
+    ],
+    omittedCategories: ['canonical_url'],
   };
 }
 
@@ -292,6 +303,9 @@ test('preview preserves explicit reply order and returns only safe exact content
   assert.equal(result.value.selectedMessageCount, 2);
   assert.equal(result.value.omittedMessageCount, 2);
   assert.equal(result.value.sharedCard.title, 'Selected share title');
+  assert.deepEqual(result.value.sharedCard.omittedCategories, [
+    'canonical_url',
+  ]);
   assert.equal(result.value.requiresConfirmation, true);
   assert.equal(result.value.requiresOrganizationAudienceConfirmation, false);
   const serialized = JSON.stringify(result.value);

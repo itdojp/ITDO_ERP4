@@ -81,6 +81,30 @@ function previewValue(overrides = {}) {
   };
 }
 
+function sharedCardValue() {
+  return {
+    schemaVersion: 1,
+    shareVersion: 2,
+    title: 'Selected card title',
+    labels: [],
+    annotations: [],
+    turns: [],
+    syntheses: [],
+    selectedCategories: ['title'],
+    omittedCategories: [
+      'source_type',
+      'canonical_url',
+      'snapshot_provenance',
+      'snapshot_excerpt',
+      'label',
+      'annotation',
+      'conversation_turn',
+      'synthesis',
+      'sharer_note',
+    ],
+  };
+}
+
 function commitValue(overrides = {}) {
   return {
     promotionId: 'promotion-safe-id',
@@ -220,4 +244,34 @@ test('preview response mapper strips internal source and provider fields', () =>
   assert.equal(text.includes('must-not-leak'), false);
   assert.equal(text.includes('provider'), false);
   assert.equal(response.omittedMessageCount, 1);
+});
+
+test('preview maps an included share card with the complete selection summary', async (t) => {
+  const app = await build(
+    service({
+      preview: async () => ({
+        ok: true,
+        value: previewValue({ sharedCard: sharedCardValue() }),
+      }),
+    }),
+  );
+  t.after(() => app.close());
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/chat-messages/root-1/promote-to-knowledge/preview',
+    payload: requestBody({ includeSharedCard: true }),
+  });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.deepEqual(response.json().sharedCard.omittedCategories, [
+    'source_type',
+    'canonical_url',
+    'snapshot_provenance',
+    'snapshot_excerpt',
+    'label',
+    'annotation',
+    'conversation_turn',
+    'synthesis',
+    'sharer_note',
+  ]);
 });

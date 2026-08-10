@@ -415,6 +415,7 @@ function publicCard(card: KnowledgeThreadPromotionShareCardPreview) {
       ordinal: entry.ordinal,
     })),
     selectedCategories: [...card.selectedCategories],
+    omittedCategories: [...card.omittedCategories],
   };
 }
 

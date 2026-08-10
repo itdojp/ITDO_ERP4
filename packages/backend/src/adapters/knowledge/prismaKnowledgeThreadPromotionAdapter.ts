@@ -3,6 +3,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Prisma, type PrismaClient } from '@prisma/client';
 
 import type { KnowledgeActor } from '../../application/knowledge/knowledgeItemPorts.js';
+import {
+  knowledgeShareSelectionCategories,
+  type KnowledgeShareSelectionCategory,
+} from '../../application/knowledge/knowledgeSharePorts.js';
 import type {
   KnowledgeThreadPromotionCommitRecord,
   KnowledgeThreadPromotionFailure,
@@ -98,7 +102,7 @@ function strictQuestions(value: Prisma.JsonValue): string[] {
 }
 
 function selectedCategories(share: ShareRow) {
-  const result: string[] = [];
+  const result: KnowledgeShareSelectionCategory[] = [];
   if (share.selectedTitle !== null) result.push('title');
   if (share.selectedSourceType !== null) result.push('source_type');
   if (share.selectedCanonicalUrl !== null) result.push('canonical_url');
@@ -120,6 +124,7 @@ function publicShareCard(
       ? undefined
       : safeCanonicalUrl(share.selectedCanonicalUrl);
   if (share.selectedCanonicalUrl !== null && !canonicalUrl) return null;
+  const selected = selectedCategories(share);
   return {
     schemaVersion: 1,
     shareVersion: share.version,
@@ -169,7 +174,10 @@ function publicShareCard(
       unresolvedQuestions: strictQuestions(entry.unresolvedQuestions),
       ordinal: entry.ordinal,
     })),
-    selectedCategories: selectedCategories(share),
+    selectedCategories: selected,
+    omittedCategories: knowledgeShareSelectionCategories.filter(
+      (category) => !selected.includes(category),
+    ),
   };
 }
 
