@@ -606,4 +606,39 @@ describe('KnowledgeThreadPromotionDialog', () => {
     expect(props.onClose).toHaveBeenCalledTimes(1);
     outside.remove();
   });
+
+  it('uses instance-scoped accessible relationships for concurrent dialogs', () => {
+    const firstProps: React.ComponentProps<
+      typeof KnowledgeThreadPromotionDialog
+    > = {
+      open: true,
+      roomId: 'room-1',
+      root: root(),
+      replies: activeReplies,
+      knowledgeShare: knowledgeShare(),
+      onClose: vi.fn(),
+    };
+    render(
+      <>
+        <KnowledgeThreadPromotionDialog {...firstProps} />
+        <KnowledgeThreadPromotionDialog {...firstProps} />
+      </>,
+    );
+
+    const dialogs = screen.getAllByRole('dialog', {
+      name: 'スレッドをナレッジ化',
+    });
+    const labelledBy = dialogs.map((dialog) =>
+      dialog.getAttribute('aria-labelledby'),
+    );
+    const describedBy = dialogs.map((dialog) =>
+      dialog.getAttribute('aria-describedby'),
+    );
+    expect(new Set(labelledBy).size).toBe(2);
+    expect(new Set(describedBy).size).toBe(2);
+    for (const referencedId of [...labelledBy, ...describedBy]) {
+      expect(referencedId).not.toBeNull();
+      expect(document.getElementById(referencedId!)).not.toBeNull();
+    }
+  });
 });

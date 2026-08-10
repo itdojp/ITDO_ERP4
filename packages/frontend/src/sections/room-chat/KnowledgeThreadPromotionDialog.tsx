@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -191,33 +192,71 @@ export function KnowledgeThreadPromotionDialog(props: {
     () => activeDirectReplies(roomId, root.id, replies),
     [replies, roomId, root.id],
   );
-  const activeReplyKey = JSON.stringify(
-    activeReplies.map((reply) => [
-      reply.id,
-      reply.body,
-      reply.createdAt,
-      reply.userId,
-      reply.roomId,
-      reply.parentMessageId,
-      reply.threadRootId,
-    ]),
+  const activeReplyKey = useMemo(
+    () =>
+      JSON.stringify(
+        activeReplies.map((reply) => [
+          reply.id,
+          reply.body,
+          reply.createdAt,
+          reply.userId,
+          reply.roomId,
+          reply.parentMessageId,
+          reply.threadRootId,
+        ]),
+      ),
+    [activeReplies],
   );
   const activeReplyIds = useMemo(
-    () =>
-      new Set<string>(
-        (JSON.parse(activeReplyKey) as Array<[string]>).map(
-          ([messageId]) => messageId,
-        ),
-      ),
-    [activeReplyKey],
+    () => new Set<string>(activeReplies.map((reply) => reply.id)),
+    [activeReplies],
   );
-  const contextKey = JSON.stringify([
-    roomId,
-    root,
-    knowledgeShare,
-    activeReplyKey,
-  ]);
+  const sharedCardContextKey = useMemo(
+    () => JSON.stringify(knowledgeShare.card),
+    [knowledgeShare.card],
+  );
+  const contextKey = useMemo(
+    () =>
+      JSON.stringify([
+        roomId,
+        root.id,
+        root.roomId,
+        root.messageType,
+        root.parentMessageId,
+        root.threadRootId,
+        root.deleted,
+        root.deletedAt,
+        knowledgeShare.shareId,
+        knowledgeShare.status,
+        knowledgeShare.version,
+        knowledgeShare.schemaVersion,
+        sharedCardContextKey,
+        activeReplyKey,
+      ]),
+    [
+      activeReplyKey,
+      knowledgeShare.schemaVersion,
+      knowledgeShare.shareId,
+      knowledgeShare.status,
+      knowledgeShare.version,
+      roomId,
+      root.deleted,
+      root.deletedAt,
+      root.id,
+      root.messageType,
+      root.parentMessageId,
+      root.roomId,
+      root.threadRootId,
+      sharedCardContextKey,
+    ],
+  );
   const eligible = isEligibleRoot(roomId, root, knowledgeShare);
+  const idPrefix = useId();
+  const titleId = `${idPrefix}-title`;
+  const descriptionId = `${idPrefix}-description`;
+  const previewTitleId = `${idPrefix}-preview-title`;
+  const previewCardTitleId = `${idPrefix}-preview-card-title`;
+  const resultTitleId = `${idPrefix}-result-title`;
 
   const [selectedReplyIds, setSelectedReplyIds] = useState<string[]>([]);
   const [includeSharedCard, setIncludeSharedCard] = useState(false);
@@ -685,8 +724,8 @@ export function KnowledgeThreadPromotionDialog(props: {
         role="dialog"
         tabIndex={-1}
         aria-modal="true"
-        aria-labelledby="knowledge-thread-promotion-title"
-        aria-describedby="knowledge-thread-promotion-description"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
         onKeyDown={handleDialogKeyDown}
         style={{
           width: '100vw',
@@ -707,11 +746,11 @@ export function KnowledgeThreadPromotionDialog(props: {
           }}
         >
           <div>
-            <h2 id="knowledge-thread-promotion-title" style={{ margin: 0 }}>
+            <h2 id={titleId} style={{ margin: 0 }}>
               スレッドをナレッジ化
             </h2>
             <p
-              id="knowledge-thread-promotion-description"
+              id={descriptionId}
               style={{ margin: '6px 0 0', color: '#475569' }}
             >
               選択した返信だけを、新しい統合知version 1へ保存します。
@@ -994,14 +1033,11 @@ export function KnowledgeThreadPromotionDialog(props: {
 
         {preview ? (
           <section
-            aria-labelledby="knowledge-thread-promotion-preview-title"
+            aria-labelledby={previewTitleId}
             className="card"
             style={{ marginTop: 20, padding: 12 }}
           >
-            <h3
-              id="knowledge-thread-promotion-preview-title"
-              style={{ marginTop: 0 }}
-            >
+            <h3 id={previewTitleId} style={{ marginTop: 0 }}>
               ナレッジ化プレビュー
             </h3>
             <dl style={{ display: 'grid', gap: 8 }}>
@@ -1078,10 +1114,8 @@ export function KnowledgeThreadPromotionDialog(props: {
               ))}
             </ol>
             {preview.sharedCard ? (
-              <section aria-labelledby="knowledge-thread-promotion-card-title">
-                <h4 id="knowledge-thread-promotion-card-title">
-                  保存する知識共有カード
-                </h4>
+              <section aria-labelledby={previewCardTitleId}>
+                <h4 id={previewCardTitleId}>保存する知識共有カード</h4>
                 <p>共有版: {preview.sharedCard.shareVersion}</p>
                 <div
                   style={{
@@ -1171,13 +1205,11 @@ export function KnowledgeThreadPromotionDialog(props: {
         {commitResult ? (
           <section
             role="status"
-            aria-labelledby="knowledge-thread-promotion-result-title"
+            aria-labelledby={resultTitleId}
             className="card"
             style={{ marginTop: 20, padding: 12 }}
           >
-            <h3 id="knowledge-thread-promotion-result-title">
-              ナレッジ化結果と来歴
-            </h3>
+            <h3 id={resultTitleId}>ナレッジ化結果と来歴</h3>
             <dl style={{ display: 'grid', gap: 8 }}>
               <div>
                 <dt>処理結果</dt>
