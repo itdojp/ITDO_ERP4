@@ -14,6 +14,7 @@ import type {
   ChatThreadSnapshotRepository,
 } from '../../application/chat/chatThreadPorts.js';
 import {
+  chatRoomProjectId,
   ensureChatRoomContentAccess,
   hasActiveChatProject,
 } from '../../services/chatRoomAccess.js';
@@ -438,14 +439,32 @@ async function lockReplyTarget(
     return null;
   }
 
-  const rooms = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-    SELECT room."id"
+  const rooms = await tx.$queryRaw<
+    Array<{
+      id: string;
+      type: string;
+      projectId: string | null;
+      isOfficial: boolean;
+    }>
+  >(Prisma.sql`
+    SELECT room."id", room."type", room."projectId", room."isOfficial"
     FROM "ChatRoom" AS room
     WHERE room."id" = ${root.roomId}
       AND room."deletedAt" IS NULL
     FOR SHARE
   `);
   if (rooms.length !== 1) return null;
+  const lockedProjectId = chatRoomProjectId(rooms[0]);
+  if (lockedProjectId) {
+    const projects = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT project."id"
+      FROM "Project" AS project
+      WHERE project."id" = ${lockedProjectId}
+        AND project."deletedAt" IS NULL
+      FOR SHARE
+    `);
+    if (projects.length !== 1) return null;
+  }
 
   // Lock a current direct membership when one exists. Project/group claims
   // remain part of the canonical policy evaluation below; the room lock
@@ -470,14 +489,7 @@ async function lockReplyTarget(
     client: tx as unknown as typeof prisma,
   });
   if (!access.ok) return null;
-  if (
-    !(await hasActiveChatProject({
-      room: access.room,
-      client: tx as unknown as typeof prisma,
-    }))
-  ) {
-    return null;
-  }
+  if (chatRoomProjectId(access.room) !== lockedProjectId) return null;
   return {
     rootMessageId: root.id,
     room: access.room,

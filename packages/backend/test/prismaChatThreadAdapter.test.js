@@ -434,7 +434,18 @@ test('reply creation rechecks the active root, same room, and post ACL in one tr
       }
       if (/FROM "ChatRoom" AS room/.test(query.text)) {
         calls.push(['roomLock', query]);
-        return [{ id: 'room-1' }];
+        return [
+          {
+            id: 'room-1',
+            type: 'project',
+            projectId: 'project-1',
+            isOfficial: true,
+          },
+        ];
+      }
+      if (/FROM "Project" AS project/.test(query.text)) {
+        calls.push(['projectLock', query]);
+        return [{ id: 'project-1' }];
       }
       if (/FROM "ChatRoomMember" AS member/.test(query.text)) {
         calls.push(['memberLock', query]);
@@ -462,12 +473,6 @@ test('reply creation rechecks the active root, same room, and post ACL in one tr
           deletedAt: null,
           allowExternalUsers: false,
         };
-      },
-    },
-    project: {
-      async findFirst(input) {
-        calls.push(['activeProject', input]);
-        return { id: 'project-1' };
       },
     },
     chatAckRequest: { findMany: async () => [] },
@@ -504,13 +509,13 @@ test('reply creation rechecks the active root, same room, and post ACL in one tr
     [
       'rootLock',
       'roomLock',
+      'projectLock',
       'memberLock',
       'accessRoom',
-      'activeProject',
       'create',
     ],
   );
-  const [rootLock, roomLock, memberLock] = calls;
+  const [rootLock, roomLock, projectLock, memberLock] = calls;
   assert.match(rootLock[1].text, /FROM "ChatMessage" AS root/);
   assert.match(rootLock[1].text, /root\."parentMessageId" IS NULL/);
   assert.match(rootLock[1].text, /root\."threadRootId" IS NULL/);
@@ -525,10 +530,10 @@ test('reply creation rechecks the active root, same room, and post ACL in one tr
   assert.match(memberLock[1].text, /member\."deletedAt" IS NULL/);
   assert.match(memberLock[1].text, /FOR SHARE/);
   assert.deepEqual(memberLock[1].values, ['room-1', 'user-1']);
-  assert.deepEqual(calls[4][1].where, {
-    id: 'project-1',
-    deletedAt: null,
-  });
+  assert.match(projectLock[1].text, /FROM "Project" AS project/);
+  assert.match(projectLock[1].text, /project\."deletedAt" IS NULL/);
+  assert.match(projectLock[1].text, /FOR SHARE/);
+  assert.deepEqual(projectLock[1].values, ['project-1']);
   assert.equal(calls[5][1].data.roomId, 'room-1');
   assert.equal(calls[5][1].data.parentMessageId, 'root-1');
 });
@@ -538,7 +543,7 @@ test('reply creation fails closed after locks when the root, room, or current po
     { label: 'missing root', rootRows: [] },
     { label: 'inactive room', roomRows: [] },
     { label: 'stale post ACL', accessProjectId: 'project-2' },
-    { label: 'inactive project', activeProject: null },
+    { label: 'inactive project', projectRows: [] },
   ]) {
     let created = false;
     const calls = [];
@@ -550,7 +555,20 @@ test('reply creation fails closed after locks when the root, room, or current po
         }
         if (/FROM "ChatRoom" AS room/.test(query.text)) {
           calls.push('roomLock');
-          return testCase.roomRows ?? [{ id: 'room-1' }];
+          return (
+            testCase.roomRows ?? [
+              {
+                id: 'room-1',
+                type: 'project',
+                projectId: 'project-1',
+                isOfficial: true,
+              },
+            ]
+          );
+        }
+        if (/FROM "Project" AS project/.test(query.text)) {
+          calls.push('projectLock');
+          return testCase.projectRows ?? [{ id: 'project-1' }];
         }
         if (/FROM "ChatRoomMember" AS member/.test(query.text)) {
           calls.push('memberLock');
@@ -577,14 +595,6 @@ test('reply creation fails closed after locks when the root, room, or current po
           allowExternalUsers: false,
         }),
       },
-      project: {
-        findFirst: async () => {
-          calls.push('activeProject');
-          return Object.hasOwn(testCase, 'activeProject')
-            ? testCase.activeProject
-            : { id: 'project-1' };
-        },
-      },
     };
     const repository = createPrismaChatThreadRepository({
       $transaction: async (operation) => operation(tx),
@@ -604,15 +614,15 @@ test('reply creation fails closed after locks when the root, room, or current po
     assert.equal(result, null, testCase.label);
     assert.equal(created, false, testCase.label);
     if (testCase.label === 'stale post ACL') {
-      assert.deepEqual(calls, ['rootLock', 'roomLock', 'memberLock']);
-    }
-    if (testCase.label === 'inactive project') {
       assert.deepEqual(calls, [
         'rootLock',
         'roomLock',
+        'projectLock',
         'memberLock',
-        'activeProject',
       ]);
+    }
+    if (testCase.label === 'inactive project') {
+      assert.deepEqual(calls, ['rootLock', 'roomLock', 'projectLock']);
     }
   }
 });

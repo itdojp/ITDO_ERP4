@@ -34,6 +34,8 @@ const readBoundaryRoomId = 'thread-read-boundary-room';
 const projectId = 'thread-project';
 const projectAliasId = 'thread-project-canonical';
 const projectAliasRoomId = 'thread-project-room-alias';
+const projectDeleteRaceId = 'thread-project-delete-race';
+const projectDeleteRaceRoomId = 'thread-project-delete-race-room';
 const ownerId = 'thread-owner';
 const ownerThreadActor = {
   userId: ownerId,
@@ -138,6 +140,13 @@ try {
   });
   await prisma.project.create({
     data: {
+      id: projectDeleteRaceId,
+      code: 'THREAD-DELETE-RACE',
+      name: 'Thread project delete race',
+    },
+  });
+  await prisma.project.create({
+    data: {
       id: projectAliasId,
       code: 'THREAD-ALIAS',
       name: 'Thread alias project',
@@ -159,6 +168,13 @@ try {
         isOfficial: true,
         projectId: projectAliasId,
       },
+      {
+        id: projectDeleteRaceRoomId,
+        type: 'project',
+        name: 'Thread project delete race room',
+        isOfficial: true,
+        projectId: projectDeleteRaceId,
+      },
     ],
   });
   await prisma.projectMember.createMany({
@@ -170,6 +186,11 @@ try {
         projectId: projectAliasId,
         userId: 'thread-member',
         role: 'member',
+      },
+      {
+        projectId: projectDeleteRaceId,
+        userId: ownerId,
+        role: 'leader',
       },
     ],
   });
@@ -215,6 +236,12 @@ try {
         roomId: projectAliasRoomId,
         userId: ownerId,
         body: 'Synthetic project alias root',
+      },
+      {
+        id: 'thread-project-delete-race-root',
+        roomId: projectDeleteRaceRoomId,
+        userId: ownerId,
+        body: 'Synthetic project delete race root',
       },
     ],
   });
@@ -299,6 +326,70 @@ try {
   } finally {
     deleteClient.release();
     insertClient.release();
+  }
+
+  const projectDeleteClient = await concurrentPool.connect();
+  try {
+    await projectDeleteClient.query('BEGIN');
+    await projectDeleteClient.query(
+      `UPDATE "Project"
+          SET "deletedAt" = '2026-08-08 00:00:05.000'::timestamp,
+              "updatedAt" = '2026-08-08 00:00:05.000'::timestamp
+        WHERE "id" = $1`,
+      [projectDeleteRaceId],
+    );
+    let projectRaceReplySettled = false;
+    const projectRaceReply = prismaChatThreadRepository
+      .createReply({
+        rootMessageId: 'thread-project-delete-race-root',
+        expectedRoomId: projectDeleteRaceRoomId,
+        actor: {
+          userId: ownerId,
+          roles: ['user'],
+          projectIds: [projectDeleteRaceId],
+          groupIds: [],
+          groupAccountIds: [],
+        },
+        draft: {
+          body: 'Must be rejected after concurrent project deletion',
+          mentions: {},
+          mentionsAll: false,
+        },
+      })
+      .finally(() => {
+        projectRaceReplySettled = true;
+      });
+    await waitForLockWaiters(
+      projectDeleteClient,
+      1,
+      'reply creation behind project logical delete',
+    );
+    assert.equal(
+      projectRaceReplySettled,
+      false,
+      'reply creation must wait for an in-flight project logical delete',
+    );
+    await projectDeleteClient.query('COMMIT');
+    assert.equal(
+      await projectRaceReply,
+      null,
+      'reply creation must fail closed after project deletion commits',
+    );
+    assert.equal(
+      await prisma.chatMessage.count({
+        where: {
+          parentMessageId: 'thread-project-delete-race-root',
+          threadRootId: 'thread-project-delete-race-root',
+        },
+      }),
+      0,
+      'project deletion race must not leave a reply row',
+    );
+  } catch (error) {
+    await projectDeleteClient.query('ROLLBACK').catch(() => undefined);
+    throw error;
+  } finally {
+    projectDeleteClient.release();
   }
   await concurrentPool.end();
   await prisma.chatMessage.update({
@@ -1525,6 +1616,7 @@ try {
       ackAliasNotificationSuppression: true,
       rootTimelineExcludesReplies: true,
       concurrentRootDeleteFailsClosed: true,
+      concurrentProjectDeleteFailsClosed: true,
       replyMutationAndAck: true,
       replySearch: true,
       stableReplySearchBoundary: true,
