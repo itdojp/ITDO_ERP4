@@ -19,24 +19,42 @@ function knowledgeActorUserId(request: FastifyRequest) {
   return typeof candidate === 'string' ? candidate.trim() : '';
 }
 
+function normalizedStrings(value: unknown) {
+  return [
+    ...new Set(
+      (Array.isArray(value) ? value : [])
+        .filter((entry): entry is string => typeof entry === 'string')
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
 export function knowledgeActorFromRequest(
   request: FastifyRequest,
+  options: { includeChat?: boolean } = {},
 ): KnowledgeActor {
   const userId = knowledgeActorUserId(request);
   const orgId = request.user?.orgId;
   const groupAccountIds = request.user?.groupAccountIds;
+  const chatUserId =
+    typeof request.user?.userId === 'string' ? request.user.userId.trim() : '';
   return {
     userId,
     organizationId:
       typeof orgId === 'string' ? orgId.trim() || undefined : undefined,
-    groupAccountIds: [
-      ...new Set(
-        (Array.isArray(groupAccountIds) ? groupAccountIds : [])
-          .filter((value): value is string => typeof value === 'string')
-          .map((value) => value.trim())
-          .filter(Boolean),
-      ),
-    ],
+    groupAccountIds: normalizedStrings(groupAccountIds),
+    ...(options.includeChat === true && chatUserId
+      ? {
+          chat: {
+            userId: chatUserId,
+            roles: normalizedStrings(request.user?.roles),
+            projectIds: normalizedStrings(request.user?.projectIds),
+            groupIds: normalizedStrings(request.user?.groupIds),
+            groupAccountIds: normalizedStrings(request.user?.groupAccountIds),
+          },
+        }
+      : {}),
   };
 }
 

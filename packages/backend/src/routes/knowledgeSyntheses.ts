@@ -7,6 +7,7 @@ import {
 } from '../application/knowledge/knowledgeProvenanceCursor.js';
 import {
   knowledgeProvenanceLimits,
+  knowledgeSynthesisInputSourceKinds,
   knowledgeSynthesisSourceKinds,
   knowledgeSynthesisSourceRelationTypes,
   type KnowledgePage,
@@ -199,7 +200,7 @@ const sourceInputSchema = {
   additionalProperties: false,
   required: ['kind', 'sourceId', 'relationType'],
   properties: {
-    kind: { type: 'string', enum: knowledgeSynthesisSourceKinds },
+    kind: { type: 'string', enum: knowledgeSynthesisInputSourceKinds },
     sourceId: {
       type: 'string',
       minLength: 1,
@@ -303,7 +304,7 @@ export async function registerKnowledgeSynthesisRoutes(
       },
     },
     async (request, reply) => {
-      const actor = knowledgeActorFromRequest(request);
+      const actor = knowledgeActorFromRequest(request, { includeChat: true });
       const query = request.query as { limit?: number; cursor?: string };
       let boundary;
       try {
@@ -389,7 +390,7 @@ export async function registerKnowledgeSynthesisRoutes(
     },
     async (request, reply) => {
       const result = await service.create({
-        actor: knowledgeActorFromRequest(request),
+        actor: knowledgeActorFromRequest(request, { includeChat: true }),
         auditActor: knowledgeAuditActorFromRequest(request),
         body: request.body as never,
       });
@@ -420,7 +421,7 @@ export async function registerKnowledgeSynthesisRoutes(
     },
     async (request, reply) => {
       const result = await service.detail({
-        actor: knowledgeActorFromRequest(request),
+        actor: knowledgeActorFromRequest(request, { includeChat: true }),
         synthesisId: (request.params as { synthesisId: string }).synthesisId,
       });
       return sendKnowledgeProvenanceResult(
@@ -457,7 +458,7 @@ export async function registerKnowledgeSynthesisRoutes(
       },
     },
     async (request, reply) => {
-      const actor = knowledgeActorFromRequest(request);
+      const actor = knowledgeActorFromRequest(request, { includeChat: true });
       const synthesisId = (request.params as { synthesisId: string })
         .synthesisId;
       const query = request.query as { limit?: number; cursor?: string };
@@ -543,7 +544,7 @@ export async function registerKnowledgeSynthesisRoutes(
     },
     async (request, reply) => {
       const result = await service.appendVersion({
-        actor: knowledgeActorFromRequest(request),
+        actor: knowledgeActorFromRequest(request, { includeChat: true }),
         auditActor: knowledgeAuditActorFromRequest(request),
         synthesisId: (request.params as { synthesisId: string }).synthesisId,
         body: request.body as never,

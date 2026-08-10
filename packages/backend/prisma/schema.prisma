@@ -233,6 +233,10 @@ enum KnowledgeShareFailureCode {
   post_rejected
 }
 
+enum KnowledgeThreadPromotionAuthorCategory {
+  user
+}
+
 model Customer {
   id                    String    @id @default(uuid())
   code                  String    @unique
@@ -556,6 +560,7 @@ model ChatRoom {
   readStates                ChatReadState[]
   notificationSettings      ChatRoomNotificationSetting[]
   knowledgeShares           KnowledgeShare[]
+  knowledgeThreadPromotions KnowledgeThreadPromotion[]    @relation("KnowledgeThreadPromotionRoom")
 
   @@unique([type, projectId])
   @@index([type, createdAt])
@@ -586,30 +591,32 @@ enum ChatMessageType {
 }
 
 model ChatMessage {
-  id               String           @id @default(uuid())
-  activitySequence BigInt           @unique @default(autoincrement())
-  room             ChatRoom         @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  id               String                            @id @default(uuid())
+  activitySequence BigInt                            @unique @default(autoincrement())
+  room             ChatRoom                          @relation(fields: [roomId], references: [id], onDelete: Restrict)
   roomId           String
-  messageType      ChatMessageType  @default(text)
+  messageType      ChatMessageType                   @default(text)
   parentMessageId  String?
   threadRootId     String?
-  parentMessage    ChatMessage?     @relation("ChatMessageParent", fields: [parentMessageId, roomId], references: [id, roomId], onDelete: Restrict, onUpdate: NoAction)
-  replies          ChatMessage[]    @relation("ChatMessageParent")
-  threadRoot       ChatMessage?     @relation("ChatMessageRoot", fields: [threadRootId, roomId], references: [id, roomId], onDelete: Restrict, onUpdate: NoAction)
-  threadReplies    ChatMessage[]    @relation("ChatMessageRoot")
+  parentMessage    ChatMessage?                      @relation("ChatMessageParent", fields: [parentMessageId, roomId], references: [id, roomId], onDelete: Restrict, onUpdate: NoAction)
+  replies          ChatMessage[]                     @relation("ChatMessageParent")
+  threadRoot       ChatMessage?                      @relation("ChatMessageRoot", fields: [threadRootId, roomId], references: [id, roomId], onDelete: Restrict, onUpdate: NoAction)
+  threadReplies    ChatMessage[]                     @relation("ChatMessageRoot")
   userId           String
   body             String
   tags             Json?
   reactions        Json?
   mentions         Json?
-  mentionsAll      Boolean          @default(false)
+  mentionsAll      Boolean                           @default(false)
   ackRequest       ChatAckRequest?
   ackLinks         ChatAckLink[]
   attachments      ChatAttachment[]
   knowledgeShare   KnowledgeShare?
-  createdAt        DateTime         @default(now())
+  promotionRoots   KnowledgeThreadPromotion[]        @relation("KnowledgeThreadPromotionRoot")
+  promotionSources KnowledgeThreadPromotionMessage[] @relation("KnowledgeThreadPromotionSelectedMessage")
+  createdAt        DateTime                          @default(now())
   createdBy        String?
-  updatedAt        DateTime         @updatedAt
+  updatedAt        DateTime                          @updatedAt
   updatedBy        String?
   deletedAt        DateTime?
   deletedReason    String?
@@ -2637,20 +2644,22 @@ model KnowledgeConversationTurn {
 }
 
 model KnowledgeSynthesis {
-  id             String                            @id @default(uuid())
-  ownerUserId    String
-  scope          KnowledgeItemScope
-  organizationId String?
-  title          String
-  currentVersion Int                               @default(1)
-  deletedAt      DateTime?
-  deletedBy      String?
-  createdAt      DateTime                          @default(now())
-  createdBy      String
-  updatedAt      DateTime                          @updatedAt
-  updatedBy      String
-  versions       KnowledgeSynthesisVersion[]
-  shareSnapshots KnowledgeShareSynthesisSnapshot[]
+  id               String                            @id @default(uuid())
+  ownerUserId      String
+  scope            KnowledgeItemScope
+  organizationId   String?
+  title            String
+  currentVersion   Int                               @default(1)
+  deletedAt        DateTime?
+  deletedBy        String?
+  createdAt        DateTime                          @default(now())
+  createdBy        String
+  updatedAt        DateTime                          @updatedAt
+  updatedBy        String
+  versions         KnowledgeSynthesisVersion[]
+  shareSnapshots   KnowledgeShareSynthesisSnapshot[]
+  threadPromotions KnowledgeThreadPromotion[]
+  groupGrants      KnowledgeSynthesisGroupGrant[]
 
   @@unique([id, ownerUserId])
   @@index([ownerUserId, deletedAt, updatedAt, id])
@@ -2670,6 +2679,7 @@ model KnowledgeSynthesisVersion {
   sources               KnowledgeSynthesisSource[]        @relation("KnowledgeSynthesisVersionSources")
   usedAsSource          KnowledgeSynthesisSource[]        @relation("KnowledgeSynthesisVersionReferenced")
   shareSnapshots        KnowledgeShareSynthesisSnapshot[]
+  threadPromotions      KnowledgeThreadPromotion[]
 
   @@unique([synthesisId, version])
   @@unique([id, synthesisId, version])
@@ -2696,6 +2706,8 @@ model KnowledgeSynthesisSource {
   sourceConversationTurnId   String?
   sourceSynthesisVersion     KnowledgeSynthesisVersion?           @relation("KnowledgeSynthesisVersionReferenced", fields: [sourceSynthesisVersionId], references: [id], onDelete: Restrict)
   sourceSynthesisVersionId   String?
+  sourceThreadPromotion      KnowledgeThreadPromotion?            @relation(fields: [sourceThreadPromotionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourceThreadPromotionId    String?                              @unique
   createdAt                  DateTime                             @default(now())
   createdBy                  String
 
@@ -2747,6 +2759,7 @@ model KnowledgeShare {
   annotations            KnowledgeShareAnnotationSnapshot[]
   turns                  KnowledgeShareTurnSnapshot[]
   syntheses              KnowledgeShareSynthesisSnapshot[]
+  threadPromotions       KnowledgeThreadPromotion[]
 
   @@unique([sharerUserId, requestKeyHash])
   @@unique([id, sourceKnowledgeItemId, sourceOwnerUserId])
@@ -2880,6 +2893,102 @@ model KnowledgeShareSynthesisSnapshot {
   @@unique([shareId, sourceSynthesisVersionId])
   @@index([sourceSynthesisId, sourceOwnerUserId])
   @@index([sourceSynthesisVersionId, sourceSynthesisId, version])
+}
+
+model KnowledgeThreadPromotion {
+  id                                String                            @id @default(uuid())
+  sourceShare                       KnowledgeShare                    @relation(fields: [sourceShareId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourceShareId                     String
+  sourceShareVersion                Int
+  sourceShareContentHash            String
+  sourceRoom                        ChatRoom                          @relation("KnowledgeThreadPromotionRoom", fields: [sourceRoomId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourceRoomId                      String
+  sourceRootMessage                 ChatMessage                       @relation("KnowledgeThreadPromotionRoot", fields: [sourceRootMessageId, sourceRoomId], references: [id, roomId], onDelete: Restrict, onUpdate: NoAction)
+  sourceRootMessageId               String
+  promoterUserId                    String
+  ownerUserId                       String
+  scope                             KnowledgeItemScope
+  organizationId                    String?
+  destinationSynthesis              KnowledgeSynthesis                @relation(fields: [destinationSynthesisId, ownerUserId], references: [id, ownerUserId], onDelete: Restrict, onUpdate: Restrict)
+  destinationSynthesisId            String                            @unique
+  destinationSynthesisVersion       KnowledgeSynthesisVersion         @relation(fields: [destinationSynthesisVersionId, destinationSynthesisId, destinationSynthesisVersionNumber], references: [id, synthesisId, version], onDelete: Restrict, onUpdate: Restrict)
+  destinationSynthesisVersionId     String                            @unique
+  destinationSynthesisVersionNumber Int                               @default(1)
+  previewSchemaVersion              Int                               @default(1)
+  selectionHash                     String
+  contentHash                       String
+  includesSharedCard                Boolean                           @default(false)
+  selectedMessageCount              Int
+  destinationGrantCount             Int                               @default(0)
+  destinationGrantHash              String?
+  version                           Int                               @default(1)
+  createdAt                         DateTime                          @default(now())
+  createdBy                         String
+  selectedMessages                  KnowledgeThreadPromotionMessage[]
+  request                           KnowledgeThreadPromotionRequest?
+  synthesisSources                  KnowledgeSynthesisSource[]
+
+  @@unique([id, promoterUserId])
+  @@unique([id, sourceRoomId, sourceRootMessageId])
+  @@index([sourceShareId, sourceShareVersion, createdAt, id])
+  @@index([sourceRoomId, sourceRootMessageId, createdAt, id])
+  @@index([ownerUserId, scope, createdAt, id])
+  @@index([organizationId, scope, createdAt, id])
+}
+
+model KnowledgeThreadPromotionMessage {
+  id                     String                                 @id @default(uuid())
+  promotion              KnowledgeThreadPromotion               @relation(fields: [promotionId, sourceRoomId, sourceRootMessageId], references: [id, sourceRoomId, sourceRootMessageId], onDelete: Restrict, onUpdate: Restrict)
+  promotionId            String
+  sourceRoomId           String
+  sourceRootMessageId    String
+  sourceMessage          ChatMessage                            @relation("KnowledgeThreadPromotionSelectedMessage", fields: [sourceMessageId, sourceRoomId], references: [id, roomId], onDelete: Restrict, onUpdate: NoAction)
+  sourceMessageId        String
+  sourceActivitySequence BigInt
+  sourceMessageCreatedAt DateTime
+  ordinal                Int
+  authorCategory         KnowledgeThreadPromotionAuthorCategory
+  content                String                                 @db.Text
+  contentHash            String
+  createdAt              DateTime                               @default(now())
+  createdBy              String
+
+  @@unique([promotionId, ordinal])
+  @@unique([promotionId, sourceMessageId])
+  @@index([sourceMessageId, sourceRoomId])
+  @@index([sourceRootMessageId, sourceRoomId, ordinal])
+}
+
+model KnowledgeThreadPromotionRequest {
+  id                 String                   @id @default(uuid())
+  promoterUserId     String
+  requestKeyHash     String
+  requestPayloadHash String
+  promotion          KnowledgeThreadPromotion @relation(fields: [promotionId, promoterUserId], references: [id, promoterUserId], onDelete: Restrict, onUpdate: Restrict)
+  promotionId        String                   @unique
+  createdAt          DateTime                 @default(now())
+  createdBy          String
+
+  @@unique([promoterUserId, requestKeyHash])
+  @@unique([promotionId, promoterUserId])
+}
+
+model KnowledgeSynthesisGroupGrant {
+  id             String             @id @default(uuid())
+  synthesis      KnowledgeSynthesis @relation(fields: [synthesisId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  synthesisId    String
+  groupAccount   GroupAccount       @relation(fields: [groupAccountId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  groupAccountId String
+  revokedAt      DateTime?
+  revokedBy      String?
+  createdAt      DateTime           @default(now())
+  createdBy      String
+  updatedAt      DateTime           @updatedAt
+  updatedBy      String
+
+  @@unique([synthesisId, groupAccountId])
+  @@index([groupAccountId, revokedAt, synthesisId])
+  @@index([synthesisId, revokedAt, groupAccountId])
 }
 
 model ReassignmentLog {
@@ -3089,18 +3198,19 @@ model UserGroup {
 }
 
 model GroupAccount {
-  id                   String                     @id @default(uuid())
-  externalId           String?                    @unique
-  displayName          String
-  scimMeta             Json?
-  active               Boolean                    @default(true)
-  createdAt            DateTime                   @default(now())
-  createdBy            String?
-  updatedAt            DateTime                   @updatedAt
-  updatedBy            String?
-  memberships          UserGroup[]
-  knowledgeItemGrants  KnowledgeItemGroupGrant[]
-  knowledgeLabelGrants KnowledgeLabelGroupGrant[]
+  id                       String                         @id @default(uuid())
+  externalId               String?                        @unique
+  displayName              String
+  scimMeta                 Json?
+  active                   Boolean                        @default(true)
+  createdAt                DateTime                       @default(now())
+  createdBy                String?
+  updatedAt                DateTime                       @updatedAt
+  updatedBy                String?
+  memberships              UserGroup[]
+  knowledgeItemGrants      KnowledgeItemGroupGrant[]
+  knowledgeLabelGrants     KnowledgeLabelGroupGrant[]
+  knowledgeSynthesisGrants KnowledgeSynthesisGroupGrant[]
 
   @@index([displayName])
 }
