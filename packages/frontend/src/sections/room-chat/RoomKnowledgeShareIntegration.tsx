@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useId, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ChatMessage, ChatThread } from './roomChatModel';
 import {
@@ -35,13 +35,14 @@ function KnowledgeThreadPromotionLauncher({
   share: KnowledgeShareRoomCard;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const headingId = useId();
   return (
     <section
       className="card"
-      aria-labelledby="knowledge-thread-promotion-heading"
+      aria-labelledby={headingId}
       style={{ padding: 12 }}
     >
-      <h3 id="knowledge-thread-promotion-heading" style={{ marginTop: 0 }}>
+      <h3 id={headingId} style={{ marginTop: 0 }}>
         ナレッジへプロモーション
       </h3>
       <p>
