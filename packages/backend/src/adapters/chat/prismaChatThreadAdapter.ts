@@ -580,6 +580,7 @@ export function createPrismaChatThreadRepository(
             client: tx as unknown as typeof prisma,
           });
           if (!access.ok) return null;
+          if (access.room.allowExternalUsers) return null;
           if (
             !(await hasActiveChatProject({
               room: access.room,

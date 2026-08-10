@@ -123,7 +123,8 @@ typed immutable snapshot row だけから表示する。旧 client は relation 
   `GET /chat-rooms/{roomId}/knowledge-share-messages?messageIds=...`へ渡し、`messageId`、`shareId`、
   `posted|revoked`、optimistic `version`、schema versionだけのcompact discriminatorを固定本数の
   batch queryで読む。timeline query、ACK、attachment、reply aggregateを再実行せず、並行投稿による
-  page driftを避ける。通常messageはこの専用responseへ含めない。
+  page driftを避ける。通常messageはこの専用responseへ含めない。roomがexternal-enabledへ変化した
+  場合はsummaryも404とし、share存在とstable share IDを公開しない。
 - card本文は`GET /chat-messages/{messageId}/knowledge-share`から単体取得する。active rootと
   current room ACL、active project、share状態を同一`REPEATABLE READ`
   snapshotで検査する。missing、unauthorized、non-share、pending、failedは同じ404、revokedは

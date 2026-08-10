@@ -30,15 +30,18 @@ const [
   { createKnowledgeShareUseCases },
   { createKnowledgeShareTokenCodec },
   { createChatMessageLifecycleService },
+  { createPrismaChatThreadRepository },
 ] = await Promise.all([
   import('../dist/services/db.js'),
   import('../dist/adapters/knowledge/prismaKnowledgeShareAdapter.js'),
   import('../dist/application/knowledge/knowledgeShareUseCases.js'),
   import('../dist/application/knowledge/knowledgeShareToken.js'),
   import('../dist/services/chatMessageLifecycle.js'),
+  import('../dist/adapters/chat/prismaChatThreadAdapter.js'),
 ]);
 
 const adapter = createPrismaKnowledgeShareAdapter(prisma);
+const prismaChatThreadRepository = createPrismaChatThreadRepository(prisma);
 const actor = {
   userId: 'knowledge-share-owner',
   organizationId: 'knowledge-share-org',
@@ -1337,6 +1340,15 @@ try {
   assert.equal(externalizedCard.ok, false);
   assert.equal(externalizedCard.code, 'not_found');
   assert.equal(externalizedCard.statusCode, 404);
+  assert.equal(
+    await prismaChatThreadRepository.listKnowledgeShareSummaries({
+      actor: chatActor,
+      roomId,
+      messageIds: [posted.chatMessageId],
+    }),
+    null,
+    'externalized room cannot reveal compact share metadata',
+  );
   expectFailure(
     await adapter.openSource({
       actor,

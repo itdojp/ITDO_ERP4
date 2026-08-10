@@ -499,7 +499,8 @@ mutationする。
   `GET /chat-rooms/{roomId}/knowledge-share-messages?messageIds=...`へ渡し、そのexact集合に対応する
   message ID、share ID、posted/revoked、optimistic version、schema versionだけを固定本数batchで取得する。
   別時点のtimeline条件を再評価しないため、並行投稿によるpage driftを起こさない。通常text message、
-  search、notification、unread、ACKは従来のgeneric本文契約を維持する。
+  search、notification、unread、ACKは従来のgeneric本文契約を維持する。roomがexternal-enabledへ
+  変化した場合はcompact discriminatorも404とし、shareの存在とstable share IDを公開しない。
 - full cardは`GET /chat-messages/{messageId}/knowledge-share`で単体取得する。active root、current room
   read ACL、active project、share statusを同一consistent snapshotで再検査し、
   postedのみselected typed snapshot、revokedはcontent-free placeholder、pending/failed/non-share/

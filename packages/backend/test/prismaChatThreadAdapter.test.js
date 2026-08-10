@@ -256,6 +256,47 @@ test('knowledge-share summaries bind to exact requested root IDs without timelin
   ]);
 });
 
+test('knowledge-share summaries fail closed before share lookup after a room becomes external-facing', async () => {
+  let shareLookupCount = 0;
+  const repository = createPrismaChatThreadRepository({
+    async $transaction(operation) {
+      return operation({
+        chatRoom: {
+          async findUnique() {
+            return {
+              id: 'room-1',
+              type: 'company',
+              projectId: null,
+              isOfficial: true,
+              groupId: null,
+              viewerGroupIds: null,
+              posterGroupIds: null,
+              deletedAt: null,
+              allowExternalUsers: true,
+            };
+          },
+        },
+        chatRoomMember: { findFirst: async () => ({ role: 'member' }) },
+        knowledgeShare: {
+          async findMany() {
+            shareLookupCount += 1;
+            return [];
+          },
+        },
+      });
+    },
+  });
+
+  const result = await repository.listKnowledgeShareSummaries({
+    roomId: 'room-1',
+    actor,
+    messageIds: ['root-1'],
+  });
+
+  assert.equal(result, null);
+  assert.equal(shareLookupCount, 0);
+});
+
 test('root timeline returns null before reading messages when same-snapshot read ACL is denied', async () => {
   const calls = [];
   const tx = {

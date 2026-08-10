@@ -297,6 +297,35 @@ test('knowledge-share summary route rejects missing, empty, oversized, and over-
   assert.deepEqual(summaryInputs, []);
 });
 
+test('knowledge-share summary route normalizes same-snapshot access revocation to 404', async () => {
+  const room = {
+    id: 'room-1',
+    type: 'company',
+    projectId: null,
+    isOfficial: true,
+    groupId: null,
+    viewerGroupIds: null,
+    posterGroupIds: null,
+    deletedAt: null,
+    allowExternalUsers: false,
+  };
+  await withServer(
+    readableRepository({
+      summaryResult: null,
+      accessRooms: { 'room-1': room },
+    }),
+    async (server) => {
+      const response = await server.inject({
+        method: 'GET',
+        url: '/chat-rooms/room-1/knowledge-share-messages?messageIds=root-1',
+        headers,
+      });
+      assert.equal(response.statusCode, 404, response.body);
+      assert.deepEqual(response.json(), { error: 'not_found' });
+    },
+  );
+});
+
 test('timeline routes pass the current actor and normalize same-snapshot ACL denial to 404', async () => {
   const cases = [
     {
