@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -174,6 +175,58 @@ describe('KnowledgeHub', () => {
     expect(
       await screen.findByText('provenance workspace: 切替候補'),
     ).toBeVisible();
+  });
+
+  it('does not replace the selected item snapshots when a concurrent capture recovery targets another item', async () => {
+    const selected = makeItem({ id: 'item-1', title: '共有確定元' });
+    const created = makeItem({ id: 'item-2', title: '保存処理中の別項目' });
+    const selectedSnapshot = makeSnapshot({
+      id: 'snapshot-a',
+      knowledgeItemId: 'item-1',
+      sha256: 'a'.repeat(64),
+    });
+    const createdSnapshot = makeSnapshot({
+      id: 'snapshot-b',
+      knowledgeItemId: 'item-2',
+      sha256: 'b'.repeat(64),
+    });
+    let rejectCapture!: (reason: unknown) => void;
+    apiMocks.listKnowledgeInbox.mockResolvedValue([selected]);
+    apiMocks.createKnowledgeItem.mockResolvedValue(created);
+    apiMocks.listKnowledgeSnapshots.mockImplementation((itemId: string) =>
+      Promise.resolve(
+        itemId === 'item-2' ? [createdSnapshot] : [selectedSnapshot],
+      ),
+    );
+    apiMocks.captureKnowledgeTextOrUrl.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectCapture = reject;
+      }),
+    );
+    render(<KnowledgeHub />);
+
+    await screen.findByRole('article', { name: 'version 1' });
+    fireEvent.change(screen.getByLabelText('保存するテキスト'), {
+      target: { value: '別項目へ保存するsynthetic本文' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Inboxへ保存' }));
+    await waitFor(() =>
+      expect(apiMocks.captureKnowledgeTextOrUrl).toHaveBeenCalledTimes(1),
+    );
+    fireEvent.click(screen.getByRole('button', { name: '共有確定を開始' }));
+
+    await act(async () => {
+      rejectCapture(new KnowledgeHubApiError('unknown_error', 500));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(apiMocks.listKnowledgeSnapshots).toHaveBeenCalledWith('item-2'),
+    );
+    expect(screen.getByText('provenance workspace: 共有確定元')).toBeVisible();
+    expect(
+      screen.getByRole('article', { name: 'version 1' }),
+    ).toHaveTextContent('a'.repeat(64));
+    expect(document.body).not.toHaveTextContent('b'.repeat(64));
   });
 
   it('loads an empty Inbox with personal/new/text as the safe defaults', async () => {

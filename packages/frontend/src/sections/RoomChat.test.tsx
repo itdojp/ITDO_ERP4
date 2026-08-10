@@ -469,6 +469,49 @@ describe('RoomChat', () => {
     expect(screen.getByText('Unread 1')).toBeInTheDocument();
   });
 
+  it('keeps the current room mounted while a promotion commit owns its result', async () => {
+    installApiMock({
+      rooms: [
+        makeRoom({ id: 'room-1', name: 'room one' }),
+        makeRoom({ id: 'room-2', name: 'room two' }),
+      ],
+      messagesByRoom: {
+        'room-1': [
+          makeMessage({
+            id: 'message-1',
+            roomId: 'room-1',
+            body: 'room one message',
+          }),
+        ],
+        'room-2': [
+          makeMessage({
+            id: 'message-2',
+            roomId: 'room-2',
+            body: 'room two message',
+          }),
+        ],
+      },
+    });
+    const view = render(<RoomChat knowledgeCommitBusy />);
+
+    expect(await screen.findByText('room one message')).toBeInTheDocument();
+    const roomSelect = screen.getByRole('combobox', { name: 'ルーム' });
+    expect(roomSelect).toBeDisabled();
+    fireEvent.change(roomSelect, { target: { value: 'room-2' } });
+    window.dispatchEvent(
+      new CustomEvent('erp4_open_room_chat', {
+        detail: { roomId: 'room-2' },
+      }),
+    );
+    expect(roomSelect).toHaveValue('room-1');
+    expect(screen.getByText('room one message')).toBeInTheDocument();
+
+    view.rerender(<RoomChat knowledgeCommitBusy={false} />);
+    await waitFor(() => expect(roomSelect).toBeEnabled());
+    fireEvent.change(roomSelect, { target: { value: 'room-2' } });
+    expect(await screen.findByText('room two message')).toBeInTheDocument();
+  });
+
   it('replaces the generic fallback with the selected Knowledge share card only', async () => {
     installApiMock({
       rooms: [makeRoom({ id: 'room-1' })],

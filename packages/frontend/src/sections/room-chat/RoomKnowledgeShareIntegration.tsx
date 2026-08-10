@@ -30,9 +30,11 @@ export function selectVisibleKnowledgeShareRootMessageIds(
 export function KnowledgeThreadPromotionLauncher({
   thread,
   share,
+  onCommitBusyChange,
 }: {
   thread: ChatThread;
   share: KnowledgeShareRoomCard;
+  onCommitBusyChange?: (busy: boolean) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const headingId = useId();
@@ -62,6 +64,7 @@ export function KnowledgeThreadPromotionLauncher({
         replies={thread.replies}
         knowledgeShare={share}
         onClose={() => setIsOpen(false)}
+        onCommitBusyChange={onCommitBusyChange}
       />
     </section>
   );
@@ -72,6 +75,7 @@ export function useRoomKnowledgeShareIntegration(input: {
   currentRoomItems: ChatMessage[];
   threadRootMessageId?: string;
   hasAccess: boolean;
+  onPromotionCommitBusyChange?: (busy: boolean) => void;
 }) {
   const visibleRootMessageIds = useMemo(
     () =>
@@ -117,10 +121,11 @@ export function useRoomKnowledgeShareIntegration(input: {
           key={`${share.shareId}:${share.version}`}
           thread={thread}
           share={{ ...share, status: 'posted', card: share.card }}
+          onCommitBusyChange={input.onPromotionCommitBusyChange}
         />
       );
     },
-    [knowledgeShares.cardsByMessageId],
+    [input.onPromotionCommitBusyChange, knowledgeShares.cardsByMessageId],
   );
 
   return {

@@ -523,11 +523,20 @@ describe('KnowledgeThreadPromotionDialog', () => {
     }>();
     commitKnowledgeThreadPromotion.mockReturnValueOnce(pending.promise);
     const parentClose = vi.fn();
+    let parentCommitBusy = false;
     const parentEscapeHandler = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !event.defaultPrevented) parentClose();
+      if (
+        event.key === 'Escape' &&
+        !event.defaultPrevented &&
+        !parentCommitBusy
+      )
+        parentClose();
     };
     window.addEventListener('keydown', parentEscapeHandler);
-    const { props } = renderDialog();
+    const onCommitBusyChange = vi.fn((busy: boolean) => {
+      parentCommitBusy = busy;
+    });
+    const { props } = renderDialog({ onCommitBusyChange });
 
     fireEvent.click(screen.getByRole('checkbox', { name: '返信 1を選択' }));
     fillRequiredDraft();
@@ -548,9 +557,13 @@ describe('KnowledgeThreadPromotionDialog', () => {
     await waitFor(() =>
       expect(commitKnowledgeThreadPromotion).toHaveBeenCalledTimes(1),
     );
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
 
     const dialog = screen.getByRole('dialog', { name: 'スレッドをナレッジ化' });
-    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(document.activeElement).not.toBe(
+      within(previewSection).getByRole('button', { name: '確定中...' }),
+    );
+    fireEvent.keyDown(document.body, { key: 'Escape' });
     expect(props.onClose).not.toHaveBeenCalled();
     expect(parentClose).not.toHaveBeenCalled();
     expect(dialog).toBeVisible();
@@ -568,8 +581,14 @@ describe('KnowledgeThreadPromotionDialog', () => {
       reused: false,
     });
     await screen.findByRole('heading', { name: 'ナレッジ化結果と来歴' });
-    window.removeEventListener('keydown', parentEscapeHandler);
     expect(props.onCommitted).toHaveBeenCalledTimes(1);
+    expect(onCommitBusyChange.mock.calls.map(([busy]) => busy)).toEqual([
+      true,
+      false,
+    ]);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(parentClose).toHaveBeenCalledTimes(1);
+    window.removeEventListener('keydown', parentEscapeHandler);
   });
 
   it('provides modal focus, mobile width, and Escape close behavior', () => {

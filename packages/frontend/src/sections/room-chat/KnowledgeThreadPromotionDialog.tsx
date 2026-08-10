@@ -175,9 +175,18 @@ export function KnowledgeThreadPromotionDialog(props: {
   knowledgeShare: KnowledgeShareRoomCard;
   onClose: () => void;
   onCommitted?: (result: KnowledgeThreadPromotionCommit) => void;
+  onCommitBusyChange?: (busy: boolean) => void;
 }) {
-  const { open, roomId, root, replies, knowledgeShare, onClose, onCommitted } =
-    props;
+  const {
+    open,
+    roomId,
+    root,
+    replies,
+    knowledgeShare,
+    onClose,
+    onCommitted,
+    onCommitBusyChange,
+  } = props;
   const activeReplies = useMemo(
     () => activeDirectReplies(roomId, root.id, replies),
     [replies, roomId, root.id],
@@ -238,10 +247,15 @@ export function KnowledgeThreadPromotionDialog(props: {
   const contextKeyRef = useRef(contextKey);
   const mountedRef = useRef(true);
   const commitInFlightRef = useRef(false);
+  const onCommitBusyChangeRef = useRef(onCommitBusyChange);
 
   useLayoutEffect(() => {
     contextKeyRef.current = contextKey;
   }, [contextKey]);
+
+  useLayoutEffect(() => {
+    onCommitBusyChangeRef.current = onCommitBusyChange;
+  }, [onCommitBusyChange]);
 
   const invalidatePreview = useCallback((clearNotice = true) => {
     generationRef.current += 1;
@@ -575,6 +589,7 @@ export function KnowledgeThreadPromotionDialog(props: {
     }
 
     commitInFlightRef.current = true;
+    onCommitBusyChangeRef.current?.(true);
     setIsCommitting(true);
     setCommitAttempted(true);
     setNotice(null);
@@ -627,6 +642,7 @@ export function KnowledgeThreadPromotionDialog(props: {
       }
     } finally {
       commitInFlightRef.current = false;
+      onCommitBusyChangeRef.current?.(false);
       if (
         mountedRef.current &&
         generationRef.current === ready.generation &&

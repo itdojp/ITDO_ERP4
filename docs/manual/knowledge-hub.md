@@ -118,9 +118,9 @@ Synthesis一覧はcurrent actorが参照可能なglobal一覧です。選択中i
 
 ## Chatへ必要なfieldだけを共有する
 
-`Chatへ選択共有` tabでは、元Knowledge itemの閲覧権限を移譲せず、選択したfieldだけをimmutable cardとしてChat roomへ共有します。
+`Chatへ共有` tabでは、元Knowledge itemの閲覧権限を移譲せず、選択したfieldだけをimmutable cardとしてChat roomへ共有します。
 
-1. `Knowledge Inbox`から対象itemを選択し、`Chatへ選択共有` tabを開きます。
+1. `Knowledge Inbox`から対象itemを選択し、`Chatへ共有` tabを開きます。panel見出しは`Chatへ選択共有`です。
 2. 共有先Chat roomを選択します。外部参加者を許可するroomはMVPではfail closedです。
 3. 共有するfieldを個別に選択します。初期状態で選択されるのはタイトルだけです。
 4. 必要な場合だけ、ready snapshotのversion／SHA-256／抜粋、active label assignment、current annotation revision、conversation turn、current Synthesis version、共有者メモを選択します。
@@ -128,6 +128,8 @@ Synthesis一覧はcurrent actorが参照可能なglobal一覧です。選択中i
 6. `上記の共有先と共有内容が完全に一致することを確認しました`を明示的に選択し、`確認した内容をChatへ共有`を実行します。
 
 private label、annotation、AI／System／Tool turn、Synthesis、snapshot全文、URLは既定で未選択です。非選択fieldはcardで隠すだけではなく、share snapshotへ保存しません。preview後に元version、選択field、ACL、room post権限が変わった場合は確定せず、再previewが必要です。preview tokenとrequest keyはcomponent memoryだけに保持し、localStorage、画面、logへ表示しません。
+
+Chat共有またはナレッジ化の確定中は、結果と同じ操作識別子を保持するため、Knowledge item、tab、Chat room、thread、ERP4内の別画面へ移動できません。deep linkと再読込も実行せず、確定結果が表示されてから次の操作へ進みます。ブラウザの再読込・終了時は離脱警告を確認してください。
 
 共有結果が`投稿確認中`の場合、同じ投稿を自動再送せず、`既存投稿を読取専用で照合`を実行します。照合は既存Chat messageとの対応だけを確認し、新しいmessageを作りません。`投稿失敗`は自動retryせず、新しいpreviewから明示的にやり直します。同じrequest keyと同じ内容は既存shareを再利用し、内容が異なる場合は競合として確定しません。
 

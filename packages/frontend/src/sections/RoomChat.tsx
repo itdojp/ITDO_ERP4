@@ -5,7 +5,6 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { getAuthState } from '../api';
 import {
   Combobox,
   MentionComposer,
@@ -59,6 +58,11 @@ import { useRoomChatNotificationSetting } from './room-chat/useRoomChatNotificat
 import { useRoomChatRooms } from './room-chat/useRoomChatRooms';
 import { useRoomChatRootTimelineMutations } from './room-chat/roomChatRootTimelineMutations';
 import { useRoomChatSummary } from './room-chat/useRoomChatSummary';
+import { getRoomChatActorContext } from './room-chat/roomChatActorContext';
+import {
+  type RoomChatProps,
+  useRoomChatMutationLifecycle,
+} from './room-chat/useRoomChatMutationLifecycle';
 import { useRoomKnowledgeShareIntegration } from './room-chat/RoomKnowledgeShareIntegration';
 import {
   buildRoomChatSummaryItems,
@@ -66,61 +70,40 @@ import {
   getRootPostLifecycleMessage,
   renderRoomChatMessageBody,
 } from './room-chat/roomChatPresentation';
-
-export type RootPostLifecycle = 'idle' | 'in_flight' | 'uncertain';
-
-export type RoomChatProps = {
-  rootPostLifecycle?: RootPostLifecycle;
-  onRootPostLifecycleChange?: (lifecycle: RootPostLifecycle) => void;
-};
-
+export type {
+  RootPostLifecycle,
+  RoomChatProps,
+} from './room-chat/useRoomChatMutationLifecycle';
 export const RoomChat: React.FC<RoomChatProps> = ({
   rootPostLifecycle: controlledRootPostLifecycle,
   onRootPostLifecycleChange,
+  knowledgeCommitBusy: controlledKnowledgeCommitBusy,
+  onKnowledgeCommitBusyChange,
 }) => {
   const mountedRef = useRef(true);
-  const [localRootPostLifecycle, setLocalRootPostLifecycle] =
-    useState<RootPostLifecycle>('idle');
-  const rootPostLifecycle =
-    controlledRootPostLifecycle ?? localRootPostLifecycle;
-  const rootPostLifecycleRef = useRef(rootPostLifecycle);
-  useEffect(() => {
-    rootPostLifecycleRef.current = rootPostLifecycle;
-  }, [rootPostLifecycle]);
-  const updateRootPostLifecycle = useCallback(
-    (next: RootPostLifecycle) => {
-      rootPostLifecycleRef.current = next;
-      if (onRootPostLifecycleChange) {
-        onRootPostLifecycleChange(next);
-      } else if (mountedRef.current) {
-        setLocalRootPostLifecycle(next);
-      }
-    },
-    [onRootPostLifecycleChange],
-  );
-
+  const {
+    knowledgeCommitBusy,
+    knowledgeCommitBusyRef,
+    roomNavigationBlocked,
+    roomNavigationBlockedRef,
+    rootPostLifecycle,
+    rootPostLifecycleRef,
+    updateKnowledgeCommitBusy,
+    updateRootPostLifecycle,
+  } = useRoomChatMutationLifecycle({
+    rootPostLifecycle: controlledRootPostLifecycle,
+    onRootPostLifecycleChange,
+    knowledgeCommitBusy: controlledKnowledgeCommitBusy,
+    onKnowledgeCommitBusyChange,
+  });
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
   }, []);
-
-  const auth = getAuthState();
-  const roles = auth?.roles || [];
-  const authGroupIds = new Set(
-    [
-      ...(Array.isArray(auth?.groupIds) ? auth.groupIds : []),
-      ...(Array.isArray(auth?.groupAccountIds) ? auth.groupAccountIds : []),
-    ]
-      .map((value) => value.trim())
-      .filter(Boolean),
-  );
-  const currentUserId = auth?.userId || 'demo-user';
-  const canUseGeneralAffairsInbox = authGroupIds.has('general_affairs');
-  const canSeeAllMeta =
-    roles.includes('admin') || roles.includes('mgmt') || roles.includes('exec');
-
+  const { roles, currentUserId, canUseGeneralAffairsInbox, canSeeAllMeta } =
+    getRoomChatActorContext();
   const {
     rooms,
     roomId,
@@ -155,7 +138,6 @@ export const RoomChat: React.FC<RoomChatProps> = ({
   const previousRoomIdRef = useRef('');
   const skipNextRoomAutoLoadRef = useRef(false);
   const rootPostBlocked = rootPostLifecycle !== 'idle';
-
   useEffect(() => {
     const previousRoomId = previousRoomIdRef.current;
     previousRoomIdRef.current = roomId;
@@ -170,14 +152,13 @@ export const RoomChat: React.FC<RoomChatProps> = ({
     setPendingScrollMessageId('');
     setHighlightMessageId('');
   }, [roomId]);
-
   useEffect(() => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<{ roomId?: unknown }>).detail;
       const nextRoomId =
         detail && typeof detail.roomId === 'string' ? detail.roomId : '';
       if (!nextRoomId) return;
-      if (rootPostLifecycleRef.current !== 'idle') return;
+      if (roomNavigationBlockedRef.current) return;
       setRoomListScope('all');
       setRoomListQuery('');
       setRoomId(nextRoomId);
@@ -189,8 +170,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
         handler as EventListener,
       );
     };
-  }, [setRoomId]);
-
+  }, [roomNavigationBlockedRef, setRoomId]);
   const revalidateRoomAccessRef = useRef<
     ((targetRoomId: string) => Promise<boolean>) | null
   >(null);
@@ -229,6 +209,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
     threadRootMessageId:
       threadTarget?.roomId === roomId ? threadTarget.expectedRootId : undefined,
     hasAccess: Boolean(roomId && selectedRoom?.isMember !== false),
+    onPromotionCommitBusyChange: updateKnowledgeCommitBusy,
   });
   const [nowMs, setNowMs] = useState(0);
   const {
@@ -525,7 +506,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
       const createdAt =
         detail && typeof detail.createdAt === 'string' ? detail.createdAt : '';
       if (!messageId || !targetRoomId) return;
-      if (rootPostLifecycleRef.current !== 'idle') return;
+      if (roomNavigationBlockedRef.current) return;
 
       const hasParentMessageId = Object.prototype.hasOwnProperty.call(
         detail,
@@ -600,7 +581,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
         handler as EventListener,
       );
     };
-  }, [purgeRoomState, setRoomId]);
+  }, [purgeRoomState, roomNavigationBlockedRef, setRoomId]);
 
   const {
     globalQuery,
@@ -692,7 +673,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
       const projectId =
         detail && typeof detail.projectId === 'string' ? detail.projectId : '';
       if (!projectId) return;
-      if (rootPostLifecycleRef.current !== 'idle') return;
+      if (roomNavigationBlockedRef.current) return;
       setRoomListScope('all');
       setRoomListQuery('');
       resolveProjectRoom(projectId)
@@ -708,10 +689,11 @@ export const RoomChat: React.FC<RoomChatProps> = ({
         handler as EventListener,
       );
     };
-  }, [resolveProjectRoom, setMessage]);
+  }, [resolveProjectRoom, roomNavigationBlockedRef, setMessage]);
 
   useEffect(() => {
     if (!pendingOpenMessage) return;
+    if (knowledgeCommitBusyRef.current) return;
     if (pendingOpenMessage.roomId !== roomId) {
       if (pendingOpenMessage.roomId) {
         setRoomId(pendingOpenMessage.roomId);
@@ -730,7 +712,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
       })
       .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingOpenMessage, roomId]);
+  }, [knowledgeCommitBusy, pendingOpenMessage, roomId]);
 
   useEffect(() => {
     if (!pendingScrollMessageId) return;
@@ -758,7 +740,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
     item: Pick<ChatMessage, 'id' | 'roomId' | 'threadRootId'>,
     trigger: HTMLElement | null,
   ) => {
-    if (rootPostLifecycleRef.current !== 'idle') return;
+    if (roomNavigationBlockedRef.current) return;
     threadReturnFocusRef.current = trigger;
     setThreadTarget({
       messageId: item.id,
@@ -768,6 +750,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
   };
 
   const closeThread = () => {
+    if (knowledgeCommitBusyRef.current) return;
     setThreadTarget(null);
     const trigger = threadReturnFocusRef.current;
     threadReturnFocusRef.current = null;
@@ -778,7 +761,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
     item: ChatSearchItem,
     trigger: HTMLButtonElement | null,
   ) => {
-    if (rootPostLifecycleRef.current !== 'idle') return;
+    if (roomNavigationBlockedRef.current) return;
     setRoomId(item.room.id);
     setMessage('');
     openThread(item, trigger);
@@ -975,7 +958,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
   };
 
   const postMessage = async (mode: 'message' | 'ack') => {
-    if (!roomId || rootPostLifecycleRef.current !== 'idle') return;
+    if (!roomId || roomNavigationBlockedRef.current) return;
     const postingRoomId = roomId;
     if (!body.trim()) {
       setMessage('本文を入力してください');
@@ -1159,7 +1142,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
   });
 
   const createPrivateGroup = async () => {
-    if (rootPostLifecycleRef.current !== 'idle') return;
+    if (roomNavigationBlockedRef.current) return;
     try {
       setRoomMessage('');
       const memberUserIds = parseUserIds(createPrivateMembers);
@@ -1170,7 +1153,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
       setCreatePrivateName('');
       setCreatePrivateMembers('');
       await loadRooms();
-      setRoomId(created.id);
+      if (!knowledgeCommitBusyRef.current) setRoomId(created.id);
     } catch (err) {
       console.error('Failed to create private group.', err);
       setRoomMessage('private_groupの作成に失敗しました');
@@ -1178,13 +1161,13 @@ export const RoomChat: React.FC<RoomChatProps> = ({
   };
 
   const createDm = async () => {
-    if (rootPostLifecycleRef.current !== 'idle') return;
+    if (roomNavigationBlockedRef.current) return;
     try {
       setRoomMessage('');
       const created = await createDmRoom(createDmPartner.trim());
       setCreateDmPartner('');
       await loadRooms();
-      setRoomId(created.id);
+      if (!knowledgeCommitBusyRef.current) setRoomId(created.id);
     } catch (err) {
       console.error('Failed to create DM.', err);
       setRoomMessage('DMの作成に失敗しました');
@@ -1240,7 +1223,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
     if (!rooms.length) {
       return;
     }
-    if (rootPostLifecycleRef.current !== 'idle') return;
+    if (roomNavigationBlockedRef.current) return;
     const nextDisplayedRooms = buildDisplayedRooms(
       rooms,
       currentUserId,
@@ -1262,7 +1245,15 @@ export const RoomChat: React.FC<RoomChatProps> = ({
         setRoomId('');
       }
     }
-  }, [currentUserId, roomId, roomListQuery, roomListScope, rooms, setRoomId]);
+  }, [
+    currentUserId,
+    roomId,
+    roomListQuery,
+    roomListScope,
+    roomNavigationBlockedRef,
+    rooms,
+    setRoomId,
+  ]);
 
   const copyMessageLink = async (
     mode: 'url' | 'markdown',
@@ -1340,8 +1331,12 @@ export const RoomChat: React.FC<RoomChatProps> = ({
             ルーム
             <select
               value={roomId}
-              onChange={(e) => setRoomId(e.target.value)}
-              disabled={rootPostBlocked}
+              onChange={(e) => {
+                if (!knowledgeCommitBusyRef.current) {
+                  setRoomId(e.target.value);
+                }
+              }}
+              disabled={roomNavigationBlocked}
             >
               <option value="">(未選択)</option>
               {displayedRooms.map((room) => (
@@ -1354,7 +1349,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
           <button
             className="button secondary"
             onClick={() => loadRooms()}
-            disabled={rootPostBlocked}
+            disabled={roomNavigationBlocked}
           >
             再読込
           </button>
@@ -1915,7 +1910,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
       )}
 
       <fieldset
-        disabled={rootPostBlocked}
+        disabled={roomNavigationBlocked}
         aria-label="ルームタイムライン"
         style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
       >

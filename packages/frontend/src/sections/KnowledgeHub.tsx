@@ -98,7 +98,9 @@ function safeFailureMessage(snapshot: KnowledgeSnapshot) {
     : knowledgeHubErrorMessage('unknown_error');
 }
 
-export const KnowledgeHub: React.FC = () => {
+export const KnowledgeHub: React.FC<{
+  onShareCommitBusyChange?: (busy: boolean) => void;
+}> = ({ onShareCommitBusyChange }) => {
   const [items, setItems] = useState<KnowledgeItem[]>([]);
   const [itemsStatus, setItemsStatus] = useState<LoadStatus>('idle');
   const [itemsError, setItemsError] = useState('');
@@ -134,13 +136,18 @@ export const KnowledgeHub: React.FC = () => {
   const shareCommitBusyRef = useRef(false);
   const selectedItemIdRef = useRef('');
 
-  const handleShareCommitBusyChange = useCallback((busy: boolean) => {
-    shareCommitBusyRef.current = busy;
-    setShareCommitBusy(busy);
-  }, []);
+  const handleShareCommitBusyChange = useCallback(
+    (busy: boolean) => {
+      shareCommitBusyRef.current = busy;
+      setShareCommitBusy(busy);
+      onShareCommitBusyChange?.(busy);
+    },
+    [onShareCommitBusyChange],
+  );
 
   const selectKnowledgeItem = useCallback((itemId: string) => {
     if (shareCommitBusyRef.current) {
+      if (selectedItemIdRef.current === itemId) return true;
       setNotice({
         tone: 'warning',
         text: 'Chat共有の確定結果を確認するまでKnowledge itemを切り替えられません。',
@@ -429,13 +436,15 @@ export const KnowledgeHub: React.FC = () => {
         setNotice({ tone: 'error', text: toSafeErrorMessage(error) });
         return;
       }
-      selectKnowledgeItem(targetItem.id);
+      const targetSelected = selectKnowledgeItem(targetItem.id);
       const history = await listKnowledgeSnapshots(targetItem.id).catch(
         () => [] as KnowledgeSnapshot[],
       );
-      setSnapshots(history);
-      setSnapshotsStatus('success');
-      setSnapshotsError('');
+      if (targetSelected && selectedItemIdRef.current === targetItem.id) {
+        setSnapshots(history);
+        setSnapshotsStatus('success');
+        setSnapshotsError('');
+      }
       const pending = history.find(
         (snapshot) =>
           snapshot.status === 'pending' &&
