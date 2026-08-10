@@ -274,6 +274,8 @@ function resolveDeepLinkTarget(
       return { sectionId: 'time-entries', payload };
     case 'daily_report':
       return { sectionId: 'daily-report', payload };
+    case 'knowledge_item':
+      return { sectionId: 'knowledge-hub', payload };
     case 'leave_request':
       return { sectionId: 'leave-requests', payload };
     case 'customer':
@@ -364,6 +366,12 @@ export const App: React.FC = () => {
   const [chatRootPostLifecycle, setChatRootPostLifecycle] = useState<
     'idle' | 'in_flight' | 'uncertain'
   >('idle');
+  const [knowledgeCommitBusy, setKnowledgeCommitBusy] = useState(false);
+  const knowledgeCommitBusyRef = useRef(false);
+  const handleKnowledgeCommitBusyChange = useCallback((busy: boolean) => {
+    knowledgeCommitBusyRef.current = busy;
+    setKnowledgeCommitBusy(busy);
+  }, []);
   const sectionGroups = useMemo<SectionGroup[]>(
     () => [
       {
@@ -515,6 +523,8 @@ export const App: React.FC = () => {
                 <RoomChat
                   rootPostLifecycle={chatRootPostLifecycle}
                   onRootPostLifecycleChange={setChatRootPostLifecycle}
+                  knowledgeCommitBusy={knowledgeCommitBusy}
+                  onKnowledgeCommitBusyChange={handleKnowledgeCommitBusyChange}
                 />
               </Card>
             ),
@@ -538,7 +548,9 @@ export const App: React.FC = () => {
             label: 'Knowledge Hub',
             render: () => (
               <Card>
-                <KnowledgeHub />
+                <KnowledgeHub
+                  onShareCommitBusyChange={handleKnowledgeCommitBusyChange}
+                />
               </Card>
             ),
           },
@@ -645,7 +657,11 @@ export const App: React.FC = () => {
         ],
       },
     ],
-    [chatRootPostLifecycle],
+    [
+      chatRootPostLifecycle,
+      handleKnowledgeCommitBusyChange,
+      knowledgeCommitBusy,
+    ],
   );
   const sections = useMemo(
     () => sectionGroups.flatMap((group) => group.items),
@@ -680,16 +696,36 @@ export const App: React.FC = () => {
     string | null
   >(null);
 
-  const prepareActiveSectionChange = useCallback((sectionId: string) => {
-    const normalizedSectionId = normalizeSectionId(sectionId);
-    setActiveSectionState((current) => {
-      if (current.id === normalizedSectionId) return current;
-      return {
-        id: normalizedSectionId,
-        loadSeq: current.loadSeq + 1,
-      };
-    });
-  }, []);
+  const prepareActiveSectionChange = useCallback(
+    (sectionId: string) => {
+      if (knowledgeCommitBusy) {
+        setDeepLinkError(
+          'Knowledge共有またはナレッジ化の確定結果を確認するまで画面を移動できません。',
+        );
+        return false;
+      }
+      const normalizedSectionId = normalizeSectionId(sectionId);
+      setActiveSectionState((current) => {
+        if (current.id === normalizedSectionId) return current;
+        return {
+          id: normalizedSectionId,
+          loadSeq: current.loadSeq + 1,
+        };
+      });
+      return true;
+    },
+    [knowledgeCommitBusy],
+  );
+
+  useEffect(() => {
+    if (!knowledgeCommitBusy || typeof window === 'undefined') return;
+    const preventCommitLoss = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', preventCommitLoss);
+    return () => window.removeEventListener('beforeunload', preventCommitLoss);
+  }, [knowledgeCommitBusy]);
 
   useEffect(() => {
     if (!isCommandPaletteOpen) return;
@@ -739,6 +775,18 @@ export const App: React.FC = () => {
         setPendingDeepLink(null);
         return;
       }
+      if (knowledgeCommitBusyRef.current) {
+        setDeepLinkError(
+          'Knowledge共有またはナレッジ化の確定結果を確認するまでdeep linkを開けません。',
+        );
+        setPendingDeepLink(null);
+        window.history.replaceState(
+          null,
+          '',
+          window.location.pathname + window.location.search,
+        );
+        return;
+      }
 
       if (parsed.kind === 'chat_message') {
         setDeepLinkError('');
@@ -758,6 +806,17 @@ export const App: React.FC = () => {
             room?: { id?: unknown; type?: unknown; projectId?: unknown };
           };
           if (currentSeq !== requestSeq) return;
+          if (knowledgeCommitBusyRef.current) {
+            setDeepLinkError(
+              'Knowledge共有またはナレッジ化の確定結果を確認するまでdeep linkを開けません。',
+            );
+            window.history.replaceState(
+              null,
+              '',
+              window.location.pathname + window.location.search,
+            );
+            return;
+          }
           if (!res.ok) {
             setDeepLinkError(
               buildChatMessageDeepLinkError({ status: res.status, payload }),
@@ -956,9 +1015,9 @@ export const App: React.FC = () => {
       options: { focusMain?: boolean } = { focusMain: true },
     ) => {
       const normalizedSectionId = normalizeSectionId(sectionId);
+      if (!prepareActiveSectionChange(normalizedSectionId)) return false;
       setDeepLinkError('');
       setPendingDeepLink(null);
-      prepareActiveSectionChange(normalizedSectionId);
       if (options.focusMain ?? true) {
         setMainFocusRequestCount((current) => current + 1);
       }
@@ -972,6 +1031,7 @@ export const App: React.FC = () => {
           window.location.pathname + window.location.search,
         );
       }
+      return true;
     },
     [prepareActiveSectionChange],
   );
@@ -990,6 +1050,12 @@ export const App: React.FC = () => {
         keywords: ['再取得', 'refresh', 'reload'],
         onSelect: () => {
           if (typeof window === 'undefined') return;
+          if (knowledgeCommitBusy) {
+            setDeepLinkError(
+              'Knowledge共有またはナレッジ化の確定結果を確認するまで再読み込みできません。',
+            );
+            return;
+          }
           window.location.reload();
         },
       },
@@ -1001,8 +1067,9 @@ export const App: React.FC = () => {
           'ホームの検索（ERP横断）に移動して入力欄へフォーカスします',
         keywords: ['検索', 'search', 'global'],
         onSelect: () => {
-          setPendingGlobalSearchFocus(true);
-          activateSection('home', { focusMain: false });
+          if (activateSection('home', { focusMain: false })) {
+            setPendingGlobalSearchFocus(true);
+          }
         },
       },
       {
@@ -1046,7 +1113,12 @@ export const App: React.FC = () => {
         onSelect: () => activateSection(section.id),
       })),
     ],
-    [activateSection, sectionGroupLabelBySectionId, sections],
+    [
+      activateSection,
+      knowledgeCommitBusy,
+      sectionGroupLabelBySectionId,
+      sections,
+    ],
   );
 
   return (
@@ -1116,6 +1188,9 @@ export const App: React.FC = () => {
                           }
                           variant={
                             item.id === activeSection?.id ? 'primary' : 'ghost'
+                          }
+                          disabled={
+                            knowledgeCommitBusy && item.id !== activeSection?.id
                           }
                           onClick={() => activateSection(item.id)}
                         >

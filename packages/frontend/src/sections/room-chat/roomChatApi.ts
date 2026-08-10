@@ -214,8 +214,8 @@ function normalizedPostedMessageOrThrow(
   };
 }
 
-export async function fetchChatRooms() {
-  const res = await api<{ items?: unknown[] }>('/chat-rooms');
+export async function fetchChatRooms(options?: RequestInit) {
+  const res = await api<{ items?: unknown[] }>('/chat-rooms', options);
   return Array.isArray(res.items)
     ? res.items
         .map(normalizeChatRoom)

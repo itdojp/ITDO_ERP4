@@ -6,6 +6,7 @@ import {
   knowledgeLabelInputLimits,
   type KnowledgeItemLabelAssignment,
   type KnowledgeItemLabelMutationTarget,
+  type KnowledgeItemLabelSelectionOption,
   type KnowledgeItemLabelWriteRepository,
   type KnowledgeLabel,
   type KnowledgeLabelAlias,
@@ -21,6 +22,7 @@ import {
 } from '../../application/knowledge/knowledgeLabelPorts.js';
 import type { KnowledgeActor } from '../../application/knowledge/knowledgeItemPorts.js';
 import { prisma } from '../../services/db.js';
+import { buildKnowledgeVisibilityWhere } from './prismaKnowledgeItemAdapter.js';
 
 type KnowledgeLabelDbClient = Pick<
   Prisma.TransactionClient,
@@ -362,6 +364,47 @@ export class PrismaKnowledgeLabelRepository
       skip: query.offset,
     });
     return rows.map(mapLabel);
+  }
+
+  async listActiveAssignmentsForVisibleItem(input: {
+    actor: KnowledgeActor;
+    itemId: string;
+    limit: number;
+  }): Promise<KnowledgeItemLabelSelectionOption[] | null> {
+    const item = await this.client.knowledgeItem.findFirst({
+      where: {
+        AND: [{ id: input.itemId }, buildKnowledgeVisibilityWhere(input.actor)],
+      },
+      select: {
+        labels: {
+          where: {
+            detachedAt: null,
+            label: {
+              is: buildKnowledgeLabelVisibilityWhere(input.actor),
+            },
+          },
+          orderBy: [{ updatedAt: 'desc' as const }, { id: 'desc' as const }],
+          take: Math.min(input.limit, knowledgeLabelInputLimits.listLimit),
+          select: {
+            id: true,
+            label: {
+              select: {
+                displayName: true,
+                scope: true,
+                version: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!item) return null;
+    return item.labels.map((assignment) => ({
+      assignmentId: assignment.id,
+      displayName: assignment.label.displayName,
+      scope: assignment.label.scope,
+      labelVersion: assignment.label.version,
+    }));
   }
 
   async findVisibleById(actor: KnowledgeActor, labelId: string) {

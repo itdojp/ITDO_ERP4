@@ -9,6 +9,7 @@ import {
   knowledgeLabelCapabilities,
   knowledgeLabelInputLimits,
   type KnowledgeItemLabelAssignment,
+  type KnowledgeItemLabelSelectionOption,
   type KnowledgeLabel,
   type KnowledgeLabelAlias,
   type KnowledgeLabelGroupGrant,
@@ -177,6 +178,18 @@ const assignmentResponseSchema = {
   },
 } as const;
 
+const assignmentSelectionResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['assignmentId', 'displayName', 'scope', 'labelVersion'],
+  properties: {
+    assignmentId: { type: 'string' },
+    displayName: { type: 'string' },
+    scope: { type: 'string', enum: knowledgeItemScopes },
+    labelVersion: { type: 'integer', minimum: 1 },
+  },
+} as const;
+
 const idProperty = {
   type: 'string',
   minLength: 1,
@@ -216,6 +229,13 @@ const itemLabelParamsSchema = {
     },
     labelId: idProperty,
   },
+} as const;
+
+const itemParamsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['id'],
+  properties: { id: itemLabelParamsSchema.properties.id },
 } as const;
 
 const versionProperty = {
@@ -359,6 +379,17 @@ function toAssignmentResponse(assignment: KnowledgeItemLabelAssignment) {
     detachedAt: assignment.detachedAt?.toISOString() ?? null,
     createdAt: assignment.createdAt.toISOString(),
     updatedAt: assignment.updatedAt.toISOString(),
+  };
+}
+
+function toAssignmentSelectionResponse(
+  assignment: KnowledgeItemLabelSelectionOption,
+) {
+  return {
+    assignmentId: assignment.assignmentId,
+    displayName: assignment.displayName,
+    scope: assignment.scope,
+    labelVersion: assignment.labelVersion,
   };
 }
 
@@ -799,6 +830,45 @@ export async function registerKnowledgeLabelRoutes(
     },
   );
 
+  app.get(
+    '/knowledge/items/:id/label-assignments',
+    {
+      preHandler,
+      schema: {
+        tags: ['knowledge'],
+        params: itemParamsSchema,
+        response: {
+          ...protectedErrorResponses,
+          200: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['items'],
+            properties: {
+              items: {
+                type: 'array',
+                maxItems: knowledgeLabelInputLimits.listLimit,
+                items: assignmentSelectionResponseSchema,
+              },
+            },
+          },
+          404: errorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const result = await service.listAssignments({
+        actor: knowledgeActorFromRequest(request),
+        itemId: (request.params as { id: string }).id,
+      });
+      if (!result.ok) return sendFailure(reply, result);
+      return reply.send({
+        items: result.value
+          .slice(0, knowledgeLabelInputLimits.listLimit)
+          .map(toAssignmentSelectionResponse),
+      });
+    },
+  );
+
   app.post(
     '/knowledge/items/:id/labels',
     {
@@ -808,12 +878,7 @@ export async function registerKnowledgeLabelRoutes(
       ),
       schema: {
         tags: ['knowledge'],
-        params: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['id'],
-          properties: { id: itemLabelParamsSchema.properties.id },
-        },
+        params: itemParamsSchema,
         body: attachBodySchema,
         response: {
           ...protectedErrorResponses,

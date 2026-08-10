@@ -10,6 +10,170 @@ import {
   PrismaKnowledgeLabelUnitOfWork,
 } from '../dist/adapters/knowledge/prismaKnowledgeLabelAdapter.js';
 
+test('assignment reads combine canonical item ACL with current label visibility and a stable bound', async () => {
+  const calls = [];
+  const client = {
+    knowledgeItem: {
+      findFirst: async (args) => {
+        calls.push(args);
+        return {
+          labels: [
+            {
+              id: `assignment-${calls.length}`,
+              assignedBy: 'must-not-pass-through',
+              providerData: 'must-not-pass-through',
+              label: {
+                displayName: calls.length === 1 ? 'Personal' : 'Organization',
+                scope: calls.length === 1 ? 'personal' : 'organization',
+                version: calls.length,
+                ownerUserId: 'must-not-pass-through',
+              },
+            },
+          ],
+        };
+      },
+    },
+  };
+  const repository = new PrismaKnowledgeLabelRepository(client);
+
+  const personal = await repository.listActiveAssignmentsForVisibleItem({
+    actor: { userId: 'owner-1', groupAccountIds: [] },
+    itemId: 'item-personal',
+    limit: 1000,
+  });
+  const organization = await repository.listActiveAssignmentsForVisibleItem({
+    actor: {
+      userId: 'member-1',
+      organizationId: 'org-1',
+      groupAccountIds: ['group-1'],
+    },
+    itemId: 'item-organization',
+    limit: 100,
+  });
+
+  assert.deepEqual(personal, [
+    {
+      assignmentId: 'assignment-1',
+      displayName: 'Personal',
+      scope: 'personal',
+      labelVersion: 1,
+    },
+  ]);
+  assert.deepEqual(organization, [
+    {
+      assignmentId: 'assignment-2',
+      displayName: 'Organization',
+      scope: 'organization',
+      labelVersion: 2,
+    },
+  ]);
+  assert.equal(
+    JSON.stringify([personal, organization]).includes('must-not-pass-through'),
+    false,
+  );
+
+  assert.deepEqual(calls[0].where, {
+    AND: [
+      { id: 'item-personal' },
+      { deletedAt: null, OR: [{ ownerUserId: 'owner-1' }] },
+    ],
+  });
+  assert.deepEqual(calls[0].select.labels.where, {
+    detachedAt: null,
+    label: {
+      is: {
+        deletedAt: null,
+        OR: [{ scope: 'personal', ownerUserId: 'owner-1' }],
+      },
+    },
+  });
+  assert.deepEqual(calls[0].select.labels.orderBy, [
+    { updatedAt: 'desc' },
+    { id: 'desc' },
+  ]);
+  assert.equal(calls[0].select.labels.take, 100);
+  assert.deepEqual(calls[0].select.labels.select, {
+    id: true,
+    label: {
+      select: { displayName: true, scope: true, version: true },
+    },
+  });
+
+  const organizationItemVisibility = calls[1].where.AND[1];
+  assert.equal(organizationItemVisibility.deletedAt, null);
+  assert.deepEqual(organizationItemVisibility.OR[0], {
+    ownerUserId: 'member-1',
+  });
+  assert.deepEqual(organizationItemVisibility.OR[1], {
+    scope: 'organization',
+    organizationId: 'org-1',
+    groupGrants: {
+      some: {
+        groupAccountId: { in: ['group-1'] },
+        groupAccount: {
+          active: true,
+          memberships: {
+            some: {
+              userId: 'member-1',
+              user: {
+                active: true,
+                deletedAt: null,
+                organization: 'org-1',
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+  assert.deepEqual(calls[1].select.labels.where.label.is.OR[1], {
+    scope: 'organization',
+    organizationId: 'org-1',
+    groupGrants: {
+      some: {
+        groupAccountId: { in: ['group-1'] },
+        capability: { in: ['use', 'manage'] },
+        active: true,
+        groupAccount: { active: true },
+      },
+    },
+  });
+});
+
+test('assignment reads return one indistinguishable null for missing and unauthorized items', async () => {
+  const calls = [];
+  const repository = new PrismaKnowledgeLabelRepository({
+    knowledgeItem: {
+      findFirst: async (args) => {
+        calls.push(args);
+        return null;
+      },
+    },
+  });
+  const actor = {
+    userId: 'outsider-1',
+    organizationId: 'org-1',
+    groupAccountIds: [],
+  };
+
+  const unauthorized = await repository.listActiveAssignmentsForVisibleItem({
+    actor,
+    itemId: 'existing-item',
+    limit: 100,
+  });
+  const missing = await repository.listActiveAssignmentsForVisibleItem({
+    actor,
+    itemId: 'missing-item',
+    limit: 100,
+  });
+
+  assert.equal(unauthorized, null);
+  assert.equal(missing, null);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].where.AND[0].id, 'existing-item');
+  assert.equal(calls[1].where.AND[0].id, 'missing-item');
+});
+
 test('mutation locks apply authorization predicates before acquiring label or item row locks', async () => {
   const rawQueries = [];
   let labelReadCount = 0;

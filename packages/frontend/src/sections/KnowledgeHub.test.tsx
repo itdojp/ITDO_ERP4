@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -11,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const apiMocks = vi.hoisted(() => ({
   captureKnowledgeTextOrUrl: vi.fn(),
   createKnowledgeItem: vi.fn(),
+  getKnowledgeItem: vi.fn(),
   listKnowledgeInbox: vi.fn(),
   listKnowledgeSnapshots: vi.fn(),
   openKnowledgeSnapshotDownload: vi.fn(),
@@ -27,8 +29,22 @@ vi.mock('./knowledge-hub/knowledgeHubApi', async (importOriginal) => ({
 }));
 vi.mock('../utils/download', () => ({ downloadResponseAsFile }));
 vi.mock('./knowledge-hub/KnowledgeProvenanceWorkspace', () => ({
-  KnowledgeProvenanceWorkspace: ({ itemLabel }: { itemLabel: string }) => (
-    <div>provenance workspace: {itemLabel}</div>
+  KnowledgeProvenanceWorkspace: ({
+    itemLabel,
+    onShareCommitBusyChange,
+  }: {
+    itemLabel: string;
+    onShareCommitBusyChange?: (busy: boolean) => void;
+  }) => (
+    <div>
+      provenance workspace: {itemLabel}
+      <button type="button" onClick={() => onShareCommitBusyChange?.(true)}>
+        共有確定を開始
+      </button>
+      <button type="button" onClick={() => onShareCommitBusyChange?.(false)}>
+        共有確定を完了
+      </button>
+    </div>
   ),
 }));
 
@@ -86,6 +102,7 @@ beforeEach(() => {
   apiMocks.listKnowledgeInbox.mockResolvedValue([]);
   apiMocks.listKnowledgeSnapshots.mockResolvedValue([]);
   apiMocks.createKnowledgeItem.mockResolvedValue(makeItem());
+  apiMocks.getKnowledgeItem.mockResolvedValue(makeItem());
   apiMocks.captureKnowledgeTextOrUrl.mockResolvedValue(makeSnapshot());
   apiMocks.uploadKnowledgeSnapshot.mockResolvedValue(
     makeSnapshot({ captureMethod: 'upload' }),
@@ -100,6 +117,118 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('KnowledgeHub', () => {
+  it('opens an authorized Knowledge item from a sanitized deep link event', async () => {
+    apiMocks.getKnowledgeItem.mockResolvedValue(
+      makeItem({ id: 'item-deep-link', title: '共有元ナレッジ' }),
+    );
+    render(<KnowledgeHub />);
+
+    window.dispatchEvent(
+      new CustomEvent('erp4_open_entity', {
+        detail: { kind: 'knowledge_item', id: 'item-deep-link' },
+      }),
+    );
+
+    await waitFor(() =>
+      expect(apiMocks.getKnowledgeItem).toHaveBeenCalledWith(
+        'item-deep-link',
+        expect.any(AbortSignal),
+      ),
+    );
+    expect(
+      await screen.findByRole('button', { name: /共有元ナレッジ/ }),
+    ).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('keeps the selected item mounted while a share commit owns its in-memory result', async () => {
+    const first = makeItem({ id: 'item-1', title: '共有確定元' });
+    const second = makeItem({ id: 'item-2', title: '切替候補' });
+    apiMocks.listKnowledgeInbox.mockResolvedValue([first, second]);
+    apiMocks.listKnowledgeSnapshots.mockResolvedValue([makeSnapshot()]);
+    render(<KnowledgeHub />);
+
+    expect(
+      await screen.findByText('provenance workspace: 共有確定元'),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '共有確定を開始' }));
+
+    const secondItem = screen.getByRole('button', { name: /切替候補/ });
+    expect(secondItem).toBeDisabled();
+    fireEvent.click(secondItem);
+    expect(screen.getByText('provenance workspace: 共有確定元')).toBeVisible();
+
+    window.dispatchEvent(
+      new CustomEvent('erp4_open_entity', {
+        detail: { kind: 'knowledge_item', id: 'item-deep-link' },
+      }),
+    );
+    expect(apiMocks.getKnowledgeItem).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText(
+        /確定結果を確認するまでKnowledge itemを切り替えられません/,
+      ),
+    ).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: '共有確定を完了' }));
+    expect(secondItem).toBeEnabled();
+    fireEvent.click(secondItem);
+    expect(
+      await screen.findByText('provenance workspace: 切替候補'),
+    ).toBeVisible();
+  });
+
+  it('does not replace the selected item snapshots when a concurrent capture recovery targets another item', async () => {
+    const selected = makeItem({ id: 'item-1', title: '共有確定元' });
+    const created = makeItem({ id: 'item-2', title: '保存処理中の別項目' });
+    const selectedSnapshot = makeSnapshot({
+      id: 'snapshot-a',
+      knowledgeItemId: 'item-1',
+      sha256: 'a'.repeat(64),
+    });
+    const createdSnapshot = makeSnapshot({
+      id: 'snapshot-b',
+      knowledgeItemId: 'item-2',
+      sha256: 'b'.repeat(64),
+    });
+    let rejectCapture!: (reason: unknown) => void;
+    apiMocks.listKnowledgeInbox.mockResolvedValue([selected]);
+    apiMocks.createKnowledgeItem.mockResolvedValue(created);
+    apiMocks.listKnowledgeSnapshots.mockImplementation((itemId: string) =>
+      Promise.resolve(
+        itemId === 'item-2' ? [createdSnapshot] : [selectedSnapshot],
+      ),
+    );
+    apiMocks.captureKnowledgeTextOrUrl.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectCapture = reject;
+      }),
+    );
+    render(<KnowledgeHub />);
+
+    await screen.findByRole('article', { name: 'version 1' });
+    fireEvent.change(screen.getByLabelText('保存するテキスト'), {
+      target: { value: '別項目へ保存するsynthetic本文' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Inboxへ保存' }));
+    await waitFor(() =>
+      expect(apiMocks.captureKnowledgeTextOrUrl).toHaveBeenCalledTimes(1),
+    );
+    fireEvent.click(screen.getByRole('button', { name: '共有確定を開始' }));
+
+    await act(async () => {
+      rejectCapture(new KnowledgeHubApiError('unknown_error', 500));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(apiMocks.listKnowledgeSnapshots).toHaveBeenCalledWith('item-2'),
+    );
+    expect(screen.getByText('provenance workspace: 共有確定元')).toBeVisible();
+    expect(
+      screen.getByRole('article', { name: 'version 1' }),
+    ).toHaveTextContent('a'.repeat(64));
+    expect(document.body).not.toHaveTextContent('b'.repeat(64));
+  });
+
   it('loads an empty Inbox with personal/new/text as the safe defaults', async () => {
     render(<KnowledgeHub />);
 
@@ -155,7 +284,7 @@ describe('KnowledgeHub', () => {
       await screen.findByText('スナップショット version 1 を保存しました。'),
     ).toBeVisible();
     expect(
-      screen.getByRole('article', { name: 'version 1' }),
+      await screen.findByRole('article', { name: 'version 1' }),
     ).toHaveTextContent('a'.repeat(64));
     expect(screen.getByLabelText('保存するテキスト')).toHaveValue('');
   });

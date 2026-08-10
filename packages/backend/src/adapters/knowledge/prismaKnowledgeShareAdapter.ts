@@ -352,11 +352,11 @@ async function lockRows(
   const actorGroupIds = uniqueSorted(actor.groupAccountIds);
   if (actorGroupIds.length > 0) {
     await transaction.$queryRaw(Prisma.sql`
-      SELECT grant."id"
-      FROM "KnowledgeItemGroupGrant" AS grant
-      WHERE grant."knowledgeItemId" = ${itemId}
-        AND grant."groupAccountId" IN (${Prisma.join(actorGroupIds)})
-      ORDER BY grant."groupAccountId", grant."id"
+      SELECT item_grant."id"
+      FROM "KnowledgeItemGroupGrant" AS item_grant
+      WHERE item_grant."knowledgeItemId" = ${itemId}
+        AND item_grant."groupAccountId" IN (${Prisma.join(actorGroupIds)})
+      ORDER BY item_grant."groupAccountId", item_grant."id"
       FOR SHARE
     `);
     await transaction.$queryRaw(Prisma.sql`

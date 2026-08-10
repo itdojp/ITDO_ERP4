@@ -39,32 +39,69 @@ const {
   PdfFiles,
   KnowledgeHub,
   completeRootPostAsUncertain,
+  completeKnowledgeShareCommit,
+  completeKnowledgePromotionCommit,
 } = vi.hoisted(() => {
   const makeSectionMock = (testId: string, label: string) =>
     vi.fn(() => <div data-testid={testId}>{label}</div>);
 
   const completeRootPostAsUncertain = vi.fn();
+  const completeKnowledgeShareCommit = vi.fn();
+  const completeKnowledgePromotionCommit = vi.fn();
   const RoomChat = vi.fn(
     ({
       rootPostLifecycle,
       onRootPostLifecycleChange,
+      knowledgeCommitBusy,
+      onKnowledgeCommitBusyChange,
     }: {
       rootPostLifecycle?: 'idle' | 'in_flight' | 'uncertain';
       onRootPostLifecycleChange?: (
         lifecycle: 'idle' | 'in_flight' | 'uncertain',
       ) => void;
+      knowledgeCommitBusy?: boolean;
+      onKnowledgeCommitBusyChange?: (busy: boolean) => void;
     }) => {
       completeRootPostAsUncertain.mockImplementation(() =>
         onRootPostLifecycleChange?.('uncertain'),
       );
+      completeKnowledgePromotionCommit.mockImplementation(() =>
+        onKnowledgeCommitBusyChange?.(false),
+      );
       return (
         <div data-testid="section-room-chat">
           <span>{`RoomChat lifecycle:${rootPostLifecycle ?? 'idle'}`}</span>
+          <span>{`Knowledge commit:${knowledgeCommitBusy ? 'busy' : 'idle'}`}</span>
           <button
             type="button"
             onClick={() => onRootPostLifecycleChange?.('in_flight')}
           >
             root post開始
+          </button>
+          <button
+            type="button"
+            onClick={() => onKnowledgeCommitBusyChange?.(true)}
+          >
+            promotion確定を開始
+          </button>
+        </div>
+      );
+    },
+  );
+  const KnowledgeHub = vi.fn(
+    ({
+      onShareCommitBusyChange,
+    }: {
+      onShareCommitBusyChange?: (busy: boolean) => void;
+    }) => {
+      completeKnowledgeShareCommit.mockImplementation(() =>
+        onShareCommitBusyChange?.(false),
+      );
+      return (
+        <div data-testid="section-knowledge-hub">
+          KnowledgeHub
+          <button type="button" onClick={() => onShareCommitBusyChange?.(true)}>
+            share確定を開始
           </button>
         </div>
       );
@@ -111,8 +148,10 @@ const {
       'DocumentSendLogs',
     ),
     PdfFiles: makeSectionMock('section-pdf-files', 'PdfFiles'),
-    KnowledgeHub: makeSectionMock('section-knowledge-hub', 'KnowledgeHub'),
+    KnowledgeHub,
     completeRootPostAsUncertain,
+    completeKnowledgeShareCommit,
+    completeKnowledgePromotionCommit,
   };
 });
 
@@ -238,6 +277,8 @@ beforeEach(() => {
   resetLocation();
   vi.mocked(apiResponse).mockReset();
   completeRootPostAsUncertain.mockReset();
+  completeKnowledgeShareCommit.mockReset();
+  completeKnowledgePromotionCommit.mockReset();
 });
 
 describe('App', () => {
@@ -337,6 +378,63 @@ describe('App', () => {
 
     expect(
       await screen.findByText('RoomChat lifecycle:uncertain'),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps Knowledge share commit ownership across sidebar, deep-link, and reload attempts', async () => {
+    window.localStorage.setItem('erp4_active_section', 'knowledge-hub');
+    render(<App />);
+
+    await screen.findByTestId('section-knowledge-hub');
+    fireEvent.click(screen.getByRole('button', { name: 'share確定を開始' }));
+    const homeButton = screen.getByRole('button', { name: 'ホーム' });
+    expect(homeButton).toBeDisabled();
+    fireEvent.click(homeButton);
+    expect(screen.getByTestId('section-knowledge-hub')).toBeInTheDocument();
+
+    window.location.hash = '#/open?kind=project&id=PJ-BLOCKED';
+    expect(
+      await screen.findByText(/確定結果を確認するまでdeep linkを開けません/),
+    ).toBeVisible();
+    expect(screen.getByTestId('section-knowledge-hub')).toBeInTheDocument();
+    expect(window.location.hash).toBe('');
+
+    const beforeUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+    expect(beforeUnload.defaultPrevented).toBe(true);
+
+    act(() => completeKnowledgeShareCommit());
+    await waitFor(() => expect(homeButton).toBeEnabled());
+    expect(screen.getByTestId('section-knowledge-hub')).toBeInTheDocument();
+    fireEvent.click(homeButton);
+    expect(await screen.findByTestId('section-dashboard')).toBeInTheDocument();
+  });
+
+  it('keeps promotion commit ownership when another App section is requested', async () => {
+    window.localStorage.setItem('erp4_active_section', 'room-chat');
+    render(<App />);
+
+    expect(
+      await screen.findByText('Knowledge commit:idle'),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'promotion確定を開始' }),
+    );
+    expect(
+      await screen.findByText('Knowledge commit:busy'),
+    ).toBeInTheDocument();
+    const knowledgeButton = screen.getByRole('button', {
+      name: 'Knowledge Hub',
+    });
+    expect(knowledgeButton).toBeDisabled();
+    fireEvent.click(knowledgeButton);
+    expect(screen.getByTestId('section-room-chat')).toBeInTheDocument();
+
+    act(() => completeKnowledgePromotionCommit());
+    await waitFor(() => expect(knowledgeButton).toBeEnabled());
+    fireEvent.click(knowledgeButton);
+    expect(
+      await screen.findByTestId('section-knowledge-hub'),
     ).toBeInTheDocument();
   });
 
@@ -478,6 +576,12 @@ describe('App', () => {
       '#/open?kind=vendor_invoice&id=VI-789',
       'section-vendor-documents',
       { kind: 'vendor_invoice', id: 'VI-789' },
+    ],
+    [
+      'dispatches Knowledge item deep links to Knowledge Hub',
+      '#/open?kind=knowledge_item&id=knowledge-789',
+      'section-knowledge-hub',
+      { kind: 'knowledge_item', id: 'knowledge-789' },
     ],
   ] as const)('%s', async (_label, hash, sectionTestId, expectedDetail) => {
     const listener = vi.fn();

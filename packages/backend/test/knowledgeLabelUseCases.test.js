@@ -61,6 +61,16 @@ function assignment(overrides = {}) {
   };
 }
 
+function selectionOption(overrides = {}) {
+  return {
+    assignmentId: 'assignment-1',
+    displayName: 'Architecture',
+    scope: 'personal',
+    labelVersion: 1,
+    ...overrides,
+  };
+}
+
 function createHarness(overrides = {}) {
   const audits = [];
   const calls = {
@@ -179,6 +189,7 @@ function createHarness(overrides = {}) {
   Object.assign(itemLabels, overrides.itemLabels);
   const reader = {
     listVisible: async () => [],
+    listActiveAssignmentsForVisibleItem: async () => [],
     findVisibleById: async (_actor, id) => (id === 'label-1' ? label() : null),
     listVisibleAliases: async (_actor, id) => (id === 'label-1' ? [] : null),
     listManageableGrants: async (_actor, id) => (id === 'label-1' ? [] : null),
@@ -407,6 +418,96 @@ test('use-only visibility does not substitute for manage authorization', async (
   assert.equal(harness.calls.update, 0);
 });
 
+test('assignment selection read forwards personal and organization actors without role expansion', async () => {
+  const inputs = [];
+  const harness = createHarness({
+    reader: {
+      listActiveAssignmentsForVisibleItem: async (input) => {
+        inputs.push(input);
+        return [
+          selectionOption({
+            scope:
+              input.actor.organizationId === 'org-1'
+                ? 'organization'
+                : 'personal',
+          }),
+        ];
+      },
+    },
+  });
+
+  const personalActor = actor({
+    organizationId: undefined,
+    groupAccountIds: [],
+  });
+  const personal = await harness.service.listAssignments({
+    actor: personalActor,
+    itemId: 'item-1',
+  });
+  const organizationActor = actor({ userId: 'member-1' });
+  const organization = await harness.service.listAssignments({
+    actor: organizationActor,
+    itemId: 'item-2',
+  });
+
+  assert.equal(personal.ok, true);
+  assert.equal(personal.value[0].scope, 'personal');
+  assert.equal(organization.ok, true);
+  assert.equal(organization.value[0].scope, 'organization');
+  assert.deepEqual(inputs, [
+    {
+      actor: personalActor,
+      itemId: 'item-1',
+      limit: 100,
+    },
+    {
+      actor: organizationActor,
+      itemId: 'item-2',
+      limit: 100,
+    },
+  ]);
+});
+
+test('assignment selection read keeps missing and unauthorized items identical and bounded', async () => {
+  const ordered = Array.from({ length: 105 }, (_, index) =>
+    selectionOption({
+      assignmentId: `assignment-${String(index).padStart(3, '0')}`,
+    }),
+  );
+  const harness = createHarness({
+    reader: {
+      listActiveAssignmentsForVisibleItem: async ({ actor: requestActor }) =>
+        requestActor.userId === 'owner-1' ? ordered : null,
+    },
+  });
+
+  const visible = await harness.service.listAssignments({
+    actor: actor(),
+    itemId: 'item-1',
+  });
+  assert.equal(visible.ok, true);
+  assert.equal(visible.value.length, 100);
+  assert.equal(visible.value[0].assignmentId, 'assignment-000');
+  assert.equal(visible.value[99].assignmentId, 'assignment-099');
+
+  const unauthorized = await harness.service.listAssignments({
+    actor: actor({ userId: 'outsider-1' }),
+    itemId: 'item-1',
+  });
+  const missing = await harness.service.listAssignments({
+    actor: actor({ userId: 'outsider-1' }),
+    itemId: 'missing-item',
+  });
+  assert.deepEqual(unauthorized, missing);
+  assert.deepEqual(missing, {
+    ok: false,
+    statusCode: 404,
+    code: 'not_found',
+    message: 'Not found',
+  });
+  assert.equal(harness.audits.length, 0);
+});
+
 test('alias mutations preserve normalized canonical namespace and version/audit contract', async () => {
   const harness = createHarness();
   const added = await harness.service.addAlias({
@@ -584,6 +685,7 @@ test('attach maps an existing active assignment to a specific invalid request', 
   const exhausted = createKnowledgeLabelService({
     reader: {
       listVisible: async () => [],
+      listActiveAssignmentsForVisibleItem: async () => null,
       findVisibleById: async () => null,
       listVisibleAliases: async () => null,
       listManageableGrants: async () => null,
@@ -684,6 +786,7 @@ test('detach audit preserves bounded assignment source without exposing the labe
 test('transaction conflict exhaustion is normalized to stable 409 application results', async () => {
   const reader = {
     listVisible: async () => [],
+    listActiveAssignmentsForVisibleItem: async () => null,
     findVisibleById: async () => null,
     listVisibleAliases: async () => null,
     listManageableGrants: async () => null,

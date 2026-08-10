@@ -20,6 +20,8 @@ type Props = {
   currentUserId: string;
   roles: string[];
   renderMessageBody: (text: string) => React.ReactNode;
+  renderKnowledgeShareRoot?: (message: ChatMessage) => React.ReactNode | null;
+  renderPromotion?: (thread: ChatThread) => React.ReactNode;
   onClose: () => void;
   onRootUpdated: (root: ChatThread['root']) => void;
   onReadUpdated: (roomId: string) => void | Promise<void>;
@@ -58,6 +60,7 @@ function ThreadMessageCard({
   isMutating,
   nowMs,
   renderMessageBody,
+  renderKnowledgeShare,
   onReaction,
   onAck,
   onRevokeAck,
@@ -71,12 +74,17 @@ function ThreadMessageCard({
   isMutating: boolean;
   nowMs: number;
   renderMessageBody: (text: string) => React.ReactNode;
+  renderKnowledgeShare?: (message: ChatMessage) => React.ReactNode | null;
   onReaction: (messageId: string, emoji: string) => void;
   onAck: (requestId: string) => void;
   onRevokeAck: (requestId: string) => void;
   onCancelAck: (requestId: string) => void;
   onDelete: (message: ChatMessage) => void;
 }) {
+  const knowledgeShare =
+    kind === 'root' && !message.deleted
+      ? (renderKnowledgeShare?.(message) ?? null)
+      : null;
   const ackRequest = isAckRequest(message.ackRequest)
     ? message.ackRequest
     : null;
@@ -148,7 +156,7 @@ function ThreadMessageCard({
         <DeletedPlaceholder kind={kind} />
       ) : (
         <div style={{ marginTop: 8 }}>
-          {renderMessageBody(message.body ?? '')}
+          {knowledgeShare ?? renderMessageBody(message.body ?? '')}
         </div>
       )}
 
@@ -255,6 +263,8 @@ export function ChatThreadPanel({
   currentUserId,
   roles,
   renderMessageBody,
+  renderKnowledgeShareRoot,
+  renderPromotion,
   onClose,
   onRootUpdated,
   onReadUpdated,
@@ -530,6 +540,7 @@ export function ChatThreadPanel({
                 isMutating={interactionLocked}
                 nowMs={nowMs}
                 renderMessageBody={renderMessageBody}
+                renderKnowledgeShare={renderKnowledgeShareRoot}
                 onReaction={(id, emoji) =>
                   threadState.addReaction(id, emoji).catch(() => undefined)
                 }
@@ -567,6 +578,7 @@ export function ChatThreadPanel({
                   onDelete={handleDelete}
                 />
               ))}
+              {renderPromotion?.(thread)}
             </div>
 
             {thread.nextCursor && (
