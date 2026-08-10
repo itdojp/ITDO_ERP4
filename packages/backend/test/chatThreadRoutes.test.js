@@ -414,6 +414,46 @@ test('room timeline preserves the existing not-found access response under the a
   assert.deepEqual(timelineInputs, []);
 });
 
+test('room timeline and Knowledge share summary preserve the allowlisted room-access 403 response', async () => {
+  const deniedRoom = {
+    id: 'room-denied',
+    type: 'company',
+    projectId: null,
+    isOfficial: true,
+    groupId: null,
+    viewerGroupIds: ['group-other'],
+    posterGroupIds: null,
+    deletedAt: null,
+    allowExternalUsers: false,
+  };
+  const timelineInputs = [];
+  const summaryInputs = [];
+  await withServer(
+    readableRepository({
+      timelineInputs,
+      summaryInputs,
+      accessRooms: { 'room-denied': deniedRoom },
+    }),
+    async (server) => {
+      for (const url of [
+        '/chat-rooms/room-denied/messages',
+        '/chat-rooms/room-denied/knowledge-share-messages?messageIds=root-1',
+      ]) {
+        const response = await server.inject({ method: 'GET', url, headers });
+        assert.equal(response.statusCode, 403, `${url}: ${response.body}`);
+        assert.deepEqual(response.json(), {
+          error: {
+            code: 'forbidden_room_member',
+            message: 'forbidden_room_member',
+          },
+        });
+      }
+    },
+  );
+  assert.deepEqual(timelineInputs, []);
+  assert.deepEqual(summaryInputs, []);
+});
+
 test('GET thread normalizes missing and unauthorized messages to the same 404', async () => {
   for (const repository of [
     readableRepository({ resolveMessage: async () => null }),

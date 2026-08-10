@@ -997,6 +997,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         response: {
           200: chatRootTimelineListResponseSchema,
           400: chatApiErrorResponseSchema,
+          403: chatApiErrorResponseSchema,
           404: chatTimelineNotFoundResponseSchema,
         },
       },
@@ -1019,6 +1020,7 @@ export async function registerChatRoomRoutes(app: FastifyInstance) {
         response: {
           200: chatKnowledgeShareSummaryListResponseSchema,
           400: chatApiErrorResponseSchema,
+          403: chatApiErrorResponseSchema,
           404: chatTimelineNotFoundResponseSchema,
         },
       },
