@@ -96,6 +96,13 @@ describe('KnowledgeProvenanceWorkspace', () => {
       ),
     ).toBeVisible();
     expect(screen.getByText('conversation panel')).not.toBeVisible();
+
+    fireEvent.click(screen.getByRole('tab', { name: '本人annotation' }));
+    expect(
+      screen.queryByText(
+        'share panel / item-1 / 検証Knowledge / personal / snapshot-1',
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it('labels organization scope without exposing identifiers', () => {

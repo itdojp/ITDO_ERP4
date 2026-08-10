@@ -522,7 +522,27 @@ describe('promotion response topology', () => {
     expect(JSON.stringify(normalized)).not.toMatch(
       /sourceMessageId|sourceRoomId|must-not-pass-through/,
     );
-    expect(promotionPreviewMatchesRequest(normalized!, request!)).toBe(true);
+    const expectedReplies = [
+      {
+        messageId: 'reply-2',
+        content: 'First selected reply',
+        createdAt: timestamp,
+      },
+      {
+        messageId: 'reply-1',
+        content: 'Second selected reply',
+        createdAt: timestamp,
+      },
+    ];
+    expect(
+      promotionPreviewMatchesRequest(normalized!, request!, expectedReplies),
+    ).toBe(true);
+    expect(
+      promotionPreviewMatchesRequest(normalized!, request!, [
+        expectedReplies[0]!,
+        { ...expectedReplies[1]!, content: 'substituted reply' },
+      ]),
+    ).toBe(false);
     expect(
       normalizeKnowledgeThreadPromotionPreview({
         ...response,

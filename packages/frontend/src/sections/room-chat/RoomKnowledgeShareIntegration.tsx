@@ -9,6 +9,24 @@ import { KnowledgeThreadPromotionDialog } from './KnowledgeThreadPromotionDialog
 import type { KnowledgeShareRoomCard } from '../knowledge-share/knowledgeShareModel';
 import { useRoomKnowledgeShares } from './useRoomKnowledgeShares';
 
+const maximumVisibleKnowledgeShareRoots = 100;
+
+export function selectVisibleKnowledgeShareRootMessageIds(
+  currentRoomItems: readonly ChatMessage[],
+  threadRootMessageId?: string,
+) {
+  const ids = new Set<string>();
+  if (threadRootMessageId) ids.add(threadRootMessageId);
+  for (const message of currentRoomItems) {
+    if (message.parentMessageId !== null || message.threadRootId !== null) {
+      continue;
+    }
+    ids.add(message.id);
+    if (ids.size >= maximumVisibleKnowledgeShareRoots) break;
+  }
+  return [...ids].slice(0, maximumVisibleKnowledgeShareRoots);
+}
+
 function KnowledgeThreadPromotionLauncher({
   thread,
   share,
@@ -54,13 +72,14 @@ export function useRoomKnowledgeShareIntegration(input: {
   threadRootMessageId?: string;
   hasAccess: boolean;
 }) {
-  const visibleRootMessageIds = useMemo(() => {
-    const ids = input.currentRoomItems.map((item) => item.id);
-    if (input.threadRootMessageId && !ids.includes(input.threadRootMessageId)) {
-      ids.push(input.threadRootMessageId);
-    }
-    return ids.slice(0, 100);
-  }, [input.currentRoomItems, input.threadRootMessageId]);
+  const visibleRootMessageIds = useMemo(
+    () =>
+      selectVisibleKnowledgeShareRootMessageIds(
+        input.currentRoomItems,
+        input.threadRootMessageId,
+      ),
+    [input.currentRoomItems, input.threadRootMessageId],
+  );
   const knowledgeShares = useRoomKnowledgeShares({
     roomId: input.roomId,
     visibleRootMessageIds,

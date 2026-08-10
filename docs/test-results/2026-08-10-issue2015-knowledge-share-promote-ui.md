@@ -27,7 +27,7 @@
 | backend label/share focused             | 65 tests PASS                                                                                         |
 | frontend share/card/promote focused     | 146 tests PASS。最終helper/API調整後の関連79 testsも再実行してPASS                                    |
 | backend full (`make test`)              | 2,168 / 2,168 PASS、skip 0                                                                            |
-| frontend full (`make test`)             | 101 files、776 / 776 PASS                                                                             |
+| frontend full                           | 102 files、779 / 779 PASS                                                                             |
 | real-backend focused E2E                | `frontend-knowledge-share-promote.spec.ts` 1 / 1 PASS                                                 |
 | full/extended E2E                       | 154 passed、34 existing environment-conditional skipped、failure 0（3.0分）。#2015 testは実行済みPASS |
 | lint / format-check / typecheck / build | PASS                                                                                                  |
@@ -40,6 +40,12 @@
 real-backend E2Eでは、実PostgreSQLでshare commitを実行した際に予約語をSQL aliasへ
 使用していた問題を検出した。aliasを非予約語へ変更し、backend focused testとE2Eを
 再実行してPASSを確認した。
+
+独立review後、Room Chatのsummary対象をroot messageだけへ限定し、100件境界でも現在
+開いているthread rootを優先保持するよう修正した。またpromotion previewは、件数だけ
+でなく選択順、本文、作成日時を現在のselected replyと照合し、同件数の別reply応答を
+`invalid_response`として拒否する。share tab離脱時にはpanelをunmountし、preview token
+とrequest keyをcomponent memoryから破棄する。
 
 ## Synthetic fixture
 

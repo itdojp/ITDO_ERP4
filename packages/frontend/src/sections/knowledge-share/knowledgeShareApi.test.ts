@@ -149,6 +149,16 @@ function promotionPreviewPayload() {
   };
 }
 
+function expectedPromotionReplies() {
+  return [
+    {
+      messageId: 'reply-1',
+      content: 'Selected reply content.',
+      createdAt: timestamp,
+    },
+  ];
+}
+
 beforeEach(() => {
   apiResponse.mockReset();
   vi.stubGlobal('crypto', {
@@ -422,6 +432,7 @@ describe('knowledge thread promotion API boundary', () => {
           ...promotionRequest(),
           providerKey: 'must-not-send',
         } as KnowledgeThreadPromotionDraft,
+        expectedReplies: expectedPromotionReplies(),
       },
       { signal: controller.signal },
     );
@@ -474,6 +485,29 @@ describe('knowledge thread promotion API boundary', () => {
       previewKnowledgeThreadPromotion({
         rootMessageId: 'root-1',
         request: promotionRequest(),
+        expectedReplies: expectedPromotionReplies(),
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_response', status: 200 });
+  });
+
+  it('rejects a same-count preview that substitutes another reply body', async () => {
+    apiResponse.mockResolvedValueOnce(
+      jsonResponse({
+        ...promotionPreviewPayload(),
+        selectedMessages: [
+          {
+            ...promotionPreviewPayload().selectedMessages[0],
+            content: 'Different reply with the same count.',
+          },
+        ],
+      }),
+    );
+
+    await expect(
+      previewKnowledgeThreadPromotion({
+        rootMessageId: 'root-1',
+        request: promotionRequest(),
+        expectedReplies: expectedPromotionReplies(),
       }),
     ).rejects.toMatchObject({ code: 'invalid_response', status: 200 });
   });

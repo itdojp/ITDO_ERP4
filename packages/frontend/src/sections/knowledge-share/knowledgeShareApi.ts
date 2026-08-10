@@ -11,6 +11,7 @@ import type {
   KnowledgeShareStatusResponse,
   KnowledgeThreadPromotionCommit,
   KnowledgeThreadPromotionDraft,
+  KnowledgeThreadPromotionExpectedReply,
   KnowledgeThreadPromotionPreview,
   KnowledgeThreadPromotionRequest,
   RoomKnowledgeShareSummary,
@@ -87,14 +88,17 @@ export type KnowledgeShareCommitInput = KnowledgeSharePreviewInput & {
 export type KnowledgeThreadPromotionPreviewInput = {
   rootMessageId: string;
   request: KnowledgeThreadPromotionDraft;
+  expectedReplies: readonly KnowledgeThreadPromotionExpectedReply[];
 };
 
-export type KnowledgeThreadPromotionCommitInput =
-  KnowledgeThreadPromotionPreviewInput & {
-    previewToken: string;
-    requestKey: string;
-    organizationAudienceConfirmed: boolean;
-  };
+export type KnowledgeThreadPromotionCommitInput = Omit<
+  KnowledgeThreadPromotionPreviewInput,
+  'expectedReplies'
+> & {
+  previewToken: string;
+  requestKey: string;
+  organizationAudienceConfirmed: boolean;
+};
 
 type JsonRecord = Record<string, unknown>;
 
@@ -436,7 +440,10 @@ export async function previewKnowledgeThreadPromotion(
     jsonPost(promotionBody(request), options.signal),
   );
   const preview = normalizeKnowledgeThreadPromotionPreview(payload);
-  if (!preview || !promotionPreviewMatchesRequest(preview, request)) {
+  if (
+    !preview ||
+    !promotionPreviewMatchesRequest(preview, request, input.expectedReplies)
+  ) {
     invalidResponse(status);
   }
   return preview;

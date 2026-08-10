@@ -485,6 +485,21 @@ export function KnowledgeThreadPromotionDialog(props: {
         {
           rootMessageId: root.id,
           request: validation.request,
+          expectedReplies: validation.request.selectedReplyMessageIds.map(
+            (messageId) => {
+              const reply = activeReplies.find(
+                (candidate) => candidate.id === messageId,
+              );
+              if (!reply || reply.body === null) {
+                throw new KnowledgeShareSafeError('invalid_request', null);
+              }
+              return {
+                messageId: reply.id,
+                content: reply.body,
+                createdAt: reply.createdAt,
+              };
+            },
+          ),
         },
         { signal: controller.signal },
       );

@@ -247,6 +247,20 @@ describe('KnowledgeThreadPromotionDialog', () => {
     expect(previewKnowledgeThreadPromotion.mock.calls[0]?.[1]).toEqual({
       signal: expect.any(AbortSignal),
     });
+    expect(
+      previewKnowledgeThreadPromotion.mock.calls[0]?.[0].expectedReplies,
+    ).toEqual([
+      {
+        messageId: 'reply-1',
+        content: activeReplies[0]?.body,
+        createdAt: activeReplies[0]?.createdAt,
+      },
+      {
+        messageId: 'reply-2',
+        content: activeReplies[2]?.body,
+        createdAt: activeReplies[2]?.createdAt,
+      },
+    ]);
     expect(screen.queryByText('memory-only-preview-token')).toBeNull();
     expect(screen.queryByText('memory-only-request-key')).toBeNull();
     expect(screen.getByText('Shared title')).toBeVisible();

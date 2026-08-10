@@ -93,11 +93,8 @@ export function KnowledgeProvenanceWorkspace(props: {
                 />
               </div>
             ) : null}
-            {visitedTabs.has('share') ? (
-              <div
-                className="knowledge-provenance-retained-panel"
-                hidden={activeTab !== 'share'}
-              >
+            {activeTab === 'share' ? (
+              <div className="knowledge-provenance-retained-panel">
                 <KnowledgeSharePanel
                   key={props.itemId}
                   itemId={props.itemId}

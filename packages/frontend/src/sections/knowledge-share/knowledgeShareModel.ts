@@ -257,6 +257,12 @@ export type KnowledgeThreadPromotionPreview = {
   requiresOrganizationAudienceConfirmation: boolean;
 };
 
+export type KnowledgeThreadPromotionExpectedReply = {
+  messageId: string;
+  content: string;
+  createdAt: string;
+};
+
 export type KnowledgeThreadPromotionCommit = {
   promotionId: string;
   synthesisId: string;
@@ -1279,9 +1285,19 @@ export function isBoundedKnowledgeShareId(value: unknown): value is string {
 export function promotionPreviewMatchesRequest(
   preview: KnowledgeThreadPromotionPreview,
   request: KnowledgeThreadPromotionRequest,
+  expectedReplies: readonly KnowledgeThreadPromotionExpectedReply[],
 ) {
   return (
     preview.selectedMessageCount === request.selectedReplyMessageIds.length &&
+    expectedReplies.length === request.selectedReplyMessageIds.length &&
+    expectedReplies.every(
+      (expected, index) =>
+        expected.messageId === request.selectedReplyMessageIds[index] &&
+        preview.selectedMessages[index]?.ordinal === index &&
+        preview.selectedMessages[index]?.content === expected.content &&
+        preview.selectedMessages[index]?.createdAt === expected.createdAt &&
+        preview.selectedMessages[index]?.authorCategory === 'user',
+    ) &&
     preview.destination.scope === request.destination.scope &&
     preview.destination.organizationGroupCount ===
       request.destination.organizationGroupAccountIds.length &&
