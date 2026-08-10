@@ -301,6 +301,84 @@ try {
     committed.value.promotionId,
   );
 
+  const differentKeySamePreview = await service.commit({
+    ...commitInput,
+    body: {
+      ...commitInput.body,
+      requestKey: 'synthetic-promotion-request-different-key',
+    },
+  });
+  assert.deepEqual(differentKeySamePreview, {
+    ok: false,
+    statusCode: 409,
+    code: 'promotion_conflict',
+    message: 'Promotion conflict',
+  });
+
+  const differentKeyRaceRequest = {
+    ...request,
+    synthesis: {
+      ...request.synthesis,
+      title: 'Different request-key race synthesis',
+    },
+  };
+  const differentKeyRacePreview = await service.preview({
+    actor,
+    auditActor,
+    rootMessageId: ids.root,
+    body: differentKeyRaceRequest,
+  });
+  assert.equal(differentKeyRacePreview.ok, true);
+  const differentKeyRaceBase = {
+    actor,
+    auditActor,
+    rootMessageId: ids.root,
+    body: {
+      ...differentKeyRaceRequest,
+      previewToken: differentKeyRacePreview.value.previewToken,
+      confirmed: true,
+      organizationAudienceConfirmed: true,
+    },
+  };
+  const differentKeyRaceResults = await Promise.all([
+    service.commit({
+      ...differentKeyRaceBase,
+      body: { ...differentKeyRaceBase.body, requestKey: 'race-key-a' },
+    }),
+    service.commit({
+      ...differentKeyRaceBase,
+      body: { ...differentKeyRaceBase.body, requestKey: 'race-key-b' },
+    }),
+  ]);
+  assert.equal(
+    differentKeyRaceResults.filter((result) => result.ok).length,
+    1,
+  );
+  assert.deepEqual(
+    differentKeyRaceResults.find((result) => !result.ok),
+    {
+      ok: false,
+      statusCode: 409,
+      code: 'promotion_conflict',
+      message: 'Promotion conflict',
+    },
+  );
+  const differentKeyRacePersisted = await client.query(
+    `SELECT COUNT(p."id")::int AS "promotionCount",
+            COUNT(r."id")::int AS "requestCount"
+       FROM "KnowledgeThreadPromotion" p
+       JOIN "KnowledgeSynthesis" s
+         ON s."id" = p."destinationSynthesisId"
+       LEFT JOIN "KnowledgeThreadPromotionRequest" r
+         ON r."promotionId" = p."id"
+      WHERE s."title" = $1`,
+    [differentKeyRaceRequest.synthesis.title],
+  );
+  assert.deepEqual(differentKeyRacePersisted.rows[0], {
+    promotionCount: 1,
+    requestCount: 1,
+  });
+
   const concurrentRequest = {
     ...request,
     synthesis: {
@@ -414,6 +492,34 @@ try {
   );
 
   await client.query(
+    `UPDATE "ChatRoom"
+        SET "allowExternalUsers" = true, "updatedAt" = $2
+      WHERE "id" = $1`,
+    [ids.room, new Date(now.getTime() + 1)],
+  );
+  const visibleAfterRoomExternalization =
+    await synthesisRepository.findVisible({
+      actor: viewer,
+      synthesisId: committed.value.synthesisId,
+      accessContext: createSynthesisAccessContext(),
+    });
+  assert.ok(visibleAfterRoomExternalization);
+  assert.equal(
+    visibleAfterRoomExternalization.currentVersion.sources[0].accessible,
+    false,
+  );
+  assert.equal(
+    visibleAfterRoomExternalization.currentVersion.sources[0].sourceId,
+    null,
+  );
+  await client.query(
+    `UPDATE "ChatRoom"
+        SET "allowExternalUsers" = false, "updatedAt" = $2
+      WHERE "id" = $1`,
+    [ids.room, new Date(now.getTime() + 2)],
+  );
+
+  await client.query(
     `UPDATE "ChatRoomMember"
         SET "deletedAt" = $2, "updatedAt" = $2
       WHERE "id" = $1`,
@@ -519,11 +625,14 @@ try {
       selectedOnly: true,
       idempotentReplay: true,
       repeatedPreviewReplay: true,
+      differentKeySamePreviewConflicts: true,
+      concurrentDifferentKeyDeterministic: true,
       concurrentReplayConverges: true,
       idempotencyConflict: true,
       organizationGrant: true,
       revokedGrantDenied: true,
       roomLossRedactsProvenanceOnly: true,
+      externalizedRoomRedactsProvenanceOnly: true,
       auditFailureRollsBack: true,
     }),
   );

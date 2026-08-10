@@ -96,7 +96,11 @@ export async function threadPromotionSourceAccessible(input: {
     where: {
       id: input.sourceId,
       sourceShare: {
-        is: { status: 'posted', chatMessageId: { not: null } },
+        is: {
+          status: 'posted',
+          revokedAt: null,
+          chatMessageId: { not: null },
+        },
       },
       sourceRootMessage: {
         is: {
@@ -121,6 +125,7 @@ export async function threadPromotionSourceAccessible(input: {
     client: input.client as unknown as typeof prisma,
   });
   if (!roomAccess.ok) return false;
+  if (roomAccess.room.allowExternalUsers) return false;
   consumeSynthesisAccessBudget(input.context, 'query');
   return hasActiveChatProject({
     room: roomAccess.room,

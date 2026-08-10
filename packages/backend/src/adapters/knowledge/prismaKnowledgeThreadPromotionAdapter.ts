@@ -691,6 +691,19 @@ export class PrismaKnowledgeThreadPromotionAdapter implements KnowledgeThreadPro
           ? success(commitRecord(existing.promotion, false))
           : failure(409, 'idempotency_conflict');
       }
+      const existingPromotion =
+        await transaction.knowledgeThreadPromotion.findUnique({
+          where: { id: input.promotionId },
+          select: { id: true },
+        });
+      if (existingPromotion) {
+        await writePromotionAudit(transaction, {
+          ...input,
+          action: 'knowledge_thread_promote_rejected',
+          resultCode: 'conflict',
+        });
+        return failure(409, 'promotion_conflict');
+      }
       const resolved = await resolveMaterial(transaction, input, true);
       if (!resolved.ok) {
         await writePromotionAudit(transaction, {
