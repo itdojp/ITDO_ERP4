@@ -1,6 +1,11 @@
 import type { ChatRoom } from '../room-chat/roomChatModel';
 import type { KnowledgeSynthesisDetail } from './knowledgeProvenanceModel';
 
+const unsafeKnowledgeShareNoteDirectionals = new Set([
+  0x061c, 0x200e, 0x200f, 0x2028, 0x2029, 0x202a, 0x202b, 0x202c, 0x202d,
+  0x202e, 0x2066, 0x2067, 0x2068, 0x2069, 0xfeff,
+]);
+
 export function mergeKnowledgeShareCandidates<T extends { id: string }>(
   current: T[],
   incoming: T[],
@@ -34,10 +39,6 @@ export function knowledgeShareRoomDisplayLabel(room: ChatRoom, index: number) {
 }
 
 export function hasUnsafeKnowledgeShareNoteCharacter(value: string) {
-  const directional = new Set([
-    0x061c, 0x200e, 0x200f, 0x2028, 0x2029, 0x202a, 0x202b, 0x202c, 0x202d,
-    0x202e, 0x2066, 0x2067, 0x2068, 0x2069, 0xfeff,
-  ]);
   for (const character of value) {
     const codePoint = character.codePointAt(0);
     if (
@@ -45,7 +46,7 @@ export function hasUnsafeKnowledgeShareNoteCharacter(value: string) {
       codePoint < 0x20 ||
       (codePoint >= 0x7f && codePoint <= 0x9f) ||
       (codePoint >= 0xd800 && codePoint <= 0xdfff) ||
-      directional.has(codePoint)
+      unsafeKnowledgeShareNoteDirectionals.has(codePoint)
     ) {
       return true;
     }

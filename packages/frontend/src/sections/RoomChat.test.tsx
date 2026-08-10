@@ -497,6 +497,8 @@ describe('RoomChat', () => {
     expect(await screen.findByText('room one message')).toBeInTheDocument();
     const roomSelect = screen.getByRole('combobox', { name: 'ルーム' });
     expect(roomSelect).toBeDisabled();
+    expect(screen.getByRole('button', { name: '送信' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '確認依頼' })).toBeDisabled();
     fireEvent.change(roomSelect, { target: { value: 'room-2' } });
     window.dispatchEvent(
       new CustomEvent('erp4_open_room_chat', {
@@ -508,6 +510,7 @@ describe('RoomChat', () => {
 
     view.rerender(<RoomChat knowledgeCommitBusy={false} />);
     await waitFor(() => expect(roomSelect).toBeEnabled());
+    expect(screen.getByRole('button', { name: '送信' })).toBeEnabled();
     fireEvent.change(roomSelect, { target: { value: 'room-2' } });
     expect(await screen.findByText('room two message')).toBeInTheDocument();
   });

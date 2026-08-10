@@ -137,7 +137,6 @@ export const RoomChat: React.FC<RoomChatProps> = ({
   const currentRoomIdRef = useRef('');
   const previousRoomIdRef = useRef('');
   const skipNextRoomAutoLoadRef = useRef(false);
-  const rootPostBlocked = rootPostLifecycle !== 'idle';
   useEffect(() => {
     const previousRoomId = previousRoomIdRef.current;
     previousRoomIdRef.current = roomId;
@@ -1512,7 +1511,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
           <button
             className="button"
             onClick={createPrivateGroup}
-            disabled={!createPrivateName.trim() || rootPostBlocked}
+            disabled={!createPrivateName.trim() || roomNavigationBlocked}
           >
             private_group作成
           </button>
@@ -1533,7 +1532,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
           <button
             className="button"
             onClick={createDm}
-            disabled={!createDmPartner.trim() || rootPostBlocked}
+            disabled={!createDmPartner.trim() || roomNavigationBlocked}
           >
             DM作成
           </button>
@@ -1608,7 +1607,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
               type="checkbox"
               checked={showPreview}
               onChange={(e) => setShowPreview(e.target.checked)}
-              disabled={isLoading || rootPostBlocked}
+              disabled={isLoading || roomNavigationBlocked}
             />
             プレビュー
           </label>
@@ -1652,7 +1651,7 @@ export const RoomChat: React.FC<RoomChatProps> = ({
               submitLabel={isPosting ? '送信中...' : '送信'}
               cancelLabel="クリア"
               requiredSectionLabel="確認依頼の対象"
-              disabled={isLoading || rootPostBlocked}
+              disabled={isLoading || roomNavigationBlocked}
               limits={{ maxBodyLength: 2000, maxMentions: 70, maxGroups: 20 }}
             />
             {(mentionCandidates.allowAll ?? true) && (
@@ -1871,14 +1870,14 @@ export const RoomChat: React.FC<RoomChatProps> = ({
               <button
                 className="button secondary"
                 onClick={() => postMessage('ack')}
-                disabled={isLoading || rootPostBlocked}
+                disabled={isLoading || roomNavigationBlocked}
               >
                 確認依頼
               </button>
               <button
                 className="button secondary"
                 onClick={() => loadMessages()}
-                disabled={isLoading || rootPostBlocked}
+                disabled={isLoading || roomNavigationBlocked}
               >
                 再読込
               </button>
