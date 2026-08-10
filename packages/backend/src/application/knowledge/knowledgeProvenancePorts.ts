@@ -59,7 +59,7 @@ export const knowledgeSynthesisSourceRelationTypes = [
 export type KnowledgeSynthesisSourceRelationType =
   (typeof knowledgeSynthesisSourceRelationTypes)[number];
 
-export const knowledgeSynthesisSourceKinds = [
+export const knowledgeSynthesisInputSourceKinds = [
   'item',
   'snapshot',
   'annotation',
@@ -67,6 +67,11 @@ export const knowledgeSynthesisSourceKinds = [
   'conversation',
   'conversation_turn',
   'synthesis_version',
+] as const;
+
+export const knowledgeSynthesisSourceKinds = [
+  ...knowledgeSynthesisInputSourceKinds,
+  'thread_promotion',
 ] as const;
 export type KnowledgeSynthesisSourceKind =
   (typeof knowledgeSynthesisSourceKinds)[number];

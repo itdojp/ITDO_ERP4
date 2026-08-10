@@ -511,6 +511,26 @@ mutationする。
   未削除のChat rootへbindされていることを同じsnapshotで再検査し、`canOpenSource`はcurrent Knowledge
   ACLを独立再検査する。source削除/ACL失効後はfalseとする。canonical URLは保存値を信頼せず
   response時にもcredential/query/fragment/provider hostを再sanitizeする。
+- thread promote は posted かつ未revokeのKnowledge share rootに限定し、1〜100件のactive direct replyを
+  利用者が順序付きで明示選択する。rootの汎用fallback、thread全文、未選択reply、notification/search
+  snippetはpromotion snapshotへ複製しない。MVPは新規`KnowledgeSynthesis` version 1の作成だけを扱い、
+  既存synthesisへのappend、自動要約、AI実行を行わない。
+- `POST /chat-messages/{rootMessageId}/promote-to-knowledge/preview`はcurrent room read ACL、active project、
+  exact share version/hash、replyのroom/root/deleted state/body hash/activity boundary、destination scope/grantを
+  consistent snapshotで検査し、選択本文、選択/省略件数、destination、synthesis入力のexact previewだけを
+  返す。10分の用途分離HMAC tokenにはactor/root/payloadのfingerprintだけを格納し、本文、message ID、
+  room ID、request keyを平文で入れない。
+- commitは`confirmed=true`を必須とし、previewと同じ境界を再検査する。personalを既定とし、organizationは
+  actorのcurrent organizationと1件以上のactive group grantを明示要求する。room accessをKnowledge write
+  ACLへ昇格させない。同じopaque request keyと同じpayloadは同じpromotion/synthesisへ収束し、異なる
+  payloadはmutationなしのsanitized 409、Serializable競合は最大3 attemptとする。
+- 選択replyは`KnowledgeThreadPromotionMessage`へimmutable copyとして保存し、順序、本文hash、作成時刻、
+  activity boundary、sanitized author categoryを固定する。`KnowledgeSynthesisSource`はpromotion FKを
+  exactly-one source制約へ追加し、自由文字列source type/idを正本にしない。後からChat ACLまたはshare
+  状態が失効してもsynthesis本文はdestination ACLで保持するが、live thread identityはredactする。
+- organization promotionで作成するsynthesisは明示`KnowledgeSynthesisGroupGrant`を持つ。migration前の
+  organization synthesisはgrant row 0件の既存organization-wide契約を維持し、new promotionだけを
+  grant必須にするexpand段階とする。
 
 ### 08. External LLM common boundary / AI dialogue / cost guard
 

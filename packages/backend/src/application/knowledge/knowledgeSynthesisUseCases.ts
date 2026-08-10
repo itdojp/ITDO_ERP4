@@ -6,7 +6,7 @@ import type {
 import { knowledgeItemScopes } from './knowledgeItemPorts.js';
 import {
   knowledgeProvenanceLimits,
-  knowledgeSynthesisSourceKinds,
+  knowledgeSynthesisInputSourceKinds,
   knowledgeSynthesisSourceRelationTypes,
   type KnowledgePageBoundary,
   type KnowledgeProvenanceUnitOfWork,
@@ -77,7 +77,10 @@ function normalizeSources(
       Object.keys(record).some(
         (key) => !['kind', 'sourceId', 'relationType'].includes(key),
       ) ||
-      !isAllowedKnowledgeValue(knowledgeSynthesisSourceKinds, record.kind) ||
+      !isAllowedKnowledgeValue(
+        knowledgeSynthesisInputSourceKinds,
+        record.kind,
+      ) ||
       !isBoundedKnowledgeId(record.sourceId) ||
       !isAllowedKnowledgeValue(
         knowledgeSynthesisSourceRelationTypes,

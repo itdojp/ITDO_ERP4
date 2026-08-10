@@ -54,6 +54,19 @@ export type KnowledgeActor = {
   userId: string;
   organizationId?: string;
   groupAccountIds: string[];
+  /**
+   * Current Chat authorization claims are optional because non-Chat Knowledge
+   * flows do not need them.  They are required before live Chat provenance is
+   * exposed; an absent context therefore fails closed rather than falling back
+   * to the Knowledge principal or a raw token subject.
+   */
+  chat?: {
+    userId: string;
+    roles: string[];
+    projectIds: string[];
+    groupIds: string[];
+    groupAccountIds: string[];
+  };
 };
 
 export type KnowledgeAuditActorContext = {

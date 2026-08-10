@@ -915,6 +915,24 @@ test('synthesis source input is strict and concurrent version append returns con
   });
   assert.equal(unknown.statusCode, 400);
 
+  const internalPromotionSource = await service.create({
+    actor,
+    auditActor,
+    body: {
+      scope: 'personal',
+      title: 'Internal source cannot be selected',
+      content: 'Conclusion',
+      sources: [
+        {
+          kind: 'thread_promotion',
+          sourceId: 'promotion-1',
+          relationType: 'primary',
+        },
+      ],
+    },
+  });
+  assert.equal(internalPromotionSource.statusCode, 400);
+
   const nullQuestionsCreate = await service.create({
     actor,
     auditActor,

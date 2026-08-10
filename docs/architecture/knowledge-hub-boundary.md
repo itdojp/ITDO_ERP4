@@ -201,6 +201,19 @@ typed immutable snapshot row だけから表示する。旧 client は relation 
 - break-glass access、export、外部 AI 送信、認可済み binary download のように実アクセス監査が必須の操作は、監査 write 失敗時に操作を開始しないか応答を成功させない。通常 read を監査対象に追加する場合は、fail-open/fail-closed と可用性影響を対象 Issue で明示する。
 - Chat share は share snapshot の DB 確定後に Chat application port を呼ぶ。Chat 側失敗時は share を `pending|failed` とし、元 item を organization 化したり成功表示したりしない。
 - thread から synthesis への promote は対象 thread snapshot と選択 message を固定し、元 message の live body を synthesis へ暗黙連結しない。
+- promote はChat messageを`KnowledgeConversation`へ変換せず、独立した
+  `KnowledgeThreadPromotion` aggregateとimmutable selected-message child rowで表現する。これにより
+  manual/JSON/Markdown conversation importのowner/effective ACLと、Chat room ACLを混同しない。
+- preview/commitはKnowledge share root、share version/content hash、ordered direct reply集合と各content
+  hash/activity boundary、destination scope/group grants、利用者が入力したsynthesis version 1本文を束縛する。
+  commitはcurrent Chat room readとcurrent Knowledge destination writeを別々に再検査し、どちらかが失効した
+  場合はfail closedとする。
+- synthesis provenanceは`KnowledgeSynthesisSource.sourceThreadPromotionId`のnullable FKを既存
+  exactly-one制約へ追加して固定する。promotion後にroom accessまたはshare状態が失効した場合、immutable
+  synthesis本文はdestination ACLで保持する一方、promotion source IDとlive Chat identityはredactする。
+- promotion request ledgerはraw keyを保存せずcanonical ownerとdomain-separated hashで一意化する。
+  selected snapshot、synthesis/version/source、明示organization grants、mandatory auditは同じSerializable
+  transactionで確定し、同時replayを最大3 attemptで一件へ収束させる。
 - retry は read、stat、idempotent reconciliation 等に限定する。結果不明の外部 create、AI request、Chat post を新規操作として自動再実行しない。
 
 #### annotation / conversation / synthesis provenance foundation

@@ -433,7 +433,8 @@
               "annotation_revision",
               "conversation",
               "conversation_turn",
-              "synthesis_version"
+              "synthesis_version",
+              "thread_promotion"
             ],
             "type": "string"
           },
@@ -11032,6 +11033,1191 @@
             "description": "Default Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "tags": [
+          "chat",
+          "knowledge"
+        ]
+      }
+    },
+    "/chat-messages/{rootMessageId}/promote-to-knowledge": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rootMessageId",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "confirmed": {
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "destination": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "organizationGroupAccountIds": {
+                        "items": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 20,
+                        "type": "array",
+                        "uniqueItems": true
+                      },
+                      "scope": {
+                        "enum": [
+                          "personal",
+                          "organization"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "scope",
+                      "organizationGroupAccountIds"
+                    ],
+                    "type": "object"
+                  },
+                  "includeSharedCard": {
+                    "type": "boolean"
+                  },
+                  "organizationAudienceConfirmed": {
+                    "type": "boolean"
+                  },
+                  "previewToken": {
+                    "maxLength": 4096,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "requestKey": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "selectedReplyMessageIds": {
+                    "items": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 100,
+                    "minItems": 1,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "synthesis": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "confidenceBasisPoints": {
+                        "maximum": 10000,
+                        "minimum": 0,
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "content": {
+                        "description": "Maximum 262,144 UTF-8 bytes; byte-bound in application.",
+                        "maxLength": 262144,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "title": {
+                        "maxLength": 500,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "unresolvedQuestions": {
+                        "items": {
+                          "maxLength": 4000,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 50,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "content",
+                      "confidenceBasisPoints",
+                      "unresolvedQuestions"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "selectedReplyMessageIds",
+                  "includeSharedCard",
+                  "destination",
+                  "synthesis",
+                  "previewToken",
+                  "requestKey",
+                  "confirmed",
+                  "organizationAudienceConfirmed"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "includesSharedCard": {
+                      "type": "boolean"
+                    },
+                    "promotionId": {
+                      "type": "string"
+                    },
+                    "reused": {
+                      "type": "boolean"
+                    },
+                    "scope": {
+                      "enum": [
+                        "personal",
+                        "organization"
+                      ],
+                      "type": "string"
+                    },
+                    "selectedMessageCount": {
+                      "maximum": 100,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "synthesisId": {
+                      "type": "string"
+                    },
+                    "synthesisVersion": {
+                      "enum": [
+                        1
+                      ],
+                      "type": "integer"
+                    },
+                    "synthesisVersionId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "promotionId",
+                    "synthesisId",
+                    "synthesisVersionId",
+                    "synthesisVersion",
+                    "scope",
+                    "selectedMessageCount",
+                    "includesSharedCard",
+                    "createdAt",
+                    "created",
+                    "reused"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "includesSharedCard": {
+                      "type": "boolean"
+                    },
+                    "promotionId": {
+                      "type": "string"
+                    },
+                    "reused": {
+                      "type": "boolean"
+                    },
+                    "scope": {
+                      "enum": [
+                        "personal",
+                        "organization"
+                      ],
+                      "type": "string"
+                    },
+                    "selectedMessageCount": {
+                      "maximum": 100,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "synthesisId": {
+                      "type": "string"
+                    },
+                    "synthesisVersion": {
+                      "enum": [
+                        1
+                      ],
+                      "type": "integer"
+                    },
+                    "synthesisVersionId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "promotionId",
+                    "synthesisId",
+                    "synthesisVersionId",
+                    "synthesisVersion",
+                    "scope",
+                    "selectedMessageCount",
+                    "includesSharedCard",
+                    "createdAt",
+                    "created",
+                    "reused"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "tags": [
+          "chat",
+          "knowledge"
+        ]
+      }
+    },
+    "/chat-messages/{rootMessageId}/promote-to-knowledge/preview": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rootMessageId",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "destination": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "organizationGroupAccountIds": {
+                        "items": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 20,
+                        "type": "array",
+                        "uniqueItems": true
+                      },
+                      "scope": {
+                        "enum": [
+                          "personal",
+                          "organization"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "scope",
+                      "organizationGroupAccountIds"
+                    ],
+                    "type": "object"
+                  },
+                  "includeSharedCard": {
+                    "type": "boolean"
+                  },
+                  "selectedReplyMessageIds": {
+                    "items": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 100,
+                    "minItems": 1,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "synthesis": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "confidenceBasisPoints": {
+                        "maximum": 10000,
+                        "minimum": 0,
+                        "nullable": true,
+                        "type": "integer"
+                      },
+                      "content": {
+                        "description": "Maximum 262,144 UTF-8 bytes; byte-bound in application.",
+                        "maxLength": 262144,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "title": {
+                        "maxLength": 500,
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "unresolvedQuestions": {
+                        "items": {
+                          "maxLength": 4000,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "maxItems": 50,
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "content",
+                      "confidenceBasisPoints",
+                      "unresolvedQuestions"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "selectedReplyMessageIds",
+                  "includeSharedCard",
+                  "destination",
+                  "synthesis"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "destination": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "organizationGroupCount": {
+                          "maximum": 100,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "scope": {
+                          "enum": [
+                            "personal",
+                            "organization"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "scope",
+                        "organizationGroupCount"
+                      ],
+                      "type": "object"
+                    },
+                    "expiresAt": {
+                      "format": "date-time",
+                      "type": "string"
+                    },
+                    "omittedMessageCount": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "previewToken": {
+                      "type": "string"
+                    },
+                    "requiresConfirmation": {
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "requiresOrganizationAudienceConfirmation": {
+                      "type": "boolean"
+                    },
+                    "selectedMessageCount": {
+                      "maximum": 100,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "selectedMessages": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "authorCategory": {
+                            "enum": [
+                              "user",
+                              "external",
+                              "system"
+                            ],
+                            "type": "string"
+                          },
+                          "content": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "format": "date-time",
+                            "type": "string"
+                          },
+                          "ordinal": {
+                            "minimum": 0,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "ordinal",
+                          "content",
+                          "createdAt",
+                          "authorCategory"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 100,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "sharedCard": {
+                      "additionalProperties": false,
+                      "nullable": true,
+                      "properties": {
+                        "annotations": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "content": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "enum": [
+                                  "note",
+                                  "question",
+                                  "hypothesis",
+                                  "quote",
+                                  "todo"
+                                ],
+                                "type": "string"
+                              },
+                              "origin": {
+                                "enum": [
+                                  "user",
+                                  "external",
+                                  "ai",
+                                  "system",
+                                  "tool"
+                                ],
+                                "type": "string"
+                              },
+                              "revision": {
+                                "minimum": 1,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "revision",
+                              "kind",
+                              "origin",
+                              "content"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "canonicalUrl": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "labels": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "displayName": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "displayName"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        "omittedCategories": {
+                          "items": {
+                            "enum": [
+                              "title",
+                              "source_type",
+                              "canonical_url",
+                              "snapshot_provenance",
+                              "snapshot_excerpt",
+                              "label",
+                              "annotation",
+                              "conversation_turn",
+                              "synthesis",
+                              "sharer_note"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array",
+                          "uniqueItems": true
+                        },
+                        "schemaVersion": {
+                          "enum": [
+                            1
+                          ],
+                          "type": "integer"
+                        },
+                        "selectedCategories": {
+                          "items": {
+                            "enum": [
+                              "title",
+                              "source_type",
+                              "canonical_url",
+                              "snapshot_provenance",
+                              "snapshot_excerpt",
+                              "label",
+                              "annotation",
+                              "conversation_turn",
+                              "synthesis",
+                              "sharer_note"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "array",
+                          "uniqueItems": true
+                        },
+                        "sharerNote": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "shareVersion": {
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "snapshot": {
+                          "additionalProperties": false,
+                          "anyOf": [
+                            {
+                              "required": [
+                                "version",
+                                "sha256"
+                              ],
+                              "type": "object"
+                            },
+                            {
+                              "required": [
+                                "excerpt"
+                              ],
+                              "type": "object"
+                            }
+                          ],
+                          "nullable": true,
+                          "properties": {
+                            "excerpt": {
+                              "type": "string"
+                            },
+                            "sha256": {
+                              "pattern": "^[a-f0-9]{64}$",
+                              "type": "string"
+                            },
+                            "version": {
+                              "minimum": 1,
+                              "type": "integer"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "sourceType": {
+                          "enum": [
+                            "x",
+                            "threads",
+                            "news",
+                            "web",
+                            "pdf",
+                            "image",
+                            "manual",
+                            "other"
+                          ],
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "syntheses": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "confidenceBasisPoints": {
+                                "maximum": 10000,
+                                "minimum": 0,
+                                "nullable": true,
+                                "type": "integer"
+                              },
+                              "content": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "unresolvedQuestions": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "maxItems": 50,
+                                "type": "array"
+                              },
+                              "version": {
+                                "minimum": 1,
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "version",
+                              "title",
+                              "content",
+                              "confidenceBasisPoints",
+                              "unresolvedQuestions"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 10,
+                          "type": "array"
+                        },
+                        "title": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "turns": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "content": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "occurredAt": {
+                                "format": "date-time",
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "origin": {
+                                "enum": [
+                                  "user",
+                                  "external",
+                                  "ai",
+                                  "system",
+                                  "tool"
+                                ],
+                                "type": "string"
+                              },
+                              "role": {
+                                "enum": [
+                                  "user",
+                                  "assistant",
+                                  "system",
+                                  "tool"
+                                ],
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "role",
+                              "origin",
+                              "content",
+                              "name",
+                              "occurredAt"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 50,
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "schemaVersion",
+                        "title",
+                        "sourceType",
+                        "canonicalUrl",
+                        "snapshot",
+                        "sharerNote",
+                        "labels",
+                        "annotations",
+                        "turns",
+                        "syntheses",
+                        "selectedCategories",
+                        "omittedCategories",
+                        "shareVersion"
+                      ],
+                      "type": "object"
+                    },
+                    "sourceThread": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "replyCount": {
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "roomName": {
+                          "type": "string"
+                        },
+                        "roomType": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "roomName",
+                        "roomType",
+                        "replyCount"
+                      ],
+                      "type": "object"
+                    },
+                    "synthesis": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "confidenceBasisPoints": {
+                          "maximum": 10000,
+                          "minimum": 0,
+                          "nullable": true,
+                          "type": "integer"
+                        },
+                        "content": {
+                          "description": "Maximum 262,144 UTF-8 bytes; byte-bound in application.",
+                          "maxLength": 262144,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "title": {
+                          "maxLength": 500,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "unresolvedQuestions": {
+                          "items": {
+                            "maxLength": 4000,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "maxItems": 50,
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "title",
+                        "content",
+                        "confidenceBasisPoints",
+                        "unresolvedQuestions"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "sourceThread",
+                    "selectedMessages",
+                    "selectedMessageCount",
+                    "omittedMessageCount",
+                    "sharedCard",
+                    "destination",
+                    "synthesis",
+                    "previewToken",
+                    "expiresAt",
+                    "requiresConfirmation",
+                    "requiresOrganizationAudienceConfirmation"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {

@@ -31,6 +31,11 @@ import {
   consumeSynthesisAccessBudget,
   type KnowledgeSynthesisAccessContext,
 } from '../../application/knowledge/knowledgeSynthesisAccessContext.js';
+import {
+  buildKnowledgeSynthesisVisibilityWhere,
+  threadPromotionSourceAuthorizesVersion,
+  threadPromotionSourceAccessible,
+} from './prismaKnowledgeSynthesisVisibility.js';
 
 export { PrismaKnowledgeProvenanceAuditWriter } from './prismaKnowledgeProvenanceAuditAdapter.js';
 
@@ -47,7 +52,15 @@ type KnowledgeProvenanceDbClient = Pick<
   | 'knowledgeSynthesis'
   | 'knowledgeSynthesisSource'
   | 'knowledgeSynthesisVersion'
+  | 'knowledgeThreadPromotion'
 >;
+
+// The application Prisma client intentionally omits ChatMessage.activitySequence
+// from default result payloads. This adapter always uses explicit projections,
+// while transaction clients expose Prisma's un-omitted delegate type. Keep one
+// narrow cast at the adapter boundary instead of leaking that client-level omit
+// distinction through every repository constructor.
+const provenanceDbClient = prisma as unknown as KnowledgeProvenanceDbClient;
 
 type KnowledgeProvenanceTransactionHost = {
   $transaction<T>(
@@ -216,9 +229,13 @@ function sourceIdentity(row: SynthesisSourceRow): {
     ['conversation', row.sourceConversationId],
     ['conversation_turn', row.sourceConversationTurnId],
     ['synthesis_version', row.sourceSynthesisVersionId],
+    ['thread_promotion', row.sourceThreadPromotionId],
   ] as const;
-  const defined = values.filter((entry) => entry[1] !== null);
-  if (defined.length !== 1 || defined[0]?.[1] === null) {
+  const defined = values.filter(
+    (entry): entry is readonly [KnowledgeSynthesisSourceKind, string] =>
+      typeof entry[1] === 'string',
+  );
+  if (defined.length !== 1) {
     throw new Error('knowledge_synthesis_source_integrity_invalid');
   }
   return { kind: defined[0][0], sourceId: defined[0][1] };
@@ -307,21 +324,6 @@ function annotationHistoryVisibilityWhere(
   };
 }
 
-function synthesisBaseVisibilityWhere(
-  actor: KnowledgeActor,
-): Prisma.KnowledgeSynthesisWhereInput {
-  const organizationId = actor.organizationId?.trim();
-  return {
-    deletedAt: null,
-    OR: [
-      { ownerUserId: actor.userId },
-      ...(organizationId
-        ? [{ scope: 'organization' as const, organizationId }]
-        : []),
-    ],
-  };
-}
-
 function sourceData(source: KnowledgeSynthesisSourceInput, ordinal: number) {
   const base = {
     relationType: source.relationType,
@@ -342,11 +344,15 @@ function sourceData(source: KnowledgeSynthesisSourceInput, ordinal: number) {
       return { ...base, sourceConversationTurnId: source.sourceId };
     case 'synthesis_version':
       return { ...base, sourceSynthesisVersionId: source.sourceId };
+    case 'thread_promotion':
+      return { ...base, sourceThreadPromotionId: source.sourceId };
   }
 }
 
 export class PrismaKnowledgeAccessRepository implements KnowledgeAccessRepository {
-  constructor(private readonly client: KnowledgeProvenanceDbClient = prisma) {}
+  constructor(
+    private readonly client: KnowledgeProvenanceDbClient = provenanceDbClient,
+  ) {}
 
   async findVisibleItem(actor: KnowledgeActor, itemId: string) {
     const row = await this.client.knowledgeItem.findFirst({
@@ -376,7 +382,9 @@ export class PrismaKnowledgeAccessRepository implements KnowledgeAccessRepositor
 }
 
 export class PrismaKnowledgeAnnotationRepository implements KnowledgeAnnotationRepository {
-  constructor(private readonly client: KnowledgeProvenanceDbClient = prisma) {}
+  constructor(
+    private readonly client: KnowledgeProvenanceDbClient = provenanceDbClient,
+  ) {}
 
   async withConsistentSnapshot<T>(
     read: (repository: KnowledgeAnnotationRepository) => Promise<T>,
@@ -638,7 +646,9 @@ export class PrismaKnowledgeAnnotationRepository implements KnowledgeAnnotationR
 }
 
 export class PrismaKnowledgeConversationRepository implements KnowledgeConversationRepository {
-  constructor(private readonly client: KnowledgeProvenanceDbClient = prisma) {}
+  constructor(
+    private readonly client: KnowledgeProvenanceDbClient = provenanceDbClient,
+  ) {}
 
   async withConsistentSnapshot<T>(
     read: (repository: KnowledgeConversationRepository) => Promise<T>,
@@ -919,7 +929,9 @@ export class PrismaKnowledgeConversationRepository implements KnowledgeConversat
 }
 
 export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRepository {
-  constructor(private readonly client: KnowledgeProvenanceDbClient = prisma) {}
+  constructor(
+    private readonly client: KnowledgeProvenanceDbClient = provenanceDbClient,
+  ) {}
 
   async withConsistentSnapshot<T>(
     read: (repository: KnowledgeSynthesisRepository) => Promise<T>,
@@ -1039,6 +1051,15 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
           }),
         );
         break;
+      case 'thread_promotion': {
+        accessible = await threadPromotionSourceAccessible({
+          client: this.client,
+          actor,
+          sourceId: identity.sourceId,
+          context,
+        });
+        break;
+      }
     }
     context.sourceMemo.set(memoKey, accessible);
     return accessible;
@@ -1063,7 +1084,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
     const version = await this.client.knowledgeSynthesisVersion.findFirst({
       where: {
         id: versionId,
-        synthesis: { is: synthesisBaseVisibilityWhere(actor) },
+        synthesis: { is: buildKnowledgeSynthesisVisibilityWhere(actor) },
       },
       include: {
         synthesis: { select: { ownerUserId: true } },
@@ -1078,6 +1099,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
         accessible = true;
         for (const source of version.sources) {
           if (
+            !threadPromotionSourceAuthorizesVersion(source) &&
             !(await this.sourceAccessible(actor, source, context, path, depth))
           ) {
             accessible = false;
@@ -1099,6 +1121,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
     if (version.sources.length === 0) return false;
     for (const source of version.sources) {
       if (
+        !threadPromotionSourceAuthorizesVersion(source) &&
         !(await this.sourceAccessible(actor, source, context, new Set(), 0))
       ) {
         return false;
@@ -1143,7 +1166,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
     const synthesis = await this.client.knowledgeSynthesis.findFirst({
       where: {
         id: synthesisId,
-        ...synthesisBaseVisibilityWhere(actor),
+        ...buildKnowledgeSynthesisVisibilityWhere(actor),
       },
     });
     if (!synthesis) return null;
@@ -1192,7 +1215,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
       const rows = await this.client.knowledgeSynthesis.findMany({
         where: {
           AND: [
-            synthesisBaseVisibilityWhere(input.actor),
+            buildKnowledgeSynthesisVisibilityWhere(input.actor),
             ...(boundary
               ? [
                   {
@@ -1342,6 +1365,8 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
           source.kind === 'conversation_turn' ? source.sourceId : null,
         sourceSynthesisVersionId:
           source.kind === 'synthesis_version' ? source.sourceId : null,
+        sourceThreadPromotionId:
+          source.kind === 'thread_promotion' ? source.sourceId : null,
         createdAt: new Date(0),
         createdBy: input.actor.userId,
       } satisfies SynthesisSourceRow;
@@ -1516,10 +1541,10 @@ export class PrismaKnowledgeProvenanceUnitOfWork implements KnowledgeProvenanceU
 }
 
 export const prismaKnowledgeAnnotationRepository =
-  new PrismaKnowledgeAnnotationRepository(prisma);
+  new PrismaKnowledgeAnnotationRepository(provenanceDbClient);
 export const prismaKnowledgeConversationRepository =
-  new PrismaKnowledgeConversationRepository(prisma);
+  new PrismaKnowledgeConversationRepository(provenanceDbClient);
 export const prismaKnowledgeSynthesisRepository =
-  new PrismaKnowledgeSynthesisRepository(prisma);
+  new PrismaKnowledgeSynthesisRepository(provenanceDbClient);
 export const prismaKnowledgeProvenanceUnitOfWork =
   new PrismaKnowledgeProvenanceUnitOfWork(prisma);

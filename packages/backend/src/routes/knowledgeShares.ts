@@ -448,6 +448,10 @@ const publicCardSchema = {
   },
 } as const;
 
+// Reused by the thread-promotion preview. The promotion route adds only its
+// immutable share version discriminator and does not expose source identities.
+export const knowledgeSharePublicCardSchema = publicCardSchema;
+
 const previewResponseSchema = {
   type: 'object',
   additionalProperties: false,
@@ -715,31 +719,19 @@ function sendResult<T>(
     .send(mapper(result.value));
 }
 
-function normalizedStrings(value: unknown) {
-  return [
-    ...new Set(
-      (Array.isArray(value) ? value : [])
-        .filter((entry): entry is string => typeof entry === 'string')
-        .map((entry) => entry.trim())
-        .filter(Boolean),
-    ),
-  ];
-}
-
 export function knowledgeShareChatActorFromRequest(
   request: FastifyRequest,
 ): KnowledgeShareChatActor {
-  const knowledgeActor = knowledgeActorFromRequest(request);
+  const knowledgeActor = knowledgeActorFromRequest(request, {
+    includeChat: true,
+  });
   return {
     canonicalUserId: knowledgeActor.userId,
-    userId:
-      typeof request.user?.userId === 'string'
-        ? request.user.userId.trim()
-        : '',
-    roles: normalizedStrings(request.user?.roles),
-    projectIds: normalizedStrings(request.user?.projectIds),
-    groupIds: normalizedStrings(request.user?.groupIds),
-    groupAccountIds: normalizedStrings(request.user?.groupAccountIds),
+    userId: knowledgeActor.chat?.userId ?? '',
+    roles: knowledgeActor.chat?.roles ?? [],
+    projectIds: knowledgeActor.chat?.projectIds ?? [],
+    groupIds: knowledgeActor.chat?.groupIds ?? [],
+    groupAccountIds: knowledgeActor.chat?.groupAccountIds ?? [],
   };
 }
 
