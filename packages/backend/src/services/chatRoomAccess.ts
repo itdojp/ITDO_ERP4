@@ -29,11 +29,6 @@ export type ChatRoomContentAccessResult =
         | 'forbidden_external_room';
     };
 
-export type ChatRoomAccessActor = {
-  userId: string;
-  roles: string[];
-};
-
 export function chatRoomProjectId(
   room: Pick<ChatRoomAccessRoom, 'id' | 'type' | 'projectId' | 'isOfficial'>,
 ): string | null {
