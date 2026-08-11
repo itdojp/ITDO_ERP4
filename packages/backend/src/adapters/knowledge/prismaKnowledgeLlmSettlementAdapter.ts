@@ -9,8 +9,17 @@ import type {
 import { ceilCostMicros } from '../../application/knowledge/knowledgeLlmConfig.js';
 import { sha256KnowledgeText } from '../../application/knowledge/knowledgeProvenanceValidation.js';
 import { PrismaKnowledgeLlmAuditWriter } from './prismaKnowledgeLlmAuditAdapter.js';
+import { normalizeAuthIdentifier } from '../../services/authIdentifiers.js';
 
 type Transaction = Prisma.TransactionClient;
+
+function canonicalUserId(value: string, errorCode: string): string {
+  try {
+    return normalizeAuthIdentifier(value, 200);
+  } catch {
+    throw new Error(errorCode);
+  }
+}
 
 function trustedTimestamp(clock: KnowledgeLlmClock): Date {
   const timestamp = clock();
@@ -162,7 +171,10 @@ async function writeTerminalAudit(
     result: Parameters<typeof terminalAuditMetadata>[2];
   },
 ): Promise<void> {
-  if (input.auditActor.userId !== input.run.actorUserId) {
+  if (
+    canonicalUserId(input.auditActor.userId, 'knowledge_llm_audit_invalid') !==
+    canonicalUserId(input.run.actorUserId, 'knowledge_llm_audit_invalid')
+  ) {
     throw new Error('knowledge_llm_audit_invalid');
   }
   await writeAudit(transaction, input);
@@ -198,6 +210,10 @@ export async function markKnowledgeLlmRunDispatched(
   clock: KnowledgeLlmClock = () => new Date(),
 ): Promise<void> {
   const dispatchedAt = trustedTimestamp(clock);
+  const actorUserId = canonicalUserId(
+    input.actorUserId,
+    'knowledge_llm_dispatch_conflict',
+  );
   const runs = await transaction.$queryRaw<Array<LockedRun>>(Prisma.sql`
     SELECT id, "actorUserId", scope, provider, model, "providerRequestHash", "catalogVersion",
       "estimatedInputTokens", "maxOutputTokens", currency,
@@ -210,7 +226,7 @@ export async function markKnowledgeLlmRunDispatched(
   const run = runs[0];
   if (
     !run ||
-    run.actorUserId !== input.actorUserId ||
+    run.actorUserId !== actorUserId ||
     run.providerRequestHash !== input.expectedProviderRequestHash ||
     run.executionStatus !== 'reserved' ||
     run.settlementStatus !== 'reserved'
@@ -244,7 +260,7 @@ export async function markKnowledgeLlmRunDispatched(
       executionStatus: 'dispatched',
       dispatchedAt,
       updatedAt: dispatchedAt,
-      updatedBy: input.actorUserId,
+      updatedBy: actorUserId,
     },
   });
   await writeTerminalAudit(transaction, {
@@ -273,6 +289,10 @@ export async function settleKnowledgeLlmBudget(
   clock: KnowledgeLlmClock = () => new Date(),
 ): Promise<void> {
   const completedAt = trustedTimestamp(clock);
+  const actorUserId = canonicalUserId(
+    input.actorUserId,
+    'knowledge_llm_settlement_conflict',
+  );
   await lockKnowledgeLlmOutcomeBeforeRun(transaction, input.runId);
   const lockedRuns = await transaction.$queryRaw<Array<LockedRun>>(Prisma.sql`
     SELECT id, "actorUserId", scope, provider, model, "providerRequestHash", "catalogVersion",
@@ -286,7 +306,7 @@ export async function settleKnowledgeLlmBudget(
   const run = lockedRuns[0];
   if (
     !run ||
-    run.actorUserId !== input.actorUserId ||
+    run.actorUserId !== actorUserId ||
     run.settlementStatus !== 'reserved' ||
     !['reserved', 'dispatched'].includes(run.executionStatus)
   ) {
@@ -574,6 +594,10 @@ export async function reconcileKnowledgeLlmHeldBudget(
   clock: KnowledgeLlmClock = () => new Date(),
 ): Promise<void> {
   const completedAt = trustedTimestamp(clock);
+  const actorUserId = canonicalUserId(
+    input.actorUserId,
+    'knowledge_llm_reconcile_conflict',
+  );
   if (
     !Number.isSafeInteger(input.actualInputTokens) ||
     input.actualInputTokens < 0 ||
@@ -603,7 +627,7 @@ export async function reconcileKnowledgeLlmHeldBudget(
   const run = runs[0];
   if (
     !run ||
-    run.actorUserId !== input.actorUserId ||
+    run.actorUserId !== actorUserId ||
     input.actualCostMicros > run.maximumCostMicros
   ) {
     throw new Error('knowledge_llm_reconcile_conflict');
@@ -748,6 +772,14 @@ export async function reconcileKnowledgeLlmUsageUnknownBudget(
   clock: KnowledgeLlmClock = () => new Date(),
 ): Promise<{ actualCostMicros: bigint }> {
   const completedAt = trustedTimestamp(clock);
+  const runActorUserId = canonicalUserId(
+    input.runActorUserId,
+    'knowledge_llm_usage_reconcile_invalid',
+  );
+  const operatorUserId = canonicalUserId(
+    input.operatorActor.userId,
+    'knowledge_llm_usage_reconcile_invalid',
+  );
   if (
     input.source !== 'operator_billing' ||
     !/^[0-9a-f]{64}$/.test(input.evidenceHash) ||
@@ -775,8 +807,8 @@ export async function reconcileKnowledgeLlmUsageUnknownBudget(
   const run = runs[0];
   if (
     !run ||
-    run.actorUserId !== input.runActorUserId ||
-    input.operatorActor.userId === run.actorUserId
+    run.actorUserId !== runActorUserId ||
+    operatorUserId === run.actorUserId
   ) {
     throw new Error('knowledge_llm_usage_reconcile_conflict');
   }
@@ -799,7 +831,7 @@ export async function reconcileKnowledgeLlmUsageUnknownBudget(
     run.actualOutputTokens === input.actualOutputTokens &&
     run.actualCostMicros === actualCostMicros &&
     existingEvidence?.source === input.source &&
-    existingEvidence.createdBy === input.operatorActor.userId &&
+    existingEvidence.createdBy === operatorUserId &&
     existingEvidence.evidenceHash === input.evidenceHash &&
     existingEvidence.inputTokens === input.actualInputTokens &&
     existingEvidence.outputTokens === input.actualOutputTokens &&
@@ -880,7 +912,7 @@ export async function reconcileKnowledgeLlmUsageUnknownBudget(
       actualCostMicros,
       evidenceHash: input.evidenceHash,
       createdAt: completedAt,
-      createdBy: input.operatorActor.userId,
+      createdBy: operatorUserId,
     },
   });
   await transaction.knowledgeLlmRun.update({
@@ -893,7 +925,7 @@ export async function reconcileKnowledgeLlmUsageUnknownBudget(
       actualCostMicros,
       completedAt,
       updatedAt: completedAt,
-      updatedBy: input.operatorActor.userId,
+      updatedBy: operatorUserId,
     },
   });
   for (const reservation of reservations) {

@@ -49,6 +49,48 @@ test('Knowledge LLM audit keeps canonical user attribution and omits caller auth
   assert.equal(serialized.includes('spoofed-scope'), false);
 });
 
+test('Knowledge LLM audit rejects non-canonical actor identifiers', async () => {
+  const { PrismaKnowledgeLlmAuditWriter } =
+    await import('../dist/adapters/knowledge/prismaKnowledgeLlmAuditAdapter.js');
+  let writes = 0;
+  const writer = new PrismaKnowledgeLlmAuditWriter({
+    auditLog: {
+      async create(input) {
+        writes += 1;
+        return input.data;
+      },
+    },
+  });
+
+  await assert.rejects(
+    writer.write({
+      action: 'knowledge_llm_budget_reserved',
+      actor: {
+        userId: 'canonical-user\u200b',
+        requestId: 'synthetic-request',
+        source: 'api',
+      },
+      targetTable: 'knowledge_llm_runs',
+      targetId: 'synthetic-run',
+      metadata: {
+        provider: 'stub',
+        model: 'stub-v1',
+        scope: 'personal',
+        catalogVersion: 1,
+        estimatedInputTokens: 10,
+        maxOutputTokens: 20,
+        reservedCostMicros: '0',
+        currency: 'JPY',
+        resultCode: 'reserved',
+        policyCount: 1,
+        softLimitWarning: false,
+      },
+    }),
+    /knowledge_llm_audit_invalid/,
+  );
+  assert.equal(writes, 0);
+});
+
 test('Knowledge LLM audit measures model bounds by Unicode code points', async () => {
   const { PrismaKnowledgeLlmAuditWriter } =
     await import('../dist/adapters/knowledge/prismaKnowledgeLlmAuditAdapter.js');

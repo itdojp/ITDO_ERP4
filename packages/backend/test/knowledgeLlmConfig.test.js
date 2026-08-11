@@ -220,6 +220,63 @@ test('organization reservation fails closed when canonical organization differs'
   assert.equal(called, false);
 });
 
+test('reservation rejects non-canonical actor and organization identifiers', async () => {
+  const { createKnowledgeLlmBudgetUseCases } = await budgetModule();
+  const { parseKnowledgeLlmModelCatalog } = await configModule();
+  let calls = 0;
+  const service = createKnowledgeLlmBudgetUseCases(
+    {
+      async reserve() {
+        calls += 1;
+        throw new Error('must not call');
+      },
+    },
+    parseKnowledgeLlmModelCatalog(catalog()),
+  );
+  const base = {
+    runId: 'canonical-actor-run',
+    actor: { userId: 'canonical-user', groupAccountIds: [] },
+    auditActor: {},
+    scope: 'personal',
+    organizationId: null,
+    provider: 'stub',
+    model: 'stub-v1',
+    catalogVersion: 3,
+    promptTemplateVersion: 1,
+    requestKeyHash: '9'.repeat(64),
+    systemPrompt: '',
+    userPrompt: '',
+    selectedContextSources: [],
+    maxOutputTokens: 7,
+  };
+
+  for (const input of [
+    {
+      ...base,
+      actor: { ...base.actor, userId: 'canonical-user\u200b' },
+    },
+    {
+      ...base,
+      actor: {
+        ...base.actor,
+        organizationId: 'canonical-org\u200b',
+      },
+      scope: 'organization',
+      organizationId: 'canonical-org\u200b',
+    },
+  ]) {
+    assert.deepEqual(await service.reserve(input), {
+      ok: false,
+      error: {
+        status: 400,
+        code: 'invalid_request',
+        message: 'Invalid request',
+      },
+    });
+  }
+  assert.equal(calls, 0);
+});
+
 test('reservation pricing is resolved from the enabled catalog, not caller fields', async () => {
   const { createKnowledgeLlmBudgetUseCases } = await budgetModule();
   const { parseKnowledgeLlmModelCatalog } = await configModule();

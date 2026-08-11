@@ -24,6 +24,7 @@ import {
   deriveKnowledgeLlmSelectedContext,
   validKnowledgeLlmContextFingerprintSources,
 } from './knowledgeLlmContext.js';
+import { normalizeAuthIdentifier } from '../../services/authIdentifiers.js';
 
 const sha256Pattern = /^[0-9a-f]{64}$/;
 const maximumDatabaseBigInt = 9_223_372_036_854_775_807n;
@@ -40,6 +41,13 @@ function reservationPayloadHash(
   input: KnowledgeLlmReservationCommand,
   selectedContextFingerprint: string,
   providerRequestHash: string,
+  economics: {
+    estimatedInputTokens: number;
+    inputCostMicrosPerMillion: bigint;
+    outputCostMicrosPerMillion: bigint;
+    maximumCostMicros: bigint;
+    currency: string;
+  },
 ) {
   const hash = createHash('sha256');
   hash.update('erp4:knowledge:llm-reservation-payload:v1\0', 'utf8');
@@ -53,6 +61,11 @@ function reservationPayloadHash(
     selectedContextFingerprint,
     providerRequestHash,
     String(input.maxOutputTokens),
+    String(economics.estimatedInputTokens),
+    economics.inputCostMicrosPerMillion.toString(),
+    economics.outputCostMicrosPerMillion.toString(),
+    economics.maximumCostMicros.toString(),
+    economics.currency,
   ]) {
     updateHashField(hash, value);
   }
@@ -88,6 +101,14 @@ function boundedIdentifier(value: string, maximum: number): boolean {
   );
 }
 
+function validAuthIdentifier(value: string, maximum: number): boolean {
+  try {
+    return normalizeAuthIdentifier(value, maximum) === value;
+  } catch {
+    return false;
+  }
+}
+
 function invalid(): KnowledgeLlmBudgetResult<never> {
   return {
     ok: false,
@@ -117,7 +138,7 @@ function validInput(input: KnowledgeLlmReservationRequest): boolean {
   }
   if (
     !boundedIdentifier(input.runId, 255) ||
-    !boundedIdentifier(input.actor.userId, 200) ||
+    !validAuthIdentifier(input.actor.userId, 200) ||
     (input.provider !== 'stub' && input.provider !== 'openai') ||
     !boundedIdentifier(input.model, 200) ||
     input.inputCostMicrosPerMillion < 0n ||
@@ -155,7 +176,7 @@ function validInput(input: KnowledgeLlmReservationRequest): boolean {
   return (
     input.scope === 'organization' &&
     typeof input.organizationId === 'string' &&
-    boundedIdentifier(input.organizationId, 200) &&
+    validAuthIdentifier(input.organizationId, 200) &&
     input.organizationId === input.actor.organizationId
   );
 }
@@ -258,6 +279,13 @@ export function createKnowledgeLlmBudgetUseCases(
           input,
           selectedContext.fingerprint,
           providerRequestHash,
+          {
+            estimatedInputTokens,
+            inputCostMicrosPerMillion: model.inputCostMicrosPerMillion,
+            outputCostMicrosPerMillion: model.outputCostMicrosPerMillion,
+            maximumCostMicros,
+            currency: model.currency,
+          },
         ),
         providerRequestHash,
         selectedContextFingerprint: selectedContext.fingerprint,

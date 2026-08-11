@@ -322,13 +322,100 @@ ALTER TABLE "KnowledgeLlmUsageEvidence" ADD CONSTRAINT "KnowledgeLlmUsageEvidenc
 -- provenance. These tables are expand-only and contain no existing-row
 -- rewrites.
 
+CREATE FUNCTION "erp4_knowledge_llm_auth_identifier_valid"(
+  candidate TEXT,
+  maximum_length INTEGER
+)
+RETURNS BOOLEAN
+LANGUAGE SQL
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+  WITH codepoints AS (
+    SELECT
+      character_index,
+      ASCII(SUBSTRING(candidate FROM character_index FOR 1)) AS codepoint
+    FROM GENERATE_SERIES(1, CHAR_LENGTH(candidate)) AS characters(character_index)
+  )
+  SELECT maximum_length BETWEEN 1 AND 2048
+    AND candidate = BTRIM(candidate)
+    AND (
+      SELECT COALESCE(SUM(CASE WHEN codepoint > 65535 THEN 2 ELSE 1 END), 0)
+      FROM codepoints
+    ) BETWEEN 1 AND maximum_length
+    AND NOT EXISTS (
+      SELECT 1
+      FROM codepoints
+      WHERE codepoint BETWEEN 0 AND 31
+        OR codepoint BETWEEN 127 AND 159
+        OR codepoint = 173
+        OR codepoint BETWEEN 1536 AND 1541
+        OR codepoint = 1564
+        OR codepoint = 1757
+        OR codepoint = 1807
+        OR codepoint BETWEEN 2192 AND 2193
+        OR codepoint = 2274
+        OR codepoint BETWEEN 6068 AND 6069
+        OR codepoint = 6158
+        OR codepoint BETWEEN 8203 AND 8207
+        OR codepoint BETWEEN 8232 AND 8238
+        OR codepoint BETWEEN 8288 AND 8292
+        OR codepoint BETWEEN 8294 AND 8303
+        OR codepoint = 65279
+        OR codepoint BETWEEN 65529 AND 65531
+        OR codepoint IN (69821, 69837)
+        OR codepoint BETWEEN 78896 AND 78933
+        OR codepoint BETWEEN 113824 AND 113839
+        OR codepoint BETWEEN 119155 AND 119162
+        OR codepoint = 917505
+        OR codepoint BETWEEN 917536 AND 917631
+    )
+    AND (
+      SELECT codepoint
+      FROM codepoints
+      WHERE character_index = 1
+    ) NOT IN (160, 5760, 8239, 8287, 12288)
+    AND NOT (
+      SELECT codepoint
+      FROM codepoints
+      WHERE character_index = 1
+    ) BETWEEN 8192 AND 8202
+    AND (
+      SELECT codepoint
+      FROM codepoints
+      WHERE character_index = CHAR_LENGTH(candidate)
+    ) NOT IN (160, 5760, 8239, 8287, 12288)
+    AND NOT (
+      SELECT codepoint
+      FROM codepoints
+      WHERE character_index = CHAR_LENGTH(candidate)
+    ) BETWEEN 8192 AND 8202;
+$$;
+
+CREATE FUNCTION "erp4_knowledge_llm_timezone_valid"(candidate TEXT)
+RETURNS BOOLEAN
+LANGUAGE SQL
+STABLE
+STRICT
+PARALLEL SAFE
+AS $$
+  SELECT candidate = BTRIM(candidate)
+    AND CHAR_LENGTH(candidate) BETWEEN 1 AND 100
+    AND EXISTS (
+      SELECT 1
+      FROM pg_timezone_names
+      WHERE name = candidate
+    );
+$$;
+
 ALTER TABLE "KnowledgeLlmBudgetPolicy"
   ADD CONSTRAINT "KnowledgeLlmBudgetPolicy_identity_check" CHECK (
-    LENGTH(BTRIM("subjectId")) BETWEEN 1 AND 200
+    "erp4_knowledge_llm_auth_identifier_valid"("subjectId", 200)
     AND "currency" ~ '^[A-Z]{3}$'
-    AND LENGTH(BTRIM("timezone")) BETWEEN 1 AND 100
-    AND LENGTH(BTRIM("createdBy")) BETWEEN 1 AND 200
-    AND LENGTH(BTRIM("updatedBy")) BETWEEN 1 AND 200
+    AND "erp4_knowledge_llm_timezone_valid"("timezone")
+    AND "erp4_knowledge_llm_auth_identifier_valid"("createdBy", 200)
+    AND "erp4_knowledge_llm_auth_identifier_valid"("updatedBy", 200)
   ),
   ADD CONSTRAINT "KnowledgeLlmBudgetPolicy_limits_check" CHECK (
     "softLimitMicros" >= 0
@@ -375,7 +462,7 @@ ALTER TABLE "KnowledgeLlmBudgetPeriod"
   ADD CONSTRAINT "KnowledgeLlmBudgetPeriod_window_check" CHECK (
     "periodEndUtc" > "periodStartUtc"
     AND "currency" ~ '^[A-Z]{3}$'
-    AND LENGTH(BTRIM("timezone")) BETWEEN 1 AND 100
+    AND "erp4_knowledge_llm_timezone_valid"("timezone")
     AND "version" >= 1
     AND "updatedAt" >= "createdAt"
   ),
@@ -416,18 +503,18 @@ CREATE TRIGGER "KnowledgeLlmBudgetPeriod_boundary_guard"
 
 ALTER TABLE "KnowledgeLlmRun"
   ADD CONSTRAINT "KnowledgeLlmRun_identity_check" CHECK (
-    LENGTH(BTRIM("actorUserId")) BETWEEN 1 AND 200
+    "erp4_knowledge_llm_auth_identifier_valid"("actorUserId", 200)
     AND LENGTH(BTRIM("model")) BETWEEN 1 AND 200
     AND "currency" ~ '^[A-Z]{3}$'
-    AND LENGTH(BTRIM("createdBy")) BETWEEN 1 AND 200
-    AND LENGTH(BTRIM("updatedBy")) BETWEEN 1 AND 200
+    AND "erp4_knowledge_llm_auth_identifier_valid"("createdBy", 200)
+    AND "erp4_knowledge_llm_auth_identifier_valid"("updatedBy", 200)
   ),
   ADD CONSTRAINT "KnowledgeLlmRun_scope_check" CHECK (
     ("scope" = 'personal' AND "organizationId" IS NULL)
     OR (
       "scope" = 'organization'
       AND "organizationId" IS NOT NULL
-      AND LENGTH(BTRIM("organizationId")) BETWEEN 1 AND 200
+      AND "erp4_knowledge_llm_auth_identifier_valid"("organizationId", 200)
     )
   ),
   ADD CONSTRAINT "KnowledgeLlmRun_request_check" CHECK (
@@ -554,8 +641,8 @@ ALTER TABLE "KnowledgeLlmRequest"
     AND "requestPayloadHash" ~ '^[0-9a-f]{64}$'
   ),
   ADD CONSTRAINT "KnowledgeLlmRequest_identity_check" CHECK (
-    LENGTH(BTRIM("actorUserId")) BETWEEN 1 AND 200
-    AND LENGTH(BTRIM("createdBy")) BETWEEN 1 AND 200
+    "erp4_knowledge_llm_auth_identifier_valid"("actorUserId", 200)
+    AND "erp4_knowledge_llm_auth_identifier_valid"("createdBy", 200)
   );
 
 ALTER TABLE "KnowledgeLlmReservation"
@@ -627,7 +714,7 @@ ALTER TABLE "KnowledgeLlmContextSource"
     AND "representationHash" ~ '^[0-9a-f]{64}$'
     AND "byteLength" BETWEEN 1 AND 65536
     AND "estimatedTokens" BETWEEN 1 AND 2147483647
-    AND LENGTH(BTRIM("createdBy")) BETWEEN 1 AND 200
+    AND "erp4_knowledge_llm_auth_identifier_valid"("createdBy", 200)
   );
 
 ALTER TABLE "KnowledgeLlmProviderOutcome"
@@ -681,7 +768,7 @@ ALTER TABLE "KnowledgeLlmUsageEvidence"
     AND "outputTokens" >= 0
     AND "actualCostMicros" >= 0
     AND "evidenceHash" ~ '^[0-9a-f]{64}$'
-    AND LENGTH(BTRIM("createdBy")) BETWEEN 1 AND 200
+    AND "erp4_knowledge_llm_auth_identifier_valid"("createdBy", 200)
   );
 
 CREATE FUNCTION "erp4_knowledge_llm_immutable_row"()

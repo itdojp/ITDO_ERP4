@@ -12,7 +12,10 @@ import {
   reconcileKnowledgeLlmUsageUnknownBudget as reconcileKnowledgeLlmUsageUnknownBudgetWithClock,
   settleKnowledgeLlmBudget as settleKnowledgeLlmBudgetWithClock,
 } from '../dist/adapters/knowledge/prismaKnowledgeLlmSettlementAdapter.js';
-import { createKnowledgeLlmBudgetUseCases } from '../dist/application/knowledge/knowledgeLlmBudgetUseCases.js';
+import {
+  createKnowledgeLlmBudgetUseCases,
+  knowledgeLlmMonthlyPeriod,
+} from '../dist/application/knowledge/knowledgeLlmBudgetUseCases.js';
 import {
   knowledgeLlmContextEstimatedTokens,
   knowledgeLlmContextRepresentationHash,
@@ -352,6 +355,7 @@ async function exerciseResultUnknownReconciliation({
         contentHash: assistant.contentHash,
         inputTokens: 40,
         outputTokens: 10,
+        createdAt: after(8_300),
         capturedAt: after(8_300),
       },
     });
@@ -382,6 +386,54 @@ async function exerciseResultUnknownReconciliation({
 }
 
 try {
+  const [identifierContract] = await prisma.$queryRaw`
+    SELECT
+      "erp4_knowledge_llm_auth_identifier_valid"('canonical-user', 200) AS valid,
+      "erp4_knowledge_llm_auth_identifier_valid"('canonical-user' || CHR(8203), 200) AS "zeroWidthInvalid",
+      "erp4_knowledge_llm_auth_identifier_valid"(CHR(8192) || 'canonical-user', 200) AS "unicodeTrimInvalid",
+      "erp4_knowledge_llm_auth_identifier_valid"(' canonical-user', 200) AS "leadingSpaceInvalid",
+      "erp4_knowledge_llm_timezone_valid"('UTC') AS "timezoneValid",
+      "erp4_knowledge_llm_timezone_valid"('UTC ') AS "paddedTimezoneInvalid"
+  `;
+  assert.equal(identifierContract.valid, true);
+  assert.equal(identifierContract.zeroWidthInvalid, false);
+  assert.equal(identifierContract.unicodeTrimInvalid, false);
+  assert.equal(identifierContract.leadingSpaceInvalid, false);
+  assert.equal(identifierContract.timezoneValid, true);
+  assert.equal(identifierContract.paddedTimezoneInvalid, false);
+  const invalidPolicy = {
+    subjectType: 'user',
+    currency: 'JPY',
+    softLimitMicros: 1n,
+    hardLimitMicros: 2n,
+    requestsPerHour: 1,
+    version: 1,
+    createdBy: 'synthetic-admin',
+    updatedBy: 'synthetic-admin',
+  };
+  await assert.rejects(
+    prisma.knowledgeLlmBudgetPolicy.create({
+      data: {
+        ...invalidPolicy,
+        id: 'policy-non-canonical-subject',
+        subjectId: 'non-canonical-user\u200b',
+        timezone: 'UTC',
+      },
+    }),
+    /KnowledgeLlmBudgetPolicy_identity_check/,
+  );
+  await assert.rejects(
+    prisma.knowledgeLlmBudgetPolicy.create({
+      data: {
+        ...invalidPolicy,
+        id: 'policy-invalid-timezone',
+        subjectId: 'invalid-timezone-user',
+        timezone: 'UTC ',
+      },
+    }),
+    /KnowledgeLlmBudgetPolicy_identity_check/,
+  );
+
   await policy({
     id: 'policy-rendered-prompt',
     subjectType: 'user',
@@ -521,6 +573,20 @@ try {
       where: { runId: 'run-first' },
     }),
     1,
+  );
+
+  const economicReplayConflict = await service.reserve({
+    ...firstInput,
+    runId: 'run-economic-conflicting-replay',
+    reservationInputTokenFloor: 90,
+  });
+  assert.equal(economicReplayConflict.ok, false);
+  assert.equal(economicReplayConflict.error.code, 'idempotency_conflict');
+  assert.equal(
+    await prisma.knowledgeLlmRun.count({
+      where: { id: 'run-economic-conflicting-replay' },
+    }),
+    0,
   );
 
   const conflict = await service.reserve({
@@ -742,6 +808,7 @@ try {
     subjectId: 'policy-timezone-drift-user',
     soft: 1000n,
     hard: 1000n,
+    rate: 1,
     timezone: 'Asia/Tokyo',
   });
   assert.equal(
@@ -767,6 +834,7 @@ try {
     subjectId: 'policy-timezone-drift-user',
     soft: 1000n,
     hard: 1000n,
+    rate: 1,
     timezone: 'UTC',
     version: 2,
   });
@@ -842,6 +910,101 @@ try {
       where: { id: 'run-policy-boundary-rollover-v2' },
     }),
     0,
+  );
+
+  await prisma.knowledgeLlmBudgetPolicy.create({
+    data: {
+      id: 'policy-boundary-currency-v1',
+      subjectType: 'user',
+      subjectId: 'policy-boundary-currency-user',
+      currency: 'USD',
+      timezone: 'UTC',
+      softLimitMicros: 1000n,
+      hardLimitMicros: 1000n,
+      requestsPerHour: 10,
+      version: 1,
+      createdBy: 'synthetic-admin',
+      updatedBy: 'synthetic-admin',
+      periods: {
+        create: {
+          periodStartUtc: new Date('2026-08-01T00:00:00.000Z'),
+          periodEndUtc: new Date('2026-09-01T00:00:00.000Z'),
+          timezone: 'UTC',
+          currency: 'USD',
+        },
+      },
+    },
+  });
+  await prisma.knowledgeLlmBudgetPolicy.update({
+    where: { id: 'policy-boundary-currency-v1' },
+    data: { active: false, updatedBy: 'synthetic-admin' },
+  });
+  await policy({
+    id: 'policy-boundary-currency-v2',
+    subjectType: 'user',
+    subjectId: 'policy-boundary-currency-user',
+    soft: 1000n,
+    hard: 1000n,
+    rate: 10,
+    timezone: 'UTC',
+    version: 2,
+  });
+  const boundaryCurrencyRollover = await serviceAt(
+    currentMonthTimestamp,
+  ).reserve(
+    reservation({
+      runId: 'run-policy-boundary-currency-v2',
+      userId: 'policy-boundary-currency-user',
+      keyHash: knowledgeTextHash(
+        'llm-test-request-key',
+        'policy-boundary-currency-v2',
+      ),
+      maximumCostMicros: 1n,
+    }),
+  );
+  assert.equal(boundaryCurrencyRollover.ok, true);
+
+  await policy({
+    id: 'policy-period-mismatch',
+    subjectType: 'user',
+    subjectId: 'policy-period-mismatch-user',
+    soft: 1000n,
+    hard: 1000n,
+    timezone: 'UTC',
+  });
+  const currentWindow = knowledgeLlmMonthlyPeriod(now, 'UTC');
+  await prisma.knowledgeLlmBudgetPeriod.create({
+    data: {
+      policyId: 'policy-period-mismatch',
+      periodStartUtc: currentWindow.start,
+      periodEndUtc: new Date(currentWindow.end.getTime() - 86_400_000),
+      timezone: 'UTC',
+      currency: 'JPY',
+    },
+  });
+  const periodMismatch = await service.reserve(
+    reservation({
+      runId: 'run-policy-period-mismatch',
+      userId: 'policy-period-mismatch-user',
+      keyHash: knowledgeTextHash(
+        'llm-test-request-key',
+        'policy-period-mismatch',
+      ),
+      maximumCostMicros: 1n,
+    }),
+  );
+  assert.equal(periodMismatch.ok, false);
+  assert.equal(periodMismatch.error.code, 'policy_mismatch');
+  assert.equal(
+    (
+      await prisma.auditLog.findFirstOrThrow({
+        where: {
+          action: 'knowledge_llm_budget_blocked',
+          targetId: 'run-policy-period-mismatch',
+        },
+      })
+    ).metadata.resultCode,
+    'configuration_blocked',
   );
 
   await policy({
@@ -1141,9 +1304,7 @@ try {
             role: 'assistant',
             origin: 'ai',
             content: 'Synthetic direct guard result',
-            contentHash: conversationTurnHash(
-              'Synthetic direct guard result',
-            ),
+            contentHash: conversationTurnHash('Synthetic direct guard result'),
             createdBy: 'settlement-user',
           },
         });
@@ -1154,10 +1315,7 @@ try {
     reservation({
       runId: 'run-direct-cost-guard',
       userId: 'settlement-user',
-      keyHash: knowledgeTextHash(
-        'llm-test-request-key',
-        'direct-cost-guard',
-      ),
+      keyHash: knowledgeTextHash('llm-test-request-key', 'direct-cost-guard'),
       maximumCostMicros: 100n,
       inputCostMicrosPerMillion: 250_000n,
       outputCostMicrosPerMillion: 750_000n,
@@ -1182,6 +1340,7 @@ try {
         contentHash: settlementConversation.directGuardAssistant.contentHash,
         inputTokens: 80,
         outputTokens: 20,
+        createdAt: after(31_000),
         capturedAt: after(31_000),
       },
     });
@@ -1275,6 +1434,7 @@ try {
         contentHash: settlementConversation.assistant.contentHash,
         inputTokens: 80,
         outputTokens: 20,
+        createdAt: after(1_500),
         capturedAt: after(1_500),
         finalizedAt: after(1_900),
       },
@@ -1290,6 +1450,7 @@ try {
         contentHash: conversationTurnHash('Different result'),
         inputTokens: 80,
         outputTokens: 20,
+        createdAt: after(1_500),
         capturedAt: after(1_500),
       },
     }),
@@ -1314,6 +1475,7 @@ try {
           contentHash: settlementConversation.assistant.contentHash,
           inputTokens: 80,
           outputTokens: 20,
+          createdAt: after(1_500),
           capturedAt: after(1_500),
         },
       });
@@ -1360,6 +1522,7 @@ try {
           contentHash: settlementConversation.user.contentHash,
           inputTokens: 80,
           outputTokens: 20,
+          createdAt: after(1_500),
           capturedAt: after(1_500),
         },
       });
@@ -1405,6 +1568,7 @@ try {
         contentHash: settlementConversation.assistant.contentHash,
         inputTokens: 80,
         outputTokens: 20,
+        createdAt: after(1_500),
         capturedAt: after(1_500),
       },
     });
@@ -1642,6 +1806,7 @@ try {
         runId: 'run-context-freeze',
         status: 'invalid',
         failureCode: 'provider_4xx',
+        createdAt: after(2_100),
         capturedAt: after(2_100),
       },
     }),
@@ -1758,6 +1923,7 @@ try {
         runId: 'run-context-freeze',
         status: 'invalid',
         failureCode: 'provider_4xx',
+        createdAt: after(2_150),
         capturedAt: after(2_150),
       },
     }),
@@ -2096,6 +2262,7 @@ try {
           contentHash: mismatchedTurn.contentHash,
           inputTokens: 1,
           outputTokens: 0,
+          createdAt: after(2_500),
           capturedAt: after(2_500),
         },
       });
@@ -2253,6 +2420,7 @@ try {
         normalizedContent: 'Synthetic usage-unknown result',
         contentHash: usageUnknownConversation.assistant.contentHash,
         failureCode: 'usage_missing',
+        createdAt: after(4_150),
         capturedAt: after(4_150),
       },
     });
@@ -2315,6 +2483,24 @@ try {
       }),
     ),
     /usage_reconcile_conflict/,
+  );
+  await assert.rejects(
+    prisma.$transaction((transaction) =>
+      reconcileKnowledgeLlmUsageUnknownBudget(transaction, {
+        runId: 'run-settlement-usage-unknown',
+        runActorUserId: 'settlement-user',
+        operatorActor: terminalAuditActor(
+          'settlement-user\u200b',
+          'run-settlement-usage-unknown-confusable-reconcile',
+        ),
+        source: 'operator_billing',
+        evidenceHash: hash('d'),
+        actualInputTokens: 20,
+        actualOutputTokens: 0,
+        completedAt: after(4_280),
+      }),
+    ),
+    /usage_reconcile_invalid/,
   );
   const usageReconciliation = await prisma.$transaction((transaction) =>
     reconcileKnowledgeLlmUsageUnknownBudget(transaction, {
@@ -2487,6 +2673,7 @@ try {
         normalizedContent: 'Synthetic usage reconciliation audit result',
         contentHash: usageAuditConversation.assistant.contentHash,
         failureCode: 'usage_missing',
+        createdAt: after(4_650),
         capturedAt: after(4_650),
       },
     });
@@ -2570,6 +2757,7 @@ try {
         contentHash: conversationTurnHash('Synthetic normalized result'),
         inputTokens: 40,
         outputTokens: 10,
+        createdAt: after(6_000),
         capturedAt: after(6_000),
       },
     });
@@ -3181,6 +3369,10 @@ try {
       policyVersionRolloverRaceBlocked: true,
       policyTimezoneDriftBlocked: true,
       policyBoundaryRolloverRateCarryForward: true,
+      policyBoundaryCurrencyRolloverAllowed: true,
+      periodMismatchTypedAndAudited: true,
+      canonicalActorDatabaseBoundary: true,
+      economicReplayConflict: true,
       rateLimit: true,
       crossPeriodRateLimit: true,
       idempotency: true,
@@ -3193,6 +3385,7 @@ try {
       usageUnknownReconciliationAuditRollback: true,
       operatorBillingAttribution: true,
       operatorSelfSettlementBlocked: true,
+      nonCanonicalOperatorBlocked: true,
       contextPersistedWithReservation: true,
       contextFrozenAtDispatch: true,
       contextExactProvenanceVerified: true,

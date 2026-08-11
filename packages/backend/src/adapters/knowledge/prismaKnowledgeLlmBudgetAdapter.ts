@@ -15,6 +15,12 @@ import { PrismaKnowledgeLlmAuditWriter } from './prismaKnowledgeLlmAuditAdapter.
 type TransactionHost = Pick<PrismaClient, '$transaction'>;
 type Transaction = Prisma.TransactionClient;
 
+class KnowledgeLlmPolicyConfigurationError extends Error {
+  constructor() {
+    super('knowledge_llm_policy_configuration_invalid');
+  }
+}
+
 type Policy = {
   id: string;
   subjectType: 'user' | 'organization';
@@ -163,7 +169,12 @@ async function ensureAndLockPeriods(
 ) {
   const periods = [];
   for (const policy of policies) {
-    const window = knowledgeLlmMonthlyPeriod(now, policy.timezone);
+    let window: ReturnType<typeof knowledgeLlmMonthlyPeriod>;
+    try {
+      window = knowledgeLlmMonthlyPeriod(now, policy.timezone);
+    } catch {
+      throw new KnowledgeLlmPolicyConfigurationError();
+    }
     const period = await transaction.knowledgeLlmBudgetPeriod.upsert({
       where: {
         policyId_periodStartUtc: {
@@ -185,7 +196,7 @@ async function ensureAndLockPeriods(
       period.timezone !== policy.timezone ||
       period.currency !== policy.currency
     ) {
-      throw new Error('knowledge_llm_period_mismatch');
+      throw new KnowledgeLlmPolicyConfigurationError();
     }
     periods.push({ policy, period, window });
   }
@@ -547,6 +558,26 @@ export class PrismaKnowledgeLlmBudgetAdapter implements KnowledgeLlmBudgetPort {
           { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
         );
       } catch (error) {
+        if (error instanceof KnowledgeLlmPolicyConfigurationError) {
+          await this.client.$transaction(async (transaction) => {
+            await new PrismaKnowledgeLlmAuditWriter(transaction).write({
+              action: 'knowledge_llm_budget_blocked',
+              actor: knowledgeProvenanceAuditActor(
+                input.actor,
+                input.auditActor,
+              ),
+              targetTable: 'knowledge_llm_runs',
+              targetId: input.runId,
+              metadata: auditMetadata(
+                input,
+                'configuration_blocked',
+                requiredSubjects(input).length,
+                false,
+              ),
+            });
+          });
+          return failure(400, 'policy_mismatch');
+        }
         if (!retryable(error)) throw error;
         if (attempt + 1 >= knowledgeLlmLimits.serializableAttempts) {
           await this.client.$transaction(async (transaction) => {

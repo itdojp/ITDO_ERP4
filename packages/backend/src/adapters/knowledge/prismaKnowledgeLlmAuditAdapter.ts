@@ -231,7 +231,7 @@ export class PrismaKnowledgeLlmAuditWriter implements KnowledgeLlmAuditWriter {
     await this.client.auditLog.create({
       data: {
         action: entry.action,
-        userId: entry.actor.userId,
+        userId: identifier(entry.actor.userId, 200),
         actorRole: operatorIntervention
           ? 'knowledge_billing_operator'
           : 'knowledge_user',

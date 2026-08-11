@@ -45,6 +45,20 @@ test('LLM foundation is additive and separates execution from settlement', () =>
   assert.match(run, /providerRequestHash\s+String/);
   assert.match(migration, /"providerRequestHash" ~ '\^\[0-9a-f\]\{64\}\$'/);
   assert.match(migration, /KnowledgeLlmRun_state_shape_check/);
+  assert.match(migration, /erp4_knowledge_llm_auth_identifier_valid/);
+  assert.match(migration, /erp4_knowledge_llm_timezone_valid/);
+  assert.match(
+    migration,
+    /KnowledgeLlmRun_identity_check[\s\S]*?auth_identifier_valid"\("actorUserId", 200\)/,
+  );
+  assert.match(
+    migration,
+    /KnowledgeLlmBudgetPolicy_identity_check[\s\S]*?auth_identifier_valid"\("subjectId", 200\)[\s\S]*?timezone_valid"\("timezone"\)/,
+  );
+  assert.match(
+    migration,
+    /KnowledgeLlmUsageEvidence_shape_check[\s\S]*?auth_identifier_valid"\("createdBy", 200\)/,
+  );
   assert.match(
     migration,
     /"executionStatus" = 'reserved'[\s\S]*?"conversationId" IS NULL[\s\S]*?"assistantTurnId" IS NULL/,
