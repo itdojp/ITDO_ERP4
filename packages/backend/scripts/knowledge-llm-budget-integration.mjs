@@ -106,6 +106,23 @@ async function waitForDatabaseLock(pid) {
   }
   throw new Error('knowledge_llm_lock_wait_not_observed');
 }
+
+async function waitForPolicyLock(excludedPid) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const activity = await prisma.$queryRaw`
+      SELECT pid
+      FROM pg_stat_activity
+      WHERE pid <> ${excludedPid}
+        AND wait_event_type = 'Lock'
+        AND query LIKE '%KnowledgeLlmBudgetPolicy%'
+      ORDER BY pid
+      LIMIT 1
+    `;
+    if (activity[0]?.pid) return activity[0].pid;
+    await delay(20);
+  }
+  throw new Error('knowledge_llm_policy_lock_wait_not_observed');
+}
 const hash = (character) => character.repeat(64);
 const knowledgeTextHash = (domain, content) =>
   createHash('sha256')
@@ -639,6 +656,130 @@ try {
   );
   assert.equal(versionRateBlocked.ok, false);
   assert.equal(versionRateBlocked.error.code, 'rate_limit');
+
+  await policy({
+    id: 'policy-rollover-race-v1',
+    subjectType: 'user',
+    subjectId: 'policy-rollover-race-user',
+    soft: 1000n,
+    hard: 1000n,
+  });
+  let signalPolicyTransitionReady;
+  const policyTransitionReady = new Promise((resolve) => {
+    signalPolicyTransitionReady = resolve;
+  });
+  let releasePolicyTransition;
+  const policyTransitionRelease = new Promise((resolve) => {
+    releasePolicyTransition = resolve;
+  });
+  const policyTransition = prisma.$transaction(
+    async (transaction) => {
+      const [{ pid }] = await transaction.$queryRaw`
+        SELECT pg_backend_pid()::INTEGER AS pid
+      `;
+      await transaction.knowledgeLlmBudgetPolicy.update({
+        where: { id: 'policy-rollover-race-v1' },
+        data: { active: false, updatedBy: 'synthetic-admin' },
+      });
+      await transaction.knowledgeLlmBudgetPolicy.create({
+        data: {
+          id: 'policy-rollover-race-v2',
+          subjectType: 'user',
+          subjectId: 'policy-rollover-race-user',
+          currency: 'JPY',
+          timezone: 'Asia/Tokyo',
+          softLimitMicros: 1n,
+          hardLimitMicros: 1n,
+          requestsPerHour: 10,
+          version: 2,
+          createdBy: 'synthetic-admin',
+          updatedBy: 'synthetic-admin',
+        },
+      });
+      signalPolicyTransitionReady(pid);
+      await policyTransitionRelease;
+    },
+    { timeout: 15_000 },
+  );
+  const policyTransitionPid = await policyTransitionReady;
+  const reservationDuringPolicyTransition = service.reserve(
+    reservation({
+      runId: 'run-policy-rollover-race',
+      userId: 'policy-rollover-race-user',
+      keyHash: hash('4'),
+      maximumCostMicros: 2n,
+    }),
+  );
+  let policyTransitionError;
+  try {
+    await waitForPolicyLock(policyTransitionPid);
+  } catch (error) {
+    policyTransitionError = error;
+  } finally {
+    releasePolicyTransition();
+  }
+  await policyTransition;
+  if (policyTransitionError) throw policyTransitionError;
+  const rolloverRaceResult = await reservationDuringPolicyTransition;
+  assert.equal(rolloverRaceResult.ok, false);
+  assert.equal(rolloverRaceResult.error.code, 'budget_hard_limit');
+  assert.equal(
+    await prisma.knowledgeLlmRun.count({
+      where: { id: 'run-policy-rollover-race' },
+    }),
+    0,
+  );
+
+  await policy({
+    id: 'policy-timezone-drift-v1',
+    subjectType: 'user',
+    subjectId: 'policy-timezone-drift-user',
+    soft: 1000n,
+    hard: 1000n,
+    timezone: 'Asia/Tokyo',
+  });
+  assert.equal(
+    (
+      await service.reserve(
+        reservation({
+          runId: 'run-policy-timezone-drift-v1',
+          userId: 'policy-timezone-drift-user',
+          keyHash: hash('6'),
+          maximumCostMicros: 1n,
+        }),
+      )
+    ).ok,
+    true,
+  );
+  await prisma.knowledgeLlmBudgetPolicy.update({
+    where: { id: 'policy-timezone-drift-v1' },
+    data: { active: false, updatedBy: 'synthetic-admin' },
+  });
+  await policy({
+    id: 'policy-timezone-drift-v2',
+    subjectType: 'user',
+    subjectId: 'policy-timezone-drift-user',
+    soft: 1000n,
+    hard: 1000n,
+    timezone: 'UTC',
+    version: 2,
+  });
+  const timezoneDriftBlocked = await service.reserve(
+    reservation({
+      runId: 'run-policy-timezone-drift-v2',
+      userId: 'policy-timezone-drift-user',
+      keyHash: hash('8'),
+      maximumCostMicros: 1n,
+    }),
+  );
+  assert.equal(timezoneDriftBlocked.ok, false);
+  assert.equal(timezoneDriftBlocked.error.code, 'policy_mismatch');
+  assert.equal(
+    await prisma.knowledgeLlmRun.count({
+      where: { id: 'run-policy-timezone-drift-v2' },
+    }),
+    0,
+  );
 
   await policy({
     id: 'policy-org-user',
@@ -2881,6 +3022,8 @@ try {
       hardLimitRace: true,
       policyVersionBudgetCarryForward: true,
       policyVersionRateCarryForward: true,
+      policyVersionRolloverRaceBlocked: true,
+      policyTimezoneDriftBlocked: true,
       rateLimit: true,
       crossPeriodRateLimit: true,
       idempotency: true,

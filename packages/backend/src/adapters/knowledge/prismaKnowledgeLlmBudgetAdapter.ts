@@ -119,38 +119,40 @@ async function lockPolicies(
   input: KnowledgeLlmReservationRequest,
 ): Promise<Policy[] | null> {
   const subjects = requiredSubjects(input);
-  const policies = (await transaction.knowledgeLlmBudgetPolicy.findMany({
-    where: {
-      active: true,
-      OR: subjects.map((subject) => ({
-        subjectType: subject.subjectType,
-        subjectId: subject.subjectId,
-      })),
-    },
-    select: {
-      id: true,
-      subjectType: true,
-      subjectId: true,
-      currency: true,
-      timezone: true,
-      softLimitMicros: true,
-      hardLimitMicros: true,
-      requestsPerHour: true,
-    },
-  })) as Policy[];
-  if (policies.length !== subjects.length) return null;
-  policies.sort((left, right) => {
-    const type = left.subjectType.localeCompare(right.subjectType);
-    const subject = left.subjectId.localeCompare(right.subjectId);
-    return type || subject || left.id.localeCompare(right.id);
-  });
-  await transaction.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-    SELECT id
+  // Select and lock the active rows in one statement. Reading active policies
+  // first and locking only their IDs later leaves a TOCTOU window where a
+  // version rollover can make the selected rows inactive before reservation.
+  // The Serializable retry then re-resolves the active version after a
+  // concurrent rollover instead of applying stale limits.
+  const subjectPredicate = Prisma.join(
+    subjects.map(
+      (subject) => Prisma.sql`
+        (
+          "subjectType" =
+            CAST(${subject.subjectType} AS "KnowledgeLlmBudgetSubjectType")
+          AND "subjectId" = ${subject.subjectId}
+        )
+      `,
+    ),
+    ' OR ',
+  );
+  const policies = await transaction.$queryRaw<Policy[]>(Prisma.sql`
+    SELECT
+      id,
+      "subjectType",
+      "subjectId",
+      currency,
+      timezone,
+      "softLimitMicros",
+      "hardLimitMicros",
+      "requestsPerHour"
     FROM "KnowledgeLlmBudgetPolicy"
-    WHERE id IN (${Prisma.join(policies.map((policy) => policy.id))})
+    WHERE active
+      AND (${subjectPredicate})
     ORDER BY "subjectType", "subjectId", id
     FOR UPDATE
   `);
+  if (policies.length !== subjects.length) return null;
   return policies;
 }
 
@@ -202,6 +204,7 @@ type SubjectUsage = {
   committedMicros: bigint;
   recentRequestCount: bigint;
   currencyMismatch: boolean;
+  timezoneMismatch: boolean;
 };
 
 async function loadAndLockSubjectUsage(
@@ -213,8 +216,10 @@ async function loadAndLockSubjectUsage(
   const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
   const lockStart =
     hourAgo.getTime() < window.start.getTime() ? hourAgo : window.start;
-  await transaction.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-    SELECT period.id
+  const lockedPeriods = await transaction.$queryRaw<
+    Array<{ id: string; currency: string; timezone: string }>
+  >(Prisma.sql`
+    SELECT period.id, period.currency, period.timezone
     FROM "KnowledgeLlmBudgetPeriod" period
     JOIN "KnowledgeLlmBudgetPolicy" policy
       ON policy.id = period."policyId"
@@ -226,6 +231,12 @@ async function loadAndLockSubjectUsage(
     ORDER BY period.id
     FOR UPDATE OF period
   `);
+  const currencyMismatch = lockedPeriods.some(
+    (period) => period.currency !== policy.currency,
+  );
+  const timezoneMismatch = lockedPeriods.some(
+    (period) => period.timezone !== policy.timezone,
+  );
   const usage = await transaction.$queryRaw<Array<SubjectUsage>>(Prisma.sql`
     SELECT
       COALESCE(SUM(
@@ -248,11 +259,8 @@ async function loadAndLockSubjectUsage(
       COUNT(*) FILTER (
         WHERE reservation."createdAt" >= ${hourAgo}
       )::bigint AS "recentRequestCount",
-      COALESCE(BOOL_OR(
-        reservation."createdAt" >= ${window.start}
-        AND reservation."createdAt" < ${window.end}
-        AND period.currency <> ${policy.currency}
-      ), false) AS "currencyMismatch"
+      ${currencyMismatch}::boolean AS "currencyMismatch",
+      ${timezoneMismatch}::boolean AS "timezoneMismatch"
     FROM "KnowledgeLlmReservation" reservation
     JOIN "KnowledgeLlmBudgetPeriod" period
       ON period.id = reservation."budgetPeriodId"
@@ -389,7 +397,7 @@ async function reserveOnce(
   const usages = new Map<string, SubjectUsage>();
   for (const entry of periods) {
     const usage = await loadAndLockSubjectUsage(transaction, entry, input.now);
-    if (usage.currencyMismatch) {
+    if (usage.currencyMismatch || usage.timezoneMismatch) {
       await audit.write({
         action: 'knowledge_llm_budget_blocked',
         actor: auditActor,
