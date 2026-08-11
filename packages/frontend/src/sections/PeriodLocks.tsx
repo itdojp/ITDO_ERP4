@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { api } from '../api';
 import {
   Alert,
@@ -95,6 +101,10 @@ export const PeriodLocks: React.FC = () => {
   const [formMessage, setFormMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [targetLock, setTargetLock] = useState<PeriodLock | null>(null);
+  const filtersRef = useRef(filters);
+  const isMountedRef = useRef(true);
+  const listRequestGenerationRef = useRef(0);
+  const listRequestAbortRef = useRef<AbortController | null>(null);
 
   const projectMap = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
@@ -102,27 +112,82 @@ export const PeriodLocks: React.FC = () => {
   );
 
   useEffect(() => {
+    const controller = new AbortController();
     api<{ items: ProjectOption[] }>('/projects')
-      .then((res) => setProjects(res.items || []))
-      .catch(() => setProjects([]));
+      .then((res) => {
+        if (!controller.signal.aborted && isMountedRef.current) {
+          setProjects(res.items || []);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted && isMountedRef.current) {
+          setProjects([]);
+        }
+      });
+    return () => controller.abort();
   }, []);
 
-  const loadLocks = async () => {
+  const updateFilters = (nextFilters: FilterState) => {
+    // Keep mutation-triggered reloads aligned with the visible filter state
+    // without waiting for a passive effect after the input event.
+    filtersRef.current = nextFilters;
+    setFilters(nextFilters);
+  };
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      listRequestGenerationRef.current += 1;
+      listRequestAbortRef.current?.abort();
+      listRequestAbortRef.current = null;
+    };
+  }, []);
+
+  const loadLocks = async (requestFilters: FilterState = filters) => {
+    if (!isMountedRef.current) return;
+    const generation = listRequestGenerationRef.current + 1;
+    listRequestGenerationRef.current = generation;
+    listRequestAbortRef.current?.abort();
+    const controller = new AbortController();
+    listRequestAbortRef.current = controller;
     try {
       setListStatus('loading');
       setListError('');
       const params = new URLSearchParams();
-      if (filters.period) params.set('period', filters.period);
-      if (filters.scope) params.set('scope', filters.scope);
-      if (filters.projectId) params.set('projectId', filters.projectId);
+      if (requestFilters.period) params.set('period', requestFilters.period);
+      if (requestFilters.scope) params.set('scope', requestFilters.scope);
+      if (requestFilters.projectId) {
+        params.set('projectId', requestFilters.projectId);
+      }
       const suffix = params.toString() ? `?${params}` : '';
-      const res = await api<{ items: PeriodLock[] }>(`/period-locks${suffix}`);
+      const res = await api<{ items: PeriodLock[] }>(`/period-locks${suffix}`, {
+        signal: controller.signal,
+      });
+      if (
+        !isMountedRef.current ||
+        controller.signal.aborted ||
+        listRequestGenerationRef.current !== generation
+      ) {
+        return;
+      }
       setItems(res.items || []);
       setListStatus('success');
     } catch (err) {
+      if (
+        !isMountedRef.current ||
+        controller.signal.aborted ||
+        listRequestGenerationRef.current !== generation
+      ) {
+        return;
+      }
       setItems([]);
       setListStatus('error');
       setListError('締め一覧の取得に失敗しました');
+    } finally {
+      if (listRequestAbortRef.current === controller) {
+        listRequestAbortRef.current = null;
+      }
     }
   };
 
@@ -162,21 +227,32 @@ export const PeriodLocks: React.FC = () => {
           reason: form.reason.trim() || undefined,
         }),
       });
-      await loadLocks();
+      if (!isMountedRef.current) return;
+      await loadLocks(filtersRef.current);
     } catch (err) {
-      setFormMessage('締め登録に失敗しました');
+      if (isMountedRef.current) {
+        setFormMessage('締め登録に失敗しました');
+      }
     } finally {
-      setIsSaving(false);
+      if (isMountedRef.current) {
+        setIsSaving(false);
+      }
     }
   };
 
   const removeLock = async (id: string) => {
+    const listGenerationAtStart = listRequestGenerationRef.current;
     try {
       await api(`/period-locks/${id}`, { method: 'DELETE' });
-      await loadLocks();
+      if (!isMountedRef.current) return;
+      await loadLocks(filtersRef.current);
     } catch (err) {
-      setListError('締め解除に失敗しました');
-      setListStatus('error');
+      if (
+        isMountedRef.current &&
+        listRequestGenerationRef.current === listGenerationAtStart
+      ) {
+        setListError('締め解除に失敗しました');
+      }
     }
   };
 
@@ -430,7 +506,11 @@ export const PeriodLocks: React.FC = () => {
                     <Button
                       variant="ghost"
                       onClick={() =>
-                        setFilters({ period: '', scope: '', projectId: '' })
+                        updateFilters({
+                          period: '',
+                          scope: '',
+                          projectId: '',
+                        })
                       }
                     >
                       条件クリア
@@ -454,7 +534,7 @@ export const PeriodLocks: React.FC = () => {
                     label="period"
                     value={filters.period}
                     onChange={(e) =>
-                      setFilters({ ...filters, period: e.target.value })
+                      updateFilters({ ...filters, period: e.target.value })
                     }
                     placeholder="YYYY-MM"
                   />
@@ -462,7 +542,7 @@ export const PeriodLocks: React.FC = () => {
                     label="scope"
                     value={filters.scope}
                     onChange={(e) =>
-                      setFilters({ ...filters, scope: e.target.value })
+                      updateFilters({ ...filters, scope: e.target.value })
                     }
                   >
                     <option value="">すべて</option>
@@ -473,7 +553,7 @@ export const PeriodLocks: React.FC = () => {
                     label="project"
                     value={filters.projectId}
                     onChange={(e) =>
-                      setFilters({ ...filters, projectId: e.target.value })
+                      updateFilters({ ...filters, projectId: e.target.value })
                     }
                   >
                     <option value="">すべて</option>

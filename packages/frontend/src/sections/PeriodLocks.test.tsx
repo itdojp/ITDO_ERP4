@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -200,6 +201,14 @@ vi.mock('../ui', () => ({
 
 import { PeriodLocks } from './PeriodLocks';
 
+type TestPeriodLock = {
+  id: string;
+  period: string;
+  scope: 'global' | 'project';
+  projectId?: string;
+  reason?: string;
+};
+
 afterEach(() => {
   cleanup();
 });
@@ -209,6 +218,16 @@ beforeEach(() => {
 });
 
 describe('PeriodLocks', () => {
+  const deferred = <T,>() => {
+    let resolve!: (value: T) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+      resolve = resolvePromise;
+      reject = rejectPromise;
+    });
+    return { promise, resolve, reject };
+  };
+
   const getCreateSection = () =>
     screen.getByRole('button', { name: '締め登録' }).closest('section')!;
 
@@ -317,6 +336,10 @@ describe('PeriodLocks', () => {
       expect(listSection.getByText('月次締め')).toBeInTheDocument();
     });
 
+    expect(api).toHaveBeenCalledWith('/period-locks', {
+      signal: expect.any(AbortSignal),
+    });
+
     const summary = screen.getByRole('region', { name: '期間締めサマリー' });
     expect(within(summary).getByText('取得済み')).toBeInTheDocument();
     expect(within(summary).getByText('1件を取得')).toBeInTheDocument();
@@ -384,6 +407,7 @@ describe('PeriodLocks', () => {
     await waitFor(() => {
       expect(api).toHaveBeenCalledWith(
         '/period-locks?period=2026-03&scope=project&projectId=project-1',
+        { signal: expect.any(AbortSignal) },
       );
     });
     await waitFor(() => {
@@ -438,5 +462,469 @@ describe('PeriodLocks', () => {
     expect(
       listSection.getByRole('button', { name: '再試行' }),
     ).toBeInTheDocument();
+  });
+
+  it('keeps the latest filtered response when an older create reload resolves later', async () => {
+    const staleReload = deferred<{ items: TestPeriodLock[] }>();
+    const filteredReload = deferred<{ items: TestPeriodLock[] }>();
+    let staleReloadSignal: AbortSignal | null | undefined;
+
+    vi.mocked(api).mockImplementation((path, options) => {
+      if (path === '/projects') {
+        return Promise.resolve({
+          items: [{ id: 'project-1', code: 'P001', name: 'Project One' }],
+        });
+      }
+      if (path === '/period-locks' && options?.method === 'POST') {
+        return Promise.resolve({ id: 'lock-filtered' });
+      }
+      if (path === '/period-locks') {
+        staleReloadSignal = options?.signal;
+        return staleReload.promise;
+      }
+      if (path === '/period-locks?period=2026-03') {
+        return filteredReload.promise;
+      }
+      return Promise.reject(new Error(`unexpected api call: ${String(path)}`));
+    });
+
+    render(<PeriodLocks />);
+    await waitFor(() => expect(api).toHaveBeenCalledWith('/projects'));
+
+    const createSection = within(getCreateSection());
+    const listSection = within(getListSection());
+    const searchButton = listSection.getByRole('button', { name: '検索' });
+
+    fireEvent.change(createSection.getByLabelText('period (YYYY-MM)'), {
+      target: { value: '2026-03' },
+    });
+    fireEvent.change(createSection.getByLabelText('project'), {
+      target: { value: 'project-1' },
+    });
+    fireEvent.click(createSection.getByRole('button', { name: '締め登録' }));
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/period-locks', {
+        signal: expect.any(AbortSignal),
+      });
+    });
+
+    fireEvent.change(listSection.getByLabelText('period'), {
+      target: { value: '2026-03' },
+    });
+    fireEvent.click(searchButton);
+    expect(staleReloadSignal?.aborted).toBe(true);
+
+    await act(async () => {
+      filteredReload.resolve({
+        items: [
+          {
+            id: 'lock-filtered',
+            period: '2026-03',
+            scope: 'project',
+            projectId: 'project-1',
+            reason: 'filtered result',
+          },
+        ],
+      });
+      await filteredReload.promise;
+    });
+
+    await waitFor(() => {
+      expect(listSection.getByText('filtered result')).toBeInTheDocument();
+    });
+    const summary = screen.getByRole('region', { name: '期間締めサマリー' });
+    expect(within(summary).getByText('取得済み')).toBeInTheDocument();
+    expect(within(summary).getByText('1件を取得')).toBeInTheDocument();
+
+    await act(async () => {
+      staleReload.resolve({
+        items: [
+          {
+            id: 'lock-filtered',
+            period: '2026-03',
+            scope: 'project',
+            projectId: 'project-1',
+            reason: 'stale result',
+          },
+          {
+            id: 'lock-unrelated',
+            period: '2026-04',
+            scope: 'global',
+            reason: 'unrelated result',
+          },
+        ],
+      });
+      await staleReload.promise;
+    });
+
+    await waitFor(() => {
+      expect(
+        createSection.getByRole('button', { name: '締め登録' }),
+      ).toBeInTheDocument();
+    });
+    expect(listSection.getByText('filtered result')).toBeInTheDocument();
+    expect(listSection.queryByText('stale result')).not.toBeInTheDocument();
+    expect(listSection.queryByText('unrelated result')).not.toBeInTheDocument();
+    expect(within(summary).getByText('取得済み')).toBeInTheDocument();
+    expect(within(summary).getByText('1件を取得')).toBeInTheDocument();
+  });
+
+  it('does not surface a stale create reload error after a filtered request succeeds', async () => {
+    const staleReload = deferred<{ items: TestPeriodLock[] }>();
+
+    vi.mocked(api).mockImplementation((path, options) => {
+      if (path === '/projects') {
+        return Promise.resolve({
+          items: [{ id: 'project-1', code: 'P001', name: 'Project One' }],
+        });
+      }
+      if (path === '/period-locks' && options?.method === 'POST') {
+        return Promise.resolve({ id: 'lock-filtered' });
+      }
+      if (path === '/period-locks') return staleReload.promise;
+      if (path === '/period-locks?period=2026-03') {
+        return Promise.resolve({
+          items: [
+            {
+              id: 'lock-filtered',
+              period: '2026-03',
+              scope: 'project',
+              projectId: 'project-1',
+              reason: 'filtered result',
+            },
+          ],
+        });
+      }
+      return Promise.reject(new Error(`unexpected api call: ${String(path)}`));
+    });
+
+    render(<PeriodLocks />);
+    await waitFor(() => expect(api).toHaveBeenCalledWith('/projects'));
+
+    const createSection = within(getCreateSection());
+    const listSection = within(getListSection());
+    const searchButton = listSection.getByRole('button', { name: '検索' });
+
+    fireEvent.change(createSection.getByLabelText('period (YYYY-MM)'), {
+      target: { value: '2026-03' },
+    });
+    fireEvent.change(createSection.getByLabelText('project'), {
+      target: { value: 'project-1' },
+    });
+    fireEvent.click(createSection.getByRole('button', { name: '締め登録' }));
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/period-locks', {
+        signal: expect.any(AbortSignal),
+      });
+    });
+
+    fireEvent.change(listSection.getByLabelText('period'), {
+      target: { value: '2026-03' },
+    });
+    fireEvent.click(searchButton);
+    await waitFor(() => {
+      expect(listSection.getByText('filtered result')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      staleReload.reject(new Error('stale load failed'));
+      await staleReload.promise.catch(() => undefined);
+    });
+
+    await waitFor(() => {
+      expect(
+        createSection.getByRole('button', { name: '締め登録' }),
+      ).toBeInTheDocument();
+    });
+    const summary = screen.getByRole('region', { name: '期間締めサマリー' });
+    expect(within(summary).getByText('取得済み')).toBeInTheDocument();
+    expect(within(summary).getByText('1件を取得')).toBeInTheDocument();
+    expect(listSection.getByText('filtered result')).toBeInTheDocument();
+    expect(
+      listSection.queryByText('締め一覧の取得に失敗しました'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('reloads with the current filters when they change while create is pending', async () => {
+    const createRequest = deferred<{ id: string }>();
+
+    vi.mocked(api).mockImplementation((path, options) => {
+      if (path === '/projects') {
+        return Promise.resolve({
+          items: [{ id: 'project-1', code: 'P001', name: 'Project One' }],
+        });
+      }
+      if (path === '/period-locks' && options?.method === 'POST') {
+        return createRequest.promise;
+      }
+      if (path === '/period-locks?period=2026-03') {
+        return Promise.resolve({
+          items: [
+            {
+              id: 'lock-filtered',
+              period: '2026-03',
+              scope: 'project',
+              projectId: 'project-1',
+              reason: 'latest filters',
+            },
+          ],
+        });
+      }
+      return Promise.reject(new Error(`unexpected api call: ${String(path)}`));
+    });
+
+    render(<PeriodLocks />);
+    await waitFor(() => expect(api).toHaveBeenCalledWith('/projects'));
+
+    const createSection = within(getCreateSection());
+    const listSection = within(getListSection());
+
+    fireEvent.change(createSection.getByLabelText('period (YYYY-MM)'), {
+      target: { value: '2026-03' },
+    });
+    fireEvent.change(createSection.getByLabelText('project'), {
+      target: { value: 'project-1' },
+    });
+    fireEvent.click(createSection.getByRole('button', { name: '締め登録' }));
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith(
+        '/period-locks',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+
+    fireEvent.change(listSection.getByLabelText('period'), {
+      target: { value: '2026-03' },
+    });
+    await act(async () => {
+      createRequest.resolve({ id: 'lock-filtered' });
+      await createRequest.promise;
+    });
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/period-locks?period=2026-03', {
+        signal: expect.any(AbortSignal),
+      });
+      expect(listSection.getByText('latest filters')).toBeInTheDocument();
+    });
+    expect(api).not.toHaveBeenCalledWith(
+      '/period-locks',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it('aborts an active list request when the section unmounts', async () => {
+    const pendingReload = deferred<{ items: TestPeriodLock[] }>();
+    let pendingSignal: AbortSignal | null | undefined;
+
+    vi.mocked(api).mockImplementation((path, options) => {
+      if (path === '/projects') return Promise.resolve({ items: [] });
+      if (path === '/period-locks') {
+        pendingSignal = options?.signal;
+        return pendingReload.promise;
+      }
+      return Promise.reject(new Error(`unexpected api call: ${String(path)}`));
+    });
+
+    const view = render(<PeriodLocks />);
+    await waitFor(() => expect(api).toHaveBeenCalledWith('/projects'));
+
+    const listSection = within(getListSection());
+    fireEvent.click(listSection.getByRole('button', { name: '検索' }));
+    await waitFor(() => expect(pendingSignal).toBeInstanceOf(AbortSignal));
+    expect(pendingSignal?.aborted).toBe(false);
+
+    view.unmount();
+    expect(pendingSignal?.aborted).toBe(true);
+
+    await act(async () => {
+      pendingReload.resolve({ items: [] });
+      await pendingReload.promise;
+    });
+  });
+
+  it('does not start a create reload after the section unmounts', async () => {
+    const createRequest = deferred<{ id: string }>();
+
+    vi.mocked(api).mockImplementation((path, options) => {
+      if (path === '/projects') return Promise.resolve({ items: [] });
+      if (path === '/period-locks' && options?.method === 'POST') {
+        return createRequest.promise;
+      }
+      return Promise.reject(new Error(`unexpected api call: ${String(path)}`));
+    });
+
+    const view = render(<PeriodLocks />);
+    await waitFor(() => expect(api).toHaveBeenCalledWith('/projects'));
+
+    const createSection = within(getCreateSection());
+    fireEvent.change(createSection.getByLabelText('period (YYYY-MM)'), {
+      target: { value: '2026-03' },
+    });
+    fireEvent.change(createSection.getByLabelText('scope'), {
+      target: { value: 'global' },
+    });
+    fireEvent.click(createSection.getByRole('button', { name: '締め登録' }));
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith(
+        '/period-locks',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+
+    view.unmount();
+    await act(async () => {
+      createRequest.resolve({ id: 'lock-created-after-unmount' });
+      await createRequest.promise;
+    });
+
+    expect(api).not.toHaveBeenCalledWith('/period-locks', {
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  it('does not replace a newer search result with a stale delete error', async () => {
+    const deleteRequest = deferred<{ ok: boolean }>();
+
+    vi.mocked(api).mockImplementation((path, options) => {
+      if (path === '/projects') return Promise.resolve({ items: [] });
+      if (path === '/period-locks' && !options?.method) {
+        return Promise.resolve({
+          items: [
+            {
+              id: 'lock-pending-delete',
+              period: '2026-03',
+              scope: 'global',
+              reason: 'pending delete',
+            },
+          ],
+        });
+      }
+      if (
+        path === '/period-locks/lock-pending-delete' &&
+        options?.method === 'DELETE'
+      ) {
+        return deleteRequest.promise;
+      }
+      if (path === '/period-locks?period=2026-04') {
+        return Promise.resolve({
+          items: [
+            {
+              id: 'lock-latest',
+              period: '2026-04',
+              scope: 'global',
+              reason: 'latest search',
+            },
+          ],
+        });
+      }
+      return Promise.reject(new Error(`unexpected api call: ${String(path)}`));
+    });
+
+    render(<PeriodLocks />);
+    await waitFor(() => expect(api).toHaveBeenCalledWith('/projects'));
+
+    const listSection = within(getListSection());
+    fireEvent.click(listSection.getByRole('button', { name: '検索' }));
+    await waitFor(() => {
+      expect(
+        listSection.getByRole('button', {
+          name: '解除:lock-pending-delete',
+        }),
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(
+      listSection.getByRole('button', { name: '解除:lock-pending-delete' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: '解除' }));
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/period-locks/lock-pending-delete', {
+        method: 'DELETE',
+      });
+    });
+
+    fireEvent.change(listSection.getByLabelText('period'), {
+      target: { value: '2026-04' },
+    });
+    fireEvent.click(listSection.getByRole('button', { name: '検索' }));
+    await waitFor(() => {
+      expect(listSection.getByText('latest search')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      deleteRequest.reject(new Error('stale delete failed'));
+      await deleteRequest.promise.catch(() => undefined);
+    });
+
+    expect(listSection.getByText('latest search')).toBeInTheDocument();
+    expect(
+      listSection.queryByText('締め解除に失敗しました'),
+    ).not.toBeInTheDocument();
+    const summary = screen.getByRole('region', { name: '期間締めサマリー' });
+    expect(within(summary).getByText('取得済み')).toBeInTheDocument();
+    expect(within(summary).getByText('1件を取得')).toBeInTheDocument();
+  });
+
+  it('does not start a delete reload after the section unmounts', async () => {
+    const deleteRequest = deferred<{ ok: boolean }>();
+
+    vi.mocked(api).mockImplementation((path, options) => {
+      if (path === '/projects') return Promise.resolve({ items: [] });
+      if (path === '/period-locks') {
+        return Promise.resolve({
+          items: [
+            {
+              id: 'lock-pending-delete',
+              period: '2026-03',
+              scope: 'global',
+              reason: 'pending delete',
+            },
+          ],
+        });
+      }
+      if (
+        path === '/period-locks/lock-pending-delete' &&
+        options?.method === 'DELETE'
+      ) {
+        return deleteRequest.promise;
+      }
+      return Promise.reject(new Error(`unexpected api call: ${String(path)}`));
+    });
+
+    const view = render(<PeriodLocks />);
+    await waitFor(() => expect(api).toHaveBeenCalledWith('/projects'));
+
+    const listSection = within(getListSection());
+    fireEvent.click(listSection.getByRole('button', { name: '検索' }));
+    await waitFor(() => {
+      expect(
+        listSection.getByRole('button', {
+          name: '解除:lock-pending-delete',
+        }),
+      ).toBeInTheDocument();
+    });
+    fireEvent.click(
+      listSection.getByRole('button', { name: '解除:lock-pending-delete' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: '解除' }));
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/period-locks/lock-pending-delete', {
+        method: 'DELETE',
+      });
+    });
+
+    view.unmount();
+    await act(async () => {
+      deleteRequest.resolve({ ok: true });
+      await deleteRequest.promise;
+    });
+
+    const listRequestCount = vi
+      .mocked(api)
+      .mock.calls.filter(([path]) => path === '/period-locks').length;
+    expect(listRequestCount).toBe(1);
   });
 });
