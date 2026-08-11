@@ -158,6 +158,15 @@ Storage artifact migration:
   - `CHAT_EXTERNAL_LLM_ALLOWED_HOSTS`（任意、カンマ区切り）で接続先ホストを制限（未設定時は全ホスト許可）
   - `CHAT_EXTERNAL_LLM_ALLOW_HTTP` / `CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP`（任意、既定: `false`）
 
+外部LLM（Knowledge Hub、既定無効）:
+
+- `KNOWLEDGE_EXTERNAL_LLM_PROVIDER=disabled|stub|openai`（既定: `disabled`）。`CHAT_EXTERNAL_LLM_*`へfallbackしない
+- `stub|openai`では`KNOWLEDGE_LLM_MODEL_CATALOG_JSON`が必須。catalogはversion、allowlistされたprovider/model、input/output token上限、ISO 4217 currency、100万token当たりinteger micro-unit価格を持つ
+- `openai`では`KNOWLEDGE_EXTERNAL_LLM_OPENAI_API_KEY`、HTTPSの`KNOWLEDGE_EXTERNAL_LLM_OPENAI_BASE_URL`、base URL hostを含む`KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS`が必須
+- `KNOWLEDGE_EXTERNAL_LLM_ALLOW_HTTP` / `KNOWLEDGE_EXTERNAL_LLM_ALLOW_PRIVATE_IP`は既定`false`。repository test用の明示設定でのみ有効化し、production sampleでは有効化しない
+- Chat summaryのprovider/model/rate契約は従来どおり独立しており、Knowledge Hubのuser/organization予算予約へ暗黙統合しない
+- 実provider keyによる検証とprovider cutoverは本設定追加のrepo-side完了範囲外
+
 ## バックアップ/リストア
 
 参照:

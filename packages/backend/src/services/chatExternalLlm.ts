@@ -1,5 +1,5 @@
-import { safeFetch } from './safeHttpClient.js';
-import { readBoundedResponseText, redactSensitiveText } from './redaction.js';
+import { ExternalLlmProviderError } from '../application/externalLlm/externalLlmPort.js';
+import { OpenAiCompatibleTextAdapter } from '../adapters/externalLlm/openAiCompatibleTextAdapter.js';
 
 type ExternalLlmProvider = 'disabled' | 'stub' | 'openai';
 
@@ -143,62 +143,44 @@ export async function summarizeWithExternalLlm(options: {
   }
 
   const prompt = buildSummaryPrompt({ bodies: options.bodies });
-  const url = `${config.baseUrl}/chat/completions`;
-  const allowedHosts = parseAllowedHosts(
-    process.env.CHAT_EXTERNAL_LLM_ALLOWED_HOSTS,
-  );
-  const res = await safeFetch(
-    url,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: config.model,
-        temperature: 0.2,
-        messages: [
-          { role: 'system', content: prompt.system },
-          { role: 'user', content: prompt.user },
-        ],
-        max_tokens: 600,
-      }),
-    },
-    {
-      timeoutMs: config.timeoutMs,
-      allowedHosts,
-      allowHttp: process.env.CHAT_EXTERNAL_LLM_ALLOW_HTTP === 'true',
-      allowPrivateIp: process.env.CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP === 'true',
-    },
-  );
-
-  if (!res.ok) {
-    const text = await readBoundedResponseText(res, 1024).catch(() => '');
-    const diagnostic = redactSensitiveText(text, 200);
-    const suffix = diagnostic ? `: ${diagnostic}` : '';
-    throw new Error(`openai_error_${res.status}${suffix}`);
+  const adapter = new OpenAiCompatibleTextAdapter({
+    apiKey: config.apiKey,
+    baseUrl: config.baseUrl,
+    timeoutMs: config.timeoutMs,
+    allowedHosts: parseAllowedHosts(
+      process.env.CHAT_EXTERNAL_LLM_ALLOWED_HOSTS,
+    ),
+    allowHttp: process.env.CHAT_EXTERNAL_LLM_ALLOW_HTTP === 'true',
+    allowPrivateIp: process.env.CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP === 'true',
+    // The pre-existing Chat summary contract treats a malformed successful
+    // response as an empty summary and does not account provider usage.
+    // Knowledge callers keep the adapter defaults (strict/strict).
+    malformedSuccessPolicy: 'empty',
+    usagePolicy: 'ignore',
+  });
+  let content: string;
+  try {
+    const result = await adapter.complete({
+      provider: 'openai',
+      model: config.model,
+      systemPrompt: prompt.system,
+      userPrompt: prompt.user,
+      maxOutputTokens: 600,
+      temperatureBasisPoints: 2_000,
+    });
+    content = result.content;
+  } catch (error) {
+    if (
+      error instanceof ExternalLlmProviderError &&
+      error.providerStatus !== null
+    ) {
+      const diagnostic = error.message.includes(':')
+        ? error.message.slice(error.message.indexOf(':'))
+        : '';
+      throw new Error(`openai_error_${error.providerStatus}${diagnostic}`);
+    }
+    throw error;
   }
-
-  const data = (await res.json().catch(() => null)) as {
-    id?: unknown;
-    choices?: unknown;
-  } | null;
-  const choice0 =
-    data && Array.isArray(data.choices) ? (data.choices[0] as unknown) : null;
-  const content =
-    choice0 &&
-    typeof choice0 === 'object' &&
-    choice0 !== null &&
-    'message' in choice0 &&
-    typeof (choice0 as { message?: unknown }).message === 'object' &&
-    (choice0 as { message?: { content?: unknown } }).message &&
-    typeof (choice0 as { message?: { content?: unknown } }).message?.content ===
-      'string'
-      ? (
-          (choice0 as { message: { content: string } }).message.content || ''
-        ).trim()
-      : '';
 
   return {
     provider: 'openai',

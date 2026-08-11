@@ -38,6 +38,76 @@ function runEnvValidation(overrides = {}) {
   return runNodeScript(script, overrides);
 }
 
+const VALID_KNOWLEDGE_LLM_STUB_CATALOG = JSON.stringify({
+  version: 1,
+  models: [
+    {
+      provider: 'stub',
+      model: 'stub-v1',
+      enabled: true,
+      maxInputTokens: 524288,
+      maxOutputTokens: 4096,
+      inputCostMicrosPerMillion: '0',
+      outputCostMicrosPerMillion: '0',
+      currency: 'JPY',
+      capabilities: ['text'],
+    },
+  ],
+});
+
+test('envValidation: Knowledge external LLM remains disabled when only Chat stub is enabled', () => {
+  const result = runEnvValidation({ CHAT_EXTERNAL_LLM_PROVIDER: 'stub' });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test('envValidation: Knowledge stub requires a strict model catalog', () => {
+  const missing = runEnvValidation({
+    KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'stub',
+  });
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /KNOWLEDGE_LLM_MODEL_CATALOG_JSON/);
+
+  const valid = runEnvValidation({
+    KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'stub',
+    KNOWLEDGE_LLM_MODEL_CATALOG_JSON: VALID_KNOWLEDGE_LLM_STUB_CATALOG,
+  });
+  assert.equal(valid.status, 0, valid.stderr);
+});
+
+test('envValidation: Knowledge openai never reuses Chat credentials or an unallowlisted host', () => {
+  const openAiCatalog = JSON.stringify({
+    ...JSON.parse(VALID_KNOWLEDGE_LLM_STUB_CATALOG),
+    models: [
+      {
+        ...JSON.parse(VALID_KNOWLEDGE_LLM_STUB_CATALOG).models[0],
+        provider: 'openai',
+      },
+    ],
+  });
+  const missingKnowledgeKey = runEnvValidation({
+    KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'openai',
+    KNOWLEDGE_LLM_MODEL_CATALOG_JSON: openAiCatalog,
+    CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'chat-key-must-not-be-reused',
+    KNOWLEDGE_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://api.example.test/v1',
+    KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS: 'api.example.test',
+  });
+  assert.notEqual(missingKnowledgeKey.status, 0);
+  assert.match(
+    missingKnowledgeKey.stderr,
+    /KNOWLEDGE_EXTERNAL_LLM_OPENAI_API_KEY/,
+  );
+
+  const unallowlisted = runEnvValidation({
+    KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'openai',
+    KNOWLEDGE_LLM_MODEL_CATALOG_JSON: openAiCatalog,
+    KNOWLEDGE_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-only',
+    KNOWLEDGE_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://api.example.test/v1',
+    KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS: 'other.example.test',
+  });
+  assert.notEqual(unallowlisted.status, 0);
+  assert.match(unallowlisted.stderr, /KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS/);
+});
+
 function runCurrentUserRequest(overrides = {}, headers = {}) {
   const script = `
     import { buildServer } from './dist/server.js';

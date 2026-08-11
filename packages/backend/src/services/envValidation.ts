@@ -4,6 +4,10 @@ import {
   resolveGoogleDriveCredentials,
   resolveGoogleDriveTuningConfig,
 } from '../infrastructure/storage/googleDriveConfig.js';
+import {
+  getKnowledgeLlmRuntimeConfig,
+  KnowledgeLlmConfigurationError,
+} from '../application/knowledge/knowledgeLlmConfig.js';
 
 type ValidationIssue = {
   key: string;
@@ -694,6 +698,17 @@ export function assertValidBackendEnv() {
         'http(s) URL を指定してください',
       );
     }
+  }
+
+  try {
+    getKnowledgeLlmRuntimeConfig(process.env);
+  } catch (error) {
+    if (!(error instanceof KnowledgeLlmConfigurationError)) throw error;
+    addIssue(
+      issues,
+      error.key,
+      'Knowledge外部LLM設定をallowlist、catalog、secretおよび接続制限の契約に合わせてください',
+    );
   }
 
   if (issues.length > 0) {

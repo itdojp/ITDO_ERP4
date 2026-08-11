@@ -187,6 +187,14 @@ typed immutable snapshot row だけから表示する。旧 client は relation 
 
 ### 9. external AI
 
+Knowledge Hubの外部AIは、Chat summary固有関数ではなく共有provider-neutral portへ依存する。共有adapterは一回のdispatchとtransport安全性だけを所有し、Knowledge側がselected context、exact source version、preview/confirm、ACL、budget reservation、idempotency、監査を所有する。Chatの既存prompt、`CHAT_EXTERNAL_LLM_*`、user/room rateは独立した互換wrapperに残す。
+
+予算正本はPostgreSQLのversioned policy、月次period、run、request ledger、reservationである。personalはuser policy、organizationはuser/org policyを同一currencyで決定順lockし、hard limitを`settled + active + held + new maximum`で評価する。policyのIANA timezoneから月次UTC境界を算出し、process timezoneを使用しない。execution stateとsettlement stateを分離し、provider結果またはusageが不明なら通常successにせずmaximum reservationを保持する。
+
+provider call中はDB transactionを開かない。dispatch前にrun/reservation/auditを確定し、provider callは自動retry・fallbackなしで一回だけ行う。normalized outcomeを保存した後、assistant turn・actual settlement・完了auditを別transactionで確定する。安全なprovider outcome lookupがない場合のreconcileは再dispatchせず、unknown/held maximumを維持する。
+
+selected contextはtyped FKとexact version/hashを持つimmutable rowで表現し、自由な`sourceType + sourceId`を正本にしない。assistant resultは同じownerの`KnowledgeConversation`と、そのconversationに属するassistant turnの複合FKへ結び付ける。provider outcomeは最大256 KiBのnormalized contentだけをfinalizationまで一時保持でき、finalize時に本文をconversation turnへ移してoutcome rowから消去する。
+
 - provider は既定 `disabled` とし、組織設定、利用者の明示操作、送信 preview、確認、監査、rate/cost limit がすべて成立した場合だけ呼ぶ。
 - item/snapshot/annotation/attachment 全文を既定送信しない。利用者が選択した最小範囲を prompt material として固定する。
 - provider、model、actor、日時、参照 item/snapshot、送信範囲の digest/分類、token usage、推定費用、結果 status を保存する。API key、prompt 本文、provider 生 error は通常 log に残さない。
