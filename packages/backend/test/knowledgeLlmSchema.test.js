@@ -252,6 +252,6 @@ test('provider outcome retains only normalized bounded state for reconciliation'
   )?.[0];
   assert.ok(evidenceGuard);
   assert.match(evidenceGuard, /NEW\."createdBy" <> BTRIM\(NEW\."createdBy"\)/);
-  assert.doesNotMatch(evidenceGuard, /NEW\."createdBy" <> run_actor/);
+  assert.match(evidenceGuard, /NEW\."createdBy" = run_actor/);
   assert.match(migration, /KnowledgeLlmUsageEvidence_immutable/);
 });

@@ -169,6 +169,7 @@ export type KnowledgeLlmAuditMetadata =
       actualOutputTokens?: number;
       actualCostMicros?: string;
       failureCode?: KnowledgeLlmTerminalFailureCode;
+      operatorIntervention?: 'billing_evidence';
     };
 
 export type KnowledgeLlmAuditEntry = {

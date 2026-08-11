@@ -97,6 +97,10 @@ function auditMetadata(entry: KnowledgeLlmAuditEntry): Prisma.InputJsonObject {
     'actualCostMicros' in metadata ? metadata.actualCostMicros : undefined;
   const failureCode =
     'failureCode' in metadata ? metadata.failureCode : undefined;
+  const operatorIntervention =
+    'operatorIntervention' in metadata
+      ? metadata.operatorIntervention
+      : undefined;
   const modelHasControl = [...metadata.model].some((character) => {
     const codePoint = character.codePointAt(0) ?? 0;
     return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f);
@@ -121,6 +125,14 @@ function auditMetadata(entry: KnowledgeLlmAuditEntry): Prisma.InputJsonObject {
     metadata.policyCount > 2 ||
     (!reservationResult && !terminalResult) ||
     !actionResultCodes[entry.action]?.has(metadata.resultCode)
+  ) {
+    throw new Error('knowledge_llm_audit_invalid');
+  }
+  if (
+    operatorIntervention !== undefined &&
+    (operatorIntervention !== 'billing_evidence' ||
+      entry.action !== 'knowledge_llm_reconciled' ||
+      metadata.resultCode !== 'reconciled')
   ) {
     throw new Error('knowledge_llm_audit_invalid');
   }
@@ -194,6 +206,7 @@ function auditMetadata(entry: KnowledgeLlmAuditEntry): Prisma.InputJsonObject {
       : terminalResult && !dispatched
         ? { failureCode }
         : {}),
+    ...(operatorIntervention ? { operatorIntervention } : {}),
     // The canonical actor remains the top-level AuditLog.userId. Do not copy
     // caller-supplied principal, delegated actor, or scope identifiers into
     // LLM metadata; the request/auth boundary owns those values and future
@@ -212,14 +225,21 @@ export class PrismaKnowledgeLlmAuditWriter implements KnowledgeLlmAuditWriter {
     ) {
       throw new Error('knowledge_llm_audit_invalid');
     }
+    const operatorIntervention =
+      'operatorIntervention' in entry.metadata &&
+      entry.metadata.operatorIntervention === 'billing_evidence';
     await this.client.auditLog.create({
       data: {
         action: entry.action,
         userId: entry.actor.userId,
-        actorRole: 'knowledge_user',
+        actorRole: operatorIntervention
+          ? 'knowledge_billing_operator'
+          : 'knowledge_user',
         requestId: identifier(entry.actor.requestId, 128),
         source: entry.actor.source,
-        reasonCode: entry.action,
+        reasonCode: operatorIntervention
+          ? 'knowledge_llm_operator_reconciled'
+          : entry.action,
         targetTable: entry.targetTable,
         targetId: identifier(entry.targetId, 255),
         metadata: auditMetadata(entry),

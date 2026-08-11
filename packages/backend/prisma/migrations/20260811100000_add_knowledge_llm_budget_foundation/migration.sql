@@ -1746,6 +1746,7 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 DECLARE
+  run_actor TEXT;
   run_execution "KnowledgeLlmExecutionStatus";
   run_settlement "KnowledgeLlmSettlementStatus";
   run_failure "KnowledgeLlmFailureCode";
@@ -1756,10 +1757,10 @@ DECLARE
   expected_cost NUMERIC;
   valid_outcome_count INTEGER;
 BEGIN
-  SELECT "executionStatus", "settlementStatus", "failureCode",
+  SELECT "actorUserId", "executionStatus", "settlementStatus", "failureCode",
     "maximumCostMicros", "inputCostMicrosPerMillion",
     "outputCostMicrosPerMillion", "completedAt"
-  INTO run_execution, run_settlement, run_failure, run_maximum,
+  INTO run_actor, run_execution, run_settlement, run_failure, run_maximum,
     run_input_rate, run_output_rate, run_completed_at
   FROM "KnowledgeLlmRun"
   WHERE id = NEW."runId"
@@ -1793,6 +1794,7 @@ BEGIN
     OR run_failure NOT IN ('usage_missing', 'usage_invalid')
     OR run_completed_at IS NULL
     OR NEW.source <> 'operator_billing'
+    OR NEW."createdBy" = run_actor
     OR NEW."createdBy" = ''
     OR NEW."createdBy" <> BTRIM(NEW."createdBy")
     OR CHAR_LENGTH(NEW."createdBy") > 200

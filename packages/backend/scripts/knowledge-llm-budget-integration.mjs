@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
@@ -92,6 +93,19 @@ const reconcileKnowledgeLlmUsageUnknownBudget = (transaction, input) =>
     { ...input, completedAt: untrustedTimestampCanary },
     () => new Date(input.completedAt.getTime()),
   );
+
+async function waitForDatabaseLock(pid) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const activity = await prisma.$queryRaw`
+      SELECT wait_event_type AS "waitEventType"
+      FROM pg_stat_activity
+      WHERE pid = ${pid}
+    `;
+    if (activity[0]?.waitEventType === 'Lock') return;
+    await delay(20);
+  }
+  throw new Error('knowledge_llm_lock_wait_not_observed');
+}
 const hash = (character) => character.repeat(64);
 const knowledgeTextHash = (domain, content) =>
   createHash('sha256')
@@ -1099,28 +1113,89 @@ try {
         capturedAt: after(1_500),
       },
     });
-    await transaction.knowledgeLlmProviderOutcome.update({
-      where: { runId: 'run-settlement-actual' },
-      data: { normalizedContent: null, finalizedAt: after(1_900) },
-    });
-    await settleKnowledgeLlmBudget(transaction, {
-      runId: 'run-settlement-actual',
-      actorUserId: 'settlement-user',
-      auditActor: terminalAuditActor(
-        'settlement-user',
-        'run-settlement-actual',
-      ),
-      completedAt: after(2_000),
-      settlement: {
-        type: 'actual',
-        actualInputTokens: 80,
-        actualOutputTokens: 20,
-        actualCostMicros: 35n,
-        conversationId: settlementConversation.conversation.id,
-        assistantTurnId: settlementConversation.assistant.id,
-      },
-    });
   });
+  let signalOutcomeLocked;
+  const outcomeLocked = new Promise((resolve) => {
+    signalOutcomeLocked = resolve;
+  });
+  let releaseOutcomeLock;
+  const outcomeLockRelease = new Promise((resolve) => {
+    releaseOutcomeLock = resolve;
+  });
+  const outcomeFinalization = prisma.$transaction(
+    async (transaction) => {
+      await transaction.$queryRaw`
+        SELECT id
+        FROM "KnowledgeLlmProviderOutcome"
+        WHERE "runId" = 'run-settlement-actual'
+        FOR UPDATE
+      `;
+      signalOutcomeLocked();
+      await outcomeLockRelease;
+      await transaction.knowledgeLlmProviderOutcome.update({
+        where: { runId: 'run-settlement-actual' },
+        data: { normalizedContent: null, finalizedAt: after(1_900) },
+      });
+    },
+    { timeout: 15_000 },
+  );
+  await outcomeLocked;
+
+  let signalSettlementPid;
+  const settlementPid = new Promise((resolve) => {
+    signalSettlementPid = resolve;
+  });
+  const concurrentSettlement = prisma.$transaction(
+    async (transaction) => {
+      const [{ pid }] = await transaction.$queryRaw`
+        SELECT pg_backend_pid()::INTEGER AS pid
+      `;
+      signalSettlementPid(pid);
+      await settleKnowledgeLlmBudget(transaction, {
+        runId: 'run-settlement-actual',
+        actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor(
+          'settlement-user',
+          'run-settlement-actual',
+        ),
+        completedAt: after(2_000),
+        settlement: {
+          type: 'actual',
+          actualInputTokens: 80,
+          actualOutputTokens: 20,
+          actualCostMicros: 35n,
+          conversationId: settlementConversation.conversation.id,
+          assistantTurnId: settlementConversation.assistant.id,
+        },
+      });
+    },
+    { timeout: 15_000 },
+  );
+  let lockOrderProbeError;
+  try {
+    await waitForDatabaseLock(await settlementPid);
+    await prisma.$transaction(
+      (transaction) =>
+        transaction.$queryRaw`
+        SELECT id
+        FROM "KnowledgeLlmRun"
+        WHERE id = 'run-settlement-actual'
+        FOR UPDATE NOWAIT
+      `,
+    );
+  } catch (error) {
+    lockOrderProbeError = error;
+  } finally {
+    releaseOutcomeLock();
+  }
+  const concurrentFinalizationResults = await Promise.allSettled([
+    outcomeFinalization,
+    concurrentSettlement,
+  ]);
+  if (lockOrderProbeError) throw lockOrderProbeError;
+  for (const result of concurrentFinalizationResults) {
+    if (result.status === 'rejected') throw result.reason;
+  }
   const settled = await prisma.knowledgeLlmRun.findUniqueOrThrow({
     where: { id: 'run-settlement-actual' },
     include: { reservations: true },
@@ -1918,13 +1993,31 @@ try {
         source: 'operator_billing',
         inputTokens: 20,
         outputTokens: 0,
-        actualCostMicros: 9n,
+        actualCostMicros: 10n,
         evidenceHash: hash('d'),
         createdAt: after(4_250),
         createdBy: 'settlement-user',
       },
     }),
     /verified held usage-unknown result/,
+  );
+  await assert.rejects(
+    prisma.$transaction((transaction) =>
+      reconcileKnowledgeLlmUsageUnknownBudget(transaction, {
+        runId: 'run-settlement-usage-unknown',
+        runActorUserId: 'settlement-user',
+        operatorActor: terminalAuditActor(
+          'settlement-user',
+          'run-settlement-usage-unknown-self-reconcile',
+        ),
+        source: 'operator_billing',
+        evidenceHash: hash('d'),
+        actualInputTokens: 20,
+        actualOutputTokens: 0,
+        completedAt: after(4_275),
+      }),
+    ),
+    /usage_reconcile_conflict/,
   );
   const usageReconciliation = await prisma.$transaction((transaction) =>
     reconcileKnowledgeLlmUsageUnknownBudget(transaction, {
@@ -1958,17 +2051,22 @@ try {
   assert.equal(usageReconciled.usageEvidence?.evidenceHash, hash('d'));
   assert.equal(usageReconciled.usageEvidence?.createdBy, 'billing-operator');
   assert.equal(usageReconciled.updatedBy, 'billing-operator');
+  const operatorReconcileAudit = await prisma.auditLog.findFirstOrThrow({
+    where: {
+      action: 'knowledge_llm_reconciled',
+      targetId: 'run-settlement-usage-unknown',
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  assert.equal(operatorReconcileAudit.userId, 'billing-operator');
+  assert.equal(operatorReconcileAudit.actorRole, 'knowledge_billing_operator');
   assert.equal(
-    (
-      await prisma.auditLog.findFirstOrThrow({
-        where: {
-          action: 'knowledge_llm_reconciled',
-          targetId: 'run-settlement-usage-unknown',
-        },
-        orderBy: { createdAt: 'desc' },
-      })
-    ).userId,
-    'billing-operator',
+    operatorReconcileAudit.reasonCode,
+    'knowledge_llm_operator_reconciled',
+  );
+  assert.equal(
+    operatorReconcileAudit.metadata.operatorIntervention,
+    'billing_evidence',
   );
   assert.equal(usageReconciled.reservations[0].status, 'settled_actual');
   assert.ok(
@@ -2794,6 +2892,7 @@ try {
       usageUnknownReconciliation: true,
       usageUnknownReconciliationAuditRollback: true,
       operatorBillingAttribution: true,
+      operatorSelfSettlementBlocked: true,
       contextPersistedWithReservation: true,
       contextFrozenAtDispatch: true,
       contextExactProvenanceVerified: true,
@@ -2809,6 +2908,7 @@ try {
       reservationDeletionBlocked: true,
       lateReservationInsertBlocked: true,
       directReservationSettlementBlocked: true,
+      outcomeRunLockOrderVerified: true,
       runReservationAtomicityVerified: true,
       periodLedgerConsistencyVerified: true,
       terminalDispatchTimestampImmutable: true,

@@ -91,3 +91,48 @@ test('Knowledge LLM audit measures model bounds by Unicode code points', async (
     /knowledge_llm_audit_invalid/,
   );
 });
+
+test('Knowledge LLM operator billing reconciliation is distinctly attributable', async () => {
+  const { PrismaKnowledgeLlmAuditWriter } =
+    await import('../dist/adapters/knowledge/prismaKnowledgeLlmAuditAdapter.js');
+  let created;
+  const writer = new PrismaKnowledgeLlmAuditWriter({
+    auditLog: {
+      async create(input) {
+        created = input.data;
+        return input.data;
+      },
+    },
+  });
+
+  await writer.write({
+    action: 'knowledge_llm_reconciled',
+    actor: {
+      userId: 'synthetic-billing-operator',
+      requestId: 'synthetic-operator-request',
+      source: 'api',
+    },
+    targetTable: 'knowledge_llm_runs',
+    targetId: 'synthetic-run',
+    metadata: {
+      provider: 'stub',
+      model: 'stub-v1',
+      scope: 'personal',
+      catalogVersion: 1,
+      estimatedInputTokens: 10,
+      maxOutputTokens: 20,
+      reservedCostMicros: '10',
+      currency: 'JPY',
+      resultCode: 'reconciled',
+      policyCount: 1,
+      actualInputTokens: 8,
+      actualOutputTokens: 2,
+      actualCostMicros: '7',
+      operatorIntervention: 'billing_evidence',
+    },
+  });
+
+  assert.equal(created.actorRole, 'knowledge_billing_operator');
+  assert.equal(created.reasonCode, 'knowledge_llm_operator_reconciled');
+  assert.equal(created.metadata.operatorIntervention, 'billing_evidence');
+});

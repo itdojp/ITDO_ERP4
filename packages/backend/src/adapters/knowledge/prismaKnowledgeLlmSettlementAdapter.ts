@@ -99,6 +99,7 @@ function terminalAuditMetadata(
         actualInputTokens: number;
         actualOutputTokens: number;
         actualCostMicros: bigint;
+        operatorIntervention?: 'billing_evidence';
       }
     | {
         resultCode: 'failed' | 'result_unknown' | 'usage_unknown';
@@ -121,6 +122,9 @@ function terminalAuditMetadata(
           actualInputTokens: result.actualInputTokens,
           actualOutputTokens: result.actualOutputTokens,
           actualCostMicros: result.actualCostMicros.toString(),
+          ...('operatorIntervention' in result && result.operatorIntervention
+            ? { operatorIntervention: result.operatorIntervention }
+            : {}),
         }
       : 'failureCode' in result
         ? {
@@ -129,6 +133,23 @@ function terminalAuditMetadata(
           }
         : { resultCode: result.resultCode }),
   } as const;
+}
+
+/**
+ * Existing outcome rows are always locked before the parent run. Outcome
+ * finalization locks the outcome row before its DB trigger validates the run,
+ * so every settlement/reconciliation path must preserve the same order.
+ */
+async function lockKnowledgeLlmOutcomeBeforeRun(
+  transaction: Transaction,
+  runId: string,
+): Promise<void> {
+  await transaction.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT id
+    FROM "KnowledgeLlmProviderOutcome"
+    WHERE "runId" = ${runId}
+    FOR UPDATE
+  `);
 }
 
 async function writeTerminalAudit(
@@ -252,6 +273,7 @@ export async function settleKnowledgeLlmBudget(
   clock: KnowledgeLlmClock = () => new Date(),
 ): Promise<void> {
   const completedAt = trustedTimestamp(clock);
+  await lockKnowledgeLlmOutcomeBeforeRun(transaction, input.runId);
   const lockedRuns = await transaction.$queryRaw<Array<LockedRun>>(Prisma.sql`
     SELECT id, "actorUserId", scope, provider, model, "providerRequestHash", "catalogVersion",
       "estimatedInputTokens", "maxOutputTokens", currency,
@@ -561,6 +583,7 @@ export async function reconcileKnowledgeLlmHeldBudget(
   ) {
     throw new Error('knowledge_llm_reconcile_invalid');
   }
+  await lockKnowledgeLlmOutcomeBeforeRun(transaction, input.runId);
   const runs = await transaction.$queryRaw<Array<LockedRun>>(Prisma.sql`
     SELECT id, "actorUserId", scope, provider, model, "providerRequestHash", "catalogVersion",
       "estimatedInputTokens", "maxOutputTokens", currency,
@@ -730,6 +753,7 @@ export async function reconcileKnowledgeLlmUsageUnknownBudget(
   ) {
     throw new Error('knowledge_llm_usage_reconcile_invalid');
   }
+  await lockKnowledgeLlmOutcomeBeforeRun(transaction, input.runId);
   const runs = await transaction.$queryRaw<Array<LockedUsageUnknownRun>>(
     Prisma.sql`
       SELECT id, "actorUserId", scope, provider, model, "providerRequestHash",
@@ -744,7 +768,11 @@ export async function reconcileKnowledgeLlmUsageUnknownBudget(
     `,
   );
   const run = runs[0];
-  if (!run || run.actorUserId !== input.runActorUserId) {
+  if (
+    !run ||
+    run.actorUserId !== input.runActorUserId ||
+    input.operatorActor.userId === run.actorUserId
+  ) {
     throw new Error('knowledge_llm_usage_reconcile_conflict');
   }
   const actualCostMicros =
@@ -766,6 +794,7 @@ export async function reconcileKnowledgeLlmUsageUnknownBudget(
     run.actualOutputTokens === input.actualOutputTokens &&
     run.actualCostMicros === actualCostMicros &&
     existingEvidence?.source === input.source &&
+    existingEvidence.createdBy === input.operatorActor.userId &&
     existingEvidence.evidenceHash === input.evidenceHash &&
     existingEvidence.inputTokens === input.actualInputTokens &&
     existingEvidence.outputTokens === input.actualOutputTokens &&
@@ -883,6 +912,7 @@ export async function reconcileKnowledgeLlmUsageUnknownBudget(
       actualInputTokens: input.actualInputTokens,
       actualOutputTokens: input.actualOutputTokens,
       actualCostMicros,
+      operatorIntervention: 'billing_evidence',
     },
   });
   return { actualCostMicros };
