@@ -53,6 +53,12 @@ test('LLM foundation is additive and separates execution from settlement', () =>
     migration,
     /KnowledgeLlmProviderOutcome must capture content before finalization/,
   );
+  assert.match(migration, /erp4_knowledge_llm_content_hash/);
+  assert.match(migration, /sha256\([\s\S]*?conversation-turn:v1/);
+  assert.match(
+    migration,
+    /KnowledgeLlmRun held result requires a usage-unknown provider outcome/,
+  );
   assert.match(
     migration,
     /OLD\."inputCostMicrosPerMillion" <> NEW\."inputCostMicrosPerMillion"/,

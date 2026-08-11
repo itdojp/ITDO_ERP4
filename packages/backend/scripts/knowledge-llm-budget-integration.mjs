@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
@@ -28,6 +29,11 @@ const service = createKnowledgeLlmBudgetUseCases(
 const now = new Date();
 const after = (milliseconds) => new Date(now.getTime() + milliseconds);
 const hash = (character) => character.repeat(64);
+const conversationTurnHash = (content) =>
+  createHash('sha256')
+    .update('erp4:knowledge:conversation-turn:v1\0', 'utf8')
+    .update(content, 'utf8')
+    .digest('hex');
 
 function auditActor(userId, suffix) {
   return {
@@ -37,6 +43,10 @@ function auditActor(userId, suffix) {
     actorUserId: userId,
     authScopes: ['knowledge:write'],
   };
+}
+
+function terminalAuditActor(userId, suffix) {
+  return { userId, ...auditActor(userId, suffix) };
 }
 
 function reservation({
@@ -396,7 +406,7 @@ try {
           role: 'user',
           origin: 'user',
           content: 'Synthetic prompt',
-          contentHash: hash('2'),
+          contentHash: conversationTurnHash('Synthetic prompt'),
           createdBy: 'settlement-user',
         },
       });
@@ -407,7 +417,7 @@ try {
           role: 'assistant',
           origin: 'ai',
           content: 'Synthetic result',
-          contentHash: hash('3'),
+          contentHash: conversationTurnHash('Synthetic result'),
           createdBy: 'settlement-user',
         },
       });
@@ -419,11 +429,19 @@ try {
       await markKnowledgeLlmRunDispatched(transaction, {
         runId: 'run-settlement-actual',
         actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor(
+          'settlement-user',
+          'run-settlement-actual',
+        ),
         dispatchedAt: after(1_000),
       });
       await settleKnowledgeLlmBudget(transaction, {
         runId: 'run-settlement-actual',
         actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor(
+          'settlement-user',
+          'run-settlement-actual',
+        ),
         completedAt: after(2_000),
         settlement: {
           type: 'actual',
@@ -461,10 +479,28 @@ try {
     /capture content before finalization/,
   );
   await assert.rejects(
+    prisma.knowledgeLlmProviderOutcome.create({
+      data: {
+        runId: 'run-settlement-actual',
+        status: 'valid',
+        normalizedContent: 'Synthetic result',
+        contentHash: conversationTurnHash('Different result'),
+        inputTokens: 80,
+        outputTokens: 20,
+        capturedAt: after(1_500),
+      },
+    }),
+    /matching hash/,
+  );
+  await assert.rejects(
     prisma.$transaction(async (transaction) => {
       await markKnowledgeLlmRunDispatched(transaction, {
         runId: 'run-settlement-actual',
         actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor(
+          'settlement-user',
+          'run-settlement-actual',
+        ),
         dispatchedAt: after(1_000),
       });
       await transaction.knowledgeLlmProviderOutcome.create({
@@ -485,6 +521,10 @@ try {
       await settleKnowledgeLlmBudget(transaction, {
         runId: 'run-settlement-actual',
         actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor(
+          'settlement-user',
+          'run-settlement-actual',
+        ),
         completedAt: after(2_000),
         settlement: {
           type: 'actual',
@@ -503,6 +543,10 @@ try {
       await markKnowledgeLlmRunDispatched(transaction, {
         runId: 'run-settlement-actual',
         actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor(
+          'settlement-user',
+          'run-settlement-actual',
+        ),
         dispatchedAt: after(1_000),
       });
       await transaction.knowledgeLlmProviderOutcome.create({
@@ -523,6 +567,10 @@ try {
       await settleKnowledgeLlmBudget(transaction, {
         runId: 'run-settlement-actual',
         actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor(
+          'settlement-user',
+          'run-settlement-actual',
+        ),
         completedAt: after(2_000),
         settlement: {
           type: 'actual',
@@ -540,6 +588,10 @@ try {
     await markKnowledgeLlmRunDispatched(transaction, {
       runId: 'run-settlement-actual',
       actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor(
+        'settlement-user',
+        'run-settlement-actual',
+      ),
       dispatchedAt: after(1_000),
     });
     await transaction.knowledgeLlmProviderOutcome.create({
@@ -560,6 +612,10 @@ try {
     await settleKnowledgeLlmBudget(transaction, {
       runId: 'run-settlement-actual',
       actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor(
+        'settlement-user',
+        'run-settlement-actual',
+      ),
       completedAt: after(2_000),
       settlement: {
         type: 'actual',
@@ -602,11 +658,13 @@ try {
     await markKnowledgeLlmRunDispatched(transaction, {
       runId: 'run-settlement-held',
       actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor('settlement-user', 'run-settlement-held'),
       dispatchedAt: after(3_000),
     });
     await settleKnowledgeLlmBudget(transaction, {
       runId: 'run-settlement-held',
       actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor('settlement-user', 'run-settlement-held'),
       completedAt: after(4_000),
       settlement: {
         type: 'hold',
@@ -622,6 +680,134 @@ try {
   assert.equal(held.executionStatus, 'result_unknown');
   assert.equal(held.settlementStatus, 'held_maximum');
   assert.ok(held.reservations[0].budgetPeriod.heldMaximumMicros >= 50n);
+
+  const usageUnknownReservation = await service.reserve(
+    reservation({
+      runId: 'run-settlement-usage-unknown',
+      userId: 'settlement-user',
+      keyHash: hash('c'),
+      payloadHash: hash('d'),
+      maximumCostMicros: 40n,
+    }),
+  );
+  assert.equal(usageUnknownReservation.ok, true);
+  const usageUnknownConversation = await prisma.$transaction(
+    async (transaction) => {
+      const conversation = await transaction.knowledgeConversation.create({
+        data: {
+          id: 'llm-usage-unknown-conversation',
+          ownerUserId: 'settlement-user',
+          title: 'Synthetic usage-unknown conversation',
+          sourceType: 'manual',
+          provider: 'stub',
+          model: 'stub-v1',
+          contentHash: hash('4'),
+          createdBy: 'settlement-user',
+          updatedBy: 'settlement-user',
+        },
+      });
+      await transaction.knowledgeConversationTurn.create({
+        data: {
+          conversationId: conversation.id,
+          sequence: 1,
+          role: 'user',
+          origin: 'user',
+          content: 'Synthetic usage-unknown prompt',
+          contentHash: conversationTurnHash('Synthetic usage-unknown prompt'),
+          createdBy: 'settlement-user',
+        },
+      });
+      const assistant = await transaction.knowledgeConversationTurn.create({
+        data: {
+          conversationId: conversation.id,
+          sequence: 2,
+          role: 'assistant',
+          origin: 'ai',
+          content: 'Synthetic usage-unknown result',
+          contentHash: conversationTurnHash('Synthetic usage-unknown result'),
+          createdBy: 'settlement-user',
+        },
+      });
+      return { conversation, assistant };
+    },
+  );
+  await assert.rejects(
+    prisma.$transaction(async (transaction) => {
+      await markKnowledgeLlmRunDispatched(transaction, {
+        runId: 'run-settlement-usage-unknown',
+        actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor(
+          'settlement-user',
+          'run-settlement-usage-unknown',
+        ),
+        dispatchedAt: after(4_100),
+      });
+      await settleKnowledgeLlmBudget(transaction, {
+        runId: 'run-settlement-usage-unknown',
+        actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor(
+          'settlement-user',
+          'run-settlement-usage-unknown',
+        ),
+        completedAt: after(4_200),
+        settlement: {
+          type: 'hold',
+          executionStatus: 'result_ready',
+          failureCode: 'usage_missing',
+          conversationId: usageUnknownConversation.conversation.id,
+          assistantTurnId: usageUnknownConversation.assistant.id,
+        },
+      });
+    }),
+    /without_usage_unknown_outcome/,
+  );
+  await prisma.$transaction(async (transaction) => {
+    await markKnowledgeLlmRunDispatched(transaction, {
+      runId: 'run-settlement-usage-unknown',
+      actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor(
+        'settlement-user',
+        'run-settlement-usage-unknown',
+      ),
+      dispatchedAt: after(4_100),
+    });
+    await transaction.knowledgeLlmProviderOutcome.create({
+      data: {
+        runId: 'run-settlement-usage-unknown',
+        status: 'usage_unknown',
+        normalizedContent: 'Synthetic usage-unknown result',
+        contentHash: usageUnknownConversation.assistant.contentHash,
+        failureCode: 'usage_missing',
+        capturedAt: after(4_150),
+      },
+    });
+    await transaction.knowledgeLlmProviderOutcome.update({
+      where: { runId: 'run-settlement-usage-unknown' },
+      data: { normalizedContent: null, finalizedAt: after(4_175) },
+    });
+    await settleKnowledgeLlmBudget(transaction, {
+      runId: 'run-settlement-usage-unknown',
+      actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor(
+        'settlement-user',
+        'run-settlement-usage-unknown',
+      ),
+      completedAt: after(4_200),
+      settlement: {
+        type: 'hold',
+        executionStatus: 'result_ready',
+        failureCode: 'usage_missing',
+        conversationId: usageUnknownConversation.conversation.id,
+        assistantTurnId: usageUnknownConversation.assistant.id,
+      },
+    });
+  });
+  const usageUnknown = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: 'run-settlement-usage-unknown' },
+  });
+  assert.equal(usageUnknown.executionStatus, 'result_ready');
+  assert.equal(usageUnknown.settlementStatus, 'held_maximum');
+  assert.equal(usageUnknown.failureCode, 'usage_missing');
 
   const reconciliationReservation = await service.reserve(
     reservation({
@@ -639,6 +825,10 @@ try {
     await markKnowledgeLlmRunDispatched(transaction, {
       runId: 'run-settlement-reconcile',
       actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor(
+        'settlement-user',
+        'run-settlement-reconcile',
+      ),
       dispatchedAt: after(5_000),
     });
     await transaction.knowledgeLlmProviderOutcome.create({
@@ -646,7 +836,7 @@ try {
         runId: 'run-settlement-reconcile',
         status: 'valid',
         normalizedContent: 'Synthetic normalized result',
-        contentHash: hash('a'),
+        contentHash: conversationTurnHash('Synthetic normalized result'),
         inputTokens: 40,
         outputTokens: 10,
         capturedAt: after(6_000),
@@ -655,6 +845,10 @@ try {
     await settleKnowledgeLlmBudget(transaction, {
       runId: 'run-settlement-reconcile',
       actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor(
+        'settlement-user',
+        'run-settlement-reconcile',
+      ),
       completedAt: after(7_000),
       settlement: {
         type: 'hold',
@@ -668,6 +862,10 @@ try {
       reconcileKnowledgeLlmHeldBudget(transaction, {
         runId: 'run-settlement-reconcile',
         actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor(
+          'settlement-user',
+          'run-settlement-reconcile',
+        ),
         completedAt: after(8_000),
         actualInputTokens: 40,
         actualOutputTokens: 10,
@@ -699,7 +897,7 @@ try {
         role: 'user',
         origin: 'user',
         content: 'Synthetic prompt',
-        contentHash: hash('c'),
+        contentHash: conversationTurnHash('Synthetic prompt'),
         createdBy: 'settlement-user',
       },
     });
@@ -710,7 +908,7 @@ try {
         role: 'assistant',
         origin: 'ai',
         content: 'Synthetic normalized result',
-        contentHash: hash('a'),
+        contentHash: conversationTurnHash('Synthetic normalized result'),
         createdBy: 'settlement-user',
       },
     });
@@ -721,6 +919,10 @@ try {
     await reconcileKnowledgeLlmHeldBudget(transaction, {
       runId: 'run-settlement-reconcile',
       actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor(
+        'settlement-user',
+        'run-settlement-reconcile',
+      ),
       completedAt: after(8_000),
       actualInputTokens: 40,
       actualOutputTokens: 10,
@@ -752,6 +954,10 @@ try {
     settleKnowledgeLlmBudget(transaction, {
       runId: 'run-settlement-release',
       actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor(
+        'settlement-user',
+        'run-settlement-release',
+      ),
       completedAt: after(9_000),
       settlement: {
         type: 'release',
@@ -780,6 +986,10 @@ try {
       settleKnowledgeLlmBudget(transaction, {
         runId: 'run-invalid-provider-release',
         actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor(
+          'settlement-user',
+          'run-invalid-provider-release',
+        ),
         completedAt: after(10_000),
         settlement: { type: 'release', failureCode: 'provider_4xx' },
       }),
@@ -802,6 +1012,10 @@ try {
       settleKnowledgeLlmBudget(transaction, {
         runId: 'run-invalid-predispatch-hold',
         actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor(
+          'settlement-user',
+          'run-invalid-predispatch-hold',
+        ),
         completedAt: after(11_000),
         settlement: {
           type: 'hold',
@@ -894,6 +1108,78 @@ try {
   );
 
   await policy({
+    id: 'policy-terminal-audit-rollback',
+    subjectType: 'user',
+    subjectId: 'terminal-audit-rollback-user',
+    hard: 1000n,
+  });
+  assert.equal(
+    (
+      await service.reserve(
+        reservation({
+          runId: 'run-terminal-audit-rollback',
+          userId: 'terminal-audit-rollback-user',
+          keyHash: hash('1'),
+          payloadHash: hash('2'),
+          maximumCostMicros: 10n,
+        }),
+      )
+    ).ok,
+    true,
+  );
+  await assert.rejects(
+    prisma.$transaction((transaction) =>
+      markKnowledgeLlmRunDispatched(transaction, {
+        runId: 'run-terminal-audit-rollback',
+        actorUserId: 'terminal-audit-rollback-user',
+        auditActor: { userId: 'terminal-audit-rollback-user' },
+        dispatchedAt: after(12_000),
+      }),
+    ),
+    /knowledge_llm_audit_invalid/,
+  );
+  assert.equal(
+    (
+      await prisma.knowledgeLlmRun.findUniqueOrThrow({
+        where: { id: 'run-terminal-audit-rollback' },
+      })
+    ).executionStatus,
+    'reserved',
+  );
+  await assert.rejects(
+    prisma.$transaction(async (transaction) => {
+      await markKnowledgeLlmRunDispatched(transaction, {
+        runId: 'run-terminal-audit-rollback',
+        actorUserId: 'terminal-audit-rollback-user',
+        auditActor: terminalAuditActor(
+          'terminal-audit-rollback-user',
+          'run-terminal-audit-rollback',
+        ),
+        dispatchedAt: after(12_000),
+      });
+      await settleKnowledgeLlmBudget(transaction, {
+        runId: 'run-terminal-audit-rollback',
+        actorUserId: 'terminal-audit-rollback-user',
+        auditActor: { userId: 'terminal-audit-rollback-user' },
+        completedAt: after(13_000),
+        settlement: {
+          type: 'hold',
+          executionStatus: 'result_unknown',
+          failureCode: 'connection_outcome_unknown',
+        },
+      });
+    }),
+    /knowledge_llm_audit_invalid/,
+  );
+  const terminalAuditRollback = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: 'run-terminal-audit-rollback' },
+    include: { reservations: true },
+  });
+  assert.equal(terminalAuditRollback.executionStatus, 'reserved');
+  assert.equal(terminalAuditRollback.settlementStatus, 'reserved');
+  assert.equal(terminalAuditRollback.reservations[0].status, 'reserved');
+
+  await policy({
     id: 'policy-audit-rollback',
     subjectType: 'user',
     subjectId: 'audit-rollback-user',
@@ -932,12 +1218,28 @@ try {
   assert.ok(
     audits.some((entry) => entry.action === 'knowledge_llm_rate_blocked'),
   );
+  for (const action of [
+    'knowledge_llm_dispatched',
+    'knowledge_llm_completed',
+    'knowledge_llm_result_unknown',
+    'knowledge_llm_usage_unknown',
+    'knowledge_llm_failed',
+    'knowledge_llm_reconciled',
+  ]) {
+    assert.ok(
+      audits.some((entry) => entry.action === action),
+      action,
+    );
+  }
   const serializedAudit = JSON.stringify(audits);
   for (const canary of [
     hash('a'),
     hash('b'),
     'synthetic-org',
     'chat-key-must-not-be-reused',
+    'Synthetic result',
+    'Synthetic usage-unknown result',
+    'Synthetic normalized result',
   ]) {
     assert.equal(serializedAudit.includes(canary), false, canary);
   }
@@ -953,8 +1255,10 @@ try {
       idempotency: true,
       exactSettlement: true,
       heldMaximum: true,
+      usageUnknownOutcomeBinding: true,
       reconciliation: true,
       auditRollback: true,
+      terminalAuditRollback: true,
     }),
   );
 } finally {

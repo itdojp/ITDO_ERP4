@@ -436,6 +436,8 @@ ALTER TABLE "KnowledgeLlmRun"
       AND "dispatchedAt" IS NOT NULL
       AND "completedAt" IS NULL
       AND "assistantTurnId" IS NULL
+      AND "actualInputTokens" IS NULL
+      AND "actualOutputTokens" IS NULL
       AND "actualCostMicros" IS NULL
     )
     OR (
@@ -454,7 +456,9 @@ ALTER TABLE "KnowledgeLlmRun"
         )
         OR (
           "settlementStatus" = 'held_maximum'
-          AND "failureCode" IN ('usage_missing', 'usage_invalid', 'finalization_failed')
+          AND "failureCode" IN ('usage_missing', 'usage_invalid')
+          AND "actualInputTokens" IS NULL
+          AND "actualOutputTokens" IS NULL
           AND "actualCostMicros" IS NULL
         )
       )
@@ -465,6 +469,8 @@ ALTER TABLE "KnowledgeLlmRun"
       AND "failureCode" IS NOT NULL
       AND "completedAt" IS NOT NULL
       AND "assistantTurnId" IS NULL
+      AND "actualInputTokens" IS NULL
+      AND "actualOutputTokens" IS NULL
       AND "actualCostMicros" IS NULL
       AND (
         (
@@ -505,6 +511,8 @@ ALTER TABLE "KnowledgeLlmRun"
       AND "dispatchedAt" IS NOT NULL
       AND "completedAt" IS NOT NULL
       AND "assistantTurnId" IS NULL
+      AND "actualInputTokens" IS NULL
+      AND "actualOutputTokens" IS NULL
       AND "actualCostMicros" IS NULL
     )
   ),
@@ -697,6 +705,28 @@ BEGIN
       USING ERRCODE = '23514';
   END IF;
 
+  IF NEW."executionStatus" = 'result_ready'
+    AND NEW."settlementStatus" = 'held_maximum'
+    AND NOT EXISTS (
+      SELECT 1
+      FROM "KnowledgeLlmProviderOutcome" outcome
+      JOIN "KnowledgeConversationTurn" turn
+        ON turn.id = NEW."assistantTurnId"
+       AND turn."conversationId" = NEW."conversationId"
+      WHERE outcome."runId" = NEW.id
+        AND outcome.status = 'usage_unknown'
+        AND outcome."failureCode" = NEW."failureCode"
+        AND outcome."finalizedAt" IS NOT NULL
+        AND outcome."normalizedContent" IS NULL
+        AND outcome."contentHash" = turn."contentHash"
+        AND turn.role = 'assistant'
+        AND turn.origin = 'ai'
+    )
+  THEN
+    RAISE EXCEPTION 'KnowledgeLlmRun held result requires a usage-unknown provider outcome'
+      USING ERRCODE = '23514';
+  END IF;
+
   IF OLD."executionStatus" <> NEW."executionStatus" AND NOT (
     (OLD."executionStatus" = 'reserved' AND NEW."executionStatus" IN ('dispatched', 'failed'))
     OR (
@@ -825,6 +855,23 @@ CREATE TRIGGER "KnowledgeLlmReservation_transition_guard"
   BEFORE UPDATE ON "KnowledgeLlmReservation"
   FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_reservation_transition_guard"();
 
+CREATE FUNCTION "erp4_knowledge_llm_content_hash"(content TEXT)
+RETURNS TEXT
+LANGUAGE SQL
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+  SELECT encode(
+    sha256(
+      convert_to('erp4:knowledge:conversation-turn:v1', 'UTF8')
+      || decode('00', 'hex')
+      || convert_to(content, 'UTF8')
+    ),
+    'hex'
+  );
+$$;
+
 CREATE FUNCTION "erp4_knowledge_llm_outcome_transition_guard"()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -839,6 +886,9 @@ BEGIN
     OR OLD."capturedAt" <> NEW."capturedAt"
     OR OLD."createdAt" <> NEW."createdAt"
     OR OLD."finalizedAt" IS NOT NULL
+    OR OLD."normalizedContent" IS NULL
+    OR OLD."contentHash" IS DISTINCT FROM
+      "erp4_knowledge_llm_content_hash"(OLD."normalizedContent")
     OR NEW."finalizedAt" IS NULL
     OR NEW."normalizedContent" IS NOT NULL
   THEN
@@ -855,9 +905,14 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
   IF NEW.status IN ('valid', 'usage_unknown')
-    AND (NEW."finalizedAt" IS NOT NULL OR NEW."normalizedContent" IS NULL)
+    AND (
+      NEW."finalizedAt" IS NOT NULL
+      OR NEW."normalizedContent" IS NULL
+      OR NEW."contentHash" IS DISTINCT FROM
+        "erp4_knowledge_llm_content_hash"(NEW."normalizedContent")
+    )
   THEN
-    RAISE EXCEPTION 'KnowledgeLlmProviderOutcome must capture content before finalization'
+    RAISE EXCEPTION 'KnowledgeLlmProviderOutcome must capture content before finalization with matching hash'
       USING ERRCODE = '23514';
   END IF;
   RETURN NEW;
