@@ -5,9 +5,9 @@ import type {
   ExternalLlmTextResult,
 } from '../../application/externalLlm/externalLlmPort.js';
 import {
+  bindExternalLlmTextRequest,
   ExternalLlmProviderError,
   externalLlmConservativeInputTokens,
-  externalLlmTextRequestFingerprint,
 } from '../../application/externalLlm/externalLlmPort.js';
 
 /**
@@ -18,15 +18,27 @@ export class StubExternalLlmTextAdapter implements ExternalLlmTextPort {
   async prepare(
     request: ExternalLlmTextRequest,
   ): Promise<ExternalLlmPreparedTextRequest> {
-    if (request.provider !== 'stub') {
+    const requestSnapshot: ExternalLlmTextRequest = {
+      provider: request.provider,
+      model: request.model,
+      systemPrompt: request.systemPrompt,
+      userPrompt: request.userPrompt,
+      contextSections:
+        request.contextSections === undefined
+          ? undefined
+          : [...request.contextSections],
+      maxOutputTokens: request.maxOutputTokens,
+      temperatureBasisPoints: request.temperatureBasisPoints,
+    };
+    if (requestSnapshot.provider !== 'stub') {
       throw new ExternalLlmProviderError(
         'rejected_before_dispatch',
         'not_dispatched',
       );
     }
     if (
-      !Number.isSafeInteger(request.maxOutputTokens) ||
-      request.maxOutputTokens < 1
+      !Number.isSafeInteger(requestSnapshot.maxOutputTokens) ||
+      requestSnapshot.maxOutputTokens < 1
     ) {
       throw new ExternalLlmProviderError(
         'rejected_before_dispatch',
@@ -35,16 +47,19 @@ export class StubExternalLlmTextAdapter implements ExternalLlmTextPort {
     }
     let requestFingerprint: string;
     let inputTokens: number;
+    const model = requestSnapshot.model;
+    const maxOutputTokens = requestSnapshot.maxOutputTokens;
     try {
-      requestFingerprint = externalLlmTextRequestFingerprint(request);
-      inputTokens = externalLlmConservativeInputTokens(request);
+      requestFingerprint =
+        bindExternalLlmTextRequest(requestSnapshot).requestFingerprint;
+      inputTokens = externalLlmConservativeInputTokens(requestSnapshot);
     } catch {
       throw new ExternalLlmProviderError(
         'rejected_before_dispatch',
         'not_dispatched',
       );
     }
-    const outputTokens = Math.min(12, request.maxOutputTokens);
+    const outputTokens = Math.min(12, maxOutputTokens);
     const content = 'Synthetic external LLM result.'.slice(0, outputTokens);
     let dispatched = false;
     return {
@@ -59,7 +74,7 @@ export class StubExternalLlmTextAdapter implements ExternalLlmTextPort {
         dispatched = true;
         return {
           provider: 'stub',
-          model: request.model,
+          model,
           content,
           usageStatus: 'reported',
           usage: {

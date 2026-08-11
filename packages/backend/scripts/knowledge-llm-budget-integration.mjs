@@ -8,6 +8,7 @@ import { StubExternalLlmTextAdapter } from '../dist/adapters/externalLlm/stubTex
 import {
   markKnowledgeLlmRunDispatched as markKnowledgeLlmRunDispatchedWithClock,
   reconcileKnowledgeLlmHeldBudget as reconcileKnowledgeLlmHeldBudgetWithClock,
+  reconcileKnowledgeLlmUsageUnknownBudget as reconcileKnowledgeLlmUsageUnknownBudgetWithClock,
   settleKnowledgeLlmBudget as settleKnowledgeLlmBudgetWithClock,
 } from '../dist/adapters/knowledge/prismaKnowledgeLlmSettlementAdapter.js';
 import { createKnowledgeLlmBudgetUseCases } from '../dist/application/knowledge/knowledgeLlmBudgetUseCases.js';
@@ -81,6 +82,12 @@ const settleKnowledgeLlmBudget = (transaction, input) =>
   );
 const reconcileKnowledgeLlmHeldBudget = (transaction, input) =>
   reconcileKnowledgeLlmHeldBudgetWithClock(
+    transaction,
+    { ...input, completedAt: untrustedTimestampCanary },
+    () => new Date(input.completedAt.getTime()),
+  );
+const reconcileKnowledgeLlmUsageUnknownBudget = (transaction, input) =>
+  reconcileKnowledgeLlmUsageUnknownBudgetWithClock(
     transaction,
     { ...input, completedAt: untrustedTimestampCanary },
     () => new Date(input.completedAt.getTime()),
@@ -1851,6 +1858,223 @@ try {
   assert.equal(usageUnknown.executionStatus, 'result_ready');
   assert.equal(usageUnknown.settlementStatus, 'held_maximum');
   assert.equal(usageUnknown.failureCode, 'usage_missing');
+  await assert.rejects(
+    prisma.knowledgeLlmUsageEvidence.create({
+      data: {
+        runId: 'run-settlement-usage-unknown',
+        source: 'operator_billing',
+        inputTokens: 20,
+        outputTokens: 0,
+        actualCostMicros: 9n,
+        evidenceHash: hash('d'),
+        createdAt: after(4_250),
+        createdBy: 'settlement-user',
+      },
+    }),
+    /verified held usage-unknown result/,
+  );
+  const usageReconciliation = await prisma.$transaction((transaction) =>
+    reconcileKnowledgeLlmUsageUnknownBudget(transaction, {
+      runId: 'run-settlement-usage-unknown',
+      actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor(
+        'settlement-user',
+        'run-settlement-usage-unknown-reconcile',
+      ),
+      source: 'operator_billing',
+      evidenceHash: hash('d'),
+      actualInputTokens: 20,
+      actualOutputTokens: 0,
+      completedAt: after(4_300),
+    }),
+  );
+  assert.equal(usageReconciliation.actualCostMicros, 10n);
+  const usageReconciled = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: 'run-settlement-usage-unknown' },
+    include: {
+      usageEvidence: true,
+      reservations: { include: { budgetPeriod: true } },
+    },
+  });
+  assert.equal(usageReconciled.executionStatus, 'result_ready');
+  assert.equal(usageReconciled.settlementStatus, 'settled_actual');
+  assert.equal(usageReconciled.failureCode, null);
+  assert.equal(usageReconciled.actualInputTokens, 20);
+  assert.equal(usageReconciled.actualOutputTokens, 0);
+  assert.equal(usageReconciled.actualCostMicros, 10n);
+  assert.equal(usageReconciled.usageEvidence?.evidenceHash, hash('d'));
+  assert.equal(usageReconciled.reservations[0].status, 'settled_actual');
+  assert.ok(
+    usageReconciled.reservations[0].budgetPeriod.heldMaximumMicros >= 0n,
+  );
+  const usageReplayed = await prisma.$transaction((transaction) =>
+    reconcileKnowledgeLlmUsageUnknownBudget(transaction, {
+      runId: 'run-settlement-usage-unknown',
+      actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor(
+        'settlement-user',
+        'run-settlement-usage-unknown-replay',
+      ),
+      source: 'operator_billing',
+      evidenceHash: hash('d'),
+      actualInputTokens: 20,
+      actualOutputTokens: 0,
+      completedAt: after(4_400),
+    }),
+  );
+  assert.equal(usageReplayed.actualCostMicros, 10n);
+  await assert.rejects(
+    prisma.$transaction((transaction) =>
+      reconcileKnowledgeLlmUsageUnknownBudget(transaction, {
+        runId: 'run-settlement-usage-unknown',
+        actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor(
+          'settlement-user',
+          'run-settlement-usage-unknown-conflict',
+        ),
+        source: 'operator_billing',
+        evidenceHash: hash('e'),
+        actualInputTokens: 20,
+        actualOutputTokens: 0,
+        completedAt: after(4_500),
+      }),
+    ),
+    /usage_reconcile_conflict/,
+  );
+  await assert.rejects(
+    prisma.knowledgeLlmUsageEvidence.update({
+      where: { runId: 'run-settlement-usage-unknown' },
+      data: { evidenceHash: hash('f') },
+    }),
+    /rows are immutable/,
+  );
+  await assert.rejects(
+    prisma.knowledgeLlmUsageEvidence.delete({
+      where: { runId: 'run-settlement-usage-unknown' },
+    }),
+    /rows are immutable/,
+  );
+
+  const usageAuditReservation = await service.reserve(
+    reservation({
+      runId: 'run-usage-reconcile-audit-rollback',
+      userId: 'settlement-user',
+      keyHash: conversationTurnHash('usage-reconcile-audit-request-key'),
+      maximumCostMicros: 40n,
+    }),
+  );
+  assert.equal(usageAuditReservation.ok, true);
+  const usageAuditConversation = await prisma.$transaction(
+    async (transaction) => {
+      const conversation = await transaction.knowledgeConversation.create({
+        data: {
+          id: 'llm-usage-reconcile-audit-conversation',
+          ownerUserId: 'settlement-user',
+          title: 'Synthetic usage reconciliation audit rollback',
+          sourceType: 'manual',
+          provider: 'stub',
+          model: 'stub-v1',
+          contentHash: hash('5'),
+          createdBy: 'settlement-user',
+          updatedBy: 'settlement-user',
+        },
+      });
+      await transaction.knowledgeConversationTurn.create({
+        data: {
+          conversationId: conversation.id,
+          sequence: 1,
+          role: 'user',
+          origin: 'user',
+          content: 'Synthetic usage reconciliation audit prompt',
+          contentHash: conversationTurnHash(
+            'Synthetic usage reconciliation audit prompt',
+          ),
+          createdBy: 'settlement-user',
+        },
+      });
+      const assistant = await transaction.knowledgeConversationTurn.create({
+        data: {
+          conversationId: conversation.id,
+          sequence: 2,
+          role: 'assistant',
+          origin: 'ai',
+          content: 'Synthetic usage reconciliation audit result',
+          contentHash: conversationTurnHash(
+            'Synthetic usage reconciliation audit result',
+          ),
+          createdBy: 'settlement-user',
+        },
+      });
+      return { conversation, assistant };
+    },
+  );
+  await prisma.$transaction(async (transaction) => {
+    await markKnowledgeLlmRunDispatched(transaction, {
+      runId: 'run-usage-reconcile-audit-rollback',
+      actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor(
+        'settlement-user',
+        'usage-reconcile-audit-dispatch',
+      ),
+      dispatchedAt: after(4_600),
+    });
+    await transaction.knowledgeLlmProviderOutcome.create({
+      data: {
+        runId: 'run-usage-reconcile-audit-rollback',
+        status: 'usage_unknown',
+        normalizedContent: 'Synthetic usage reconciliation audit result',
+        contentHash: usageAuditConversation.assistant.contentHash,
+        failureCode: 'usage_missing',
+        capturedAt: after(4_650),
+      },
+    });
+    await transaction.knowledgeLlmProviderOutcome.update({
+      where: { runId: 'run-usage-reconcile-audit-rollback' },
+      data: { normalizedContent: null, finalizedAt: after(4_675) },
+    });
+    await settleKnowledgeLlmBudget(transaction, {
+      runId: 'run-usage-reconcile-audit-rollback',
+      actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor(
+        'settlement-user',
+        'usage-reconcile-audit-hold',
+      ),
+      completedAt: after(4_700),
+      settlement: {
+        type: 'hold',
+        executionStatus: 'result_ready',
+        failureCode: 'usage_missing',
+        conversationId: usageAuditConversation.conversation.id,
+        assistantTurnId: usageAuditConversation.assistant.id,
+      },
+    });
+  });
+  await assert.rejects(
+    prisma.$transaction((transaction) =>
+      reconcileKnowledgeLlmUsageUnknownBudget(transaction, {
+        runId: 'run-usage-reconcile-audit-rollback',
+        actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor(
+          'different-user',
+          'usage-reconcile-audit-invalid',
+        ),
+        source: 'operator_billing',
+        evidenceHash: hash('7'),
+        actualInputTokens: 20,
+        actualOutputTokens: 0,
+        completedAt: after(4_800),
+      }),
+    ),
+    /knowledge_llm_audit_invalid/,
+  );
+  const usageAuditRollback = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: 'run-usage-reconcile-audit-rollback' },
+    include: { reservations: true, usageEvidence: true },
+  });
+  assert.equal(usageAuditRollback.settlementStatus, 'held_maximum');
+  assert.equal(usageAuditRollback.failureCode, 'usage_missing');
+  assert.equal(usageAuditRollback.usageEvidence, null);
+  assert.equal(usageAuditRollback.reservations[0].status, 'held_maximum');
 
   const reconciliationReservation = await service.reserve(
     reservation({
@@ -2255,6 +2479,81 @@ try {
     0,
   );
 
+  const lateReservation = await service.reserve(
+    reservation({
+      runId: 'run-late-reservation-insert',
+      userId: 'settlement-user',
+      keyHash: conversationTurnHash('late-reservation-request-key'),
+      maximumCostMicros: 10n,
+    }),
+  );
+  assert.equal(lateReservation.ok, true);
+  const lateRun = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: 'run-late-reservation-insert' },
+    include: { reservations: { include: { budgetPeriod: true } } },
+  });
+  const latePeriod = await prisma.knowledgeLlmBudgetPeriod.create({
+    data: {
+      id: 'period-late-reservation-insert',
+      policyId: lateRun.reservations[0].budgetPeriod.policyId,
+      periodStartUtc: new Date(now.getTime() - 86_400_000),
+      periodEndUtc: new Date(now.getTime() + 86_400_000),
+      timezone: lateRun.reservations[0].budgetPeriod.timezone,
+      currency: lateRun.currency,
+      createdAt: new Date(now.getTime() - 1_000),
+      updatedAt: new Date(now.getTime() - 1_000),
+    },
+  });
+  await prisma.$transaction((transaction) =>
+    markKnowledgeLlmRunDispatched(transaction, {
+      runId: lateRun.id,
+      actorUserId: lateRun.actorUserId,
+      auditActor: terminalAuditActor(
+        lateRun.actorUserId,
+        'late-reservation-dispatch',
+      ),
+      dispatchedAt: after(17_000),
+    }),
+  );
+  const assertLateReservationRejected = async (id) => {
+    await assert.rejects(
+      prisma.knowledgeLlmReservation.create({
+        data: {
+          id,
+          runId: lateRun.id,
+          budgetPeriodId: latePeriod.id,
+          maximumCostMicros: lateRun.maximumCostMicros,
+          createdAt: lateRun.createdAt,
+          updatedAt: lateRun.createdAt,
+        },
+      }),
+      /must be created with its initial run and matching budget subject/,
+    );
+    const unchanged = await prisma.knowledgeLlmBudgetPeriod.findUniqueOrThrow({
+      where: { id: latePeriod.id },
+    });
+    assert.equal(unchanged.activeReservedMicros, 0n);
+    assert.equal(unchanged.acceptedRequestCount, 0);
+  };
+  await assertLateReservationRejected('late-reservation-dispatched');
+  await prisma.$transaction((transaction) =>
+    settleKnowledgeLlmBudget(transaction, {
+      runId: lateRun.id,
+      actorUserId: lateRun.actorUserId,
+      auditActor: terminalAuditActor(
+        lateRun.actorUserId,
+        'late-reservation-terminal',
+      ),
+      completedAt: after(18_000),
+      settlement: {
+        type: 'hold',
+        executionStatus: 'failed',
+        failureCode: 'provider_4xx',
+      },
+    }),
+  );
+  await assertLateReservationRejected('late-reservation-terminal');
+
   for (const status of ['reserved', 'held_maximum', 'settled_actual']) {
     const immutableReservation =
       await prisma.knowledgeLlmReservation.findFirstOrThrow({
@@ -2355,6 +2654,8 @@ try {
       exactSettlement: true,
       heldMaximum: true,
       usageUnknownOutcomeBinding: true,
+      usageUnknownReconciliation: true,
+      usageUnknownReconciliationAuditRollback: true,
       contextFrozenAtDispatch: true,
       contextExactProvenanceVerified: true,
       contextAggregateBoundsVerified: true,
@@ -2367,6 +2668,7 @@ try {
       reservationAccountingTimestampVerified: true,
       settledReservationImmutable: true,
       reservationDeletionBlocked: true,
+      lateReservationInsertBlocked: true,
       terminalDispatchTimestampImmutable: true,
       outcomeUnknownRequiresReconcileableState: true,
       reconciliation: true,

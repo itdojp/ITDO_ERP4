@@ -77,6 +77,16 @@ type LockedRun = {
   maximumCostMicros: bigint;
 };
 
+type LockedUsageUnknownRun = LockedRun & {
+  failureCode: 'usage_missing' | 'usage_invalid' | null;
+  conversationId: string | null;
+  assistantTurnId: string | null;
+  completedAt: Date | null;
+  actualInputTokens: number | null;
+  actualOutputTokens: number | null;
+  actualCostMicros: bigint | null;
+};
+
 function terminalAuditMetadata(
   run: LockedRun,
   policyCount: number,
@@ -176,7 +186,8 @@ export async function markKnowledgeLlmRunDispatched(
   const policyCount = await transaction.knowledgeLlmReservation.count({
     where: { runId: input.runId },
   });
-  if (policyCount < 1 || policyCount > 2) {
+  const expectedPolicyCount = run.scope === 'personal' ? 1 : 2;
+  if (policyCount !== expectedPolicyCount) {
     throw new Error('knowledge_llm_dispatch_conflict');
   }
   const contextSources = await transaction.$queryRaw<
@@ -250,7 +261,8 @@ export async function settleKnowledgeLlmBudget(
     where: { runId: input.runId },
     orderBy: { budgetPeriodId: 'asc' },
   });
-  if (reservations.length < 1 || reservations.length > 2) {
+  const expectedPolicyCount = run.scope === 'personal' ? 1 : 2;
+  if (reservations.length !== expectedPolicyCount) {
     throw new Error('knowledge_llm_settlement_conflict');
   }
   await transaction.$queryRaw<Array<{ id: string }>>(Prisma.sql`
@@ -636,7 +648,8 @@ export async function reconcileKnowledgeLlmHeldBudget(
     where: { runId: input.runId, status: 'held_maximum' },
     orderBy: { budgetPeriodId: 'asc' },
   });
-  if (reservations.length < 1 || reservations.length > 2) {
+  const expectedPolicyCount = run.scope === 'personal' ? 1 : 2;
+  if (reservations.length !== expectedPolicyCount) {
     throw new Error('knowledge_llm_reconcile_conflict');
   }
   await transaction.$queryRaw<Array<{ id: string }>>(Prisma.sql`
@@ -705,4 +718,201 @@ export async function reconcileKnowledgeLlmHeldBudget(
       actualCostMicros: input.actualCostMicros,
     },
   });
+}
+
+/**
+ * Settles a usage-unknown result from immutable, independently verified
+ * billing evidence. This never redispatches the provider request and is
+ * intentionally not exposed as an end-user API by this foundation PR.
+ */
+export async function reconcileKnowledgeLlmUsageUnknownBudget(
+  transaction: Transaction,
+  input: {
+    runId: string;
+    actorUserId: string;
+    auditActor: KnowledgeAuditActor;
+    source: 'operator_billing';
+    evidenceHash: string;
+    actualInputTokens: number;
+    actualOutputTokens: number;
+  },
+  clock: KnowledgeLlmClock = () => new Date(),
+): Promise<{ actualCostMicros: bigint }> {
+  const completedAt = trustedTimestamp(clock);
+  if (
+    input.source !== 'operator_billing' ||
+    !/^[0-9a-f]{64}$/.test(input.evidenceHash) ||
+    !Number.isSafeInteger(input.actualInputTokens) ||
+    input.actualInputTokens < 0 ||
+    !Number.isSafeInteger(input.actualOutputTokens) ||
+    input.actualOutputTokens < 0
+  ) {
+    throw new Error('knowledge_llm_usage_reconcile_invalid');
+  }
+  const runs = await transaction.$queryRaw<Array<LockedUsageUnknownRun>>(
+    Prisma.sql`
+      SELECT id, "actorUserId", scope, provider, model, "providerRequestHash",
+        "catalogVersion", "estimatedInputTokens", "maxOutputTokens", currency,
+        "executionStatus", "settlementStatus", "inputCostMicrosPerMillion",
+        "outputCostMicrosPerMillion", "maximumCostMicros", "failureCode",
+        "conversationId", "assistantTurnId", "completedAt",
+        "actualInputTokens", "actualOutputTokens", "actualCostMicros"
+      FROM "KnowledgeLlmRun"
+      WHERE id = ${input.runId}
+      FOR UPDATE
+    `,
+  );
+  const run = runs[0];
+  if (!run || run.actorUserId !== input.actorUserId) {
+    throw new Error('knowledge_llm_usage_reconcile_conflict');
+  }
+  const actualCostMicros =
+    ceilCostMicros(input.actualInputTokens, run.inputCostMicrosPerMillion) +
+    ceilCostMicros(input.actualOutputTokens, run.outputCostMicrosPerMillion);
+  if (actualCostMicros > run.maximumCostMicros) {
+    throw new Error('knowledge_llm_usage_reconcile_conflict');
+  }
+
+  const existingEvidence =
+    await transaction.knowledgeLlmUsageEvidence.findUnique({
+      where: { runId: input.runId },
+    });
+  if (
+    run.executionStatus === 'result_ready' &&
+    run.settlementStatus === 'settled_actual' &&
+    run.failureCode === null &&
+    run.actualInputTokens === input.actualInputTokens &&
+    run.actualOutputTokens === input.actualOutputTokens &&
+    run.actualCostMicros === actualCostMicros &&
+    existingEvidence?.source === input.source &&
+    existingEvidence.evidenceHash === input.evidenceHash &&
+    existingEvidence.inputTokens === input.actualInputTokens &&
+    existingEvidence.outputTokens === input.actualOutputTokens &&
+    existingEvidence.actualCostMicros === actualCostMicros
+  ) {
+    return { actualCostMicros };
+  }
+  if (
+    existingEvidence ||
+    run.executionStatus !== 'result_ready' ||
+    run.settlementStatus !== 'held_maximum' ||
+    (run.failureCode !== 'usage_missing' &&
+      run.failureCode !== 'usage_invalid') ||
+    !run.conversationId ||
+    !run.assistantTurnId ||
+    !run.completedAt ||
+    completedAt < run.completedAt
+  ) {
+    throw new Error('knowledge_llm_usage_reconcile_conflict');
+  }
+
+  const outcomes = await transaction.$queryRaw<Array<{ contentHash: string }>>(
+    Prisma.sql`
+      SELECT outcome."contentHash"
+      FROM "KnowledgeLlmProviderOutcome" outcome
+      JOIN "KnowledgeConversationTurn" turn
+        ON turn.id = ${run.assistantTurnId}
+       AND turn."conversationId" = ${run.conversationId}
+      WHERE outcome."runId" = ${input.runId}
+        AND outcome.status = 'usage_unknown'
+        AND outcome."failureCode" = ${run.failureCode}::"KnowledgeLlmFailureCode"
+        AND outcome."finalizedAt" IS NOT NULL
+        AND outcome."normalizedContent" IS NULL
+        AND outcome."contentHash" = turn."contentHash"
+        AND outcome."contentHash" =
+          "erp4_knowledge_llm_content_hash"(turn.content)
+        AND turn.role = 'assistant'
+        AND turn.origin = 'ai'
+      FOR UPDATE OF outcome, turn
+    `,
+  );
+  if (outcomes.length !== 1) {
+    throw new Error('knowledge_llm_usage_reconcile_without_outcome');
+  }
+
+  const reservations = await transaction.knowledgeLlmReservation.findMany({
+    where: { runId: input.runId, status: 'held_maximum' },
+    orderBy: { budgetPeriodId: 'asc' },
+  });
+  const expectedPolicyCount = run.scope === 'personal' ? 1 : 2;
+  if (reservations.length !== expectedPolicyCount) {
+    throw new Error('knowledge_llm_usage_reconcile_conflict');
+  }
+  await transaction.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT id
+    FROM "KnowledgeLlmReservation"
+    WHERE id IN (${Prisma.join(reservations.map((entry) => entry.id))})
+    ORDER BY "budgetPeriodId", id
+    FOR UPDATE
+  `);
+  const periodIds = reservations
+    .map((entry) => entry.budgetPeriodId)
+    .sort((left, right) => left.localeCompare(right));
+  await transaction.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT id
+    FROM "KnowledgeLlmBudgetPeriod"
+    WHERE id IN (${Prisma.join(periodIds)})
+    ORDER BY id
+    FOR UPDATE
+  `);
+
+  await transaction.knowledgeLlmUsageEvidence.create({
+    data: {
+      runId: input.runId,
+      source: input.source,
+      inputTokens: input.actualInputTokens,
+      outputTokens: input.actualOutputTokens,
+      actualCostMicros,
+      evidenceHash: input.evidenceHash,
+      createdAt: completedAt,
+      createdBy: input.actorUserId,
+    },
+  });
+  for (const reservation of reservations) {
+    await transaction.knowledgeLlmBudgetPeriod.update({
+      where: { id: reservation.budgetPeriodId },
+      data: {
+        heldMaximumMicros: { decrement: reservation.maximumCostMicros },
+        settledActualMicros: { increment: actualCostMicros },
+        releasedMicros: {
+          increment: reservation.maximumCostMicros - actualCostMicros,
+        },
+        version: { increment: 1 },
+      },
+    });
+    await transaction.knowledgeLlmReservation.update({
+      where: { id: reservation.id },
+      data: {
+        status: 'settled_actual',
+        actualCostMicros,
+        settledAt: completedAt,
+      },
+    });
+  }
+  await transaction.knowledgeLlmRun.update({
+    where: { id: input.runId },
+    data: {
+      settlementStatus: 'settled_actual',
+      failureCode: null,
+      actualInputTokens: input.actualInputTokens,
+      actualOutputTokens: input.actualOutputTokens,
+      actualCostMicros,
+      completedAt,
+      updatedAt: completedAt,
+      updatedBy: input.actorUserId,
+    },
+  });
+  await writeTerminalAudit(transaction, {
+    run,
+    auditActor: input.auditActor,
+    action: 'knowledge_llm_reconciled',
+    policyCount: reservations.length,
+    result: {
+      resultCode: 'reconciled',
+      actualInputTokens: input.actualInputTokens,
+      actualOutputTokens: input.actualOutputTokens,
+      actualCostMicros,
+    },
+  });
+  return { actualCostMicros };
 }

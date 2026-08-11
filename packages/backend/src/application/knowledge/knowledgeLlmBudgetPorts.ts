@@ -41,6 +41,7 @@ export type KnowledgeLlmReservationCommand = Omit<
   | 'estimatedInputTokens'
   | 'requestPayloadHash'
   | 'providerRequestHash'
+  | 'selectedContextFingerprint'
   | 'inputCostMicrosPerMillion'
   | 'outputCostMicrosPerMillion'
   | 'maximumCostMicros'

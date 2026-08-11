@@ -433,16 +433,6 @@ async function reserveOnce(
       },
     },
   });
-  for (const { period } of periods) {
-    await transaction.knowledgeLlmBudgetPeriod.update({
-      where: { id: period.id },
-      data: {
-        activeReservedMicros: { increment: input.maximumCostMicros },
-        acceptedRequestCount: { increment: 1 },
-        version: { increment: 1 },
-      },
-    });
-  }
   await audit.write({
     action: 'knowledge_llm_budget_reserved',
     actor: auditActor,

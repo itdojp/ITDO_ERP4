@@ -20,6 +20,9 @@ CREATE TYPE "KnowledgeLlmContextSourceType" AS ENUM ('snapshot', 'annotation_rev
 CREATE TYPE "KnowledgeLlmOutcomeStatus" AS ENUM ('valid', 'usage_unknown', 'invalid');
 
 -- CreateEnum
+CREATE TYPE "KnowledgeLlmUsageEvidenceSource" AS ENUM ('operator_billing');
+
+-- CreateEnum
 CREATE TYPE "KnowledgeLlmFailureCode" AS ENUM ('disabled', 'budget_hard_limit', 'rate_limit', 'rejected_before_dispatch', 'provider_4xx', 'provider_5xx', 'malformed_response', 'response_oversize', 'empty_result', 'timeout_outcome_unknown', 'connection_outcome_unknown', 'usage_missing', 'usage_invalid', 'finalization_failed');
 
 -- CreateTable
@@ -167,6 +170,21 @@ CREATE TABLE "KnowledgeLlmProviderOutcome" (
     CONSTRAINT "KnowledgeLlmProviderOutcome_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "KnowledgeLlmUsageEvidence" (
+    "id" TEXT NOT NULL,
+    "runId" TEXT NOT NULL,
+    "source" "KnowledgeLlmUsageEvidenceSource" NOT NULL,
+    "inputTokens" INTEGER NOT NULL,
+    "outputTokens" INTEGER NOT NULL,
+    "actualCostMicros" BIGINT NOT NULL,
+    "evidenceHash" TEXT NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdBy" TEXT NOT NULL,
+
+    CONSTRAINT "KnowledgeLlmUsageEvidence_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE INDEX "KnowledgeLlmBudgetPolicy_subjectType_subjectId_active_versi_idx" ON "KnowledgeLlmBudgetPolicy"("subjectType", "subjectId", "active", "version");
 
@@ -251,6 +269,12 @@ CREATE UNIQUE INDEX "KnowledgeLlmProviderOutcome_runId_key" ON "KnowledgeLlmProv
 -- CreateIndex
 CREATE INDEX "KnowledgeLlmProviderOutcome_status_finalizedAt_capturedAt_i_idx" ON "KnowledgeLlmProviderOutcome"("status", "finalizedAt", "capturedAt", "id");
 
+-- CreateIndex
+CREATE UNIQUE INDEX "KnowledgeLlmUsageEvidence_runId_key" ON "KnowledgeLlmUsageEvidence"("runId");
+
+-- CreateIndex
+CREATE INDEX "KnowledgeLlmUsageEvidence_source_createdAt_id_idx" ON "KnowledgeLlmUsageEvidence"("source", "createdAt", "id");
+
 -- AddForeignKey
 ALTER TABLE "KnowledgeLlmBudgetPeriod" ADD CONSTRAINT "KnowledgeLlmBudgetPeriod_policyId_fkey" FOREIGN KEY ("policyId") REFERENCES "KnowledgeLlmBudgetPolicy"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;
 
@@ -289,6 +313,9 @@ ALTER TABLE "KnowledgeLlmContextSource" ADD CONSTRAINT "KnowledgeLlmContextSourc
 
 -- AddForeignKey
 ALTER TABLE "KnowledgeLlmProviderOutcome" ADD CONSTRAINT "KnowledgeLlmProviderOutcome_runId_fkey" FOREIGN KEY ("runId") REFERENCES "KnowledgeLlmRun"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;
+
+-- AddForeignKey
+ALTER TABLE "KnowledgeLlmUsageEvidence" ADD CONSTRAINT "KnowledgeLlmUsageEvidence_runId_fkey" FOREIGN KEY ("runId") REFERENCES "KnowledgeLlmRun"("id") ON DELETE RESTRICT ON UPDATE RESTRICT;
 
 
 -- Application-independent integrity for budget accounting and immutable
@@ -641,6 +668,15 @@ ALTER TABLE "KnowledgeLlmProviderOutcome"
   ADD CONSTRAINT "KnowledgeLlmProviderOutcome_timestamp_check" CHECK (
     "capturedAt" >= "createdAt"
     AND ("finalizedAt" IS NULL OR "finalizedAt" >= "capturedAt")
+  );
+
+ALTER TABLE "KnowledgeLlmUsageEvidence"
+  ADD CONSTRAINT "KnowledgeLlmUsageEvidence_shape_check" CHECK (
+    "inputTokens" >= 0
+    AND "outputTokens" >= 0
+    AND "actualCostMicros" >= 0
+    AND "evidenceHash" ~ '^[0-9a-f]{64}$'
+    AND LENGTH(BTRIM("createdBy")) BETWEEN 1 AND 200
   );
 
 CREATE FUNCTION "erp4_knowledge_llm_immutable_row"()
@@ -1047,27 +1083,51 @@ BEGIN
 
   IF NEW."executionStatus" = 'result_ready'
     AND NEW."settlementStatus" = 'settled_actual'
-    AND NOT EXISTS (
-      SELECT 1
-      FROM "KnowledgeLlmProviderOutcome" outcome
-      JOIN "KnowledgeConversationTurn" turn
-        ON turn.id = NEW."assistantTurnId"
-       AND turn."conversationId" = NEW."conversationId"
-      WHERE outcome."runId" = NEW.id
-        AND outcome.status = 'valid'
-        AND outcome."finalizedAt" IS NOT NULL
-        AND outcome."normalizedContent" IS NULL
-        AND outcome."inputTokens" = NEW."actualInputTokens"
-        AND outcome."outputTokens" = NEW."actualOutputTokens"
-        AND outcome."contentHash" = turn."contentHash"
-        AND outcome."contentHash" =
-          "erp4_knowledge_llm_content_hash"(turn.content)
-        AND turn.role = 'assistant'
-        AND turn.origin = 'ai'
-        AND NEW."completedAt" >= outcome."finalizedAt"
+    AND NOT (
+      EXISTS (
+        SELECT 1
+        FROM "KnowledgeLlmProviderOutcome" outcome
+        JOIN "KnowledgeConversationTurn" turn
+          ON turn.id = NEW."assistantTurnId"
+         AND turn."conversationId" = NEW."conversationId"
+        WHERE outcome."runId" = NEW.id
+          AND outcome.status = 'valid'
+          AND outcome."finalizedAt" IS NOT NULL
+          AND outcome."normalizedContent" IS NULL
+          AND outcome."inputTokens" = NEW."actualInputTokens"
+          AND outcome."outputTokens" = NEW."actualOutputTokens"
+          AND outcome."contentHash" = turn."contentHash"
+          AND outcome."contentHash" =
+            "erp4_knowledge_llm_content_hash"(turn.content)
+          AND turn.role = 'assistant'
+          AND turn.origin = 'ai'
+          AND NEW."completedAt" >= outcome."finalizedAt"
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM "KnowledgeLlmUsageEvidence" evidence
+        JOIN "KnowledgeLlmProviderOutcome" outcome
+          ON outcome."runId" = evidence."runId"
+        JOIN "KnowledgeConversationTurn" turn
+          ON turn.id = NEW."assistantTurnId"
+         AND turn."conversationId" = NEW."conversationId"
+        WHERE evidence."runId" = NEW.id
+          AND evidence."inputTokens" = NEW."actualInputTokens"
+          AND evidence."outputTokens" = NEW."actualOutputTokens"
+          AND evidence."actualCostMicros" = NEW."actualCostMicros"
+          AND evidence."createdAt" <= NEW."completedAt"
+          AND outcome.status = 'usage_unknown'
+          AND outcome."finalizedAt" IS NOT NULL
+          AND outcome."normalizedContent" IS NULL
+          AND outcome."contentHash" = turn."contentHash"
+          AND outcome."contentHash" =
+            "erp4_knowledge_llm_content_hash"(turn.content)
+          AND turn.role = 'assistant'
+          AND turn.origin = 'ai'
+      )
     )
   THEN
-    RAISE EXCEPTION 'KnowledgeLlmRun settlement requires a valid provider outcome'
+    RAISE EXCEPTION 'KnowledgeLlmRun settlement requires a valid provider outcome or usage evidence'
       USING ERRCODE = '23514';
   END IF;
 
@@ -1165,36 +1225,61 @@ BEGIN
       USING ERRCODE = '23514';
   END IF;
   IF OLD."completedAt" IS NOT NULL AND NOT (
-    OLD."executionStatus" = 'result_unknown'
-    AND OLD."settlementStatus" = 'held_maximum'
-    AND NEW."executionStatus" = 'result_ready'
-    AND NEW."settlementStatus" = 'settled_actual'
-    AND OLD."failureCode" IN ('finalization_failed', 'timeout_outcome_unknown', 'connection_outcome_unknown')
-    AND NEW."failureCode" IS NULL
-    AND NEW."conversationId" IS NOT NULL
-    AND NEW."assistantTurnId" IS NOT NULL
-    AND NEW."actualInputTokens" IS NOT NULL
-    AND NEW."actualOutputTokens" IS NOT NULL
-    AND NEW."actualCostMicros" IS NOT NULL
-    AND NEW."completedAt" >= OLD."completedAt"
-    AND EXISTS (
-      SELECT 1
-      FROM "KnowledgeLlmProviderOutcome" outcome
-      JOIN "KnowledgeConversationTurn" turn
-        ON turn.id = NEW."assistantTurnId"
-       AND turn."conversationId" = NEW."conversationId"
-      WHERE outcome."runId" = OLD.id
-        AND outcome.status = 'valid'
-        AND outcome."finalizedAt" IS NOT NULL
-        AND outcome."normalizedContent" IS NULL
-        AND outcome."inputTokens" = NEW."actualInputTokens"
-        AND outcome."outputTokens" = NEW."actualOutputTokens"
-        AND outcome."contentHash" = turn."contentHash"
-        AND outcome."contentHash" =
-          "erp4_knowledge_llm_content_hash"(turn.content)
-        AND turn.role = 'assistant'
-        AND turn.origin = 'ai'
-        AND NEW."completedAt" >= outcome."finalizedAt"
+    (
+      OLD."executionStatus" = 'result_unknown'
+      AND OLD."settlementStatus" = 'held_maximum'
+      AND NEW."executionStatus" = 'result_ready'
+      AND NEW."settlementStatus" = 'settled_actual'
+      AND OLD."failureCode" IN ('finalization_failed', 'timeout_outcome_unknown', 'connection_outcome_unknown')
+      AND NEW."failureCode" IS NULL
+      AND NEW."conversationId" IS NOT NULL
+      AND NEW."assistantTurnId" IS NOT NULL
+      AND NEW."actualInputTokens" IS NOT NULL
+      AND NEW."actualOutputTokens" IS NOT NULL
+      AND NEW."actualCostMicros" IS NOT NULL
+      AND NEW."completedAt" >= OLD."completedAt"
+      AND EXISTS (
+        SELECT 1
+        FROM "KnowledgeLlmProviderOutcome" outcome
+        JOIN "KnowledgeConversationTurn" turn
+          ON turn.id = NEW."assistantTurnId"
+         AND turn."conversationId" = NEW."conversationId"
+        WHERE outcome."runId" = OLD.id
+          AND outcome.status = 'valid'
+          AND outcome."finalizedAt" IS NOT NULL
+          AND outcome."normalizedContent" IS NULL
+          AND outcome."inputTokens" = NEW."actualInputTokens"
+          AND outcome."outputTokens" = NEW."actualOutputTokens"
+          AND outcome."contentHash" = turn."contentHash"
+          AND outcome."contentHash" =
+            "erp4_knowledge_llm_content_hash"(turn.content)
+          AND turn.role = 'assistant'
+          AND turn.origin = 'ai'
+          AND NEW."completedAt" >= outcome."finalizedAt"
+      )
+    )
+    OR (
+      OLD."executionStatus" = 'result_ready'
+      AND OLD."settlementStatus" = 'held_maximum'
+      AND OLD."failureCode" IN ('usage_missing', 'usage_invalid')
+      AND NEW."executionStatus" = 'result_ready'
+      AND NEW."settlementStatus" = 'settled_actual'
+      AND NEW."failureCode" IS NULL
+      AND NEW."conversationId" = OLD."conversationId"
+      AND NEW."assistantTurnId" = OLD."assistantTurnId"
+      AND NEW."actualInputTokens" IS NOT NULL
+      AND NEW."actualOutputTokens" IS NOT NULL
+      AND NEW."actualCostMicros" IS NOT NULL
+      AND NEW."completedAt" >= OLD."completedAt"
+      AND EXISTS (
+        SELECT 1
+        FROM "KnowledgeLlmUsageEvidence" evidence
+        WHERE evidence."runId" = OLD.id
+          AND evidence."inputTokens" = NEW."actualInputTokens"
+          AND evidence."outputTokens" = NEW."actualOutputTokens"
+          AND evidence."actualCostMicros" = NEW."actualCostMicros"
+          AND evidence."createdAt" <= NEW."completedAt"
+      )
     )
   ) THEN
     IF OLD."failureCode" IS DISTINCT FROM NEW."failureCode"
@@ -1221,7 +1306,100 @@ CREATE FUNCTION "erp4_knowledge_llm_reservation_transition_guard"()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
+DECLARE
+  run_execution "KnowledgeLlmExecutionStatus";
+  run_settlement "KnowledgeLlmSettlementStatus";
+  run_scope "KnowledgeLlmRunScope";
+  run_actor TEXT;
+  run_organization TEXT;
+  run_currency TEXT;
+  run_maximum BIGINT;
+  run_created_at TIMESTAMP(3);
+  run_dispatched_at TIMESTAMP(3);
+  period_start TIMESTAMP(3);
+  period_end TIMESTAMP(3);
+  period_currency TEXT;
+  policy_subject_type "KnowledgeLlmBudgetSubjectType";
+  policy_subject_id TEXT;
+  policy_active BOOLEAN;
+  duplicate_subject_count INTEGER;
 BEGIN
+  IF TG_OP = 'INSERT' THEN
+    SELECT "executionStatus", "settlementStatus", scope, "actorUserId",
+      "organizationId", currency, "maximumCostMicros", "createdAt",
+      "dispatchedAt"
+    INTO run_execution, run_settlement, run_scope, run_actor,
+      run_organization, run_currency, run_maximum, run_created_at,
+      run_dispatched_at
+    FROM "KnowledgeLlmRun"
+    WHERE id = NEW."runId"
+    FOR UPDATE;
+
+    SELECT period."periodStartUtc", period."periodEndUtc", period.currency,
+      policy."subjectType", policy."subjectId", policy.active
+    INTO period_start, period_end, period_currency, policy_subject_type,
+      policy_subject_id, policy_active
+    FROM "KnowledgeLlmBudgetPeriod" period
+    JOIN "KnowledgeLlmBudgetPolicy" policy ON policy.id = period."policyId"
+    WHERE period.id = NEW."budgetPeriodId"
+    FOR UPDATE OF period, policy;
+
+    IF run_execution IS NULL
+      OR period_start IS NULL
+      OR run_execution <> 'reserved'
+      OR run_settlement <> 'reserved'
+      OR run_dispatched_at IS NOT NULL
+      OR NEW.status <> 'reserved'
+      OR NEW."actualCostMicros" IS NOT NULL
+      OR NEW."settledAt" IS NOT NULL
+      OR NEW."maximumCostMicros" <> run_maximum
+      OR NEW."createdAt" <> run_created_at
+      OR NEW."updatedAt" <> NEW."createdAt"
+      OR NEW."createdAt" < period_start
+      OR NEW."createdAt" >= period_end
+      OR period_currency <> run_currency
+      OR NOT policy_active
+      OR NOT (
+        (
+          policy_subject_type = 'user'
+          AND policy_subject_id = run_actor
+        )
+        OR (
+          run_scope = 'organization'
+          AND policy_subject_type = 'organization'
+          AND policy_subject_id = run_organization
+        )
+      )
+    THEN
+      RAISE EXCEPTION 'KnowledgeLlmReservation must be created with its initial run and matching budget subject'
+        USING ERRCODE = '23514';
+    END IF;
+
+    SELECT COUNT(*)::INTEGER
+    INTO duplicate_subject_count
+    FROM "KnowledgeLlmReservation" reservation
+    JOIN "KnowledgeLlmBudgetPeriod" existing_period
+      ON existing_period.id = reservation."budgetPeriodId"
+    JOIN "KnowledgeLlmBudgetPolicy" existing_policy
+      ON existing_policy.id = existing_period."policyId"
+    WHERE reservation."runId" = NEW."runId"
+      AND existing_policy."subjectType" = policy_subject_type;
+
+    IF duplicate_subject_count <> 0 THEN
+      RAISE EXCEPTION 'KnowledgeLlmReservation budget subject already reserved'
+        USING ERRCODE = '23514';
+    END IF;
+
+    UPDATE "KnowledgeLlmBudgetPeriod"
+    SET "activeReservedMicros" = "activeReservedMicros" + NEW."maximumCostMicros",
+      "acceptedRequestCount" = "acceptedRequestCount" + 1,
+      version = version + 1,
+      "updatedAt" = GREATEST("updatedAt", NEW."updatedAt")
+    WHERE id = NEW."budgetPeriodId";
+
+    RETURN NEW;
+  END IF;
+
   IF TG_OP = 'DELETE' THEN
     RAISE EXCEPTION 'KnowledgeLlmReservation cannot be deleted'
       USING ERRCODE = '23514';
@@ -1277,7 +1455,7 @@ END;
 $$;
 
 CREATE TRIGGER "KnowledgeLlmReservation_transition_guard"
-  BEFORE UPDATE OR DELETE ON "KnowledgeLlmReservation"
+  BEFORE INSERT OR UPDATE OR DELETE ON "KnowledgeLlmReservation"
   FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_reservation_transition_guard"();
 
 CREATE FUNCTION "erp4_knowledge_llm_content_hash"(content TEXT)
@@ -1296,6 +1474,80 @@ AS $$
     'hex'
   );
 $$;
+
+CREATE FUNCTION "erp4_knowledge_llm_usage_evidence_insert_guard"()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  run_actor TEXT;
+  run_execution "KnowledgeLlmExecutionStatus";
+  run_settlement "KnowledgeLlmSettlementStatus";
+  run_failure "KnowledgeLlmFailureCode";
+  run_maximum BIGINT;
+  run_input_rate BIGINT;
+  run_output_rate BIGINT;
+  run_completed_at TIMESTAMP(3);
+  expected_cost NUMERIC;
+  valid_outcome_count INTEGER;
+BEGIN
+  SELECT "actorUserId", "executionStatus", "settlementStatus", "failureCode",
+    "maximumCostMicros", "inputCostMicrosPerMillion",
+    "outputCostMicrosPerMillion", "completedAt"
+  INTO run_actor, run_execution, run_settlement, run_failure, run_maximum,
+    run_input_rate, run_output_rate, run_completed_at
+  FROM "KnowledgeLlmRun"
+  WHERE id = NEW."runId"
+  FOR UPDATE;
+
+  expected_cost :=
+    CEIL(NEW."inputTokens"::NUMERIC * run_input_rate::NUMERIC / 1000000)
+    + CEIL(NEW."outputTokens"::NUMERIC * run_output_rate::NUMERIC / 1000000);
+
+  SELECT COUNT(*)::INTEGER
+  INTO valid_outcome_count
+  FROM "KnowledgeLlmProviderOutcome" outcome
+  JOIN "KnowledgeLlmRun" run ON run.id = outcome."runId"
+  JOIN "KnowledgeConversationTurn" turn
+    ON turn.id = run."assistantTurnId"
+   AND turn."conversationId" = run."conversationId"
+  WHERE outcome."runId" = NEW."runId"
+    AND outcome.status = 'usage_unknown'
+    AND outcome."failureCode" = run_failure
+    AND outcome."finalizedAt" IS NOT NULL
+    AND outcome."normalizedContent" IS NULL
+    AND outcome."contentHash" = turn."contentHash"
+    AND outcome."contentHash" =
+      "erp4_knowledge_llm_content_hash"(turn.content)
+    AND turn.role = 'assistant'
+    AND turn.origin = 'ai';
+
+  IF run_execution IS NULL
+    OR run_execution <> 'result_ready'
+    OR run_settlement <> 'held_maximum'
+    OR run_failure NOT IN ('usage_missing', 'usage_invalid')
+    OR run_completed_at IS NULL
+    OR NEW.source <> 'operator_billing'
+    OR NEW."createdBy" <> run_actor
+    OR NEW."createdAt" < run_completed_at
+    OR NEW."actualCostMicros"::NUMERIC <> expected_cost
+    OR NEW."actualCostMicros" > run_maximum
+    OR valid_outcome_count <> 1
+  THEN
+    RAISE EXCEPTION 'KnowledgeLlmUsageEvidence requires a verified held usage-unknown result'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "KnowledgeLlmUsageEvidence_held_result_only"
+  BEFORE INSERT ON "KnowledgeLlmUsageEvidence"
+  FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_usage_evidence_insert_guard"();
+
+CREATE TRIGGER "KnowledgeLlmUsageEvidence_immutable"
+  BEFORE UPDATE OR DELETE ON "KnowledgeLlmUsageEvidence"
+  FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_immutable_row"();
 
 CREATE FUNCTION "erp4_knowledge_llm_outcome_transition_guard"()
 RETURNS TRIGGER

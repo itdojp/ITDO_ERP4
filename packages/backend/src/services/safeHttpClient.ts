@@ -41,6 +41,13 @@ function normalizeAllowedHosts(raw?: Iterable<string>) {
   return hosts;
 }
 
+/**
+ * Non-global special-purpose ranges are synchronized from the IANA IPv4 and
+ * IPv6 Special-Purpose Address Registries (last updated 2025-10-09). When
+ * either registry changes, this list and its literal/DNS regression tests must
+ * be reviewed together. Globally reachable 192.0.0.9 and 192.0.0.10 remain
+ * explicit exceptions to their otherwise non-global parent allocation.
+ */
 function isPrivateIPv4(ip: string): boolean {
   const parts = ip.split('.').map((value) => Number(value));
   if (parts.length !== 4) return true;
@@ -57,7 +64,9 @@ function isPrivateIPv4(ip: string): boolean {
   if (a === 169 && b === 254) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 192 && b === 168) return true;
+  if (a === 192 && b === 0 && c === 0) return d !== 9 && d !== 10;
   if (a === 192 && b === 0 && c === 2) return true;
+  if (a === 192 && b === 88 && c === 99) return true;
   if (a === 100 && b >= 64 && b <= 127) return true;
   if (a === 198 && (b === 18 || b === 19)) return true;
   if (a === 198 && b === 51 && c === 100) return true;
@@ -77,12 +86,18 @@ for (const [network, prefix] of [
   ['64:ff9b::', 96],
   ['64:ff9b:1::', 48],
   ['100::', 64],
-  ['2001::', 32],
+  ['100:0:0:1::', 64],
+  // Fail closed for the IETF protocol-assignment parent. Some narrowly scoped
+  // anycast exceptions are globally reachable, but ERP4 provider traffic does
+  // not rely on special-purpose destinations.
+  ['2001::', 23],
   ['2001:2::', 48],
   ['2001:10::', 28],
   ['2001:20::', 28],
   ['2001:db8::', 32],
   ['2002::', 16],
+  ['3fff::', 20],
+  ['5f00::', 16],
   ['fc00::', 7],
   ['fe80::', 10],
   ['fec0::', 10],
@@ -448,18 +463,29 @@ export async function prepareSafeFetch(
   const timeoutMs = Number.isFinite(options.timeoutMs)
     ? Math.max(1, Math.floor(options.timeoutMs as number))
     : 5000;
-  const startedAt = Date.now();
+  // Snapshot caller-owned inputs before the first await. The prepared request
+  // must not change if its source RequestInit/options objects are mutated.
+  const preparedOptions: SafeHttpOptions = {
+    ...options,
+    allowedHosts:
+      options.allowedHosts === undefined
+        ? undefined
+        : [...options.allowedHosts],
+  };
+  const bodyInput = init.body;
+  const method = init.method;
+  const callerSignal = init.signal;
+  const initialHeaders = new Headers(init.headers || {});
   const [{ url: validatedUrl, pinnedAddresses }, body] =
     await withPreDispatchTimeout(
       Promise.all([
-        validateExternalUrlForFetch(rawUrl, options),
-        requestBodyToBuffer(init.body),
+        validateExternalUrlForFetch(rawUrl, preparedOptions),
+        requestBodyToBuffer(bodyInput),
       ]),
       timeoutMs,
     );
-  const deadlineAt = startedAt + timeoutMs;
-  const userAgent = (options.userAgent || '').trim() || 'ITDO_ERP4/0.1';
-  const headers = new Headers(init.headers || {});
+  const userAgent = (preparedOptions.userAgent || '').trim() || 'ITDO_ERP4/0.1';
+  const headers = initialHeaders;
   if (!headers.has('User-Agent')) {
     headers.set('User-Agent', userAgent);
   }
@@ -468,11 +494,7 @@ export async function prepareSafeFetch(
     async dispatch() {
       if (dispatched) throw new SafeHttpError('request_already_dispatched');
       dispatched = true;
-      const remaining = deadlineAt - Date.now();
-      if (remaining <= 0) throw new SafeHttpError('request_timeout');
-      const remainingTimeoutMs = Math.max(1, remaining);
       const controller = new AbortController();
-      const callerSignal = init.signal;
       const abortFromCaller = () => {
         controller.abort();
       };
@@ -485,7 +507,9 @@ export async function prepareSafeFetch(
           });
         }
       }
-      const timer = setTimeout(() => controller.abort(), remainingTimeoutMs);
+      // Provider/network timeout starts only when dispatch starts. DNS/body
+      // preparation has its own bounded pre-dispatch timeout above.
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
       timer.unref?.();
       let cleanedUp = false;
       const cleanup = () => {
@@ -499,11 +523,11 @@ export async function prepareSafeFetch(
       try {
         return await pinnedRequestFetch(
           validatedUrl,
-          { ...init, body: undefined, signal: controller.signal },
+          { method, signal: controller.signal },
           {
             body,
             pinnedAddresses,
-            timeoutMs: remainingTimeoutMs,
+            timeoutMs,
             headers,
             onResponseSettled: cleanup,
           },

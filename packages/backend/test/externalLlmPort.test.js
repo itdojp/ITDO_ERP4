@@ -95,6 +95,94 @@ test('adapter rejects malformed request fields during prepare', async () => {
   );
 });
 
+test('canonical external LLM serialization rejects unpaired UTF-16 surrogates without conflating U+FFFD', async () => {
+  const {
+    externalLlmTextRequestFingerprint,
+    externalLlmTextRequestSerializationSchemaVersion,
+    serializeExternalLlmTextRequestBody,
+  } = await import('../dist/application/externalLlm/externalLlmPort.js');
+  const { StubExternalLlmTextAdapter } =
+    await import('../dist/adapters/externalLlm/stubTextAdapter.js');
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  const adapter = new StubExternalLlmTextAdapter();
+  let dnsLookupCount = 0;
+  const openAiAdapterForValidation = new OpenAiCompatibleTextAdapter({
+    apiKey: 'synthetic-only',
+    baseUrl: 'https://provider.example/v1',
+    timeoutMs: 1_000,
+    allowedHosts: ['provider.example'],
+    allowHttp: false,
+    allowPrivateIp: false,
+    dnsLookupImpl: async () => {
+      dnsLookupCount += 1;
+      return [{ address: '93.184.216.34', family: 4 }];
+    },
+  });
+
+  const invalidMutations = [
+    (value) => ({ ...request, model: `model-${value}` }),
+    (value) => ({ ...request, systemPrompt: `system-${value}` }),
+    (value) => ({ ...request, userPrompt: `user-${value}` }),
+    (value) => ({ ...request, contextSections: [`context-${value}`] }),
+  ];
+  for (const surrogate of ['\ud800', '\udfff']) {
+    for (const mutate of invalidMutations) {
+      const invalid = mutate(surrogate);
+      assert.throws(
+        () => serializeExternalLlmTextRequestBody(invalid),
+        /external_llm_request_invalid/,
+      );
+      assert.throws(
+        () => externalLlmTextRequestFingerprint(invalid),
+        /external_llm_request_invalid/,
+      );
+      await assert.rejects(adapter.prepare(invalid), (error) => {
+        assert.equal(error.code, 'rejected_before_dispatch');
+        assert.equal(error.outcome, 'not_dispatched');
+        return true;
+      });
+      await assert.rejects(
+        openAiAdapterForValidation.prepare({
+          ...invalid,
+          provider: 'openai',
+        }),
+        (error) => {
+          assert.equal(error.code, 'rejected_before_dispatch');
+          assert.equal(error.outcome, 'not_dispatched');
+          return true;
+        },
+      );
+    }
+  }
+  assert.equal(dnsLookupCount, 0);
+
+  const replacementCharacterRequest = {
+    ...request,
+    model: 'stub-\ufffd',
+    systemPrompt: 'system-\ufffd',
+    userPrompt: 'user-\ufffd',
+    contextSections: ['context-\ufffd'],
+  };
+  assert.equal(
+    externalLlmTextRequestSerializationSchemaVersion,
+    'openai-chat-completions-v1',
+  );
+  assert.match(
+    serializeExternalLlmTextRequestBody(replacementCharacterRequest),
+    /\ufffd/u,
+  );
+  assert.match(
+    externalLlmTextRequestFingerprint(replacementCharacterRequest),
+    /^[a-f0-9]{64}$/,
+  );
+  const prepared = await adapter.prepare(replacementCharacterRequest);
+  assert.equal(
+    prepared.requestFingerprint,
+    externalLlmTextRequestFingerprint(replacementCharacterRequest),
+  );
+});
+
 async function withHttpServer(handler, callback) {
   const server = createServer(handler);
   await new Promise((resolve, reject) => {
@@ -134,27 +222,46 @@ function openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl, overrides = {}) {
 test('OpenAI-compatible prepare performs no provider I/O and dispatches exactly once', async () => {
   const { OpenAiCompatibleTextAdapter } =
     await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  const {
+    externalLlmTextRequestFingerprint,
+    serializeExternalLlmTextRequestBody,
+  } = await import('../dist/application/externalLlm/externalLlmPort.js');
   let requestCount = 0;
+  let receivedBody = '';
   await withHttpServer(
-    (_request, response) => {
+    (incomingRequest, response) => {
       requestCount += 1;
-      response.writeHead(200, { 'content-type': 'application/json' });
-      response.end(
-        JSON.stringify({
-          choices: [{ message: { content: 'Synthetic result' } }],
-          usage: { prompt_tokens: 10, completion_tokens: 2 },
-        }),
-      );
+      incomingRequest.setEncoding('utf8');
+      incomingRequest.on('data', (chunk) => {
+        receivedBody += chunk;
+      });
+      incomingRequest.on('end', () => {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(
+          JSON.stringify({
+            choices: [{ message: { content: 'Synthetic result' } }],
+            usage: { prompt_tokens: 10, completion_tokens: 2 },
+          }),
+        );
+      });
     },
     async (baseUrl) => {
+      const input = {
+        ...openAiRequest(),
+        contextSections: ['Selected context'],
+      };
       const prepared = await openAiAdapter(
         OpenAiCompatibleTextAdapter,
         baseUrl,
-      ).prepare(openAiRequest());
-      assert.match(prepared.requestFingerprint, /^[a-f0-9]{64}$/);
+      ).prepare(input);
+      assert.equal(
+        prepared.requestFingerprint,
+        externalLlmTextRequestFingerprint(input),
+      );
       assert.equal(requestCount, 0);
       const result = await prepared.dispatch();
       assert.equal(result.content, 'Synthetic result');
+      assert.equal(receivedBody, serializeExternalLlmTextRequestBody(input));
       assert.equal(requestCount, 1);
       await assert.rejects(prepared.dispatch(), (error) => {
         assert.equal(error.code, 'connection_outcome_unknown');
@@ -164,6 +271,81 @@ test('OpenAI-compatible prepare performs no provider I/O and dispatches exactly 
       assert.equal(requestCount, 1);
     },
   );
+});
+
+test('OpenAI-compatible prepared dispatch captures mutable request and config values', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  const { serializeExternalLlmTextRequestBody } =
+    await import('../dist/application/externalLlm/externalLlmPort.js');
+  let receivedAuthorization = '';
+  let receivedBody = '';
+
+  await withHttpServer(
+    (incomingRequest, response) => {
+      receivedAuthorization = incomingRequest.headers.authorization ?? '';
+      incomingRequest.setEncoding('utf8');
+      incomingRequest.on('data', (chunk) => {
+        receivedBody += chunk;
+      });
+      incomingRequest.on('end', () => {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(
+          JSON.stringify({
+            choices: [{ message: { content: 'Synthetic result' } }],
+          }),
+        );
+      });
+    },
+    async (baseUrl) => {
+      const config = {
+        apiKey: 'original-synthetic-key',
+        baseUrl,
+        timeoutMs: 1_000,
+        allowedHosts: ['127.0.0.1'],
+        allowHttp: true,
+        allowPrivateIp: true,
+        malformedSuccessPolicy: 'reject',
+        usagePolicy: 'strict',
+      };
+      const input = {
+        ...openAiRequest(),
+        contextSections: ['Original selected context'],
+      };
+      const originalBody = serializeExternalLlmTextRequestBody(input);
+      const prepared = await new OpenAiCompatibleTextAdapter(config).prepare(
+        input,
+      );
+
+      input.model = 'mutated-model';
+      input.systemPrompt = 'mutated system';
+      input.userPrompt = 'mutated user';
+      input.contextSections[0] = 'mutated context';
+      config.apiKey = 'mutated-key';
+      config.baseUrl = 'http://must-not-be-used.invalid/v1';
+      config.timeoutMs = 1;
+      config.allowedHosts[0] = 'must-not-be-used.invalid';
+      config.usagePolicy = 'ignore';
+
+      const result = await prepared.dispatch();
+      assert.equal(receivedAuthorization, 'Bearer original-synthetic-key');
+      assert.equal(receivedBody, originalBody);
+      assert.equal(result.model, 'synthetic-openai-model');
+      assert.equal(result.usageStatus, 'missing');
+    },
+  );
+});
+
+test('stub prepared dispatch captures mutable request values', async () => {
+  const { StubExternalLlmTextAdapter } =
+    await import('../dist/adapters/externalLlm/stubTextAdapter.js');
+  const input = { ...request };
+  const prepared = await new StubExternalLlmTextAdapter().prepare(input);
+  input.model = 'mutated-model';
+  input.maxOutputTokens = 1;
+  const result = await prepared.dispatch();
+  assert.equal(result.model, 'stub-v1');
+  assert.equal(result.usage.outputTokens, 12);
 });
 
 test('OpenAI-compatible adapter classifies a blocked redirect as a known response', async () => {

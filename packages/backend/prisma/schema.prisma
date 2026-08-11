@@ -281,6 +281,10 @@ enum KnowledgeLlmOutcomeStatus {
   invalid
 }
 
+enum KnowledgeLlmUsageEvidenceSource {
+  operator_billing
+}
+
 enum KnowledgeLlmFailureCode {
   disabled
   budget_hard_limit
@@ -3141,6 +3145,7 @@ model KnowledgeLlmRun {
   contextSources             KnowledgeLlmContextSource[]
   reservations               KnowledgeLlmReservation[]
   outcome                    KnowledgeLlmProviderOutcome?
+  usageEvidence              KnowledgeLlmUsageEvidence?
 
   @@unique([id, actorUserId])
   @@index([actorUserId, createdAt, id])
@@ -3232,6 +3237,21 @@ model KnowledgeLlmProviderOutcome {
   createdAt         DateTime                  @default(now())
 
   @@index([status, finalizedAt, capturedAt, id])
+}
+
+model KnowledgeLlmUsageEvidence {
+  id               String                          @id @default(uuid())
+  run              KnowledgeLlmRun                 @relation(fields: [runId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  runId            String                          @unique
+  source           KnowledgeLlmUsageEvidenceSource
+  inputTokens      Int
+  outputTokens     Int
+  actualCostMicros BigInt
+  evidenceHash     String
+  createdAt        DateTime                        @default(now())
+  createdBy        String
+
+  @@index([source, createdAt, id])
 }
 
 model ReassignmentLog {

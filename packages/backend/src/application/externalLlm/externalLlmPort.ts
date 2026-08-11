@@ -22,6 +22,28 @@ export type ExternalLlmTextRequest = {
   temperatureBasisPoints: number;
 };
 
+/**
+ * Version of the canonical OpenAI-compatible JSON request representation.
+ * Changing its fields, order, or numeric rendering requires a new version.
+ */
+export const externalLlmTextRequestSerializationSchemaVersion =
+  'openai-chat-completions-v1';
+
+function hasUnpairedUtf16Surrogate(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      if (index + 1 >= value.length) return true;
+      const next = value.charCodeAt(index + 1);
+      if (next < 0xdc00 || next > 0xdfff) return true;
+      index += 1;
+      continue;
+    }
+    if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) return true;
+  }
+  return false;
+}
+
 function assertExternalLlmTextRequest(request: ExternalLlmTextRequest): void {
   const contexts = request.contextSections ?? [];
   const modelHasControl =
@@ -49,6 +71,17 @@ function assertExternalLlmTextRequest(request: ExternalLlmTextRequest): void {
     request.temperatureBasisPoints < 0 ||
     request.temperatureBasisPoints > 10_000
   ) {
+    throw new Error('external_llm_request_invalid');
+  }
+  if (
+    hasUnpairedUtf16Surrogate(request.model) ||
+    hasUnpairedUtf16Surrogate(request.systemPrompt) ||
+    hasUnpairedUtf16Surrogate(request.userPrompt) ||
+    contexts.some(hasUnpairedUtf16Surrogate)
+  ) {
+    // Buffer.from replaces unpaired surrogates with U+FFFD while JSON.stringify
+    // preserves them as escapes. Reject them so fingerprint bytes and the
+    // provider payload cannot disagree.
     throw new Error('external_llm_request_invalid');
   }
   const promptBytes =
@@ -89,27 +122,51 @@ export function renderExternalLlmUserPrompt(
   return `${context}\n[U]\n${request.userPrompt}`;
 }
 
+/**
+ * Builds the exact canonical UTF-8 JSON body used by the OpenAI-compatible
+ * adapter. The fixed object construction order is part of the schema version.
+ */
+export function serializeExternalLlmTextRequestBody(
+  request: ExternalLlmTextRequest,
+): string {
+  assertExternalLlmTextRequest(request);
+  return JSON.stringify({
+    model: request.model,
+    temperature: request.temperatureBasisPoints / 10_000,
+    messages: [
+      { role: 'system', content: request.systemPrompt },
+      { role: 'user', content: renderExternalLlmUserPrompt(request) },
+    ],
+    max_tokens: request.maxOutputTokens,
+  });
+}
+
+/** Canonical body plus opaque binding for one validated request snapshot. */
+export function bindExternalLlmTextRequest(request: ExternalLlmTextRequest): {
+  serializedBody: string;
+  requestFingerprint: string;
+} {
+  const serializedBody = serializeExternalLlmTextRequestBody(request);
+  const hash = createHash('sha256');
+  hash.update('erp4:external-llm:text-request-fingerprint:v2\0', 'utf8');
+  updateFingerprintField(hash, request.provider);
+  updateFingerprintField(
+    hash,
+    externalLlmTextRequestSerializationSchemaVersion,
+  );
+  // This is the same byte sequence passed as prepareSafeFetch's string body.
+  updateFingerprintField(hash, serializedBody);
+  return {
+    serializedBody,
+    requestFingerprint: hash.digest('hex'),
+  };
+}
+
 /** Opaque binding for the exact request that an adapter prepares. */
 export function externalLlmTextRequestFingerprint(
   request: ExternalLlmTextRequest,
 ): string {
-  assertExternalLlmTextRequest(request);
-  const hash = createHash('sha256');
-  hash.update('erp4:external-llm:text-request:v1\0', 'utf8');
-  for (const value of [
-    request.provider,
-    request.model,
-    request.systemPrompt,
-    request.userPrompt,
-    String(request.maxOutputTokens),
-    String(request.temperatureBasisPoints),
-  ]) {
-    updateFingerprintField(hash, value);
-  }
-  const contextSections = request.contextSections ?? [];
-  updateFingerprintField(hash, String(contextSections.length));
-  for (const context of contextSections) updateFingerprintField(hash, context);
-  return hash.digest('hex');
+  return bindExternalLlmTextRequest(request).requestFingerprint;
 }
 
 /**
@@ -132,6 +189,13 @@ export function externalLlmConservativeInputTokens(
     contextSections.some((content) => typeof content !== 'string') ||
     !Number.isSafeInteger(sourceFramingTokens) ||
     sourceFramingTokens < 0
+  ) {
+    throw new Error('external_llm_token_estimate_invalid');
+  }
+  if (
+    hasUnpairedUtf16Surrogate(request.systemPrompt) ||
+    hasUnpairedUtf16Surrogate(request.userPrompt) ||
+    contextSections.some(hasUnpairedUtf16Surrogate)
   ) {
     throw new Error('external_llm_token_estimate_invalid');
   }

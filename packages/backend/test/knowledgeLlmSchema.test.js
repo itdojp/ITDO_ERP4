@@ -31,6 +31,7 @@ test('LLM foundation is additive and separates execution from settlement', () =>
     'KnowledgeLlmReservation',
     'KnowledgeLlmContextSource',
     'KnowledgeLlmProviderOutcome',
+    'KnowledgeLlmUsageEvidence',
   ]) {
     assert.match(migration, new RegExp(`CREATE TABLE "${name}"`));
   }
@@ -55,7 +56,7 @@ test('LLM foundation is additive and separates execution from settlement', () =>
   assert.match(migration, /KnowledgeLlmRun_transition_guard/);
   assert.match(
     migration,
-    /KnowledgeLlmRun settlement requires a valid provider outcome/,
+    /KnowledgeLlmRun settlement requires a valid provider outcome or usage evidence/,
   );
   assert.match(migration, /outcome\."contentHash" = turn\."contentHash"/);
   assert.match(
@@ -167,7 +168,19 @@ test('reservation accounting timestamp and terminal values are immutable', () =>
   assert.match(migration, /KnowledgeLlmReservation cannot be deleted/);
   assert.match(
     migration,
-    /BEFORE UPDATE OR DELETE ON "KnowledgeLlmReservation"/,
+    /BEFORE INSERT OR UPDATE OR DELETE ON "KnowledgeLlmReservation"/,
+  );
+  assert.match(
+    migration,
+    /KnowledgeLlmReservation must be created with its initial run and matching budget subject/,
+  );
+  assert.match(
+    migration,
+    /KnowledgeLlmReservation budget subject already reserved/,
+  );
+  assert.match(
+    migration,
+    /"activeReservedMicros" = "activeReservedMicros" \+ NEW\."maximumCostMicros"/,
   );
 });
 
@@ -187,4 +200,16 @@ test('provider outcome retains only normalized bounded state for reconciliation'
     migration,
     /OCTET_LENGTH\("normalizedContent"\) BETWEEN 1 AND 262144/,
   );
+  const evidence = block('model', 'KnowledgeLlmUsageEvidence');
+  assert.match(evidence, /runId\s+String\s+@unique/);
+  assert.match(evidence, /source\s+KnowledgeLlmUsageEvidenceSource/);
+  assert.match(evidence, /actualCostMicros\s+BigInt/);
+  assert.match(evidence, /evidenceHash\s+String/);
+  assert.doesNotMatch(evidence, /rawResponse|providerRequestId|apiKey|headers/);
+  assert.match(migration, /KnowledgeLlmUsageEvidence_shape_check/);
+  assert.match(
+    migration,
+    /KnowledgeLlmUsageEvidence requires a verified held usage-unknown result/,
+  );
+  assert.match(migration, /KnowledgeLlmUsageEvidence_immutable/);
 });

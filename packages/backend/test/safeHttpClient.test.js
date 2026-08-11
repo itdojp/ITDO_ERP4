@@ -99,6 +99,45 @@ test('validateExternalUrl blocks compact mapped, link-local and site-local IPv6 
   assert.equal(publicIpv6.hostname, '[2001:4860:4860::8888]');
 });
 
+test('validateExternalUrl rejects IANA non-global special-purpose addresses from literals and DNS', async () => {
+  const { validateExternalUrl } = await loadSafeHttpClient();
+  const nonGlobalAddresses = [
+    '192.0.0.1',
+    '192.0.0.8',
+    '192.0.0.170',
+    '192.0.0.200',
+    '192.88.99.2',
+    '100:0:0:1::1',
+    '2001:5::1',
+    '3fff::1',
+    '5f00::1',
+  ];
+
+  for (const address of nonGlobalAddresses) {
+    const literal = address.includes(':') ? `[${address}]` : address;
+    await assert.rejects(
+      validateExternalUrl(`https://${literal}/resource`),
+      (error) => error?.code === 'private_ip_blocked',
+      `literal ${address}`,
+    );
+    await assert.rejects(
+      validateExternalUrl('https://provider.example/resource', {
+        allowedHosts: ['provider.example'],
+        dnsLookupImpl: async () => [{ address }],
+      }),
+      (error) => error?.code === 'private_ip_blocked',
+      `DNS ${address}`,
+    );
+  }
+
+  for (const globallyReachableException of ['192.0.0.9', '192.0.0.10']) {
+    const url = await validateExternalUrl(
+      `https://${globallyReachableException}/resource`,
+    );
+    assert.equal(url.hostname, globallyReachableException);
+  }
+});
+
 test('validateExternalUrl rejects host not in allowlist', async () => {
   const { validateExternalUrl } = await loadSafeHttpClient();
   await assert.rejects(
@@ -460,6 +499,37 @@ test('prepared safe request performs DNS validation without socket I/O and dispa
         prepared.dispatch(),
         (error) => error?.code === 'request_already_dispatched',
       );
+      assert.equal(requestCount, 1);
+    },
+  );
+});
+
+test('prepared safe request starts the full network timeout at dispatch', async () => {
+  const { prepareSafeFetch } = await loadSafeHttpClient();
+  let requestCount = 0;
+  await withHttpServer(
+    (_request, response) => {
+      requestCount += 1;
+      response.end('ok');
+    },
+    async (baseUrl) => {
+      const { port } = new URL(baseUrl);
+      const timeoutMs = 80;
+      const prepared = await prepareSafeFetch(
+        `http://provider.example:${port}/delayed-dispatch`,
+        { method: 'POST', body: 'synthetic' },
+        {
+          allowHttp: true,
+          allowPrivateIp: true,
+          allowedHosts: ['provider.example'],
+          dnsLookupImpl: async () => [{ address: '127.0.0.1', family: 4 }],
+          timeoutMs,
+        },
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, timeoutMs + 40));
+      const response = await prepared.dispatch();
+      assert.equal(await response.text(), 'ok');
       assert.equal(requestCount, 1);
     },
   );
