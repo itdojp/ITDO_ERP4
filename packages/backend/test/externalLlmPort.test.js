@@ -125,3 +125,34 @@ test('OpenAI-compatible adapter rejects malformed usage by default', async () =>
     },
   );
 });
+
+test('OpenAI-compatible adapter rejects a response beyond the byte limit even when its prefix is valid JSON', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  const valid = JSON.stringify({
+    choices: [{ message: { content: 'Synthetic result' } }],
+    usage: { prompt_tokens: 10, completion_tokens: 2 },
+  });
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(`${valid}${' '.repeat(128)}`);
+    },
+    async (baseUrl) => {
+      const adapter = new OpenAiCompatibleTextAdapter({
+        apiKey: 'synthetic-only',
+        baseUrl,
+        timeoutMs: 1_000,
+        allowedHosts: ['127.0.0.1'],
+        allowHttp: true,
+        allowPrivateIp: true,
+        maximumResponseBytes: Buffer.byteLength(valid, 'utf8'),
+      });
+      await assert.rejects(adapter.complete(openAiRequest()), (error) => {
+        assert.equal(error.code, 'response_oversize');
+        assert.equal(error.outcome, 'known_response');
+        return true;
+      });
+    },
+  );
+});

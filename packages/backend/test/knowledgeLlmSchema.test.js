@@ -42,6 +42,11 @@ test('LLM foundation is additive and separates execution from settlement', () =>
   assert.match(migration, /KnowledgeLlmRun_transition_guard/);
   assert.match(
     migration,
+    /KnowledgeLlmRun settlement requires a valid provider outcome/,
+  );
+  assert.match(migration, /outcome\."contentHash" = turn\."contentHash"/);
+  assert.match(
+    migration,
     /OLD\."executionStatus" = 'result_unknown'[\s\S]*?NEW\."executionStatus" = 'result_ready'/,
   );
   assert.match(

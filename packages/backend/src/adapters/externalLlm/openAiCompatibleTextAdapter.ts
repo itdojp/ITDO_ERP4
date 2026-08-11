@@ -70,18 +70,29 @@ function responseContent(value: unknown): string {
 }
 
 async function readJsonBounded(response: Response, maximumBytes: number) {
-  const text = await readBoundedResponseText(response, maximumBytes).catch(
-    (error) => {
-      if (error instanceof Error && /too large|exceed/i.test(error.message)) {
-        throw new ExternalLlmProviderError(
-          'response_oversize',
-          'known_response',
-          response.status,
-        );
-      }
-      throw error;
-    },
-  );
+  const contentLength = response.headers.get('content-length');
+  if (
+    contentLength !== null &&
+    /^(0|[1-9][0-9]*)$/.test(contentLength) &&
+    BigInt(contentLength) > BigInt(maximumBytes)
+  ) {
+    throw new ExternalLlmProviderError(
+      'response_oversize',
+      'known_response',
+      response.status,
+    );
+  }
+  // The shared diagnostic reader intentionally truncates. Read one byte past
+  // this adapter's contract so truncation cannot turn an oversized response
+  // into valid JSON or misclassify it as merely malformed.
+  const text = await readBoundedResponseText(response, maximumBytes + 1);
+  if (Buffer.byteLength(text, 'utf8') > maximumBytes) {
+    throw new ExternalLlmProviderError(
+      'response_oversize',
+      'known_response',
+      response.status,
+    );
+  }
   try {
     return JSON.parse(text) as unknown;
   } catch {

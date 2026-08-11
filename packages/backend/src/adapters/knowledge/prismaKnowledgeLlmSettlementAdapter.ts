@@ -127,6 +127,39 @@ export async function settleKnowledgeLlmBudget(
     ) {
       throw new Error('knowledge_llm_settlement_invalid');
     }
+    const outcomes = await transaction.$queryRaw<
+      Array<{
+        inputTokens: number;
+        outputTokens: number;
+        contentHash: string;
+        turnContentHash: string;
+      }>
+    >(Prisma.sql`
+      SELECT
+        outcome."inputTokens",
+        outcome."outputTokens",
+        outcome."contentHash",
+        turn."contentHash" AS "turnContentHash"
+      FROM "KnowledgeLlmProviderOutcome" outcome
+      JOIN "KnowledgeConversationTurn" turn
+        ON turn.id = ${input.settlement.assistantTurnId}
+       AND turn."conversationId" = ${input.settlement.conversationId}
+      WHERE outcome."runId" = ${input.runId}
+        AND outcome.status = 'valid'
+        AND outcome."finalizedAt" IS NOT NULL
+        AND outcome."normalizedContent" IS NULL
+      FOR UPDATE OF outcome, turn
+    `);
+    const outcome = outcomes[0];
+    if (
+      outcomes.length !== 1 ||
+      !outcome ||
+      outcome.inputTokens !== input.settlement.actualInputTokens ||
+      outcome.outputTokens !== input.settlement.actualOutputTokens ||
+      outcome.contentHash !== outcome.turnContentHash
+    ) {
+      throw new Error('knowledge_llm_settlement_without_valid_outcome');
+    }
     for (const reservation of reservations) {
       await transaction.knowledgeLlmBudgetPeriod.update({
         where: { id: reservation.budgetPeriodId },

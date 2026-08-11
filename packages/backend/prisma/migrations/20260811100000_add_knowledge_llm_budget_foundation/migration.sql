@@ -656,6 +656,27 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
+  IF NEW."executionStatus" = 'result_ready'
+    AND NEW."settlementStatus" = 'settled_actual'
+    AND NOT EXISTS (
+      SELECT 1
+      FROM "KnowledgeLlmProviderOutcome" outcome
+      JOIN "KnowledgeConversationTurn" turn
+        ON turn.id = NEW."assistantTurnId"
+       AND turn."conversationId" = NEW."conversationId"
+      WHERE outcome."runId" = NEW.id
+        AND outcome.status = 'valid'
+        AND outcome."finalizedAt" IS NOT NULL
+        AND outcome."normalizedContent" IS NULL
+        AND outcome."inputTokens" = NEW."actualInputTokens"
+        AND outcome."outputTokens" = NEW."actualOutputTokens"
+        AND outcome."contentHash" = turn."contentHash"
+    )
+  THEN
+    RAISE EXCEPTION 'KnowledgeLlmRun settlement requires a valid provider outcome'
+      USING ERRCODE = '23514';
+  END IF;
+
   IF OLD."executionStatus" <> NEW."executionStatus" AND NOT (
     (OLD."executionStatus" = 'reserved' AND NEW."executionStatus" IN ('dispatched', 'failed'))
     OR (

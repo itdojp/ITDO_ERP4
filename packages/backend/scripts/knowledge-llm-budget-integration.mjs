@@ -234,6 +234,86 @@ try {
   assert.equal(rateBlocked.ok, false);
   assert.equal(rateBlocked.error.code, 'rate_limit');
 
+  const boundaryNow = new Date('2026-09-01T00:15:00.000Z');
+  const priorReservationAt = new Date('2026-08-31T23:45:00.000Z');
+  await policy({
+    id: 'policy-rate-boundary',
+    subjectType: 'user',
+    subjectId: 'rate-boundary-user',
+    hard: 1000n,
+    rate: 1,
+    timezone: 'UTC',
+  });
+  const priorPeriod = await prisma.knowledgeLlmBudgetPeriod.create({
+    data: {
+      id: 'period-rate-boundary-prior',
+      policyId: 'policy-rate-boundary',
+      periodStartUtc: new Date('2026-08-01T00:00:00.000Z'),
+      periodEndUtc: new Date('2026-09-01T00:00:00.000Z'),
+      timezone: 'UTC',
+      currency: 'JPY',
+      activeReservedMicros: 1n,
+      acceptedRequestCount: 1,
+      createdAt: priorReservationAt,
+      updatedAt: priorReservationAt,
+    },
+  });
+  await prisma.knowledgeLlmRun.create({
+    data: {
+      id: 'run-rate-boundary-prior',
+      actorUserId: 'rate-boundary-user',
+      scope: 'personal',
+      provider: 'stub',
+      model: 'stub-v1',
+      catalogVersion: 1,
+      promptTemplateVersion: 1,
+      requestPayloadHash: hash('d'),
+      selectedContextFingerprint: hash('e'),
+      estimatedInputTokens: 10,
+      maxOutputTokens: 10,
+      maximumCostMicros: 1n,
+      currency: 'JPY',
+      createdAt: priorReservationAt,
+      updatedAt: priorReservationAt,
+      createdBy: 'rate-boundary-user',
+      updatedBy: 'rate-boundary-user',
+      request: {
+        create: {
+          requestKeyHash: hash('f'),
+          requestPayloadHash: hash('d'),
+          createdAt: priorReservationAt,
+          createdBy: 'rate-boundary-user',
+        },
+      },
+      reservations: {
+        create: {
+          budgetPeriodId: priorPeriod.id,
+          maximumCostMicros: 1n,
+          createdAt: priorReservationAt,
+          updatedAt: priorReservationAt,
+        },
+      },
+    },
+  });
+  const boundaryRateBlocked = await service.reserve({
+    ...reservation({
+      runId: 'run-rate-boundary-current',
+      userId: 'rate-boundary-user',
+      keyHash: hash('0'),
+      payloadHash: hash('1'),
+      maximumCostMicros: 1n,
+    }),
+    now: boundaryNow,
+  });
+  assert.equal(boundaryRateBlocked.ok, false);
+  assert.equal(boundaryRateBlocked.error.code, 'rate_limit');
+  assert.equal(
+    await prisma.knowledgeLlmRun.count({
+      where: { id: 'run-rate-boundary-current' },
+    }),
+    0,
+  );
+
   await policy({
     id: 'policy-race',
     subjectType: 'user',
@@ -286,46 +366,94 @@ try {
     }),
   );
   assert.equal(settlementReservation.ok, true);
+  const settlementConversation = await prisma.$transaction(
+    async (transaction) => {
+      const conversation = await transaction.knowledgeConversation.create({
+        data: {
+          id: 'llm-settlement-conversation',
+          ownerUserId: 'settlement-user',
+          title: 'Synthetic settlement conversation',
+          sourceType: 'manual',
+          provider: 'stub',
+          model: 'stub-v1',
+          contentHash: hash('1'),
+          createdBy: 'settlement-user',
+          updatedBy: 'settlement-user',
+        },
+      });
+      await transaction.knowledgeConversationTurn.create({
+        data: {
+          conversationId: conversation.id,
+          sequence: 1,
+          role: 'user',
+          origin: 'user',
+          content: 'Synthetic prompt',
+          contentHash: hash('2'),
+          createdBy: 'settlement-user',
+        },
+      });
+      const assistant = await transaction.knowledgeConversationTurn.create({
+        data: {
+          conversationId: conversation.id,
+          sequence: 2,
+          role: 'assistant',
+          origin: 'ai',
+          content: 'Synthetic result',
+          contentHash: hash('3'),
+          createdBy: 'settlement-user',
+        },
+      });
+      return { conversation, assistant };
+    },
+  );
+  await assert.rejects(
+    prisma.$transaction(async (transaction) => {
+      await markKnowledgeLlmRunDispatched(transaction, {
+        runId: 'run-settlement-actual',
+        actorUserId: 'settlement-user',
+        dispatchedAt: after(1_000),
+      });
+      await settleKnowledgeLlmBudget(transaction, {
+        runId: 'run-settlement-actual',
+        actorUserId: 'settlement-user',
+        completedAt: after(2_000),
+        settlement: {
+          type: 'actual',
+          actualInputTokens: 80,
+          actualOutputTokens: 20,
+          actualCostMicros: 35n,
+          conversationId: settlementConversation.conversation.id,
+          assistantTurnId: settlementConversation.assistant.id,
+        },
+      });
+    }),
+    /without_valid_outcome/,
+  );
+  assert.equal(
+    (
+      await prisma.knowledgeLlmRun.findUniqueOrThrow({
+        where: { id: 'run-settlement-actual' },
+      })
+    ).executionStatus,
+    'reserved',
+  );
   await prisma.$transaction(async (transaction) => {
-    const conversation = await transaction.knowledgeConversation.create({
-      data: {
-        id: 'llm-settlement-conversation',
-        ownerUserId: 'settlement-user',
-        title: 'Synthetic settlement conversation',
-        sourceType: 'manual',
-        provider: 'stub',
-        model: 'stub-v1',
-        contentHash: hash('1'),
-        createdBy: 'settlement-user',
-        updatedBy: 'settlement-user',
-      },
-    });
-    await transaction.knowledgeConversationTurn.create({
-      data: {
-        conversationId: conversation.id,
-        sequence: 1,
-        role: 'user',
-        origin: 'user',
-        content: 'Synthetic prompt',
-        contentHash: hash('2'),
-        createdBy: 'settlement-user',
-      },
-    });
-    const assistant = await transaction.knowledgeConversationTurn.create({
-      data: {
-        conversationId: conversation.id,
-        sequence: 2,
-        role: 'assistant',
-        origin: 'ai',
-        content: 'Synthetic result',
-        contentHash: hash('3'),
-        createdBy: 'settlement-user',
-      },
-    });
     await markKnowledgeLlmRunDispatched(transaction, {
       runId: 'run-settlement-actual',
       actorUserId: 'settlement-user',
       dispatchedAt: after(1_000),
+    });
+    await transaction.knowledgeLlmProviderOutcome.create({
+      data: {
+        runId: 'run-settlement-actual',
+        status: 'valid',
+        normalizedContent: null,
+        contentHash: settlementConversation.assistant.contentHash,
+        inputTokens: 80,
+        outputTokens: 20,
+        capturedAt: after(1_500),
+        finalizedAt: after(1_900),
+      },
     });
     await settleKnowledgeLlmBudget(transaction, {
       runId: 'run-settlement-actual',
@@ -336,8 +464,8 @@ try {
         actualInputTokens: 80,
         actualOutputTokens: 20,
         actualCostMicros: 35n,
-        conversationId: conversation.id,
-        assistantTurnId: assistant.id,
+        conversationId: settlementConversation.conversation.id,
+        assistantTurnId: settlementConversation.assistant.id,
       },
     });
   });
@@ -710,6 +838,7 @@ try {
       organizationDualReservation: true,
       hardLimitRace: true,
       rateLimit: true,
+      crossPeriodRateLimit: true,
       idempotency: true,
       exactSettlement: true,
       heldMaximum: true,

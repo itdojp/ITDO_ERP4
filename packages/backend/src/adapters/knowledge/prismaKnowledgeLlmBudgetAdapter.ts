@@ -245,9 +245,12 @@ async function reserveOnce(
   }
   const periods = await ensureAndLockPeriods(transaction, policies, input.now);
   const hourAgo = new Date(input.now.getTime() - 60 * 60 * 1000);
-  for (const { policy, period } of periods) {
+  for (const { policy } of periods) {
     const recent = await transaction.knowledgeLlmReservation.count({
-      where: { budgetPeriodId: period.id, createdAt: { gte: hourAgo } },
+      where: {
+        budgetPeriod: { policyId: policy.id },
+        createdAt: { gte: hourAgo },
+      },
     });
     if (recent >= policy.requestsPerHour) {
       await audit.write({
@@ -365,11 +368,9 @@ export class PrismaKnowledgeLlmBudgetAdapter implements KnowledgeLlmBudgetPort {
           { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
         );
       } catch (error) {
-        if (
-          !retryable(error) ||
-          attempt + 1 >= knowledgeLlmLimits.serializableAttempts
-        ) {
-          throw error;
+        if (!retryable(error)) throw error;
+        if (attempt + 1 >= knowledgeLlmLimits.serializableAttempts) {
+          return failure(409, 'reservation_conflict');
         }
       }
     }
