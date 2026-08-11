@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { api } from '../api';
 import {
   Alert,
@@ -95,6 +101,9 @@ export const PeriodLocks: React.FC = () => {
   const [formMessage, setFormMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [targetLock, setTargetLock] = useState<PeriodLock | null>(null);
+  const filtersRef = useRef(filters);
+  const listRequestGenerationRef = useRef(0);
+  const listRequestAbortRef = useRef<AbortController | null>(null);
 
   const projectMap = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
@@ -107,22 +116,60 @@ export const PeriodLocks: React.FC = () => {
       .catch(() => setProjects([]));
   }, []);
 
-  const loadLocks = async () => {
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
+
+  useEffect(
+    () => () => {
+      listRequestGenerationRef.current += 1;
+      listRequestAbortRef.current?.abort();
+      listRequestAbortRef.current = null;
+    },
+    [],
+  );
+
+  const loadLocks = async (requestFilters: FilterState = filters) => {
+    const generation = listRequestGenerationRef.current + 1;
+    listRequestGenerationRef.current = generation;
+    listRequestAbortRef.current?.abort();
+    const controller = new AbortController();
+    listRequestAbortRef.current = controller;
     try {
       setListStatus('loading');
       setListError('');
       const params = new URLSearchParams();
-      if (filters.period) params.set('period', filters.period);
-      if (filters.scope) params.set('scope', filters.scope);
-      if (filters.projectId) params.set('projectId', filters.projectId);
+      if (requestFilters.period) params.set('period', requestFilters.period);
+      if (requestFilters.scope) params.set('scope', requestFilters.scope);
+      if (requestFilters.projectId) {
+        params.set('projectId', requestFilters.projectId);
+      }
       const suffix = params.toString() ? `?${params}` : '';
-      const res = await api<{ items: PeriodLock[] }>(`/period-locks${suffix}`);
+      const res = await api<{ items: PeriodLock[] }>(`/period-locks${suffix}`, {
+        signal: controller.signal,
+      });
+      if (
+        controller.signal.aborted ||
+        listRequestGenerationRef.current !== generation
+      ) {
+        return;
+      }
       setItems(res.items || []);
       setListStatus('success');
     } catch (err) {
+      if (
+        controller.signal.aborted ||
+        listRequestGenerationRef.current !== generation
+      ) {
+        return;
+      }
       setItems([]);
       setListStatus('error');
       setListError('締め一覧の取得に失敗しました');
+    } finally {
+      if (listRequestAbortRef.current === controller) {
+        listRequestAbortRef.current = null;
+      }
     }
   };
 
@@ -162,7 +209,7 @@ export const PeriodLocks: React.FC = () => {
           reason: form.reason.trim() || undefined,
         }),
       });
-      await loadLocks();
+      await loadLocks(filtersRef.current);
     } catch (err) {
       setFormMessage('締め登録に失敗しました');
     } finally {
@@ -173,7 +220,7 @@ export const PeriodLocks: React.FC = () => {
   const removeLock = async (id: string) => {
     try {
       await api(`/period-locks/${id}`, { method: 'DELETE' });
-      await loadLocks();
+      await loadLocks(filtersRef.current);
     } catch (err) {
       setListError('締め解除に失敗しました');
       setListStatus('error');

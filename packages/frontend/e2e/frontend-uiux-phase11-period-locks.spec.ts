@@ -177,12 +177,40 @@ test('phase 11 period lock UX/UI summary renders @core', async ({ page }) => {
     .fill(lockPeriod);
   await selectByValue(projectCreateSelect, defaultProjectId);
   await section.getByLabel('reason', { exact: true }).fill(reason);
+  const createResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === 'POST' &&
+      url.pathname.endsWith('/period-locks')
+    );
+  });
+  const createReloadResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === 'GET' &&
+      url.pathname.endsWith('/period-locks') &&
+      !url.searchParams.has('period')
+    );
+  });
   await section.getByRole('button', { name: '締め登録' }).click();
-
-  await section.getByLabel('period', { exact: true }).fill(lockPeriod);
-  await section.getByRole('button', { name: '検索' }).click();
+  await expect((await createResponse).ok()).toBeTruthy();
+  await expect((await createReloadResponse).ok()).toBeTruthy();
 
   const createdRows = section.locator('tbody tr', { hasText: reason });
+  await expect(createdRows).toHaveCount(1, { timeout: actionTimeout });
+
+  await section.getByLabel('period', { exact: true }).fill(lockPeriod);
+  const filteredReloadResponse = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === 'GET' &&
+      url.pathname.endsWith('/period-locks') &&
+      url.searchParams.get('period') === lockPeriod
+    );
+  });
+  await section.getByRole('button', { name: '検索' }).click();
+  await expect((await filteredReloadResponse).ok()).toBeTruthy();
+
   await expect(createdRows).toHaveCount(1, { timeout: actionTimeout });
   await expect(section.getByText('取得済み')).toBeVisible({
     timeout: actionTimeout,
