@@ -170,6 +170,18 @@ test('conservative estimate and timezone month boundary are deterministic', asyn
   );
   assert.equal(newYork.start.toISOString(), '2026-03-01T05:00:00.000Z');
   assert.equal(newYork.end.toISOString(), '2026-04-01T04:00:00.000Z');
+  const havanaAmbiguousMidnight = knowledgeLlmMonthlyPeriod(
+    new Date('2020-11-15T12:00:00.000Z'),
+    'America/Havana',
+  );
+  assert.equal(
+    havanaAmbiguousMidnight.start.toISOString(),
+    '2020-11-01T05:00:00.000Z',
+  );
+  assert.equal(
+    havanaAmbiguousMidnight.end.toISOString(),
+    '2020-12-01T05:00:00.000Z',
+  );
   assert.throws(
     () => knowledgeLlmMonthlyPeriod(new Date(), 'Not/A_Zone'),
     /Invalid time zone/i,

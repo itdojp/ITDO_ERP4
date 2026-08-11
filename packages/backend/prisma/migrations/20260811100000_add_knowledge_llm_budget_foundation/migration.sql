@@ -482,22 +482,30 @@ DECLARE
   policy_timezone TEXT;
   policy_currency TEXT;
   local_period_start TIMESTAMP;
+  expected_period_start_utc TIMESTAMP;
   expected_period_end_utc TIMESTAMP;
 BEGIN
-  IF TG_OP = 'UPDATE' AND (
-    OLD."policyId" <> NEW."policyId"
-    OR OLD."periodStartUtc" <> NEW."periodStartUtc"
-    OR OLD."periodEndUtc" <> NEW."periodEndUtc"
-    OR OLD."timezone" <> NEW."timezone"
-    OR OLD."currency" <> NEW."currency"
-    OR OLD."createdAt" <> NEW."createdAt"
-    OR NEW."settledActualMicros" < OLD."settledActualMicros"
-    OR NEW."releasedMicros" < OLD."releasedMicros"
-    OR NEW."acceptedRequestCount" < OLD."acceptedRequestCount"
-    OR NEW."version" <= OLD."version"
-  ) THEN
-    RAISE EXCEPTION 'KnowledgeLlmBudgetPeriod boundary or monotonic counter changed'
-      USING ERRCODE = '23514';
+  IF TG_OP = 'UPDATE' THEN
+    IF OLD."policyId" <> NEW."policyId"
+      OR OLD."periodStartUtc" <> NEW."periodStartUtc"
+      OR OLD."periodEndUtc" <> NEW."periodEndUtc"
+      OR OLD."timezone" <> NEW."timezone"
+      OR OLD."currency" <> NEW."currency"
+      OR OLD."createdAt" <> NEW."createdAt"
+      OR NEW."settledActualMicros" < OLD."settledActualMicros"
+      OR NEW."releasedMicros" < OLD."releasedMicros"
+      OR NEW."acceptedRequestCount" < OLD."acceptedRequestCount"
+      OR NEW."version" <= OLD."version"
+    THEN
+      RAISE EXCEPTION 'KnowledgeLlmBudgetPeriod boundary or monotonic counter changed'
+        USING ERRCODE = '23514';
+    END IF;
+
+    -- Policy metadata is immutable for a version and was validated when the
+    -- period was inserted. Counter-only settlement updates must not acquire a
+    -- period -> policy lock after settlement already locked the period; the
+    -- reservation path deliberately uses policy -> period order.
+    RETURN NEW;
   END IF;
 
   SELECT timezone, currency
@@ -516,13 +524,19 @@ BEGIN
 
   local_period_start :=
     (NEW."periodStartUtc" AT TIME ZONE 'UTC') AT TIME ZONE NEW."timezone";
+  expected_period_start_utc :=
+    (
+      DATE_TRUNC('month', local_period_start)
+      AT TIME ZONE NEW."timezone"
+    ) AT TIME ZONE 'UTC';
   expected_period_end_utc :=
     (
       (DATE_TRUNC('month', local_period_start) + INTERVAL '1 month')
       AT TIME ZONE NEW."timezone"
     ) AT TIME ZONE 'UTC';
 
-  IF local_period_start <> DATE_TRUNC('month', local_period_start)
+  IF NEW."periodStartUtc" <> expected_period_start_utc
+    OR local_period_start <> DATE_TRUNC('month', local_period_start)
     OR NEW."periodEndUtc" <> expected_period_end_utc
   THEN
     RAISE EXCEPTION 'KnowledgeLlmBudgetPeriod monthly boundary mismatch'

@@ -353,7 +353,51 @@ function localMidnightUtc(year: number, month: number, timezone: string): Date {
     );
     candidate += desired - represented;
   }
-  return new Date(candidate);
+
+  const expected: ZonedParts = {
+    year,
+    month,
+    day: 1,
+    hour: 0,
+    minute: 0,
+    second: 0,
+  };
+  const matchesExpected = (value: number) => {
+    const parts = zonedParts(new Date(value), timezone);
+    return (Object.keys(expected) as Array<keyof ZonedParts>).every(
+      (key) => parts[key] === expected[key],
+    );
+  };
+
+  // PostgreSQL resolves an ambiguous local timestamp to the later UTC
+  // instant. Probe the offset regimes around the boundary and choose that
+  // same canonical instant so application and DB checks cannot disagree at a
+  // midnight fall-back (for example America/Havana 2020-11-01).
+  const matchingCandidates = new Set<number>();
+  for (
+    let offsetProbe = -48 * 60 * 60 * 1000;
+    offsetProbe <= 48 * 60 * 60 * 1000;
+    offsetProbe += 6 * 60 * 60 * 1000
+  ) {
+    const probe = candidate + offsetProbe;
+    const parts = zonedParts(new Date(probe), timezone);
+    const represented = Date.UTC(
+      parts.year,
+      parts.month - 1,
+      parts.day,
+      parts.hour,
+      parts.minute,
+      parts.second,
+      0,
+    );
+    const possible = desired - (represented - probe);
+    if (matchesExpected(possible)) matchingCandidates.add(possible);
+  }
+  if (matchesExpected(candidate)) matchingCandidates.add(candidate);
+  if (matchingCandidates.size === 0) {
+    throw new Error('invalid_timezone_month_boundary');
+  }
+  return new Date(Math.max(...matchingCandidates));
 }
 
 export function knowledgeLlmMonthlyPeriod(

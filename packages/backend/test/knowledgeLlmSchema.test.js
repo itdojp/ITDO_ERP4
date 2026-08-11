@@ -158,6 +158,14 @@ test('budget policy and periods enforce explicit subject, timezone and integer l
   assert.match(migration, /"softLimitMicros" <= "hardLimitMicros"/);
   assert.match(migration, /KnowledgeLlmBudgetPeriod_counters_check/);
   assert.match(migration, /KnowledgeLlmBudgetPeriod_boundary_guard/);
+  assert.match(
+    migration,
+    /IF TG_OP = 'UPDATE' THEN[\s\S]*?RETURN NEW;[\s\S]*?FOR SHARE;/,
+  );
+  assert.match(
+    migration,
+    /NEW\."periodStartUtc" <> expected_period_start_utc/,
+  );
 });
 
 test('run settlement recomputes actual cost from immutable usage and price snapshots', () => {

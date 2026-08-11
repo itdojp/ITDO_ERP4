@@ -571,8 +571,8 @@ try {
     prisma.knowledgeLlmRun.create({
       data: {
         ...firstRun,
-        id: 'run-invalid-zero-maximum',
-        maximumCostMicros: 0n,
+        id: 'run-invalid-underreserved-maximum',
+        maximumCostMicros: firstRun.maximumCostMicros - 1n,
       },
     }),
     /KnowledgeLlmRun_request_check/,
@@ -1102,6 +1102,90 @@ try {
       },
     },
   });
+
+  await policy({
+    id: 'policy-ambiguous-month-start',
+    subjectType: 'user',
+    subjectId: 'ambiguous-month-start-user',
+    soft: 1000n,
+    hard: 1000n,
+    timezone: 'America/Havana',
+  });
+  const ambiguousMonthWindow = knowledgeLlmMonthlyPeriod(
+    new Date('2020-11-15T12:00:00.000Z'),
+    'America/Havana',
+  );
+  assert.equal(
+    ambiguousMonthWindow.start.toISOString(),
+    '2020-11-01T05:00:00.000Z',
+  );
+  const ambiguousMonthPeriod =
+    await prisma.knowledgeLlmBudgetPeriod.create({
+      data: {
+        id: 'period-ambiguous-month-start',
+        policyId: 'policy-ambiguous-month-start',
+        periodStartUtc: ambiguousMonthWindow.start,
+        periodEndUtc: ambiguousMonthWindow.end,
+        timezone: 'America/Havana',
+        currency: 'JPY',
+      },
+    });
+  await assert.rejects(
+    prisma.knowledgeLlmBudgetPeriod.create({
+      data: {
+        id: 'period-ambiguous-month-start-alternate',
+        policyId: 'policy-ambiguous-month-start',
+        periodStartUtc: new Date('2020-11-01T04:00:00.000Z'),
+        periodEndUtc: ambiguousMonthWindow.end,
+        timezone: 'America/Havana',
+        currency: 'JPY',
+      },
+    }),
+    /monthly boundary mismatch/,
+  );
+
+  let signalPolicyLocked;
+  const policyLocked = new Promise((resolve) => {
+    signalPolicyLocked = resolve;
+  });
+  let releasePolicyLock;
+  const policyLockRelease = new Promise((resolve) => {
+    releasePolicyLock = resolve;
+  });
+  const heldPolicyLock = prisma.$transaction(
+    async (transaction) => {
+      await transaction.$queryRaw`
+        SELECT id
+        FROM "KnowledgeLlmBudgetPolicy"
+        WHERE id = 'policy-ambiguous-month-start'
+        FOR UPDATE
+      `;
+      signalPolicyLocked();
+      await policyLockRelease;
+    },
+    { timeout: 15_000 },
+  );
+  await policyLocked;
+  try {
+    await prisma.$transaction(
+      async (transaction) => {
+        await transaction.$executeRawUnsafe(
+          "SET LOCAL lock_timeout = '1000ms'",
+        );
+        await transaction.knowledgeLlmBudgetPeriod.update({
+          where: { id: ambiguousMonthPeriod.id },
+          data: {
+            version: { increment: 1 },
+            updatedAt: after(100_000),
+          },
+        });
+      },
+      { timeout: 5_000 },
+    );
+  } finally {
+    releasePolicyLock();
+  }
+  await heldPolicyLock;
 
   await policy({
     id: 'policy-org-user',
@@ -3506,6 +3590,8 @@ try {
       periodMismatchTypedAndAudited: true,
       policyMismatchPeriodRollback: true,
       canonicalMonthlyPeriodBoundary: true,
+      ambiguousMonthStartCanonicalized: true,
+      periodCounterUpdateLockOrderVerified: true,
       canonicalActorDatabaseBoundary: true,
       economicReplayConflict: true,
       concurrentReplayConvergence: true,
