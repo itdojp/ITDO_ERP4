@@ -539,7 +539,6 @@ try {
     ).metadata.resultCode,
     'configuration_blocked',
   );
-
   await policy({
     id: 'policy-personal',
     subjectType: 'user',
@@ -564,6 +563,20 @@ try {
     firstReservationTimestamp.createdAt.toISOString(),
     now.toISOString(),
   );
+  const firstRun = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: 'run-first' },
+  });
+  assert.equal(firstRun.maximumCostMicros > 0n, true);
+  await assert.rejects(
+    prisma.knowledgeLlmRun.create({
+      data: {
+        ...firstRun,
+        id: 'run-invalid-zero-maximum',
+        maximumCostMicros: 0n,
+      },
+    }),
+    /KnowledgeLlmRun_request_check/,
+  );
 
   const replay = await service.reserve(firstInput);
   assert.equal(replay.ok, true);
@@ -571,6 +584,47 @@ try {
   assert.equal(
     await prisma.knowledgeLlmReservation.count({
       where: { runId: 'run-first' },
+    }),
+    1,
+  );
+
+  await policy({
+    id: 'policy-concurrent-replay',
+    subjectType: 'user',
+    subjectId: 'concurrent-replay-user',
+    soft: 1000n,
+    hard: 1000n,
+    rate: 10,
+  });
+  const concurrentReplayInput = reservation({
+    runId: 'run-concurrent-replay',
+    userId: 'concurrent-replay-user',
+    keyHash: knowledgeTextHash(
+      'llm-test-request-key',
+      'concurrent-replay',
+    ),
+    maximumCostMicros: 1n,
+  });
+  const concurrentReplay = await Promise.all([
+    service.reserve(concurrentReplayInput),
+    service.reserve(concurrentReplayInput),
+  ]);
+  assert.equal(concurrentReplay.every((result) => result.ok), true);
+  assert.deepEqual(
+    concurrentReplay
+      .map((result) => result.value.created)
+      .sort((left, right) => Number(left) - Number(right)),
+    [false, true],
+  );
+  assert.equal(
+    await prisma.knowledgeLlmRun.count({
+      where: { id: 'run-concurrent-replay' },
+    }),
+    1,
+  );
+  assert.equal(
+    await prisma.knowledgeLlmReservation.count({
+      where: { runId: 'run-concurrent-replay' },
     }),
     1,
   );
@@ -838,6 +892,10 @@ try {
     timezone: 'UTC',
     version: 2,
   });
+  const timezoneDriftPeriodsBefore =
+    await prisma.knowledgeLlmBudgetPeriod.count({
+      where: { policyId: 'policy-timezone-drift-v2' },
+    });
   const timezoneDriftBlocked = await service.reserve(
     reservation({
       runId: 'run-policy-timezone-drift-v2',
@@ -853,6 +911,12 @@ try {
       where: { id: 'run-policy-timezone-drift-v2' },
     }),
     0,
+  );
+  assert.equal(
+    await prisma.knowledgeLlmBudgetPeriod.count({
+      where: { policyId: 'policy-timezone-drift-v2' },
+    }),
+    timezoneDriftPeriodsBefore,
   );
 
   const previousMonthTimestamp = new Date('2026-08-31T23:45:00.000Z');
@@ -973,15 +1037,39 @@ try {
     timezone: 'UTC',
   });
   const currentWindow = knowledgeLlmMonthlyPeriod(now, 'UTC');
-  await prisma.knowledgeLlmBudgetPeriod.create({
-    data: {
-      policyId: 'policy-period-mismatch',
-      periodStartUtc: currentWindow.start,
-      periodEndUtc: new Date(currentWindow.end.getTime() - 86_400_000),
-      timezone: 'UTC',
-      currency: 'JPY',
-    },
-  });
+  const noncanonicalPeriod = {
+    policyId: 'policy-period-mismatch',
+    periodStartUtc: currentWindow.start,
+    periodEndUtc: new Date(currentWindow.end.getTime() - 86_400_000),
+    timezone: 'UTC',
+    currency: 'JPY',
+  };
+  await assert.rejects(
+    prisma.knowledgeLlmBudgetPeriod.create({ data: noncanonicalPeriod }),
+    /monthly boundary mismatch/,
+  );
+  await assert.rejects(
+    prisma.knowledgeLlmBudgetPeriod.create({
+      data: {
+        ...noncanonicalPeriod,
+        periodStartUtc: new Date(
+          currentWindow.start.getTime() + 86_400_000,
+        ),
+        periodEndUtc: new Date(currentWindow.end.getTime() + 86_400_000),
+      },
+    }),
+    /monthly boundary mismatch/,
+  );
+  await prisma.$executeRawUnsafe(
+    'ALTER TABLE "KnowledgeLlmBudgetPeriod" DISABLE TRIGGER "KnowledgeLlmBudgetPeriod_boundary_guard"',
+  );
+  try {
+    await prisma.knowledgeLlmBudgetPeriod.create({ data: noncanonicalPeriod });
+  } finally {
+    await prisma.$executeRawUnsafe(
+      'ALTER TABLE "KnowledgeLlmBudgetPeriod" ENABLE TRIGGER "KnowledgeLlmBudgetPeriod_boundary_guard"',
+    );
+  }
   const periodMismatch = await service.reserve(
     reservation({
       runId: 'run-policy-period-mismatch',
@@ -1006,6 +1094,14 @@ try {
     ).metadata.resultCode,
     'configuration_blocked',
   );
+  await prisma.knowledgeLlmBudgetPeriod.delete({
+    where: {
+      policyId_periodStartUtc: {
+        policyId: 'policy-period-mismatch',
+        periodStartUtc: currentWindow.start,
+      },
+    },
+  });
 
   await policy({
     id: 'policy-org-user',
@@ -2502,22 +2598,29 @@ try {
     ),
     /usage_reconcile_invalid/,
   );
-  const usageReconciliation = await prisma.$transaction((transaction) =>
-    reconcileKnowledgeLlmUsageUnknownBudget(transaction, {
-      runId: 'run-settlement-usage-unknown',
-      runActorUserId: 'settlement-user',
-      operatorActor: terminalAuditActor(
-        'billing-operator',
-        'run-settlement-usage-unknown-reconcile',
+  const usageReconciliation = await Promise.all(
+    [
+      'run-settlement-usage-unknown-reconcile-a',
+      'run-settlement-usage-unknown-reconcile-b',
+    ].map((requestId) =>
+      prisma.$transaction((transaction) =>
+        reconcileKnowledgeLlmUsageUnknownBudget(transaction, {
+          runId: 'run-settlement-usage-unknown',
+          runActorUserId: 'settlement-user',
+          operatorActor: terminalAuditActor('billing-operator', requestId),
+          source: 'operator_billing',
+          evidenceHash: hash('d'),
+          actualInputTokens: 20,
+          actualOutputTokens: 0,
+          completedAt: after(4_300),
+        }),
       ),
-      source: 'operator_billing',
-      evidenceHash: hash('d'),
-      actualInputTokens: 20,
-      actualOutputTokens: 0,
-      completedAt: after(4_300),
-    }),
+    ),
   );
-  assert.equal(usageReconciliation.actualCostMicros, 10n);
+  assert.deepEqual(
+    usageReconciliation.map((result) => result.actualCostMicros),
+    [10n, 10n],
+  );
   const usageReconciled = await prisma.knowledgeLlmRun.findUniqueOrThrow({
     where: { id: 'run-settlement-usage-unknown' },
     include: {
@@ -2550,6 +2653,15 @@ try {
   assert.equal(
     operatorReconcileAudit.metadata.operatorIntervention,
     'billing_evidence',
+  );
+  assert.equal(
+    await prisma.auditLog.count({
+      where: {
+        action: 'knowledge_llm_reconciled',
+        targetId: 'run-settlement-usage-unknown',
+      },
+    }),
+    1,
   );
   assert.equal(usageReconciled.reservations[0].status, 'settled_actual');
   assert.ok(
@@ -3212,12 +3324,33 @@ try {
     },
     directMutationAccountingBefore,
   );
+  const lateReservationPolicy =
+    await prisma.knowledgeLlmBudgetPolicy.findUniqueOrThrow({
+      where: { id: lateRun.reservations[0].budgetPeriod.policyId },
+    });
+  await prisma.knowledgeLlmBudgetPolicy.create({
+    data: {
+      id: 'policy-late-reservation-insert',
+      subjectType: lateReservationPolicy.subjectType,
+      subjectId: lateReservationPolicy.subjectId,
+      currency: lateReservationPolicy.currency,
+      timezone: lateReservationPolicy.timezone,
+      softLimitMicros: lateReservationPolicy.softLimitMicros,
+      hardLimitMicros: lateReservationPolicy.hardLimitMicros,
+      requestsPerHour: lateReservationPolicy.requestsPerHour,
+      version: lateReservationPolicy.version + 100,
+      active: false,
+      createdBy: 'synthetic-admin',
+      updatedBy: 'synthetic-admin',
+    },
+  });
   const latePeriod = await prisma.knowledgeLlmBudgetPeriod.create({
     data: {
       id: 'period-late-reservation-insert',
-      policyId: lateRun.reservations[0].budgetPeriod.policyId,
-      periodStartUtc: new Date(now.getTime() - 86_400_000),
-      periodEndUtc: new Date(now.getTime() + 86_400_000),
+      policyId: 'policy-late-reservation-insert',
+      periodStartUtc:
+        lateRun.reservations[0].budgetPeriod.periodStartUtc,
+      periodEndUtc: lateRun.reservations[0].budgetPeriod.periodEndUtc,
       timezone: lateRun.reservations[0].budgetPeriod.timezone,
       currency: lateRun.currency,
       createdAt: new Date(now.getTime() - 1_000),
@@ -3371,8 +3504,11 @@ try {
       policyBoundaryRolloverRateCarryForward: true,
       policyBoundaryCurrencyRolloverAllowed: true,
       periodMismatchTypedAndAudited: true,
+      policyMismatchPeriodRollback: true,
+      canonicalMonthlyPeriodBoundary: true,
       canonicalActorDatabaseBoundary: true,
       economicReplayConflict: true,
+      concurrentReplayConvergence: true,
       rateLimit: true,
       crossPeriodRateLimit: true,
       idempotency: true,
@@ -3402,6 +3538,7 @@ try {
       lateReservationInsertBlocked: true,
       directReservationSettlementBlocked: true,
       directRunCostRecalculationBlocked: true,
+      runMaximumReservationRecalculationBlocked: true,
       outcomeRunLockOrderVerified: true,
       runReservationAtomicityVerified: true,
       periodLedgerConsistencyVerified: true,
@@ -3410,6 +3547,7 @@ try {
       conversationStateGuard: true,
       outcomeUnknownRequiresReconcileableState: true,
       reconciliation: true,
+      concurrentUsageReconciliation: true,
       auditRollback: true,
       terminalAuditRollback: true,
     }),

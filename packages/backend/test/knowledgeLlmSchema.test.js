@@ -45,6 +45,18 @@ test('LLM foundation is additive and separates execution from settlement', () =>
   assert.match(run, /providerRequestHash\s+String/);
   assert.match(migration, /"providerRequestHash" ~ '\^\[0-9a-f\]\{64\}\$'/);
   assert.match(migration, /KnowledgeLlmRun_state_shape_check/);
+  assert.match(
+    migration,
+    /"maximumCostMicros"::NUMERIC\s*=\s*CEIL\([\s\S]*?"estimatedInputTokens"::NUMERIC[\s\S]*?"inputCostMicrosPerMillion"::NUMERIC[\s\S]*?\+\s*CEIL\([\s\S]*?"maxOutputTokens"::NUMERIC[\s\S]*?"outputCostMicrosPerMillion"::NUMERIC/,
+  );
+  assert.match(
+    migration,
+    /KnowledgeLlmBudgetPeriod_boundary_guard[\s\S]*?BEFORE INSERT OR UPDATE/,
+  );
+  assert.match(
+    migration,
+    /local_period_start[\s\S]*?DATE_TRUNC\('month',[\s\S]*?expected_period_end_utc/,
+  );
   assert.match(migration, /erp4_knowledge_llm_auth_identifier_valid/);
   assert.match(migration, /erp4_knowledge_llm_timezone_valid/);
   assert.match(

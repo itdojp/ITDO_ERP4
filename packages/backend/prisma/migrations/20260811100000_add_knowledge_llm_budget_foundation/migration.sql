@@ -478,8 +478,14 @@ CREATE FUNCTION "erp4_knowledge_llm_period_boundary_guard"()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
+DECLARE
+  policy_timezone TEXT;
+  policy_currency TEXT;
+  local_period_start TIMESTAMP;
+  expected_period_end_utc TIMESTAMP;
 BEGIN
-  IF OLD."policyId" <> NEW."policyId"
+  IF TG_OP = 'UPDATE' AND (
+    OLD."policyId" <> NEW."policyId"
     OR OLD."periodStartUtc" <> NEW."periodStartUtc"
     OR OLD."periodEndUtc" <> NEW."periodEndUtc"
     OR OLD."timezone" <> NEW."timezone"
@@ -489,16 +495,46 @@ BEGIN
     OR NEW."releasedMicros" < OLD."releasedMicros"
     OR NEW."acceptedRequestCount" < OLD."acceptedRequestCount"
     OR NEW."version" <= OLD."version"
-  THEN
+  ) THEN
     RAISE EXCEPTION 'KnowledgeLlmBudgetPeriod boundary or monotonic counter changed'
       USING ERRCODE = '23514';
   END IF;
+
+  SELECT timezone, currency
+  INTO policy_timezone, policy_currency
+  FROM "KnowledgeLlmBudgetPolicy"
+  WHERE id = NEW."policyId"
+  FOR SHARE;
+
+  IF NOT FOUND
+    OR NEW."timezone" <> policy_timezone
+    OR NEW."currency" <> policy_currency
+  THEN
+    RAISE EXCEPTION 'KnowledgeLlmBudgetPeriod policy metadata mismatch'
+      USING ERRCODE = '23514';
+  END IF;
+
+  local_period_start :=
+    (NEW."periodStartUtc" AT TIME ZONE 'UTC') AT TIME ZONE NEW."timezone";
+  expected_period_end_utc :=
+    (
+      (DATE_TRUNC('month', local_period_start) + INTERVAL '1 month')
+      AT TIME ZONE NEW."timezone"
+    ) AT TIME ZONE 'UTC';
+
+  IF local_period_start <> DATE_TRUNC('month', local_period_start)
+    OR NEW."periodEndUtc" <> expected_period_end_utc
+  THEN
+    RAISE EXCEPTION 'KnowledgeLlmBudgetPeriod monthly boundary mismatch'
+      USING ERRCODE = '23514';
+  END IF;
+
   RETURN NEW;
 END;
 $$;
 
 CREATE TRIGGER "KnowledgeLlmBudgetPeriod_boundary_guard"
-  BEFORE UPDATE ON "KnowledgeLlmBudgetPeriod"
+  BEFORE INSERT OR UPDATE ON "KnowledgeLlmBudgetPeriod"
   FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_period_boundary_guard"();
 
 ALTER TABLE "KnowledgeLlmRun"
@@ -528,6 +564,17 @@ ALTER TABLE "KnowledgeLlmRun"
     AND "inputCostMicrosPerMillion" >= 0
     AND "outputCostMicrosPerMillion" >= 0
     AND "maximumCostMicros" >= 0
+    AND "maximumCostMicros"::NUMERIC =
+      CEIL(
+        "estimatedInputTokens"::NUMERIC
+        * "inputCostMicrosPerMillion"::NUMERIC
+        / 1000000
+      )
+      + CEIL(
+        "maxOutputTokens"::NUMERIC
+        * "outputCostMicrosPerMillion"::NUMERIC
+        / 1000000
+      )
     AND ("actualInputTokens" IS NULL OR "actualInputTokens" >= 0)
     AND ("actualOutputTokens" IS NULL OR "actualOutputTokens" >= 0)
     AND ("actualCostMicros" IS NULL OR (

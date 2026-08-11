@@ -425,19 +425,10 @@ async function reserveOnce(
   for (const entry of periods) {
     const usage = await loadAndLockSubjectUsage(transaction, entry, input.now);
     if (usage.currencyMismatch || usage.timezoneMismatch) {
-      await audit.write({
-        action: 'knowledge_llm_budget_blocked',
-        actor: auditActor,
-        targetTable: 'knowledge_llm_runs',
-        targetId: input.runId,
-        metadata: auditMetadata(
-          input,
-          'configuration_blocked',
-          policies.length,
-          false,
-        ),
-      });
-      return failure(400, 'policy_mismatch');
+      // Roll back the current-period upsert before writing the mandatory
+      // blocked audit in the outer transaction. A rejected reservation must
+      // not leave an otherwise unused accounting period behind.
+      throw new KnowledgeLlmPolicyConfigurationError();
     }
     usages.set(entry.policy.id, usage);
     if (usage.recentRequestCount >= BigInt(entry.policy.requestsPerHour)) {
