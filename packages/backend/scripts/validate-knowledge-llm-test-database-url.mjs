@@ -20,6 +20,7 @@ export function validateKnowledgeLlmTestDatabaseUrl(raw, expectedDatabase) {
     !['127.0.0.1', 'localhost'].includes(parsed.hostname) ||
     parsed.pathname !== `/${expectedDatabase}` ||
     parsed.hash !== '' ||
+    [...parsed.searchParams.keys()].some((key) => key !== 'schema') ||
     parsed.searchParams.getAll('schema').length !== 1 ||
     parsed.searchParams.get('schema') !== 'public'
   ) {

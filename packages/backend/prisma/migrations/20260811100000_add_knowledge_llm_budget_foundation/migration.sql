@@ -480,13 +480,9 @@ ALTER TABLE "KnowledgeLlmRun"
           AND "dispatchedAt" IS NULL
         )
         OR (
-          "settlementStatus" = 'released'
-          AND "failureCode" = 'provider_4xx'
-          AND "dispatchedAt" IS NOT NULL
-        )
-        OR (
           "settlementStatus" = 'held_maximum'
           AND "failureCode" IN (
+            'provider_4xx',
             'provider_5xx',
             'malformed_response',
             'response_oversize',
@@ -1149,10 +1145,20 @@ BEGIN
     RAISE EXCEPTION 'KnowledgeLlmRun request boundary is immutable'
       USING ERRCODE = '23514';
   END IF;
-  IF OLD."completedAt" IS NOT NULL
+  IF OLD."dispatchedAt" IS NOT NULL
     AND OLD."dispatchedAt" IS DISTINCT FROM NEW."dispatchedAt"
   THEN
-    RAISE EXCEPTION 'terminal KnowledgeLlmRun dispatch timestamp is immutable'
+    RAISE EXCEPTION 'KnowledgeLlmRun dispatch timestamp is immutable'
+      USING ERRCODE = '23514';
+  END IF;
+  IF OLD."dispatchedAt" IS NULL
+    AND NEW."dispatchedAt" IS NOT NULL
+    AND NOT (
+      OLD."executionStatus" = 'reserved'
+      AND NEW."executionStatus" = 'dispatched'
+    )
+  THEN
+    RAISE EXCEPTION 'KnowledgeLlmRun dispatch timestamp requires dispatch transition'
       USING ERRCODE = '23514';
   END IF;
   IF OLD."completedAt" IS NOT NULL AND NOT (

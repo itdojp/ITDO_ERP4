@@ -88,6 +88,22 @@ test('validateExternalUrl rejects host not in allowlist', async () => {
   );
 });
 
+test('safeFetch bounds DNS lookup time before dispatch', async () => {
+  const { safeFetch } = await loadSafeHttpClient();
+  await assert.rejects(
+    safeFetch(
+      'https://dns-timeout.example.test/resource',
+      {},
+      {
+        timeoutMs: 20,
+        allowedHosts: ['dns-timeout.example.test'],
+        dnsLookupImpl: () => new Promise(() => {}),
+      },
+    ),
+    (error) => error?.code === 'pre_dispatch_timeout',
+  );
+});
+
 test('safeFetch blocks every 3xx response and sends the default user-agent', async () => {
   const { safeFetch } = await loadSafeHttpClient();
   await withHttpServer(

@@ -14,8 +14,13 @@ if (
   !oldRoot ||
   !currentRoot ||
   !['seed', 'current-row', 'old-after'].includes(mode) ||
+  databaseUrl.protocol !== 'postgresql:' ||
   !['127.0.0.1', 'localhost'].includes(databaseUrl.hostname) ||
-  databaseUrl.pathname !== '/erp4_knowledge_llm_old_app'
+  databaseUrl.pathname !== '/erp4_knowledge_llm_old_app' ||
+  databaseUrl.hash !== '' ||
+  [...databaseUrl.searchParams.keys()].some((key) => key !== 'schema') ||
+  databaseUrl.searchParams.getAll('schema').length !== 1 ||
+  databaseUrl.searchParams.get('schema') !== 'public'
 ) {
   throw new Error('Refusing non-ephemeral Knowledge LLM old-app database');
 }

@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 import { PrismaKnowledgeLlmBudgetAdapter } from '../dist/adapters/knowledge/prismaKnowledgeLlmBudgetAdapter.js';
+import { StubExternalLlmTextAdapter } from '../dist/adapters/externalLlm/stubTextAdapter.js';
 import {
   markKnowledgeLlmRunDispatched as markKnowledgeLlmRunDispatchedWithClock,
   reconcileKnowledgeLlmHeldBudget as reconcileKnowledgeLlmHeldBudgetWithClock,
@@ -19,8 +20,13 @@ import {
 const parsed = new URL(process.env.DATABASE_URL || '');
 if (
   process.env.KNOWLEDGE_LLM_BUDGET_INTEGRATION_CONFIRM !== '1' ||
+  parsed.protocol !== 'postgresql:' ||
   !['127.0.0.1', 'localhost'].includes(parsed.hostname) ||
-  parsed.pathname !== '/erp4_knowledge_llm_budget'
+  parsed.pathname !== '/erp4_knowledge_llm_budget' ||
+  parsed.hash !== '' ||
+  [...parsed.searchParams.keys()].some((key) => key !== 'schema') ||
+  parsed.searchParams.getAll('schema').length !== 1 ||
+  parsed.searchParams.get('schema') !== 'public'
 ) {
   throw new Error('Refusing non-ephemeral Knowledge LLM budget database');
 }
@@ -29,7 +35,7 @@ const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
 });
 const catalogModels = [
-  ['stub-default', 1_000_000n, 0n],
+  ['stub-default', 500_000n, 0n],
   ['stub-result', 250_000n, 350_000n],
   ['stub-settlement', 250_000n, 750_000n],
   ['stub-context', 1n, 0n],
@@ -146,10 +152,12 @@ function reservation({
   organizationId = null,
   auditSuffix = runId,
 }) {
-  const resolvedInputCost = inputCostMicrosPerMillion ?? 1_000_000n;
+  const resolvedInputCost = inputCostMicrosPerMillion ?? 500_000n;
   const resolvedEstimatedInputTokens =
     estimatedInputTokens ??
-    (inputCostMicrosPerMillion === undefined ? Number(maximumCostMicros) : 100);
+    (inputCostMicrosPerMillion === undefined
+      ? Number(maximumCostMicros) * 2
+      : 100);
   const model = catalogModels.find(
     (candidate) =>
       candidate.inputCostMicrosPerMillion === resolvedInputCost &&
@@ -171,11 +179,11 @@ function reservation({
     catalogVersion: 1,
     promptTemplateVersion: 1,
     requestKeyHash: keyHash,
-    requestPayloadHash: payloadHash,
+    confirmedPreviewPayloadHash: payloadHash,
     selectedContextFingerprint,
     systemPrompt: '',
     userPrompt: '',
-    selectedSourceCount: 0,
+    selectedContextRepresentations: [],
     reservationInputTokenFloor: resolvedEstimatedInputTokens,
     maxOutputTokens: 100,
     // Runtime callers may carry an extra timestamp field. The use case must
@@ -325,6 +333,107 @@ async function exerciseResultUnknownReconciliation({
 
 try {
   await policy({
+    id: 'policy-rendered-prompt',
+    subjectType: 'user',
+    subjectId: 'rendered-prompt-user',
+    soft: 900n,
+    hard: 1000n,
+  });
+  const renderedPromptInput = reservation({
+    runId: 'run-rendered-prompt',
+    userId: 'rendered-prompt-user',
+    keyHash: hash('c'),
+    payloadHash: hash('d'),
+    maximumCostMicros: 32n,
+  });
+  delete renderedPromptInput.reservationInputTokenFloor;
+  const renderedPromptReservation = await service.reserve(renderedPromptInput);
+  assert.equal(renderedPromptReservation.ok, true);
+  const renderedPromptRun = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: 'run-rendered-prompt' },
+  });
+  const renderedPromptResult = await new StubExternalLlmTextAdapter().complete({
+    provider: 'stub',
+    model: 'stub-default',
+    systemPrompt: '',
+    userPrompt: '',
+    maxOutputTokens: 100,
+    temperatureBasisPoints: 0,
+  });
+  assert.equal(renderedPromptRun.estimatedInputTokens, 64);
+  assert.equal(renderedPromptResult.usageStatus, 'reported');
+  assert.equal(
+    renderedPromptResult.usage.inputTokens,
+    renderedPromptRun.estimatedInputTokens,
+  );
+  assert.ok(
+    (BigInt(renderedPromptResult.usage.inputTokens) * 500_000n + 999_999n) /
+      1_000_000n <=
+      renderedPromptRun.maximumCostMicros,
+  );
+
+  const missingPolicy = await service.reserve(
+    reservation({
+      runId: 'run-missing-policy',
+      userId: 'missing-policy-user',
+      keyHash: hash('4'),
+      payloadHash: hash('5'),
+      maximumCostMicros: 40n,
+    }),
+  );
+  assert.equal(missingPolicy.ok, false);
+  assert.equal(missingPolicy.error.code, 'policy_not_found');
+  assert.equal(
+    (
+      await prisma.auditLog.findFirstOrThrow({
+        where: {
+          action: 'knowledge_llm_budget_blocked',
+          targetId: 'run-missing-policy',
+        },
+      })
+    ).metadata.resultCode,
+    'configuration_blocked',
+  );
+
+  await prisma.knowledgeLlmBudgetPolicy.create({
+    data: {
+      id: 'policy-currency-mismatch',
+      subjectType: 'user',
+      subjectId: 'currency-mismatch-user',
+      currency: 'USD',
+      timezone: 'UTC',
+      softLimitMicros: 900n,
+      hardLimitMicros: 1000n,
+      requestsPerHour: 10,
+      version: 1,
+      createdBy: 'synthetic-admin',
+      updatedBy: 'synthetic-admin',
+    },
+  });
+  const currencyMismatch = await service.reserve(
+    reservation({
+      runId: 'run-currency-mismatch',
+      userId: 'currency-mismatch-user',
+      keyHash: hash('6'),
+      payloadHash: hash('7'),
+      maximumCostMicros: 40n,
+    }),
+  );
+  assert.equal(currencyMismatch.ok, false);
+  assert.equal(currencyMismatch.error.code, 'policy_mismatch');
+  assert.equal(
+    (
+      await prisma.auditLog.findFirstOrThrow({
+        where: {
+          action: 'knowledge_llm_budget_blocked',
+          targetId: 'run-currency-mismatch',
+        },
+      })
+    ).metadata.resultCode,
+    'configuration_blocked',
+  );
+
+  await policy({
     id: 'policy-personal',
     subjectType: 'user',
     subjectId: 'budget-user',
@@ -363,7 +472,7 @@ try {
   const conflict = await service.reserve({
     ...firstInput,
     runId: 'run-conflicting-replay',
-    requestPayloadHash: hash('d'),
+    confirmedPreviewPayloadHash: hash('d'),
   });
   assert.equal(conflict.ok, false);
   assert.equal(conflict.error.code, 'idempotency_conflict');
@@ -634,7 +743,12 @@ try {
       },
     },
   });
-  const boundaryRateBlocked = await service.reserve({
+  const boundaryService = createKnowledgeLlmBudgetUseCases(
+    new PrismaKnowledgeLlmBudgetAdapter(prisma),
+    { version: 1, models: catalogModels },
+    () => new Date(boundaryNow.getTime()),
+  );
+  const boundaryRateBlocked = await boundaryService.reserve({
     ...reservation({
       runId: 'run-rate-boundary-current',
       userId: 'rate-boundary-user',
@@ -642,7 +756,6 @@ try {
       payloadHash: hash('1'),
       maximumCostMicros: 1n,
     }),
-    now: boundaryNow,
   });
   assert.equal(boundaryRateBlocked.ok, false);
   assert.equal(boundaryRateBlocked.error.code, 'rate_limit');
@@ -1166,6 +1279,26 @@ try {
   await assert.rejects(
     prisma.knowledgeLlmRun.update({
       where: { id: 'run-context-freeze' },
+      data: { dispatchedAt: after(2_201) },
+    }),
+    /dispatch timestamp is immutable/,
+  );
+  await assert.rejects(
+    prisma.knowledgeLlmRun.update({
+      where: { id: 'run-context-freeze' },
+      data: {
+        executionStatus: 'failed',
+        settlementStatus: 'held_maximum',
+        failureCode: 'provider_5xx',
+        completedAt: after(2_250),
+        dispatchedAt: after(2_201),
+      },
+    }),
+    /dispatch timestamp is immutable/,
+  );
+  await assert.rejects(
+    prisma.knowledgeLlmRun.update({
+      where: { id: 'run-context-freeze' },
       data: { settlementStatus: 'held_maximum' },
     }),
   );
@@ -1202,10 +1335,22 @@ try {
     settleKnowledgeLlmBudget(transaction, {
       runId: 'run-context-freeze',
       actorUserId: 'settlement-user',
-      auditActor: terminalAuditActor('settlement-user', 'context-release'),
+      auditActor: terminalAuditActor('settlement-user', 'context-hold'),
       completedAt: after(2_300),
-      settlement: { type: 'release', failureCode: 'provider_4xx' },
+      settlement: {
+        type: 'hold',
+        executionStatus: 'failed',
+        failureCode: 'provider_4xx',
+      },
     }),
+  );
+  assert.equal(
+    (
+      await prisma.knowledgeLlmRun.findUniqueOrThrow({
+        where: { id: 'run-context-freeze' },
+      })
+    ).settlementStatus,
+    'held_maximum',
   );
 
   await policy({
@@ -1471,7 +1616,7 @@ try {
       keyHash: conversationTurnHash('turn-hash-request-key'),
       payloadHash: conversationTurnHash('turn-hash-payload'),
       maximumCostMicros: 100n,
-      inputCostMicrosPerMillion: 1_000_000n,
+      inputCostMicrosPerMillion: 500_000n,
       outputCostMicrosPerMillion: 0n,
     }),
   );

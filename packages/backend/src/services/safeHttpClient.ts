@@ -128,6 +128,30 @@ async function ensurePublicHost(
   return normalized;
 }
 
+async function resolvePermittedHost(
+  hostname: string,
+  lookupImpl: (hostname: string) => Promise<DnsLookupResult>,
+): Promise<DnsLookupResult> {
+  const literalVersion = isIP(hostname);
+  if (literalVersion) {
+    return [{ address: hostname, family: literalVersion }];
+  }
+  let resolved: DnsLookupResult;
+  try {
+    resolved = await lookupImpl(hostname);
+  } catch {
+    throw new SafeHttpError('dns_lookup_failed');
+  }
+  if (!Array.isArray(resolved) || resolved.length === 0) {
+    throw new SafeHttpError('dns_lookup_failed');
+  }
+  const normalized = normalizeResolvedAddresses(resolved);
+  if (normalized.some((entry) => !entry.family)) {
+    throw new SafeHttpError('dns_lookup_failed');
+  }
+  return normalized;
+}
+
 function resolveDnsLookup(
   custom?: (hostname: string) => Promise<DnsLookupResult>,
 ) {
@@ -163,13 +187,11 @@ async function validateExternalUrlForFetch(
     throw new SafeHttpError('host_not_allowed');
   }
 
+  const lookup = resolveDnsLookup(options.dnsLookupImpl);
   const pinnedAddresses =
     options.allowPrivateIp === true
-      ? []
-      : await ensurePublicHost(
-          hostname,
-          resolveDnsLookup(options.dnsLookupImpl),
-        );
+      ? await resolvePermittedHost(hostname, lookup)
+      : await ensurePublicHost(hostname, lookup);
   return { url, pinnedAddresses };
 }
 
@@ -241,6 +263,24 @@ function responseHeadersFromNode(
     }
   }
   return output;
+}
+
+async function withPreDispatchTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(
+      () => reject(new SafeHttpError('pre_dispatch_timeout')),
+      timeoutMs,
+    );
+  });
+  try {
+    return await Promise.race([operation, expired]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 async function pinnedRequestFetch(
@@ -348,11 +388,15 @@ export async function safeFetch(
   init: RequestInit = {},
   options: SafeHttpOptions = {},
 ) {
-  const { url: validatedUrl, pinnedAddresses } =
-    await validateExternalUrlForFetch(rawUrl, options);
   const timeoutMs = Number.isFinite(options.timeoutMs)
     ? Math.max(1, Math.floor(options.timeoutMs as number))
     : 5000;
+  const startedAt = Date.now();
+  const { url: validatedUrl, pinnedAddresses } = await withPreDispatchTimeout(
+    validateExternalUrlForFetch(rawUrl, options),
+    timeoutMs,
+  );
+  const remainingTimeoutMs = Math.max(1, timeoutMs - (Date.now() - startedAt));
   const userAgent = (options.userAgent || '').trim() || 'ITDO_ERP4/0.1';
 
   const controller = new AbortController();
@@ -367,7 +411,7 @@ export async function safeFetch(
       callerSignal.addEventListener('abort', abortFromCaller, { once: true });
     }
   }
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), remainingTimeoutMs);
   timer.unref?.();
   let cleanedUp = false;
   const cleanup = () => {
@@ -388,7 +432,7 @@ export async function safeFetch(
       { ...init, signal: controller.signal },
       {
         pinnedAddresses,
-        timeoutMs,
+        timeoutMs: remainingTimeoutMs,
         headers,
         onResponseSettled: cleanup,
       },

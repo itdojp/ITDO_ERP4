@@ -120,6 +120,19 @@ test('openai runtime requires separate key and an allowlisted base host', async 
   assert.throws(
     () =>
       getKnowledgeLlmRuntimeConfig({
+        NODE_ENV: ' Production ',
+        KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'openai',
+        KNOWLEDGE_LLM_MODEL_CATALOG_JSON: openAiCatalog,
+        KNOWLEDGE_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-test-key',
+        KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS: 'api.example.test',
+        KNOWLEDGE_EXTERNAL_LLM_OPENAI_BASE_URL: 'http://api.example.test/v1',
+        KNOWLEDGE_EXTERNAL_LLM_ALLOW_HTTP: 'true',
+      }),
+    /KNOWLEDGE_EXTERNAL_LLM_ALLOW_HTTP/,
+  );
+  assert.throws(
+    () =>
+      getKnowledgeLlmRuntimeConfig({
         KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'openai',
         KNOWLEDGE_LLM_MODEL_CATALOG_JSON: openAiCatalog,
         KNOWLEDGE_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-test-key',
@@ -134,7 +147,7 @@ test('openai runtime requires separate key and an allowlisted base host', async 
 test('conservative estimate and timezone month boundary are deterministic', async () => {
   const { estimateKnowledgeLlmInputTokens } = await configModule();
   const { knowledgeLlmMonthlyPeriod } = await budgetModule();
-  assert.equal(estimateKnowledgeLlmInputTokens(100, 3), 248);
+  assert.equal(estimateKnowledgeLlmInputTokens(100, 3), 312);
   const tokyo = knowledgeLlmMonthlyPeriod(
     new Date('2026-08-11T04:00:00.000Z'),
     'Asia/Tokyo',
@@ -182,11 +195,11 @@ test('organization reservation fails closed when canonical organization differs'
     catalogVersion: 3,
     promptTemplateVersion: 1,
     requestKeyHash: 'a'.repeat(64),
-    requestPayloadHash: 'b'.repeat(64),
+    confirmedPreviewPayloadHash: 'b'.repeat(64),
     selectedContextFingerprint: 'c'.repeat(64),
     systemPrompt: '',
     userPrompt: '',
-    selectedSourceCount: 0,
+    selectedContextRepresentations: [],
     reservationInputTokenFloor: 100,
     maxOutputTokens: 100,
     inputCostMicrosPerMillion: 100_000n,
@@ -233,11 +246,11 @@ test('reservation pricing is resolved from the enabled catalog, not caller field
     catalogVersion: 3,
     promptTemplateVersion: 1,
     requestKeyHash: 'd'.repeat(64),
-    requestPayloadHash: 'e'.repeat(64),
+    confirmedPreviewPayloadHash: 'e'.repeat(64),
     selectedContextFingerprint: 'f'.repeat(64),
     systemPrompt: '',
     userPrompt: '',
-    selectedSourceCount: 0,
+    selectedContextRepresentations: [],
     reservationInputTokenFloor: 3,
     maxOutputTokens: 7,
     // Runtime JavaScript may still carry untrusted extra fields. The use case
@@ -251,8 +264,9 @@ test('reservation pricing is resolved from the enabled catalog, not caller field
   assert.equal(result.ok, true);
   assert.equal(received.inputCostMicrosPerMillion, 1_250_000n);
   assert.equal(received.outputCostMicrosPerMillion, 2_500_000n);
-  assert.equal(received.maximumCostMicros, 22n);
-  assert.equal(received.estimatedInputTokens, 3);
+  assert.equal(received.maximumCostMicros, 98n);
+  assert.equal(received.estimatedInputTokens, 64);
+  assert.notEqual(received.requestPayloadHash, 'e'.repeat(64));
   assert.equal('systemPrompt' in received, false);
   assert.equal('userPrompt' in received, false);
   assert.equal(received.currency, 'JPY');
@@ -273,11 +287,11 @@ test('reservation rejects stale, disabled, unknown and over-limit catalog select
     catalogVersion: 3,
     promptTemplateVersion: 1,
     requestKeyHash: '1'.repeat(64),
-    requestPayloadHash: '2'.repeat(64),
+    confirmedPreviewPayloadHash: '2'.repeat(64),
     selectedContextFingerprint: '3'.repeat(64),
     systemPrompt: '',
     userPrompt: '',
-    selectedSourceCount: 0,
+    selectedContextRepresentations: [],
     reservationInputTokenFloor: 3,
     maxOutputTokens: 7,
     now: new Date('2026-08-11T00:00:00.000Z'),
@@ -360,15 +374,66 @@ test('reservation derives a conservative floor from exact rendered prompts', asy
     catalogVersion: 3,
     promptTemplateVersion: 1,
     requestKeyHash: '4'.repeat(64),
-    requestPayloadHash: '5'.repeat(64),
+    confirmedPreviewPayloadHash: '5'.repeat(64),
     selectedContextFingerprint: '6'.repeat(64),
     systemPrompt: '12345',
     userPrompt: '67890',
-    selectedSourceCount: 2,
+    selectedContextRepresentations: ['A', 'B'],
     reservationInputTokenFloor: 1,
     maxOutputTokens: 7,
   });
   assert.equal(result.ok, true);
-  assert.equal(received.estimatedInputTokens, 52);
-  assert.equal(received.maximumCostMicros, 83n);
+  assert.equal(received.estimatedInputTokens, 120);
+  assert.equal(received.maximumCostMicros, 168n);
+});
+
+test('reservation enforces raw user and selected-context byte limits independently', async () => {
+  const { createKnowledgeLlmBudgetUseCases } = await budgetModule();
+  const { knowledgeLlmLimits, parseKnowledgeLlmModelCatalog } =
+    await configModule();
+  let calls = 0;
+  const service = createKnowledgeLlmBudgetUseCases(
+    {
+      async reserve() {
+        calls += 1;
+        throw new Error('must not call');
+      },
+    },
+    parseKnowledgeLlmModelCatalog(catalog()),
+  );
+  const base = {
+    runId: 'prompt-limit-run',
+    actor: { userId: 'synthetic-user', groupAccountIds: [] },
+    auditActor: {},
+    scope: 'personal',
+    organizationId: null,
+    provider: 'stub',
+    model: 'stub-v1',
+    catalogVersion: 3,
+    promptTemplateVersion: 1,
+    requestKeyHash: '7'.repeat(64),
+    confirmedPreviewPayloadHash: '8'.repeat(64),
+    selectedContextFingerprint: '9'.repeat(64),
+    systemPrompt: '',
+    userPrompt: '',
+    selectedContextRepresentations: [],
+    maxOutputTokens: 7,
+  };
+  const oversizedUser = await service.reserve({
+    ...base,
+    userPrompt: 'u'.repeat(knowledgeLlmLimits.userPromptBytes + 1),
+  });
+  assert.equal(oversizedUser.ok, false);
+  const oversizedContext = await service.reserve({
+    ...base,
+    selectedContextRepresentations: [
+      'c'.repeat(knowledgeLlmLimits.sourceBytes),
+      'd'.repeat(knowledgeLlmLimits.sourceBytes),
+      'e'.repeat(knowledgeLlmLimits.sourceBytes),
+      'f'.repeat(knowledgeLlmLimits.sourceBytes),
+      'g',
+    ],
+  });
+  assert.equal(oversizedContext.ok, false);
+  assert.equal(calls, 0);
 });

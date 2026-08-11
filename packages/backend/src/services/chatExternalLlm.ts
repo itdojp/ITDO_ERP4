@@ -176,6 +176,15 @@ export async function summarizeWithExternalLlm(options: {
     ) {
       throw new Error(`openai_error_${error.providerStatus}`);
     }
+    if (
+      error instanceof ExternalLlmProviderError &&
+      error.outcome === 'not_dispatched' &&
+      error.preDispatchDiagnostic !== null
+    ) {
+      // Preserve the pre-existing Chat diagnostic code while the shared port
+      // keeps a complete provider-neutral certainty classification.
+      throw new Error(error.preDispatchDiagnostic);
+    }
     throw error;
   }
 

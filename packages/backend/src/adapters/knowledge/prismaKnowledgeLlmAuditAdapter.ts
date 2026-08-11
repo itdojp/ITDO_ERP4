@@ -27,6 +27,8 @@ const reservationResultCodeSet = new Set([
   'conflict',
   'hard_blocked',
   'rate_blocked',
+  'configuration_blocked',
+  'reservation_conflict',
 ]);
 const terminalResultCodeSet = new Set([
   'dispatched',
@@ -52,7 +54,11 @@ const terminalFailureCodeSet = new Set([
 ]);
 const actionResultCodes: Record<string, ReadonlySet<string>> = {
   knowledge_llm_budget_reserved: new Set(['reserved']),
-  knowledge_llm_budget_blocked: new Set(['hard_blocked']),
+  knowledge_llm_budget_blocked: new Set([
+    'hard_blocked',
+    'configuration_blocked',
+    'reservation_conflict',
+  ]),
   knowledge_llm_rate_blocked: new Set(['rate_blocked']),
   knowledge_llm_duplicate_detected: new Set(['reused', 'conflict']),
   knowledge_llm_dispatched: new Set(['dispatched']),
@@ -110,7 +116,8 @@ function auditMetadata(entry: KnowledgeLlmAuditEntry): Prisma.InputJsonObject {
     !/^(0|[1-9][0-9]{0,18})$/.test(metadata.reservedCostMicros) ||
     !/^[A-Z]{3}$/.test(metadata.currency) ||
     !Number.isSafeInteger(metadata.policyCount) ||
-    metadata.policyCount < 1 ||
+    metadata.policyCount <
+      (metadata.resultCode === 'configuration_blocked' ? 0 : 1) ||
     metadata.policyCount > 2 ||
     (!reservationResult && !terminalResult) ||
     !actionResultCodes[entry.action]?.has(metadata.resultCode)

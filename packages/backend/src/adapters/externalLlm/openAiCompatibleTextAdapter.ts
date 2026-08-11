@@ -9,7 +9,7 @@ import {
   safeFetch,
   type SafeHttpOptions,
 } from '../../services/safeHttpClient.js';
-import { readBoundedResponseText } from '../../services/redaction.js';
+import { readBoundedResponseTextWithLimit } from '../../services/redaction.js';
 
 export type OpenAiCompatibleTextAdapterConfig = {
   apiKey: string;
@@ -26,6 +26,15 @@ export type OpenAiCompatibleTextAdapterConfig = {
 };
 
 const defaultMaximumResponseBytes = 1024 * 1024;
+
+function normalizeMaximumResponseBytes(value: number | undefined) {
+  const normalized = value ?? defaultMaximumResponseBytes;
+  return Number.isSafeInteger(normalized) &&
+    normalized >= 1 &&
+    normalized <= defaultMaximumResponseBytes
+    ? normalized
+    : null;
+}
 
 function strictNonNegativeInteger(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
@@ -110,6 +119,17 @@ function timeoutLike(error: unknown): boolean {
   );
 }
 
+const preDispatchDiagnosticSet = new Set([
+  'dns_lookup_failed',
+  'host_not_allowed',
+  'private_ip_blocked',
+  'insecure_scheme',
+  'invalid_url',
+  'missing_hostname',
+  'pre_dispatch_timeout',
+  'unsupported_body',
+]);
+
 async function readJsonBounded(response: Response, maximumBytes: number) {
   const contentLength = response.headers.get('content-length');
   if (
@@ -123,11 +143,11 @@ async function readJsonBounded(response: Response, maximumBytes: number) {
       response.status,
     );
   }
-  // The shared diagnostic reader intentionally truncates. Read one byte past
-  // this adapter's contract so truncation cannot turn an oversized response
-  // into valid JSON or misclassify it as merely malformed.
-  const text = await readBoundedResponseText(response, maximumBytes + 1);
-  if (Buffer.byteLength(text, 'utf8') > maximumBytes) {
+  const bounded = await readBoundedResponseTextWithLimit(
+    response,
+    maximumBytes,
+  );
+  if (bounded.exceededLimit) {
     throw new ExternalLlmProviderError(
       'response_oversize',
       'known_response',
@@ -135,7 +155,7 @@ async function readJsonBounded(response: Response, maximumBytes: number) {
     );
   }
   try {
-    return JSON.parse(text) as unknown;
+    return JSON.parse(bounded.text) as unknown;
   } catch {
     throw new ExternalLlmProviderError(
       'malformed_response',
@@ -157,6 +177,15 @@ export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
     request: ExternalLlmTextRequest,
   ): Promise<ExternalLlmTextResult> {
     if (request.provider !== 'openai') {
+      throw new ExternalLlmProviderError(
+        'rejected_before_dispatch',
+        'not_dispatched',
+      );
+    }
+    const maximumResponseBytes = normalizeMaximumResponseBytes(
+      this.config.maximumResponseBytes,
+    );
+    if (maximumResponseBytes === null) {
       throw new ExternalLlmProviderError(
         'rejected_before_dispatch',
         'not_dispatched',
@@ -192,27 +221,28 @@ export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
         },
       );
     } catch (error) {
+      const diagnosticCode = errorCode(error);
+      if (preDispatchDiagnosticSet.has(diagnosticCode)) {
+        throw new ExternalLlmProviderError(
+          'rejected_before_dispatch',
+          'not_dispatched',
+          null,
+          diagnosticCode as
+            | 'dns_lookup_failed'
+            | 'host_not_allowed'
+            | 'private_ip_blocked'
+            | 'insecure_scheme'
+            | 'invalid_url'
+            | 'missing_hostname'
+            | 'pre_dispatch_timeout'
+            | 'unsupported_body',
+        );
+      }
       if (timeoutLike(error)) {
         throw new ExternalLlmProviderError(
           'timeout_outcome_unknown',
           'unknown',
         );
-      }
-      if (errorCode(error) === 'dns_lookup_failed') {
-        throw new ExternalLlmProviderError(
-          'rejected_before_dispatch',
-          'not_dispatched',
-        );
-      }
-      const message = error instanceof Error ? error.message : '';
-      if (
-        /host_not_allowed|private_ip_blocked|http_not_allowed|invalid_url/i.test(
-          message,
-        )
-      ) {
-        // Preserve the established safeFetch diagnostic contract for the Chat
-        // compatibility wrapper without exposing request material.
-        throw error;
       }
       throw new ExternalLlmProviderError(
         'connection_outcome_unknown',
@@ -240,10 +270,7 @@ export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
     let body: unknown;
     let content: string;
     try {
-      body = await readJsonBounded(
-        response,
-        this.config.maximumResponseBytes ?? defaultMaximumResponseBytes,
-      );
+      body = await readJsonBounded(response, maximumResponseBytes);
       content = responseContent(body, response.status);
     } catch (error) {
       if (

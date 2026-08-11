@@ -39,16 +39,21 @@ export type KnowledgeLlmReservationRequest = {
 export type KnowledgeLlmReservationCommand = Omit<
   KnowledgeLlmReservationRequest,
   | 'estimatedInputTokens'
+  | 'requestPayloadHash'
   | 'inputCostMicrosPerMillion'
   | 'outputCostMicrosPerMillion'
   | 'maximumCostMicros'
   | 'currency'
   | 'now'
 > & {
-  /** Exact rendered prompts that will be dispatched; never persisted by the budget port. */
+  /** Opaque canonical payload hash accepted only after preview-token verification. */
+  confirmedPreviewPayloadHash: string;
+  /** Exact system prompt that will be dispatched; never persisted by the budget port. */
   systemPrompt: string;
+  /** Raw user-authored prompt, kept separate so its 16 KiB limit cannot be consumed by context. */
   userPrompt: string;
-  selectedSourceCount: number;
+  /** Exact selected, sanitized context representations; never persisted by the budget port. */
+  selectedContextRepresentations: readonly string[];
   /** Optional safe over-reservation floor; it can never reduce the derived estimate. */
   reservationInputTokenFloor?: number;
 };
@@ -127,7 +132,13 @@ export type KnowledgeLlmAuditMetadata =
       reservedCostMicros: string;
       currency: string;
       resultCode:
-        'reserved' | 'reused' | 'conflict' | 'hard_blocked' | 'rate_blocked';
+        | 'reserved'
+        | 'reused'
+        | 'conflict'
+        | 'hard_blocked'
+        | 'rate_blocked'
+        | 'configuration_blocked'
+        | 'reservation_conflict';
       policyCount: number;
       softLimitWarning: boolean;
     }

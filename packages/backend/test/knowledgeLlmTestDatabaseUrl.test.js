@@ -23,6 +23,9 @@ test('Knowledge LLM external database URL accepts only the exact local ephemeral
     'postgresql://user:secret-canary@localhost:5432/production?schema=public',
     'postgresql://user:secret-canary@localhost:5432/erp4_knowledge_llm_budget?schema=private',
     'postgresql://user:secret-canary@localhost:5432/erp4_knowledge_llm_budget?schema=public&schema=private',
+    'postgresql://user:secret-canary@localhost:5432/erp4_knowledge_llm_budget?schema=public&host=example.test',
+    'postgresql://user:secret-canary@localhost:5432/erp4_knowledge_llm_budget?schema=public&hostaddr=203.0.113.1',
+    'postgresql://user:secret-canary@localhost:5432/erp4_knowledge_llm_budget?schema=public&port=5433',
     'http://localhost/erp4_knowledge_llm_budget?schema=public',
   ]) {
     assert.throws(

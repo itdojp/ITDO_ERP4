@@ -228,7 +228,13 @@ async function loadAndLockSubjectUsage(
 function auditMetadata(
   input: KnowledgeLlmReservationRequest,
   resultCode:
-    'reserved' | 'reused' | 'conflict' | 'hard_blocked' | 'rate_blocked',
+    | 'reserved'
+    | 'reused'
+    | 'conflict'
+    | 'hard_blocked'
+    | 'rate_blocked'
+    | 'configuration_blocked'
+    | 'reservation_conflict',
   policyCount: number,
   softLimitWarning: boolean,
 ) {
@@ -310,15 +316,50 @@ async function reserveOnce(
   }
 
   const policies = await lockPolicies(transaction, input);
-  if (!policies) return failure(400, 'policy_not_found');
+  if (!policies) {
+    await audit.write({
+      action: 'knowledge_llm_budget_blocked',
+      actor: auditActor,
+      targetTable: 'knowledge_llm_runs',
+      targetId: input.runId,
+      metadata: auditMetadata(input, 'configuration_blocked', 0, false),
+    });
+    return failure(400, 'policy_not_found');
+  }
   if (policies.some((policy) => policy.currency !== input.currency)) {
+    await audit.write({
+      action: 'knowledge_llm_budget_blocked',
+      actor: auditActor,
+      targetTable: 'knowledge_llm_runs',
+      targetId: input.runId,
+      metadata: auditMetadata(
+        input,
+        'configuration_blocked',
+        policies.length,
+        false,
+      ),
+    });
     return failure(400, 'policy_mismatch');
   }
   const periods = await ensureAndLockPeriods(transaction, policies, input.now);
   const usages = new Map<string, SubjectUsage>();
   for (const entry of periods) {
     const usage = await loadAndLockSubjectUsage(transaction, entry, input.now);
-    if (usage.currencyMismatch) return failure(400, 'policy_mismatch');
+    if (usage.currencyMismatch) {
+      await audit.write({
+        action: 'knowledge_llm_budget_blocked',
+        actor: auditActor,
+        targetTable: 'knowledge_llm_runs',
+        targetId: input.runId,
+        metadata: auditMetadata(
+          input,
+          'configuration_blocked',
+          policies.length,
+          false,
+        ),
+      });
+      return failure(400, 'policy_mismatch');
+    }
     usages.set(entry.policy.id, usage);
     if (usage.recentRequestCount >= BigInt(entry.policy.requestsPerHour)) {
       await audit.write({
@@ -444,6 +485,24 @@ export class PrismaKnowledgeLlmBudgetAdapter implements KnowledgeLlmBudgetPort {
       } catch (error) {
         if (!retryable(error)) throw error;
         if (attempt + 1 >= knowledgeLlmLimits.serializableAttempts) {
+          await this.client.$transaction(async (transaction) => {
+            const audit = new PrismaKnowledgeLlmAuditWriter(transaction);
+            await audit.write({
+              action: 'knowledge_llm_budget_blocked',
+              actor: knowledgeProvenanceAuditActor(
+                input.actor,
+                input.auditActor,
+              ),
+              targetTable: 'knowledge_llm_runs',
+              targetId: input.runId,
+              metadata: auditMetadata(
+                input,
+                'reservation_conflict',
+                requiredSubjects(input).length,
+                false,
+              ),
+            });
+          });
           return failure(409, 'reservation_conflict');
         }
       }

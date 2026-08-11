@@ -76,14 +76,8 @@ test('LLM foundation is additive and separates execution from settlement', () =>
     migration,
     /OLD\."inputCostMicrosPerMillion" <> NEW\."inputCostMicrosPerMillion"/,
   );
-  assert.match(
-    migration,
-    /OLD\."softLimitWarning" <> NEW\."softLimitWarning"/,
-  );
-  assert.match(
-    migration,
-    /terminal KnowledgeLlmRun dispatch timestamp is immutable/,
-  );
+  assert.match(migration, /OLD\."softLimitWarning" <> NEW\."softLimitWarning"/);
+  assert.match(migration, /KnowledgeLlmRun dispatch timestamp is immutable/);
   assert.match(
     migration,
     /OLD\."executionStatus" = 'result_unknown'[\s\S]*?NEW\."executionStatus" = 'result_ready'/,
@@ -96,6 +90,11 @@ test('LLM foundation is additive and separates execution from settlement', () =>
     /"executionStatus" = 'failed'[\s\S]*?"settlementStatus" = 'held_maximum'[\s\S]*?"failureCode" IN \(([\s\S]*?)\)\n\s+AND "dispatchedAt"/,
   );
   assert.ok(failedHeldShape);
+  assert.match(failedHeldShape[1], /provider_4xx/);
+  assert.doesNotMatch(
+    migration,
+    /"settlementStatus" = 'released'\s+AND "failureCode" = 'provider_4xx'/,
+  );
   assert.doesNotMatch(
     failedHeldShape[1],
     /timeout_outcome_unknown|connection_outcome_unknown|finalization_failed|usage_missing|usage_invalid/,

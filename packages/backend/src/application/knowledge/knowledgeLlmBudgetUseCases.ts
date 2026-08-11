@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type {
   KnowledgeLlmBudgetPort,
   KnowledgeLlmBudgetResult,
@@ -16,6 +18,39 @@ import {
 
 const sha256Pattern = /^[0-9a-f]{64}$/;
 const maximumDatabaseBigInt = 9_223_372_036_854_775_807n;
+
+function updateHashField(hash: ReturnType<typeof createHash>, value: string) {
+  const bytes = Buffer.from(value, 'utf8');
+  const length = Buffer.allocUnsafe(4);
+  length.writeUInt32BE(bytes.length);
+  hash.update(length);
+  hash.update(bytes);
+}
+
+function reservationPayloadHash(input: KnowledgeLlmReservationCommand) {
+  const hash = createHash('sha256');
+  hash.update('erp4:knowledge:llm-reservation-payload:v1\0', 'utf8');
+  for (const value of [
+    input.scope,
+    input.organizationId ?? '',
+    input.provider,
+    input.model,
+    String(input.catalogVersion),
+    String(input.promptTemplateVersion),
+    input.confirmedPreviewPayloadHash,
+    input.selectedContextFingerprint,
+    input.systemPrompt,
+    input.userPrompt,
+    String(input.maxOutputTokens),
+  ]) {
+    updateHashField(hash, value);
+  }
+  updateHashField(hash, String(input.selectedContextRepresentations.length));
+  for (const representation of input.selectedContextRepresentations) {
+    updateHashField(hash, representation);
+  }
+  return hash.digest('hex');
+}
 
 function boundedIdentifier(value: string, maximum: number): boolean {
   const hasControl = [...value].some((character) => {
@@ -113,17 +148,19 @@ export function createKnowledgeLlmBudgetUseCases(
     async reserve(
       input: KnowledgeLlmReservationCommand,
     ): Promise<KnowledgeLlmBudgetResult<KnowledgeLlmReservationRecord>> {
+      const selectedContextRepresentations =
+        input.selectedContextRepresentations;
       if (
         typeof input.systemPrompt !== 'string' ||
         typeof input.userPrompt !== 'string' ||
         Buffer.byteLength(input.systemPrompt, 'utf8') >
           knowledgeLlmLimits.systemPromptBytes ||
         Buffer.byteLength(input.userPrompt, 'utf8') >
-          knowledgeLlmLimits.userPromptBytes +
-            knowledgeLlmLimits.totalContextBytes ||
-        !Number.isSafeInteger(input.selectedSourceCount) ||
-        input.selectedSourceCount < 0 ||
-        input.selectedSourceCount > knowledgeLlmLimits.totalSources ||
+          knowledgeLlmLimits.userPromptBytes ||
+        !sha256Pattern.test(input.confirmedPreviewPayloadHash) ||
+        !Array.isArray(selectedContextRepresentations) ||
+        selectedContextRepresentations.length >
+          knowledgeLlmLimits.totalSources ||
         (input.reservationInputTokenFloor !== undefined &&
           (!Number.isSafeInteger(input.reservationInputTokenFloor) ||
             input.reservationInputTokenFloor < 1))
@@ -132,12 +169,25 @@ export function createKnowledgeLlmBudgetUseCases(
       }
       let estimatedInputTokens: number;
       try {
+        let selectedContextBytes = 0;
+        for (const representation of selectedContextRepresentations) {
+          if (typeof representation !== 'string') return invalid();
+          const representationBytes = Buffer.byteLength(representation, 'utf8');
+          if (representationBytes > knowledgeLlmLimits.sourceBytes) {
+            return invalid();
+          }
+          selectedContextBytes += representationBytes;
+          if (selectedContextBytes > knowledgeLlmLimits.totalContextBytes) {
+            return invalid();
+          }
+        }
         const renderedPromptBytes =
           Buffer.byteLength(input.systemPrompt, 'utf8') +
-          Buffer.byteLength(input.userPrompt, 'utf8');
+          Buffer.byteLength(input.userPrompt, 'utf8') +
+          selectedContextBytes;
         const derivedEstimate = estimateKnowledgeLlmInputTokens(
           renderedPromptBytes,
-          input.selectedSourceCount,
+          selectedContextRepresentations.length,
         );
         estimatedInputTokens = Math.max(
           derivedEstimate,
@@ -182,7 +232,7 @@ export function createKnowledgeLlmBudgetUseCases(
         catalogVersion: catalogSnapshot.version,
         promptTemplateVersion: input.promptTemplateVersion,
         requestKeyHash: input.requestKeyHash,
-        requestPayloadHash: input.requestPayloadHash,
+        requestPayloadHash: reservationPayloadHash(input),
         selectedContextFingerprint: input.selectedContextFingerprint,
         estimatedInputTokens,
         maxOutputTokens: input.maxOutputTokens,

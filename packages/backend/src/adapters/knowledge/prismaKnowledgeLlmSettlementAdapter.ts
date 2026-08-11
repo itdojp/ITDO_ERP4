@@ -31,12 +31,13 @@ export type KnowledgeLlmFinalSettlement =
     }
   | {
       type: 'release';
-      failureCode: 'disabled' | 'rejected_before_dispatch' | 'provider_4xx';
+      failureCode: 'disabled' | 'rejected_before_dispatch';
     }
   | {
       type: 'hold';
       executionStatus: 'failed';
       failureCode:
+        | 'provider_4xx'
         | 'provider_5xx'
         | 'malformed_response'
         | 'response_oversize'
@@ -386,6 +387,7 @@ export async function settleKnowledgeLlmBudget(
   const holdSettlement =
     input.settlement.type === 'hold' ? input.settlement : null;
   const failedHoldCodes = new Set([
+    'provider_4xx',
     'provider_5xx',
     'malformed_response',
     'response_oversize',
@@ -412,12 +414,9 @@ export async function settleKnowledgeLlmBudget(
     input.settlement.type === 'release' &&
     (input.settlement.failureCode === 'disabled' ||
       input.settlement.failureCode === 'rejected_before_dispatch');
-  const releaseAfterDispatch =
-    input.settlement.type === 'release' &&
-    input.settlement.failureCode === 'provider_4xx';
   if (
+    (input.settlement.type === 'release' && !releaseBeforeDispatch) ||
     (releaseBeforeDispatch && run.executionStatus !== 'reserved') ||
-    (releaseAfterDispatch && run.executionStatus !== 'dispatched') ||
     (holdSettlement && run.executionStatus !== 'dispatched')
   ) {
     throw new Error('knowledge_llm_settlement_invalid');

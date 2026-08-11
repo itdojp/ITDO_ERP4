@@ -36,15 +36,26 @@ test('budget adapter normalizes exhausted serializable retries', async () => {
   const { PrismaKnowledgeLlmBudgetAdapter } =
     await import('../dist/adapters/knowledge/prismaKnowledgeLlmBudgetAdapter.js');
   let attempts = 0;
+  let auditWrites = 0;
   const adapter = new PrismaKnowledgeLlmBudgetAdapter({
-    async $transaction() {
+    async $transaction(callback) {
       attempts += 1;
+      if (attempts === 4) {
+        return callback({
+          auditLog: {
+            async create() {
+              auditWrites += 1;
+            },
+          },
+        });
+      }
       throw { code: 'P2034' };
     },
   });
 
   const result = await adapter.reserve(reservation());
-  assert.equal(attempts, 3);
+  assert.equal(attempts, 4);
+  assert.equal(auditWrites, 1);
   assert.deepEqual(result, {
     ok: false,
     error: {

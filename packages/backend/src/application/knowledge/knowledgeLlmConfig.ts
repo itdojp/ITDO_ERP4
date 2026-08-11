@@ -1,4 +1,7 @@
-import type { ExternalLlmProviderName } from '../externalLlm/externalLlmPort.js';
+import {
+  externalLlmMessageFramingTokens,
+  type ExternalLlmProviderName,
+} from '../externalLlm/externalLlmPort.js';
 
 export const knowledgeLlmLimits = {
   totalSources: 32,
@@ -11,6 +14,7 @@ export const knowledgeLlmLimits = {
   sourceBytes: 64 * 1024,
   totalContextBytes: 256 * 1024,
   sourceFramingTokens: 16,
+  providerMessageFramingTokens: externalLlmMessageFramingTokens,
   userPromptBytes: 16 * 1024,
   systemPromptBytes: 8 * 1024,
   maximumOutputTokens: 4096,
@@ -329,7 +333,8 @@ export function getKnowledgeLlmRuntimeConfig(
   }
   const allowHttp = env.KNOWLEDGE_EXTERNAL_LLM_ALLOW_HTTP === 'true';
   const allowPrivateIp = env.KNOWLEDGE_EXTERNAL_LLM_ALLOW_PRIVATE_IP === 'true';
-  if (env.NODE_ENV === 'production' && (allowHttp || allowPrivateIp)) {
+  const nodeEnvironment = env.NODE_ENV?.trim().toLowerCase();
+  if (nodeEnvironment === 'production' && (allowHttp || allowPrivateIp)) {
     throw new KnowledgeLlmConfigurationError(
       allowHttp
         ? 'KNOWLEDGE_EXTERNAL_LLM_ALLOW_HTTP'
@@ -429,7 +434,9 @@ export function estimateKnowledgeLlmInputTokens(
   }
   const estimate = Math.max(
     1,
-    utf8Bytes * 2 + sourceCount * knowledgeLlmLimits.sourceFramingTokens,
+    utf8Bytes * 2 +
+      sourceCount * knowledgeLlmLimits.sourceFramingTokens +
+      knowledgeLlmLimits.providerMessageFramingTokens,
   );
   if (!Number.isSafeInteger(estimate) || estimate > 2_147_483_647) {
     throw new KnowledgeLlmConfigurationError('knowledge_llm_token_estimate');

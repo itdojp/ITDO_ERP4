@@ -6,6 +6,9 @@
  */
 export type ExternalLlmProviderName = 'stub' | 'openai';
 
+/** Conservative role/message framing allowance used by reservation estimates. */
+export const externalLlmMessageFramingTokens = 64;
+
 export type ExternalLlmTextRequest = {
   provider: ExternalLlmProviderName;
   model: string;
@@ -57,15 +60,33 @@ export type ExternalLlmFailureCode =
 export type ExternalLlmOutcomeCertainty =
   'not_dispatched' | 'known_response' | 'unknown';
 
+export type ExternalLlmPreDispatchDiagnostic =
+  | 'dns_lookup_failed'
+  | 'host_not_allowed'
+  | 'private_ip_blocked'
+  | 'insecure_scheme'
+  | 'invalid_url'
+  | 'missing_hostname'
+  | 'pre_dispatch_timeout'
+  | 'unsupported_body';
+
 export class ExternalLlmProviderError extends Error {
   readonly name = 'ExternalLlmProviderError';
+  readonly preDispatchDiagnostic!: ExternalLlmPreDispatchDiagnostic | null;
 
   constructor(
     readonly code: ExternalLlmFailureCode,
     readonly outcome: ExternalLlmOutcomeCertainty,
     readonly providerStatus: number | null = null,
+    preDispatchDiagnostic: ExternalLlmPreDispatchDiagnostic | null = null,
   ) {
     super(code);
+    Object.defineProperty(this, 'preDispatchDiagnostic', {
+      configurable: false,
+      enumerable: false,
+      value: preDispatchDiagnostic,
+      writable: false,
+    });
   }
 }
 

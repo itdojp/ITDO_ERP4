@@ -155,6 +155,92 @@ test('OpenAI-compatible adapter classifies DNS lookup failure before dispatch', 
   });
 });
 
+test('OpenAI-compatible adapter normalizes private-address guard failure before dispatch', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  const adapter = new OpenAiCompatibleTextAdapter({
+    apiKey: 'synthetic-only',
+    baseUrl: 'https://127.0.0.1/v1',
+    timeoutMs: 1_000,
+    allowedHosts: ['127.0.0.1'],
+    allowHttp: false,
+    allowPrivateIp: false,
+  });
+  await assert.rejects(adapter.complete(openAiRequest()), (error) => {
+    assert.equal(error.code, 'rejected_before_dispatch');
+    assert.equal(error.outcome, 'not_dispatched');
+    assert.equal(error.preDispatchDiagnostic, 'private_ip_blocked');
+    return true;
+  });
+});
+
+test('OpenAI-compatible adapter classifies DNS failure before dispatch when private IPs are allowed', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  const adapter = new OpenAiCompatibleTextAdapter({
+    apiKey: 'synthetic-only',
+    baseUrl: 'http://dns-failure.example/v1',
+    timeoutMs: 1_000,
+    allowedHosts: ['dns-failure.example'],
+    allowHttp: true,
+    allowPrivateIp: true,
+    dnsLookupImpl: async () => {
+      throw new Error('synthetic lookup failure');
+    },
+  });
+  await assert.rejects(adapter.complete(openAiRequest()), (error) => {
+    assert.equal(error.code, 'rejected_before_dispatch');
+    assert.equal(error.outcome, 'not_dispatched');
+    assert.equal(error.preDispatchDiagnostic, 'dns_lookup_failed');
+    return true;
+  });
+});
+
+test('OpenAI-compatible adapter classifies DNS timeout before dispatch', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  const adapter = new OpenAiCompatibleTextAdapter({
+    apiKey: 'synthetic-only',
+    baseUrl: 'https://dns-timeout.example/v1',
+    timeoutMs: 20,
+    allowedHosts: ['dns-timeout.example'],
+    allowHttp: false,
+    allowPrivateIp: false,
+    dnsLookupImpl: () => new Promise(() => {}),
+  });
+  await assert.rejects(adapter.complete(openAiRequest()), (error) => {
+    assert.equal(error.code, 'rejected_before_dispatch');
+    assert.equal(error.outcome, 'not_dispatched');
+    assert.equal(error.preDispatchDiagnostic, 'pre_dispatch_timeout');
+    return true;
+  });
+});
+
+test('OpenAI-compatible adapter rejects an invalid response limit before dispatch', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  let lookupCalls = 0;
+  const adapter = new OpenAiCompatibleTextAdapter({
+    apiKey: 'synthetic-only',
+    baseUrl: 'https://not-dispatched.example/v1',
+    timeoutMs: 1_000,
+    allowedHosts: ['not-dispatched.example'],
+    allowHttp: false,
+    allowPrivateIp: false,
+    maximumResponseBytes: Number.MAX_SAFE_INTEGER,
+    dnsLookupImpl: async () => {
+      lookupCalls += 1;
+      return [{ address: '203.0.113.10', family: 4 }];
+    },
+  });
+  await assert.rejects(adapter.complete(openAiRequest()), (error) => {
+    assert.equal(error.code, 'rejected_before_dispatch');
+    assert.equal(error.outcome, 'not_dispatched');
+    return true;
+  });
+  assert.equal(lookupCalls, 0);
+});
+
 test('OpenAI-compatible adapter rejects malformed successful JSON by default', async () => {
   const { OpenAiCompatibleTextAdapter } =
     await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
@@ -282,6 +368,44 @@ test('OpenAI-compatible adapter rejects a response beyond the byte limit even wh
         allowHttp: true,
         allowPrivateIp: true,
         maximumResponseBytes: Buffer.byteLength(valid, 'utf8'),
+      });
+      await assert.rejects(adapter.complete(openAiRequest()), (error) => {
+        assert.equal(error.code, 'response_oversize');
+        assert.equal(error.outcome, 'known_response');
+        return true;
+      });
+    },
+  );
+});
+
+test('OpenAI-compatible adapter measures an oversized BOM response before UTF-8 decoding', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  const valid = JSON.stringify({
+    choices: [{ message: { content: 'Synthetic result' } }],
+    usage: { prompt_tokens: 10, completion_tokens: 2 },
+  });
+  const raw = Buffer.concat([
+    Buffer.from([0xef, 0xbb, 0xbf]),
+    Buffer.from(valid, 'utf8'),
+    Buffer.from(' ', 'utf8'),
+  ]);
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.write(raw.subarray(0, 2));
+      response.write(raw.subarray(2, raw.length - 1));
+      response.end(raw.subarray(raw.length - 1));
+    },
+    async (baseUrl) => {
+      const adapter = new OpenAiCompatibleTextAdapter({
+        apiKey: 'synthetic-only',
+        baseUrl,
+        timeoutMs: 1_000,
+        allowedHosts: ['127.0.0.1'],
+        allowHttp: true,
+        allowPrivateIp: true,
+        maximumResponseBytes: raw.length - 1,
       });
       await assert.rejects(adapter.complete(openAiRequest()), (error) => {
         assert.equal(error.code, 'response_oversize');
