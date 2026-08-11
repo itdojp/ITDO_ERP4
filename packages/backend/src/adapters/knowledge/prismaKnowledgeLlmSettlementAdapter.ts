@@ -356,32 +356,6 @@ export async function settleKnowledgeLlmBudget(
     ) {
       throw new Error('knowledge_llm_settlement_without_valid_outcome');
     }
-    for (const reservation of reservations) {
-      await transaction.knowledgeLlmBudgetPeriod.update({
-        where: { id: reservation.budgetPeriodId },
-        data: {
-          activeReservedMicros: {
-            decrement: reservation.maximumCostMicros,
-          },
-          settledActualMicros: {
-            increment: input.settlement.actualCostMicros,
-          },
-          releasedMicros: {
-            increment:
-              reservation.maximumCostMicros - input.settlement.actualCostMicros,
-          },
-          version: { increment: 1 },
-        },
-      });
-      await transaction.knowledgeLlmReservation.update({
-        where: { id: reservation.id },
-        data: {
-          status: 'settled_actual',
-          actualCostMicros: input.settlement.actualCostMicros,
-          settledAt: completedAt,
-        },
-      });
-    }
     await transaction.knowledgeLlmRun.update({
       where: { id: input.runId },
       data: {
@@ -397,6 +371,17 @@ export async function settleKnowledgeLlmBudget(
         updatedBy: input.actorUserId,
       },
     });
+    for (const reservation of reservations) {
+      await transaction.knowledgeLlmReservation.update({
+        where: { id: reservation.id },
+        data: {
+          status: 'settled_actual',
+          actualCostMicros: input.settlement.actualCostMicros,
+          settledAt: completedAt,
+          updatedAt: completedAt,
+        },
+      });
+    }
     await writeTerminalAudit(transaction, {
       run,
       auditActor: input.auditActor,
@@ -487,25 +472,6 @@ export async function settleKnowledgeLlmBudget(
       throw new Error('knowledge_llm_settlement_without_usage_unknown_outcome');
     }
   }
-  for (const reservation of reservations) {
-    await transaction.knowledgeLlmBudgetPeriod.update({
-      where: { id: reservation.budgetPeriodId },
-      data: {
-        activeReservedMicros: { decrement: reservation.maximumCostMicros },
-        ...(holdSettlement
-          ? { heldMaximumMicros: { increment: reservation.maximumCostMicros } }
-          : { releasedMicros: { increment: reservation.maximumCostMicros } }),
-        version: { increment: 1 },
-      },
-    });
-    await transaction.knowledgeLlmReservation.update({
-      where: { id: reservation.id },
-      data: {
-        status: holdSettlement ? 'held_maximum' : 'released',
-        settledAt: completedAt,
-      },
-    });
-  }
   await transaction.knowledgeLlmRun.update({
     where: { id: input.runId },
     data: {
@@ -525,6 +491,16 @@ export async function settleKnowledgeLlmBudget(
       updatedBy: input.actorUserId,
     },
   });
+  for (const reservation of reservations) {
+    await transaction.knowledgeLlmReservation.update({
+      where: { id: reservation.id },
+      data: {
+        status: holdSettlement ? 'held_maximum' : 'released',
+        settledAt: completedAt,
+        updatedAt: completedAt,
+      },
+    });
+  }
   const terminalResult = holdSettlement
     ? holdSettlement.executionStatus === 'result_ready'
       ? {
@@ -682,27 +658,6 @@ export async function reconcileKnowledgeLlmHeldBudget(
     ORDER BY id
     FOR UPDATE
   `);
-  for (const reservation of reservations) {
-    await transaction.knowledgeLlmBudgetPeriod.update({
-      where: { id: reservation.budgetPeriodId },
-      data: {
-        heldMaximumMicros: { decrement: reservation.maximumCostMicros },
-        settledActualMicros: { increment: input.actualCostMicros },
-        releasedMicros: {
-          increment: reservation.maximumCostMicros - input.actualCostMicros,
-        },
-        version: { increment: 1 },
-      },
-    });
-    await transaction.knowledgeLlmReservation.update({
-      where: { id: reservation.id },
-      data: {
-        status: 'settled_actual',
-        actualCostMicros: input.actualCostMicros,
-        settledAt: completedAt,
-      },
-    });
-  }
   await transaction.knowledgeLlmRun.update({
     where: { id: input.runId },
     data: {
@@ -719,6 +674,17 @@ export async function reconcileKnowledgeLlmHeldBudget(
       updatedBy: input.actorUserId,
     },
   });
+  for (const reservation of reservations) {
+    await transaction.knowledgeLlmReservation.update({
+      where: { id: reservation.id },
+      data: {
+        status: 'settled_actual',
+        actualCostMicros: input.actualCostMicros,
+        settledAt: completedAt,
+        updatedAt: completedAt,
+      },
+    });
+  }
   await writeTerminalAudit(transaction, {
     run,
     auditActor: input.auditActor,
@@ -883,27 +849,6 @@ export async function reconcileKnowledgeLlmUsageUnknownBudget(
       createdBy: input.operatorActor.userId,
     },
   });
-  for (const reservation of reservations) {
-    await transaction.knowledgeLlmBudgetPeriod.update({
-      where: { id: reservation.budgetPeriodId },
-      data: {
-        heldMaximumMicros: { decrement: reservation.maximumCostMicros },
-        settledActualMicros: { increment: actualCostMicros },
-        releasedMicros: {
-          increment: reservation.maximumCostMicros - actualCostMicros,
-        },
-        version: { increment: 1 },
-      },
-    });
-    await transaction.knowledgeLlmReservation.update({
-      where: { id: reservation.id },
-      data: {
-        status: 'settled_actual',
-        actualCostMicros,
-        settledAt: completedAt,
-      },
-    });
-  }
   await transaction.knowledgeLlmRun.update({
     where: { id: input.runId },
     data: {
@@ -917,6 +862,17 @@ export async function reconcileKnowledgeLlmUsageUnknownBudget(
       updatedBy: input.operatorActor.userId,
     },
   });
+  for (const reservation of reservations) {
+    await transaction.knowledgeLlmReservation.update({
+      where: { id: reservation.id },
+      data: {
+        status: 'settled_actual',
+        actualCostMicros,
+        settledAt: completedAt,
+        updatedAt: completedAt,
+      },
+    });
+  }
   await writeAudit(transaction, {
     run,
     auditActor: input.operatorActor,

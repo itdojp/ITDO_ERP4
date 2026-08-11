@@ -705,8 +705,6 @@ try {
       periodEndUtc: new Date('2026-09-01T00:00:00.000Z'),
       timezone: 'UTC',
       currency: 'JPY',
-      activeReservedMicros: 1n,
-      acceptedRequestCount: 1,
       createdAt: priorReservationAt,
       updatedAt: priorReservationAt,
     },
@@ -2545,6 +2543,73 @@ try {
     where: { id: 'run-late-reservation-insert' },
     include: { reservations: { include: { budgetPeriod: true } } },
   });
+  const directlyMutableReservation = lateRun.reservations[0];
+  const directMutationAccountingBefore = {
+    active: directlyMutableReservation.budgetPeriod.activeReservedMicros,
+    settled: directlyMutableReservation.budgetPeriod.settledActualMicros,
+    held: directlyMutableReservation.budgetPeriod.heldMaximumMicros,
+    released: directlyMutableReservation.budgetPeriod.releasedMicros,
+    version: directlyMutableReservation.budgetPeriod.version,
+  };
+  await assert.rejects(
+    prisma.knowledgeLlmReservation.update({
+      where: { id: directlyMutableReservation.id },
+      data: {
+        status: 'released',
+        settledAt: after(16_000),
+        updatedAt: after(16_000),
+      },
+    }),
+    /settlement must match its terminal run/,
+  );
+  await assert.rejects(
+    prisma.knowledgeLlmRun.update({
+      where: { id: lateRun.id },
+      data: {
+        executionStatus: 'failed',
+        settlementStatus: 'released',
+        failureCode: 'disabled',
+        completedAt: after(16_000),
+        updatedAt: after(16_000),
+        updatedBy: lateRun.actorUserId,
+      },
+    }),
+    /run and reservations must settle atomically/i,
+  );
+  await assert.rejects(
+    prisma.knowledgeLlmBudgetPeriod.update({
+      where: { id: directlyMutableReservation.budgetPeriodId },
+      data: {
+        releasedMicros: { increment: 1n },
+        version: { increment: 1 },
+      },
+    }),
+    /counters must match reservation ledger/,
+  );
+  const directMutationRunAfter = await prisma.knowledgeLlmRun.findUniqueOrThrow(
+    {
+      where: { id: lateRun.id },
+      include: { reservations: { include: { budgetPeriod: true } } },
+    },
+  );
+  assert.equal(directMutationRunAfter.executionStatus, 'reserved');
+  assert.equal(directMutationRunAfter.settlementStatus, 'reserved');
+  assert.equal(directMutationRunAfter.reservations[0].status, 'reserved');
+  assert.deepEqual(
+    {
+      active:
+        directMutationRunAfter.reservations[0].budgetPeriod
+          .activeReservedMicros,
+      settled:
+        directMutationRunAfter.reservations[0].budgetPeriod.settledActualMicros,
+      held: directMutationRunAfter.reservations[0].budgetPeriod
+        .heldMaximumMicros,
+      released:
+        directMutationRunAfter.reservations[0].budgetPeriod.releasedMicros,
+      version: directMutationRunAfter.reservations[0].budgetPeriod.version,
+    },
+    directMutationAccountingBefore,
+  );
   const latePeriod = await prisma.knowledgeLlmBudgetPeriod.create({
     data: {
       id: 'period-late-reservation-insert',
@@ -2724,6 +2789,9 @@ try {
       settledReservationImmutable: true,
       reservationDeletionBlocked: true,
       lateReservationInsertBlocked: true,
+      directReservationSettlementBlocked: true,
+      runReservationAtomicityVerified: true,
+      periodLedgerConsistencyVerified: true,
       terminalDispatchTimestampImmutable: true,
       conversationStateGuard: true,
       outcomeUnknownRequiresReconcileableState: true,

@@ -1332,8 +1332,10 @@ DECLARE
   run_organization TEXT;
   run_currency TEXT;
   run_maximum BIGINT;
+  run_actual BIGINT;
   run_created_at TIMESTAMP(3);
   run_dispatched_at TIMESTAMP(3);
+  run_completed_at TIMESTAMP(3);
   period_start TIMESTAMP(3);
   period_end TIMESTAMP(3);
   period_currency TEXT;
@@ -1422,6 +1424,17 @@ BEGIN
     RAISE EXCEPTION 'KnowledgeLlmReservation cannot be deleted'
       USING ERRCODE = '23514';
   END IF;
+
+  SELECT "executionStatus", "settlementStatus", scope, "actorUserId",
+    "organizationId", currency, "maximumCostMicros", "actualCostMicros",
+    "createdAt", "dispatchedAt", "completedAt"
+  INTO run_execution, run_settlement, run_scope, run_actor,
+    run_organization, run_currency, run_maximum, run_actual,
+    run_created_at, run_dispatched_at, run_completed_at
+  FROM "KnowledgeLlmRun"
+  WHERE id = NEW."runId"
+  FOR UPDATE;
+
   IF OLD."runId" <> NEW."runId"
     OR OLD."budgetPeriodId" <> NEW."budgetPeriodId"
     OR OLD."maximumCostMicros" <> NEW."maximumCostMicros"
@@ -1468,6 +1481,50 @@ BEGIN
     RAISE EXCEPTION 'terminal KnowledgeLlmReservation accounting is immutable'
       USING ERRCODE = '23514';
   END IF;
+  IF OLD."status" = NEW."status" THEN
+    RAISE EXCEPTION 'KnowledgeLlmReservation can change only with run settlement'
+      USING ERRCODE = '23514';
+  END IF;
+  IF run_settlement IS NULL
+    OR NEW."status" <> run_settlement
+    OR NEW."maximumCostMicros" <> run_maximum
+    OR NEW."settledAt" IS DISTINCT FROM run_completed_at
+    OR NEW."updatedAt" IS DISTINCT FROM NEW."settledAt"
+    OR (
+      NEW."status" = 'settled_actual'
+      AND (
+        run_actual IS NULL
+        OR NEW."actualCostMicros" IS DISTINCT FROM run_actual
+      )
+    )
+    OR (
+      NEW."status" IN ('released', 'held_maximum')
+      AND NEW."actualCostMicros" IS NOT NULL
+    )
+  THEN
+    RAISE EXCEPTION 'KnowledgeLlmReservation settlement must match its terminal run'
+      USING ERRCODE = '23514';
+  END IF;
+
+  UPDATE "KnowledgeLlmBudgetPeriod"
+  SET "activeReservedMicros" = "activeReservedMicros"
+        - CASE WHEN OLD.status = 'reserved' THEN OLD."maximumCostMicros" ELSE 0 END,
+    "heldMaximumMicros" = "heldMaximumMicros"
+        - CASE WHEN OLD.status = 'held_maximum' THEN OLD."maximumCostMicros" ELSE 0 END
+        + CASE WHEN NEW.status = 'held_maximum' THEN NEW."maximumCostMicros" ELSE 0 END,
+    "settledActualMicros" = "settledActualMicros"
+        + CASE WHEN NEW.status = 'settled_actual' THEN NEW."actualCostMicros" ELSE 0 END,
+    "releasedMicros" = "releasedMicros"
+        + CASE
+            WHEN NEW.status = 'released' THEN NEW."maximumCostMicros"
+            WHEN NEW.status = 'settled_actual'
+              THEN NEW."maximumCostMicros" - NEW."actualCostMicros"
+            ELSE 0
+          END,
+    version = version + 1,
+    "updatedAt" = GREATEST("updatedAt", NEW."updatedAt")
+  WHERE id = NEW."budgetPeriodId";
+
   RETURN NEW;
 END;
 $$;
@@ -1475,6 +1532,187 @@ $$;
 CREATE TRIGGER "KnowledgeLlmReservation_transition_guard"
   BEFORE INSERT OR UPDATE OR DELETE ON "KnowledgeLlmReservation"
   FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_reservation_transition_guard"();
+
+CREATE FUNCTION "erp4_knowledge_llm_assert_run_reservation_consistency"(
+  target_run_id TEXT
+)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  run_scope "KnowledgeLlmRunScope";
+  run_settlement "KnowledgeLlmSettlementStatus";
+  run_maximum BIGINT;
+  run_actual BIGINT;
+  run_completed_at TIMESTAMP(3);
+  expected_count INTEGER;
+  reservation_count INTEGER;
+  mismatched_count INTEGER;
+BEGIN
+  SELECT scope, "settlementStatus", "maximumCostMicros", "actualCostMicros",
+    "completedAt"
+  INTO run_scope, run_settlement, run_maximum, run_actual, run_completed_at
+  FROM "KnowledgeLlmRun"
+  WHERE id = target_run_id;
+
+  IF run_scope IS NULL THEN
+    RETURN;
+  END IF;
+
+  expected_count := CASE WHEN run_scope = 'personal' THEN 1 ELSE 2 END;
+  SELECT COUNT(*)::INTEGER,
+    COUNT(*) FILTER (
+      WHERE reservation.status <> run_settlement
+        OR reservation."maximumCostMicros" <> run_maximum
+        OR (
+          run_settlement = 'reserved'
+          AND (
+            reservation."actualCostMicros" IS NOT NULL
+            OR reservation."settledAt" IS NOT NULL
+          )
+        )
+        OR (
+          run_settlement = 'settled_actual'
+          AND (
+            reservation."actualCostMicros" IS DISTINCT FROM run_actual
+            OR reservation."settledAt" IS DISTINCT FROM run_completed_at
+          )
+        )
+        OR (
+          run_settlement IN ('released', 'held_maximum')
+          AND (
+            reservation."actualCostMicros" IS NOT NULL
+            OR reservation."settledAt" IS DISTINCT FROM run_completed_at
+          )
+        )
+    )::INTEGER
+  INTO reservation_count, mismatched_count
+  FROM "KnowledgeLlmReservation" reservation
+  WHERE reservation."runId" = target_run_id;
+
+  IF reservation_count <> expected_count OR mismatched_count <> 0 THEN
+    RAISE EXCEPTION 'KnowledgeLlmRun and reservations must settle atomically'
+      USING ERRCODE = '23514';
+  END IF;
+END;
+$$;
+
+CREATE FUNCTION "erp4_knowledge_llm_run_reservation_consistency_trigger"()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  PERFORM "erp4_knowledge_llm_assert_run_reservation_consistency"(NEW.id);
+  RETURN NEW;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER "KnowledgeLlmRun_reservation_consistency"
+  AFTER INSERT OR UPDATE ON "KnowledgeLlmRun"
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_run_reservation_consistency_trigger"();
+
+CREATE FUNCTION "erp4_knowledge_llm_reservation_run_consistency_trigger"()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  PERFORM "erp4_knowledge_llm_assert_run_reservation_consistency"(NEW."runId");
+  RETURN NEW;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER "KnowledgeLlmReservation_run_consistency"
+  AFTER INSERT OR UPDATE ON "KnowledgeLlmReservation"
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_reservation_run_consistency_trigger"();
+
+CREATE FUNCTION "erp4_knowledge_llm_assert_period_accounting"(
+  target_period_id TEXT
+)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  period_active BIGINT;
+  period_settled BIGINT;
+  period_held BIGINT;
+  period_released BIGINT;
+  period_count INTEGER;
+  expected_active BIGINT;
+  expected_settled BIGINT;
+  expected_held BIGINT;
+  expected_released BIGINT;
+  expected_count INTEGER;
+BEGIN
+  SELECT "activeReservedMicros", "settledActualMicros", "heldMaximumMicros",
+    "releasedMicros", "acceptedRequestCount"
+  INTO period_active, period_settled, period_held, period_released, period_count
+  FROM "KnowledgeLlmBudgetPeriod"
+  WHERE id = target_period_id;
+
+  IF period_count IS NULL THEN
+    RETURN;
+  END IF;
+
+  SELECT
+    COALESCE(SUM("maximumCostMicros") FILTER (WHERE status = 'reserved'), 0),
+    COALESCE(SUM("actualCostMicros") FILTER (WHERE status = 'settled_actual'), 0),
+    COALESCE(SUM("maximumCostMicros") FILTER (WHERE status = 'held_maximum'), 0),
+    COALESCE(SUM(
+      CASE
+        WHEN status = 'released' THEN "maximumCostMicros"
+        WHEN status = 'settled_actual' THEN "maximumCostMicros" - "actualCostMicros"
+        ELSE 0
+      END
+    ), 0),
+    COUNT(*)::INTEGER
+  INTO expected_active, expected_settled, expected_held, expected_released,
+    expected_count
+  FROM "KnowledgeLlmReservation"
+  WHERE "budgetPeriodId" = target_period_id;
+
+  IF period_active <> expected_active
+    OR period_settled <> expected_settled
+    OR period_held <> expected_held
+    OR period_released <> expected_released
+    OR period_count <> expected_count
+  THEN
+    RAISE EXCEPTION 'KnowledgeLlmBudgetPeriod counters must match reservation ledger'
+      USING ERRCODE = '23514';
+  END IF;
+END;
+$$;
+
+CREATE FUNCTION "erp4_knowledge_llm_reservation_period_consistency_trigger"()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  PERFORM "erp4_knowledge_llm_assert_period_accounting"(NEW."budgetPeriodId");
+  RETURN NEW;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER "KnowledgeLlmReservation_period_consistency"
+  AFTER INSERT OR UPDATE ON "KnowledgeLlmReservation"
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_reservation_period_consistency_trigger"();
+
+CREATE FUNCTION "erp4_knowledge_llm_period_accounting_consistency_trigger"()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  PERFORM "erp4_knowledge_llm_assert_period_accounting"(NEW.id);
+  RETURN NEW;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER "KnowledgeLlmBudgetPeriod_accounting_consistency"
+  AFTER INSERT OR UPDATE ON "KnowledgeLlmBudgetPeriod"
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_period_accounting_consistency_trigger"();
 
 CREATE FUNCTION "erp4_knowledge_llm_content_hash"(content TEXT)
 RETURNS TEXT

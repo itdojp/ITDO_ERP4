@@ -194,6 +194,26 @@ test('reservation accounting timestamp and terminal values are immutable', () =>
     migration,
     /"activeReservedMicros" = "activeReservedMicros" \+ NEW\."maximumCostMicros"/,
   );
+  assert.match(
+    migration,
+    /KnowledgeLlmReservation settlement must match its terminal run/,
+  );
+  assert.match(
+    migration,
+    /KnowledgeLlmRun and reservations must settle atomically/,
+  );
+  assert.match(
+    migration,
+    /KnowledgeLlmBudgetPeriod counters must match reservation ledger/,
+  );
+  assert.match(
+    migration,
+    /CREATE CONSTRAINT TRIGGER "KnowledgeLlmRun_reservation_consistency"[\s\S]*DEFERRABLE INITIALLY DEFERRED/,
+  );
+  assert.match(
+    migration,
+    /CREATE CONSTRAINT TRIGGER "KnowledgeLlmReservation_period_consistency"[\s\S]*DEFERRABLE INITIALLY DEFERRED/,
+  );
 });
 
 test('provider outcome retains only normalized bounded state for reconciliation', () => {
