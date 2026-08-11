@@ -723,9 +723,14 @@ export async function reconcileKnowledgeLlmHeldBudget(
 }
 
 /**
- * Settles a usage-unknown result from immutable, independently verified
- * billing evidence. This never redispatches the provider request and is
- * intentionally not exposed as an end-user API by this foundation PR.
+ * Settles a usage-unknown result from an immutable assertion supplied by the
+ * trusted billing-operations boundary after separate artifact verification.
+ * The application and database validate attribution, state, provenance, and
+ * arithmetic, but do not authenticate the external billing artifact itself.
+ * This never redispatches the provider request and must not be exposed through
+ * an API until an artifact verifier and operator authorization are added.
+ *
+ * @internal
  */
 export async function reconcileKnowledgeLlmUsageUnknownBudget(
   transaction: Transaction,

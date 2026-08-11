@@ -57,6 +57,12 @@ const service = createKnowledgeLlmBudgetUseCases(
   { version: 1, models: catalogModels },
   () => new Date(now.getTime()),
 );
+const serviceAt = (timestamp) =>
+  createKnowledgeLlmBudgetUseCases(
+    new PrismaKnowledgeLlmBudgetAdapter(prisma),
+    { version: 1, models: catalogModels },
+    () => new Date(timestamp.getTime()),
+  );
 const after = (milliseconds) => new Date(now.getTime() + milliseconds);
 const untrustedTimestampCanary = new Date('2000-01-01T00:00:00.000Z');
 const markKnowledgeLlmRunDispatched = async (transaction, input) => {
@@ -777,6 +783,63 @@ try {
   assert.equal(
     await prisma.knowledgeLlmRun.count({
       where: { id: 'run-policy-timezone-drift-v2' },
+    }),
+    0,
+  );
+
+  const previousMonthTimestamp = new Date('2026-08-31T23:45:00.000Z');
+  const currentMonthTimestamp = new Date('2026-09-01T00:30:00.000Z');
+  await policy({
+    id: 'policy-boundary-rollover-v1',
+    subjectType: 'user',
+    subjectId: 'policy-boundary-rollover-user',
+    soft: 1000n,
+    hard: 1000n,
+    rate: 1,
+    timezone: 'Etc/UTC',
+  });
+  assert.equal(
+    (
+      await serviceAt(previousMonthTimestamp).reserve(
+        reservation({
+          runId: 'run-policy-boundary-rollover-v1',
+          userId: 'policy-boundary-rollover-user',
+          keyHash: hash('9'),
+          maximumCostMicros: 1n,
+        }),
+      )
+    ).ok,
+    true,
+  );
+  await prisma.knowledgeLlmBudgetPolicy.update({
+    where: { id: 'policy-boundary-rollover-v1' },
+    data: { active: false, updatedBy: 'synthetic-admin' },
+  });
+  await policy({
+    id: 'policy-boundary-rollover-v2',
+    subjectType: 'user',
+    subjectId: 'policy-boundary-rollover-user',
+    soft: 1000n,
+    hard: 1000n,
+    rate: 1,
+    timezone: 'UTC',
+    version: 2,
+  });
+  const boundaryRolloverRateBlocked = await serviceAt(
+    currentMonthTimestamp,
+  ).reserve(
+    reservation({
+      runId: 'run-policy-boundary-rollover-v2',
+      userId: 'policy-boundary-rollover-user',
+      keyHash: hash('0'),
+      maximumCostMicros: 1n,
+    }),
+  );
+  assert.equal(boundaryRolloverRateBlocked.ok, false);
+  assert.equal(boundaryRolloverRateBlocked.error.code, 'rate_limit');
+  assert.equal(
+    await prisma.knowledgeLlmRun.count({
+      where: { id: 'run-policy-boundary-rollover-v2' },
     }),
     0,
   );
@@ -3117,6 +3180,7 @@ try {
       policyVersionRateCarryForward: true,
       policyVersionRolloverRaceBlocked: true,
       policyTimezoneDriftBlocked: true,
+      policyBoundaryRolloverRateCarryForward: true,
       rateLimit: true,
       crossPeriodRateLimit: true,
       idempotency: true,

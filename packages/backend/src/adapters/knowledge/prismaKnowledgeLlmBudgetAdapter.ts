@@ -217,9 +217,16 @@ async function loadAndLockSubjectUsage(
   const lockStart =
     hourAgo.getTime() < window.start.getTime() ? hourAgo : window.start;
   const lockedPeriods = await transaction.$queryRaw<
-    Array<{ id: string; currency: string; timezone: string }>
+    Array<{
+      id: string;
+      currency: string;
+      timezone: string;
+      periodStartUtc: Date;
+      periodEndUtc: Date;
+    }>
   >(Prisma.sql`
-    SELECT period.id, period.currency, period.timezone
+    SELECT period.id, period.currency, period.timezone,
+      period."periodStartUtc", period."periodEndUtc"
     FROM "KnowledgeLlmBudgetPeriod" period
     JOIN "KnowledgeLlmBudgetPolicy" policy
       ON policy.id = period."policyId"
@@ -231,10 +238,19 @@ async function loadAndLockSubjectUsage(
     ORDER BY period.id
     FOR UPDATE OF period
   `);
-  const currencyMismatch = lockedPeriods.some(
+  // Keep the wider lock set for the rolling 60-minute request count, but only
+  // compare accounting metadata for periods that overlap the current monthly
+  // window. A completed prior-month period can remain in the wider set for up
+  // to an hour and must not block an intentional boundary policy rollover.
+  const currentWindowPeriods = lockedPeriods.filter(
+    (period) =>
+      period.periodEndUtc.getTime() > window.start.getTime() &&
+      period.periodStartUtc.getTime() < window.end.getTime(),
+  );
+  const currencyMismatch = currentWindowPeriods.some(
     (period) => period.currency !== policy.currency,
   );
-  const timezoneMismatch = lockedPeriods.some(
+  const timezoneMismatch = currentWindowPeriods.some(
     (period) => period.timezone !== policy.timezone,
   );
   const usage = await transaction.$queryRaw<Array<SubjectUsage>>(Prisma.sql`
