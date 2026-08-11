@@ -110,8 +110,8 @@ test('getChatExternalLlmConfig rejects unsafe production transport overrides', a
   const { getChatExternalLlmConfig } =
     await import('../dist/services/chatExternalLlm.js');
   for (const unsafe of [
-    { CHAT_EXTERNAL_LLM_ALLOW_HTTP: 'true' },
-    { CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: 'true' },
+    { CHAT_EXTERNAL_LLM_ALLOW_HTTP: 'true', NODE_ENV: ' Production ' },
+    { CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: 'true', NODE_ENV: 'PRODUCTION' },
   ]) {
     await withEnv(
       {
@@ -121,7 +121,6 @@ test('getChatExternalLlmConfig rejects unsafe production transport overrides', a
         CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: 'provider.example',
         CHAT_EXTERNAL_LLM_ALLOW_HTTP: null,
         CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: null,
-        NODE_ENV: 'production',
         ...unsafe,
       },
       async () => {

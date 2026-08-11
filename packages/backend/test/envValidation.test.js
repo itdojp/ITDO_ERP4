@@ -78,6 +78,32 @@ test('envValidation: Chat custom OpenAI destination requires an independent host
   assert.equal(allowlisted.status, 0, allowlisted.stderr);
 });
 
+test('envValidation: Chat production transport overrides fail closed after NODE_ENV normalization', () => {
+  const productionBase = {
+    NODE_ENV: ' Production ',
+    KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
+    AUTH_MODE: 'jwt_bff',
+    JWT_ISSUER: 'https://accounts.google.com',
+    JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
+    JWT_JWKS_URL: 'https://www.googleapis.com/oauth2/v3/certs',
+    GOOGLE_OIDC_CLIENT_SECRET: 'synthetic-only',
+    GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
+    AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
+    CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+    CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-only',
+    CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://provider.example/v1',
+    CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: 'provider.example',
+  };
+  for (const [key, value] of [
+    ['CHAT_EXTERNAL_LLM_ALLOW_HTTP', 'true'],
+    ['CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP', 'true'],
+  ]) {
+    const result = runEnvValidation({ ...productionBase, [key]: value });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, new RegExp(key));
+  }
+});
+
 test('envValidation: Knowledge stub requires a strict model catalog', () => {
   const missing = runEnvValidation({
     KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'stub',

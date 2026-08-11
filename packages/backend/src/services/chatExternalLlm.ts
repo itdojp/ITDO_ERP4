@@ -82,7 +82,8 @@ function resolveOpenAiTransportConfig(baseUrl: string, env: NodeJS.ProcessEnv) {
       'CHAT_EXTERNAL_LLM_OPENAI_BASE_URL',
     );
   }
-  if (env.NODE_ENV === 'production' && (allowHttp || allowPrivateIp)) {
+  const nodeEnv = (env.NODE_ENV ?? '').trim().toLowerCase();
+  if (nodeEnv === 'production' && (allowHttp || allowPrivateIp)) {
     throw new ChatExternalLlmConfigurationError(
       allowHttp
         ? 'CHAT_EXTERNAL_LLM_ALLOW_HTTP'
