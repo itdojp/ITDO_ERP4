@@ -167,31 +167,66 @@ async function ensureAndLockPeriods(
   policies: Policy[],
   now: Date,
 ) {
-  const periods = [];
-  for (const policy of policies) {
+  const candidates = policies.map((policy) => {
     let window: ReturnType<typeof knowledgeLlmMonthlyPeriod>;
     try {
       window = knowledgeLlmMonthlyPeriod(now, policy.timezone);
     } catch {
       throw new KnowledgeLlmPolicyConfigurationError();
     }
-    const period = await transaction.knowledgeLlmBudgetPeriod.upsert({
-      where: {
-        policyId_periodStartUtc: {
+    return { policy, window };
+  });
+
+  // Settlement locks all periods for a run in global ID order. Lock every
+  // existing current period in that same order before any create/upsert-like
+  // operation can acquire an individual period row in policy enum order.
+  // Active policy locks serialize creation for the same subject, while a
+  // missing period cannot yet be visible to a concurrent settlement.
+  const predicate = Prisma.join(
+    candidates.map(
+      ({ policy, window }) => Prisma.sql`
+        (
+          "policyId" = ${policy.id}
+          AND "periodStartUtc" = ${window.start}
+        )
+      `,
+    ),
+    ' OR ',
+  );
+  const existing = await transaction.$queryRaw<
+    Array<{
+      id: string;
+      policyId: string;
+      periodStartUtc: Date;
+      periodEndUtc: Date;
+      timezone: string;
+      currency: string;
+    }>
+  >(Prisma.sql`
+    SELECT id, "policyId", "periodStartUtc", "periodEndUtc", timezone, currency
+    FROM "KnowledgeLlmBudgetPeriod"
+    WHERE ${predicate}
+    ORDER BY id
+    FOR UPDATE
+  `);
+  const existingByPolicy = new Map(
+    existing.map((period) => [period.policyId, period]),
+  );
+  const periods = [];
+  for (const { policy, window } of candidates) {
+    const period =
+      existingByPolicy.get(policy.id) ??
+      (await transaction.knowledgeLlmBudgetPeriod.create({
+        data: {
           policyId: policy.id,
           periodStartUtc: window.start,
+          periodEndUtc: window.end,
+          timezone: policy.timezone,
+          currency: policy.currency,
         },
-      },
-      create: {
-        policyId: policy.id,
-        periodStartUtc: window.start,
-        periodEndUtc: window.end,
-        timezone: policy.timezone,
-        currency: policy.currency,
-      },
-      update: {},
-    });
+      }));
     if (
+      period.periodStartUtc.getTime() !== window.start.getTime() ||
       period.periodEndUtc.getTime() !== window.end.getTime() ||
       period.timezone !== policy.timezone ||
       period.currency !== policy.currency

@@ -68,6 +68,13 @@ test('prepared stub request binds ordered context and is single-use', async () =
     ...request,
     contextSections: ['Selected B', 'Selected A'],
   });
+  assert.equal(
+    prepared.requestFingerprint,
+    adapter.bind({
+      ...request,
+      contextSections: ['Selected A', 'Selected B'],
+    }).requestFingerprint,
+  );
   assert.match(prepared.requestFingerprint, /^[a-f0-9]{64}$/);
   assert.notEqual(prepared.requestFingerprint, reordered.requestFingerprint);
   const result = await prepared.dispatch();
@@ -239,7 +246,7 @@ test('canonical external LLM serialization rejects unpaired UTF-16 surrogates wi
   const prepared = await adapter.prepare(replacementCharacterRequest);
   assert.equal(
     prepared.requestFingerprint,
-    externalLlmTextRequestFingerprint(replacementCharacterRequest),
+    adapter.bind(replacementCharacterRequest).requestFingerprint,
   );
 });
 
@@ -282,10 +289,8 @@ function openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl, overrides = {}) {
 test('OpenAI-compatible prepare performs no provider I/O and dispatches exactly once', async () => {
   const { OpenAiCompatibleTextAdapter } =
     await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
-  const {
-    externalLlmTextRequestFingerprint,
-    serializeExternalLlmTextRequestBody,
-  } = await import('../dist/application/externalLlm/externalLlmPort.js');
+  const { serializeExternalLlmTextRequestBody } =
+    await import('../dist/application/externalLlm/externalLlmPort.js');
   let requestCount = 0;
   let receivedBody = '';
   await withHttpServer(
@@ -310,14 +315,10 @@ test('OpenAI-compatible prepare performs no provider I/O and dispatches exactly 
         ...openAiRequest(),
         contextSections: ['Selected context'],
       };
-      const prepared = await openAiAdapter(
-        OpenAiCompatibleTextAdapter,
-        baseUrl,
-      ).prepare(input);
-      assert.equal(
-        prepared.requestFingerprint,
-        externalLlmTextRequestFingerprint(input),
-      );
+      const adapter = openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl);
+      const bound = adapter.bind(input);
+      const prepared = await adapter.prepare(input);
+      assert.equal(prepared.requestFingerprint, bound.requestFingerprint);
       assert.equal(requestCount, 0);
       const result = await prepared.dispatch();
       assert.equal(result.content, 'Synthetic result');
@@ -331,6 +332,78 @@ test('OpenAI-compatible prepare performs no provider I/O and dispatches exactly 
       assert.equal(requestCount, 1);
     },
   );
+});
+
+test('OpenAI-compatible binding includes canonical destination and transport policy but not API key', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  const base = {
+    apiKey: 'synthetic-key-a',
+    baseUrl: 'https://provider-a.example:443/v1',
+    timeoutMs: 1_000,
+    allowedHosts: ['provider-b.example', 'PROVIDER-A.EXAMPLE'],
+    allowHttp: false,
+    allowPrivateIp: false,
+    maximumResponseBytes: 32_000,
+    malformedSuccessPolicy: 'reject',
+    usagePolicy: 'strict',
+  };
+  const fingerprint = (overrides = {}) =>
+    new OpenAiCompatibleTextAdapter({ ...base, ...overrides }).bind(
+      openAiRequest(),
+    ).requestFingerprint;
+  const original = fingerprint();
+
+  assert.match(original, /^[a-f0-9]{64}$/);
+  assert.equal(
+    fingerprint({
+      apiKey: 'synthetic-key-b',
+      baseUrl: 'HTTPS://PROVIDER-A.EXAMPLE/v1',
+      allowedHosts: ['provider-a.example', 'provider-b.example'],
+    }),
+    original,
+  );
+  for (const overrides of [
+    { baseUrl: 'https://provider-b.example/v1' },
+    { baseUrl: 'https://provider-a.example/v2' },
+    { allowedHosts: ['provider-a.example'] },
+    { allowHttp: true },
+    { allowPrivateIp: true },
+    { timeoutMs: 1_001 },
+    { maximumResponseBytes: 32_001 },
+    { malformedSuccessPolicy: 'empty' },
+    { usagePolicy: 'ignore' },
+  ]) {
+    assert.notEqual(fingerprint(overrides), original);
+  }
+});
+
+test('OpenAI-compatible binding rejects credentialed or decorated destinations without provider I/O', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  for (const baseUrl of [
+    'https://user:secret@provider.example/v1',
+    'https://provider.example/v1?credential=forbidden',
+    'https://provider.example/v1#fragment',
+  ]) {
+    assert.throws(
+      () =>
+        new OpenAiCompatibleTextAdapter({
+          apiKey: 'synthetic-only',
+          baseUrl,
+          timeoutMs: 1_000,
+          allowedHosts: ['provider.example'],
+          allowHttp: false,
+          allowPrivateIp: false,
+        }).bind(openAiRequest()),
+      (error) => {
+        assert.equal(error.code, 'rejected_before_dispatch');
+        assert.equal(error.outcome, 'not_dispatched');
+        assert.equal(error.message.includes('secret'), false);
+        return true;
+      },
+    );
+  }
 });
 
 test('OpenAI-compatible prepared dispatch captures mutable request and config values', async () => {

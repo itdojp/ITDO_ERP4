@@ -29,6 +29,32 @@ export type ExternalLlmTextRequest = {
 export const externalLlmTextRequestSerializationSchemaVersion =
   'openai-chat-completions-v2';
 
+/**
+ * The request fingerprint authorizes one exact payload over one exact
+ * transport contract. Bump this version whenever a field is added, removed,
+ * or interpreted differently.
+ */
+export const externalLlmTextTransportBindingSchemaVersion =
+  'external-llm-text-transport-v1';
+
+export type ExternalLlmTextTransportBinding =
+  | {
+      kind: 'local_stub';
+      destination: 'local://erp4/external-llm/stub/v1';
+    }
+  | {
+      kind: 'openai_compatible_http';
+      /** Canonical final request URL, never persisted outside its hash. */
+      destination: string;
+      allowedHosts: readonly string[];
+      allowHttp: boolean;
+      allowPrivateIp: boolean;
+      timeoutMs: number;
+      maximumResponseBytes: number;
+      malformedSuccessPolicy: 'reject' | 'empty';
+      usagePolicy: 'strict' | 'ignore';
+    };
+
 function hasUnpairedUtf16Surrogate(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {
     const codeUnit = value.charCodeAt(index);
@@ -178,7 +204,119 @@ export function bindExternalLlmTextRequest(request: ExternalLlmTextRequest): {
   };
 }
 
-/** Opaque binding for the exact request that an adapter prepares. */
+function canonicalAllowedHosts(hosts: readonly string[]): string[] {
+  if (!Array.isArray(hosts) || hosts.length > 100) {
+    throw new Error('external_llm_transport_binding_invalid');
+  }
+  const result = [
+    ...new Set(
+      hosts
+        .map((host) =>
+          typeof host === 'string' ? host.trim().toLowerCase() : '',
+        )
+        .filter(Boolean),
+    ),
+  ].sort();
+  if (
+    result.some(
+      (host) =>
+        Buffer.byteLength(host, 'utf8') > 253 ||
+        host.includes('\0') ||
+        [...host].some((character) => {
+          const codePoint = character.codePointAt(0) ?? 0;
+          return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f);
+        }) ||
+        hasUnpairedUtf16Surrogate(host),
+    )
+  ) {
+    throw new Error('external_llm_transport_binding_invalid');
+  }
+  return result;
+}
+
+function canonicalHttpDestination(destination: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(destination);
+  } catch {
+    throw new Error('external_llm_transport_binding_invalid');
+  }
+  if (
+    (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') ||
+    !parsed.hostname ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash ||
+    Buffer.byteLength(parsed.href, 'utf8') > 2_048
+  ) {
+    throw new Error('external_llm_transport_binding_invalid');
+  }
+  return parsed.href;
+}
+
+/**
+ * Binds the exact canonical provider body to its non-secret destination and
+ * transport policy. Only the SHA-256 result crosses into run persistence or
+ * audit; raw URLs, allowlists and credentials do not.
+ */
+export function bindExternalLlmTextTransportRequest(
+  request: ExternalLlmTextRequest,
+  transport: ExternalLlmTextTransportBinding,
+): { serializedBody: string; requestFingerprint: string } {
+  const serializedBody = serializeExternalLlmTextRequestBody(request);
+  const hash = createHash('sha256');
+  hash.update('erp4:external-llm:text-transport-fingerprint:v1\0', 'utf8');
+  updateFingerprintField(hash, request.provider);
+  updateFingerprintField(
+    hash,
+    externalLlmTextRequestSerializationSchemaVersion,
+  );
+  updateFingerprintField(hash, externalLlmTextTransportBindingSchemaVersion);
+  updateFingerprintField(hash, transport.kind);
+
+  if (transport.kind === 'local_stub') {
+    if (transport.destination !== 'local://erp4/external-llm/stub/v1') {
+      throw new Error('external_llm_transport_binding_invalid');
+    }
+    updateFingerprintField(hash, transport.destination);
+  } else {
+    const destination = canonicalHttpDestination(transport.destination);
+    const allowedHosts = canonicalAllowedHosts(transport.allowedHosts);
+    if (
+      typeof transport.allowHttp !== 'boolean' ||
+      typeof transport.allowPrivateIp !== 'boolean' ||
+      !Number.isSafeInteger(transport.timeoutMs) ||
+      transport.timeoutMs < 1 ||
+      !Number.isSafeInteger(transport.maximumResponseBytes) ||
+      transport.maximumResponseBytes < 1 ||
+      transport.maximumResponseBytes > 1024 * 1024 ||
+      (transport.malformedSuccessPolicy !== 'reject' &&
+        transport.malformedSuccessPolicy !== 'empty') ||
+      (transport.usagePolicy !== 'strict' && transport.usagePolicy !== 'ignore')
+    ) {
+      throw new Error('external_llm_transport_binding_invalid');
+    }
+    updateFingerprintField(hash, destination);
+    updateFingerprintField(hash, String(allowedHosts.length));
+    for (const host of allowedHosts) updateFingerprintField(hash, host);
+    updateFingerprintField(hash, String(transport.allowHttp));
+    updateFingerprintField(hash, String(transport.allowPrivateIp));
+    updateFingerprintField(hash, String(transport.timeoutMs));
+    updateFingerprintField(hash, String(transport.maximumResponseBytes));
+    updateFingerprintField(hash, transport.malformedSuccessPolicy);
+    updateFingerprintField(hash, transport.usagePolicy);
+  }
+
+  // This is the exact byte sequence passed as prepareSafeFetch's string body.
+  updateFingerprintField(hash, serializedBody);
+  return { serializedBody, requestFingerprint: hash.digest('hex') };
+}
+
+/**
+ * Body-only serialization fingerprint retained for canonical payload tests.
+ * Dispatch authorization must use an adapter's transport-bound `bind()`.
+ */
 export function externalLlmTextRequestFingerprint(
   request: ExternalLlmTextRequest,
 ): string {
@@ -311,7 +449,17 @@ export type ExternalLlmPreparedTextRequest = {
   dispatch(): Promise<ExternalLlmTextResult>;
 };
 
-export interface ExternalLlmTextPort {
+export type ExternalLlmBoundTextRequest = {
+  /** Opaque SHA-256 over the exact body, destination and transport policy. */
+  requestFingerprint: string;
+};
+
+export interface ExternalLlmTextRequestBindingPort {
+  /** Deterministic and provider-I/O-free binding used before budget reserve. */
+  bind(request: ExternalLlmTextRequest): ExternalLlmBoundTextRequest;
+}
+
+export interface ExternalLlmTextPort extends ExternalLlmTextRequestBindingPort {
   /** Performs every deterministic/pre-dispatch check without provider I/O. */
   prepare(
     request: ExternalLlmTextRequest,

@@ -5,31 +5,65 @@ import type {
   ExternalLlmTextResult,
 } from '../../application/externalLlm/externalLlmPort.js';
 import {
-  bindExternalLlmTextRequest,
+  bindExternalLlmTextTransportRequest,
   ExternalLlmProviderError,
   externalLlmConservativeInputTokens,
 } from '../../application/externalLlm/externalLlmPort.js';
+
+const stubTransport = {
+  kind: 'local_stub' as const,
+  destination: 'local://erp4/external-llm/stub/v1' as const,
+};
+
+function snapshotRequest(
+  request: ExternalLlmTextRequest,
+): ExternalLlmTextRequest {
+  return {
+    provider: request.provider,
+    model: request.model,
+    systemPrompt: request.systemPrompt,
+    userPrompt: request.userPrompt,
+    contextSections:
+      request.contextSections === undefined
+        ? undefined
+        : [...request.contextSections],
+    maxOutputTokens: request.maxOutputTokens,
+    temperatureBasisPoints: request.temperatureBasisPoints,
+  };
+}
 
 /**
  * Explicit test-only provider. It never echoes prompt material and never
  * performs network I/O. Runtime composition must opt in to provider=stub.
  */
 export class StubExternalLlmTextAdapter implements ExternalLlmTextPort {
+  bind(request: ExternalLlmTextRequest) {
+    const requestSnapshot = snapshotRequest(request);
+    if (requestSnapshot.provider !== 'stub') {
+      throw new ExternalLlmProviderError(
+        'rejected_before_dispatch',
+        'not_dispatched',
+      );
+    }
+    try {
+      return {
+        requestFingerprint: bindExternalLlmTextTransportRequest(
+          requestSnapshot,
+          stubTransport,
+        ).requestFingerprint,
+      };
+    } catch {
+      throw new ExternalLlmProviderError(
+        'rejected_before_dispatch',
+        'not_dispatched',
+      );
+    }
+  }
+
   async prepare(
     request: ExternalLlmTextRequest,
   ): Promise<ExternalLlmPreparedTextRequest> {
-    const requestSnapshot: ExternalLlmTextRequest = {
-      provider: request.provider,
-      model: request.model,
-      systemPrompt: request.systemPrompt,
-      userPrompt: request.userPrompt,
-      contextSections:
-        request.contextSections === undefined
-          ? undefined
-          : [...request.contextSections],
-      maxOutputTokens: request.maxOutputTokens,
-      temperatureBasisPoints: request.temperatureBasisPoints,
-    };
+    const requestSnapshot = snapshotRequest(request);
     if (requestSnapshot.provider !== 'stub') {
       throw new ExternalLlmProviderError(
         'rejected_before_dispatch',
@@ -50,8 +84,7 @@ export class StubExternalLlmTextAdapter implements ExternalLlmTextPort {
     const model = requestSnapshot.model;
     const maxOutputTokens = requestSnapshot.maxOutputTokens;
     try {
-      requestFingerprint =
-        bindExternalLlmTextRequest(requestSnapshot).requestFingerprint;
+      requestFingerprint = this.bind(requestSnapshot).requestFingerprint;
       inputTokens = externalLlmConservativeInputTokens(requestSnapshot);
     } catch {
       throw new ExternalLlmProviderError(

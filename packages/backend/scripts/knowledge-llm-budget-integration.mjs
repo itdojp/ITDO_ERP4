@@ -54,16 +54,19 @@ const catalogModels = [
   currency: 'JPY',
   capabilities: ['text'],
 }));
+const stubProvider = new StubExternalLlmTextAdapter();
 const now = new Date();
 const service = createKnowledgeLlmBudgetUseCases(
   new PrismaKnowledgeLlmBudgetAdapter(prisma),
   { version: 1, models: catalogModels },
+  stubProvider,
   () => new Date(now.getTime()),
 );
 const serviceAt = (timestamp) =>
   createKnowledgeLlmBudgetUseCases(
     new PrismaKnowledgeLlmBudgetAdapter(prisma),
     { version: 1, models: catalogModels },
+    stubProvider,
     () => new Date(timestamp.getTime()),
   );
 const after = (milliseconds) => new Date(now.getTime() + milliseconds);
@@ -114,6 +117,22 @@ async function waitForDatabaseLock(pid) {
     await delay(20);
   }
   throw new Error('knowledge_llm_lock_wait_not_observed');
+}
+
+async function waitForNamedDatabaseLock(applicationName) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const activity = await prisma.$queryRaw`
+      SELECT pid
+      FROM pg_stat_activity
+      WHERE application_name = ${applicationName}
+        AND wait_event_type = 'Lock'
+      ORDER BY pid
+      LIMIT 1
+    `;
+    if (activity[0]?.pid) return activity[0].pid;
+    await delay(20);
+  }
+  throw new Error('knowledge_llm_named_lock_wait_not_observed');
 }
 
 async function waitForPolicyLock(excludedPid) {
@@ -461,7 +480,7 @@ try {
     maxOutputTokens: 100,
     temperatureBasisPoints: 0,
   };
-  const renderedPromptPrepared = await new StubExternalLlmTextAdapter().prepare(
+  const renderedPromptPrepared = await stubProvider.prepare(
     renderedPromptRequest,
   );
   assert.equal(
@@ -1188,6 +1207,120 @@ try {
   await heldPolicyLock;
 
   await policy({
+    id: 'policy-period-order-user',
+    subjectType: 'user',
+    subjectId: 'period-order-user',
+    soft: 100n,
+    hard: 200n,
+    timezone: 'UTC',
+  });
+  await policy({
+    id: 'policy-period-order-org',
+    subjectType: 'organization',
+    subjectId: 'period-order-org',
+    soft: 100n,
+    hard: 200n,
+    timezone: 'UTC',
+  });
+  const periodOrderWindow = knowledgeLlmMonthlyPeriod(now, 'UTC');
+  const organizationFirstPeriod =
+    await prisma.knowledgeLlmBudgetPeriod.create({
+      data: {
+        id: '00000000-period-order-organization',
+        policyId: 'policy-period-order-org',
+        periodStartUtc: periodOrderWindow.start,
+        periodEndUtc: periodOrderWindow.end,
+        timezone: 'UTC',
+        currency: 'JPY',
+      },
+    });
+  const userSecondPeriod = await prisma.knowledgeLlmBudgetPeriod.create({
+    data: {
+      id: 'zzzzzzzz-period-order-user',
+      policyId: 'policy-period-order-user',
+      periodStartUtc: periodOrderWindow.start,
+      periodEndUtc: periodOrderWindow.end,
+      timezone: 'UTC',
+      currency: 'JPY',
+    },
+  });
+  const lockOrderApplicationName = 'erp4-knowledge-llm-period-order';
+  const lockOrderUrl = new URL(process.env.DATABASE_URL);
+  lockOrderUrl.searchParams.set('application_name', lockOrderApplicationName);
+  const lockOrderPrisma = new PrismaClient({
+    adapter: new PrismaPg({ connectionString: lockOrderUrl.toString() }),
+  });
+  const lockOrderService = createKnowledgeLlmBudgetUseCases(
+    new PrismaKnowledgeLlmBudgetAdapter(lockOrderPrisma),
+    { version: 1, models: catalogModels },
+    stubProvider,
+    () => new Date(now.getTime()),
+  );
+  let signalOrganizationPeriodLocked;
+  const organizationPeriodLocked = new Promise((resolve) => {
+    signalOrganizationPeriodLocked = resolve;
+  });
+  let releaseOrganizationPeriod;
+  const organizationPeriodRelease = new Promise((resolve) => {
+    releaseOrganizationPeriod = resolve;
+  });
+  const heldOrganizationPeriod = prisma.$transaction(
+    async (transaction) => {
+      await transaction.$queryRaw`
+        SELECT id
+        FROM "KnowledgeLlmBudgetPeriod"
+        WHERE id = ${organizationFirstPeriod.id}
+        FOR UPDATE
+      `;
+      signalOrganizationPeriodLocked();
+      await organizationPeriodRelease;
+    },
+    { timeout: 15_000 },
+  );
+  await organizationPeriodLocked;
+  const periodOrderReservation = lockOrderService.reserve(
+    reservation({
+      runId: 'run-period-order',
+      userId: 'period-order-user',
+      organizationId: 'period-order-org',
+      keyHash: hash('e'),
+      maximumCostMicros: 1n,
+    }),
+  );
+  let periodOrderProbeError;
+  try {
+    await waitForNamedDatabaseLock(lockOrderApplicationName);
+    await prisma.$transaction(
+      async (transaction) => {
+        await transaction.$executeRawUnsafe(
+          "SET LOCAL lock_timeout = '1000ms'",
+        );
+        await transaction.$queryRaw`
+          SELECT id
+          FROM "KnowledgeLlmBudgetPeriod"
+          WHERE id = ${userSecondPeriod.id}
+          FOR UPDATE
+        `;
+      },
+      { timeout: 5_000 },
+    );
+  } catch (error) {
+    periodOrderProbeError = error;
+  } finally {
+    releaseOrganizationPeriod();
+  }
+  const periodOrderResults = await Promise.allSettled([
+    heldOrganizationPeriod,
+    periodOrderReservation,
+  ]);
+  await lockOrderPrisma.$disconnect();
+  if (periodOrderProbeError) throw periodOrderProbeError;
+  for (const result of periodOrderResults) {
+    if (result.status === 'rejected') throw result.reason;
+  }
+  assert.equal(periodOrderResults[1].value.ok, true);
+
+  await policy({
     id: 'policy-org-user',
     subjectType: 'user',
     subjectId: 'org-user',
@@ -1313,6 +1446,7 @@ try {
   const boundaryService = createKnowledgeLlmBudgetUseCases(
     new PrismaKnowledgeLlmBudgetAdapter(prisma),
     { version: 1, models: catalogModels },
+    stubProvider,
     () => new Date(boundaryNow.getTime()),
   );
   const boundaryRateBlocked = await boundaryService.reserve({
@@ -3592,6 +3726,7 @@ try {
       canonicalMonthlyPeriodBoundary: true,
       ambiguousMonthStartCanonicalized: true,
       periodCounterUpdateLockOrderVerified: true,
+      reservationPeriodLockOrderVerified: true,
       canonicalActorDatabaseBoundary: true,
       economicReplayConflict: true,
       concurrentReplayConvergence: true,

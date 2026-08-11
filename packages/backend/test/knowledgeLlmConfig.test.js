@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { StubExternalLlmTextAdapter } from '../dist/adapters/externalLlm/stubTextAdapter.js';
+
 const configModule = () =>
   import('../dist/application/knowledge/knowledgeLlmConfig.js');
 const budgetModule = () =>
@@ -200,6 +202,7 @@ test('organization reservation fails closed when canonical organization differs'
       },
     },
     parseKnowledgeLlmModelCatalog(catalog()),
+    new StubExternalLlmTextAdapter(),
     () => new Date('2026-08-12T00:00:00.000Z'),
   );
   const result = await service.reserve({
@@ -244,6 +247,7 @@ test('reservation rejects non-canonical actor and organization identifiers', asy
       },
     },
     parseKnowledgeLlmModelCatalog(catalog()),
+    new StubExternalLlmTextAdapter(),
   );
   const base = {
     runId: 'canonical-actor-run',
@@ -310,6 +314,7 @@ test('reservation pricing is resolved from the enabled catalog, not caller field
       },
     },
     parseKnowledgeLlmModelCatalog(catalog()),
+    new StubExternalLlmTextAdapter(),
     () => new Date('2026-08-12T00:00:00.000Z'),
   );
   const result = await service.reserve({
@@ -346,6 +351,18 @@ test('reservation pricing is resolved from the enabled catalog, not caller field
   assert.notEqual(received.selectedContextFingerprint, 'f'.repeat(64));
   assert.deepEqual(received.selectedContextSources, []);
   assert.match(received.providerRequestHash, /^[a-f0-9]{64}$/);
+  assert.equal(
+    received.providerRequestHash,
+    new StubExternalLlmTextAdapter().bind({
+      provider: 'stub',
+      model: 'stub-v1',
+      systemPrompt: '',
+      userPrompt: '',
+      contextSections: [],
+      maxOutputTokens: 7,
+      temperatureBasisPoints: 0,
+    }).requestFingerprint,
+  );
   assert.equal('systemPrompt' in received, false);
   assert.equal('userPrompt' in received, false);
   assert.equal(received.currency, 'JPY');
@@ -405,6 +422,7 @@ test('reservation rejects stale, disabled, unknown and over-limit catalog select
         },
       },
       candidate.catalog,
+      new StubExternalLlmTextAdapter(),
     );
     assert.deepEqual(await service.reserve(candidate.input), {
       ok: false,
@@ -439,6 +457,7 @@ test('reservation derives a conservative floor from exact rendered prompts', asy
       },
     },
     parseKnowledgeLlmModelCatalog(catalog()),
+    new StubExternalLlmTextAdapter(),
   );
   const result = await service.reserve({
     runId: 'prompt-bound-run',
@@ -497,6 +516,7 @@ test('reservation enforces raw user and selected-context byte limits independent
       },
     },
     parseKnowledgeLlmModelCatalog(catalog()),
+    new StubExternalLlmTextAdapter(),
   );
   const base = {
     runId: 'prompt-limit-run',

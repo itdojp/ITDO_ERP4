@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import {
   externalLlmConservativeInputTokens,
-  externalLlmTextRequestFingerprint,
+  type ExternalLlmTextRequestBindingPort,
   type ExternalLlmTextRequest,
 } from '../externalLlm/externalLlmPort.js';
 
@@ -184,6 +184,7 @@ function validInput(input: KnowledgeLlmReservationRequest): boolean {
 export function createKnowledgeLlmBudgetUseCases(
   port: KnowledgeLlmBudgetPort,
   catalog: KnowledgeLlmModelCatalog | null,
+  providerBindingPort: ExternalLlmTextRequestBindingPort,
   clock: KnowledgeLlmClock = () => new Date(),
 ) {
   const catalogSnapshot =
@@ -231,7 +232,7 @@ export function createKnowledgeLlmBudgetUseCases(
           knowledgeLlmLimits.sourceFramingTokens,
         );
         providerRequestHash =
-          externalLlmTextRequestFingerprint(providerRequest);
+          providerBindingPort.bind(providerRequest).requestFingerprint;
         estimatedInputTokens = Math.max(
           derivedEstimate,
           input.reservationInputTokenFloor ?? derivedEstimate,

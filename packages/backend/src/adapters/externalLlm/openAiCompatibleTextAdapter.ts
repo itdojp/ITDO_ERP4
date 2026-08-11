@@ -6,7 +6,7 @@ import type {
   ExternalLlmUsageResult,
 } from '../../application/externalLlm/externalLlmPort.js';
 import {
-  bindExternalLlmTextRequest,
+  bindExternalLlmTextTransportRequest,
   ExternalLlmProviderError,
 } from '../../application/externalLlm/externalLlmPort.js';
 import {
@@ -32,6 +32,20 @@ export type OpenAiCompatibleTextAdapterConfig = {
 
 const defaultMaximumResponseBytes = 1024 * 1024;
 
+type OpenAiRequestSnapshot = {
+  request: ExternalLlmTextRequest;
+  endpoint: string;
+  apiKey: string;
+  timeoutMs: number;
+  allowedHosts: string[];
+  allowHttp: boolean;
+  allowPrivateIp: boolean;
+  maximumResponseBytes: number;
+  malformedSuccessPolicy: 'reject' | 'empty';
+  usagePolicy: 'strict' | 'ignore';
+  dnsLookupImpl: SafeHttpOptions['dnsLookupImpl'];
+};
+
 function normalizeMaximumResponseBytes(value: number | undefined) {
   const normalized = value ?? defaultMaximumResponseBytes;
   return Number.isSafeInteger(normalized) &&
@@ -39,6 +53,46 @@ function normalizeMaximumResponseBytes(value: number | undefined) {
     normalized <= defaultMaximumResponseBytes
     ? normalized
     : null;
+}
+
+function normalizeTimeoutMs(value: number) {
+  return Number.isSafeInteger(value) && value >= 1 ? value : null;
+}
+
+function canonicalEndpoint(baseUrl: string): string | null {
+  try {
+    const parsed = new URL(`${baseUrl.replace(/\/$/, '')}/chat/completions`);
+    if (
+      (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') ||
+      !parsed.hostname ||
+      parsed.username ||
+      parsed.password ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      return null;
+    }
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
+
+function snapshotRequest(
+  request: ExternalLlmTextRequest,
+): ExternalLlmTextRequest {
+  return {
+    provider: request.provider,
+    model: request.model,
+    systemPrompt: request.systemPrompt,
+    userPrompt: request.userPrompt,
+    contextSections:
+      request.contextSections === undefined
+        ? undefined
+        : [...request.contextSections],
+    maxOutputTokens: request.maxOutputTokens,
+    temperatureBasisPoints: request.temperatureBasisPoints,
+  };
 }
 
 function strictNonNegativeInteger(value: unknown): number | null {
@@ -178,21 +232,80 @@ async function readJsonBounded(response: Response, maximumBytes: number) {
 export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
   constructor(private readonly config: OpenAiCompatibleTextAdapterConfig) {}
 
+  private snapshot(
+    request: ExternalLlmTextRequest,
+  ): OpenAiRequestSnapshot | null {
+    const maximumResponseBytes = normalizeMaximumResponseBytes(
+      this.config.maximumResponseBytes,
+    );
+    const timeoutMs = normalizeTimeoutMs(this.config.timeoutMs);
+    const endpoint = canonicalEndpoint(this.config.baseUrl);
+    if (
+      maximumResponseBytes === null ||
+      timeoutMs === null ||
+      endpoint === null
+    ) {
+      return null;
+    }
+    return {
+      request: snapshotRequest(request),
+      endpoint,
+      apiKey: this.config.apiKey,
+      timeoutMs,
+      allowedHosts: [...this.config.allowedHosts],
+      allowHttp: this.config.allowHttp,
+      allowPrivateIp: this.config.allowPrivateIp,
+      maximumResponseBytes,
+      malformedSuccessPolicy: this.config.malformedSuccessPolicy ?? 'reject',
+      usagePolicy: this.config.usagePolicy ?? 'strict',
+      dnsLookupImpl: this.config.dnsLookupImpl,
+    };
+  }
+
+  bind(request: ExternalLlmTextRequest) {
+    const snapshot = this.snapshot(request);
+    if (snapshot === null || snapshot.request.provider !== 'openai') {
+      throw new ExternalLlmProviderError(
+        'rejected_before_dispatch',
+        'not_dispatched',
+      );
+    }
+    try {
+      return {
+        requestFingerprint: bindExternalLlmTextTransportRequest(
+          snapshot.request,
+          {
+            kind: 'openai_compatible_http',
+            destination: snapshot.endpoint,
+            allowedHosts: snapshot.allowedHosts,
+            allowHttp: snapshot.allowHttp,
+            allowPrivateIp: snapshot.allowPrivateIp,
+            timeoutMs: snapshot.timeoutMs,
+            maximumResponseBytes: snapshot.maximumResponseBytes,
+            malformedSuccessPolicy: snapshot.malformedSuccessPolicy,
+            usagePolicy: snapshot.usagePolicy,
+          },
+        ).requestFingerprint,
+      };
+    } catch {
+      throw new ExternalLlmProviderError(
+        'rejected_before_dispatch',
+        'not_dispatched',
+      );
+    }
+  }
+
   async prepare(
     request: ExternalLlmTextRequest,
   ): Promise<ExternalLlmPreparedTextRequest> {
-    const requestSnapshot: ExternalLlmTextRequest = {
-      provider: request.provider,
-      model: request.model,
-      systemPrompt: request.systemPrompt,
-      userPrompt: request.userPrompt,
-      contextSections:
-        request.contextSections === undefined
-          ? undefined
-          : [...request.contextSections],
-      maxOutputTokens: request.maxOutputTokens,
-      temperatureBasisPoints: request.temperatureBasisPoints,
-    };
+    const snapshot = this.snapshot(request);
+    if (snapshot === null) {
+      throw new ExternalLlmProviderError(
+        'rejected_before_dispatch',
+        'not_dispatched',
+      );
+    }
+    const requestSnapshot = snapshot.request;
     if (requestSnapshot.provider !== 'openai') {
       throw new ExternalLlmProviderError(
         'rejected_before_dispatch',
@@ -202,29 +315,33 @@ export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
     // Snapshot every mutable caller-owned value before the first await. A
     // prepared dispatch must remain bound to the request/config it validated.
     const model = requestSnapshot.model;
-    const maximumResponseBytes = normalizeMaximumResponseBytes(
-      this.config.maximumResponseBytes,
-    );
-    const baseUrl = this.config.baseUrl;
-    const apiKey = this.config.apiKey;
-    const timeoutMs = this.config.timeoutMs;
-    const allowedHosts = [...this.config.allowedHosts];
-    const allowHttp = this.config.allowHttp;
-    const allowPrivateIp = this.config.allowPrivateIp;
-    const dnsLookupImpl = this.config.dnsLookupImpl;
-    const malformedSuccessPolicy = this.config.malformedSuccessPolicy;
-    const usagePolicy = this.config.usagePolicy;
-    if (maximumResponseBytes === null) {
-      throw new ExternalLlmProviderError(
-        'rejected_before_dispatch',
-        'not_dispatched',
-      );
-    }
+    const {
+      endpoint,
+      apiKey,
+      timeoutMs,
+      allowedHosts,
+      allowHttp,
+      allowPrivateIp,
+      dnsLookupImpl,
+      maximumResponseBytes,
+      malformedSuccessPolicy,
+      usagePolicy,
+    } = snapshot;
 
     let requestFingerprint: string;
     let requestBody: string;
     try {
-      const binding = bindExternalLlmTextRequest(requestSnapshot);
+      const binding = bindExternalLlmTextTransportRequest(requestSnapshot, {
+        kind: 'openai_compatible_http',
+        destination: endpoint,
+        allowedHosts,
+        allowHttp,
+        allowPrivateIp,
+        timeoutMs,
+        maximumResponseBytes,
+        malformedSuccessPolicy,
+        usagePolicy,
+      });
       requestFingerprint = binding.requestFingerprint;
       requestBody = binding.serializedBody;
     } catch {
@@ -237,7 +354,7 @@ export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
     let preparedHttpRequest: Awaited<ReturnType<typeof prepareSafeFetch>>;
     try {
       preparedHttpRequest = await prepareSafeFetch(
-        `${baseUrl.replace(/\/$/, '')}/chat/completions`,
+        endpoint,
         {
           method: 'POST',
           headers: {
