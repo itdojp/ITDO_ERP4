@@ -76,6 +76,8 @@ CREATE TABLE "KnowledgeLlmRun" (
     "selectedContextFingerprint" TEXT NOT NULL,
     "estimatedInputTokens" INTEGER NOT NULL,
     "maxOutputTokens" INTEGER NOT NULL,
+    "inputCostMicrosPerMillion" BIGINT NOT NULL,
+    "outputCostMicrosPerMillion" BIGINT NOT NULL,
     "maximumCostMicros" BIGINT NOT NULL,
     "actualInputTokens" INTEGER,
     "actualOutputTokens" INTEGER,
@@ -406,6 +408,8 @@ ALTER TABLE "KnowledgeLlmRun"
     AND "selectedContextFingerprint" ~ '^[0-9a-f]{64}$'
     AND "estimatedInputTokens" BETWEEN 1 AND 2147483647
     AND "maxOutputTokens" BETWEEN 1 AND 4096
+    AND "inputCostMicrosPerMillion" >= 0
+    AND "outputCostMicrosPerMillion" >= 0
     AND "maximumCostMicros" >= 0
     AND ("actualInputTokens" IS NULL OR "actualInputTokens" >= 0)
     AND ("actualOutputTokens" IS NULL OR "actualOutputTokens" >= 0)
@@ -657,6 +661,20 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
   IF NEW."executionStatus" = 'result_ready'
+    AND NOT EXISTS (
+      SELECT 1
+      FROM "KnowledgeConversationTurn" turn
+      WHERE turn.id = NEW."assistantTurnId"
+        AND turn."conversationId" = NEW."conversationId"
+        AND turn.role = 'assistant'
+        AND turn.origin = 'ai'
+    )
+  THEN
+    RAISE EXCEPTION 'KnowledgeLlmRun result requires an assistant AI turn'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF NEW."executionStatus" = 'result_ready'
     AND NEW."settlementStatus" = 'settled_actual'
     AND NOT EXISTS (
       SELECT 1
@@ -671,6 +689,8 @@ BEGIN
         AND outcome."inputTokens" = NEW."actualInputTokens"
         AND outcome."outputTokens" = NEW."actualOutputTokens"
         AND outcome."contentHash" = turn."contentHash"
+        AND turn.role = 'assistant'
+        AND turn.origin = 'ai'
     )
   THEN
     RAISE EXCEPTION 'KnowledgeLlmRun settlement requires a valid provider outcome'
@@ -717,6 +737,8 @@ BEGIN
     OR OLD."selectedContextFingerprint" <> NEW."selectedContextFingerprint"
     OR OLD."estimatedInputTokens" <> NEW."estimatedInputTokens"
     OR OLD."maxOutputTokens" <> NEW."maxOutputTokens"
+    OR OLD."inputCostMicrosPerMillion" <> NEW."inputCostMicrosPerMillion"
+    OR OLD."outputCostMicrosPerMillion" <> NEW."outputCostMicrosPerMillion"
     OR OLD."maximumCostMicros" <> NEW."maximumCostMicros"
     OR OLD."currency" <> NEW."currency"
     OR OLD."createdAt" <> NEW."createdAt"
@@ -826,6 +848,25 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+CREATE FUNCTION "erp4_knowledge_llm_outcome_insert_guard"()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.status IN ('valid', 'usage_unknown')
+    AND (NEW."finalizedAt" IS NOT NULL OR NEW."normalizedContent" IS NULL)
+  THEN
+    RAISE EXCEPTION 'KnowledgeLlmProviderOutcome must capture content before finalization'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "KnowledgeLlmProviderOutcome_capture_before_finalize"
+  BEFORE INSERT ON "KnowledgeLlmProviderOutcome"
+  FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_outcome_insert_guard"();
 
 CREATE TRIGGER "KnowledgeLlmProviderOutcome_finalize_only"
   BEFORE UPDATE ON "KnowledgeLlmProviderOutcome"

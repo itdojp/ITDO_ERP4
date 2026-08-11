@@ -548,10 +548,10 @@ mutationする。
 - Knowledge providerは既定`disabled`で、`CHAT_EXTERNAL_LLM_*`へfallbackしない。任意provider/model入力は受けず、version付きcatalogのenabled entryだけを使用する。価格はfloatではなくISO currencyごとのinteger micro-unit/100万tokenとし、各項を切り上げて最大reservationを計算する。
 - personal runはuser policy、organization runはuserとorganization policyの両方を必要とする。policyは明示IANA timezone、soft/hard月次上限、requests/hour、currency、versionを保持する。process timezoneへfallbackせず、異なるcurrencyのpolicyを混在させない。
 - hard判定は`settled actual + active reservation + held maximum + new maximum`で行う。policy/periodを決定順にlockし、Serializable transactionを最大3 attemptだけ再評価する。同じopaque request hashは一つのrun/reservationへ収束し、hard/rate blockではprovider requestを作らない。
-- conservative input estimateは`UTF-8 bytes * 2 + source framing`でありprovider tokenizer実測ではない。実usageは後続settlementでstrictに検証する。costは`ceil(tokens * price / 1,000,000)`で計算する。
+- conservative input estimateは`UTF-8 bytes * 2 + source framing`でありprovider tokenizer実測ではない。runはcatalog versionに加えてinput/output単価をimmutable snapshotとして保持し、実usageはprovider outcomeとassistant/AI turnへ束縛してsettlement時にstrictに再検証する。costはcaller入力を信用せず、snapshot単価から各項を`ceil(tokens * price / 1,000,000)`で再計算する。
 - selected contextの上限は、全source 32、snapshot 4、annotation revision 10、conversation turn 20、synthesis version 5、thread promotion message 20、関連item 10、一source 64 KiB、合計256 KiB、利用者prompt 16 KiB、固定system prompt 8 KiB、output 4,096 token、provenance depth 1とする。preview tokenは4 KiB、TTLは10分とし、catalogのmodel上限がこれより小さい場合は小さい方を適用する。
 - runはexecution（reserved/dispatched/result_ready/failed/result_unknown）とsettlement（reserved/settled_actual/released/held_maximum）を分離する。timeout、結果不明、usage不明、finalization不明ではmaximumを保持し、自動retry/provider fallbackを行わない。
-- `result_unknown + held_maximum`からのreconcileは、同一runに保存済みのvalid normalized outcomeがfinalize済みでusageと一致する場合だけ`result_ready + settled_actual`へ進める。provider再送や証跡なしreleaseは行わない。request/context row、policy version、terminal outcomeはDB triggerで不変とする。
+- `result_unknown + held_maximum`からのreconcileは、同一runに一度captureされ、immutableなupdate遷移でfinalizeされたvalid normalized outcomeがusage、content hash、assistant/AI turnと一致する場合だけ`result_ready + settled_actual`へ進める。finalized outcomeの直接INSERT、provider再送、証跡なしreleaseは行わない。request/context row、policy version、terminal outcomeはDB triggerで不変とする。
 - migrationは新enum/table/index/FK/CHECK/immutable・state-transition triggerだけのexpand-onlyとし、既存rowを更新しない。application rollbackでは新tableを保持し、Knowledge endpoint/UIを無効化して旧imageへ戻す。
 
 ### 09. Chrome/Edge capture extension / PWA share target

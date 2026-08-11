@@ -45,6 +45,8 @@ function reservation({
   keyHash,
   payloadHash,
   maximumCostMicros,
+  inputCostMicrosPerMillion = maximumCostMicros * 10_000n,
+  outputCostMicrosPerMillion = 0n,
   organizationId = null,
   auditSuffix = runId,
 }) {
@@ -67,6 +69,8 @@ function reservation({
     selectedContextFingerprint: hash('c'),
     estimatedInputTokens: 100,
     maxOutputTokens: 100,
+    inputCostMicrosPerMillion,
+    outputCostMicrosPerMillion,
     maximumCostMicros,
     currency: 'JPY',
     now,
@@ -271,6 +275,8 @@ try {
       selectedContextFingerprint: hash('e'),
       estimatedInputTokens: 10,
       maxOutputTokens: 10,
+      inputCostMicrosPerMillion: 100_000n,
+      outputCostMicrosPerMillion: 0n,
       maximumCostMicros: 1n,
       currency: 'JPY',
       createdAt: priorReservationAt,
@@ -363,6 +369,8 @@ try {
       keyHash: hash('f'),
       payloadHash: hash('0'),
       maximumCostMicros: 100n,
+      inputCostMicrosPerMillion: 250_000n,
+      outputCostMicrosPerMillion: 750_000n,
     }),
   );
   assert.equal(settlementReservation.ok, true);
@@ -381,7 +389,7 @@ try {
           updatedBy: 'settlement-user',
         },
       });
-      await transaction.knowledgeConversationTurn.create({
+      const user = await transaction.knowledgeConversationTurn.create({
         data: {
           conversationId: conversation.id,
           sequence: 1,
@@ -403,7 +411,7 @@ try {
           createdBy: 'settlement-user',
         },
       });
-      return { conversation, assistant };
+      return { conversation, user, assistant };
     },
   );
   await assert.rejects(
@@ -437,13 +445,8 @@ try {
     ).executionStatus,
     'reserved',
   );
-  await prisma.$transaction(async (transaction) => {
-    await markKnowledgeLlmRunDispatched(transaction, {
-      runId: 'run-settlement-actual',
-      actorUserId: 'settlement-user',
-      dispatchedAt: after(1_000),
-    });
-    await transaction.knowledgeLlmProviderOutcome.create({
+  await assert.rejects(
+    prisma.knowledgeLlmProviderOutcome.create({
       data: {
         runId: 'run-settlement-actual',
         status: 'valid',
@@ -454,6 +457,105 @@ try {
         capturedAt: after(1_500),
         finalizedAt: after(1_900),
       },
+    }),
+    /capture content before finalization/,
+  );
+  await assert.rejects(
+    prisma.$transaction(async (transaction) => {
+      await markKnowledgeLlmRunDispatched(transaction, {
+        runId: 'run-settlement-actual',
+        actorUserId: 'settlement-user',
+        dispatchedAt: after(1_000),
+      });
+      await transaction.knowledgeLlmProviderOutcome.create({
+        data: {
+          runId: 'run-settlement-actual',
+          status: 'valid',
+          normalizedContent: 'Synthetic result',
+          contentHash: settlementConversation.assistant.contentHash,
+          inputTokens: 80,
+          outputTokens: 20,
+          capturedAt: after(1_500),
+        },
+      });
+      await transaction.knowledgeLlmProviderOutcome.update({
+        where: { runId: 'run-settlement-actual' },
+        data: { normalizedContent: null, finalizedAt: after(1_900) },
+      });
+      await settleKnowledgeLlmBudget(transaction, {
+        runId: 'run-settlement-actual',
+        actorUserId: 'settlement-user',
+        completedAt: after(2_000),
+        settlement: {
+          type: 'actual',
+          actualInputTokens: 80,
+          actualOutputTokens: 20,
+          actualCostMicros: 0n,
+          conversationId: settlementConversation.conversation.id,
+          assistantTurnId: settlementConversation.assistant.id,
+        },
+      });
+    }),
+    /without_valid_outcome/,
+  );
+  await assert.rejects(
+    prisma.$transaction(async (transaction) => {
+      await markKnowledgeLlmRunDispatched(transaction, {
+        runId: 'run-settlement-actual',
+        actorUserId: 'settlement-user',
+        dispatchedAt: after(1_000),
+      });
+      await transaction.knowledgeLlmProviderOutcome.create({
+        data: {
+          runId: 'run-settlement-actual',
+          status: 'valid',
+          normalizedContent: 'Synthetic prompt',
+          contentHash: settlementConversation.user.contentHash,
+          inputTokens: 80,
+          outputTokens: 20,
+          capturedAt: after(1_500),
+        },
+      });
+      await transaction.knowledgeLlmProviderOutcome.update({
+        where: { runId: 'run-settlement-actual' },
+        data: { normalizedContent: null, finalizedAt: after(1_900) },
+      });
+      await settleKnowledgeLlmBudget(transaction, {
+        runId: 'run-settlement-actual',
+        actorUserId: 'settlement-user',
+        completedAt: after(2_000),
+        settlement: {
+          type: 'actual',
+          actualInputTokens: 80,
+          actualOutputTokens: 20,
+          actualCostMicros: 35n,
+          conversationId: settlementConversation.conversation.id,
+          assistantTurnId: settlementConversation.user.id,
+        },
+      });
+    }),
+    /without_valid_outcome/,
+  );
+  await prisma.$transaction(async (transaction) => {
+    await markKnowledgeLlmRunDispatched(transaction, {
+      runId: 'run-settlement-actual',
+      actorUserId: 'settlement-user',
+      dispatchedAt: after(1_000),
+    });
+    await transaction.knowledgeLlmProviderOutcome.create({
+      data: {
+        runId: 'run-settlement-actual',
+        status: 'valid',
+        normalizedContent: 'Synthetic result',
+        contentHash: settlementConversation.assistant.contentHash,
+        inputTokens: 80,
+        outputTokens: 20,
+        capturedAt: after(1_500),
+      },
+    });
+    await transaction.knowledgeLlmProviderOutcome.update({
+      where: { runId: 'run-settlement-actual' },
+      data: { normalizedContent: null, finalizedAt: after(1_900) },
     });
     await settleKnowledgeLlmBudget(transaction, {
       runId: 'run-settlement-actual',
@@ -528,6 +630,8 @@ try {
       keyHash: hash('8'),
       payloadHash: hash('9'),
       maximumCostMicros: 60n,
+      inputCostMicrosPerMillion: 250_000n,
+      outputCostMicrosPerMillion: 350_000n,
     }),
   );
   assert.equal(reconciliationReservation.ok, true);
@@ -567,7 +671,7 @@ try {
         completedAt: after(8_000),
         actualInputTokens: 40,
         actualOutputTokens: 10,
-        actualCostMicros: 20n,
+        actualCostMicros: 14n,
         conversationId: 'missing-conversation',
         assistantTurnId: 'missing-turn',
       }),
@@ -620,7 +724,7 @@ try {
       completedAt: after(8_000),
       actualInputTokens: 40,
       actualOutputTokens: 10,
-      actualCostMicros: 20n,
+      actualCostMicros: 14n,
       conversationId: conversation.id,
       assistantTurnId: assistant.id,
     });
@@ -631,7 +735,7 @@ try {
   });
   assert.equal(reconciled.executionStatus, 'result_ready');
   assert.equal(reconciled.settlementStatus, 'settled_actual');
-  assert.equal(reconciled.actualCostMicros, 20n);
+  assert.equal(reconciled.actualCostMicros, 14n);
   assert.equal(reconciled.reservations[0].status, 'settled_actual');
 
   const releaseReservation = await service.reserve(
@@ -771,6 +875,13 @@ try {
         createdBy: 'budget-user',
       },
     }),
+  );
+  await assert.rejects(
+    prisma.knowledgeLlmRun.update({
+      where: { id: 'run-first' },
+      data: { inputCostMicrosPerMillion: 1n },
+    }),
+    /request boundary is immutable/,
   );
   await assert.rejects(
     prisma.knowledgeLlmRun.update({

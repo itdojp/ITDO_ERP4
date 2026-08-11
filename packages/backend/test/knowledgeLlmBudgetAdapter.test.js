@@ -24,6 +24,8 @@ function reservation() {
     selectedContextFingerprint: hash('c'),
     estimatedInputTokens: 10,
     maxOutputTokens: 10,
+    inputCostMicrosPerMillion: 100_000n,
+    outputCostMicrosPerMillion: 0n,
     maximumCostMicros: 1n,
     currency: 'JPY',
     now: new Date('2026-08-11T00:00:00.000Z'),

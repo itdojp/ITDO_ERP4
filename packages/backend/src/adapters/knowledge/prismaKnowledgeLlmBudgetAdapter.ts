@@ -298,6 +298,8 @@ async function reserveOnce(
       selectedContextFingerprint: input.selectedContextFingerprint,
       estimatedInputTokens: input.estimatedInputTokens,
       maxOutputTokens: input.maxOutputTokens,
+      inputCostMicrosPerMillion: input.inputCostMicrosPerMillion,
+      outputCostMicrosPerMillion: input.outputCostMicrosPerMillion,
       maximumCostMicros: input.maximumCostMicros,
       currency: input.currency,
       createdBy: input.actor.userId,

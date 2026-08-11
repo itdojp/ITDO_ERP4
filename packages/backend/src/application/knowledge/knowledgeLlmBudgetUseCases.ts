@@ -4,7 +4,7 @@ import type {
   KnowledgeLlmReservationRecord,
   KnowledgeLlmReservationRequest,
 } from './knowledgeLlmBudgetPorts.js';
-import { knowledgeLlmLimits } from './knowledgeLlmConfig.js';
+import { ceilCostMicros, knowledgeLlmLimits } from './knowledgeLlmConfig.js';
 
 const sha256Pattern = /^[0-9a-f]{64}$/;
 const maximumDatabaseBigInt = 9_223_372_036_854_775_807n;
@@ -30,13 +30,29 @@ function invalid(): KnowledgeLlmBudgetResult<never> {
 }
 
 function validInput(input: KnowledgeLlmReservationRequest): boolean {
+  let expectedMaximumCost: bigint;
+  try {
+    expectedMaximumCost =
+      ceilCostMicros(
+        input.estimatedInputTokens,
+        input.inputCostMicrosPerMillion,
+      ) +
+      ceilCostMicros(input.maxOutputTokens, input.outputCostMicrosPerMillion);
+  } catch {
+    return false;
+  }
   if (
     !boundedIdentifier(input.runId, 255) ||
     !boundedIdentifier(input.actor.userId, 200) ||
     (input.provider !== 'stub' && input.provider !== 'openai') ||
     !boundedIdentifier(input.model, 200) ||
+    input.inputCostMicrosPerMillion < 0n ||
+    input.inputCostMicrosPerMillion > maximumDatabaseBigInt ||
+    input.outputCostMicrosPerMillion < 0n ||
+    input.outputCostMicrosPerMillion > maximumDatabaseBigInt ||
     input.maximumCostMicros < 0n ||
     input.maximumCostMicros > maximumDatabaseBigInt ||
+    input.maximumCostMicros !== expectedMaximumCost ||
     !/^[A-Z]{3}$/.test(input.currency) ||
     !sha256Pattern.test(input.requestKeyHash) ||
     !sha256Pattern.test(input.requestPayloadHash) ||

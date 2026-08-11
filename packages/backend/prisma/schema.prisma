@@ -3115,6 +3115,8 @@ model KnowledgeLlmRun {
   selectedContextFingerprint String
   estimatedInputTokens       Int
   maxOutputTokens            Int
+  inputCostMicrosPerMillion  BigInt
+  outputCostMicrosPerMillion BigInt
   maximumCostMicros          BigInt
   actualInputTokens          Int?
   actualOutputTokens         Int?

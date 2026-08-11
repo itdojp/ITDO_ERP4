@@ -22,6 +22,8 @@ export type KnowledgeLlmReservationRequest = {
   selectedContextFingerprint: string;
   estimatedInputTokens: number;
   maxOutputTokens: number;
+  inputCostMicrosPerMillion: bigint;
+  outputCostMicrosPerMillion: bigint;
   maximumCostMicros: bigint;
   currency: string;
   now: Date;

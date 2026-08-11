@@ -181,6 +181,8 @@ test('organization reservation fails closed when canonical organization differs'
     selectedContextFingerprint: 'c'.repeat(64),
     estimatedInputTokens: 100,
     maxOutputTokens: 100,
+    inputCostMicrosPerMillion: 100_000n,
+    outputCostMicrosPerMillion: 0n,
     maximumCostMicros: 10n,
     currency: 'JPY',
     now: new Date('2026-08-11T00:00:00.000Z'),

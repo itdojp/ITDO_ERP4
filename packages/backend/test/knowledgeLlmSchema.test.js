@@ -38,6 +38,8 @@ test('LLM foundation is additive and separates execution from settlement', () =>
   assert.match(run, /executionStatus\s+KnowledgeLlmExecutionStatus/);
   assert.match(run, /settlementStatus\s+KnowledgeLlmSettlementStatus/);
   assert.match(run, /maximumCostMicros\s+BigInt/);
+  assert.match(run, /inputCostMicrosPerMillion\s+BigInt/);
+  assert.match(run, /outputCostMicrosPerMillion\s+BigInt/);
   assert.match(migration, /KnowledgeLlmRun_state_shape_check/);
   assert.match(migration, /KnowledgeLlmRun_transition_guard/);
   assert.match(
@@ -45,6 +47,16 @@ test('LLM foundation is additive and separates execution from settlement', () =>
     /KnowledgeLlmRun settlement requires a valid provider outcome/,
   );
   assert.match(migration, /outcome\."contentHash" = turn\."contentHash"/);
+  assert.match(migration, /turn\.role = 'assistant'/);
+  assert.match(migration, /turn\.origin = 'ai'/);
+  assert.match(
+    migration,
+    /KnowledgeLlmProviderOutcome must capture content before finalization/,
+  );
+  assert.match(
+    migration,
+    /OLD\."inputCostMicrosPerMillion" <> NEW\."inputCostMicrosPerMillion"/,
+  );
   assert.match(
     migration,
     /OLD\."executionStatus" = 'result_unknown'[\s\S]*?NEW\."executionStatus" = 'result_ready'/,

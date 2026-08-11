@@ -1,5 +1,7 @@
 import { Prisma } from '@prisma/client';
 
+import { ceilCostMicros } from '../../application/knowledge/knowledgeLlmConfig.js';
+
 type Transaction = Prisma.TransactionClient;
 
 export type KnowledgeLlmFinalSettlement =
@@ -73,10 +75,13 @@ export async function settleKnowledgeLlmBudget(
       actorUserId: string;
       executionStatus: string;
       settlementStatus: string;
+      inputCostMicrosPerMillion: bigint;
+      outputCostMicrosPerMillion: bigint;
       maximumCostMicros: bigint;
     }>
   >(Prisma.sql`
-    SELECT id, "actorUserId", "executionStatus", "settlementStatus", "maximumCostMicros"
+    SELECT id, "actorUserId", "executionStatus", "settlementStatus",
+      "inputCostMicrosPerMillion", "outputCostMicrosPerMillion", "maximumCostMicros"
     FROM "KnowledgeLlmRun"
     WHERE id = ${input.runId}
     FOR UPDATE
@@ -133,13 +138,17 @@ export async function settleKnowledgeLlmBudget(
         outputTokens: number;
         contentHash: string;
         turnContentHash: string;
+        role: string;
+        origin: string;
       }>
     >(Prisma.sql`
       SELECT
         outcome."inputTokens",
         outcome."outputTokens",
         outcome."contentHash",
-        turn."contentHash" AS "turnContentHash"
+        turn."contentHash" AS "turnContentHash",
+        turn.role,
+        turn.origin
       FROM "KnowledgeLlmProviderOutcome" outcome
       JOIN "KnowledgeConversationTurn" turn
         ON turn.id = ${input.settlement.assistantTurnId}
@@ -151,12 +160,19 @@ export async function settleKnowledgeLlmBudget(
       FOR UPDATE OF outcome, turn
     `);
     const outcome = outcomes[0];
+    const expectedActualCost = outcome
+      ? ceilCostMicros(outcome.inputTokens, run.inputCostMicrosPerMillion) +
+        ceilCostMicros(outcome.outputTokens, run.outputCostMicrosPerMillion)
+      : null;
     if (
       outcomes.length !== 1 ||
       !outcome ||
       outcome.inputTokens !== input.settlement.actualInputTokens ||
       outcome.outputTokens !== input.settlement.actualOutputTokens ||
-      outcome.contentHash !== outcome.turnContentHash
+      outcome.contentHash !== outcome.turnContentHash ||
+      outcome.role !== 'assistant' ||
+      outcome.origin !== 'ai' ||
+      input.settlement.actualCostMicros !== expectedActualCost
     ) {
       throw new Error('knowledge_llm_settlement_without_valid_outcome');
     }
@@ -293,10 +309,13 @@ export async function reconcileKnowledgeLlmHeldBudget(
     Array<{
       id: string;
       actorUserId: string;
+      inputCostMicrosPerMillion: bigint;
+      outputCostMicrosPerMillion: bigint;
       maximumCostMicros: bigint;
     }>
   >(Prisma.sql`
-    SELECT id, "actorUserId", "maximumCostMicros"
+    SELECT id, "actorUserId", "inputCostMicrosPerMillion",
+      "outputCostMicrosPerMillion", "maximumCostMicros"
     FROM "KnowledgeLlmRun"
     WHERE id = ${input.runId}
       AND "executionStatus" = 'result_unknown'
@@ -313,20 +332,46 @@ export async function reconcileKnowledgeLlmHeldBudget(
     throw new Error('knowledge_llm_reconcile_conflict');
   }
   const outcomes = await transaction.$queryRaw<
-    Array<{ inputTokens: number; outputTokens: number }>
+    Array<{
+      inputTokens: number;
+      outputTokens: number;
+      contentHash: string;
+      turnContentHash: string;
+      role: string;
+      origin: string;
+    }>
   >(Prisma.sql`
-    SELECT "inputTokens", "outputTokens"
-    FROM "KnowledgeLlmProviderOutcome"
-    WHERE "runId" = ${input.runId}
-      AND status = 'valid'
-      AND "finalizedAt" IS NOT NULL
-      AND "normalizedContent" IS NULL
-    FOR UPDATE
+    SELECT
+      outcome."inputTokens",
+      outcome."outputTokens",
+      outcome."contentHash",
+      turn."contentHash" AS "turnContentHash",
+      turn.role,
+      turn.origin
+    FROM "KnowledgeLlmProviderOutcome" outcome
+    JOIN "KnowledgeConversationTurn" turn
+      ON turn.id = ${input.assistantTurnId}
+     AND turn."conversationId" = ${input.conversationId}
+    WHERE outcome."runId" = ${input.runId}
+      AND outcome.status = 'valid'
+      AND outcome."finalizedAt" IS NOT NULL
+      AND outcome."normalizedContent" IS NULL
+    FOR UPDATE OF outcome, turn
   `);
+  const outcome = outcomes[0];
+  const expectedActualCost = outcome
+    ? ceilCostMicros(outcome.inputTokens, run.inputCostMicrosPerMillion) +
+      ceilCostMicros(outcome.outputTokens, run.outputCostMicrosPerMillion)
+    : null;
   if (
     outcomes.length !== 1 ||
-    outcomes[0].inputTokens !== input.actualInputTokens ||
-    outcomes[0].outputTokens !== input.actualOutputTokens
+    !outcome ||
+    outcome.inputTokens !== input.actualInputTokens ||
+    outcome.outputTokens !== input.actualOutputTokens ||
+    outcome.contentHash !== outcome.turnContentHash ||
+    outcome.role !== 'assistant' ||
+    outcome.origin !== 'ai' ||
+    input.actualCostMicros !== expectedActualCost
   ) {
     throw new Error('knowledge_llm_reconcile_without_outcome');
   }
