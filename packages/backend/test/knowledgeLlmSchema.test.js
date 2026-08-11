@@ -41,6 +41,14 @@ test('LLM foundation is additive and separates execution from settlement', () =>
   assert.match(run, /inputCostMicrosPerMillion\s+BigInt/);
   assert.match(run, /outputCostMicrosPerMillion\s+BigInt/);
   assert.match(migration, /KnowledgeLlmRun_state_shape_check/);
+  assert.match(
+    migration,
+    /"executionStatus" = 'dispatched'\s+AND "settlementStatus" = 'reserved'/,
+  );
+  assert.doesNotMatch(
+    migration,
+    /"executionStatus" = 'dispatched'\s+AND "settlementStatus" IN \('reserved', 'held_maximum'\)/,
+  );
   assert.match(migration, /KnowledgeLlmRun_transition_guard/);
   assert.match(
     migration,

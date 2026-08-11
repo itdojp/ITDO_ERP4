@@ -26,6 +26,8 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 20.19.0
@@ -47,6 +49,22 @@ jobs:
         working-directory: packages/backend
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/postgres?schema=public
+      - name: Create Knowledge LLM integration databases
+        env:
+          PGPASSWORD: pass
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          createdb --host localhost --username user erp4_knowledge_llm_budget
+          createdb --host localhost --username user erp4_knowledge_llm_old_app
+      - name: Run Knowledge LLM PostgreSQL integration
+        run: ./scripts/test-knowledge-llm-budget-postgres.sh
+        env:
+          KNOWLEDGE_LLM_TEST_DATABASE_URL: postgresql://user:pass@localhost:5432/erp4_knowledge_llm_budget?schema=public
+      - name: Run Knowledge LLM old-application compatibility
+        run: ./scripts/test-knowledge-llm-old-app.sh
+        env:
+          KNOWLEDGE_LLM_OLD_APP_TEST_DATABASE_URL: postgresql://user:pass@localhost:5432/erp4_knowledge_llm_old_app?schema=public
       - name: Run PO migration synthetic fixture dry-run
         run: npm run migration:po:fixture-dry-run -- --skip-build
         working-directory: packages/backend

@@ -121,9 +121,11 @@ function auditActor(userId, suffix) {
   return {
     requestId: `knowledge-llm-budget-${suffix}`,
     source: 'api',
-    principalUserId: userId,
-    actorUserId: userId,
-    authScopes: ['knowledge:write'],
+    // These deliberately untrusted attribution values must never be copied to
+    // mandatory LLM audit metadata. AuditLog.userId is the canonical actor.
+    principalUserId: 'audit-principal-canary',
+    actorUserId: 'audit-actor-canary',
+    authScopes: ['audit-scope-canary'],
   };
 }
 
@@ -1149,6 +1151,12 @@ try {
     }),
   );
   await assert.rejects(
+    prisma.knowledgeLlmRun.update({
+      where: { id: 'run-context-freeze' },
+      data: { settlementStatus: 'held_maximum' },
+    }),
+  );
+  await assert.rejects(
     prisma.knowledgeLlmContextSource.create({
       data: {
         id: 'context-freeze-after-dispatch',
@@ -2122,6 +2130,9 @@ try {
     'Synthetic normalized result',
     'Synthetic timeout_outcome_unknown reconciled result',
     'Synthetic connection_outcome_unknown reconciled result',
+    'audit-principal-canary',
+    'audit-actor-canary',
+    'audit-scope-canary',
   ]) {
     assert.equal(serializedAudit.includes(canary), false, canary);
   }

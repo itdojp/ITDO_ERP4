@@ -431,7 +431,7 @@ ALTER TABLE "KnowledgeLlmRun"
     )
     OR (
       "executionStatus" = 'dispatched'
-      AND "settlementStatus" IN ('reserved', 'held_maximum')
+      AND "settlementStatus" = 'reserved'
       AND "failureCode" IS NULL
       AND "dispatchedAt" IS NOT NULL
       AND "completedAt" IS NULL

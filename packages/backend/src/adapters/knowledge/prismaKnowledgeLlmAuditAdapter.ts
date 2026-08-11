@@ -5,7 +5,6 @@ import type {
   KnowledgeLlmAuditWriter,
 } from '../../application/knowledge/knowledgeLlmBudgetPorts.js';
 import { normalizeAuthIdentifier } from '../../services/authIdentifiers.js';
-import { normalizeAuthScopes } from '../../services/authScopes.js';
 
 type AuditClient = Pick<Prisma.TransactionClient, 'auditLog'>;
 
@@ -75,19 +74,9 @@ function identifier(value: string | undefined, maximum = 255): string {
 
 function auditMetadata(entry: KnowledgeLlmAuditEntry): Prisma.InputJsonObject {
   const actor = entry.actor;
-  const principalUserId = identifier(actor.principalUserId);
-  const actorUserId = identifier(actor.actorUserId);
   const requestId = identifier(actor.requestId, 128);
   if (actor.source !== 'api' && actor.source !== 'agent') {
     throw new Error('knowledge_llm_audit_invalid');
-  }
-  let scopes: string[] | undefined;
-  if (actor.authScopes !== undefined) {
-    try {
-      scopes = normalizeAuthScopes(actor.authScopes);
-    } catch {
-      throw new Error('knowledge_llm_audit_invalid');
-    }
   }
   const metadata = entry.metadata;
   const reservationResult = reservationResultCodeSet.has(metadata.resultCode);
@@ -198,11 +187,10 @@ function auditMetadata(entry: KnowledgeLlmAuditEntry): Prisma.InputJsonObject {
       : terminalResult && !dispatched
         ? { failureCode }
         : {}),
-    _auth: {
-      principalUserId,
-      actorUserId,
-      ...(scopes === undefined ? {} : { scopes }),
-    },
+    // The canonical actor remains the top-level AuditLog.userId. Do not copy
+    // caller-supplied principal, delegated actor, or scope identifiers into
+    // LLM metadata; the request/auth boundary owns those values and future
+    // route integration must not be able to forge mandatory audit identity.
     _request: { id: requestId, source: actor.source },
   } as Prisma.InputJsonObject;
 }

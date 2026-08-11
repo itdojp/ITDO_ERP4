@@ -7,35 +7,44 @@ POSTGRES_IMAGE="${POSTGRES_IMAGE:-docker.io/library/postgres:15@sha256:6ab12ad43
 TEST_DATABASE="erp4_knowledge_llm_budget"
 TEST_USER="erp4_knowledge_llm_budget"
 TEST_PASSWORD="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(24).toString("hex"))')"
+EXTERNAL_DATABASE_URL="${KNOWLEDGE_LLM_TEST_DATABASE_URL:-}"
+CONTAINER_STARTED=0
 
 cleanup() {
-  podman stop --time 5 "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  if [[ "$CONTAINER_STARTED" == "1" ]]; then
+    podman stop --time 5 "$CONTAINER_NAME" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT INT TERM
 
-podman run --rm -d \
-  --name "$CONTAINER_NAME" \
-  --tmpfs /var/lib/postgresql/data:rw,size=1g \
-  -p 127.0.0.1::5432 \
-  -e POSTGRES_DB="$TEST_DATABASE" \
-  -e POSTGRES_USER="$TEST_USER" \
-  -e POSTGRES_PASSWORD="$TEST_PASSWORD" \
-  "$POSTGRES_IMAGE" >/dev/null
+if [[ -n "$EXTERNAL_DATABASE_URL" ]]; then
+  export DATABASE_URL="$EXTERNAL_DATABASE_URL"
+else
+  podman run --rm -d \
+    --name "$CONTAINER_NAME" \
+    --tmpfs /var/lib/postgresql/data:rw,size=1g \
+    -p 127.0.0.1::5432 \
+    -e POSTGRES_DB="$TEST_DATABASE" \
+    -e POSTGRES_USER="$TEST_USER" \
+    -e POSTGRES_PASSWORD="$TEST_PASSWORD" \
+    "$POSTGRES_IMAGE" >/dev/null
+  CONTAINER_STARTED=1
 
-for _ in $(seq 1 60); do
-  if podman exec "$CONTAINER_NAME" pg_isready -U "$TEST_USER" -d "$TEST_DATABASE" >/dev/null 2>&1; then
-    break
+  for _ in $(seq 1 60); do
+    if podman exec "$CONTAINER_NAME" pg_isready -U "$TEST_USER" -d "$TEST_DATABASE" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
+  podman exec "$CONTAINER_NAME" pg_isready -U "$TEST_USER" -d "$TEST_DATABASE" >/dev/null
+  HOST_PORT="$(podman port "$CONTAINER_NAME" 5432/tcp | sed -n 's/.*://p' | tail -n 1)"
+  if [[ ! "$HOST_PORT" =~ ^[0-9]+$ ]]; then
+    echo "Unable to determine ephemeral PostgreSQL port" >&2
+    exit 1
   fi
-  sleep 1
-done
-podman exec "$CONTAINER_NAME" pg_isready -U "$TEST_USER" -d "$TEST_DATABASE" >/dev/null
-HOST_PORT="$(podman port "$CONTAINER_NAME" 5432/tcp | sed -n 's/.*://p' | tail -n 1)"
-if [[ ! "$HOST_PORT" =~ ^[0-9]+$ ]]; then
-  echo "Unable to determine ephemeral PostgreSQL port" >&2
-  exit 1
+  export DATABASE_URL="postgresql://${TEST_USER}:${TEST_PASSWORD}@127.0.0.1:${HOST_PORT}/${TEST_DATABASE}?schema=public"
 fi
 
-export DATABASE_URL="postgresql://${TEST_USER}:${TEST_PASSWORD}@127.0.0.1:${HOST_PORT}/${TEST_DATABASE}?schema=public"
 export KNOWLEDGE_LLM_BUDGET_INTEGRATION_CONFIRM=1
 export TZ=UTC
 
