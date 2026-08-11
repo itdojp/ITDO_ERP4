@@ -23,6 +23,7 @@ function reservation() {
     requestPayloadHash: hash('b'),
     providerRequestHash: hash('d'),
     selectedContextFingerprint: hash('c'),
+    selectedContextSources: [],
     estimatedInputTokens: 10,
     maxOutputTokens: 10,
     inputCostMicrosPerMillion: 100_000n,

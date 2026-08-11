@@ -77,6 +77,7 @@ test('selected context derives fingerprint, representation hash and tokens from 
     deriveKnowledgeLlmSelectedContext,
     knowledgeLlmContextFingerprint,
     knowledgeLlmContextRepresentationHash,
+    validKnowledgeLlmContextFingerprintSources,
   } = await contextModule();
   const selected = [
     {
@@ -97,6 +98,27 @@ test('selected context derives fingerprint, representation hash and tokens from 
   assert.equal(
     derived.fingerprint,
     knowledgeLlmContextFingerprint(derived.sources),
+  );
+  assert.equal(
+    validKnowledgeLlmContextFingerprintSources(
+      derived.sources,
+      derived.fingerprint,
+    ),
+    true,
+  );
+  assert.equal(
+    validKnowledgeLlmContextFingerprintSources(
+      [{ ...derived.sources[0], ordinal: 1 }],
+      derived.fingerprint,
+    ),
+    false,
+  );
+  assert.equal(
+    validKnowledgeLlmContextFingerprintSources(
+      [{ ...derived.sources[0], representationHash: 'f'.repeat(64) }],
+      derived.fingerprint,
+    ),
+    false,
   );
   assert.notEqual(
     deriveKnowledgeLlmSelectedContext([

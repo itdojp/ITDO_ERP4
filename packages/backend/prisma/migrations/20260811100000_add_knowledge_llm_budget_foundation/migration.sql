@@ -454,6 +454,7 @@ ALTER TABLE "KnowledgeLlmRun"
       AND "failureCode" IS NULL
       AND "dispatchedAt" IS NULL
       AND "completedAt" IS NULL
+      AND "conversationId" IS NULL
       AND "assistantTurnId" IS NULL
       AND "actualInputTokens" IS NULL
       AND "actualOutputTokens" IS NULL
@@ -465,6 +466,7 @@ ALTER TABLE "KnowledgeLlmRun"
       AND "failureCode" IS NULL
       AND "dispatchedAt" IS NOT NULL
       AND "completedAt" IS NULL
+      AND "conversationId" IS NULL
       AND "assistantTurnId" IS NULL
       AND "actualInputTokens" IS NULL
       AND "actualOutputTokens" IS NULL
@@ -475,6 +477,7 @@ ALTER TABLE "KnowledgeLlmRun"
       AND "settlementStatus" IN ('settled_actual', 'held_maximum')
       AND "dispatchedAt" IS NOT NULL
       AND "completedAt" IS NOT NULL
+      AND "conversationId" IS NOT NULL
       AND "assistantTurnId" IS NOT NULL
       AND (
         (
@@ -498,6 +501,7 @@ ALTER TABLE "KnowledgeLlmRun"
       AND "settlementStatus" IN ('released', 'held_maximum')
       AND "failureCode" IS NOT NULL
       AND "completedAt" IS NOT NULL
+      AND "conversationId" IS NULL
       AND "assistantTurnId" IS NULL
       AND "actualInputTokens" IS NULL
       AND "actualOutputTokens" IS NULL
@@ -531,6 +535,7 @@ ALTER TABLE "KnowledgeLlmRun"
       )
       AND "dispatchedAt" IS NOT NULL
       AND "completedAt" IS NOT NULL
+      AND "conversationId" IS NULL
       AND "assistantTurnId" IS NULL
       AND "actualInputTokens" IS NULL
       AND "actualOutputTokens" IS NULL
@@ -1214,6 +1219,19 @@ BEGIN
     RAISE EXCEPTION 'KnowledgeLlmRun dispatch timestamp is immutable'
       USING ERRCODE = '23514';
   END IF;
+  IF OLD."conversationId" IS DISTINCT FROM NEW."conversationId"
+    AND NOT (
+      NEW."executionStatus" = 'result_ready'
+      AND NEW."conversationId" IS NOT NULL
+      AND (
+        OLD."executionStatus" = 'dispatched'
+        OR OLD."executionStatus" = 'result_unknown'
+      )
+    )
+  THEN
+    RAISE EXCEPTION 'KnowledgeLlmRun conversation requires result transition'
+      USING ERRCODE = '23514';
+  END IF;
   IF OLD."dispatchedAt" IS NULL
     AND NEW."dispatchedAt" IS NOT NULL
     AND NOT (
@@ -1480,7 +1498,6 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  run_actor TEXT;
   run_execution "KnowledgeLlmExecutionStatus";
   run_settlement "KnowledgeLlmSettlementStatus";
   run_failure "KnowledgeLlmFailureCode";
@@ -1491,10 +1508,10 @@ DECLARE
   expected_cost NUMERIC;
   valid_outcome_count INTEGER;
 BEGIN
-  SELECT "actorUserId", "executionStatus", "settlementStatus", "failureCode",
+  SELECT "executionStatus", "settlementStatus", "failureCode",
     "maximumCostMicros", "inputCostMicrosPerMillion",
     "outputCostMicrosPerMillion", "completedAt"
-  INTO run_actor, run_execution, run_settlement, run_failure, run_maximum,
+  INTO run_execution, run_settlement, run_failure, run_maximum,
     run_input_rate, run_output_rate, run_completed_at
   FROM "KnowledgeLlmRun"
   WHERE id = NEW."runId"
@@ -1528,7 +1545,10 @@ BEGIN
     OR run_failure NOT IN ('usage_missing', 'usage_invalid')
     OR run_completed_at IS NULL
     OR NEW.source <> 'operator_billing'
-    OR NEW."createdBy" <> run_actor
+    OR NEW."createdBy" = ''
+    OR NEW."createdBy" <> BTRIM(NEW."createdBy")
+    OR CHAR_LENGTH(NEW."createdBy") > 200
+    OR NEW."createdBy" ~ '[[:cntrl:]]'
     OR NEW."createdAt" < run_completed_at
     OR NEW."actualCostMicros"::NUMERIC <> expected_cost
     OR NEW."actualCostMicros" > run_maximum

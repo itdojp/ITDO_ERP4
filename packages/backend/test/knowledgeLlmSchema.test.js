@@ -47,6 +47,14 @@ test('LLM foundation is additive and separates execution from settlement', () =>
   assert.match(migration, /KnowledgeLlmRun_state_shape_check/);
   assert.match(
     migration,
+    /"executionStatus" = 'reserved'[\s\S]*?"conversationId" IS NULL[\s\S]*?"assistantTurnId" IS NULL/,
+  );
+  assert.match(
+    migration,
+    /"executionStatus" = 'result_ready'[\s\S]*?"conversationId" IS NOT NULL[\s\S]*?"assistantTurnId" IS NOT NULL/,
+  );
+  assert.match(
+    migration,
     /"executionStatus" = 'dispatched'\s+AND "settlementStatus" = 'reserved'/,
   );
   assert.doesNotMatch(
@@ -81,6 +89,10 @@ test('LLM foundation is additive and separates execution from settlement', () =>
   );
   assert.match(migration, /OLD\."softLimitWarning" <> NEW\."softLimitWarning"/);
   assert.match(migration, /KnowledgeLlmRun dispatch timestamp is immutable/);
+  assert.match(
+    migration,
+    /KnowledgeLlmRun conversation requires result transition/,
+  );
   assert.match(
     migration,
     /OLD\."executionStatus" = 'result_unknown'[\s\S]*?NEW\."executionStatus" = 'result_ready'/,
@@ -211,5 +223,11 @@ test('provider outcome retains only normalized bounded state for reconciliation'
     migration,
     /KnowledgeLlmUsageEvidence requires a verified held usage-unknown result/,
   );
+  const evidenceGuard = migration.match(
+    /CREATE FUNCTION "erp4_knowledge_llm_usage_evidence_insert_guard"\(\)[\s\S]*?\n\$\$;/,
+  )?.[0];
+  assert.ok(evidenceGuard);
+  assert.match(evidenceGuard, /NEW\."createdBy" <> BTRIM\(NEW\."createdBy"\)/);
+  assert.doesNotMatch(evidenceGuard, /NEW\."createdBy" <> run_actor/);
   assert.match(migration, /KnowledgeLlmUsageEvidence_immutable/);
 });

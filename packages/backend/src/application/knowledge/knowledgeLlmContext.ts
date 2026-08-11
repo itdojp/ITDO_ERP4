@@ -200,3 +200,61 @@ export function deriveKnowledgeLlmSelectedContext(
     totalEstimatedTokens,
   };
 }
+
+/**
+ * Revalidates the representation-free rows handed to the persistence port.
+ * The port never accepts a caller-supplied fingerprint without the exact
+ * ordered source records that produced it.
+ */
+export function validKnowledgeLlmContextFingerprintSources(
+  sources: readonly KnowledgeLlmContextFingerprintSource[],
+  expectedFingerprint: string,
+): boolean {
+  try {
+    if (
+      !Array.isArray(sources) ||
+      sources.length > knowledgeLlmLimits.totalSources ||
+      !sha256Pattern.test(expectedFingerprint)
+    ) {
+      return false;
+    }
+    const counts = new Map<KnowledgeLlmContextSourceType, number>();
+    const identities = new Set<string>();
+    let totalBytes = 0;
+    for (const [ordinal, source] of sources.entries()) {
+      const sourceType = source?.sourceType as
+        KnowledgeLlmContextSourceType | undefined;
+      if (
+        source === null ||
+        typeof source !== 'object' ||
+        source.ordinal !== ordinal ||
+        sourceType === undefined ||
+        !allowedSourceTypes.has(sourceType) ||
+        !boundedSourceId(source.sourceId) ||
+        !Number.isSafeInteger(source.exactSourceVersion) ||
+        source.exactSourceVersion < 1 ||
+        !sha256Pattern.test(source.exactSourceHash) ||
+        !sha256Pattern.test(source.representationHash) ||
+        !Number.isSafeInteger(source.byteLength) ||
+        source.byteLength < 1 ||
+        source.byteLength > knowledgeLlmLimits.sourceBytes ||
+        !Number.isSafeInteger(source.estimatedTokens) ||
+        source.estimatedTokens !==
+          knowledgeLlmContextEstimatedTokens(source.byteLength)
+      ) {
+        return false;
+      }
+      const identity = `${sourceType}\0${source.sourceId}`;
+      if (identities.has(identity)) return false;
+      identities.add(identity);
+      const count = (counts.get(sourceType) ?? 0) + 1;
+      counts.set(sourceType, count);
+      if (count > sourceTypeLimits[sourceType]) return false;
+      totalBytes += source.byteLength;
+      if (totalBytes > knowledgeLlmLimits.totalContextBytes) return false;
+    }
+    return knowledgeLlmContextFingerprint(sources) === expectedFingerprint;
+  } catch {
+    return false;
+  }
+}

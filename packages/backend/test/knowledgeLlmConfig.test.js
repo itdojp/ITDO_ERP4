@@ -275,6 +275,7 @@ test('reservation pricing is resolved from the enabled catalog, not caller field
   assert.equal(received.estimatedInputTokens, 64);
   assert.notEqual(received.requestPayloadHash, 'e'.repeat(64));
   assert.notEqual(received.selectedContextFingerprint, 'f'.repeat(64));
+  assert.deepEqual(received.selectedContextSources, []);
   assert.match(received.providerRequestHash, /^[a-f0-9]{64}$/);
   assert.equal('systemPrompt' in received, false);
   assert.equal('userPrompt' in received, false);
@@ -390,6 +391,28 @@ test('reservation derives a conservative floor from exact rendered prompts', asy
   assert.equal(result.ok, true);
   assert.equal(received.estimatedInputTokens, 120);
   assert.equal(received.maximumCostMicros, 168n);
+  assert.deepEqual(
+    received.selectedContextSources.map((source) => ({
+      ordinal: source.ordinal,
+      sourceType: source.sourceType,
+      sourceId: source.sourceId,
+      exactSourceVersion: source.exactSourceVersion,
+    })),
+    [
+      {
+        ordinal: 0,
+        sourceType: 'conversation_turn',
+        sourceId: 'synthetic-turn-0',
+        exactSourceVersion: 1,
+      },
+      {
+        ordinal: 1,
+        sourceType: 'conversation_turn',
+        sourceId: 'synthetic-turn-1',
+        exactSourceVersion: 2,
+      },
+    ],
+  );
 });
 
 test('reservation enforces raw user and selected-context byte limits independently', async () => {

@@ -20,7 +20,10 @@ import {
   maximumReservationMicros,
   type KnowledgeLlmModelCatalog,
 } from './knowledgeLlmConfig.js';
-import { deriveKnowledgeLlmSelectedContext } from './knowledgeLlmContext.js';
+import {
+  deriveKnowledgeLlmSelectedContext,
+  validKnowledgeLlmContextFingerprintSources,
+} from './knowledgeLlmContext.js';
 
 const sha256Pattern = /^[0-9a-f]{64}$/;
 const maximumDatabaseBigInt = 9_223_372_036_854_775_807n;
@@ -129,6 +132,10 @@ function validInput(input: KnowledgeLlmReservationRequest): boolean {
     !sha256Pattern.test(input.requestPayloadHash) ||
     !sha256Pattern.test(input.providerRequestHash) ||
     !sha256Pattern.test(input.selectedContextFingerprint) ||
+    !validKnowledgeLlmContextFingerprintSources(
+      input.selectedContextSources,
+      input.selectedContextFingerprint,
+    ) ||
     !Number.isSafeInteger(input.catalogVersion) ||
     input.catalogVersion < 1 ||
     !Number.isSafeInteger(input.promptTemplateVersion) ||
@@ -254,6 +261,7 @@ export function createKnowledgeLlmBudgetUseCases(
         ),
         providerRequestHash,
         selectedContextFingerprint: selectedContext.fingerprint,
+        selectedContextSources: selectedContext.sources,
         estimatedInputTokens,
         maxOutputTokens: input.maxOutputTokens,
         inputCostMicrosPerMillion: model.inputCostMicrosPerMillion,

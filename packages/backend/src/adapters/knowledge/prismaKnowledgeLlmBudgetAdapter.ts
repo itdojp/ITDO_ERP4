@@ -70,6 +70,50 @@ function requiredSubjects(input: KnowledgeLlmReservationRequest) {
   });
 }
 
+function contextSourceCreateData(
+  input: KnowledgeLlmReservationRequest,
+  source: KnowledgeLlmReservationRequest['selectedContextSources'][number],
+) {
+  const common = {
+    sourceType: source.sourceType,
+    ordinal: source.ordinal,
+    exactSourceVersion: source.exactSourceVersion,
+    exactSourceHash: source.exactSourceHash,
+    representationHash: source.representationHash,
+    byteLength: source.byteLength,
+    estimatedTokens: source.estimatedTokens,
+    createdAt: input.now,
+    createdBy: input.actor.userId,
+  };
+  switch (source.sourceType) {
+    case 'snapshot':
+      return {
+        ...common,
+        sourceSnapshot: { connect: { id: source.sourceId } },
+      };
+    case 'annotation_revision':
+      return {
+        ...common,
+        sourceAnnotationRevision: { connect: { id: source.sourceId } },
+      };
+    case 'conversation_turn':
+      return {
+        ...common,
+        sourceConversationTurn: { connect: { id: source.sourceId } },
+      };
+    case 'synthesis_version':
+      return {
+        ...common,
+        sourceSynthesisVersion: { connect: { id: source.sourceId } },
+      };
+    case 'thread_promotion_message':
+      return {
+        ...common,
+        sourceThreadPromotionMessage: { connect: { id: source.sourceId } },
+      };
+  }
+}
+
 async function lockPolicies(
   transaction: Transaction,
   input: KnowledgeLlmReservationRequest,
@@ -422,6 +466,11 @@ async function reserveOnce(
           createdAt: input.now,
           createdBy: input.actor.userId,
         },
+      },
+      contextSources: {
+        create: input.selectedContextSources.map((source) =>
+          contextSourceCreateData(input, source),
+        ),
       },
       reservations: {
         create: periods.map(({ period }) => ({

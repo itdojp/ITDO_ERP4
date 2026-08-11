@@ -144,6 +144,19 @@ async function writeTerminalAudit(
   if (input.auditActor.userId !== input.run.actorUserId) {
     throw new Error('knowledge_llm_audit_invalid');
   }
+  await writeAudit(transaction, input);
+}
+
+async function writeAudit(
+  transaction: Transaction,
+  input: {
+    run: LockedRun;
+    auditActor: KnowledgeAuditActor;
+    action: KnowledgeLlmAuditAction;
+    policyCount: number;
+    result: Parameters<typeof terminalAuditMetadata>[2];
+  },
+): Promise<void> {
   await new PrismaKnowledgeLlmAuditWriter(transaction).write({
     action: input.action,
     actor: input.auditActor,
@@ -729,8 +742,10 @@ export async function reconcileKnowledgeLlmUsageUnknownBudget(
   transaction: Transaction,
   input: {
     runId: string;
-    actorUserId: string;
-    auditActor: KnowledgeAuditActor;
+    /** Immutable ownership assertion for the run being reconciled. */
+    runActorUserId: string;
+    /** Canonical authenticated operator supplying verified billing evidence. */
+    operatorActor: KnowledgeAuditActor;
     source: 'operator_billing';
     evidenceHash: string;
     actualInputTokens: number;
@@ -763,7 +778,7 @@ export async function reconcileKnowledgeLlmUsageUnknownBudget(
     `,
   );
   const run = runs[0];
-  if (!run || run.actorUserId !== input.actorUserId) {
+  if (!run || run.actorUserId !== input.runActorUserId) {
     throw new Error('knowledge_llm_usage_reconcile_conflict');
   }
   const actualCostMicros =
@@ -865,7 +880,7 @@ export async function reconcileKnowledgeLlmUsageUnknownBudget(
       actualCostMicros,
       evidenceHash: input.evidenceHash,
       createdAt: completedAt,
-      createdBy: input.actorUserId,
+      createdBy: input.operatorActor.userId,
     },
   });
   for (const reservation of reservations) {
@@ -899,12 +914,12 @@ export async function reconcileKnowledgeLlmUsageUnknownBudget(
       actualCostMicros,
       completedAt,
       updatedAt: completedAt,
-      updatedBy: input.actorUserId,
+      updatedBy: input.operatorActor.userId,
     },
   });
-  await writeTerminalAudit(transaction, {
+  await writeAudit(transaction, {
     run,
-    auditActor: input.auditActor,
+    auditActor: input.operatorActor,
     action: 'knowledge_llm_reconciled',
     policyCount: reservations.length,
     result: {

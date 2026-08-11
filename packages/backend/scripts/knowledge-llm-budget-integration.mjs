@@ -1217,6 +1217,37 @@ try {
   );
   assert.equal(contextFreezeReservation.ok, true);
   await assert.rejects(
+    prisma.knowledgeLlmRun.update({
+      where: { id: 'run-context-freeze' },
+      data: { conversationId: settlementConversation.conversation.id },
+    }),
+    /conversation requires result transition|state_shape_check/,
+  );
+  const persistedContextSources =
+    await prisma.knowledgeLlmContextSource.findMany({
+      where: { runId: 'run-context-freeze' },
+      orderBy: { ordinal: 'asc' },
+    });
+  assert.equal(persistedContextSources.length, 2);
+  assert.deepEqual(
+    persistedContextSources.map((source) => ({
+      ordinal: source.ordinal,
+      sourceType: source.sourceType,
+      sourceConversationTurnId: source.sourceConversationTurnId,
+      exactSourceVersion: source.exactSourceVersion,
+      exactSourceHash: source.exactSourceHash,
+      representationHash: source.representationHash,
+    })),
+    contextFreezeSources.map((source) => ({
+      ordinal: source.ordinal,
+      sourceType: source.sourceType,
+      sourceConversationTurnId: source.sourceId,
+      exactSourceVersion: source.exactSourceVersion,
+      exactSourceHash: source.exactSourceHash,
+      representationHash: source.representationHash,
+    })),
+  );
+  await assert.rejects(
     prisma.knowledgeLlmProviderOutcome.create({
       data: {
         runId: 'run-context-freeze',
@@ -1227,10 +1258,22 @@ try {
     }),
     /requires provider dispatch/,
   );
+  const contextGapReservation = await service.reserve(
+    reservation({
+      runId: 'run-context-gap',
+      userId: 'settlement-user',
+      keyHash: conversationTurnHash('context-gap-request-key'),
+      maximumCostMicros: 1n,
+      inputCostMicrosPerMillion: 1n,
+      estimatedInputTokens: 64,
+      selectedContextSources: [],
+    }),
+  );
+  assert.equal(contextGapReservation.ok, true);
   await prisma.knowledgeLlmContextSource.create({
     data: {
       id: 'context-freeze-ordinal-1',
-      runId: 'run-context-freeze',
+      runId: 'run-context-gap',
       sourceType: 'conversation_turn',
       ordinal: 1,
       sourceConversationTurnId: settlementConversation.user.id,
@@ -1245,7 +1288,7 @@ try {
   await assert.rejects(
     prisma.$transaction((transaction) =>
       markKnowledgeLlmRunDispatched(transaction, {
-        runId: 'run-context-freeze',
+        runId: 'run-context-gap',
         actorUserId: 'settlement-user',
         auditActor: terminalAuditActor('settlement-user', 'context-gap'),
         dispatchedAt: after(2_200),
@@ -1253,21 +1296,6 @@ try {
     ),
     /dispatch_conflict/,
   );
-  await prisma.knowledgeLlmContextSource.create({
-    data: {
-      id: 'context-freeze-ordinal-0',
-      runId: 'run-context-freeze',
-      sourceType: 'conversation_turn',
-      ordinal: 0,
-      sourceConversationTurnId: settlementConversation.assistant.id,
-      exactSourceVersion: contextFreezeSources[0].exactSourceVersion,
-      exactSourceHash: contextFreezeSources[0].exactSourceHash,
-      representationHash: contextFreezeSources[0].representationHash,
-      byteLength: contextFreezeSources[0].byteLength,
-      estimatedTokens: contextFreezeSources[0].estimatedTokens,
-      createdBy: 'settlement-user',
-    },
-  });
   await assert.rejects(
     prisma.$transaction((transaction) =>
       markKnowledgeLlmRunDispatched(transaction, {
@@ -1422,9 +1450,11 @@ try {
       true,
       reserved.ok ? undefined : reserved.error.code,
     );
-    await prisma.knowledgeLlmContextSource.createMany({
-      data: sources.map((source) => contextCreateData(runId, source)),
-    });
+    if (reservationSources !== sources) {
+      await prisma.knowledgeLlmContextSource.createMany({
+        data: sources.map((source) => contextCreateData(runId, source)),
+      });
+    }
   }
 
   async function expectContextDispatchRejected(runId, pattern, suffix) {
@@ -1451,7 +1481,13 @@ try {
       },
     ],
     ['hash', { ...validGuardSource, exactSourceHash: hash('9') }],
-    ['representation', { ...validGuardSource, representationHash: hash('8') }],
+    [
+      'representation',
+      {
+        ...validGuardSource,
+        representation: 'Synthetic mismatched representation',
+      },
+    ],
   ]) {
     const runId = `run-context-invalid-${suffix}`;
     await reserveContextRun(runId, [source]);
@@ -1876,9 +1912,9 @@ try {
   const usageReconciliation = await prisma.$transaction((transaction) =>
     reconcileKnowledgeLlmUsageUnknownBudget(transaction, {
       runId: 'run-settlement-usage-unknown',
-      actorUserId: 'settlement-user',
-      auditActor: terminalAuditActor(
-        'settlement-user',
+      runActorUserId: 'settlement-user',
+      operatorActor: terminalAuditActor(
+        'billing-operator',
         'run-settlement-usage-unknown-reconcile',
       ),
       source: 'operator_billing',
@@ -1903,6 +1939,20 @@ try {
   assert.equal(usageReconciled.actualOutputTokens, 0);
   assert.equal(usageReconciled.actualCostMicros, 10n);
   assert.equal(usageReconciled.usageEvidence?.evidenceHash, hash('d'));
+  assert.equal(usageReconciled.usageEvidence?.createdBy, 'billing-operator');
+  assert.equal(usageReconciled.updatedBy, 'billing-operator');
+  assert.equal(
+    (
+      await prisma.auditLog.findFirstOrThrow({
+        where: {
+          action: 'knowledge_llm_reconciled',
+          targetId: 'run-settlement-usage-unknown',
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+    ).userId,
+    'billing-operator',
+  );
   assert.equal(usageReconciled.reservations[0].status, 'settled_actual');
   assert.ok(
     usageReconciled.reservations[0].budgetPeriod.heldMaximumMicros >= 0n,
@@ -1910,9 +1960,9 @@ try {
   const usageReplayed = await prisma.$transaction((transaction) =>
     reconcileKnowledgeLlmUsageUnknownBudget(transaction, {
       runId: 'run-settlement-usage-unknown',
-      actorUserId: 'settlement-user',
-      auditActor: terminalAuditActor(
-        'settlement-user',
+      runActorUserId: 'settlement-user',
+      operatorActor: terminalAuditActor(
+        'billing-operator',
         'run-settlement-usage-unknown-replay',
       ),
       source: 'operator_billing',
@@ -1927,9 +1977,9 @@ try {
     prisma.$transaction((transaction) =>
       reconcileKnowledgeLlmUsageUnknownBudget(transaction, {
         runId: 'run-settlement-usage-unknown',
-        actorUserId: 'settlement-user',
-        auditActor: terminalAuditActor(
-          'settlement-user',
+        runActorUserId: 'settlement-user',
+        operatorActor: terminalAuditActor(
+          'billing-operator',
           'run-settlement-usage-unknown-conflict',
         ),
         source: 'operator_billing',
@@ -2053,11 +2103,14 @@ try {
     prisma.$transaction((transaction) =>
       reconcileKnowledgeLlmUsageUnknownBudget(transaction, {
         runId: 'run-usage-reconcile-audit-rollback',
-        actorUserId: 'settlement-user',
-        auditActor: terminalAuditActor(
-          'different-user',
-          'usage-reconcile-audit-invalid',
-        ),
+        runActorUserId: 'settlement-user',
+        operatorActor: {
+          ...terminalAuditActor(
+            'billing-operator',
+            'usage-reconcile-audit-invalid',
+          ),
+          requestId: '',
+        },
         source: 'operator_billing',
         evidenceHash: hash('7'),
         actualInputTokens: 20,
@@ -2656,6 +2709,8 @@ try {
       usageUnknownOutcomeBinding: true,
       usageUnknownReconciliation: true,
       usageUnknownReconciliationAuditRollback: true,
+      operatorBillingAttribution: true,
+      contextPersistedWithReservation: true,
       contextFrozenAtDispatch: true,
       contextExactProvenanceVerified: true,
       contextAggregateBoundsVerified: true,
@@ -2670,6 +2725,7 @@ try {
       reservationDeletionBlocked: true,
       lateReservationInsertBlocked: true,
       terminalDispatchTimestampImmutable: true,
+      conversationStateGuard: true,
       outcomeUnknownRequiresReconcileableState: true,
       reconciliation: true,
       auditRollback: true,

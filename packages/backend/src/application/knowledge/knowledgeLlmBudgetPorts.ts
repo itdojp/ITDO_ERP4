@@ -4,9 +4,13 @@ import type {
   KnowledgeAuditActorContext,
 } from './knowledgeItemPorts.js';
 import type { ExternalLlmProviderName } from '../externalLlm/externalLlmPort.js';
-import type { KnowledgeLlmSelectedContextSource } from './knowledgeLlmContext.js';
+import type {
+  KnowledgeLlmContextFingerprintSource,
+  KnowledgeLlmSelectedContextSource,
+} from './knowledgeLlmContext.js';
 
 export type {
+  KnowledgeLlmContextFingerprintSource,
   KnowledgeLlmContextSourceType,
   KnowledgeLlmSelectedContextSource,
 } from './knowledgeLlmContext.js';
@@ -27,6 +31,8 @@ export type KnowledgeLlmReservationRequest = {
   requestPayloadHash: string;
   providerRequestHash: string;
   selectedContextFingerprint: string;
+  /** Derived immutable provenance rows persisted with the reservation transaction. */
+  selectedContextSources: readonly KnowledgeLlmContextFingerprintSource[];
   estimatedInputTokens: number;
   maxOutputTokens: number;
   inputCostMicrosPerMillion: bigint;
