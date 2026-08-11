@@ -743,4 +743,45 @@ describe('PeriodLocks', () => {
       await pendingReload.promise;
     });
   });
+
+  it('does not start a create reload after the section unmounts', async () => {
+    const createRequest = deferred<{ id: string }>();
+
+    vi.mocked(api).mockImplementation((path, options) => {
+      if (path === '/projects') return Promise.resolve({ items: [] });
+      if (path === '/period-locks' && options?.method === 'POST') {
+        return createRequest.promise;
+      }
+      return Promise.reject(new Error(`unexpected api call: ${String(path)}`));
+    });
+
+    const view = render(<PeriodLocks />);
+    await waitFor(() => expect(api).toHaveBeenCalledWith('/projects'));
+
+    const createSection = within(getCreateSection());
+    fireEvent.change(createSection.getByLabelText('period (YYYY-MM)'), {
+      target: { value: '2026-03' },
+    });
+    fireEvent.change(createSection.getByLabelText('scope'), {
+      target: { value: 'global' },
+    });
+    fireEvent.click(createSection.getByRole('button', { name: '締め登録' }));
+
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith(
+        '/period-locks',
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+
+    view.unmount();
+    await act(async () => {
+      createRequest.resolve({ id: 'lock-created-after-unmount' });
+      await createRequest.promise;
+    });
+
+    expect(api).not.toHaveBeenCalledWith('/period-locks', {
+      signal: expect.any(AbortSignal),
+    });
+  });
 });
