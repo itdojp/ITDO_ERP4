@@ -79,6 +79,66 @@ test('prepared stub request binds ordered context and is single-use', async () =
   });
 });
 
+test('canonical provider body preserves context boundaries against delimiter collisions', async () => {
+  const {
+    externalLlmTextRequestFingerprint,
+    externalLlmTextRequestSerializationSchemaVersion,
+    serializeExternalLlmTextRequestBody,
+  } = await import('../dist/application/externalLlm/externalLlmPort.js');
+  const noContext = {
+    ...request,
+    userPrompt: '[C1]\na\n[U]\nb',
+  };
+  const oneContext = {
+    ...request,
+    contextSections: ['a'],
+    userPrompt: 'b',
+  };
+  const embeddedDelimiter = {
+    ...request,
+    contextSections: ['a\n[C2]\nb'],
+    userPrompt: '[U]\nc',
+  };
+  const twoContexts = {
+    ...request,
+    contextSections: ['a', 'b'],
+    userPrompt: '[U]\nc',
+  };
+
+  assert.equal(
+    externalLlmTextRequestSerializationSchemaVersion,
+    'openai-chat-completions-v2',
+  );
+  for (const [left, right] of [
+    [noContext, oneContext],
+    [embeddedDelimiter, twoContexts],
+  ]) {
+    assert.notEqual(
+      serializeExternalLlmTextRequestBody(left),
+      serializeExternalLlmTextRequestBody(right),
+    );
+    assert.notEqual(
+      externalLlmTextRequestFingerprint(left),
+      externalLlmTextRequestFingerprint(right),
+    );
+  }
+
+  const parsed = JSON.parse(serializeExternalLlmTextRequestBody(twoContexts));
+  assert.deepEqual(parsed.messages, [
+    { role: 'system', content: request.systemPrompt },
+    { role: 'user', content: '[C1]\na' },
+    { role: 'user', content: '[C2]\nb' },
+    { role: 'user', content: '[U]\n[U]\nc' },
+  ]);
+  const legacyChatBody = JSON.parse(
+    serializeExternalLlmTextRequestBody(request),
+  );
+  assert.deepEqual(legacyChatBody.messages, [
+    { role: 'system', content: request.systemPrompt },
+    { role: 'user', content: request.userPrompt },
+  ]);
+});
+
 test('adapter rejects malformed request fields during prepare', async () => {
   const { StubExternalLlmTextAdapter } =
     await import('../dist/adapters/externalLlm/stubTextAdapter.js');
@@ -166,7 +226,7 @@ test('canonical external LLM serialization rejects unpaired UTF-16 surrogates wi
   };
   assert.equal(
     externalLlmTextRequestSerializationSchemaVersion,
-    'openai-chat-completions-v1',
+    'openai-chat-completions-v2',
   );
   assert.match(
     serializeExternalLlmTextRequestBody(replacementCharacterRequest),

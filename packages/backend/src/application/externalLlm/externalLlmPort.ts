@@ -27,7 +27,7 @@ export type ExternalLlmTextRequest = {
  * Changing its fields, order, or numeric rendering requires a new version.
  */
 export const externalLlmTextRequestSerializationSchemaVersion =
-  'openai-chat-completions-v1';
+  'openai-chat-completions-v2';
 
 function hasUnpairedUtf16Surrogate(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {
@@ -107,19 +107,38 @@ function updateFingerprintField(
   hash.update(encoded);
 }
 
+type ExternalLlmMessage = {
+  role: 'system' | 'user';
+  content: string;
+};
+
 /**
- * Keeps Chat's legacy prompt byte-for-byte compatible when no context is
- * selected, while giving Knowledge one deterministic provider payload.
+ * Keeps Chat's two-message payload byte-for-byte compatible when no context
+ * is selected. Knowledge context is represented by distinct messages so
+ * delimiter-like text inside a source cannot collide with another source
+ * boundary or with the final user prompt.
  */
-export function renderExternalLlmUserPrompt(
-  request: Pick<ExternalLlmTextRequest, 'userPrompt' | 'contextSections'>,
-): string {
+function externalLlmMessages(
+  request: Pick<
+    ExternalLlmTextRequest,
+    'systemPrompt' | 'userPrompt' | 'contextSections'
+  >,
+): ExternalLlmMessage[] {
   const contextSections = request.contextSections ?? [];
-  if (contextSections.length === 0) return request.userPrompt;
-  const context = contextSections
-    .map((content, index) => `[C${index + 1}]\n${content}`)
-    .join('\n');
-  return `${context}\n[U]\n${request.userPrompt}`;
+  if (contextSections.length === 0) {
+    return [
+      { role: 'system', content: request.systemPrompt },
+      { role: 'user', content: request.userPrompt },
+    ];
+  }
+  return [
+    { role: 'system', content: request.systemPrompt },
+    ...contextSections.map((content, index) => ({
+      role: 'user' as const,
+      content: `[C${index + 1}]\n${content}`,
+    })),
+    { role: 'user', content: `[U]\n${request.userPrompt}` },
+  ];
 }
 
 /**
@@ -133,10 +152,7 @@ export function serializeExternalLlmTextRequestBody(
   return JSON.stringify({
     model: request.model,
     temperature: request.temperatureBasisPoints / 10_000,
-    messages: [
-      { role: 'system', content: request.systemPrompt },
-      { role: 'user', content: renderExternalLlmUserPrompt(request) },
-    ],
+    messages: externalLlmMessages(request),
     max_tokens: request.maxOutputTokens,
   });
 }
