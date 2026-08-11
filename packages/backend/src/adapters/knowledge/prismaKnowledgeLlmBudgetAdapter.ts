@@ -368,12 +368,15 @@ async function reserveOnce(
       outputCostMicrosPerMillion: input.outputCostMicrosPerMillion,
       maximumCostMicros: input.maximumCostMicros,
       currency: input.currency,
+      createdAt: input.now,
       createdBy: input.actor.userId,
+      updatedAt: input.now,
       updatedBy: input.actor.userId,
       request: {
         create: {
           requestKeyHash: input.requestKeyHash,
           requestPayloadHash: input.requestPayloadHash,
+          createdAt: input.now,
           createdBy: input.actor.userId,
         },
       },
@@ -381,6 +384,8 @@ async function reserveOnce(
         create: periods.map(({ period }) => ({
           budgetPeriodId: period.id,
           maximumCostMicros: input.maximumCostMicros,
+          createdAt: input.now,
+          updatedAt: input.now,
         })),
       },
     },

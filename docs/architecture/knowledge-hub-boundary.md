@@ -193,7 +193,7 @@ Knowledge Hubの外部AIは、Chat summary固有関数ではなく共有provider
 
 provider call中はDB transactionを開かない。dispatch前にrun/reservation/auditとcatalog単価snapshotを確定し、provider callは自動retry・fallbackなしで一回だけ行う。normalized outcomeは本文をcaptureした未finalized rowとして保存し、DBがdomain-separated SHA-256を再計算してcontent hashを検証した後にだけ本文消去を伴うfinalizeを許可する。settlementはassistant/AI turnへのhash束縛、snapshot単価とusageからのactual cost再計算、typed完了／失敗／結果不明／usage不明auditを同じtransactionで確定する。`result_ready + held_maximum`はfinalized `usage_unknown` outcomeとassistant/AI turnが一致する場合だけ許可し、finalized outcomeの直接INSERTはDBで拒否する。`result_unknown + held_maximum`の全許可failure codeは、同一runのvalid/finalized outcomeを後から安全に取得できた場合だけreconcile可能とする。安全なprovider outcome lookupがない場合は再dispatchせず、unknown/held maximumを維持する。
 
-selected contextはtyped FKとexact version/hashを持つimmutable rowで表現し、自由な`sourceType + sourceId`を正本にしない。assistant resultは同じownerの`KnowledgeConversation`と、そのconversationに属するassistant turnの複合FKへ結び付ける。provider outcomeは最大256 KiBのnormalized contentだけをfinalizationまで一時保持でき、finalize時に本文をconversation turnへ移してoutcome rowから消去する。
+selected contextはtyped FKとexact version/hashを持つimmutable rowで表現し、自由な`sourceType + sourceId`を正本にしない。dispatch時にDBはFK先のversion/hash、domain-separated representation hash、`UTF-8 bytes * 2 + 16 framing tokens`、種別別・合計・関連item・provenance depth上限を再検証し、source IDを含むorder-sensitive opaque fingerprintへ束縛する。assistant resultは同じownerの`KnowledgeConversation`と、そのconversationに属するassistant turnの複合FKへ結び付ける。provider outcomeは最大256 KiBのnormalized contentだけをfinalizationまで一時保持でき、finalize時に本文をconversation turnへ移してoutcome rowから消去する。
 
 - provider は既定 `disabled` とし、組織設定、利用者の明示操作、送信 preview、確認、監査、rate/cost limit がすべて成立した場合だけ呼ぶ。
 - item/snapshot/annotation/attachment 全文を既定送信しない。利用者が選択した最小範囲を prompt material として固定する。

@@ -559,6 +559,10 @@ ALTER TABLE "KnowledgeLlmReservation"
       AND "actualCostMicros" IS NULL
       AND "settledAt" IS NOT NULL
     )
+  ),
+  ADD CONSTRAINT "KnowledgeLlmReservation_timestamp_check" CHECK (
+    "updatedAt" >= "createdAt"
+    AND ("settledAt" IS NULL OR "settledAt" >= "createdAt")
   );
 
 ALTER TABLE "KnowledgeLlmContextSource"
@@ -688,11 +692,329 @@ CREATE TRIGGER "KnowledgeLlmContextSource_immutable"
   BEFORE UPDATE OR DELETE ON "KnowledgeLlmContextSource"
   FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_immutable_row"();
 
+CREATE FUNCTION "erp4_knowledge_llm_text_hash"(domain TEXT, content TEXT)
+RETURNS TEXT
+LANGUAGE SQL
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+  SELECT encode(
+    sha256(
+      convert_to('erp4:knowledge:' || domain || ':v1', 'UTF8')
+      || decode('00', 'hex')
+      || convert_to(content, 'UTF8')
+    ),
+    'hex'
+  )
+$$;
+
+CREATE FUNCTION "erp4_knowledge_llm_context_source_fingerprint"(
+  source_type "KnowledgeLlmContextSourceType",
+  source_ordinal INTEGER,
+  source_id TEXT,
+  source_version INTEGER,
+  source_hash TEXT,
+  representation_hash TEXT,
+  byte_length INTEGER,
+  estimated_tokens INTEGER
+)
+RETURNS TEXT
+LANGUAGE SQL
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+  SELECT encode(
+    sha256(
+      convert_to('erp4:knowledge:llm-context-source:v1', 'UTF8')
+      || decode('00', 'hex')
+      || convert_to(OCTET_LENGTH(source_ordinal::TEXT)::TEXT || ':' || source_ordinal::TEXT, 'UTF8')
+      || convert_to(OCTET_LENGTH(source_type::TEXT)::TEXT || ':' || source_type::TEXT, 'UTF8')
+      || convert_to(OCTET_LENGTH(source_id)::TEXT || ':' || source_id, 'UTF8')
+      || convert_to(OCTET_LENGTH(source_version::TEXT)::TEXT || ':' || source_version::TEXT, 'UTF8')
+      || convert_to(OCTET_LENGTH(source_hash)::TEXT || ':' || source_hash, 'UTF8')
+      || convert_to(OCTET_LENGTH(representation_hash)::TEXT || ':' || representation_hash, 'UTF8')
+      || convert_to(OCTET_LENGTH(byte_length::TEXT)::TEXT || ':' || byte_length::TEXT, 'UTF8')
+      || convert_to(OCTET_LENGTH(estimated_tokens::TEXT)::TEXT || ':' || estimated_tokens::TEXT, 'UTF8')
+    ),
+    'hex'
+  )
+$$;
+
+CREATE FUNCTION "erp4_knowledge_llm_context_fingerprint"(target_run_id TEXT)
+RETURNS TEXT
+LANGUAGE SQL
+STABLE
+STRICT
+PARALLEL SAFE
+AS $$
+  SELECT encode(
+    sha256(
+      convert_to('erp4:knowledge:llm-context-fingerprint:v1', 'UTF8')
+      || decode('00', 'hex')
+      || convert_to(
+        COALESCE(
+          STRING_AGG(
+            "erp4_knowledge_llm_context_source_fingerprint"(
+              source."sourceType",
+              source.ordinal,
+              CASE source."sourceType"
+                WHEN 'snapshot' THEN source."sourceSnapshotId"
+                WHEN 'annotation_revision' THEN source."sourceAnnotationRevisionId"
+                WHEN 'conversation_turn' THEN source."sourceConversationTurnId"
+                WHEN 'synthesis_version' THEN source."sourceSynthesisVersionId"
+                WHEN 'thread_promotion_message' THEN source."sourceThreadPromotionMessageId"
+              END,
+              source."exactSourceVersion",
+              source."exactSourceHash",
+              source."representationHash",
+              source."byteLength",
+              source."estimatedTokens"
+            ),
+            '' ORDER BY source.ordinal
+          ),
+          ''
+        ),
+        'UTF8'
+      )
+    ),
+    'hex'
+  )
+  FROM "KnowledgeLlmContextSource" source
+  WHERE source."runId" = target_run_id
+$$;
+
+CREATE FUNCTION "erp4_knowledge_llm_validate_context"(
+  target_run_id TEXT,
+  expected_fingerprint TEXT,
+  run_estimated_tokens INTEGER
+)
+RETURNS VOID
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  source_count INTEGER;
+  snapshot_count INTEGER;
+  annotation_count INTEGER;
+  conversation_count INTEGER;
+  synthesis_count INTEGER;
+  promotion_count INTEGER;
+  context_bytes BIGINT;
+  context_tokens BIGINT;
+  selected_item_count INTEGER;
+BEGIN
+  SELECT
+    COUNT(*)::INTEGER,
+    COUNT(*) FILTER (WHERE "sourceType" = 'snapshot')::INTEGER,
+    COUNT(*) FILTER (WHERE "sourceType" = 'annotation_revision')::INTEGER,
+    COUNT(*) FILTER (WHERE "sourceType" = 'conversation_turn')::INTEGER,
+    COUNT(*) FILTER (WHERE "sourceType" = 'synthesis_version')::INTEGER,
+    COUNT(*) FILTER (WHERE "sourceType" = 'thread_promotion_message')::INTEGER,
+    COALESCE(SUM("byteLength"), 0),
+    COALESCE(SUM("estimatedTokens"), 0)
+  INTO source_count, snapshot_count, annotation_count, conversation_count,
+    synthesis_count, promotion_count, context_bytes, context_tokens
+  FROM "KnowledgeLlmContextSource"
+  WHERE "runId" = target_run_id;
+
+  IF source_count > 32
+    OR snapshot_count > 4
+    OR annotation_count > 10
+    OR conversation_count > 20
+    OR synthesis_count > 5
+    OR promotion_count > 20
+    OR context_bytes > 262144
+    OR context_tokens > run_estimated_tokens
+  THEN
+    RAISE EXCEPTION 'KnowledgeLlmRun dispatch context bounds exceeded'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM "KnowledgeLlmContextSource" source
+    LEFT JOIN "KnowledgeSnapshot" snapshot
+      ON snapshot.id = source."sourceSnapshotId"
+    LEFT JOIN "KnowledgeAnnotationRevision" annotation_revision
+      ON annotation_revision.id = source."sourceAnnotationRevisionId"
+    LEFT JOIN "KnowledgeConversationTurn" conversation_turn
+      ON conversation_turn.id = source."sourceConversationTurnId"
+    LEFT JOIN "KnowledgeSynthesisVersion" synthesis_version
+      ON synthesis_version.id = source."sourceSynthesisVersionId"
+    LEFT JOIN "KnowledgeThreadPromotionMessage" promotion_message
+      ON promotion_message.id = source."sourceThreadPromotionMessageId"
+    WHERE source."runId" = target_run_id
+      AND NOT (
+        (
+          source."sourceType" = 'snapshot'
+          AND snapshot.id IS NOT NULL
+          AND snapshot.status = 'ready'
+          AND snapshot.sha256 IS NOT NULL
+          AND snapshot."extractedText" IS NOT NULL
+          AND source."exactSourceVersion" = snapshot.version
+          AND source."exactSourceHash" = snapshot.sha256
+          AND source."representationHash" =
+            "erp4_knowledge_llm_text_hash"('llm-context-representation', snapshot."extractedText")
+          AND source."byteLength" = OCTET_LENGTH(snapshot."extractedText")
+          AND source."estimatedTokens" = source."byteLength" * 2 + 16
+        )
+        OR (
+          source."sourceType" = 'annotation_revision'
+          AND annotation_revision.id IS NOT NULL
+          AND source."exactSourceVersion" = annotation_revision.revision
+          AND source."exactSourceHash" =
+            "erp4_knowledge_llm_text_hash"('annotation-revision', annotation_revision.content)
+          AND source."representationHash" =
+            "erp4_knowledge_llm_text_hash"('llm-context-representation', annotation_revision.content)
+          AND source."byteLength" = OCTET_LENGTH(annotation_revision.content)
+          AND source."estimatedTokens" = source."byteLength" * 2 + 16
+        )
+        OR (
+          source."sourceType" = 'conversation_turn'
+          AND conversation_turn.id IS NOT NULL
+          AND source."exactSourceVersion" = conversation_turn.sequence
+          AND source."exactSourceHash" = conversation_turn."contentHash"
+          AND conversation_turn."contentHash" =
+            "erp4_knowledge_llm_text_hash"('conversation-turn', conversation_turn.content)
+          AND source."representationHash" =
+            "erp4_knowledge_llm_text_hash"('llm-context-representation', conversation_turn.content)
+          AND source."byteLength" = OCTET_LENGTH(conversation_turn.content)
+          AND source."estimatedTokens" = source."byteLength" * 2 + 16
+        )
+        OR (
+          source."sourceType" = 'synthesis_version'
+          AND synthesis_version.id IS NOT NULL
+          AND source."exactSourceVersion" = synthesis_version.version
+          AND source."exactSourceHash" =
+            "erp4_knowledge_llm_text_hash"('synthesis-version', synthesis_version.content)
+          AND source."representationHash" =
+            "erp4_knowledge_llm_text_hash"('llm-context-representation', synthesis_version.content)
+          AND source."byteLength" = OCTET_LENGTH(synthesis_version.content)
+          AND source."estimatedTokens" = source."byteLength" * 2 + 16
+        )
+        OR (
+          source."sourceType" = 'thread_promotion_message'
+          AND promotion_message.id IS NOT NULL
+          AND source."exactSourceVersion" = promotion_message.ordinal + 1
+          AND source."exactSourceHash" = promotion_message."contentHash"
+          AND source."representationHash" =
+            "erp4_knowledge_llm_text_hash"('llm-context-representation', promotion_message.content)
+          AND source."byteLength" = OCTET_LENGTH(promotion_message.content)
+          AND source."estimatedTokens" = source."byteLength" * 2 + 16
+        )
+      )
+  ) THEN
+    RAISE EXCEPTION 'KnowledgeLlmRun dispatch context provenance is stale or invalid'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM "KnowledgeLlmContextSource" source
+    JOIN "KnowledgeSynthesisSource" provenance
+      ON provenance."synthesisVersionId" = source."sourceSynthesisVersionId"
+    WHERE source."runId" = target_run_id
+      AND source."sourceType" = 'synthesis_version'
+      AND (
+        provenance."sourceSynthesisVersionId" IS NOT NULL
+        OR provenance."sourceThreadPromotionId" IS NOT NULL
+      )
+  ) THEN
+    RAISE EXCEPTION 'KnowledgeLlmRun dispatch context provenance depth exceeded'
+      USING ERRCODE = '23514';
+  END IF;
+
+  WITH selected_items AS (
+    SELECT snapshot."knowledgeItemId" AS id
+    FROM "KnowledgeLlmContextSource" source
+    JOIN "KnowledgeSnapshot" snapshot ON snapshot.id = source."sourceSnapshotId"
+    WHERE source."runId" = target_run_id
+    UNION
+    SELECT annotation."knowledgeItemId"
+    FROM "KnowledgeLlmContextSource" source
+    JOIN "KnowledgeAnnotationRevision" revision
+      ON revision.id = source."sourceAnnotationRevisionId"
+    JOIN "KnowledgeAnnotation" annotation ON annotation.id = revision."annotationId"
+    WHERE source."runId" = target_run_id
+    UNION
+    SELECT item."knowledgeItemId"
+    FROM "KnowledgeLlmContextSource" source
+    JOIN "KnowledgeConversationTurn" turn
+      ON turn.id = source."sourceConversationTurnId"
+    JOIN "KnowledgeConversationItem" item
+      ON item."conversationId" = turn."conversationId"
+    WHERE source."runId" = target_run_id
+    UNION
+    SELECT synthesis_item.id
+    FROM "KnowledgeLlmContextSource" source
+    JOIN "KnowledgeSynthesisSource" provenance
+      ON provenance."synthesisVersionId" = source."sourceSynthesisVersionId"
+    CROSS JOIN LATERAL (
+      SELECT provenance."sourceKnowledgeItemId" AS id
+      UNION SELECT snapshot."knowledgeItemId"
+        FROM "KnowledgeSnapshot" snapshot
+        WHERE snapshot.id = provenance."sourceSnapshotId"
+      UNION SELECT annotation."knowledgeItemId"
+        FROM "KnowledgeAnnotation" annotation
+        WHERE annotation.id = provenance."sourceAnnotationId"
+      UNION SELECT revision_annotation."knowledgeItemId"
+        FROM "KnowledgeAnnotationRevision" revision
+        JOIN "KnowledgeAnnotation" revision_annotation
+          ON revision_annotation.id = revision."annotationId"
+        WHERE revision.id = provenance."sourceAnnotationRevisionId"
+      UNION SELECT item."knowledgeItemId"
+        FROM "KnowledgeConversationItem" item
+        WHERE item."conversationId" = provenance."sourceConversationId"
+      UNION SELECT item."knowledgeItemId"
+        FROM "KnowledgeConversationTurn" turn
+        JOIN "KnowledgeConversationItem" item
+          ON item."conversationId" = turn."conversationId"
+        WHERE turn.id = provenance."sourceConversationTurnId"
+    ) synthesis_item
+    WHERE source."runId" = target_run_id
+      AND synthesis_item.id IS NOT NULL
+    UNION
+    SELECT share."sourceKnowledgeItemId"
+    FROM "KnowledgeLlmContextSource" source
+    JOIN "KnowledgeThreadPromotionMessage" message
+      ON message.id = source."sourceThreadPromotionMessageId"
+    JOIN "KnowledgeThreadPromotion" promotion
+      ON promotion.id = message."promotionId"
+    JOIN "KnowledgeShare" share ON share.id = promotion."sourceShareId"
+    WHERE source."runId" = target_run_id
+  )
+  SELECT COUNT(*)::INTEGER INTO selected_item_count FROM selected_items;
+
+  IF selected_item_count > 10 THEN
+    RAISE EXCEPTION 'KnowledgeLlmRun dispatch selected item bound exceeded'
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF expected_fingerprint <>
+    "erp4_knowledge_llm_context_fingerprint"(target_run_id)
+  THEN
+    RAISE EXCEPTION 'KnowledgeLlmRun dispatch context fingerprint mismatch'
+      USING ERRCODE = '23514';
+  END IF;
+END;
+$$;
+
 CREATE FUNCTION "erp4_knowledge_llm_run_transition_guard"()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
+  IF OLD."executionStatus" = 'reserved'
+    AND NEW."executionStatus" = 'dispatched'
+  THEN
+    PERFORM "erp4_knowledge_llm_validate_context"(
+      NEW.id,
+      NEW."selectedContextFingerprint",
+      NEW."estimatedInputTokens"
+    );
+  END IF;
+
   IF OLD."executionStatus" = 'reserved'
     AND NEW."executionStatus" = 'dispatched'
     AND EXISTS (
@@ -907,6 +1229,31 @@ BEGIN
     )
   ) THEN
     RAISE EXCEPTION 'invalid KnowledgeLlmReservation transition'
+      USING ERRCODE = '23514';
+  END IF;
+  IF (
+      OLD."status" IN ('settled_actual', 'released')
+      AND (
+        OLD."status" <> NEW."status"
+        OR OLD."actualCostMicros" IS DISTINCT FROM NEW."actualCostMicros"
+        OR OLD."settledAt" IS DISTINCT FROM NEW."settledAt"
+      )
+    )
+    OR (
+      OLD."status" = 'held_maximum'
+      AND NEW."status" = 'held_maximum'
+      AND (
+        OLD."actualCostMicros" IS DISTINCT FROM NEW."actualCostMicros"
+        OR OLD."settledAt" IS DISTINCT FROM NEW."settledAt"
+      )
+    )
+    OR (
+      OLD."status" = 'held_maximum'
+      AND NEW."status" = 'settled_actual'
+      AND NEW."settledAt" < OLD."settledAt"
+    )
+  THEN
+    RAISE EXCEPTION 'terminal KnowledgeLlmReservation accounting is immutable'
       USING ERRCODE = '23514';
   END IF;
   RETURN NEW;

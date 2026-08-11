@@ -7,6 +7,13 @@ import type { ExternalLlmProviderName } from '../externalLlm/externalLlmPort.js'
 
 export type KnowledgeLlmRunScope = 'personal' | 'organization';
 
+export type KnowledgeLlmContextSourceType =
+  | 'snapshot'
+  | 'annotation_revision'
+  | 'conversation_turn'
+  | 'synthesis_version'
+  | 'thread_promotion_message';
+
 export type KnowledgeLlmReservationRequest = {
   runId: string;
   actor: KnowledgeActor;

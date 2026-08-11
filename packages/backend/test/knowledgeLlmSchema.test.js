@@ -110,6 +110,12 @@ test('request and selected context are immutable and exactly-one typed', () => {
   assert.match(migration, /KnowledgeLlmRequest_immutable/);
   assert.match(migration, /KnowledgeLlmContextSource_immutable/);
   assert.match(migration, /KnowledgeLlmContextSource_before_dispatch_only/);
+  assert.match(migration, /erp4_knowledge_llm_validate_context/);
+  assert.match(migration, /erp4_knowledge_llm_context_fingerprint/);
+  assert.match(migration, /context provenance is stale or invalid/);
+  assert.match(migration, /context bounds exceeded/);
+  assert.match(migration, /selected item bound exceeded/);
+  assert.match(migration, /context provenance depth exceeded/);
   assert.match(
     migration,
     /KnowledgeLlmRun dispatch requires contiguous context sources/,
@@ -119,6 +125,19 @@ test('request and selected context are immutable and exactly-one typed', () => {
     /KnowledgeLlmRun_assistantTurnId_conversationId_fkey/,
   );
   assert.doesNotMatch(source, /sourceId\s+String/);
+});
+
+test('reservation accounting timestamp and terminal values are immutable', () => {
+  assert.match(migration, /KnowledgeLlmReservation_timestamp_check/);
+  assert.match(
+    migration,
+    /terminal KnowledgeLlmReservation accounting is immutable/,
+  );
+  assert.match(
+    migration,
+    /OLD\."actualCostMicros" IS DISTINCT FROM NEW\."actualCostMicros"/,
+  );
+  assert.match(migration, /OLD\."settledAt" IS DISTINCT FROM NEW\."settledAt"/);
 });
 
 test('provider outcome retains only normalized bounded state for reconciliation', () => {

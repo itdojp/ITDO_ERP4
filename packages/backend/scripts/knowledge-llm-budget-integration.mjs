@@ -10,6 +10,11 @@ import {
   settleKnowledgeLlmBudget,
 } from '../dist/adapters/knowledge/prismaKnowledgeLlmSettlementAdapter.js';
 import { createKnowledgeLlmBudgetUseCases } from '../dist/application/knowledge/knowledgeLlmBudgetUseCases.js';
+import {
+  knowledgeLlmContextEstimatedTokens,
+  knowledgeLlmContextFingerprint,
+  knowledgeLlmContextRepresentationHash,
+} from '../dist/application/knowledge/knowledgeLlmContext.js';
 
 const parsed = new URL(process.env.DATABASE_URL || '');
 if (
@@ -29,11 +34,51 @@ const service = createKnowledgeLlmBudgetUseCases(
 const now = new Date();
 const after = (milliseconds) => new Date(now.getTime() + milliseconds);
 const hash = (character) => character.repeat(64);
-const conversationTurnHash = (content) =>
+const knowledgeTextHash = (domain, content) =>
   createHash('sha256')
-    .update('erp4:knowledge:conversation-turn:v1\0', 'utf8')
+    .update(`erp4:knowledge:${domain}:v1\0`, 'utf8')
     .update(content, 'utf8')
     .digest('hex');
+const conversationTurnHash = (content) =>
+  knowledgeTextHash('conversation-turn', content);
+
+function contextFromTurn(turn, ordinal, overrides = {}) {
+  const byteLength = Buffer.byteLength(turn.content, 'utf8');
+  return {
+    ordinal,
+    sourceType: 'conversation_turn',
+    sourceId: turn.id,
+    exactSourceVersion: turn.sequence,
+    exactSourceHash: turn.contentHash,
+    representationHash: knowledgeLlmContextRepresentationHash(turn.content),
+    byteLength,
+    estimatedTokens: knowledgeLlmContextEstimatedTokens(byteLength),
+    ...overrides,
+  };
+}
+
+function contextCreateData(runId, source) {
+  const sourceField = {
+    snapshot: 'sourceSnapshotId',
+    annotation_revision: 'sourceAnnotationRevisionId',
+    conversation_turn: 'sourceConversationTurnId',
+    synthesis_version: 'sourceSynthesisVersionId',
+    thread_promotion_message: 'sourceThreadPromotionMessageId',
+  }[source.sourceType];
+  if (!sourceField) throw new Error('invalid synthetic context source');
+  return {
+    runId,
+    sourceType: source.sourceType,
+    ordinal: source.ordinal,
+    [sourceField]: source.sourceId,
+    exactSourceVersion: source.exactSourceVersion,
+    exactSourceHash: source.exactSourceHash,
+    representationHash: source.representationHash,
+    byteLength: source.byteLength,
+    estimatedTokens: source.estimatedTokens,
+    createdBy: 'context-guard-user',
+  };
+}
 
 function auditActor(userId, suffix) {
   return {
@@ -57,6 +102,8 @@ function reservation({
   maximumCostMicros,
   inputCostMicrosPerMillion = maximumCostMicros * 10_000n,
   outputCostMicrosPerMillion = 0n,
+  selectedContextFingerprint = knowledgeLlmContextFingerprint([]),
+  estimatedInputTokens = 100,
   organizationId = null,
   auditSuffix = runId,
 }) {
@@ -76,8 +123,8 @@ function reservation({
     promptTemplateVersion: 1,
     requestKeyHash: keyHash,
     requestPayloadHash: payloadHash,
-    selectedContextFingerprint: hash('c'),
-    estimatedInputTokens: 100,
+    selectedContextFingerprint,
+    estimatedInputTokens,
     maxOutputTokens: 100,
     inputCostMicrosPerMillion,
     outputCostMicrosPerMillion,
@@ -243,6 +290,15 @@ try {
   assert.equal(first.ok, true);
   assert.equal(first.value.created, true);
   assert.equal(first.value.softLimitWarning, false);
+  const firstReservationTimestamp =
+    await prisma.knowledgeLlmReservation.findFirstOrThrow({
+      where: { runId: 'run-first' },
+      select: { createdAt: true },
+    });
+  assert.equal(
+    firstReservationTimestamp.createdAt.toISOString(),
+    now.toISOString(),
+  );
 
   const replay = await service.reserve(firstInput);
   assert.equal(replay.ok, true);
@@ -858,7 +914,62 @@ try {
   assert.equal(settledPeriod.activeReservedMicros, 0n);
   assert.equal(settledPeriod.settledActualMicros, 35n);
   assert.equal(settledPeriod.releasedMicros, 65n);
+  await assert.rejects(
+    prisma.knowledgeLlmReservation.update({
+      where: { id: settled.reservations[0].id },
+      data: { actualCostMicros: 34n },
+    }),
+    /accounting is immutable/,
+  );
+  await assert.rejects(
+    prisma.knowledgeLlmReservation.update({
+      where: { id: settled.reservations[0].id },
+      data: { settledAt: after(30_000) },
+    }),
+    /accounting is immutable/,
+  );
 
+  const contextFreezeSources = [
+    {
+      ordinal: 0,
+      sourceType: 'conversation_turn',
+      sourceId: settlementConversation.assistant.id,
+      exactSourceVersion: settlementConversation.assistant.sequence,
+      exactSourceHash: settlementConversation.assistant.contentHash,
+      representationHash: knowledgeLlmContextRepresentationHash(
+        settlementConversation.assistant.content,
+      ),
+      byteLength: Buffer.byteLength(
+        settlementConversation.assistant.content,
+        'utf8',
+      ),
+      estimatedTokens: knowledgeLlmContextEstimatedTokens(
+        Buffer.byteLength(settlementConversation.assistant.content, 'utf8'),
+      ),
+    },
+    {
+      ordinal: 1,
+      sourceType: 'conversation_turn',
+      sourceId: settlementConversation.user.id,
+      exactSourceVersion: settlementConversation.user.sequence,
+      exactSourceHash: settlementConversation.user.contentHash,
+      representationHash: knowledgeLlmContextRepresentationHash(
+        settlementConversation.user.content,
+      ),
+      byteLength: Buffer.byteLength(
+        settlementConversation.user.content,
+        'utf8',
+      ),
+      estimatedTokens: knowledgeLlmContextEstimatedTokens(
+        Buffer.byteLength(settlementConversation.user.content, 'utf8'),
+      ),
+    },
+  ];
+  const contextFreezeEstimatedTokens =
+    contextFreezeSources.reduce(
+      (sum, source) => sum + source.estimatedTokens,
+      0,
+    ) + 32;
   const contextFreezeReservation = await service.reserve(
     reservation({
       runId: 'run-context-freeze',
@@ -866,6 +977,10 @@ try {
       keyHash: conversationTurnHash('context-freeze-request-key'),
       payloadHash: conversationTurnHash('context-freeze-payload'),
       maximumCostMicros: 1n,
+      inputCostMicrosPerMillion: 1n,
+      estimatedInputTokens: contextFreezeEstimatedTokens,
+      selectedContextFingerprint:
+        knowledgeLlmContextFingerprint(contextFreezeSources),
     }),
   );
   assert.equal(contextFreezeReservation.ok, true);
@@ -887,11 +1002,11 @@ try {
       sourceType: 'conversation_turn',
       ordinal: 1,
       sourceConversationTurnId: settlementConversation.user.id,
-      exactSourceVersion: settlementConversation.user.sequence,
-      exactSourceHash: settlementConversation.user.contentHash,
-      representationHash: settlementConversation.user.contentHash,
-      byteLength: Buffer.byteLength(settlementConversation.user.content, 'utf8'),
-      estimatedTokens: 4,
+      exactSourceVersion: contextFreezeSources[1].exactSourceVersion,
+      exactSourceHash: contextFreezeSources[1].exactSourceHash,
+      representationHash: contextFreezeSources[1].representationHash,
+      byteLength: contextFreezeSources[1].byteLength,
+      estimatedTokens: contextFreezeSources[1].estimatedTokens,
       createdBy: 'settlement-user',
     },
   });
@@ -913,14 +1028,11 @@ try {
       sourceType: 'conversation_turn',
       ordinal: 0,
       sourceConversationTurnId: settlementConversation.assistant.id,
-      exactSourceVersion: settlementConversation.assistant.sequence,
-      exactSourceHash: settlementConversation.assistant.contentHash,
-      representationHash: settlementConversation.assistant.contentHash,
-      byteLength: Buffer.byteLength(
-        settlementConversation.assistant.content,
-        'utf8',
-      ),
-      estimatedTokens: 4,
+      exactSourceVersion: contextFreezeSources[0].exactSourceVersion,
+      exactSourceHash: contextFreezeSources[0].exactSourceHash,
+      representationHash: contextFreezeSources[0].representationHash,
+      byteLength: contextFreezeSources[0].byteLength,
+      estimatedTokens: contextFreezeSources[0].estimatedTokens,
       createdBy: 'settlement-user',
     },
   });
@@ -969,6 +1081,262 @@ try {
       completedAt: after(2_300),
       settlement: { type: 'release', failureCode: 'provider_4xx' },
     }),
+  );
+
+  await policy({
+    id: 'policy-context-guard',
+    subjectType: 'user',
+    subjectId: 'context-guard-user',
+    soft: 900_000n,
+    hard: 1_000_000n,
+    rate: 100,
+  });
+  const contextGuardConversation = await prisma.knowledgeConversation.create({
+    data: {
+      id: 'llm-context-guard-conversation',
+      ownerUserId: 'context-guard-user',
+      title: 'Synthetic context guard conversation',
+      sourceType: 'manual',
+      contentHash: hash('4'),
+      createdBy: 'context-guard-user',
+      updatedBy: 'context-guard-user',
+    },
+  });
+  const contextGuardTurn = await prisma.knowledgeConversationTurn.create({
+    data: {
+      conversationId: contextGuardConversation.id,
+      sequence: 1,
+      role: 'user',
+      origin: 'user',
+      content: 'Synthetic exact context',
+      contentHash: conversationTurnHash('Synthetic exact context'),
+      createdBy: 'context-guard-user',
+    },
+  });
+
+  async function reserveContextRun(runId, sources, fingerprint = null) {
+    const estimatedInputTokens =
+      sources.reduce((sum, source) => sum + source.estimatedTokens, 0) + 32;
+    const reserved = await service.reserve(
+      reservation({
+        runId,
+        userId: 'context-guard-user',
+        keyHash: knowledgeTextHash('llm-test-request-key', runId),
+        payloadHash: knowledgeTextHash('llm-test-payload', runId),
+        maximumCostMicros: 1n,
+        inputCostMicrosPerMillion: 1n,
+        estimatedInputTokens,
+        selectedContextFingerprint:
+          fingerprint ?? knowledgeLlmContextFingerprint(sources),
+      }),
+    );
+    assert.equal(
+      reserved.ok,
+      true,
+      reserved.ok ? undefined : reserved.error.code,
+    );
+    await prisma.knowledgeLlmContextSource.createMany({
+      data: sources.map((source) => contextCreateData(runId, source)),
+    });
+  }
+
+  async function expectContextDispatchRejected(runId, pattern, suffix) {
+    await assert.rejects(
+      prisma.$transaction((transaction) =>
+        markKnowledgeLlmRunDispatched(transaction, {
+          runId,
+          actorUserId: 'context-guard-user',
+          auditActor: terminalAuditActor('context-guard-user', suffix),
+          dispatchedAt: after(4_000),
+        }),
+      ),
+      pattern,
+    );
+  }
+
+  const validGuardSource = contextFromTurn(contextGuardTurn, 0);
+  for (const [suffix, source] of [
+    [
+      'version',
+      {
+        ...validGuardSource,
+        exactSourceVersion: validGuardSource.exactSourceVersion + 1,
+      },
+    ],
+    ['hash', { ...validGuardSource, exactSourceHash: hash('9') }],
+    ['representation', { ...validGuardSource, representationHash: hash('8') }],
+  ]) {
+    const runId = `run-context-invalid-${suffix}`;
+    await reserveContextRun(runId, [source]);
+    await expectContextDispatchRejected(
+      runId,
+      /context provenance is stale or invalid/,
+      `context-invalid-${suffix}`,
+    );
+  }
+
+  await reserveContextRun(
+    'run-context-fingerprint-mismatch',
+    [validGuardSource],
+    knowledgeLlmContextFingerprint([]),
+  );
+  await expectContextDispatchRejected(
+    'run-context-fingerprint-mismatch',
+    /context fingerprint mismatch/,
+    'context-fingerprint-mismatch',
+  );
+
+  const perTypeTurns = await Promise.all(
+    Array.from({ length: 21 }, (_, index) => {
+      const content = `Synthetic per-type context ${index}`;
+      return prisma.knowledgeConversationTurn.create({
+        data: {
+          conversationId: contextGuardConversation.id,
+          sequence: index + 2,
+          role: 'user',
+          origin: 'user',
+          content,
+          contentHash: conversationTurnHash(content),
+          createdBy: 'context-guard-user',
+        },
+      });
+    }),
+  );
+  await reserveContextRun(
+    'run-context-per-type-bound',
+    perTypeTurns.map((turn, ordinal) => contextFromTurn(turn, ordinal)),
+  );
+  await expectContextDispatchRejected(
+    'run-context-per-type-bound',
+    /context bounds exceeded/,
+    'context-per-type-bound',
+  );
+
+  const aggregateTurns = await Promise.all(
+    Array.from({ length: 5 }, (_, index) => {
+      const content = `${index}${'x'.repeat(60_000)}`;
+      return prisma.knowledgeConversationTurn.create({
+        data: {
+          conversationId: contextGuardConversation.id,
+          sequence: index + 23,
+          role: 'user',
+          origin: 'user',
+          content,
+          contentHash: conversationTurnHash(content),
+          createdBy: 'context-guard-user',
+        },
+      });
+    }),
+  );
+  await reserveContextRun(
+    'run-context-aggregate-bound',
+    aggregateTurns.map((turn, ordinal) => contextFromTurn(turn, ordinal)),
+  );
+  await expectContextDispatchRejected(
+    'run-context-aggregate-bound',
+    /context bounds exceeded/,
+    'context-aggregate-bound',
+  );
+
+  await prisma.knowledgeItem.createMany({
+    data: Array.from({ length: 11 }, (_, index) => ({
+      id: `context-selected-item-${index}`,
+      ownerUserId: 'context-guard-user',
+      scope: 'personal',
+      sourceType: 'manual',
+      title: `Synthetic selected item ${index}`,
+      createdBy: 'context-guard-user',
+      updatedBy: 'context-guard-user',
+    })),
+  });
+  await prisma.knowledgeConversationItem.createMany({
+    data: Array.from({ length: 11 }, (_, index) => ({
+      id: `context-selected-link-${index}`,
+      conversationId: contextGuardConversation.id,
+      knowledgeItemId: `context-selected-item-${index}`,
+      ownerUserId: 'context-guard-user',
+      relationType: index === 0 ? 'primary' : 'context',
+      ordinal: index,
+      createdBy: 'context-guard-user',
+    })),
+  });
+  await reserveContextRun('run-context-selected-item-bound', [
+    validGuardSource,
+  ]);
+  await expectContextDispatchRejected(
+    'run-context-selected-item-bound',
+    /selected item bound exceeded/,
+    'context-selected-item-bound',
+  );
+
+  const nestedSourceSynthesis = await prisma.knowledgeSynthesis.create({
+    data: {
+      id: 'context-nested-source-synthesis',
+      ownerUserId: 'context-guard-user',
+      scope: 'personal',
+      title: 'Synthetic nested source',
+      createdBy: 'context-guard-user',
+      updatedBy: 'context-guard-user',
+      versions: {
+        create: {
+          id: 'context-nested-source-version',
+          version: 1,
+          content: 'Synthetic nested source content',
+          unresolvedQuestions: [],
+          createdBy: 'context-guard-user',
+        },
+      },
+    },
+    include: { versions: true },
+  });
+  const nestedTargetSynthesis = await prisma.knowledgeSynthesis.create({
+    data: {
+      id: 'context-nested-target-synthesis',
+      ownerUserId: 'context-guard-user',
+      scope: 'personal',
+      title: 'Synthetic nested target',
+      createdBy: 'context-guard-user',
+      updatedBy: 'context-guard-user',
+      versions: {
+        create: {
+          id: 'context-nested-target-version',
+          version: 1,
+          content: 'Synthetic nested target content',
+          unresolvedQuestions: [],
+          createdBy: 'context-guard-user',
+        },
+      },
+    },
+    include: { versions: true },
+  });
+  await prisma.knowledgeSynthesisSource.create({
+    data: {
+      synthesisVersionId: nestedTargetSynthesis.versions[0].id,
+      relationType: 'supporting',
+      ordinal: 0,
+      sourceSynthesisVersionId: nestedSourceSynthesis.versions[0].id,
+      createdBy: 'context-guard-user',
+    },
+  });
+  const nestedContent = nestedTargetSynthesis.versions[0].content;
+  const nestedByteLength = Buffer.byteLength(nestedContent, 'utf8');
+  const nestedContextSource = {
+    ordinal: 0,
+    sourceType: 'synthesis_version',
+    sourceId: nestedTargetSynthesis.versions[0].id,
+    exactSourceVersion: nestedTargetSynthesis.versions[0].version,
+    exactSourceHash: knowledgeTextHash('synthesis-version', nestedContent),
+    representationHash: knowledgeLlmContextRepresentationHash(nestedContent),
+    byteLength: nestedByteLength,
+    estimatedTokens: knowledgeLlmContextEstimatedTokens(nestedByteLength),
+  };
+  await reserveContextRun('run-context-provenance-depth', [
+    nestedContextSource,
+  ]);
+  await expectContextDispatchRejected(
+    'run-context-provenance-depth',
+    /context provenance depth exceeded/,
+    'context-provenance-depth',
   );
 
   const turnHashReservation = await service.reserve(
@@ -1669,8 +2037,15 @@ try {
       heldMaximum: true,
       usageUnknownOutcomeBinding: true,
       contextFrozenAtDispatch: true,
+      contextExactProvenanceVerified: true,
+      contextAggregateBoundsVerified: true,
+      contextSelectedItemBoundVerified: true,
+      contextProvenanceDepthVerified: true,
+      contextFingerprintVerified: true,
       providerOutcomeRequiresDispatch: true,
       assistantTurnContentHashVerified: true,
+      reservationAccountingTimestampVerified: true,
+      settledReservationImmutable: true,
       reconciliation: true,
       auditRollback: true,
       terminalAuditRollback: true,
