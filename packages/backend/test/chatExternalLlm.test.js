@@ -84,6 +84,45 @@ test('getChatExternalLlmConfig preserves the default OpenAI destination allowlis
   );
 });
 
+test('getChatExternalLlmConfig treats a non-standard OpenAI port as a custom destination', async () => {
+  const { getChatExternalLlmConfig } =
+    await import('../dist/services/chatExternalLlm.js');
+  await withEnv(
+    {
+      CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+      CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+      CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://api.openai.com:444/v1',
+      CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: null,
+      CHAT_EXTERNAL_LLM_ALLOW_HTTP: null,
+      CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: null,
+      NODE_ENV: 'development',
+    },
+    async () => {
+      assert.throws(
+        () => getChatExternalLlmConfig(),
+        /CHAT_EXTERNAL_LLM_ALLOWED_HOSTS/,
+      );
+    },
+  );
+
+  await withEnv(
+    {
+      CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+      CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+      CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://api.openai.com:443/v1',
+      CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: null,
+      CHAT_EXTERNAL_LLM_ALLOW_HTTP: null,
+      CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: null,
+      NODE_ENV: 'development',
+    },
+    async () => {
+      const config = getChatExternalLlmConfig();
+      assert.equal(config.provider, 'openai');
+      assert.deepEqual(config.allowedHosts, ['api.openai.com']);
+    },
+  );
+});
+
 test('getChatExternalLlmConfig rejects a custom destination without an independent allowlist', async () => {
   const { getChatExternalLlmConfig } =
     await import('../dist/services/chatExternalLlm.js');

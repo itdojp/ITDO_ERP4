@@ -95,6 +95,7 @@ function resolveOpenAiTransportConfig(baseUrl: string, env: NodeJS.ProcessEnv) {
   const isDefaultDestination =
     parsedUrl.protocol === 'https:' &&
     parsedUrl.hostname.toLowerCase() === 'api.openai.com' &&
+    parsedUrl.port === '' &&
     (parsedUrl.pathname === '/v1' || parsedUrl.pathname === '/v1/');
   // Preserve the historical zero-configuration OpenAI endpoint while making
   // every custom destination opt in through an independent host allowlist.

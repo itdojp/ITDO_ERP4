@@ -76,6 +76,24 @@ test('envValidation: Chat custom OpenAI destination requires an independent host
     CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: 'provider.example',
   });
   assert.equal(allowlisted.status, 0, allowlisted.stderr);
+
+  const nonStandardOpenAiPort = runEnvValidation({
+    CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+    CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-only',
+    CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://api.openai.com:444/v1',
+  });
+  assert.notEqual(nonStandardOpenAiPort.status, 0);
+  assert.match(
+    nonStandardOpenAiPort.stderr,
+    /CHAT_EXTERNAL_LLM_ALLOWED_HOSTS/,
+  );
+
+  const canonicalDefaultPort = runEnvValidation({
+    CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+    CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-only',
+    CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://api.openai.com:443/v1',
+  });
+  assert.equal(canonicalDefaultPort.status, 0, canonicalDefaultPort.stderr);
 });
 
 test('envValidation: Chat production transport overrides fail closed after NODE_ENV normalization', () => {
