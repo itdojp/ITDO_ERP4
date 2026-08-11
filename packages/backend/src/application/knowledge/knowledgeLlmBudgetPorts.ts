@@ -42,7 +42,11 @@ export type KnowledgeLlmReservationCommand = Omit<
   | 'outputCostMicrosPerMillion'
   | 'maximumCostMicros'
   | 'currency'
+  | 'now'
 >;
+
+/** Trusted server-side clock dependency; never construct it from request data. */
+export type KnowledgeLlmClock = () => Date;
 
 export type KnowledgeLlmReservationRecord = {
   runId: string;

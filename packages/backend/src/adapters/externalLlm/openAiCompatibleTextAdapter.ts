@@ -6,10 +6,7 @@ import type {
 } from '../../application/externalLlm/externalLlmPort.js';
 import { ExternalLlmProviderError } from '../../application/externalLlm/externalLlmPort.js';
 import { safeFetch } from '../../services/safeHttpClient.js';
-import {
-  readBoundedResponseText,
-  redactSensitiveText,
-} from '../../services/redaction.js';
+import { readBoundedResponseText } from '../../services/redaction.js';
 
 export type OpenAiCompatibleTextAdapterConfig = {
   apiKey: string;
@@ -176,17 +173,20 @@ export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
     }
 
     if (!response.ok) {
-      const diagnostic = await readBoundedResponseText(response, 1024)
-        .then((text) => redactSensitiveText(text, 200))
-        .catch(() => '');
-      const error = new ExternalLlmProviderError(
+      // Provider error bodies are untrusted and may reflect prompts or
+      // credentials. Discard them instead of attaching even a redacted suffix
+      // to an error that can reach application logs or mandatory audit.
+      try {
+        await response.body?.cancel();
+      } catch {
+        // The normalized status/certainty contract does not depend on whether
+        // an untrusted diagnostic body can be cancelled.
+      }
+      throw new ExternalLlmProviderError(
         response.status >= 500 ? 'provider_5xx' : 'provider_4xx',
         'known_response',
         response.status,
       );
-      // This bounded, redacted suffix preserves current operator diagnostics.
-      if (diagnostic) error.message = `${error.message}: ${diagnostic}`;
-      throw error;
     }
 
     let body: unknown;

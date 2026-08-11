@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import type { KnowledgeAuditActor } from '../../application/knowledge/knowledgeItemPorts.js';
 import type {
   KnowledgeLlmAuditAction,
+  KnowledgeLlmClock,
   KnowledgeLlmTerminalFailureCode,
 } from '../../application/knowledge/knowledgeLlmBudgetPorts.js';
 import { ceilCostMicros } from '../../application/knowledge/knowledgeLlmConfig.js';
@@ -10,6 +11,14 @@ import { sha256KnowledgeText } from '../../application/knowledge/knowledgeProven
 import { PrismaKnowledgeLlmAuditWriter } from './prismaKnowledgeLlmAuditAdapter.js';
 
 type Transaction = Prisma.TransactionClient;
+
+function trustedTimestamp(clock: KnowledgeLlmClock): Date {
+  const timestamp = clock();
+  if (!(timestamp instanceof Date) || Number.isNaN(timestamp.getTime())) {
+    throw new Error('knowledge_llm_clock_invalid');
+  }
+  return new Date(timestamp.getTime());
+}
 
 export type KnowledgeLlmFinalSettlement =
   | {
@@ -138,9 +147,10 @@ export async function markKnowledgeLlmRunDispatched(
     runId: string;
     actorUserId: string;
     auditActor: KnowledgeAuditActor;
-    dispatchedAt: Date;
   },
+  clock: KnowledgeLlmClock = () => new Date(),
 ): Promise<void> {
+  const dispatchedAt = trustedTimestamp(clock);
   const runs = await transaction.$queryRaw<Array<LockedRun>>(Prisma.sql`
     SELECT id, "actorUserId", scope, provider, model, "catalogVersion",
       "estimatedInputTokens", "maxOutputTokens", currency,
@@ -183,8 +193,8 @@ export async function markKnowledgeLlmRunDispatched(
     where: { id: input.runId },
     data: {
       executionStatus: 'dispatched',
-      dispatchedAt: input.dispatchedAt,
-      updatedAt: input.dispatchedAt,
+      dispatchedAt,
+      updatedAt: dispatchedAt,
       updatedBy: input.actorUserId,
     },
   });
@@ -209,10 +219,11 @@ export async function settleKnowledgeLlmBudget(
     runId: string;
     actorUserId: string;
     auditActor: KnowledgeAuditActor;
-    completedAt: Date;
     settlement: KnowledgeLlmFinalSettlement;
   },
+  clock: KnowledgeLlmClock = () => new Date(),
 ): Promise<void> {
+  const completedAt = trustedTimestamp(clock);
   const lockedRuns = await transaction.$queryRaw<Array<LockedRun>>(Prisma.sql`
     SELECT id, "actorUserId", scope, provider, model, "catalogVersion",
       "estimatedInputTokens", "maxOutputTokens", currency,
@@ -338,7 +349,7 @@ export async function settleKnowledgeLlmBudget(
         data: {
           status: 'settled_actual',
           actualCostMicros: input.settlement.actualCostMicros,
-          settledAt: input.completedAt,
+          settledAt: completedAt,
         },
       });
     }
@@ -352,8 +363,8 @@ export async function settleKnowledgeLlmBudget(
         actualCostMicros: input.settlement.actualCostMicros,
         conversationId: input.settlement.conversationId,
         assistantTurnId: input.settlement.assistantTurnId,
-        completedAt: input.completedAt,
-        updatedAt: input.completedAt,
+        completedAt,
+        updatedAt: completedAt,
         updatedBy: input.actorUserId,
       },
     });
@@ -464,7 +475,7 @@ export async function settleKnowledgeLlmBudget(
       where: { id: reservation.id },
       data: {
         status: holdSettlement ? 'held_maximum' : 'released',
-        settledAt: input.completedAt,
+        settledAt: completedAt,
       },
     });
   }
@@ -482,8 +493,8 @@ export async function settleKnowledgeLlmBudget(
             assistantTurnId: holdSettlement.assistantTurnId,
           }
         : {}),
-      completedAt: input.completedAt,
-      updatedAt: input.completedAt,
+      completedAt,
+      updatedAt: completedAt,
       updatedBy: input.actorUserId,
     },
   });
@@ -529,14 +540,15 @@ export async function reconcileKnowledgeLlmHeldBudget(
     runId: string;
     actorUserId: string;
     auditActor: KnowledgeAuditActor;
-    completedAt: Date;
     actualInputTokens: number;
     actualOutputTokens: number;
     actualCostMicros: bigint;
     conversationId: string;
     assistantTurnId: string;
   },
+  clock: KnowledgeLlmClock = () => new Date(),
 ): Promise<void> {
+  const completedAt = trustedTimestamp(clock);
   if (
     !Number.isSafeInteger(input.actualInputTokens) ||
     input.actualInputTokens < 0 ||
@@ -659,7 +671,7 @@ export async function reconcileKnowledgeLlmHeldBudget(
       data: {
         status: 'settled_actual',
         actualCostMicros: input.actualCostMicros,
-        settledAt: input.completedAt,
+        settledAt: completedAt,
       },
     });
   }
@@ -674,8 +686,8 @@ export async function reconcileKnowledgeLlmHeldBudget(
       actualCostMicros: input.actualCostMicros,
       conversationId: input.conversationId,
       assistantTurnId: input.assistantTurnId,
-      completedAt: input.completedAt,
-      updatedAt: input.completedAt,
+      completedAt,
+      updatedAt: completedAt,
       updatedBy: input.actorUserId,
     },
   });

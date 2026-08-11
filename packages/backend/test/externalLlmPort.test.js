@@ -211,3 +211,32 @@ test('OpenAI-compatible adapter rejects a response beyond the byte limit even wh
     },
   );
 });
+
+test('OpenAI-compatible adapter never exposes provider error bodies', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(502, { 'content-type': 'text/plain' });
+      response.end(
+        'Synthetic prompt reflection: confidential; api_key=sk-live-1234567890abcdef',
+      );
+    },
+    async (baseUrl) => {
+      await assert.rejects(
+        openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl).complete(
+          openAiRequest(),
+        ),
+        (error) => {
+          assert.equal(error.code, 'provider_5xx');
+          assert.equal(error.outcome, 'known_response');
+          assert.equal(error.providerStatus, 502);
+          assert.equal(error.message, 'provider_5xx');
+          assert.equal(error.message.includes('confidential'), false);
+          assert.equal(error.message.includes('sk-live'), false);
+          return true;
+        },
+      );
+    },
+  );
+});

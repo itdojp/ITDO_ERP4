@@ -95,13 +95,15 @@ test('summarizeWithExternalLlm uses guarded fetch for allowed host', async () =>
   );
 });
 
-test('summarizeWithExternalLlm redacts bounded provider error diagnostics', async () => {
+test('summarizeWithExternalLlm discards provider error bodies', async () => {
   const { summarizeWithExternalLlm } =
     await import('../dist/services/chatExternalLlm.js');
   await withHttpServer(
     (_request, response) => {
       response.writeHead(502, { 'content-type': 'text/plain' });
-      response.end(`token=sk_secret_value ${'x'.repeat(2000)}`);
+      response.end(
+        `token=sk-live-1234567890abcdef secret prompt ${'x'.repeat(2000)}`,
+      );
     },
     async (baseUrl) => {
       await withEnv(
@@ -117,9 +119,9 @@ test('summarizeWithExternalLlm redacts bounded provider error diagnostics', asyn
           await assert.rejects(
             summarizeWithExternalLlm({ bodies: ['secret prompt'] }),
             (error) => {
-              assert.match(error.message, /openai_error_502/);
-              assert.equal(error.message.includes('sk_secret_value'), false);
-              assert.ok(error.message.length < 260);
+              assert.equal(error.message, 'openai_error_502');
+              assert.equal(error.message.includes('sk-live'), false);
+              assert.equal(error.message.includes('secret prompt'), false);
               return true;
             },
           );

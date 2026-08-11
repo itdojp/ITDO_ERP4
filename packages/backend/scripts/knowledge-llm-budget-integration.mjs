@@ -5,9 +5,9 @@ import { PrismaPg } from '@prisma/adapter-pg';
 
 import { PrismaKnowledgeLlmBudgetAdapter } from '../dist/adapters/knowledge/prismaKnowledgeLlmBudgetAdapter.js';
 import {
-  markKnowledgeLlmRunDispatched,
-  reconcileKnowledgeLlmHeldBudget,
-  settleKnowledgeLlmBudget,
+  markKnowledgeLlmRunDispatched as markKnowledgeLlmRunDispatchedWithClock,
+  reconcileKnowledgeLlmHeldBudget as reconcileKnowledgeLlmHeldBudgetWithClock,
+  settleKnowledgeLlmBudget as settleKnowledgeLlmBudgetWithClock,
 } from '../dist/adapters/knowledge/prismaKnowledgeLlmSettlementAdapter.js';
 import { createKnowledgeLlmBudgetUseCases } from '../dist/application/knowledge/knowledgeLlmBudgetUseCases.js';
 import {
@@ -44,12 +44,32 @@ const catalogModels = [
   currency: 'JPY',
   capabilities: ['text'],
 }));
+const now = new Date();
 const service = createKnowledgeLlmBudgetUseCases(
   new PrismaKnowledgeLlmBudgetAdapter(prisma),
   { version: 1, models: catalogModels },
+  () => new Date(now.getTime()),
 );
-const now = new Date();
 const after = (milliseconds) => new Date(now.getTime() + milliseconds);
+const untrustedTimestampCanary = new Date('2000-01-01T00:00:00.000Z');
+const markKnowledgeLlmRunDispatched = (transaction, input) =>
+  markKnowledgeLlmRunDispatchedWithClock(
+    transaction,
+    { ...input, dispatchedAt: untrustedTimestampCanary },
+    () => new Date(input.dispatchedAt.getTime()),
+  );
+const settleKnowledgeLlmBudget = (transaction, input) =>
+  settleKnowledgeLlmBudgetWithClock(
+    transaction,
+    { ...input, completedAt: untrustedTimestampCanary },
+    () => new Date(input.completedAt.getTime()),
+  );
+const reconcileKnowledgeLlmHeldBudget = (transaction, input) =>
+  reconcileKnowledgeLlmHeldBudgetWithClock(
+    transaction,
+    { ...input, completedAt: untrustedTimestampCanary },
+    () => new Date(input.completedAt.getTime()),
+  );
 const hash = (character) => character.repeat(64);
 const knowledgeTextHash = (domain, content) =>
   createHash('sha256')
@@ -153,7 +173,9 @@ function reservation({
     selectedContextFingerprint,
     estimatedInputTokens: resolvedEstimatedInputTokens,
     maxOutputTokens: 100,
-    now,
+    // Runtime callers may carry an extra timestamp field. The use case must
+    // overwrite it with the trusted server clock dependency.
+    now: untrustedTimestampCanary,
   };
 }
 
@@ -2126,6 +2148,7 @@ try {
       contextFingerprintVerified: true,
       providerOutcomeRequiresDispatch: true,
       assistantTurnContentHashVerified: true,
+      trustedClockBoundaryVerified: true,
       reservationAccountingTimestampVerified: true,
       settledReservationImmutable: true,
       outcomeUnknownRequiresReconcileableState: true,

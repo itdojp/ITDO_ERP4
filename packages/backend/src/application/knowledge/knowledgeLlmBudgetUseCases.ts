@@ -1,6 +1,7 @@
 import type {
   KnowledgeLlmBudgetPort,
   KnowledgeLlmBudgetResult,
+  KnowledgeLlmClock,
   KnowledgeLlmReservationCommand,
   KnowledgeLlmReservationRecord,
   KnowledgeLlmReservationRequest,
@@ -33,6 +34,14 @@ function invalid(): KnowledgeLlmBudgetResult<never> {
     ok: false,
     error: { status: 400, code: 'invalid_request', message: 'Invalid request' },
   };
+}
+
+function trustedTimestamp(clock: KnowledgeLlmClock): Date {
+  const timestamp = clock();
+  if (!(timestamp instanceof Date) || Number.isNaN(timestamp.getTime())) {
+    throw new Error('knowledge_llm_clock_invalid');
+  }
+  return new Date(timestamp.getTime());
 }
 
 function validInput(input: KnowledgeLlmReservationRequest): boolean {
@@ -90,6 +99,7 @@ function validInput(input: KnowledgeLlmReservationRequest): boolean {
 export function createKnowledgeLlmBudgetUseCases(
   port: KnowledgeLlmBudgetPort,
   catalog: KnowledgeLlmModelCatalog | null,
+  clock: KnowledgeLlmClock = () => new Date(),
 ) {
   const catalogSnapshot =
     catalog === null
@@ -134,6 +144,7 @@ export function createKnowledgeLlmBudgetUseCases(
         outputCostMicrosPerMillion: model.outputCostMicrosPerMillion,
         maximumCostMicros,
         currency: model.currency,
+        now: trustedTimestamp(clock),
       };
       if (!validInput(resolved)) return invalid();
       return port.reserve(resolved);

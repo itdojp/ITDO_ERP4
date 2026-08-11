@@ -174,10 +174,7 @@ export async function summarizeWithExternalLlm(options: {
       error instanceof ExternalLlmProviderError &&
       error.providerStatus !== null
     ) {
-      const diagnostic = error.message.includes(':')
-        ? error.message.slice(error.message.indexOf(':'))
-        : '';
-      throw new Error(`openai_error_${error.providerStatus}${diagnostic}`);
+      throw new Error(`openai_error_${error.providerStatus}`);
     }
     throw error;
   }

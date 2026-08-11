@@ -165,6 +165,7 @@ test('organization reservation fails closed when canonical organization differs'
       },
     },
     parseKnowledgeLlmModelCatalog(catalog()),
+    () => new Date('2026-08-12T00:00:00.000Z'),
   );
   const result = await service.reserve({
     runId: 'synthetic-run',
@@ -216,6 +217,7 @@ test('reservation pricing is resolved from the enabled catalog, not caller field
       },
     },
     parseKnowledgeLlmModelCatalog(catalog()),
+    () => new Date('2026-08-12T00:00:00.000Z'),
   );
   const result = await service.reserve({
     runId: 'trusted-catalog-run',
@@ -233,7 +235,7 @@ test('reservation pricing is resolved from the enabled catalog, not caller field
     estimatedInputTokens: 3,
     maxOutputTokens: 7,
     // Runtime JavaScript may still carry untrusted extra fields. The use case
-    // reconstructs its port request and overwrites every pricing field.
+    // reconstructs its port request and overwrites every pricing/time field.
     inputCostMicrosPerMillion: 0n,
     outputCostMicrosPerMillion: 0n,
     maximumCostMicros: 0n,
@@ -245,6 +247,7 @@ test('reservation pricing is resolved from the enabled catalog, not caller field
   assert.equal(received.outputCostMicrosPerMillion, 2_500_000n);
   assert.equal(received.maximumCostMicros, 22n);
   assert.equal(received.currency, 'JPY');
+  assert.equal(received.now.toISOString(), '2026-08-12T00:00:00.000Z');
 });
 
 test('reservation rejects stale, disabled, unknown and over-limit catalog selections', async () => {
