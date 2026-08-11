@@ -98,7 +98,7 @@ function auditMetadata(entry: KnowledgeLlmAuditEntry): Prisma.InputJsonObject {
   if (
     (metadata.provider !== 'stub' && metadata.provider !== 'openai') ||
     !metadata.model ||
-    metadata.model.length > 200 ||
+    [...metadata.model].length > 200 ||
     modelHasControl ||
     !scopeSet.has(metadata.scope) ||
     !Number.isSafeInteger(metadata.catalogVersion) ||

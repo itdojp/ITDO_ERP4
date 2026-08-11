@@ -8,6 +8,7 @@ import type {
 } from './knowledgeLlmBudgetPorts.js';
 import {
   ceilCostMicros,
+  estimateKnowledgeLlmInputTokens,
   knowledgeLlmLimits,
   maximumReservationMicros,
   type KnowledgeLlmModelCatalog,
@@ -112,6 +113,39 @@ export function createKnowledgeLlmBudgetUseCases(
     async reserve(
       input: KnowledgeLlmReservationCommand,
     ): Promise<KnowledgeLlmBudgetResult<KnowledgeLlmReservationRecord>> {
+      if (
+        typeof input.systemPrompt !== 'string' ||
+        typeof input.userPrompt !== 'string' ||
+        Buffer.byteLength(input.systemPrompt, 'utf8') >
+          knowledgeLlmLimits.systemPromptBytes ||
+        Buffer.byteLength(input.userPrompt, 'utf8') >
+          knowledgeLlmLimits.userPromptBytes +
+            knowledgeLlmLimits.totalContextBytes ||
+        !Number.isSafeInteger(input.selectedSourceCount) ||
+        input.selectedSourceCount < 0 ||
+        input.selectedSourceCount > knowledgeLlmLimits.totalSources ||
+        (input.reservationInputTokenFloor !== undefined &&
+          (!Number.isSafeInteger(input.reservationInputTokenFloor) ||
+            input.reservationInputTokenFloor < 1))
+      ) {
+        return invalid();
+      }
+      let estimatedInputTokens: number;
+      try {
+        const renderedPromptBytes =
+          Buffer.byteLength(input.systemPrompt, 'utf8') +
+          Buffer.byteLength(input.userPrompt, 'utf8');
+        const derivedEstimate = estimateKnowledgeLlmInputTokens(
+          renderedPromptBytes,
+          input.selectedSourceCount,
+        );
+        estimatedInputTokens = Math.max(
+          derivedEstimate,
+          input.reservationInputTokenFloor ?? derivedEstimate,
+        );
+      } catch {
+        return invalid();
+      }
       const model = catalogSnapshot?.models.find(
         (candidate) =>
           candidate.enabled &&
@@ -122,7 +156,7 @@ export function createKnowledgeLlmBudgetUseCases(
         !catalogSnapshot ||
         !model ||
         input.catalogVersion !== catalogSnapshot.version ||
-        input.estimatedInputTokens > model.maxInputTokens ||
+        estimatedInputTokens > model.maxInputTokens ||
         input.maxOutputTokens > model.maxOutputTokens
       ) {
         return invalid();
@@ -131,15 +165,27 @@ export function createKnowledgeLlmBudgetUseCases(
       try {
         maximumCostMicros = maximumReservationMicros({
           model,
-          estimatedInputTokens: input.estimatedInputTokens,
+          estimatedInputTokens,
           maxOutputTokens: input.maxOutputTokens,
         });
       } catch {
         return invalid();
       }
       const resolved: KnowledgeLlmReservationRequest = {
-        ...input,
+        runId: input.runId,
+        actor: input.actor,
+        auditActor: input.auditActor,
+        scope: input.scope,
+        organizationId: input.organizationId,
+        provider: input.provider,
+        model: input.model,
         catalogVersion: catalogSnapshot.version,
+        promptTemplateVersion: input.promptTemplateVersion,
+        requestKeyHash: input.requestKeyHash,
+        requestPayloadHash: input.requestPayloadHash,
+        selectedContextFingerprint: input.selectedContextFingerprint,
+        estimatedInputTokens,
+        maxOutputTokens: input.maxOutputTokens,
         inputCostMicrosPerMillion: model.inputCostMicrosPerMillion,
         outputCostMicrosPerMillion: model.outputCostMicrosPerMillion,
         maximumCostMicros,

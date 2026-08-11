@@ -294,7 +294,7 @@ async function reserveOnce(
         input,
         'reused',
         existing.run.reservations.length,
-        false,
+        existing.run.softLimitWarning,
       ),
     });
     return {
@@ -304,7 +304,7 @@ async function reserveOnce(
         created: false,
         maximumCostMicros: existing.run.maximumCostMicros,
         currency: existing.run.currency,
-        softLimitWarning: false,
+        softLimitWarning: existing.run.softLimitWarning,
       },
     };
   }
@@ -367,6 +367,7 @@ async function reserveOnce(
       inputCostMicrosPerMillion: input.inputCostMicrosPerMillion,
       outputCostMicrosPerMillion: input.outputCostMicrosPerMillion,
       maximumCostMicros: input.maximumCostMicros,
+      softLimitWarning,
       currency: input.currency,
       createdAt: input.now,
       createdBy: input.actor.userId,

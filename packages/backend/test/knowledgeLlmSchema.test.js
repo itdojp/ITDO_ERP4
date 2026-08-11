@@ -38,6 +38,7 @@ test('LLM foundation is additive and separates execution from settlement', () =>
   assert.match(run, /executionStatus\s+KnowledgeLlmExecutionStatus/);
   assert.match(run, /settlementStatus\s+KnowledgeLlmSettlementStatus/);
   assert.match(run, /maximumCostMicros\s+BigInt/);
+  assert.match(run, /softLimitWarning\s+Boolean\s+@default\(false\)/);
   assert.match(run, /inputCostMicrosPerMillion\s+BigInt/);
   assert.match(run, /outputCostMicrosPerMillion\s+BigInt/);
   assert.match(migration, /KnowledgeLlmRun_state_shape_check/);
@@ -74,6 +75,14 @@ test('LLM foundation is additive and separates execution from settlement', () =>
   assert.match(
     migration,
     /OLD\."inputCostMicrosPerMillion" <> NEW\."inputCostMicrosPerMillion"/,
+  );
+  assert.match(
+    migration,
+    /OLD\."softLimitWarning" <> NEW\."softLimitWarning"/,
+  );
+  assert.match(
+    migration,
+    /terminal KnowledgeLlmRun dispatch timestamp is immutable/,
   );
   assert.match(
     migration,

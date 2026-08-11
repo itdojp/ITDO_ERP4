@@ -3118,6 +3118,7 @@ model KnowledgeLlmRun {
   inputCostMicrosPerMillion  BigInt
   outputCostMicrosPerMillion BigInt
   maximumCostMicros          BigInt
+  softLimitWarning           Boolean                      @default(false)
   actualInputTokens          Int?
   actualOutputTokens         Int?
   actualCostMicros           BigInt?

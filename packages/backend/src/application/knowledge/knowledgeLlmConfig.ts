@@ -427,8 +427,10 @@ export function estimateKnowledgeLlmInputTokens(
   ) {
     throw new KnowledgeLlmConfigurationError('knowledge_llm_token_estimate');
   }
-  const estimate =
-    utf8Bytes * 2 + sourceCount * knowledgeLlmLimits.sourceFramingTokens + 64;
+  const estimate = Math.max(
+    1,
+    utf8Bytes * 2 + sourceCount * knowledgeLlmLimits.sourceFramingTokens,
+  );
   if (!Number.isSafeInteger(estimate) || estimate > 2_147_483_647) {
     throw new KnowledgeLlmConfigurationError('knowledge_llm_token_estimate');
   }

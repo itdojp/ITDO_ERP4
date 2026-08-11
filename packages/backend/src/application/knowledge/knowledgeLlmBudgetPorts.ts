@@ -38,12 +38,20 @@ export type KnowledgeLlmReservationRequest = {
 
 export type KnowledgeLlmReservationCommand = Omit<
   KnowledgeLlmReservationRequest,
+  | 'estimatedInputTokens'
   | 'inputCostMicrosPerMillion'
   | 'outputCostMicrosPerMillion'
   | 'maximumCostMicros'
   | 'currency'
   | 'now'
->;
+> & {
+  /** Exact rendered prompts that will be dispatched; never persisted by the budget port. */
+  systemPrompt: string;
+  userPrompt: string;
+  selectedSourceCount: number;
+  /** Optional safe over-reservation floor; it can never reduce the derived estimate. */
+  reservationInputTokenFloor?: number;
+};
 
 /** Trusted server-side clock dependency; never construct it from request data. */
 export type KnowledgeLlmClock = () => Date;

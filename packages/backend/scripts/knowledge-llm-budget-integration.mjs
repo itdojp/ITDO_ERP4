@@ -173,7 +173,10 @@ function reservation({
     requestKeyHash: keyHash,
     requestPayloadHash: payloadHash,
     selectedContextFingerprint,
-    estimatedInputTokens: resolvedEstimatedInputTokens,
+    systemPrompt: '',
+    userPrompt: '',
+    selectedSourceCount: 0,
+    reservationInputTokenFloor: resolvedEstimatedInputTokens,
     maxOutputTokens: 100,
     // Runtime callers may carry an extra timestamp field. The use case must
     // overwrite it with the trusted server clock dependency.
@@ -373,17 +376,20 @@ try {
   });
   assert.equal(conflictAudit?.metadata?.resultCode, 'conflict');
 
-  const second = await service.reserve(
-    reservation({
-      runId: 'run-second',
-      userId: 'budget-user',
-      keyHash: hash('e'),
-      payloadHash: hash('f'),
-      maximumCostMicros: 40n,
-    }),
-  );
+  const secondInput = reservation({
+    runId: 'run-second',
+    userId: 'budget-user',
+    keyHash: hash('e'),
+    payloadHash: hash('f'),
+    maximumCostMicros: 40n,
+  });
+  const second = await service.reserve(secondInput);
   assert.equal(second.ok, true);
   assert.equal(second.value.softLimitWarning, true);
+  const secondReplay = await service.reserve(secondInput);
+  assert.equal(secondReplay.ok, true);
+  assert.equal(secondReplay.value.created, false);
+  assert.equal(secondReplay.value.softLimitWarning, true);
 
   const blocked = await service.reserve(
     reservation({
@@ -1012,6 +1018,13 @@ try {
   assert.equal(settled.settlementStatus, 'settled_actual');
   assert.equal(settled.actualCostMicros, 35n);
   assert.equal(settled.reservations[0].status, 'settled_actual');
+  await assert.rejects(
+    prisma.knowledgeLlmRun.update({
+      where: { id: 'run-settlement-actual' },
+      data: { dispatchedAt: after(50_000) },
+    }),
+    /dispatch timestamp is immutable/,
+  );
   const settledPeriod = await prisma.knowledgeLlmBudgetPeriod.findUniqueOrThrow(
     {
       where: { id: settled.reservations[0].budgetPeriodId },
@@ -2148,6 +2161,8 @@ try {
       rateLimit: true,
       crossPeriodRateLimit: true,
       idempotency: true,
+      softLimitReplay: true,
+      renderedPromptReservationBound: true,
       exactSettlement: true,
       heldMaximum: true,
       usageUnknownOutcomeBinding: true,
@@ -2162,6 +2177,7 @@ try {
       trustedClockBoundaryVerified: true,
       reservationAccountingTimestampVerified: true,
       settledReservationImmutable: true,
+      terminalDispatchTimestampImmutable: true,
       outcomeUnknownRequiresReconcileableState: true,
       reconciliation: true,
       auditRollback: true,

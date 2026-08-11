@@ -19,18 +19,29 @@ export class StubExternalLlmTextAdapter implements ExternalLlmTextPort {
         'not_dispatched',
       );
     }
+    if (
+      !Number.isSafeInteger(request.maxOutputTokens) ||
+      request.maxOutputTokens < 1
+    ) {
+      throw new ExternalLlmProviderError(
+        'rejected_before_dispatch',
+        'not_dispatched',
+      );
+    }
     const inputBytes = Buffer.byteLength(
       `${request.systemPrompt}\n${request.userPrompt}`,
       'utf8',
     );
+    const outputTokens = Math.min(12, request.maxOutputTokens);
+    const content = 'Synthetic external LLM result.'.slice(0, outputTokens);
     return {
       provider: 'stub',
       model: request.model,
-      content: 'Synthetic external LLM result.',
+      content,
       usageStatus: 'reported',
       usage: {
         inputTokens: Math.max(1, inputBytes * 2),
-        outputTokens: 12,
+        outputTokens,
       },
     };
   }

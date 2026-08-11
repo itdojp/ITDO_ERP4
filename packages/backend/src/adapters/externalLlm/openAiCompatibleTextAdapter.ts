@@ -5,7 +5,10 @@ import type {
   ExternalLlmUsageResult,
 } from '../../application/externalLlm/externalLlmPort.js';
 import { ExternalLlmProviderError } from '../../application/externalLlm/externalLlmPort.js';
-import { safeFetch } from '../../services/safeHttpClient.js';
+import {
+  safeFetch,
+  type SafeHttpOptions,
+} from '../../services/safeHttpClient.js';
 import { readBoundedResponseText } from '../../services/redaction.js';
 
 export type OpenAiCompatibleTextAdapterConfig = {
@@ -18,6 +21,8 @@ export type OpenAiCompatibleTextAdapterConfig = {
   maximumResponseBytes?: number;
   malformedSuccessPolicy?: 'reject' | 'empty';
   usagePolicy?: 'strict' | 'ignore';
+  /** Deterministic test seam; runtime composition uses the shared DNS resolver. */
+  dnsLookupImpl?: SafeHttpOptions['dnsLookupImpl'];
 };
 
 const defaultMaximumResponseBytes = 1024 * 1024;
@@ -45,7 +50,7 @@ function parseOptionalUsage(value: unknown): ExternalLlmUsageResult {
   };
 }
 
-function responseContent(value: unknown): string {
+function responseContent(value: unknown, providerStatus: number): string {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new ExternalLlmProviderError('malformed_response', 'known_response');
   }
@@ -55,7 +60,11 @@ function responseContent(value: unknown): string {
   }
   const first = choices[0];
   if (first === null || typeof first !== 'object' || Array.isArray(first)) {
-    return '';
+    throw new ExternalLlmProviderError(
+      'empty_result',
+      'known_response',
+      providerStatus,
+    );
   }
   const message = (first as Record<string, unknown>).message;
   if (
@@ -63,10 +72,42 @@ function responseContent(value: unknown): string {
     typeof message !== 'object' ||
     Array.isArray(message)
   ) {
-    return '';
+    throw new ExternalLlmProviderError(
+      'empty_result',
+      'known_response',
+      providerStatus,
+    );
   }
   const content = (message as Record<string, unknown>).content;
-  return typeof content === 'string' ? content.trim() : '';
+  const normalized = typeof content === 'string' ? content.trim() : '';
+  if (!normalized) {
+    throw new ExternalLlmProviderError(
+      'empty_result',
+      'known_response',
+      providerStatus,
+    );
+  }
+  return normalized;
+}
+
+function errorCode(error: unknown): string {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof error.code === 'string'
+  ) {
+    return error.code;
+  }
+  return '';
+}
+
+function timeoutLike(error: unknown): boolean {
+  return (
+    (error instanceof Error &&
+      (error.name === 'AbortError' || /timeout|abort/i.test(error.message))) ||
+    /timeout|abort/i.test(errorCode(error))
+  );
 }
 
 async function readJsonBounded(response: Response, maximumBytes: number) {
@@ -147,16 +188,23 @@ export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
           allowedHosts: this.config.allowedHosts,
           allowHttp: this.config.allowHttp,
           allowPrivateIp: this.config.allowPrivateIp,
+          dnsLookupImpl: this.config.dnsLookupImpl,
         },
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : '';
-      if (/timeout|abort/i.test(message)) {
+      if (timeoutLike(error)) {
         throw new ExternalLlmProviderError(
           'timeout_outcome_unknown',
           'unknown',
         );
       }
+      if (errorCode(error) === 'dns_lookup_failed') {
+        throw new ExternalLlmProviderError(
+          'rejected_before_dispatch',
+          'not_dispatched',
+        );
+      }
+      const message = error instanceof Error ? error.message : '';
       if (
         /host_not_allowed|private_ip_blocked|http_not_allowed|invalid_url/i.test(
           message,
@@ -196,12 +244,12 @@ export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
         response,
         this.config.maximumResponseBytes ?? defaultMaximumResponseBytes,
       );
-      content = responseContent(body);
+      content = responseContent(body, response.status);
     } catch (error) {
       if (
         this.config.malformedSuccessPolicy === 'empty' &&
         error instanceof ExternalLlmProviderError &&
-        error.code === 'malformed_response'
+        (error.code === 'malformed_response' || error.code === 'empty_result')
       ) {
         return {
           provider: 'openai',
@@ -212,7 +260,17 @@ export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
           usage: null,
         };
       }
-      throw error;
+      if (error instanceof ExternalLlmProviderError) throw error;
+      if (timeoutLike(error)) {
+        throw new ExternalLlmProviderError(
+          'timeout_outcome_unknown',
+          'unknown',
+        );
+      }
+      throw new ExternalLlmProviderError(
+        'connection_outcome_unknown',
+        'unknown',
+      );
     }
     const usageResult =
       this.config.usagePolicy === 'ignore'

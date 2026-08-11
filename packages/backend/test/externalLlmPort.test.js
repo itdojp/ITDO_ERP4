@@ -26,6 +26,17 @@ test('explicit stub adapter is deterministic, local and does not echo prompts', 
   assert.ok(first.usage.outputTokens > 0);
 });
 
+test('stub adapter never exceeds a small requested output limit', async () => {
+  const { StubExternalLlmTextAdapter } =
+    await import('../dist/adapters/externalLlm/stubTextAdapter.js');
+  const result = await new StubExternalLlmTextAdapter().complete({
+    ...request,
+    maxOutputTokens: 1,
+  });
+  assert.equal(result.usage.outputTokens, 1);
+  assert.equal(result.content.length, 1);
+});
+
 test('stub adapter rejects another provider before dispatch', async () => {
   const { StubExternalLlmTextAdapter } =
     await import('../dist/adapters/externalLlm/stubTextAdapter.js');
@@ -64,7 +75,7 @@ function openAiRequest() {
   };
 }
 
-function openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl) {
+function openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl, overrides = {}) {
   return new OpenAiCompatibleTextAdapter({
     apiKey: 'synthetic-only',
     baseUrl,
@@ -72,8 +83,77 @@ function openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl) {
     allowedHosts: ['127.0.0.1'],
     allowHttp: true,
     allowPrivateIp: true,
+    ...overrides,
   });
 }
+
+test('OpenAI-compatible adapter rejects an empty successful result', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ choices: [] }));
+    },
+    async (baseUrl) => {
+      await assert.rejects(
+        openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl).complete(
+          openAiRequest(),
+        ),
+        (error) => {
+          assert.equal(error.code, 'empty_result');
+          assert.equal(error.outcome, 'known_response');
+          assert.equal(error.providerStatus, 200);
+          return true;
+        },
+      );
+    },
+  );
+});
+
+test('OpenAI-compatible adapter normalizes a stalled response body timeout', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.write('{"choices":');
+    },
+    async (baseUrl) => {
+      await assert.rejects(
+        openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl, {
+          timeoutMs: 30,
+        }).complete(openAiRequest()),
+        (error) => {
+          assert.equal(error.code, 'timeout_outcome_unknown');
+          assert.equal(error.outcome, 'unknown');
+          return true;
+        },
+      );
+    },
+  );
+});
+
+test('OpenAI-compatible adapter classifies DNS lookup failure before dispatch', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  const adapter = new OpenAiCompatibleTextAdapter({
+    apiKey: 'synthetic-only',
+    baseUrl: 'https://dns-failure.example/v1',
+    timeoutMs: 1_000,
+    allowedHosts: ['dns-failure.example'],
+    allowHttp: false,
+    allowPrivateIp: false,
+    dnsLookupImpl: async () => {
+      throw new Error('synthetic lookup failure');
+    },
+  });
+  await assert.rejects(adapter.complete(openAiRequest()), (error) => {
+    assert.equal(error.code, 'rejected_before_dispatch');
+    assert.equal(error.outcome, 'not_dispatched');
+    return true;
+  });
+});
 
 test('OpenAI-compatible adapter rejects malformed successful JSON by default', async () => {
   const { OpenAiCompatibleTextAdapter } =

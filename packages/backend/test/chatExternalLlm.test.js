@@ -158,6 +158,33 @@ test('summarizeWithExternalLlm preserves malformed successful response fallback'
   );
 });
 
+test('summarizeWithExternalLlm preserves empty successful response fallback', async () => {
+  const { summarizeWithExternalLlm } =
+    await import('../dist/services/chatExternalLlm.js');
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ choices: [] }));
+    },
+    async (baseUrl) => {
+      await withEnv(
+        {
+          CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+          CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+          CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: `${baseUrl}/v1`,
+          CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: '127.0.0.1',
+          CHAT_EXTERNAL_LLM_ALLOW_HTTP: 'true',
+          CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: 'true',
+        },
+        async () => {
+          const result = await summarizeWithExternalLlm({ bodies: ['hello'] });
+          assert.equal(result.summary, '要約の生成に失敗しました（空の応答）');
+        },
+      );
+    },
+  );
+});
+
 test('summarizeWithExternalLlm ignores provider usage for Chat compatibility', async () => {
   const { summarizeWithExternalLlm } =
     await import('../dist/services/chatExternalLlm.js');

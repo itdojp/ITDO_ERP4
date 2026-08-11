@@ -79,6 +79,7 @@ CREATE TABLE "KnowledgeLlmRun" (
     "inputCostMicrosPerMillion" BIGINT NOT NULL,
     "outputCostMicrosPerMillion" BIGINT NOT NULL,
     "maximumCostMicros" BIGINT NOT NULL,
+    "softLimitWarning" BOOLEAN NOT NULL DEFAULT false,
     "actualInputTokens" INTEGER,
     "actualOutputTokens" INTEGER,
     "actualCostMicros" BIGINT,
@@ -1140,11 +1141,18 @@ BEGIN
     OR OLD."inputCostMicrosPerMillion" <> NEW."inputCostMicrosPerMillion"
     OR OLD."outputCostMicrosPerMillion" <> NEW."outputCostMicrosPerMillion"
     OR OLD."maximumCostMicros" <> NEW."maximumCostMicros"
+    OR OLD."softLimitWarning" <> NEW."softLimitWarning"
     OR OLD."currency" <> NEW."currency"
     OR OLD."createdAt" <> NEW."createdAt"
     OR OLD."createdBy" <> NEW."createdBy"
   THEN
     RAISE EXCEPTION 'KnowledgeLlmRun request boundary is immutable'
+      USING ERRCODE = '23514';
+  END IF;
+  IF OLD."completedAt" IS NOT NULL
+    AND OLD."dispatchedAt" IS DISTINCT FROM NEW."dispatchedAt"
+  THEN
+    RAISE EXCEPTION 'terminal KnowledgeLlmRun dispatch timestamp is immutable'
       USING ERRCODE = '23514';
   END IF;
   IF OLD."completedAt" IS NOT NULL AND NOT (
