@@ -91,6 +91,10 @@ test('LLM foundation is additive and separates execution from settlement', () =>
   assert.match(migration, /KnowledgeLlmRun dispatch timestamp is immutable/);
   assert.match(
     migration,
+    /KnowledgeLlmRun provenance updates require a state transition/,
+  );
+  assert.match(
+    migration,
     /KnowledgeLlmRun conversation requires result transition/,
   );
   assert.match(

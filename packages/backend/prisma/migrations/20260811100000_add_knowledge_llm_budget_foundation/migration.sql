@@ -1312,6 +1312,16 @@ BEGIN
         USING ERRCODE = '23514';
     END IF;
   END IF;
+  IF OLD."executionStatus" = NEW."executionStatus"
+    AND OLD."settlementStatus" = NEW."settlementStatus"
+    AND (
+      OLD."updatedAt" IS DISTINCT FROM NEW."updatedAt"
+      OR OLD."updatedBy" IS DISTINCT FROM NEW."updatedBy"
+    )
+  THEN
+    RAISE EXCEPTION 'KnowledgeLlmRun provenance updates require a state transition'
+      USING ERRCODE = '23514';
+  END IF;
   RETURN NEW;
 END;
 $$;

@@ -1136,6 +1136,25 @@ try {
     }),
     /dispatch timestamp is immutable/,
   );
+  await assert.rejects(
+    prisma.knowledgeLlmRun.update({
+      where: { id: 'run-settlement-actual' },
+      data: {
+        updatedAt: after(50_000),
+        updatedBy: 'synthetic-direct-writer',
+      },
+    }),
+    /provenance updates require a state transition/,
+  );
+  const settledAfterProvenanceMutation =
+    await prisma.knowledgeLlmRun.findUniqueOrThrow({
+      where: { id: 'run-settlement-actual' },
+    });
+  assert.equal(
+    settledAfterProvenanceMutation.updatedAt.getTime(),
+    after(2_000).getTime(),
+  );
+  assert.equal(settledAfterProvenanceMutation.updatedBy, 'settlement-user');
   const settledPeriod = await prisma.knowledgeLlmBudgetPeriod.findUniqueOrThrow(
     {
       where: { id: settled.reservations[0].budgetPeriodId },
@@ -2793,6 +2812,7 @@ try {
       runReservationAtomicityVerified: true,
       periodLedgerConsistencyVerified: true,
       terminalDispatchTimestampImmutable: true,
+      terminalRunProvenanceImmutable: true,
       conversationStateGuard: true,
       outcomeUnknownRequiresReconcileableState: true,
       reconciliation: true,
