@@ -10,6 +10,12 @@ TEST_PASSWORD="$(node -e 'process.stdout.write(require("node:crypto").randomByte
 EXTERNAL_DATABASE_URL="${KNOWLEDGE_LLM_TEST_DATABASE_URL:-}"
 CONTAINER_STARTED=0
 
+if [[ -n "$EXTERNAL_DATABASE_URL" ]]; then
+  KNOWLEDGE_LLM_TEST_DATABASE_URL_TO_VALIDATE="$EXTERNAL_DATABASE_URL" \
+    node "$ROOT_DIR/packages/backend/scripts/validate-knowledge-llm-test-database-url.mjs" \
+      erp4_knowledge_llm_budget
+fi
+
 cleanup() {
   if [[ "$CONTAINER_STARTED" == "1" ]]; then
     podman stop --time 5 "$CONTAINER_NAME" >/dev/null 2>&1 || true

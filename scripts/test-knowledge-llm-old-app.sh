@@ -14,6 +14,12 @@ TEST_PASSWORD="$(node -e 'process.stdout.write(require("node:crypto").randomByte
 EXTERNAL_DATABASE_URL="${KNOWLEDGE_LLM_OLD_APP_TEST_DATABASE_URL:-}"
 CONTAINER_STARTED=0
 
+if [[ -n "$EXTERNAL_DATABASE_URL" ]]; then
+  KNOWLEDGE_LLM_TEST_DATABASE_URL_TO_VALIDATE="$EXTERNAL_DATABASE_URL" \
+    node "$ROOT_DIR/packages/backend/scripts/validate-knowledge-llm-test-database-url.mjs" \
+      erp4_knowledge_llm_old_app
+fi
+
 if [[ "$BASE_SHA" != "$EXPECTED_BASE_SHA" ]]; then
   echo "Refusing an unreviewed Knowledge LLM old-app baseline" >&2
   exit 1
