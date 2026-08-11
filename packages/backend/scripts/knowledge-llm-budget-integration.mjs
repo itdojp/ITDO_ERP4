@@ -28,8 +28,25 @@ if (
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
 });
+const catalogModels = [
+  ['stub-default', 1_000_000n, 0n],
+  ['stub-result', 250_000n, 350_000n],
+  ['stub-settlement', 250_000n, 750_000n],
+  ['stub-context', 1n, 0n],
+].map(([model, inputCostMicrosPerMillion, outputCostMicrosPerMillion]) => ({
+  provider: 'stub',
+  model,
+  enabled: true,
+  maxInputTokens: 2_147_483_647,
+  maxOutputTokens: 4096,
+  inputCostMicrosPerMillion,
+  outputCostMicrosPerMillion,
+  currency: 'JPY',
+  capabilities: ['text'],
+}));
 const service = createKnowledgeLlmBudgetUseCases(
   new PrismaKnowledgeLlmBudgetAdapter(prisma),
+  { version: 1, models: catalogModels },
 );
 const now = new Date();
 const after = (milliseconds) => new Date(now.getTime() + milliseconds);
@@ -100,13 +117,23 @@ function reservation({
   keyHash,
   payloadHash,
   maximumCostMicros,
-  inputCostMicrosPerMillion = maximumCostMicros * 10_000n,
+  inputCostMicrosPerMillion,
   outputCostMicrosPerMillion = 0n,
   selectedContextFingerprint = knowledgeLlmContextFingerprint([]),
-  estimatedInputTokens = 100,
+  estimatedInputTokens,
   organizationId = null,
   auditSuffix = runId,
 }) {
+  const resolvedInputCost = inputCostMicrosPerMillion ?? 1_000_000n;
+  const resolvedEstimatedInputTokens =
+    estimatedInputTokens ??
+    (inputCostMicrosPerMillion === undefined ? Number(maximumCostMicros) : 100);
+  const model = catalogModels.find(
+    (candidate) =>
+      candidate.inputCostMicrosPerMillion === resolvedInputCost &&
+      candidate.outputCostMicrosPerMillion === outputCostMicrosPerMillion,
+  )?.model;
+  assert.ok(model, 'synthetic catalog entry must exist');
   return {
     runId,
     actor: {
@@ -118,18 +145,14 @@ function reservation({
     scope: organizationId ? 'organization' : 'personal',
     organizationId,
     provider: 'stub',
-    model: 'stub-v1',
+    model,
     catalogVersion: 1,
     promptTemplateVersion: 1,
     requestKeyHash: keyHash,
     requestPayloadHash: payloadHash,
     selectedContextFingerprint,
-    estimatedInputTokens,
+    estimatedInputTokens: resolvedEstimatedInputTokens,
     maxOutputTokens: 100,
-    inputCostMicrosPerMillion,
-    outputCostMicrosPerMillion,
-    maximumCostMicros,
-    currency: 'JPY',
     now,
   };
 }
@@ -643,6 +666,65 @@ try {
     hard: 2000n,
     rate: 100,
   });
+  await policy({
+    id: 'policy-invalid-settlement-state',
+    subjectType: 'user',
+    subjectId: 'invalid-settlement-state-user',
+    soft: 100n,
+    hard: 100n,
+  });
+  const invalidFailedUnknownReservation = await service.reserve(
+    reservation({
+      runId: 'run-invalid-failed-unknown',
+      userId: 'invalid-settlement-state-user',
+      keyHash: knowledgeTextHash(
+        'llm-test-request-key',
+        'invalid-failed-unknown',
+      ),
+      payloadHash: knowledgeTextHash(
+        'llm-test-payload',
+        'invalid-failed-unknown',
+      ),
+      maximumCostMicros: 10n,
+    }),
+  );
+  assert.equal(invalidFailedUnknownReservation.ok, true);
+  await assert.rejects(
+    prisma.$transaction(async (transaction) => {
+      await markKnowledgeLlmRunDispatched(transaction, {
+        runId: 'run-invalid-failed-unknown',
+        actorUserId: 'invalid-settlement-state-user',
+        auditActor: terminalAuditActor(
+          'invalid-settlement-state-user',
+          'invalid-failed-unknown-dispatch',
+        ),
+        dispatchedAt: after(900),
+      });
+      await settleKnowledgeLlmBudget(transaction, {
+        runId: 'run-invalid-failed-unknown',
+        actorUserId: 'invalid-settlement-state-user',
+        auditActor: terminalAuditActor(
+          'invalid-settlement-state-user',
+          'invalid-failed-unknown-settle',
+        ),
+        completedAt: after(950),
+        settlement: {
+          type: 'hold',
+          executionStatus: 'failed',
+          failureCode: 'connection_outcome_unknown',
+        },
+      });
+    }),
+    /knowledge_llm_settlement_invalid/,
+  );
+  assert.equal(
+    (
+      await prisma.knowledgeLlmRun.findUniqueOrThrow({
+        where: { id: 'run-invalid-failed-unknown' },
+      })
+    ).executionStatus,
+    'reserved',
+  );
   const settlementReservation = await service.reserve(
     reservation({
       runId: 'run-settlement-actual',
@@ -2046,6 +2128,7 @@ try {
       assistantTurnContentHashVerified: true,
       reservationAccountingTimestampVerified: true,
       settledReservationImmutable: true,
+      outcomeUnknownRequiresReconcileableState: true,
       reconciliation: true,
       auditRollback: true,
       terminalAuditRollback: true,

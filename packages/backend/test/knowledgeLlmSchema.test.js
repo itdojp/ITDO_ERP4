@@ -75,6 +75,14 @@ test('LLM foundation is additive and separates execution from settlement', () =>
     migration,
     /OLD\."settlementStatus" = 'held_maximum'[\s\S]*?NEW\."settlementStatus" = 'settled_actual'/,
   );
+  const failedHeldShape = migration.match(
+    /"executionStatus" = 'failed'[\s\S]*?"settlementStatus" = 'held_maximum'[\s\S]*?"failureCode" IN \(([\s\S]*?)\)\n\s+AND "dispatchedAt"/,
+  );
+  assert.ok(failedHeldShape);
+  assert.doesNotMatch(
+    failedHeldShape[1],
+    /timeout_outcome_unknown|connection_outcome_unknown|finalization_failed|usage_missing|usage_invalid/,
+  );
   assert.doesNotMatch(migration, /DROP TABLE|DROP COLUMN|ALTER COLUMN/);
 });
 

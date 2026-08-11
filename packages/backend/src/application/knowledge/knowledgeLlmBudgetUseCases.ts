@@ -1,10 +1,16 @@
 import type {
   KnowledgeLlmBudgetPort,
   KnowledgeLlmBudgetResult,
+  KnowledgeLlmReservationCommand,
   KnowledgeLlmReservationRecord,
   KnowledgeLlmReservationRequest,
 } from './knowledgeLlmBudgetPorts.js';
-import { ceilCostMicros, knowledgeLlmLimits } from './knowledgeLlmConfig.js';
+import {
+  ceilCostMicros,
+  knowledgeLlmLimits,
+  maximumReservationMicros,
+  type KnowledgeLlmModelCatalog,
+} from './knowledgeLlmConfig.js';
 
 const sha256Pattern = /^[0-9a-f]{64}$/;
 const maximumDatabaseBigInt = 9_223_372_036_854_775_807n;
@@ -81,13 +87,56 @@ function validInput(input: KnowledgeLlmReservationRequest): boolean {
   );
 }
 
-export function createKnowledgeLlmBudgetUseCases(port: KnowledgeLlmBudgetPort) {
+export function createKnowledgeLlmBudgetUseCases(
+  port: KnowledgeLlmBudgetPort,
+  catalog: KnowledgeLlmModelCatalog | null,
+) {
+  const catalogSnapshot =
+    catalog === null
+      ? null
+      : {
+          version: catalog.version,
+          models: catalog.models.map((model) => ({ ...model })),
+        };
   return {
     async reserve(
-      input: KnowledgeLlmReservationRequest,
+      input: KnowledgeLlmReservationCommand,
     ): Promise<KnowledgeLlmBudgetResult<KnowledgeLlmReservationRecord>> {
-      if (!validInput(input)) return invalid();
-      return port.reserve(input);
+      const model = catalogSnapshot?.models.find(
+        (candidate) =>
+          candidate.enabled &&
+          candidate.provider === input.provider &&
+          candidate.model === input.model,
+      );
+      if (
+        !catalogSnapshot ||
+        !model ||
+        input.catalogVersion !== catalogSnapshot.version ||
+        input.estimatedInputTokens > model.maxInputTokens ||
+        input.maxOutputTokens > model.maxOutputTokens
+      ) {
+        return invalid();
+      }
+      let maximumCostMicros: bigint;
+      try {
+        maximumCostMicros = maximumReservationMicros({
+          model,
+          estimatedInputTokens: input.estimatedInputTokens,
+          maxOutputTokens: input.maxOutputTokens,
+        });
+      } catch {
+        return invalid();
+      }
+      const resolved: KnowledgeLlmReservationRequest = {
+        ...input,
+        catalogVersion: catalogSnapshot.version,
+        inputCostMicrosPerMillion: model.inputCostMicrosPerMillion,
+        outputCostMicrosPerMillion: model.outputCostMicrosPerMillion,
+        maximumCostMicros,
+        currency: model.currency,
+      };
+      if (!validInput(resolved)) return invalid();
+      return port.reserve(resolved);
     },
   };
 }

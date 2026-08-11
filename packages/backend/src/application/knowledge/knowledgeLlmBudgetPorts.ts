@@ -36,6 +36,14 @@ export type KnowledgeLlmReservationRequest = {
   now: Date;
 };
 
+export type KnowledgeLlmReservationCommand = Omit<
+  KnowledgeLlmReservationRequest,
+  | 'inputCostMicrosPerMillion'
+  | 'outputCostMicrosPerMillion'
+  | 'maximumCostMicros'
+  | 'currency'
+>;
+
 export type KnowledgeLlmReservationRecord = {
   runId: string;
   created: boolean;

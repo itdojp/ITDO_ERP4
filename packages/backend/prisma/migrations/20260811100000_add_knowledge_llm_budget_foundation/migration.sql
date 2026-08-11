@@ -489,12 +489,7 @@ ALTER TABLE "KnowledgeLlmRun"
             'provider_5xx',
             'malformed_response',
             'response_oversize',
-            'empty_result',
-            'usage_missing',
-            'usage_invalid',
-            'timeout_outcome_unknown',
-            'connection_outcome_unknown',
-            'finalization_failed'
+            'empty_result'
           )
           AND "dispatchedAt" IS NOT NULL
         )

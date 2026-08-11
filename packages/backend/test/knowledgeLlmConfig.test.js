@@ -155,13 +155,17 @@ test('conservative estimate and timezone month boundary are deterministic', asyn
 
 test('organization reservation fails closed when canonical organization differs', async () => {
   const { createKnowledgeLlmBudgetUseCases } = await budgetModule();
+  const { parseKnowledgeLlmModelCatalog } = await configModule();
   let called = false;
-  const service = createKnowledgeLlmBudgetUseCases({
-    async reserve() {
-      called = true;
-      throw new Error('must not call');
+  const service = createKnowledgeLlmBudgetUseCases(
+    {
+      async reserve() {
+        called = true;
+        throw new Error('must not call');
+      },
     },
-  });
+    parseKnowledgeLlmModelCatalog(catalog()),
+  );
   const result = await service.reserve({
     runId: 'synthetic-run',
     actor: {
@@ -174,7 +178,7 @@ test('organization reservation fails closed when canonical organization differs'
     organizationId: 'other-org',
     provider: 'stub',
     model: 'stub-v1',
-    catalogVersion: 1,
+    catalogVersion: 3,
     promptTemplateVersion: 1,
     requestKeyHash: 'a'.repeat(64),
     requestPayloadHash: 'b'.repeat(64),
@@ -189,4 +193,121 @@ test('organization reservation fails closed when canonical organization differs'
   });
   assert.equal(result.ok, false);
   assert.equal(called, false);
+});
+
+test('reservation pricing is resolved from the enabled catalog, not caller fields', async () => {
+  const { createKnowledgeLlmBudgetUseCases } = await budgetModule();
+  const { parseKnowledgeLlmModelCatalog } = await configModule();
+  let received;
+  const service = createKnowledgeLlmBudgetUseCases(
+    {
+      async reserve(input) {
+        received = input;
+        return {
+          ok: true,
+          value: {
+            runId: input.runId,
+            created: true,
+            maximumCostMicros: input.maximumCostMicros,
+            currency: input.currency,
+            softLimitWarning: false,
+          },
+        };
+      },
+    },
+    parseKnowledgeLlmModelCatalog(catalog()),
+  );
+  const result = await service.reserve({
+    runId: 'trusted-catalog-run',
+    actor: { userId: 'synthetic-user', groupAccountIds: [] },
+    auditActor: {},
+    scope: 'personal',
+    organizationId: null,
+    provider: 'stub',
+    model: 'stub-v1',
+    catalogVersion: 3,
+    promptTemplateVersion: 1,
+    requestKeyHash: 'd'.repeat(64),
+    requestPayloadHash: 'e'.repeat(64),
+    selectedContextFingerprint: 'f'.repeat(64),
+    estimatedInputTokens: 3,
+    maxOutputTokens: 7,
+    // Runtime JavaScript may still carry untrusted extra fields. The use case
+    // reconstructs its port request and overwrites every pricing field.
+    inputCostMicrosPerMillion: 0n,
+    outputCostMicrosPerMillion: 0n,
+    maximumCostMicros: 0n,
+    currency: 'XXX',
+    now: new Date('2026-08-11T00:00:00.000Z'),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(received.inputCostMicrosPerMillion, 1_250_000n);
+  assert.equal(received.outputCostMicrosPerMillion, 2_500_000n);
+  assert.equal(received.maximumCostMicros, 22n);
+  assert.equal(received.currency, 'JPY');
+});
+
+test('reservation rejects stale, disabled, unknown and over-limit catalog selections', async () => {
+  const { createKnowledgeLlmBudgetUseCases } = await budgetModule();
+  const { parseKnowledgeLlmModelCatalog } = await configModule();
+  const base = {
+    runId: 'catalog-selection-run',
+    actor: { userId: 'synthetic-user', groupAccountIds: [] },
+    auditActor: {},
+    scope: 'personal',
+    organizationId: null,
+    provider: 'stub',
+    model: 'stub-v1',
+    catalogVersion: 3,
+    promptTemplateVersion: 1,
+    requestKeyHash: '1'.repeat(64),
+    requestPayloadHash: '2'.repeat(64),
+    selectedContextFingerprint: '3'.repeat(64),
+    estimatedInputTokens: 3,
+    maxOutputTokens: 7,
+    now: new Date('2026-08-11T00:00:00.000Z'),
+  };
+  for (const candidate of [
+    { catalog: null, input: base },
+    {
+      catalog: parseKnowledgeLlmModelCatalog(catalog()),
+      input: { ...base, catalogVersion: 2 },
+    },
+    {
+      catalog: parseKnowledgeLlmModelCatalog(catalog({ enabled: false })),
+      input: base,
+    },
+    {
+      catalog: parseKnowledgeLlmModelCatalog(catalog()),
+      input: { ...base, model: 'unknown-model' },
+    },
+    {
+      catalog: parseKnowledgeLlmModelCatalog(catalog({ maxInputTokens: 2 })),
+      input: base,
+    },
+    {
+      catalog: parseKnowledgeLlmModelCatalog(catalog({ maxOutputTokens: 6 })),
+      input: base,
+    },
+  ]) {
+    let called = false;
+    const service = createKnowledgeLlmBudgetUseCases(
+      {
+        async reserve() {
+          called = true;
+          throw new Error('must not call');
+        },
+      },
+      candidate.catalog,
+    );
+    assert.deepEqual(await service.reserve(candidate.input), {
+      ok: false,
+      error: {
+        status: 400,
+        code: 'invalid_request',
+        message: 'Invalid request',
+      },
+    });
+    assert.equal(called, false);
+  }
 });
