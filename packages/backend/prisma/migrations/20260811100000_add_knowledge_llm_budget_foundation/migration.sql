@@ -659,6 +659,31 @@ CREATE TRIGGER "KnowledgeLlmRequest_immutable"
   BEFORE UPDATE OR DELETE ON "KnowledgeLlmRequest"
   FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_immutable_row"();
 
+CREATE FUNCTION "erp4_knowledge_llm_context_source_insert_guard"()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  run_execution "KnowledgeLlmExecutionStatus";
+BEGIN
+  SELECT "executionStatus"
+  INTO run_execution
+  FROM "KnowledgeLlmRun"
+  WHERE id = NEW."runId"
+  FOR UPDATE;
+
+  IF run_execution IS NULL OR run_execution <> 'reserved' THEN
+    RAISE EXCEPTION 'KnowledgeLlmContextSource cannot change after dispatch'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "KnowledgeLlmContextSource_before_dispatch_only"
+  BEFORE INSERT ON "KnowledgeLlmContextSource"
+  FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_context_source_insert_guard"();
+
 CREATE TRIGGER "KnowledgeLlmContextSource_immutable"
   BEFORE UPDATE OR DELETE ON "KnowledgeLlmContextSource"
   FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_immutable_row"();
@@ -668,6 +693,28 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
+  IF OLD."executionStatus" = 'reserved'
+    AND NEW."executionStatus" = 'dispatched'
+    AND EXISTS (
+      SELECT 1
+      FROM (
+        SELECT COUNT(*) AS source_count,
+          MIN(ordinal) AS minimum_ordinal,
+          MAX(ordinal) AS maximum_ordinal
+        FROM "KnowledgeLlmContextSource"
+        WHERE "runId" = NEW.id
+      ) source_set
+      WHERE source_set.source_count > 0
+        AND (
+          source_set.minimum_ordinal <> 0
+          OR source_set.maximum_ordinal <> source_set.source_count - 1
+        )
+    )
+  THEN
+    RAISE EXCEPTION 'KnowledgeLlmRun dispatch requires contiguous context sources'
+      USING ERRCODE = '23514';
+  END IF;
+
   IF NEW."executionStatus" = 'result_ready'
     AND NOT EXISTS (
       SELECT 1
@@ -697,8 +744,11 @@ BEGIN
         AND outcome."inputTokens" = NEW."actualInputTokens"
         AND outcome."outputTokens" = NEW."actualOutputTokens"
         AND outcome."contentHash" = turn."contentHash"
+        AND outcome."contentHash" =
+          "erp4_knowledge_llm_content_hash"(turn.content)
         AND turn.role = 'assistant'
         AND turn.origin = 'ai'
+        AND NEW."completedAt" >= outcome."finalizedAt"
     )
   THEN
     RAISE EXCEPTION 'KnowledgeLlmRun settlement requires a valid provider outcome'
@@ -719,8 +769,11 @@ BEGIN
         AND outcome."finalizedAt" IS NOT NULL
         AND outcome."normalizedContent" IS NULL
         AND outcome."contentHash" = turn."contentHash"
+        AND outcome."contentHash" =
+          "erp4_knowledge_llm_content_hash"(turn.content)
         AND turn.role = 'assistant'
         AND turn.origin = 'ai'
+        AND NEW."completedAt" >= outcome."finalizedAt"
     )
   THEN
     RAISE EXCEPTION 'KnowledgeLlmRun held result requires a usage-unknown provider outcome'
@@ -793,12 +846,21 @@ BEGIN
     AND EXISTS (
       SELECT 1
       FROM "KnowledgeLlmProviderOutcome" outcome
+      JOIN "KnowledgeConversationTurn" turn
+        ON turn.id = NEW."assistantTurnId"
+       AND turn."conversationId" = NEW."conversationId"
       WHERE outcome."runId" = OLD.id
         AND outcome.status = 'valid'
         AND outcome."finalizedAt" IS NOT NULL
         AND outcome."normalizedContent" IS NULL
         AND outcome."inputTokens" = NEW."actualInputTokens"
         AND outcome."outputTokens" = NEW."actualOutputTokens"
+        AND outcome."contentHash" = turn."contentHash"
+        AND outcome."contentHash" =
+          "erp4_knowledge_llm_content_hash"(turn.content)
+        AND turn.role = 'assistant'
+        AND turn.origin = 'ai'
+        AND NEW."completedAt" >= outcome."finalizedAt"
     )
   ) THEN
     IF OLD."failureCode" IS DISTINCT FROM NEW."failureCode"
@@ -876,7 +938,16 @@ CREATE FUNCTION "erp4_knowledge_llm_outcome_transition_guard"()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
+DECLARE
+  run_execution "KnowledgeLlmExecutionStatus";
+  run_dispatched_at TIMESTAMP(3);
 BEGIN
+  SELECT "executionStatus", "dispatchedAt"
+  INTO run_execution, run_dispatched_at
+  FROM "KnowledgeLlmRun"
+  WHERE id = NEW."runId"
+  FOR UPDATE;
+
   IF OLD."runId" <> NEW."runId"
     OR OLD."status" <> NEW."status"
     OR OLD."contentHash" IS DISTINCT FROM NEW."contentHash"
@@ -889,7 +960,11 @@ BEGIN
     OR OLD."normalizedContent" IS NULL
     OR OLD."contentHash" IS DISTINCT FROM
       "erp4_knowledge_llm_content_hash"(OLD."normalizedContent")
+    OR run_execution IS NULL
+    OR run_execution NOT IN ('dispatched', 'result_unknown')
+    OR run_dispatched_at IS NULL
     OR NEW."finalizedAt" IS NULL
+    OR NEW."finalizedAt" < run_dispatched_at
     OR NEW."normalizedContent" IS NOT NULL
   THEN
     RAISE EXCEPTION 'invalid KnowledgeLlmProviderOutcome finalization'
@@ -903,16 +978,31 @@ CREATE FUNCTION "erp4_knowledge_llm_outcome_insert_guard"()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
+DECLARE
+  run_execution "KnowledgeLlmExecutionStatus";
+  run_dispatched_at TIMESTAMP(3);
 BEGIN
-  IF NEW.status IN ('valid', 'usage_unknown')
-    AND (
+  SELECT "executionStatus", "dispatchedAt"
+  INTO run_execution, run_dispatched_at
+  FROM "KnowledgeLlmRun"
+  WHERE id = NEW."runId"
+  FOR UPDATE;
+
+  IF run_execution IS NULL
+    OR run_execution NOT IN ('dispatched', 'result_unknown')
+    OR run_dispatched_at IS NULL
+    OR NEW."capturedAt" < run_dispatched_at
+    OR (
+      NEW.status IN ('valid', 'usage_unknown')
+      AND (
       NEW."finalizedAt" IS NOT NULL
       OR NEW."normalizedContent" IS NULL
       OR NEW."contentHash" IS DISTINCT FROM
         "erp4_knowledge_llm_content_hash"(NEW."normalizedContent")
+      )
     )
   THEN
-    RAISE EXCEPTION 'KnowledgeLlmProviderOutcome must capture content before finalization with matching hash'
+    RAISE EXCEPTION 'KnowledgeLlmProviderOutcome requires provider dispatch and must capture content before finalization with matching hash'
       USING ERRCODE = '23514';
   END IF;
   RETURN NEW;

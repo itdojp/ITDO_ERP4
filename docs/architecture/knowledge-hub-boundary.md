@@ -355,7 +355,9 @@ mandatory auditを同じtransaction clientで確定し、audit failure時は全m
 - 既存 ERP4/Google Workspace を除く月額増分目標は 5,000 円とする。追加 infrastructure は管理者が計測値と見積を提示し、業務責任者の承認を得た別 ADR/Issue で導入する。
 - AI の hard/soft limit は `admin` が設定し、`mgmt` は利用量と予算状態を参照できる。hard limit がない状態で external AI を有効化できない。
 - hard limit 判定は request ごとの最大 token/cost reservation を先に確保し、完了時に実使用量へ精算する設計とする。予約不能なら副作用前に拒否する。
+- budget policyを月中にversion更新しても同じsubjectの当月reservationを引き継ぎ、active versionの上限で再評価する。rolling rateもpolicy IDではなくsubject単位で集計し、policy差替えによる上限リセットを許可しない。
 - timeout 等で provider 実行結果または usage が不明な場合、最大 reservation を消費扱いで保留し、自動再送しない。operator reconciliation または請求 usage 確定後だけ精算する。
+- selected contextはrunのdispatch時に連続ordinalの集合として凍結し、以後のsource追加をDB triggerで拒否する。provider outcomeはdispatchより前のcaptureを拒否し、settlement時はnormalized outcomeとassistant turn本文のdomain-separated hashを再計算して照合する。
 
 ## Alternatives rejected
 

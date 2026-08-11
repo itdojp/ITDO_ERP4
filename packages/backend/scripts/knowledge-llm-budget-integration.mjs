@@ -95,6 +95,7 @@ async function policy({
   hard = 100n,
   rate = 10,
   timezone = 'Asia/Tokyo',
+  version = 1,
 }) {
   return prisma.knowledgeLlmBudgetPolicy.create({
     data: {
@@ -106,6 +107,7 @@ async function policy({
       softLimitMicros: soft,
       hardLimitMicros: hard,
       requestsPerHour: rate,
+      version,
       createdBy: 'synthetic-admin',
       updatedBy: 'synthetic-admin',
     },
@@ -297,6 +299,106 @@ try {
   );
 
   await policy({
+    id: 'policy-version-budget-v1',
+    subjectType: 'user',
+    subjectId: 'policy-version-budget-user',
+    soft: 100n,
+    hard: 100n,
+  });
+  assert.equal(
+    (
+      await service.reserve(
+        reservation({
+          runId: 'run-policy-version-budget-v1',
+          userId: 'policy-version-budget-user',
+          keyHash: hash('a'),
+          payloadHash: hash('c'),
+          maximumCostMicros: 60n,
+        }),
+      )
+    ).ok,
+    true,
+  );
+  await prisma.knowledgeLlmBudgetPolicy.update({
+    where: { id: 'policy-version-budget-v1' },
+    data: { active: false, updatedBy: 'synthetic-admin' },
+  });
+  await policy({
+    id: 'policy-version-budget-v2',
+    subjectType: 'user',
+    subjectId: 'policy-version-budget-user',
+    soft: 100n,
+    hard: 100n,
+    version: 2,
+  });
+  const versionBudgetBlocked = await service.reserve(
+    reservation({
+      runId: 'run-policy-version-budget-blocked',
+      userId: 'policy-version-budget-user',
+      keyHash: hash('d'),
+      payloadHash: hash('e'),
+      maximumCostMicros: 50n,
+    }),
+  );
+  assert.equal(versionBudgetBlocked.ok, false);
+  assert.equal(versionBudgetBlocked.error.code, 'budget_hard_limit');
+  const versionBudgetRemaining = await service.reserve(
+    reservation({
+      runId: 'run-policy-version-budget-remaining',
+      userId: 'policy-version-budget-user',
+      keyHash: hash('f'),
+      payloadHash: hash('0'),
+      maximumCostMicros: 40n,
+    }),
+  );
+  assert.equal(versionBudgetRemaining.ok, true);
+
+  await policy({
+    id: 'policy-version-rate-v1',
+    subjectType: 'user',
+    subjectId: 'policy-version-rate-user',
+    hard: 1000n,
+    rate: 1,
+  });
+  assert.equal(
+    (
+      await service.reserve(
+        reservation({
+          runId: 'run-policy-version-rate-v1',
+          userId: 'policy-version-rate-user',
+          keyHash: hash('1'),
+          payloadHash: hash('2'),
+          maximumCostMicros: 1n,
+        }),
+      )
+    ).ok,
+    true,
+  );
+  await prisma.knowledgeLlmBudgetPolicy.update({
+    where: { id: 'policy-version-rate-v1' },
+    data: { active: false, updatedBy: 'synthetic-admin' },
+  });
+  await policy({
+    id: 'policy-version-rate-v2',
+    subjectType: 'user',
+    subjectId: 'policy-version-rate-user',
+    hard: 1000n,
+    rate: 1,
+    version: 2,
+  });
+  const versionRateBlocked = await service.reserve(
+    reservation({
+      runId: 'run-policy-version-rate-blocked',
+      userId: 'policy-version-rate-user',
+      keyHash: hash('3'),
+      payloadHash: hash('4'),
+      maximumCostMicros: 1n,
+    }),
+  );
+  assert.equal(versionRateBlocked.ok, false);
+  assert.equal(versionRateBlocked.error.code, 'rate_limit');
+
+  await policy({
     id: 'policy-org-user',
     subjectType: 'user',
     subjectId: 'org-user',
@@ -483,6 +585,7 @@ try {
     subjectId: 'settlement-user',
     soft: 1000n,
     hard: 2000n,
+    rate: 100,
   });
   const settlementReservation = await service.reserve(
     reservation({
@@ -755,6 +858,186 @@ try {
   assert.equal(settledPeriod.activeReservedMicros, 0n);
   assert.equal(settledPeriod.settledActualMicros, 35n);
   assert.equal(settledPeriod.releasedMicros, 65n);
+
+  const contextFreezeReservation = await service.reserve(
+    reservation({
+      runId: 'run-context-freeze',
+      userId: 'settlement-user',
+      keyHash: conversationTurnHash('context-freeze-request-key'),
+      payloadHash: conversationTurnHash('context-freeze-payload'),
+      maximumCostMicros: 1n,
+    }),
+  );
+  assert.equal(contextFreezeReservation.ok, true);
+  await assert.rejects(
+    prisma.knowledgeLlmProviderOutcome.create({
+      data: {
+        runId: 'run-context-freeze',
+        status: 'invalid',
+        failureCode: 'provider_4xx',
+        capturedAt: after(2_100),
+      },
+    }),
+    /requires provider dispatch/,
+  );
+  await prisma.knowledgeLlmContextSource.create({
+    data: {
+      id: 'context-freeze-ordinal-1',
+      runId: 'run-context-freeze',
+      sourceType: 'conversation_turn',
+      ordinal: 1,
+      sourceConversationTurnId: settlementConversation.user.id,
+      exactSourceVersion: settlementConversation.user.sequence,
+      exactSourceHash: settlementConversation.user.contentHash,
+      representationHash: settlementConversation.user.contentHash,
+      byteLength: Buffer.byteLength(settlementConversation.user.content, 'utf8'),
+      estimatedTokens: 4,
+      createdBy: 'settlement-user',
+    },
+  });
+  await assert.rejects(
+    prisma.$transaction((transaction) =>
+      markKnowledgeLlmRunDispatched(transaction, {
+        runId: 'run-context-freeze',
+        actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor('settlement-user', 'context-gap'),
+        dispatchedAt: after(2_200),
+      }),
+    ),
+    /dispatch_conflict/,
+  );
+  await prisma.knowledgeLlmContextSource.create({
+    data: {
+      id: 'context-freeze-ordinal-0',
+      runId: 'run-context-freeze',
+      sourceType: 'conversation_turn',
+      ordinal: 0,
+      sourceConversationTurnId: settlementConversation.assistant.id,
+      exactSourceVersion: settlementConversation.assistant.sequence,
+      exactSourceHash: settlementConversation.assistant.contentHash,
+      representationHash: settlementConversation.assistant.contentHash,
+      byteLength: Buffer.byteLength(
+        settlementConversation.assistant.content,
+        'utf8',
+      ),
+      estimatedTokens: 4,
+      createdBy: 'settlement-user',
+    },
+  });
+  await prisma.$transaction((transaction) =>
+    markKnowledgeLlmRunDispatched(transaction, {
+      runId: 'run-context-freeze',
+      actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor('settlement-user', 'context-dispatch'),
+      dispatchedAt: after(2_200),
+    }),
+  );
+  await assert.rejects(
+    prisma.knowledgeLlmContextSource.create({
+      data: {
+        id: 'context-freeze-after-dispatch',
+        runId: 'run-context-freeze',
+        sourceType: 'conversation_turn',
+        ordinal: 2,
+        sourceConversationTurnId: settlementConversation.user.id,
+        exactSourceVersion: settlementConversation.user.sequence,
+        exactSourceHash: settlementConversation.user.contentHash,
+        representationHash: settlementConversation.user.contentHash,
+        byteLength: 10,
+        estimatedTokens: 4,
+        createdBy: 'settlement-user',
+      },
+    }),
+    /cannot change after dispatch/,
+  );
+  await assert.rejects(
+    prisma.knowledgeLlmProviderOutcome.create({
+      data: {
+        runId: 'run-context-freeze',
+        status: 'invalid',
+        failureCode: 'provider_4xx',
+        capturedAt: after(2_150),
+      },
+    }),
+    /requires provider dispatch/,
+  );
+  await prisma.$transaction((transaction) =>
+    settleKnowledgeLlmBudget(transaction, {
+      runId: 'run-context-freeze',
+      actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor('settlement-user', 'context-release'),
+      completedAt: after(2_300),
+      settlement: { type: 'release', failureCode: 'provider_4xx' },
+    }),
+  );
+
+  const turnHashReservation = await service.reserve(
+    reservation({
+      runId: 'run-turn-content-hash-mismatch',
+      userId: 'settlement-user',
+      keyHash: conversationTurnHash('turn-hash-request-key'),
+      payloadHash: conversationTurnHash('turn-hash-payload'),
+      maximumCostMicros: 100n,
+      inputCostMicrosPerMillion: 1_000_000n,
+      outputCostMicrosPerMillion: 0n,
+    }),
+  );
+  assert.equal(
+    turnHashReservation.ok,
+    true,
+    turnHashReservation.ok ? undefined : turnHashReservation.error.code,
+  );
+  const mismatchedTurn = await prisma.knowledgeConversationTurn.create({
+    data: {
+      conversationId: settlementConversation.conversation.id,
+      sequence: 3,
+      role: 'assistant',
+      origin: 'ai',
+      content: 'Synthetic tampered displayed result',
+      contentHash: conversationTurnHash('Synthetic captured provider result'),
+      createdBy: 'settlement-user',
+    },
+  });
+  await assert.rejects(
+    prisma.$transaction(async (transaction) => {
+      await markKnowledgeLlmRunDispatched(transaction, {
+        runId: 'run-turn-content-hash-mismatch',
+        actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor('settlement-user', 'turn-hash-dispatch'),
+        dispatchedAt: after(2_400),
+      });
+      await transaction.knowledgeLlmProviderOutcome.create({
+        data: {
+          runId: 'run-turn-content-hash-mismatch',
+          status: 'valid',
+          normalizedContent: 'Synthetic captured provider result',
+          contentHash: mismatchedTurn.contentHash,
+          inputTokens: 1,
+          outputTokens: 0,
+          capturedAt: after(2_500),
+        },
+      });
+      await transaction.knowledgeLlmProviderOutcome.update({
+        where: { runId: 'run-turn-content-hash-mismatch' },
+        data: { normalizedContent: null, finalizedAt: after(2_600) },
+      });
+      await settleKnowledgeLlmBudget(transaction, {
+        runId: 'run-turn-content-hash-mismatch',
+        actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor('settlement-user', 'turn-hash-settle'),
+        completedAt: after(2_700),
+        settlement: {
+          type: 'actual',
+          actualInputTokens: 1,
+          actualOutputTokens: 0,
+          actualCostMicros: 1n,
+          conversationId: settlementConversation.conversation.id,
+          assistantTurnId: mismatchedTurn.id,
+        },
+      });
+    }),
+    /without_valid_outcome/,
+  );
 
   const heldReservation = await service.reserve(
     reservation({
@@ -1377,12 +1660,17 @@ try {
       personalReservation: true,
       organizationDualReservation: true,
       hardLimitRace: true,
+      policyVersionBudgetCarryForward: true,
+      policyVersionRateCarryForward: true,
       rateLimit: true,
       crossPeriodRateLimit: true,
       idempotency: true,
       exactSettlement: true,
       heldMaximum: true,
       usageUnknownOutcomeBinding: true,
+      contextFrozenAtDispatch: true,
+      providerOutcomeRequiresDispatch: true,
+      assistantTurnContentHashVerified: true,
       reconciliation: true,
       auditRollback: true,
       terminalAuditRollback: true,

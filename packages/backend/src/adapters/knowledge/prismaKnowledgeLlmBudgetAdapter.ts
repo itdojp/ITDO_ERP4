@@ -141,7 +141,7 @@ async function ensureAndLockPeriods(
     ) {
       throw new Error('knowledge_llm_period_mismatch');
     }
-    periods.push({ policy, period });
+    periods.push({ policy, period, window });
   }
   periods.sort((left, right) => left.period.id.localeCompare(right.period.id));
   await transaction.$queryRaw<Array<{ id: string }>>(Prisma.sql`
@@ -152,6 +152,77 @@ async function ensureAndLockPeriods(
     FOR UPDATE
   `);
   return periods;
+}
+
+type SubjectUsage = {
+  committedMicros: bigint;
+  recentRequestCount: bigint;
+  currencyMismatch: boolean;
+};
+
+async function loadAndLockSubjectUsage(
+  transaction: Transaction,
+  entry: Awaited<ReturnType<typeof ensureAndLockPeriods>>[number],
+  now: Date,
+): Promise<SubjectUsage> {
+  const { policy, window } = entry;
+  const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+  const lockStart =
+    hourAgo.getTime() < window.start.getTime() ? hourAgo : window.start;
+  await transaction.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT period.id
+    FROM "KnowledgeLlmBudgetPeriod" period
+    JOIN "KnowledgeLlmBudgetPolicy" policy
+      ON policy.id = period."policyId"
+    WHERE policy."subjectType" =
+        CAST(${policy.subjectType} AS "KnowledgeLlmBudgetSubjectType")
+      AND policy."subjectId" = ${policy.subjectId}
+      AND period."periodEndUtc" > ${lockStart}
+      AND period."periodStartUtc" < ${window.end}
+    ORDER BY period.id
+    FOR UPDATE OF period
+  `);
+  const usage = await transaction.$queryRaw<Array<SubjectUsage>>(Prisma.sql`
+    SELECT
+      COALESCE(SUM(
+        CASE
+          WHEN reservation."createdAt" >= ${window.start}
+            AND reservation."createdAt" < ${window.end}
+            AND reservation.status = 'reserved'
+            THEN reservation."maximumCostMicros"
+          WHEN reservation."createdAt" >= ${window.start}
+            AND reservation."createdAt" < ${window.end}
+            AND reservation.status = 'held_maximum'
+            THEN reservation."maximumCostMicros"
+          WHEN reservation."createdAt" >= ${window.start}
+            AND reservation."createdAt" < ${window.end}
+            AND reservation.status = 'settled_actual'
+            THEN reservation."actualCostMicros"
+          ELSE 0
+        END
+      ), 0)::bigint AS "committedMicros",
+      COUNT(*) FILTER (
+        WHERE reservation."createdAt" >= ${hourAgo}
+      )::bigint AS "recentRequestCount",
+      COALESCE(BOOL_OR(
+        reservation."createdAt" >= ${window.start}
+        AND reservation."createdAt" < ${window.end}
+        AND period.currency <> ${policy.currency}
+      ), false) AS "currencyMismatch"
+    FROM "KnowledgeLlmReservation" reservation
+    JOIN "KnowledgeLlmBudgetPeriod" period
+      ON period.id = reservation."budgetPeriodId"
+    JOIN "KnowledgeLlmBudgetPolicy" historical_policy
+      ON historical_policy.id = period."policyId"
+    WHERE historical_policy."subjectType" =
+        CAST(${policy.subjectType} AS "KnowledgeLlmBudgetSubjectType")
+      AND historical_policy."subjectId" = ${policy.subjectId}
+      AND reservation."createdAt" >= ${lockStart}
+      AND reservation."createdAt" < ${window.end}
+  `);
+  const result = usage[0];
+  if (!result) throw new Error('knowledge_llm_period_mismatch');
+  return result;
 }
 
 function auditMetadata(
@@ -244,15 +315,12 @@ async function reserveOnce(
     return failure(400, 'policy_mismatch');
   }
   const periods = await ensureAndLockPeriods(transaction, policies, input.now);
-  const hourAgo = new Date(input.now.getTime() - 60 * 60 * 1000);
-  for (const { policy } of periods) {
-    const recent = await transaction.knowledgeLlmReservation.count({
-      where: {
-        budgetPeriod: { policyId: policy.id },
-        createdAt: { gte: hourAgo },
-      },
-    });
-    if (recent >= policy.requestsPerHour) {
+  const usages = new Map<string, SubjectUsage>();
+  for (const entry of periods) {
+    const usage = await loadAndLockSubjectUsage(transaction, entry, input.now);
+    if (usage.currencyMismatch) return failure(400, 'policy_mismatch');
+    usages.set(entry.policy.id, usage);
+    if (usage.recentRequestCount >= BigInt(entry.policy.requestsPerHour)) {
       await audit.write({
         action: 'knowledge_llm_rate_blocked',
         actor: auditActor,
@@ -265,12 +333,10 @@ async function reserveOnce(
   }
 
   let softLimitWarning = false;
-  for (const { policy, period } of periods) {
-    const committed =
-      period.activeReservedMicros +
-      period.settledActualMicros +
-      period.heldMaximumMicros;
-    const afterReservation = committed + input.maximumCostMicros;
+  for (const { policy } of periods) {
+    const usage = usages.get(policy.id);
+    if (!usage) throw new Error('knowledge_llm_period_mismatch');
+    const afterReservation = usage.committedMicros + input.maximumCostMicros;
     if (afterReservation > policy.hardLimitMicros) {
       await audit.write({
         action: 'knowledge_llm_budget_blocked',

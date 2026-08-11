@@ -6,6 +6,7 @@ import type {
   KnowledgeLlmTerminalFailureCode,
 } from '../../application/knowledge/knowledgeLlmBudgetPorts.js';
 import { ceilCostMicros } from '../../application/knowledge/knowledgeLlmConfig.js';
+import { sha256KnowledgeText } from '../../application/knowledge/knowledgeProvenanceValidation.js';
 import { PrismaKnowledgeLlmAuditWriter } from './prismaKnowledgeLlmAuditAdapter.js';
 
 type Transaction = Prisma.TransactionClient;
@@ -169,6 +170,20 @@ export async function markKnowledgeLlmRunDispatched(
   if (policyCount < 1 || policyCount > 2) {
     throw new Error('knowledge_llm_dispatch_conflict');
   }
+  const contextSources = await transaction.$queryRaw<
+    Array<{ ordinal: number }>
+  >(
+    Prisma.sql`
+      SELECT ordinal
+      FROM "KnowledgeLlmContextSource"
+      WHERE "runId" = ${input.runId}
+      ORDER BY ordinal
+      FOR UPDATE
+    `,
+  );
+  if (contextSources.some((source, index) => source.ordinal !== index)) {
+    throw new Error('knowledge_llm_dispatch_conflict');
+  }
   await transaction.knowledgeLlmRun.update({
     where: { id: input.runId },
     data: {
@@ -264,6 +279,7 @@ export async function settleKnowledgeLlmBudget(
         outputTokens: number;
         contentHash: string;
         turnContentHash: string;
+        turnContent: string;
         role: string;
         origin: string;
       }>
@@ -273,6 +289,7 @@ export async function settleKnowledgeLlmBudget(
         outcome."outputTokens",
         outcome."contentHash",
         turn."contentHash" AS "turnContentHash",
+        turn.content AS "turnContent",
         turn.role,
         turn.origin
       FROM "KnowledgeLlmProviderOutcome" outcome
@@ -296,6 +313,8 @@ export async function settleKnowledgeLlmBudget(
       outcome.inputTokens !== input.settlement.actualInputTokens ||
       outcome.outputTokens !== input.settlement.actualOutputTokens ||
       outcome.contentHash !== outcome.turnContentHash ||
+      outcome.contentHash !==
+        sha256KnowledgeText('conversation-turn', outcome.turnContent) ||
       outcome.role !== 'assistant' ||
       outcome.origin !== 'ai' ||
       input.settlement.actualCostMicros !== expectedActualCost
@@ -379,13 +398,15 @@ export async function settleKnowledgeLlmBudget(
       Array<{
         contentHash: string;
         turnContentHash: string;
+        turnContent: string;
         role: string;
         origin: string;
         failureCode: string;
       }>
     >(Prisma.sql`
       SELECT outcome."contentHash", turn."contentHash" AS "turnContentHash",
-        turn.role, turn.origin, outcome."failureCode"
+        turn.content AS "turnContent", turn.role, turn.origin,
+        outcome."failureCode"
       FROM "KnowledgeLlmProviderOutcome" outcome
       JOIN "KnowledgeConversationTurn" turn
         ON turn.id = ${holdSettlement.assistantTurnId}
@@ -402,6 +423,8 @@ export async function settleKnowledgeLlmBudget(
       !outcome ||
       outcome.failureCode !== holdSettlement.failureCode ||
       outcome.contentHash !== outcome.turnContentHash ||
+      outcome.contentHash !==
+        sha256KnowledgeText('conversation-turn', outcome.turnContent) ||
       outcome.role !== 'assistant' ||
       outcome.origin !== 'ai'
     ) {
@@ -535,6 +558,7 @@ export async function reconcileKnowledgeLlmHeldBudget(
       outputTokens: number;
       contentHash: string;
       turnContentHash: string;
+      turnContent: string;
       role: string;
       origin: string;
     }>
@@ -544,6 +568,7 @@ export async function reconcileKnowledgeLlmHeldBudget(
       outcome."outputTokens",
       outcome."contentHash",
       turn."contentHash" AS "turnContentHash",
+      turn.content AS "turnContent",
       turn.role,
       turn.origin
     FROM "KnowledgeLlmProviderOutcome" outcome
@@ -567,6 +592,8 @@ export async function reconcileKnowledgeLlmHeldBudget(
     outcome.inputTokens !== input.actualInputTokens ||
     outcome.outputTokens !== input.actualOutputTokens ||
     outcome.contentHash !== outcome.turnContentHash ||
+    outcome.contentHash !==
+      sha256KnowledgeText('conversation-turn', outcome.turnContent) ||
     outcome.role !== 'assistant' ||
     outcome.origin !== 'ai' ||
     input.actualCostMicros !== expectedActualCost

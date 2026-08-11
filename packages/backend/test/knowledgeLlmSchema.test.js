@@ -47,11 +47,15 @@ test('LLM foundation is additive and separates execution from settlement', () =>
     /KnowledgeLlmRun settlement requires a valid provider outcome/,
   );
   assert.match(migration, /outcome\."contentHash" = turn\."contentHash"/);
+  assert.match(
+    migration,
+    /outcome\."contentHash" =\s*"erp4_knowledge_llm_content_hash"\(turn\.content\)/,
+  );
   assert.match(migration, /turn\.role = 'assistant'/);
   assert.match(migration, /turn\.origin = 'ai'/);
   assert.match(
     migration,
-    /KnowledgeLlmProviderOutcome must capture content before finalization/,
+    /KnowledgeLlmProviderOutcome requires provider dispatch and must capture content before finalization/,
   );
   assert.match(migration, /erp4_knowledge_llm_content_hash/);
   assert.match(migration, /sha256\([\s\S]*?conversation-turn:v1/);
@@ -105,6 +109,11 @@ test('request and selected context are immutable and exactly-one typed', () => {
   assert.match(migration, /KnowledgeLlmContextSource_type_check/);
   assert.match(migration, /KnowledgeLlmRequest_immutable/);
   assert.match(migration, /KnowledgeLlmContextSource_immutable/);
+  assert.match(migration, /KnowledgeLlmContextSource_before_dispatch_only/);
+  assert.match(
+    migration,
+    /KnowledgeLlmRun dispatch requires contiguous context sources/,
+  );
   assert.match(
     migration,
     /KnowledgeLlmRun_assistantTurnId_conversationId_fkey/,
@@ -119,6 +128,11 @@ test('provider outcome retains only normalized bounded state for reconciliation'
   assert.doesNotMatch(outcome, /rawResponse|providerRequestId|apiKey|headers/);
   assert.match(migration, /KnowledgeLlmProviderOutcome_shape_check/);
   assert.match(migration, /KnowledgeLlmProviderOutcome_finalize_only/);
+  assert.match(
+    migration,
+    /KnowledgeLlmProviderOutcome requires provider dispatch/,
+  );
+  assert.match(migration, /NEW\."capturedAt" < run_dispatched_at/);
   assert.match(
     migration,
     /OCTET_LENGTH\("normalizedContent"\) BETWEEN 1 AND 262144/,
