@@ -71,3 +71,41 @@ test('context representation hash and conservative framing estimate are fixed', 
     /invalid_knowledge_llm_context_bytes/,
   );
 });
+
+test('selected context derives fingerprint, representation hash and tokens from one ordered structure', async () => {
+  const {
+    deriveKnowledgeLlmSelectedContext,
+    knowledgeLlmContextFingerprint,
+    knowledgeLlmContextRepresentationHash,
+  } = await contextModule();
+  const selected = [
+    {
+      sourceType: 'conversation_turn',
+      sourceId: 'synthetic-turn',
+      exactSourceVersion: 1,
+      exactSourceHash: 'a'.repeat(64),
+      representation: 'Synthetic',
+    },
+  ];
+  const derived = deriveKnowledgeLlmSelectedContext(selected);
+  assert.deepEqual(derived.representations, ['Synthetic']);
+  assert.equal(derived.sources[0].ordinal, 0);
+  assert.equal(
+    derived.sources[0].representationHash,
+    knowledgeLlmContextRepresentationHash('Synthetic'),
+  );
+  assert.equal(
+    derived.fingerprint,
+    knowledgeLlmContextFingerprint(derived.sources),
+  );
+  assert.notEqual(
+    deriveKnowledgeLlmSelectedContext([
+      { ...selected[0], representation: 'Synthetic changed' },
+    ]).fingerprint,
+    derived.fingerprint,
+  );
+  assert.throws(
+    () => deriveKnowledgeLlmSelectedContext([selected[0], selected[0]]),
+    /invalid_knowledge_llm_context/,
+  );
+});

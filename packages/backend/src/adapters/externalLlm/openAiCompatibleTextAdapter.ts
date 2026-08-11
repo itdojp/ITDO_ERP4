@@ -1,12 +1,18 @@
 import type {
+  ExternalLlmPreparedTextRequest,
   ExternalLlmTextPort,
   ExternalLlmTextRequest,
   ExternalLlmTextResult,
   ExternalLlmUsageResult,
 } from '../../application/externalLlm/externalLlmPort.js';
-import { ExternalLlmProviderError } from '../../application/externalLlm/externalLlmPort.js';
 import {
-  safeFetch,
+  ExternalLlmProviderError,
+  externalLlmTextRequestFingerprint,
+  renderExternalLlmUserPrompt,
+} from '../../application/externalLlm/externalLlmPort.js';
+import {
+  prepareSafeFetch,
+  SafeHttpError,
   type SafeHttpOptions,
 } from '../../services/safeHttpClient.js';
 import { readBoundedResponseTextWithLimit } from '../../services/redaction.js';
@@ -173,9 +179,9 @@ async function readJsonBounded(response: Response, maximumBytes: number) {
 export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
   constructor(private readonly config: OpenAiCompatibleTextAdapterConfig) {}
 
-  async complete(
+  async prepare(
     request: ExternalLlmTextRequest,
-  ): Promise<ExternalLlmTextResult> {
+  ): Promise<ExternalLlmPreparedTextRequest> {
     if (request.provider !== 'openai') {
       throw new ExternalLlmProviderError(
         'rejected_before_dispatch',
@@ -192,9 +198,29 @@ export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
       );
     }
 
-    let response: Response;
+    let requestFingerprint: string;
+    let requestBody: string;
     try {
-      response = await safeFetch(
+      requestFingerprint = externalLlmTextRequestFingerprint(request);
+      requestBody = JSON.stringify({
+        model: request.model,
+        temperature: request.temperatureBasisPoints / 10_000,
+        messages: [
+          { role: 'system', content: request.systemPrompt },
+          { role: 'user', content: renderExternalLlmUserPrompt(request) },
+        ],
+        max_tokens: request.maxOutputTokens,
+      });
+    } catch {
+      throw new ExternalLlmProviderError(
+        'rejected_before_dispatch',
+        'not_dispatched',
+      );
+    }
+
+    let preparedHttpRequest: Awaited<ReturnType<typeof prepareSafeFetch>>;
+    try {
+      preparedHttpRequest = await prepareSafeFetch(
         `${this.config.baseUrl.replace(/\/$/, '')}/chat/completions`,
         {
           method: 'POST',
@@ -202,15 +228,7 @@ export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
             Authorization: `Bearer ${this.config.apiKey}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            model: request.model,
-            temperature: request.temperatureBasisPoints / 10_000,
-            messages: [
-              { role: 'system', content: request.systemPrompt },
-              { role: 'user', content: request.userPrompt },
-            ],
-            max_tokens: request.maxOutputTokens,
-          }),
+          body: requestBody,
         },
         {
           timeoutMs: this.config.timeoutMs,
@@ -238,80 +256,114 @@ export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
             | 'unsupported_body',
         );
       }
-      if (timeoutLike(error)) {
-        throw new ExternalLlmProviderError(
-          'timeout_outcome_unknown',
-          'unknown',
-        );
-      }
       throw new ExternalLlmProviderError(
-        'connection_outcome_unknown',
-        'unknown',
+        'rejected_before_dispatch',
+        'not_dispatched',
       );
     }
 
-    if (!response.ok) {
-      // Provider error bodies are untrusted and may reflect prompts or
-      // credentials. Discard them instead of attaching even a redacted suffix
-      // to an error that can reach application logs or mandatory audit.
-      try {
-        await response.body?.cancel();
-      } catch {
-        // The normalized status/certainty contract does not depend on whether
-        // an untrusted diagnostic body can be cancelled.
-      }
-      throw new ExternalLlmProviderError(
-        response.status >= 500 ? 'provider_5xx' : 'provider_4xx',
-        'known_response',
-        response.status,
-      );
-    }
+    let dispatched = false;
+    return {
+      requestFingerprint,
+      dispatch: async (): Promise<ExternalLlmTextResult> => {
+        if (dispatched) {
+          throw new ExternalLlmProviderError(
+            'connection_outcome_unknown',
+            'unknown',
+          );
+        }
+        dispatched = true;
+        let response: Response;
+        try {
+          response = await preparedHttpRequest.dispatch();
+        } catch (error) {
+          if (
+            error instanceof SafeHttpError &&
+            error.code === 'redirect_blocked'
+          ) {
+            throw new ExternalLlmProviderError(
+              'malformed_response',
+              'known_response',
+              error.status,
+            );
+          }
+          if (timeoutLike(error)) {
+            throw new ExternalLlmProviderError(
+              'timeout_outcome_unknown',
+              'unknown',
+            );
+          }
+          throw new ExternalLlmProviderError(
+            'connection_outcome_unknown',
+            'unknown',
+          );
+        }
 
-    let body: unknown;
-    let content: string;
-    try {
-      body = await readJsonBounded(response, maximumResponseBytes);
-      content = responseContent(body, response.status);
-    } catch (error) {
-      if (
-        this.config.malformedSuccessPolicy === 'empty' &&
-        error instanceof ExternalLlmProviderError &&
-        (error.code === 'malformed_response' || error.code === 'empty_result')
-      ) {
+        if (!response.ok) {
+          // Provider error bodies are untrusted and may reflect prompts or
+          // credentials. Discard them instead of attaching even a redacted suffix
+          // to an error that can reach application logs or mandatory audit.
+          try {
+            await response.body?.cancel();
+          } catch {
+            // The normalized status/certainty contract does not depend on whether
+            // an untrusted diagnostic body can be cancelled.
+          }
+          throw new ExternalLlmProviderError(
+            response.status >= 500 ? 'provider_5xx' : 'provider_4xx',
+            'known_response',
+            response.status,
+          );
+        }
+
+        let body: unknown;
+        let content: string;
+        try {
+          body = await readJsonBounded(response, maximumResponseBytes);
+          content = responseContent(body, response.status);
+        } catch (error) {
+          if (
+            this.config.malformedSuccessPolicy === 'empty' &&
+            error instanceof ExternalLlmProviderError &&
+            (error.code === 'malformed_response' ||
+              error.code === 'empty_result')
+          ) {
+            return {
+              provider: 'openai',
+              model: request.model,
+              content: '',
+              usageStatus:
+                this.config.usagePolicy === 'ignore' ? 'ignored' : 'missing',
+              usage: null,
+            };
+          }
+          if (error instanceof ExternalLlmProviderError) throw error;
+          if (timeoutLike(error)) {
+            throw new ExternalLlmProviderError(
+              'timeout_outcome_unknown',
+              'unknown',
+            );
+          }
+          throw new ExternalLlmProviderError(
+            'connection_outcome_unknown',
+            'unknown',
+          );
+        }
+        const usageResult =
+          this.config.usagePolicy === 'ignore'
+            ? ({ usageStatus: 'ignored', usage: null } as const)
+            : parseOptionalUsage(
+                body && typeof body === 'object' && !Array.isArray(body)
+                  ? (body as Record<string, unknown>).usage
+                  : undefined,
+              );
         return {
           provider: 'openai',
           model: request.model,
-          content: '',
-          usageStatus:
-            this.config.usagePolicy === 'ignore' ? 'ignored' : 'missing',
-          usage: null,
+          content,
+          ...usageResult,
         };
-      }
-      if (error instanceof ExternalLlmProviderError) throw error;
-      if (timeoutLike(error)) {
-        throw new ExternalLlmProviderError(
-          'timeout_outcome_unknown',
-          'unknown',
-        );
-      }
-      throw new ExternalLlmProviderError(
-        'connection_outcome_unknown',
-        'unknown',
-      );
-    }
-    const usageResult =
-      this.config.usagePolicy === 'ignore'
-        ? ({ usageStatus: 'ignored', usage: null } as const)
-        : parseOptionalUsage(
-            body && typeof body === 'object' && !Array.isArray(body)
-              ? (body as Record<string, unknown>).usage
-              : undefined,
-          );
-    return {
-      provider: 'openai',
-      model: request.model,
-      content,
-      ...usageResult,
+      },
     };
   }
 }

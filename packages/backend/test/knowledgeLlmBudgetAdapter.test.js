@@ -21,6 +21,7 @@ function reservation() {
     promptTemplateVersion: 1,
     requestKeyHash: hash('a'),
     requestPayloadHash: hash('b'),
+    providerRequestHash: hash('d'),
     selectedContextFingerprint: hash('c'),
     estimatedInputTokens: 10,
     maxOutputTokens: 10,

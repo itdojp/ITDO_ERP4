@@ -4,15 +4,14 @@ import type {
   KnowledgeAuditActorContext,
 } from './knowledgeItemPorts.js';
 import type { ExternalLlmProviderName } from '../externalLlm/externalLlmPort.js';
+import type { KnowledgeLlmSelectedContextSource } from './knowledgeLlmContext.js';
+
+export type {
+  KnowledgeLlmContextSourceType,
+  KnowledgeLlmSelectedContextSource,
+} from './knowledgeLlmContext.js';
 
 export type KnowledgeLlmRunScope = 'personal' | 'organization';
-
-export type KnowledgeLlmContextSourceType =
-  | 'snapshot'
-  | 'annotation_revision'
-  | 'conversation_turn'
-  | 'synthesis_version'
-  | 'thread_promotion_message';
 
 export type KnowledgeLlmReservationRequest = {
   runId: string;
@@ -26,6 +25,7 @@ export type KnowledgeLlmReservationRequest = {
   promptTemplateVersion: number;
   requestKeyHash: string;
   requestPayloadHash: string;
+  providerRequestHash: string;
   selectedContextFingerprint: string;
   estimatedInputTokens: number;
   maxOutputTokens: number;
@@ -40,20 +40,19 @@ export type KnowledgeLlmReservationCommand = Omit<
   KnowledgeLlmReservationRequest,
   | 'estimatedInputTokens'
   | 'requestPayloadHash'
+  | 'providerRequestHash'
   | 'inputCostMicrosPerMillion'
   | 'outputCostMicrosPerMillion'
   | 'maximumCostMicros'
   | 'currency'
   | 'now'
 > & {
-  /** Opaque canonical payload hash accepted only after preview-token verification. */
-  confirmedPreviewPayloadHash: string;
   /** Exact system prompt that will be dispatched; never persisted by the budget port. */
   systemPrompt: string;
   /** Raw user-authored prompt, kept separate so its 16 KiB limit cannot be consumed by context. */
   userPrompt: string;
-  /** Exact selected, sanitized context representations; never persisted by the budget port. */
-  selectedContextRepresentations: readonly string[];
+  /** One canonical typed source structure drives the provider payload and DB provenance. */
+  selectedContextSources: readonly KnowledgeLlmSelectedContextSource[];
   /** Optional safe over-reservation floor; it can never reduce the derived estimate. */
   reservationInputTokenFloor?: number;
 };

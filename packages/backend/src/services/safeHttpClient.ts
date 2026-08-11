@@ -1,7 +1,7 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { isIP } from 'node:net';
+import { BlockList, isIP } from 'node:net';
 import { Readable } from 'node:stream';
 
 export type DnsLookupResult = Array<{ address: string; family?: number }>;
@@ -22,10 +22,12 @@ export type SafeHttpOptions = {
 
 export class SafeHttpError extends Error {
   code: string;
+  status: number | null;
 
-  constructor(code: string, message?: string) {
+  constructor(code: string, message?: string, status: number | null = null) {
     super(message || code);
     this.code = code;
+    this.status = status;
   }
 }
 
@@ -64,19 +66,37 @@ function isPrivateIPv4(ip: string): boolean {
   return false;
 }
 
+const blockedIpv6 = new BlockList();
+for (const [network, prefix] of [
+  ['::', 128],
+  ['::1', 128],
+  ['::', 96],
+  // Reject every IPv4-mapped address. Node may otherwise translate a compact
+  // mapped literal such as ::ffff:7f00:1 into a loopback socket destination.
+  ['::ffff:0:0', 96],
+  ['64:ff9b::', 96],
+  ['64:ff9b:1::', 48],
+  ['100::', 64],
+  ['2001::', 32],
+  ['2001:2::', 48],
+  ['2001:10::', 28],
+  ['2001:20::', 28],
+  ['2001:db8::', 32],
+  ['2002::', 16],
+  ['fc00::', 7],
+  ['fe80::', 10],
+  ['fec0::', 10],
+  ['ff00::', 8],
+] as const) {
+  blockedIpv6.addSubnet(network, prefix, 'ipv6');
+}
+
 function isPrivateIPv6(ip: string): boolean {
-  const normalized = ip.toLowerCase();
-  if (normalized === '::' || normalized === '::1') return true;
-  if (normalized.startsWith('fe80:')) return true;
-  if (normalized.startsWith('fec0:')) return true;
-  if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
-  if (normalized.startsWith('ff')) return true;
-  if (normalized.startsWith('2001:db8')) return true;
-  if (normalized.startsWith('::ffff:')) {
-    const tail = normalized.slice('::ffff:'.length);
-    if (isIP(tail) === 4) return isPrivateIPv4(tail);
+  try {
+    return blockedIpv6.check(ip, 'ipv6');
+  } catch {
+    return true;
   }
-  return false;
 }
 
 function isPrivateAddress(address: string): boolean {
@@ -89,9 +109,13 @@ function isPrivateAddress(address: string): boolean {
 function normalizeResolvedAddresses(resolved: DnsLookupResult) {
   return resolved.map((entry) => {
     const version = isIP(entry.address);
+    const declaredFamily = entry.family ?? version;
     return {
       address: entry.address,
-      family: entry.family || (version === 6 ? 6 : version === 4 ? 4 : 0),
+      family:
+        (version === 4 || version === 6) && declaredFamily === version
+          ? version
+          : 0,
     };
   });
 }
@@ -177,7 +201,11 @@ async function validateExternalUrlForFetch(
   if (protocol !== 'https:' && !(allowHttp && protocol === 'http:')) {
     throw new SafeHttpError('insecure_scheme');
   }
-  const hostname = url.hostname.toLowerCase();
+  const rawHostname = url.hostname.toLowerCase();
+  const hostname =
+    rawHostname.startsWith('[') && rawHostname.endsWith(']')
+      ? rawHostname.slice(1, -1)
+      : rawHostname;
   if (!hostname) {
     throw new SafeHttpError('missing_hostname');
   }
@@ -203,28 +231,51 @@ export async function validateExternalUrl(
   return url;
 }
 
-function pinnedAddressForLookup(pinnedAddresses: DnsLookupResult) {
-  const preferred =
-    pinnedAddresses.find((entry) => entry.family === 4) || pinnedAddresses[0];
-  if (!preferred?.address || !preferred.family) {
-    return null;
-  }
-  return preferred;
-}
-
 export function createPinnedLookupForTest(pinnedAddresses: DnsLookupResult) {
-  const pinned = pinnedAddressForLookup(pinnedAddresses);
-  if (!pinned) return undefined;
+  const normalized = normalizeResolvedAddresses(pinnedAddresses).filter(
+    (entry) => entry.family === 4 || entry.family === 6,
+  );
+  if (normalized.length === 0) return undefined;
   return (
     _hostname: string,
-    _options: unknown,
+    options: number | { all?: boolean; family?: number | string },
     callback: (
-      err: NodeJS.ErrnoException | null,
-      address: string,
-      family: number,
+      error: NodeJS.ErrnoException | null,
+      address?: string | DnsLookupResult,
+      family?: number,
     ) => void,
   ) => {
-    callback(null, pinned.address, pinned.family || 4);
+    const requestedFamily =
+      typeof options === 'number'
+        ? options
+        : options?.family === 'IPv4'
+          ? 4
+          : options?.family === 'IPv6'
+            ? 6
+            : Number(options?.family || 0);
+    const matching = requestedFamily
+      ? normalized.filter((entry) => entry.family === requestedFamily)
+      : normalized;
+    if (matching.length === 0) {
+      const error = new Error(
+        'pinned address family unavailable',
+      ) as NodeJS.ErrnoException;
+      error.code = 'EAI_ADDRFAMILY';
+      callback(error);
+      return;
+    }
+    if (typeof options === 'object' && options?.all === true) {
+      callback(
+        null,
+        matching.map((entry) => ({
+          address: entry.address,
+          family: entry.family,
+        })),
+      );
+      return;
+    }
+    const pinned = matching.find((entry) => entry.family === 4) ?? matching[0];
+    callback(null, pinned.address, pinned.family);
   };
 }
 
@@ -287,13 +338,14 @@ async function pinnedRequestFetch(
   url: URL,
   init: RequestInit,
   options: {
+    body: Buffer | undefined;
     pinnedAddresses: DnsLookupResult;
     timeoutMs: number;
     headers: Headers;
     onResponseSettled: () => void;
   },
 ) {
-  const body = await requestBodyToBuffer(init.body);
+  const body = options.body;
   const requestImpl = url.protocol === 'http:' ? httpRequest : httpsRequest;
   const lookup = createPinnedLookupForTest(options.pinnedAddresses);
 
@@ -334,7 +386,7 @@ async function pinnedRequestFetch(
         const status = response.statusCode || 0;
         if (status >= 300 && status < 400) {
           response.destroy();
-          reject(new SafeHttpError('redirect_blocked'));
+          reject(new SafeHttpError('redirect_blocked', undefined, status));
           return;
         }
         try {
@@ -383,62 +435,92 @@ async function pinnedRequestFetch(
   });
 }
 
+export type PreparedSafeHttpRequest = {
+  /** A prepared request is single-use so callers cannot accidentally retry. */
+  dispatch(): Promise<Response>;
+};
+
+export async function prepareSafeFetch(
+  rawUrl: string,
+  init: RequestInit = {},
+  options: SafeHttpOptions = {},
+): Promise<PreparedSafeHttpRequest> {
+  const timeoutMs = Number.isFinite(options.timeoutMs)
+    ? Math.max(1, Math.floor(options.timeoutMs as number))
+    : 5000;
+  const startedAt = Date.now();
+  const [{ url: validatedUrl, pinnedAddresses }, body] =
+    await withPreDispatchTimeout(
+      Promise.all([
+        validateExternalUrlForFetch(rawUrl, options),
+        requestBodyToBuffer(init.body),
+      ]),
+      timeoutMs,
+    );
+  const deadlineAt = startedAt + timeoutMs;
+  const userAgent = (options.userAgent || '').trim() || 'ITDO_ERP4/0.1';
+  const headers = new Headers(init.headers || {});
+  if (!headers.has('User-Agent')) {
+    headers.set('User-Agent', userAgent);
+  }
+  let dispatched = false;
+  return {
+    async dispatch() {
+      if (dispatched) throw new SafeHttpError('request_already_dispatched');
+      dispatched = true;
+      const remaining = deadlineAt - Date.now();
+      if (remaining <= 0) throw new SafeHttpError('request_timeout');
+      const remainingTimeoutMs = Math.max(1, remaining);
+      const controller = new AbortController();
+      const callerSignal = init.signal;
+      const abortFromCaller = () => {
+        controller.abort();
+      };
+      if (callerSignal) {
+        if (callerSignal.aborted) {
+          abortFromCaller();
+        } else {
+          callerSignal.addEventListener('abort', abortFromCaller, {
+            once: true,
+          });
+        }
+      }
+      const timer = setTimeout(() => controller.abort(), remainingTimeoutMs);
+      timer.unref?.();
+      let cleanedUp = false;
+      const cleanup = () => {
+        if (cleanedUp) return;
+        cleanedUp = true;
+        clearTimeout(timer);
+        if (callerSignal) {
+          callerSignal.removeEventListener('abort', abortFromCaller);
+        }
+      };
+      try {
+        return await pinnedRequestFetch(
+          validatedUrl,
+          { ...init, body: undefined, signal: controller.signal },
+          {
+            body,
+            pinnedAddresses,
+            timeoutMs: remainingTimeoutMs,
+            headers,
+            onResponseSettled: cleanup,
+          },
+        );
+      } catch (error) {
+        cleanup();
+        throw error;
+      }
+    },
+  };
+}
+
 export async function safeFetch(
   rawUrl: string,
   init: RequestInit = {},
   options: SafeHttpOptions = {},
 ) {
-  const timeoutMs = Number.isFinite(options.timeoutMs)
-    ? Math.max(1, Math.floor(options.timeoutMs as number))
-    : 5000;
-  const startedAt = Date.now();
-  const { url: validatedUrl, pinnedAddresses } = await withPreDispatchTimeout(
-    validateExternalUrlForFetch(rawUrl, options),
-    timeoutMs,
-  );
-  const remainingTimeoutMs = Math.max(1, timeoutMs - (Date.now() - startedAt));
-  const userAgent = (options.userAgent || '').trim() || 'ITDO_ERP4/0.1';
-
-  const controller = new AbortController();
-  const callerSignal = init.signal;
-  const abortFromCaller = () => {
-    controller.abort();
-  };
-  if (callerSignal) {
-    if (callerSignal.aborted) {
-      abortFromCaller();
-    } else {
-      callerSignal.addEventListener('abort', abortFromCaller, { once: true });
-    }
-  }
-  const timer = setTimeout(() => controller.abort(), remainingTimeoutMs);
-  timer.unref?.();
-  let cleanedUp = false;
-  const cleanup = () => {
-    if (cleanedUp) return;
-    cleanedUp = true;
-    clearTimeout(timer);
-    if (callerSignal) {
-      callerSignal.removeEventListener('abort', abortFromCaller);
-    }
-  };
-  try {
-    const headers = new Headers(init.headers || {});
-    if (!headers.has('User-Agent')) {
-      headers.set('User-Agent', userAgent);
-    }
-    return await pinnedRequestFetch(
-      validatedUrl,
-      { ...init, signal: controller.signal },
-      {
-        pinnedAddresses,
-        timeoutMs: remainingTimeoutMs,
-        headers,
-        onResponseSettled: cleanup,
-      },
-    );
-  } catch (error) {
-    cleanup();
-    throw error;
-  }
+  const prepared = await prepareSafeFetch(rawUrl, init, options);
+  return prepared.dispatch();
 }

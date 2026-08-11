@@ -77,6 +77,28 @@ test('validateExternalUrl rejects private ip from DNS resolution', async () => {
   );
 });
 
+test('validateExternalUrl blocks compact mapped, link-local and site-local IPv6 literals', async () => {
+  const { validateExternalUrl } = await loadSafeHttpClient();
+  for (const literal of [
+    '::ffff:7f00:1',
+    '::7f00:1',
+    'fe90::1',
+    'febf::1',
+    'fed0::1',
+    '2002:7f00:1::',
+  ]) {
+    await assert.rejects(
+      validateExternalUrl(`https://[${literal}]/resource`),
+      (error) => error?.code === 'private_ip_blocked',
+      literal,
+    );
+  }
+  const publicIpv6 = await validateExternalUrl(
+    'https://[2001:4860:4860::8888]/resource',
+  );
+  assert.equal(publicIpv6.hostname, '[2001:4860:4860::8888]');
+});
+
 test('validateExternalUrl rejects host not in allowlist', async () => {
   const { validateExternalUrl } = await loadSafeHttpClient();
   await assert.rejects(
@@ -388,4 +410,57 @@ test('safeFetch exposes pinned lookup from validated DNS results', async () => {
     resolved = { address, family };
   });
   assert.deepEqual(resolved, { address: '93.184.216.34', family: 4 });
+
+  let allResolved = null;
+  lookup('example.com', { all: true }, (err, addresses) => {
+    assert.equal(err, null);
+    allResolved = addresses;
+  });
+  assert.deepEqual(allResolved, [
+    { address: '2001:4860:4860::8888', family: 6 },
+    { address: '93.184.216.34', family: 4 },
+  ]);
+
+  let ipv6Resolved = null;
+  lookup('example.com', { family: 6 }, (err, address, family) => {
+    assert.equal(err, null);
+    ipv6Resolved = { address, family };
+  });
+  assert.deepEqual(ipv6Resolved, {
+    address: '2001:4860:4860::8888',
+    family: 6,
+  });
+});
+
+test('prepared safe request performs DNS validation without socket I/O and dispatches once through the pinned hostname', async () => {
+  const { prepareSafeFetch } = await loadSafeHttpClient();
+  let requestCount = 0;
+  await withHttpServer(
+    (_request, response) => {
+      requestCount += 1;
+      response.end('ok');
+    },
+    async (baseUrl) => {
+      const { port } = new URL(baseUrl);
+      const prepared = await prepareSafeFetch(
+        `http://provider.example:${port}/prepared`,
+        { method: 'POST', body: 'synthetic' },
+        {
+          allowHttp: true,
+          allowPrivateIp: true,
+          allowedHosts: ['provider.example'],
+          dnsLookupImpl: async () => [{ address: '127.0.0.1', family: 4 }],
+        },
+      );
+      assert.equal(requestCount, 0);
+      const response = await prepared.dispatch();
+      assert.equal(await response.text(), 'ok');
+      assert.equal(requestCount, 1);
+      await assert.rejects(
+        prepared.dispatch(),
+        (error) => error?.code === 'request_already_dispatched',
+      );
+      assert.equal(requestCount, 1);
+    },
+  );
 });

@@ -73,6 +73,7 @@ CREATE TABLE "KnowledgeLlmRun" (
     "catalogVersion" INTEGER NOT NULL,
     "promptTemplateVersion" INTEGER NOT NULL,
     "requestPayloadHash" TEXT NOT NULL,
+    "providerRequestHash" TEXT NOT NULL,
     "selectedContextFingerprint" TEXT NOT NULL,
     "estimatedInputTokens" INTEGER NOT NULL,
     "maxOutputTokens" INTEGER NOT NULL,
@@ -406,6 +407,7 @@ ALTER TABLE "KnowledgeLlmRun"
     "catalogVersion" >= 1
     AND "promptTemplateVersion" >= 1
     AND "requestPayloadHash" ~ '^[0-9a-f]{64}$'
+    AND "providerRequestHash" ~ '^[0-9a-f]{64}$'
     AND "selectedContextFingerprint" ~ '^[0-9a-f]{64}$'
     AND "estimatedInputTokens" BETWEEN 1 AND 2147483647
     AND "maxOutputTokens" BETWEEN 1 AND 4096
@@ -817,7 +819,7 @@ BEGIN
     OR synthesis_count > 5
     OR promotion_count > 20
     OR context_bytes > 262144
-    OR context_tokens > run_estimated_tokens
+    OR context_tokens + 64 > run_estimated_tokens
   THEN
     RAISE EXCEPTION 'KnowledgeLlmRun dispatch context bounds exceeded'
       USING ERRCODE = '23514';
@@ -1131,6 +1133,7 @@ BEGIN
     OR OLD."catalogVersion" <> NEW."catalogVersion"
     OR OLD."promptTemplateVersion" <> NEW."promptTemplateVersion"
     OR OLD."requestPayloadHash" <> NEW."requestPayloadHash"
+    OR OLD."providerRequestHash" <> NEW."providerRequestHash"
     OR OLD."selectedContextFingerprint" <> NEW."selectedContextFingerprint"
     OR OLD."estimatedInputTokens" <> NEW."estimatedInputTokens"
     OR OLD."maxOutputTokens" <> NEW."maxOutputTokens"
@@ -1219,6 +1222,10 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'KnowledgeLlmReservation cannot be deleted'
+      USING ERRCODE = '23514';
+  END IF;
   IF OLD."runId" <> NEW."runId"
     OR OLD."budgetPeriodId" <> NEW."budgetPeriodId"
     OR OLD."maximumCostMicros" <> NEW."maximumCostMicros"
@@ -1270,7 +1277,7 @@ END;
 $$;
 
 CREATE TRIGGER "KnowledgeLlmReservation_transition_guard"
-  BEFORE UPDATE ON "KnowledgeLlmReservation"
+  BEFORE UPDATE OR DELETE ON "KnowledgeLlmReservation"
   FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_reservation_transition_guard"();
 
 CREATE FUNCTION "erp4_knowledge_llm_content_hash"(content TEXT)

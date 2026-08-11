@@ -402,6 +402,7 @@ async function reserveOnce(
       catalogVersion: input.catalogVersion,
       promptTemplateVersion: input.promptTemplateVersion,
       requestPayloadHash: input.requestPayloadHash,
+      providerRequestHash: input.providerRequestHash,
       selectedContextFingerprint: input.selectedContextFingerprint,
       estimatedInputTokens: input.estimatedInputTokens,
       maxOutputTokens: input.maxOutputTokens,

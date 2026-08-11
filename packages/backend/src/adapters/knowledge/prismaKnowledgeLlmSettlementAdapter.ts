@@ -65,6 +65,7 @@ type LockedRun = {
   scope: 'personal' | 'organization';
   provider: 'stub' | 'openai';
   model: string;
+  providerRequestHash: string;
   catalogVersion: number;
   estimatedInputTokens: number;
   maxOutputTokens: number;
@@ -148,12 +149,13 @@ export async function markKnowledgeLlmRunDispatched(
     runId: string;
     actorUserId: string;
     auditActor: KnowledgeAuditActor;
+    expectedProviderRequestHash: string;
   },
   clock: KnowledgeLlmClock = () => new Date(),
 ): Promise<void> {
   const dispatchedAt = trustedTimestamp(clock);
   const runs = await transaction.$queryRaw<Array<LockedRun>>(Prisma.sql`
-    SELECT id, "actorUserId", scope, provider, model, "catalogVersion",
+    SELECT id, "actorUserId", scope, provider, model, "providerRequestHash", "catalogVersion",
       "estimatedInputTokens", "maxOutputTokens", currency,
       "executionStatus", "settlementStatus", "inputCostMicrosPerMillion",
       "outputCostMicrosPerMillion", "maximumCostMicros"
@@ -165,6 +167,7 @@ export async function markKnowledgeLlmRunDispatched(
   if (
     !run ||
     run.actorUserId !== input.actorUserId ||
+    run.providerRequestHash !== input.expectedProviderRequestHash ||
     run.executionStatus !== 'reserved' ||
     run.settlementStatus !== 'reserved'
   ) {
@@ -226,7 +229,7 @@ export async function settleKnowledgeLlmBudget(
 ): Promise<void> {
   const completedAt = trustedTimestamp(clock);
   const lockedRuns = await transaction.$queryRaw<Array<LockedRun>>(Prisma.sql`
-    SELECT id, "actorUserId", scope, provider, model, "catalogVersion",
+    SELECT id, "actorUserId", scope, provider, model, "providerRequestHash", "catalogVersion",
       "estimatedInputTokens", "maxOutputTokens", currency,
       "executionStatus", "settlementStatus", "inputCostMicrosPerMillion",
       "outputCostMicrosPerMillion", "maximumCostMicros"
@@ -558,7 +561,7 @@ export async function reconcileKnowledgeLlmHeldBudget(
     throw new Error('knowledge_llm_reconcile_invalid');
   }
   const runs = await transaction.$queryRaw<Array<LockedRun>>(Prisma.sql`
-    SELECT id, "actorUserId", scope, provider, model, "catalogVersion",
+    SELECT id, "actorUserId", scope, provider, model, "providerRequestHash", "catalogVersion",
       "estimatedInputTokens", "maxOutputTokens", currency,
       "executionStatus", "settlementStatus", "inputCostMicrosPerMillion",
       "outputCostMicrosPerMillion", "maximumCostMicros"

@@ -41,6 +41,8 @@ test('LLM foundation is additive and separates execution from settlement', () =>
   assert.match(run, /softLimitWarning\s+Boolean\s+@default\(false\)/);
   assert.match(run, /inputCostMicrosPerMillion\s+BigInt/);
   assert.match(run, /outputCostMicrosPerMillion\s+BigInt/);
+  assert.match(run, /providerRequestHash\s+String/);
+  assert.match(migration, /"providerRequestHash" ~ '\^\[0-9a-f\]\{64\}\$'/);
   assert.match(migration, /KnowledgeLlmRun_state_shape_check/);
   assert.match(
     migration,
@@ -162,6 +164,11 @@ test('reservation accounting timestamp and terminal values are immutable', () =>
     /OLD\."actualCostMicros" IS DISTINCT FROM NEW\."actualCostMicros"/,
   );
   assert.match(migration, /OLD\."settledAt" IS DISTINCT FROM NEW\."settledAt"/);
+  assert.match(migration, /KnowledgeLlmReservation cannot be deleted/);
+  assert.match(
+    migration,
+    /BEFORE UPDATE OR DELETE ON "KnowledgeLlmReservation"/,
+  );
 });
 
 test('provider outcome retains only normalized bounded state for reconciliation', () => {

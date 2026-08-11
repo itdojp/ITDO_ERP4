@@ -160,7 +160,7 @@ export async function summarizeWithExternalLlm(options: {
   });
   let content: string;
   try {
-    const result = await adapter.complete({
+    const prepared = await adapter.prepare({
       provider: 'openai',
       model: config.model,
       systemPrompt: prompt.system,
@@ -168,6 +168,7 @@ export async function summarizeWithExternalLlm(options: {
       maxOutputTokens: 600,
       temperatureBasisPoints: 2_000,
     });
+    const result = await prepared.dispatch();
     content = result.content;
   } catch (error) {
     if (

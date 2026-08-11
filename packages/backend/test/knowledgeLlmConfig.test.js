@@ -26,6 +26,16 @@ function catalog(overrides = {}) {
   });
 }
 
+function selectedContext(representation, index = 0) {
+  return {
+    sourceType: 'conversation_turn',
+    sourceId: `synthetic-turn-${index}`,
+    exactSourceVersion: index + 1,
+    exactSourceHash: String((index % 9) + 1).repeat(64),
+    representation,
+  };
+}
+
 test('Knowledge external LLM is disabled independently of Chat settings', async () => {
   const { getKnowledgeLlmRuntimeConfig } = await configModule();
   assert.deepEqual(
@@ -195,11 +205,9 @@ test('organization reservation fails closed when canonical organization differs'
     catalogVersion: 3,
     promptTemplateVersion: 1,
     requestKeyHash: 'a'.repeat(64),
-    confirmedPreviewPayloadHash: 'b'.repeat(64),
-    selectedContextFingerprint: 'c'.repeat(64),
     systemPrompt: '',
     userPrompt: '',
-    selectedContextRepresentations: [],
+    selectedContextSources: [],
     reservationInputTokenFloor: 100,
     maxOutputTokens: 100,
     inputCostMicrosPerMillion: 100_000n,
@@ -246,11 +254,10 @@ test('reservation pricing is resolved from the enabled catalog, not caller field
     catalogVersion: 3,
     promptTemplateVersion: 1,
     requestKeyHash: 'd'.repeat(64),
-    confirmedPreviewPayloadHash: 'e'.repeat(64),
-    selectedContextFingerprint: 'f'.repeat(64),
+    selectedContextFingerprint: 'f'.repeat(64), // ignored untrusted extra field
     systemPrompt: '',
     userPrompt: '',
-    selectedContextRepresentations: [],
+    selectedContextSources: [],
     reservationInputTokenFloor: 3,
     maxOutputTokens: 7,
     // Runtime JavaScript may still carry untrusted extra fields. The use case
@@ -267,6 +274,8 @@ test('reservation pricing is resolved from the enabled catalog, not caller field
   assert.equal(received.maximumCostMicros, 98n);
   assert.equal(received.estimatedInputTokens, 64);
   assert.notEqual(received.requestPayloadHash, 'e'.repeat(64));
+  assert.notEqual(received.selectedContextFingerprint, 'f'.repeat(64));
+  assert.match(received.providerRequestHash, /^[a-f0-9]{64}$/);
   assert.equal('systemPrompt' in received, false);
   assert.equal('userPrompt' in received, false);
   assert.equal(received.currency, 'JPY');
@@ -287,11 +296,9 @@ test('reservation rejects stale, disabled, unknown and over-limit catalog select
     catalogVersion: 3,
     promptTemplateVersion: 1,
     requestKeyHash: '1'.repeat(64),
-    confirmedPreviewPayloadHash: '2'.repeat(64),
-    selectedContextFingerprint: '3'.repeat(64),
     systemPrompt: '',
     userPrompt: '',
-    selectedContextRepresentations: [],
+    selectedContextSources: [],
     reservationInputTokenFloor: 3,
     maxOutputTokens: 7,
     now: new Date('2026-08-11T00:00:00.000Z'),
@@ -374,11 +381,9 @@ test('reservation derives a conservative floor from exact rendered prompts', asy
     catalogVersion: 3,
     promptTemplateVersion: 1,
     requestKeyHash: '4'.repeat(64),
-    confirmedPreviewPayloadHash: '5'.repeat(64),
-    selectedContextFingerprint: '6'.repeat(64),
     systemPrompt: '12345',
     userPrompt: '67890',
-    selectedContextRepresentations: ['A', 'B'],
+    selectedContextSources: [selectedContext('A'), selectedContext('B', 1)],
     reservationInputTokenFloor: 1,
     maxOutputTokens: 7,
   });
@@ -412,11 +417,9 @@ test('reservation enforces raw user and selected-context byte limits independent
     catalogVersion: 3,
     promptTemplateVersion: 1,
     requestKeyHash: '7'.repeat(64),
-    confirmedPreviewPayloadHash: '8'.repeat(64),
-    selectedContextFingerprint: '9'.repeat(64),
     systemPrompt: '',
     userPrompt: '',
-    selectedContextRepresentations: [],
+    selectedContextSources: [],
     maxOutputTokens: 7,
   };
   const oversizedUser = await service.reserve({
@@ -426,12 +429,12 @@ test('reservation enforces raw user and selected-context byte limits independent
   assert.equal(oversizedUser.ok, false);
   const oversizedContext = await service.reserve({
     ...base,
-    selectedContextRepresentations: [
-      'c'.repeat(knowledgeLlmLimits.sourceBytes),
-      'd'.repeat(knowledgeLlmLimits.sourceBytes),
-      'e'.repeat(knowledgeLlmLimits.sourceBytes),
-      'f'.repeat(knowledgeLlmLimits.sourceBytes),
-      'g',
+    selectedContextSources: [
+      selectedContext('c'.repeat(knowledgeLlmLimits.sourceBytes), 0),
+      selectedContext('d'.repeat(knowledgeLlmLimits.sourceBytes), 1),
+      selectedContext('e'.repeat(knowledgeLlmLimits.sourceBytes), 2),
+      selectedContext('f'.repeat(knowledgeLlmLimits.sourceBytes), 3),
+      selectedContext('g', 4),
     ],
   });
   assert.equal(oversizedContext.ok, false);

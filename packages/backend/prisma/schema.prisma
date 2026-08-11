@@ -3112,6 +3112,7 @@ model KnowledgeLlmRun {
   catalogVersion             Int
   promptTemplateVersion      Int
   requestPayloadHash         String
+  providerRequestHash        String
   selectedContextFingerprint String
   estimatedInputTokens       Int
   maxOutputTokens            Int

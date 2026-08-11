@@ -13,7 +13,6 @@ import {
 import { createKnowledgeLlmBudgetUseCases } from '../dist/application/knowledge/knowledgeLlmBudgetUseCases.js';
 import {
   knowledgeLlmContextEstimatedTokens,
-  knowledgeLlmContextFingerprint,
   knowledgeLlmContextRepresentationHash,
 } from '../dist/application/knowledge/knowledgeLlmContext.js';
 
@@ -58,12 +57,22 @@ const service = createKnowledgeLlmBudgetUseCases(
 );
 const after = (milliseconds) => new Date(now.getTime() + milliseconds);
 const untrustedTimestampCanary = new Date('2000-01-01T00:00:00.000Z');
-const markKnowledgeLlmRunDispatched = (transaction, input) =>
-  markKnowledgeLlmRunDispatchedWithClock(
+const markKnowledgeLlmRunDispatched = async (transaction, input) => {
+  const run = await transaction.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: input.runId },
+    select: { providerRequestHash: true },
+  });
+  return markKnowledgeLlmRunDispatchedWithClock(
     transaction,
-    { ...input, dispatchedAt: untrustedTimestampCanary },
+    {
+      ...input,
+      expectedProviderRequestHash:
+        input.expectedProviderRequestHash ?? run.providerRequestHash,
+      dispatchedAt: untrustedTimestampCanary,
+    },
     () => new Date(input.dispatchedAt.getTime()),
   );
+};
 const settleKnowledgeLlmBudget = (transaction, input) =>
   settleKnowledgeLlmBudgetWithClock(
     transaction,
@@ -93,6 +102,7 @@ function contextFromTurn(turn, ordinal, overrides = {}) {
     sourceId: turn.id,
     exactSourceVersion: turn.sequence,
     exactSourceHash: turn.contentHash,
+    representation: turn.content,
     representationHash: knowledgeLlmContextRepresentationHash(turn.content),
     byteLength,
     estimatedTokens: knowledgeLlmContextEstimatedTokens(byteLength),
@@ -143,11 +153,10 @@ function reservation({
   runId,
   userId,
   keyHash,
-  payloadHash,
   maximumCostMicros,
   inputCostMicrosPerMillion,
   outputCostMicrosPerMillion = 0n,
-  selectedContextFingerprint = knowledgeLlmContextFingerprint([]),
+  selectedContextSources = [],
   estimatedInputTokens,
   organizationId = null,
   auditSuffix = runId,
@@ -179,11 +188,9 @@ function reservation({
     catalogVersion: 1,
     promptTemplateVersion: 1,
     requestKeyHash: keyHash,
-    confirmedPreviewPayloadHash: payloadHash,
-    selectedContextFingerprint,
     systemPrompt: '',
     userPrompt: '',
-    selectedContextRepresentations: [],
+    selectedContextSources,
     reservationInputTokenFloor: resolvedEstimatedInputTokens,
     maxOutputTokens: 100,
     // Runtime callers may carry an extra timestamp field. The use case must
@@ -230,7 +237,6 @@ async function exerciseResultUnknownReconciliation({
       runId,
       userId: 'settlement-user',
       keyHash: hash(keyCharacter),
-      payloadHash: hash(payloadCharacter),
       maximumCostMicros: 60n,
       inputCostMicrosPerMillion: 250_000n,
       outputCostMicrosPerMillion: 350_000n,
@@ -343,7 +349,6 @@ try {
     runId: 'run-rendered-prompt',
     userId: 'rendered-prompt-user',
     keyHash: hash('c'),
-    payloadHash: hash('d'),
     maximumCostMicros: 32n,
   });
   delete renderedPromptInput.reservationInputTokenFloor;
@@ -352,14 +357,22 @@ try {
   const renderedPromptRun = await prisma.knowledgeLlmRun.findUniqueOrThrow({
     where: { id: 'run-rendered-prompt' },
   });
-  const renderedPromptResult = await new StubExternalLlmTextAdapter().complete({
+  const renderedPromptRequest = {
     provider: 'stub',
     model: 'stub-default',
     systemPrompt: '',
     userPrompt: '',
     maxOutputTokens: 100,
     temperatureBasisPoints: 0,
-  });
+  };
+  const renderedPromptPrepared = await new StubExternalLlmTextAdapter().prepare(
+    renderedPromptRequest,
+  );
+  assert.equal(
+    renderedPromptPrepared.requestFingerprint,
+    renderedPromptRun.providerRequestHash,
+  );
+  const renderedPromptResult = await renderedPromptPrepared.dispatch();
   assert.equal(renderedPromptRun.estimatedInputTokens, 64);
   assert.equal(renderedPromptResult.usageStatus, 'reported');
   assert.equal(
@@ -377,7 +390,6 @@ try {
       runId: 'run-missing-policy',
       userId: 'missing-policy-user',
       keyHash: hash('4'),
-      payloadHash: hash('5'),
       maximumCostMicros: 40n,
     }),
   );
@@ -415,7 +427,6 @@ try {
       runId: 'run-currency-mismatch',
       userId: 'currency-mismatch-user',
       keyHash: hash('6'),
-      payloadHash: hash('7'),
       maximumCostMicros: 40n,
     }),
   );
@@ -442,7 +453,6 @@ try {
     runId: 'run-first',
     userId: 'budget-user',
     keyHash: hash('a'),
-    payloadHash: hash('b'),
     maximumCostMicros: 40n,
   });
   const first = await service.reserve(firstInput);
@@ -472,7 +482,7 @@ try {
   const conflict = await service.reserve({
     ...firstInput,
     runId: 'run-conflicting-replay',
-    confirmedPreviewPayloadHash: hash('d'),
+    userPrompt: 'Different canonical request',
   });
   assert.equal(conflict.ok, false);
   assert.equal(conflict.error.code, 'idempotency_conflict');
@@ -489,7 +499,6 @@ try {
     runId: 'run-second',
     userId: 'budget-user',
     keyHash: hash('e'),
-    payloadHash: hash('f'),
     maximumCostMicros: 40n,
   });
   const second = await service.reserve(secondInput);
@@ -505,7 +514,6 @@ try {
       runId: 'run-hard-blocked',
       userId: 'budget-user',
       keyHash: hash('1'),
-      payloadHash: hash('2'),
       maximumCostMicros: 30n,
     }),
   );
@@ -530,7 +538,6 @@ try {
           runId: 'run-policy-version-budget-v1',
           userId: 'policy-version-budget-user',
           keyHash: hash('a'),
-          payloadHash: hash('c'),
           maximumCostMicros: 60n,
         }),
       )
@@ -554,7 +561,6 @@ try {
       runId: 'run-policy-version-budget-blocked',
       userId: 'policy-version-budget-user',
       keyHash: hash('d'),
-      payloadHash: hash('e'),
       maximumCostMicros: 50n,
     }),
   );
@@ -565,7 +571,6 @@ try {
       runId: 'run-policy-version-budget-remaining',
       userId: 'policy-version-budget-user',
       keyHash: hash('f'),
-      payloadHash: hash('0'),
       maximumCostMicros: 40n,
     }),
   );
@@ -585,7 +590,6 @@ try {
           runId: 'run-policy-version-rate-v1',
           userId: 'policy-version-rate-user',
           keyHash: hash('1'),
-          payloadHash: hash('2'),
           maximumCostMicros: 1n,
         }),
       )
@@ -609,7 +613,6 @@ try {
       runId: 'run-policy-version-rate-blocked',
       userId: 'policy-version-rate-user',
       keyHash: hash('3'),
-      payloadHash: hash('4'),
       maximumCostMicros: 1n,
     }),
   );
@@ -637,7 +640,6 @@ try {
       userId: 'org-user',
       organizationId: 'synthetic-org',
       keyHash: hash('3'),
-      payloadHash: hash('4'),
       maximumCostMicros: 25n,
     }),
   );
@@ -661,7 +663,6 @@ try {
           runId: 'run-rate-first',
           userId: 'rate-user',
           keyHash: hash('5'),
-          payloadHash: hash('6'),
           maximumCostMicros: 1n,
         }),
       )
@@ -673,7 +674,6 @@ try {
       runId: 'run-rate-second',
       userId: 'rate-user',
       keyHash: hash('7'),
-      payloadHash: hash('8'),
       maximumCostMicros: 1n,
     }),
   );
@@ -714,6 +714,7 @@ try {
       catalogVersion: 1,
       promptTemplateVersion: 1,
       requestPayloadHash: hash('d'),
+      providerRequestHash: hash('c'),
       selectedContextFingerprint: hash('e'),
       estimatedInputTokens: 10,
       maxOutputTokens: 10,
@@ -753,7 +754,6 @@ try {
       runId: 'run-rate-boundary-current',
       userId: 'rate-boundary-user',
       keyHash: hash('0'),
-      payloadHash: hash('1'),
       maximumCostMicros: 1n,
     }),
   });
@@ -779,7 +779,6 @@ try {
         runId: 'run-race-a',
         userId: 'race-user',
         keyHash: hash('9'),
-        payloadHash: hash('a'),
         maximumCostMicros: 60n,
       }),
     ),
@@ -788,7 +787,6 @@ try {
         runId: 'run-race-b',
         userId: 'race-user',
         keyHash: hash('b'),
-        payloadHash: hash('c'),
         maximumCostMicros: 60n,
       }),
     ),
@@ -822,10 +820,6 @@ try {
       userId: 'invalid-settlement-state-user',
       keyHash: knowledgeTextHash(
         'llm-test-request-key',
-        'invalid-failed-unknown',
-      ),
-      payloadHash: knowledgeTextHash(
-        'llm-test-payload',
         'invalid-failed-unknown',
       ),
       maximumCostMicros: 10n,
@@ -873,7 +867,6 @@ try {
       runId: 'run-settlement-actual',
       userId: 'settlement-user',
       keyHash: hash('f'),
-      payloadHash: hash('0'),
       maximumCostMicros: 100n,
       inputCostMicrosPerMillion: 250_000n,
       outputCostMicrosPerMillion: 750_000n,
@@ -1168,6 +1161,7 @@ try {
       sourceId: settlementConversation.assistant.id,
       exactSourceVersion: settlementConversation.assistant.sequence,
       exactSourceHash: settlementConversation.assistant.contentHash,
+      representation: settlementConversation.assistant.content,
       representationHash: knowledgeLlmContextRepresentationHash(
         settlementConversation.assistant.content,
       ),
@@ -1185,6 +1179,7 @@ try {
       sourceId: settlementConversation.user.id,
       exactSourceVersion: settlementConversation.user.sequence,
       exactSourceHash: settlementConversation.user.contentHash,
+      representation: settlementConversation.user.content,
       representationHash: knowledgeLlmContextRepresentationHash(
         settlementConversation.user.content,
       ),
@@ -1201,18 +1196,16 @@ try {
     contextFreezeSources.reduce(
       (sum, source) => sum + source.estimatedTokens,
       0,
-    ) + 32;
+    ) + 64;
   const contextFreezeReservation = await service.reserve(
     reservation({
       runId: 'run-context-freeze',
       userId: 'settlement-user',
       keyHash: conversationTurnHash('context-freeze-request-key'),
-      payloadHash: conversationTurnHash('context-freeze-payload'),
       maximumCostMicros: 1n,
       inputCostMicrosPerMillion: 1n,
       estimatedInputTokens: contextFreezeEstimatedTokens,
-      selectedContextFingerprint:
-        knowledgeLlmContextFingerprint(contextFreezeSources),
+      selectedContextSources: contextFreezeSources,
     }),
   );
   assert.equal(contextFreezeReservation.ok, true);
@@ -1268,6 +1261,21 @@ try {
       createdBy: 'settlement-user',
     },
   });
+  await assert.rejects(
+    prisma.$transaction((transaction) =>
+      markKnowledgeLlmRunDispatched(transaction, {
+        runId: 'run-context-freeze',
+        actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor(
+          'settlement-user',
+          'provider-request-mismatch',
+        ),
+        expectedProviderRequestHash: hash('f'),
+        dispatchedAt: after(2_200),
+      }),
+    ),
+    /dispatch_conflict/,
+  );
   await prisma.$transaction((transaction) =>
     markKnowledgeLlmRunDispatched(transaction, {
       runId: 'run-context-freeze',
@@ -1384,20 +1392,22 @@ try {
     },
   });
 
-  async function reserveContextRun(runId, sources, fingerprint = null) {
+  async function reserveContextRun(
+    runId,
+    sources,
+    reservationSources = sources,
+  ) {
     const estimatedInputTokens =
-      sources.reduce((sum, source) => sum + source.estimatedTokens, 0) + 32;
+      sources.reduce((sum, source) => sum + source.estimatedTokens, 0) + 64;
     const reserved = await service.reserve(
       reservation({
         runId,
         userId: 'context-guard-user',
         keyHash: knowledgeTextHash('llm-test-request-key', runId),
-        payloadHash: knowledgeTextHash('llm-test-payload', runId),
         maximumCostMicros: 1n,
         inputCostMicrosPerMillion: 1n,
         estimatedInputTokens,
-        selectedContextFingerprint:
-          fingerprint ?? knowledgeLlmContextFingerprint(sources),
+        selectedContextSources: reservationSources,
       }),
     );
     assert.equal(
@@ -1448,7 +1458,7 @@ try {
   await reserveContextRun(
     'run-context-fingerprint-mismatch',
     [validGuardSource],
-    knowledgeLlmContextFingerprint([]),
+    [],
   );
   await expectContextDispatchRejected(
     'run-context-fingerprint-mismatch',
@@ -1475,6 +1485,7 @@ try {
   await reserveContextRun(
     'run-context-per-type-bound',
     perTypeTurns.map((turn, ordinal) => contextFromTurn(turn, ordinal)),
+    [],
   );
   await expectContextDispatchRejected(
     'run-context-per-type-bound',
@@ -1501,6 +1512,7 @@ try {
   await reserveContextRun(
     'run-context-aggregate-bound',
     aggregateTurns.map((turn, ordinal) => contextFromTurn(turn, ordinal)),
+    [],
   );
   await expectContextDispatchRejected(
     'run-context-aggregate-bound',
@@ -1596,6 +1608,7 @@ try {
     sourceId: nestedTargetSynthesis.versions[0].id,
     exactSourceVersion: nestedTargetSynthesis.versions[0].version,
     exactSourceHash: knowledgeTextHash('synthesis-version', nestedContent),
+    representation: nestedContent,
     representationHash: knowledgeLlmContextRepresentationHash(nestedContent),
     byteLength: nestedByteLength,
     estimatedTokens: knowledgeLlmContextEstimatedTokens(nestedByteLength),
@@ -1614,7 +1627,6 @@ try {
       runId: 'run-turn-content-hash-mismatch',
       userId: 'settlement-user',
       keyHash: conversationTurnHash('turn-hash-request-key'),
-      payloadHash: conversationTurnHash('turn-hash-payload'),
       maximumCostMicros: 100n,
       inputCostMicrosPerMillion: 500_000n,
       outputCostMicrosPerMillion: 0n,
@@ -1682,7 +1694,6 @@ try {
       runId: 'run-settlement-held',
       userId: 'settlement-user',
       keyHash: hash('4'),
-      payloadHash: hash('5'),
       maximumCostMicros: 50n,
     }),
   );
@@ -1719,7 +1730,6 @@ try {
       runId: 'run-settlement-usage-unknown',
       userId: 'settlement-user',
       keyHash: hash('c'),
-      payloadHash: hash('d'),
       maximumCostMicros: 40n,
     }),
   );
@@ -1847,7 +1857,6 @@ try {
       runId: 'run-settlement-reconcile',
       userId: 'settlement-user',
       keyHash: hash('8'),
-      payloadHash: hash('9'),
       maximumCostMicros: 60n,
       inputCostMicrosPerMillion: 250_000n,
       outputCostMicrosPerMillion: 350_000n,
@@ -1991,7 +2000,6 @@ try {
       runId: 'run-settlement-release',
       userId: 'settlement-user',
       keyHash: hash('6'),
-      payloadHash: hash('7'),
       maximumCostMicros: 25n,
     }),
   );
@@ -2022,7 +2030,6 @@ try {
       runId: 'run-invalid-provider-release',
       userId: 'settlement-user',
       keyHash: hash('0'),
-      payloadHash: hash('1'),
       maximumCostMicros: 1n,
     }),
   );
@@ -2048,7 +2055,6 @@ try {
       runId: 'run-invalid-predispatch-hold',
       userId: 'settlement-user',
       keyHash: hash('2'),
-      payloadHash: hash('3'),
       maximumCostMicros: 1n,
     }),
   );
@@ -2166,7 +2172,6 @@ try {
           runId: 'run-terminal-audit-rollback',
           userId: 'terminal-audit-rollback-user',
           keyHash: hash('1'),
-          payloadHash: hash('2'),
           maximumCostMicros: 10n,
         }),
       )
@@ -2237,7 +2242,6 @@ try {
         runId: 'run-audit-rollback',
         userId: 'audit-rollback-user',
         keyHash: hash('d'),
-        payloadHash: hash('e'),
         maximumCostMicros: 1n,
       }),
       auditActor: {},
@@ -2250,6 +2254,46 @@ try {
     }),
     0,
   );
+
+  for (const status of ['reserved', 'held_maximum', 'settled_actual']) {
+    const immutableReservation =
+      await prisma.knowledgeLlmReservation.findFirstOrThrow({
+        where: { status },
+        include: { budgetPeriod: true },
+      });
+    const accountingBefore = {
+      active: immutableReservation.budgetPeriod.activeReservedMicros,
+      settled: immutableReservation.budgetPeriod.settledActualMicros,
+      held: immutableReservation.budgetPeriod.heldMaximumMicros,
+      released: immutableReservation.budgetPeriod.releasedMicros,
+      count: immutableReservation.budgetPeriod.acceptedRequestCount,
+    };
+    await assert.rejects(
+      prisma.knowledgeLlmReservation.delete({
+        where: { id: immutableReservation.id },
+      }),
+      /KnowledgeLlmReservation cannot be deleted/,
+    );
+    assert.equal(
+      await prisma.knowledgeLlmReservation.count({
+        where: { id: immutableReservation.id },
+      }),
+      1,
+    );
+    const periodAfter = await prisma.knowledgeLlmBudgetPeriod.findUniqueOrThrow(
+      { where: { id: immutableReservation.budgetPeriodId } },
+    );
+    assert.deepEqual(
+      {
+        active: periodAfter.activeReservedMicros,
+        settled: periodAfter.settledActualMicros,
+        held: periodAfter.heldMaximumMicros,
+        released: periodAfter.releasedMicros,
+        count: periodAfter.acceptedRequestCount,
+      },
+      accountingBefore,
+    );
+  }
 
   const audits = await prisma.auditLog.findMany({
     where: { action: { startsWith: 'knowledge_llm_' } },
@@ -2322,6 +2366,7 @@ try {
       trustedClockBoundaryVerified: true,
       reservationAccountingTimestampVerified: true,
       settledReservationImmutable: true,
+      reservationDeletionBlocked: true,
       terminalDispatchTimestampImmutable: true,
       outcomeUnknownRequiresReconcileableState: true,
       reconciliation: true,

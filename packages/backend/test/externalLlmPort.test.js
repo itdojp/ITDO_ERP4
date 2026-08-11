@@ -11,12 +11,17 @@ const request = {
   temperatureBasisPoints: 0,
 };
 
+async function complete(adapter, input) {
+  const prepared = await adapter.prepare(input);
+  return prepared.dispatch();
+}
+
 test('explicit stub adapter is deterministic, local and does not echo prompts', async () => {
   const { StubExternalLlmTextAdapter } =
     await import('../dist/adapters/externalLlm/stubTextAdapter.js');
   const adapter = new StubExternalLlmTextAdapter();
-  const first = await adapter.complete(request);
-  const second = await adapter.complete(request);
+  const first = await complete(adapter, request);
+  const second = await complete(adapter, request);
   assert.deepEqual(second, first);
   assert.equal(first.provider, 'stub');
   assert.equal(first.model, 'stub-v1');
@@ -29,7 +34,7 @@ test('explicit stub adapter is deterministic, local and does not echo prompts', 
 test('stub adapter never exceeds a small requested output limit', async () => {
   const { StubExternalLlmTextAdapter } =
     await import('../dist/adapters/externalLlm/stubTextAdapter.js');
-  const result = await new StubExternalLlmTextAdapter().complete({
+  const result = await complete(new StubExternalLlmTextAdapter(), {
     ...request,
     maxOutputTokens: 1,
   });
@@ -42,7 +47,46 @@ test('stub adapter rejects another provider before dispatch', async () => {
     await import('../dist/adapters/externalLlm/stubTextAdapter.js');
   const adapter = new StubExternalLlmTextAdapter();
   await assert.rejects(
-    adapter.complete({ ...request, provider: 'openai' }),
+    complete(adapter, { ...request, provider: 'openai' }),
+    (error) => {
+      assert.equal(error.code, 'rejected_before_dispatch');
+      assert.equal(error.outcome, 'not_dispatched');
+      return true;
+    },
+  );
+});
+
+test('prepared stub request binds ordered context and is single-use', async () => {
+  const { StubExternalLlmTextAdapter } =
+    await import('../dist/adapters/externalLlm/stubTextAdapter.js');
+  const adapter = new StubExternalLlmTextAdapter();
+  const prepared = await adapter.prepare({
+    ...request,
+    contextSections: ['Selected A', 'Selected B'],
+  });
+  const reordered = await adapter.prepare({
+    ...request,
+    contextSections: ['Selected B', 'Selected A'],
+  });
+  assert.match(prepared.requestFingerprint, /^[a-f0-9]{64}$/);
+  assert.notEqual(prepared.requestFingerprint, reordered.requestFingerprint);
+  const result = await prepared.dispatch();
+  assert.equal(result.usageStatus, 'reported');
+  await assert.rejects(prepared.dispatch(), (error) => {
+    assert.equal(error.code, 'connection_outcome_unknown');
+    assert.equal(error.outcome, 'unknown');
+    return true;
+  });
+});
+
+test('adapter rejects malformed request fields during prepare', async () => {
+  const { StubExternalLlmTextAdapter } =
+    await import('../dist/adapters/externalLlm/stubTextAdapter.js');
+  await assert.rejects(
+    new StubExternalLlmTextAdapter().prepare({
+      ...request,
+      contextSections: [null],
+    }),
     (error) => {
       assert.equal(error.code, 'rejected_before_dispatch');
       assert.equal(error.outcome, 'not_dispatched');
@@ -87,6 +131,69 @@ function openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl, overrides = {}) {
   });
 }
 
+test('OpenAI-compatible prepare performs no provider I/O and dispatches exactly once', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  let requestCount = 0;
+  await withHttpServer(
+    (_request, response) => {
+      requestCount += 1;
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
+        JSON.stringify({
+          choices: [{ message: { content: 'Synthetic result' } }],
+          usage: { prompt_tokens: 10, completion_tokens: 2 },
+        }),
+      );
+    },
+    async (baseUrl) => {
+      const prepared = await openAiAdapter(
+        OpenAiCompatibleTextAdapter,
+        baseUrl,
+      ).prepare(openAiRequest());
+      assert.match(prepared.requestFingerprint, /^[a-f0-9]{64}$/);
+      assert.equal(requestCount, 0);
+      const result = await prepared.dispatch();
+      assert.equal(result.content, 'Synthetic result');
+      assert.equal(requestCount, 1);
+      await assert.rejects(prepared.dispatch(), (error) => {
+        assert.equal(error.code, 'connection_outcome_unknown');
+        assert.equal(error.outcome, 'unknown');
+        return true;
+      });
+      assert.equal(requestCount, 1);
+    },
+  );
+});
+
+test('OpenAI-compatible adapter classifies a blocked redirect as a known response', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  let requestCount = 0;
+  await withHttpServer(
+    (_request, response) => {
+      requestCount += 1;
+      response.writeHead(302, { location: '/must-not-follow' });
+      response.end();
+    },
+    async (baseUrl) => {
+      await assert.rejects(
+        complete(
+          openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl),
+          openAiRequest(),
+        ),
+        (error) => {
+          assert.equal(error.code, 'malformed_response');
+          assert.equal(error.outcome, 'known_response');
+          assert.equal(error.providerStatus, 302);
+          return true;
+        },
+      );
+      assert.equal(requestCount, 1);
+    },
+  );
+});
+
 test('OpenAI-compatible adapter rejects an empty successful result', async () => {
   const { OpenAiCompatibleTextAdapter } =
     await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
@@ -97,7 +204,8 @@ test('OpenAI-compatible adapter rejects an empty successful result', async () =>
     },
     async (baseUrl) => {
       await assert.rejects(
-        openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl).complete(
+        complete(
+          openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl),
           openAiRequest(),
         ),
         (error) => {
@@ -121,9 +229,12 @@ test('OpenAI-compatible adapter normalizes a stalled response body timeout', asy
     },
     async (baseUrl) => {
       await assert.rejects(
-        openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl, {
-          timeoutMs: 30,
-        }).complete(openAiRequest()),
+        complete(
+          openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl, {
+            timeoutMs: 30,
+          }),
+          openAiRequest(),
+        ),
         (error) => {
           assert.equal(error.code, 'timeout_outcome_unknown');
           assert.equal(error.outcome, 'unknown');
@@ -148,7 +259,7 @@ test('OpenAI-compatible adapter classifies DNS lookup failure before dispatch', 
       throw new Error('synthetic lookup failure');
     },
   });
-  await assert.rejects(adapter.complete(openAiRequest()), (error) => {
+  await assert.rejects(complete(adapter, openAiRequest()), (error) => {
     assert.equal(error.code, 'rejected_before_dispatch');
     assert.equal(error.outcome, 'not_dispatched');
     return true;
@@ -166,12 +277,44 @@ test('OpenAI-compatible adapter normalizes private-address guard failure before 
     allowHttp: false,
     allowPrivateIp: false,
   });
-  await assert.rejects(adapter.complete(openAiRequest()), (error) => {
+  await assert.rejects(complete(adapter, openAiRequest()), (error) => {
     assert.equal(error.code, 'rejected_before_dispatch');
     assert.equal(error.outcome, 'not_dispatched');
     assert.equal(error.preDispatchDiagnostic, 'private_ip_blocked');
     return true;
   });
+});
+
+test('OpenAI-compatible prepare sends neither authorization nor prompt to a private DNS result', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  let requestCount = 0;
+  await withHttpServer(
+    (_request, response) => {
+      requestCount += 1;
+      response.end();
+    },
+    async (baseUrl) => {
+      const { port } = new URL(baseUrl);
+      const adapter = new OpenAiCompatibleTextAdapter({
+        apiKey: 'PRIVATE-AUTHORIZATION-CANARY',
+        baseUrl: `http://provider.example:${port}/v1`,
+        timeoutMs: 1_000,
+        allowedHosts: ['provider.example'],
+        allowHttp: true,
+        allowPrivateIp: false,
+        dnsLookupImpl: async () => [{ address: '127.0.0.1', family: 4 }],
+      });
+      await assert.rejects(adapter.prepare(openAiRequest()), (error) => {
+        assert.equal(error.code, 'rejected_before_dispatch');
+        assert.equal(error.outcome, 'not_dispatched');
+        assert.equal(error.preDispatchDiagnostic, 'private_ip_blocked');
+        assert.equal(error.message.includes('PRIVATE'), false);
+        return true;
+      });
+      assert.equal(requestCount, 0);
+    },
+  );
 });
 
 test('OpenAI-compatible adapter classifies DNS failure before dispatch when private IPs are allowed', async () => {
@@ -188,7 +331,7 @@ test('OpenAI-compatible adapter classifies DNS failure before dispatch when priv
       throw new Error('synthetic lookup failure');
     },
   });
-  await assert.rejects(adapter.complete(openAiRequest()), (error) => {
+  await assert.rejects(complete(adapter, openAiRequest()), (error) => {
     assert.equal(error.code, 'rejected_before_dispatch');
     assert.equal(error.outcome, 'not_dispatched');
     assert.equal(error.preDispatchDiagnostic, 'dns_lookup_failed');
@@ -208,7 +351,7 @@ test('OpenAI-compatible adapter classifies DNS timeout before dispatch', async (
     allowPrivateIp: false,
     dnsLookupImpl: () => new Promise(() => {}),
   });
-  await assert.rejects(adapter.complete(openAiRequest()), (error) => {
+  await assert.rejects(complete(adapter, openAiRequest()), (error) => {
     assert.equal(error.code, 'rejected_before_dispatch');
     assert.equal(error.outcome, 'not_dispatched');
     assert.equal(error.preDispatchDiagnostic, 'pre_dispatch_timeout');
@@ -233,7 +376,7 @@ test('OpenAI-compatible adapter rejects an invalid response limit before dispatc
       return [{ address: '203.0.113.10', family: 4 }];
     },
   });
-  await assert.rejects(adapter.complete(openAiRequest()), (error) => {
+  await assert.rejects(complete(adapter, openAiRequest()), (error) => {
     assert.equal(error.code, 'rejected_before_dispatch');
     assert.equal(error.outcome, 'not_dispatched');
     return true;
@@ -251,7 +394,8 @@ test('OpenAI-compatible adapter rejects malformed successful JSON by default', a
     },
     async (baseUrl) => {
       await assert.rejects(
-        openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl).complete(
+        complete(
+          openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl),
           openAiRequest(),
         ),
         (error) => {
@@ -279,10 +423,10 @@ test('OpenAI-compatible adapter preserves content and marks malformed usage inva
       );
     },
     async (baseUrl) => {
-      const result = await openAiAdapter(
-        OpenAiCompatibleTextAdapter,
-        baseUrl,
-      ).complete(openAiRequest());
+      const result = await complete(
+        openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl),
+        openAiRequest(),
+      );
       assert.deepEqual(
         {
           content: result.content,
@@ -312,10 +456,10 @@ test('OpenAI-compatible adapter preserves content and marks missing usage', asyn
       );
     },
     async (baseUrl) => {
-      const result = await openAiAdapter(
-        OpenAiCompatibleTextAdapter,
-        baseUrl,
-      ).complete(openAiRequest());
+      const result = await complete(
+        openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl),
+        openAiRequest(),
+      );
       assert.equal(result.content, 'Synthetic result');
       assert.equal(result.usageStatus, 'missing');
       assert.equal(result.usage, null);
@@ -337,10 +481,10 @@ test('OpenAI-compatible adapter returns strictly parsed reported usage', async (
       );
     },
     async (baseUrl) => {
-      const result = await openAiAdapter(
-        OpenAiCompatibleTextAdapter,
-        baseUrl,
-      ).complete(openAiRequest());
+      const result = await complete(
+        openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl),
+        openAiRequest(),
+      );
       assert.equal(result.usageStatus, 'reported');
       assert.deepEqual(result.usage, { inputTokens: 10, outputTokens: 2 });
     },
@@ -369,7 +513,7 @@ test('OpenAI-compatible adapter rejects a response beyond the byte limit even wh
         allowPrivateIp: true,
         maximumResponseBytes: Buffer.byteLength(valid, 'utf8'),
       });
-      await assert.rejects(adapter.complete(openAiRequest()), (error) => {
+      await assert.rejects(complete(adapter, openAiRequest()), (error) => {
         assert.equal(error.code, 'response_oversize');
         assert.equal(error.outcome, 'known_response');
         return true;
@@ -407,7 +551,7 @@ test('OpenAI-compatible adapter measures an oversized BOM response before UTF-8 
         allowPrivateIp: true,
         maximumResponseBytes: raw.length - 1,
       });
-      await assert.rejects(adapter.complete(openAiRequest()), (error) => {
+      await assert.rejects(complete(adapter, openAiRequest()), (error) => {
         assert.equal(error.code, 'response_oversize');
         assert.equal(error.outcome, 'known_response');
         return true;
@@ -428,7 +572,8 @@ test('OpenAI-compatible adapter never exposes provider error bodies', async () =
     },
     async (baseUrl) => {
       await assert.rejects(
-        openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl).complete(
+        complete(
+          openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl),
           openAiRequest(),
         ),
         (error) => {

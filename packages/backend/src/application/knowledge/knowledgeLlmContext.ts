@@ -1,8 +1,23 @@
 import { createHash } from 'node:crypto';
 
-import type { KnowledgeLlmContextSourceType } from './knowledgeLlmBudgetPorts.js';
 import { knowledgeLlmLimits } from './knowledgeLlmConfig.js';
 import { sha256KnowledgeText } from './knowledgeProvenanceValidation.js';
+
+export type KnowledgeLlmContextSourceType =
+  | 'snapshot'
+  | 'annotation_revision'
+  | 'conversation_turn'
+  | 'synthesis_version'
+  | 'thread_promotion_message';
+
+export type KnowledgeLlmSelectedContextSource = {
+  sourceType: KnowledgeLlmContextSourceType;
+  sourceId: string;
+  exactSourceVersion: number;
+  exactSourceHash: string;
+  /** Exact sanitized text that will be dispatched. Never persisted by budget code. */
+  representation: string;
+};
 
 export type KnowledgeLlmContextFingerprintSource = {
   ordinal: number;
@@ -68,4 +83,120 @@ export function knowledgeLlmContextEstimatedTokens(byteLength: number): number {
     throw new Error('invalid_knowledge_llm_context_bytes');
   }
   return byteLength * 2 + knowledgeLlmLimits.sourceFramingTokens;
+}
+
+const sha256Pattern = /^[0-9a-f]{64}$/;
+const allowedSourceTypes = new Set<KnowledgeLlmContextSourceType>([
+  'snapshot',
+  'annotation_revision',
+  'conversation_turn',
+  'synthesis_version',
+  'thread_promotion_message',
+]);
+
+const sourceTypeLimits: Record<KnowledgeLlmContextSourceType, number> = {
+  snapshot: knowledgeLlmLimits.snapshots,
+  annotation_revision: knowledgeLlmLimits.annotationRevisions,
+  conversation_turn: knowledgeLlmLimits.conversationTurns,
+  synthesis_version: knowledgeLlmLimits.synthesisVersions,
+  thread_promotion_message: knowledgeLlmLimits.threadPromotionMessages,
+};
+
+function boundedSourceId(value: string): boolean {
+  return (
+    typeof value === 'string' &&
+    value === value.trim() &&
+    value.length > 0 &&
+    [...value].length <= 255 &&
+    ![...value].some((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f);
+    })
+  );
+}
+
+/**
+ * Derives every reservation/provenance binding from one typed, ordered source
+ * structure. Callers cannot provide an independent fingerprint or token count.
+ */
+export function deriveKnowledgeLlmSelectedContext(
+  selected: readonly KnowledgeLlmSelectedContextSource[],
+): {
+  sources: KnowledgeLlmContextFingerprintSource[];
+  representations: string[];
+  fingerprint: string;
+  totalBytes: number;
+  totalEstimatedTokens: number;
+} {
+  if (
+    !Array.isArray(selected) ||
+    selected.length > knowledgeLlmLimits.totalSources
+  ) {
+    throw new Error('invalid_knowledge_llm_context');
+  }
+  const counts = new Map<KnowledgeLlmContextSourceType, number>();
+  const identities = new Set<string>();
+  let totalBytes = 0;
+  let totalEstimatedTokens = 0;
+  const representations: string[] = [];
+  const sources = selected.map((source, ordinal) => {
+    const sourceType = source?.sourceType as
+      KnowledgeLlmContextSourceType | undefined;
+    if (
+      source === null ||
+      typeof source !== 'object' ||
+      sourceType === undefined ||
+      !allowedSourceTypes.has(sourceType) ||
+      !boundedSourceId(source.sourceId) ||
+      !Number.isSafeInteger(source.exactSourceVersion) ||
+      source.exactSourceVersion < 1 ||
+      !sha256Pattern.test(source.exactSourceHash) ||
+      typeof source.representation !== 'string'
+    ) {
+      throw new Error('invalid_knowledge_llm_context');
+    }
+    const identity = `${sourceType}\0${source.sourceId}`;
+    if (identities.has(identity)) {
+      throw new Error('invalid_knowledge_llm_context');
+    }
+    identities.add(identity);
+    const count = (counts.get(sourceType) ?? 0) + 1;
+    counts.set(sourceType, count);
+    if (count > sourceTypeLimits[sourceType]) {
+      throw new Error('invalid_knowledge_llm_context');
+    }
+    const byteLength = Buffer.byteLength(source.representation, 'utf8');
+    if (byteLength < 1 || byteLength > knowledgeLlmLimits.sourceBytes) {
+      throw new Error('invalid_knowledge_llm_context');
+    }
+    totalBytes += byteLength;
+    if (totalBytes > knowledgeLlmLimits.totalContextBytes) {
+      throw new Error('invalid_knowledge_llm_context');
+    }
+    const estimatedTokens = knowledgeLlmContextEstimatedTokens(byteLength);
+    totalEstimatedTokens += estimatedTokens;
+    if (!Number.isSafeInteger(totalEstimatedTokens)) {
+      throw new Error('invalid_knowledge_llm_context');
+    }
+    representations.push(source.representation);
+    return {
+      ordinal,
+      sourceType,
+      sourceId: source.sourceId,
+      exactSourceVersion: source.exactSourceVersion,
+      exactSourceHash: source.exactSourceHash,
+      representationHash: knowledgeLlmContextRepresentationHash(
+        source.representation,
+      ),
+      byteLength,
+      estimatedTokens,
+    };
+  });
+  return {
+    sources,
+    representations,
+    fingerprint: knowledgeLlmContextFingerprint(sources),
+    totalBytes,
+    totalEstimatedTokens,
+  };
 }

@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
 
+import {
+  externalLlmConservativeInputTokens,
+  externalLlmTextRequestFingerprint,
+  type ExternalLlmTextRequest,
+} from '../externalLlm/externalLlmPort.js';
+
 import type {
   KnowledgeLlmBudgetPort,
   KnowledgeLlmBudgetResult,
@@ -10,11 +16,11 @@ import type {
 } from './knowledgeLlmBudgetPorts.js';
 import {
   ceilCostMicros,
-  estimateKnowledgeLlmInputTokens,
   knowledgeLlmLimits,
   maximumReservationMicros,
   type KnowledgeLlmModelCatalog,
 } from './knowledgeLlmConfig.js';
+import { deriveKnowledgeLlmSelectedContext } from './knowledgeLlmContext.js';
 
 const sha256Pattern = /^[0-9a-f]{64}$/;
 const maximumDatabaseBigInt = 9_223_372_036_854_775_807n;
@@ -27,7 +33,11 @@ function updateHashField(hash: ReturnType<typeof createHash>, value: string) {
   hash.update(bytes);
 }
 
-function reservationPayloadHash(input: KnowledgeLlmReservationCommand) {
+function reservationPayloadHash(
+  input: KnowledgeLlmReservationCommand,
+  selectedContextFingerprint: string,
+  providerRequestHash: string,
+) {
   const hash = createHash('sha256');
   hash.update('erp4:knowledge:llm-reservation-payload:v1\0', 'utf8');
   for (const value of [
@@ -37,19 +47,29 @@ function reservationPayloadHash(input: KnowledgeLlmReservationCommand) {
     input.model,
     String(input.catalogVersion),
     String(input.promptTemplateVersion),
-    input.confirmedPreviewPayloadHash,
-    input.selectedContextFingerprint,
-    input.systemPrompt,
-    input.userPrompt,
+    selectedContextFingerprint,
+    providerRequestHash,
     String(input.maxOutputTokens),
   ]) {
     updateHashField(hash, value);
   }
-  updateHashField(hash, String(input.selectedContextRepresentations.length));
-  for (const representation of input.selectedContextRepresentations) {
-    updateHashField(hash, representation);
-  }
   return hash.digest('hex');
+}
+
+export const knowledgeLlmTemperatureBasisPoints = 0;
+
+export function buildKnowledgeLlmExternalRequest(input: {
+  provider: ExternalLlmTextRequest['provider'];
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+  contextSections: readonly string[];
+  maxOutputTokens: number;
+}): ExternalLlmTextRequest {
+  return {
+    ...input,
+    temperatureBasisPoints: knowledgeLlmTemperatureBasisPoints,
+  };
 }
 
 function boundedIdentifier(value: string, maximum: number): boolean {
@@ -107,6 +127,7 @@ function validInput(input: KnowledgeLlmReservationRequest): boolean {
     !/^[A-Z]{3}$/.test(input.currency) ||
     !sha256Pattern.test(input.requestKeyHash) ||
     !sha256Pattern.test(input.requestPayloadHash) ||
+    !sha256Pattern.test(input.providerRequestHash) ||
     !sha256Pattern.test(input.selectedContextFingerprint) ||
     !Number.isSafeInteger(input.catalogVersion) ||
     input.catalogVersion < 1 ||
@@ -148,8 +169,6 @@ export function createKnowledgeLlmBudgetUseCases(
     async reserve(
       input: KnowledgeLlmReservationCommand,
     ): Promise<KnowledgeLlmBudgetResult<KnowledgeLlmReservationRecord>> {
-      const selectedContextRepresentations =
-        input.selectedContextRepresentations;
       if (
         typeof input.systemPrompt !== 'string' ||
         typeof input.userPrompt !== 'string' ||
@@ -157,38 +176,34 @@ export function createKnowledgeLlmBudgetUseCases(
           knowledgeLlmLimits.systemPromptBytes ||
         Buffer.byteLength(input.userPrompt, 'utf8') >
           knowledgeLlmLimits.userPromptBytes ||
-        !sha256Pattern.test(input.confirmedPreviewPayloadHash) ||
-        !Array.isArray(selectedContextRepresentations) ||
-        selectedContextRepresentations.length >
-          knowledgeLlmLimits.totalSources ||
+        !Array.isArray(input.selectedContextSources) ||
         (input.reservationInputTokenFloor !== undefined &&
           (!Number.isSafeInteger(input.reservationInputTokenFloor) ||
             input.reservationInputTokenFloor < 1))
       ) {
         return invalid();
       }
+      let selectedContext: ReturnType<typeof deriveKnowledgeLlmSelectedContext>;
       let estimatedInputTokens: number;
+      let providerRequestHash: string;
       try {
-        let selectedContextBytes = 0;
-        for (const representation of selectedContextRepresentations) {
-          if (typeof representation !== 'string') return invalid();
-          const representationBytes = Buffer.byteLength(representation, 'utf8');
-          if (representationBytes > knowledgeLlmLimits.sourceBytes) {
-            return invalid();
-          }
-          selectedContextBytes += representationBytes;
-          if (selectedContextBytes > knowledgeLlmLimits.totalContextBytes) {
-            return invalid();
-          }
-        }
-        const renderedPromptBytes =
-          Buffer.byteLength(input.systemPrompt, 'utf8') +
-          Buffer.byteLength(input.userPrompt, 'utf8') +
-          selectedContextBytes;
-        const derivedEstimate = estimateKnowledgeLlmInputTokens(
-          renderedPromptBytes,
-          selectedContextRepresentations.length,
+        selectedContext = deriveKnowledgeLlmSelectedContext(
+          input.selectedContextSources,
         );
+        const providerRequest = buildKnowledgeLlmExternalRequest({
+          provider: input.provider,
+          model: input.model,
+          systemPrompt: input.systemPrompt,
+          userPrompt: input.userPrompt,
+          contextSections: selectedContext.representations,
+          maxOutputTokens: input.maxOutputTokens,
+        });
+        const derivedEstimate = externalLlmConservativeInputTokens(
+          providerRequest,
+          knowledgeLlmLimits.sourceFramingTokens,
+        );
+        providerRequestHash =
+          externalLlmTextRequestFingerprint(providerRequest);
         estimatedInputTokens = Math.max(
           derivedEstimate,
           input.reservationInputTokenFloor ?? derivedEstimate,
@@ -232,8 +247,13 @@ export function createKnowledgeLlmBudgetUseCases(
         catalogVersion: catalogSnapshot.version,
         promptTemplateVersion: input.promptTemplateVersion,
         requestKeyHash: input.requestKeyHash,
-        requestPayloadHash: reservationPayloadHash(input),
-        selectedContextFingerprint: input.selectedContextFingerprint,
+        requestPayloadHash: reservationPayloadHash(
+          input,
+          selectedContext.fingerprint,
+          providerRequestHash,
+        ),
+        providerRequestHash,
+        selectedContextFingerprint: selectedContext.fingerprint,
         estimatedInputTokens,
         maxOutputTokens: input.maxOutputTokens,
         inputCostMicrosPerMillion: model.inputCostMicrosPerMillion,

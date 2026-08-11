@@ -1,19 +1,23 @@
 import type {
+  ExternalLlmPreparedTextRequest,
   ExternalLlmTextPort,
   ExternalLlmTextRequest,
   ExternalLlmTextResult,
 } from '../../application/externalLlm/externalLlmPort.js';
-import { ExternalLlmProviderError } from '../../application/externalLlm/externalLlmPort.js';
-import { externalLlmMessageFramingTokens } from '../../application/externalLlm/externalLlmPort.js';
+import {
+  ExternalLlmProviderError,
+  externalLlmConservativeInputTokens,
+  externalLlmTextRequestFingerprint,
+} from '../../application/externalLlm/externalLlmPort.js';
 
 /**
  * Explicit test-only provider. It never echoes prompt material and never
  * performs network I/O. Runtime composition must opt in to provider=stub.
  */
 export class StubExternalLlmTextAdapter implements ExternalLlmTextPort {
-  async complete(
+  async prepare(
     request: ExternalLlmTextRequest,
-  ): Promise<ExternalLlmTextResult> {
+  ): Promise<ExternalLlmPreparedTextRequest> {
     if (request.provider !== 'stub') {
       throw new ExternalLlmProviderError(
         'rejected_before_dispatch',
@@ -29,22 +33,40 @@ export class StubExternalLlmTextAdapter implements ExternalLlmTextPort {
         'not_dispatched',
       );
     }
-    const inputBytes =
-      Buffer.byteLength(request.systemPrompt, 'utf8') +
-      Buffer.byteLength(request.userPrompt, 'utf8');
+    let requestFingerprint: string;
+    let inputTokens: number;
+    try {
+      requestFingerprint = externalLlmTextRequestFingerprint(request);
+      inputTokens = externalLlmConservativeInputTokens(request);
+    } catch {
+      throw new ExternalLlmProviderError(
+        'rejected_before_dispatch',
+        'not_dispatched',
+      );
+    }
     const outputTokens = Math.min(12, request.maxOutputTokens);
     const content = 'Synthetic external LLM result.'.slice(0, outputTokens);
+    let dispatched = false;
     return {
-      provider: 'stub',
-      model: request.model,
-      content,
-      usageStatus: 'reported',
-      usage: {
-        inputTokens: Math.max(
-          1,
-          inputBytes * 2 + externalLlmMessageFramingTokens,
-        ),
-        outputTokens,
+      requestFingerprint,
+      async dispatch(): Promise<ExternalLlmTextResult> {
+        if (dispatched) {
+          throw new ExternalLlmProviderError(
+            'connection_outcome_unknown',
+            'unknown',
+          );
+        }
+        dispatched = true;
+        return {
+          provider: 'stub',
+          model: request.model,
+          content,
+          usageStatus: 'reported',
+          usage: {
+            inputTokens,
+            outputTokens,
+          },
+        };
       },
     };
   }
