@@ -60,6 +60,24 @@ test('envValidation: Knowledge external LLM remains disabled when only Chat stub
   assert.equal(result.status, 0, result.stderr);
 });
 
+test('envValidation: Chat custom OpenAI destination requires an independent host allowlist', () => {
+  const missingAllowlist = runEnvValidation({
+    CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+    CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-only',
+    CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://provider.example/v1',
+  });
+  assert.notEqual(missingAllowlist.status, 0);
+  assert.match(missingAllowlist.stderr, /CHAT_EXTERNAL_LLM_ALLOWED_HOSTS/);
+
+  const allowlisted = runEnvValidation({
+    CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+    CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-only',
+    CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://provider.example/v1',
+    CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: 'provider.example',
+  });
+  assert.equal(allowlisted.status, 0, allowlisted.stderr);
+});
+
 test('envValidation: Knowledge stub requires a strict model catalog', () => {
   const missing = runEnvValidation({
     KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'stub',

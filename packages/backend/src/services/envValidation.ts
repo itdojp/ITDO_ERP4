@@ -8,6 +8,10 @@ import {
   getKnowledgeLlmRuntimeConfig,
   KnowledgeLlmConfigurationError,
 } from '../application/knowledge/knowledgeLlmConfig.js';
+import {
+  ChatExternalLlmConfigurationError,
+  getChatExternalLlmConfig,
+} from './chatExternalLlm.js';
 
 type ValidationIssue = {
   key: string;
@@ -696,6 +700,16 @@ export function assertValidBackendEnv() {
         issues,
         'CHAT_EXTERNAL_LLM_OPENAI_BASE_URL',
         'http(s) URL を指定してください',
+      );
+    }
+    try {
+      getChatExternalLlmConfig(process.env);
+    } catch (error) {
+      if (!(error instanceof ChatExternalLlmConfigurationError)) throw error;
+      addIssue(
+        issues,
+        error.key,
+        'Chat外部LLM設定をallowlistと接続制限の契約に合わせてください',
       );
     }
   }

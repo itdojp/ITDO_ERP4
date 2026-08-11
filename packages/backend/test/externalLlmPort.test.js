@@ -560,6 +560,30 @@ test('OpenAI-compatible adapter normalizes a stalled response body timeout', asy
   );
 });
 
+test('OpenAI-compatible adapter preserves Chat empty fallback after a success body stalls', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.write('{"choices":');
+    },
+    async (baseUrl) => {
+      const result = await complete(
+        openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl, {
+          timeoutMs: 30,
+          malformedSuccessPolicy: 'empty',
+          usagePolicy: 'ignore',
+        }),
+        openAiRequest(),
+      );
+      assert.equal(result.content, '');
+      assert.equal(result.usageStatus, 'ignored');
+      assert.equal(result.usage, null);
+    },
+  );
+});
+
 test('OpenAI-compatible adapter classifies DNS lookup failure before dispatch', async () => {
   const { OpenAiCompatibleTextAdapter } =
     await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');

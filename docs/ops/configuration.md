@@ -155,8 +155,8 @@ Storage artifact migration:
 - `CHAT_EXTERNAL_LLM_PROVIDER=openai` の場合
   - `CHAT_EXTERNAL_LLM_OPENAI_API_KEY` 必須
   - `CHAT_EXTERNAL_LLM_OPENAI_BASE_URL` 指定時は `http(s)` URL
-  - `CHAT_EXTERNAL_LLM_ALLOWED_HOSTS`（任意、カンマ区切り）で接続先ホストを制限（未設定時は全ホスト許可）
-  - `CHAT_EXTERNAL_LLM_ALLOW_HTTP` / `CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP`（任意、既定: `false`）
+  - `CHAT_EXTERNAL_LLM_ALLOWED_HOSTS`（カンマ区切り）へbase URL hostを必ず含める。既定の`https://api.openai.com/v1`だけは後方互換のため`api.openai.com`を暗黙allowlistとする
+  - `CHAT_EXTERNAL_LLM_ALLOW_HTTP` / `CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP`（任意、既定: `false`）。productionでは`true`を拒否する
 
 外部LLM（Knowledge Hub、既定無効）:
 

@@ -22,6 +22,11 @@
 ### OpenAI（provider=openai の場合のみ必須）
 - `CHAT_EXTERNAL_LLM_OPENAI_API_KEY`
 - `CHAT_EXTERNAL_LLM_OPENAI_BASE_URL`（任意、既定: `https://api.openai.com/v1`）
+- `CHAT_EXTERNAL_LLM_ALLOWED_HOSTS`
+  - カンマ区切りの接続先allowlist。custom base URLでは必須で、base URL hostを含める
+  - 既定の`https://api.openai.com/v1`だけは後方互換のため`api.openai.com`を暗黙allowlistとする
+- `CHAT_EXTERNAL_LLM_ALLOW_HTTP` / `CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP`
+  - repository-sideの明示的なlocal testだけで利用する。productionでは`true`を拒否する
 - `CHAT_EXTERNAL_LLM_TIMEOUT_MS`（任意、既定: `15000`）
 
 ### レート制限（任意）

@@ -457,10 +457,13 @@ export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
         } catch (error) {
           if (
             malformedSuccessPolicy === 'empty' &&
-            error instanceof ExternalLlmProviderError &&
-            (error.code === 'malformed_response' ||
+            (!(error instanceof ExternalLlmProviderError) ||
+              error.code === 'malformed_response' ||
               error.code === 'empty_result')
           ) {
+            // Chat's pre-existing compatibility contract treated any failure
+            // while consuming an already-received 2xx body as an empty result.
+            // Strict Knowledge callers retain timeout/outcome classification.
             return {
               provider: 'openai',
               model,

@@ -12,6 +12,9 @@ type ChatExternalLlmConfig =
       apiKey: string;
       baseUrl: string;
       timeoutMs: number;
+      allowedHosts: string[];
+      allowHttp: boolean;
+      allowPrivateIp: boolean;
     };
 
 type ChatExternalLlmRateLimit = {
@@ -47,31 +50,100 @@ function parseAllowedHosts(raw: string | undefined) {
     .filter(Boolean);
 }
 
-export function getChatExternalLlmConfig(): ChatExternalLlmConfig {
-  const provider = normalizeProvider(process.env.CHAT_EXTERNAL_LLM_PROVIDER);
+export class ChatExternalLlmConfigurationError extends Error {
+  readonly name = 'ChatExternalLlmConfigurationError';
+  constructor(readonly key: string) {
+    super(`invalid_chat_external_llm_configuration:${key}`);
+  }
+}
+
+const defaultOpenAiBaseUrl = 'https://api.openai.com/v1';
+
+function resolveOpenAiTransportConfig(baseUrl: string, env: NodeJS.ProcessEnv) {
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(baseUrl);
+  } catch {
+    throw new ChatExternalLlmConfigurationError(
+      'CHAT_EXTERNAL_LLM_OPENAI_BASE_URL',
+    );
+  }
+  const allowHttp = env.CHAT_EXTERNAL_LLM_ALLOW_HTTP === 'true';
+  const allowPrivateIp = env.CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP === 'true';
+  if (
+    parsedUrl.username ||
+    parsedUrl.password ||
+    parsedUrl.search ||
+    parsedUrl.hash ||
+    (parsedUrl.protocol !== 'https:' &&
+      !(allowHttp && parsedUrl.protocol === 'http:'))
+  ) {
+    throw new ChatExternalLlmConfigurationError(
+      'CHAT_EXTERNAL_LLM_OPENAI_BASE_URL',
+    );
+  }
+  if (env.NODE_ENV === 'production' && (allowHttp || allowPrivateIp)) {
+    throw new ChatExternalLlmConfigurationError(
+      allowHttp
+        ? 'CHAT_EXTERNAL_LLM_ALLOW_HTTP'
+        : 'CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP',
+    );
+  }
+
+  let allowedHosts = parseAllowedHosts(env.CHAT_EXTERNAL_LLM_ALLOWED_HOSTS);
+  const isDefaultDestination =
+    parsedUrl.protocol === 'https:' &&
+    parsedUrl.hostname.toLowerCase() === 'api.openai.com' &&
+    (parsedUrl.pathname === '/v1' || parsedUrl.pathname === '/v1/');
+  // Preserve the historical zero-configuration OpenAI endpoint while making
+  // every custom destination opt in through an independent host allowlist.
+  if (allowedHosts.length === 0 && isDefaultDestination) {
+    allowedHosts = ['api.openai.com'];
+  }
+  if (
+    allowedHosts.length === 0 ||
+    !allowedHosts.includes(parsedUrl.hostname.toLowerCase())
+  ) {
+    throw new ChatExternalLlmConfigurationError(
+      'CHAT_EXTERNAL_LLM_ALLOWED_HOSTS',
+    );
+  }
+  return { allowedHosts, allowHttp, allowPrivateIp };
+}
+
+export function getChatExternalLlmConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): ChatExternalLlmConfig {
+  const provider = normalizeProvider(env.CHAT_EXTERNAL_LLM_PROVIDER);
   if (provider === 'stub') {
     return {
       provider: 'stub',
-      model: (process.env.CHAT_EXTERNAL_LLM_MODEL || 'stub').trim() || 'stub',
+      model: (env.CHAT_EXTERNAL_LLM_MODEL || 'stub').trim() || 'stub',
     };
   }
   if (provider === 'openai') {
-    const apiKey = process.env.CHAT_EXTERNAL_LLM_OPENAI_API_KEY?.trim();
+    const apiKey = env.CHAT_EXTERNAL_LLM_OPENAI_API_KEY?.trim();
     if (!apiKey) return { provider: 'disabled' };
     const baseUrl = (
-      process.env.CHAT_EXTERNAL_LLM_OPENAI_BASE_URL ||
-      'https://api.openai.com/v1'
+      env.CHAT_EXTERNAL_LLM_OPENAI_BASE_URL || defaultOpenAiBaseUrl
     )
       .trim()
       .replace(/\/$/, '');
     const model =
-      (process.env.CHAT_EXTERNAL_LLM_MODEL || 'gpt-4o-mini').trim() ||
-      'gpt-4o-mini';
+      (env.CHAT_EXTERNAL_LLM_MODEL || 'gpt-4o-mini').trim() || 'gpt-4o-mini';
     const timeoutMs = parsePositiveInt(
-      process.env.CHAT_EXTERNAL_LLM_TIMEOUT_MS,
+      env.CHAT_EXTERNAL_LLM_TIMEOUT_MS,
       15_000,
     );
-    return { provider: 'openai', model, apiKey, baseUrl, timeoutMs };
+    const transport = resolveOpenAiTransportConfig(baseUrl, env);
+    return {
+      provider: 'openai',
+      model,
+      apiKey,
+      baseUrl,
+      timeoutMs,
+      ...transport,
+    };
   }
   return { provider: 'disabled' };
 }
@@ -147,11 +219,9 @@ export async function summarizeWithExternalLlm(options: {
     apiKey: config.apiKey,
     baseUrl: config.baseUrl,
     timeoutMs: config.timeoutMs,
-    allowedHosts: parseAllowedHosts(
-      process.env.CHAT_EXTERNAL_LLM_ALLOWED_HOSTS,
-    ),
-    allowHttp: process.env.CHAT_EXTERNAL_LLM_ALLOW_HTTP === 'true',
-    allowPrivateIp: process.env.CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP === 'true',
+    allowedHosts: config.allowedHosts,
+    allowHttp: config.allowHttp,
+    allowPrivateIp: config.allowPrivateIp,
     // The pre-existing Chat summary contract treats a malformed successful
     // response as an empty summary and does not account provider usage.
     // Knowledge callers keep the adapter defaults (strict/strict).
