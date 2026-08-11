@@ -241,14 +241,17 @@ export const PeriodLocks: React.FC = () => {
   };
 
   const removeLock = async (id: string) => {
+    const listGenerationAtStart = listRequestGenerationRef.current;
     try {
       await api(`/period-locks/${id}`, { method: 'DELETE' });
       if (!isMountedRef.current) return;
       await loadLocks(filtersRef.current);
     } catch (err) {
-      if (isMountedRef.current) {
+      if (
+        isMountedRef.current &&
+        listRequestGenerationRef.current === listGenerationAtStart
+      ) {
         setListError('締め解除に失敗しました');
-        setListStatus('error');
       }
     }
   };

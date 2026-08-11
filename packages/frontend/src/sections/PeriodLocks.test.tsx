@@ -784,4 +784,147 @@ describe('PeriodLocks', () => {
       signal: expect.any(AbortSignal),
     });
   });
+
+  it('does not replace a newer search result with a stale delete error', async () => {
+    const deleteRequest = deferred<{ ok: boolean }>();
+
+    vi.mocked(api).mockImplementation((path, options) => {
+      if (path === '/projects') return Promise.resolve({ items: [] });
+      if (path === '/period-locks' && !options?.method) {
+        return Promise.resolve({
+          items: [
+            {
+              id: 'lock-pending-delete',
+              period: '2026-03',
+              scope: 'global',
+              reason: 'pending delete',
+            },
+          ],
+        });
+      }
+      if (
+        path === '/period-locks/lock-pending-delete' &&
+        options?.method === 'DELETE'
+      ) {
+        return deleteRequest.promise;
+      }
+      if (path === '/period-locks?period=2026-04') {
+        return Promise.resolve({
+          items: [
+            {
+              id: 'lock-latest',
+              period: '2026-04',
+              scope: 'global',
+              reason: 'latest search',
+            },
+          ],
+        });
+      }
+      return Promise.reject(new Error(`unexpected api call: ${String(path)}`));
+    });
+
+    render(<PeriodLocks />);
+    await waitFor(() => expect(api).toHaveBeenCalledWith('/projects'));
+
+    const listSection = within(getListSection());
+    fireEvent.click(listSection.getByRole('button', { name: '検索' }));
+    await waitFor(() => {
+      expect(
+        listSection.getByRole('button', {
+          name: '解除:lock-pending-delete',
+        }),
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(
+      listSection.getByRole('button', { name: '解除:lock-pending-delete' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: '解除' }));
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/period-locks/lock-pending-delete', {
+        method: 'DELETE',
+      });
+    });
+
+    fireEvent.change(listSection.getByLabelText('period'), {
+      target: { value: '2026-04' },
+    });
+    fireEvent.click(listSection.getByRole('button', { name: '検索' }));
+    await waitFor(() => {
+      expect(listSection.getByText('latest search')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      deleteRequest.reject(new Error('stale delete failed'));
+      await deleteRequest.promise.catch(() => undefined);
+    });
+
+    expect(listSection.getByText('latest search')).toBeInTheDocument();
+    expect(
+      listSection.queryByText('締め解除に失敗しました'),
+    ).not.toBeInTheDocument();
+    const summary = screen.getByRole('region', { name: '期間締めサマリー' });
+    expect(within(summary).getByText('取得済み')).toBeInTheDocument();
+    expect(within(summary).getByText('1件を取得')).toBeInTheDocument();
+  });
+
+  it('does not start a delete reload after the section unmounts', async () => {
+    const deleteRequest = deferred<{ ok: boolean }>();
+
+    vi.mocked(api).mockImplementation((path, options) => {
+      if (path === '/projects') return Promise.resolve({ items: [] });
+      if (path === '/period-locks') {
+        return Promise.resolve({
+          items: [
+            {
+              id: 'lock-pending-delete',
+              period: '2026-03',
+              scope: 'global',
+              reason: 'pending delete',
+            },
+          ],
+        });
+      }
+      if (
+        path === '/period-locks/lock-pending-delete' &&
+        options?.method === 'DELETE'
+      ) {
+        return deleteRequest.promise;
+      }
+      return Promise.reject(new Error(`unexpected api call: ${String(path)}`));
+    });
+
+    const view = render(<PeriodLocks />);
+    await waitFor(() => expect(api).toHaveBeenCalledWith('/projects'));
+
+    const listSection = within(getListSection());
+    fireEvent.click(listSection.getByRole('button', { name: '検索' }));
+    await waitFor(() => {
+      expect(
+        listSection.getByRole('button', {
+          name: '解除:lock-pending-delete',
+        }),
+      ).toBeInTheDocument();
+    });
+    fireEvent.click(
+      listSection.getByRole('button', { name: '解除:lock-pending-delete' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: '解除' }));
+    await waitFor(() => {
+      expect(api).toHaveBeenCalledWith('/period-locks/lock-pending-delete', {
+        method: 'DELETE',
+      });
+    });
+
+    view.unmount();
+    await act(async () => {
+      deleteRequest.resolve({ ok: true });
+      await deleteRequest.promise;
+    });
+
+    const listRequestCount = vi
+      .mocked(api)
+      .mock.calls.filter(([path]) => path === '/period-locks').length;
+    expect(listRequestCount).toBe(1);
+  });
 });
