@@ -134,6 +134,17 @@ test('budget policy and periods enforce explicit subject, timezone and integer l
   assert.match(migration, /KnowledgeLlmBudgetPeriod_boundary_guard/);
 });
 
+test('run settlement recomputes actual cost from immutable usage and price snapshots', () => {
+  assert.match(
+    migration,
+    /erp4_knowledge_llm_run_transition_guard[\s\S]*?expected_actual_cost\s*:=\s*[\s\S]*?CEIL\([\s\S]*?NEW\."actualInputTokens"::NUMERIC[\s\S]*?OLD\."inputCostMicrosPerMillion"::NUMERIC[\s\S]*?\/ 1000000[\s\S]*?\+ CEIL\([\s\S]*?NEW\."actualOutputTokens"::NUMERIC[\s\S]*?OLD\."outputCostMicrosPerMillion"::NUMERIC[\s\S]*?\/ 1000000/,
+  );
+  assert.match(
+    migration,
+    /NEW\."actualCostMicros"::NUMERIC <> expected_actual_cost/,
+  );
+});
+
 test('request and selected context are immutable and exactly-one typed', () => {
   const request = block('model', 'KnowledgeLlmRequest');
   assert.match(request, /@@unique\(\[actorUserId, requestKeyHash\]\)/);

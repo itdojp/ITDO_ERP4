@@ -1070,8 +1070,99 @@ try {
           createdBy: 'settlement-user',
         },
       });
-      return { conversation, user, assistant };
+      const directGuardAssistant =
+        await transaction.knowledgeConversationTurn.create({
+          data: {
+            conversationId: conversation.id,
+            sequence: 3,
+            role: 'assistant',
+            origin: 'ai',
+            content: 'Synthetic direct guard result',
+            contentHash: conversationTurnHash(
+              'Synthetic direct guard result',
+            ),
+            createdBy: 'settlement-user',
+          },
+        });
+      return { conversation, user, assistant, directGuardAssistant };
     },
+  );
+  const directCostGuardReservation = await service.reserve(
+    reservation({
+      runId: 'run-direct-cost-guard',
+      userId: 'settlement-user',
+      keyHash: knowledgeTextHash(
+        'llm-test-request-key',
+        'direct-cost-guard',
+      ),
+      maximumCostMicros: 100n,
+      inputCostMicrosPerMillion: 250_000n,
+      outputCostMicrosPerMillion: 750_000n,
+    }),
+  );
+  assert.equal(directCostGuardReservation.ok, true);
+  await prisma.$transaction(async (transaction) => {
+    await markKnowledgeLlmRunDispatched(transaction, {
+      runId: 'run-direct-cost-guard',
+      actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor(
+        'settlement-user',
+        'run-direct-cost-guard-dispatch',
+      ),
+      dispatchedAt: after(30_000),
+    });
+    await transaction.knowledgeLlmProviderOutcome.create({
+      data: {
+        runId: 'run-direct-cost-guard',
+        status: 'valid',
+        normalizedContent: 'Synthetic direct guard result',
+        contentHash: settlementConversation.directGuardAssistant.contentHash,
+        inputTokens: 80,
+        outputTokens: 20,
+        capturedAt: after(31_000),
+      },
+    });
+    await transaction.knowledgeLlmProviderOutcome.update({
+      where: { runId: 'run-direct-cost-guard' },
+      data: { normalizedContent: null, finalizedAt: after(32_000) },
+    });
+  });
+  await assert.rejects(
+    prisma.knowledgeLlmRun.update({
+      where: { id: 'run-direct-cost-guard' },
+      data: {
+        executionStatus: 'result_ready',
+        settlementStatus: 'settled_actual',
+        conversationId: settlementConversation.conversation.id,
+        assistantTurnId: settlementConversation.directGuardAssistant.id,
+        actualInputTokens: 80,
+        actualOutputTokens: 20,
+        actualCostMicros: 0n,
+        completedAt: after(33_000),
+        updatedAt: after(33_000),
+        updatedBy: 'synthetic-direct-writer',
+      },
+    }),
+    /actual settlement cost mismatch/,
+  );
+  await prisma.$transaction((transaction) =>
+    settleKnowledgeLlmBudget(transaction, {
+      runId: 'run-direct-cost-guard',
+      actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor(
+        'settlement-user',
+        'run-direct-cost-guard-settlement',
+      ),
+      completedAt: after(34_000),
+      settlement: {
+        type: 'actual',
+        actualInputTokens: 80,
+        actualOutputTokens: 20,
+        actualCostMicros: 35n,
+        conversationId: settlementConversation.conversation.id,
+        assistantTurnId: settlementConversation.directGuardAssistant.id,
+      },
+    }),
   );
   await assert.rejects(
     prisma.$transaction(async (transaction) => {
@@ -1377,8 +1468,10 @@ try {
     },
   );
   assert.equal(settledPeriod.activeReservedMicros, 0n);
-  assert.equal(settledPeriod.settledActualMicros, 35n);
-  assert.equal(settledPeriod.releasedMicros, 65n);
+  // The same subject/period also contains the direct-cost-guard run. Both
+  // reservations settle 100 maximum to 35 actual.
+  assert.equal(settledPeriod.settledActualMicros, 70n);
+  assert.equal(settledPeriod.releasedMicros, 130n);
   await assert.rejects(
     prisma.knowledgeLlmReservation.update({
       where: { id: settled.reservations[0].id },
@@ -1916,7 +2009,7 @@ try {
   const mismatchedTurn = await prisma.knowledgeConversationTurn.create({
     data: {
       conversationId: settlementConversation.conversation.id,
-      sequence: 3,
+      sequence: 4,
       role: 'assistant',
       origin: 'ai',
       content: 'Synthetic tampered displayed result',
@@ -3051,6 +3144,7 @@ try {
       reservationDeletionBlocked: true,
       lateReservationInsertBlocked: true,
       directReservationSettlementBlocked: true,
+      directRunCostRecalculationBlocked: true,
       outcomeRunLockOrderVerified: true,
       runReservationAtomicityVerified: true,
       periodLedgerConsistencyVerified: true,

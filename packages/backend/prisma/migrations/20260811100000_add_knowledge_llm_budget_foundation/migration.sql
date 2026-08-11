@@ -1039,6 +1039,8 @@ CREATE FUNCTION "erp4_knowledge_llm_run_transition_guard"()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
+DECLARE
+  expected_actual_cost NUMERIC;
 BEGIN
   IF OLD."executionStatus" = 'reserved'
     AND NEW."executionStatus" = 'dispatched'
@@ -1070,6 +1072,31 @@ BEGIN
   THEN
     RAISE EXCEPTION 'KnowledgeLlmRun dispatch requires contiguous context sources'
       USING ERRCODE = '23514';
+  END IF;
+
+  IF NEW."settlementStatus" = 'settled_actual' THEN
+    IF NEW."actualInputTokens" IS NULL
+      OR NEW."actualOutputTokens" IS NULL
+      OR NEW."actualCostMicros" IS NULL
+    THEN
+      RAISE EXCEPTION 'KnowledgeLlmRun actual settlement requires usage and cost'
+        USING ERRCODE = '23514';
+    END IF;
+    expected_actual_cost :=
+      CEIL(
+        NEW."actualInputTokens"::NUMERIC
+        * OLD."inputCostMicrosPerMillion"::NUMERIC
+        / 1000000
+      )
+      + CEIL(
+        NEW."actualOutputTokens"::NUMERIC
+        * OLD."outputCostMicrosPerMillion"::NUMERIC
+        / 1000000
+      );
+    IF NEW."actualCostMicros"::NUMERIC <> expected_actual_cost THEN
+      RAISE EXCEPTION 'KnowledgeLlmRun actual settlement cost mismatch'
+        USING ERRCODE = '23514';
+    END IF;
   END IF;
 
   IF NEW."executionStatus" = 'result_ready'
