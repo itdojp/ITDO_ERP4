@@ -116,9 +116,12 @@ export const PeriodLocks: React.FC = () => {
       .catch(() => setProjects([]));
   }, []);
 
-  useEffect(() => {
-    filtersRef.current = filters;
-  }, [filters]);
+  const updateFilters = (nextFilters: FilterState) => {
+    // Keep mutation-triggered reloads aligned with the visible filter state
+    // without waiting for a passive effect after the input event.
+    filtersRef.current = nextFilters;
+    setFilters(nextFilters);
+  };
 
   useEffect(
     () => () => {
@@ -477,7 +480,11 @@ export const PeriodLocks: React.FC = () => {
                     <Button
                       variant="ghost"
                       onClick={() =>
-                        setFilters({ period: '', scope: '', projectId: '' })
+                        updateFilters({
+                          period: '',
+                          scope: '',
+                          projectId: '',
+                        })
                       }
                     >
                       条件クリア
@@ -501,7 +508,7 @@ export const PeriodLocks: React.FC = () => {
                     label="period"
                     value={filters.period}
                     onChange={(e) =>
-                      setFilters({ ...filters, period: e.target.value })
+                      updateFilters({ ...filters, period: e.target.value })
                     }
                     placeholder="YYYY-MM"
                   />
@@ -509,7 +516,7 @@ export const PeriodLocks: React.FC = () => {
                     label="scope"
                     value={filters.scope}
                     onChange={(e) =>
-                      setFilters({ ...filters, scope: e.target.value })
+                      updateFilters({ ...filters, scope: e.target.value })
                     }
                   >
                     <option value="">すべて</option>
@@ -520,7 +527,7 @@ export const PeriodLocks: React.FC = () => {
                     label="project"
                     value={filters.projectId}
                     onChange={(e) =>
-                      setFilters({ ...filters, projectId: e.target.value })
+                      updateFilters({ ...filters, projectId: e.target.value })
                     }
                   >
                     <option value="">すべて</option>
