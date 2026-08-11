@@ -21,6 +21,7 @@ test('explicit stub adapter is deterministic, local and does not echo prompts', 
   assert.equal(first.provider, 'stub');
   assert.equal(first.model, 'stub-v1');
   assert.equal(first.content.includes('PRIVATE-CANARY'), false);
+  assert.equal(first.usageStatus, 'reported');
   assert.ok(first.usage.inputTokens > 0);
   assert.ok(first.usage.outputTokens > 0);
 });
@@ -98,7 +99,7 @@ test('OpenAI-compatible adapter rejects malformed successful JSON by default', a
   );
 });
 
-test('OpenAI-compatible adapter rejects malformed usage by default', async () => {
+test('OpenAI-compatible adapter preserves content and marks malformed usage invalid', async () => {
   const { OpenAiCompatibleTextAdapter } =
     await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
   await withHttpServer(
@@ -112,16 +113,70 @@ test('OpenAI-compatible adapter rejects malformed usage by default', async () =>
       );
     },
     async (baseUrl) => {
-      await assert.rejects(
-        openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl).complete(
-          openAiRequest(),
-        ),
-        (error) => {
-          assert.equal(error.code, 'usage_invalid');
-          assert.equal(error.outcome, 'known_response');
-          return true;
+      const result = await openAiAdapter(
+        OpenAiCompatibleTextAdapter,
+        baseUrl,
+      ).complete(openAiRequest());
+      assert.deepEqual(
+        {
+          content: result.content,
+          usageStatus: result.usageStatus,
+          usage: result.usage,
+        },
+        {
+          content: 'Synthetic result',
+          usageStatus: 'invalid',
+          usage: null,
         },
       );
+    },
+  );
+});
+
+test('OpenAI-compatible adapter preserves content and marks missing usage', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
+        JSON.stringify({
+          choices: [{ message: { content: 'Synthetic result' } }],
+        }),
+      );
+    },
+    async (baseUrl) => {
+      const result = await openAiAdapter(
+        OpenAiCompatibleTextAdapter,
+        baseUrl,
+      ).complete(openAiRequest());
+      assert.equal(result.content, 'Synthetic result');
+      assert.equal(result.usageStatus, 'missing');
+      assert.equal(result.usage, null);
+    },
+  );
+});
+
+test('OpenAI-compatible adapter returns strictly parsed reported usage', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
+        JSON.stringify({
+          choices: [{ message: { content: 'Synthetic result' } }],
+          usage: { prompt_tokens: 10, completion_tokens: 2 },
+        }),
+      );
+    },
+    async (baseUrl) => {
+      const result = await openAiAdapter(
+        OpenAiCompatibleTextAdapter,
+        baseUrl,
+      ).complete(openAiRequest());
+      assert.equal(result.usageStatus, 'reported');
+      assert.deepEqual(result.usage, { inputTokens: 10, outputTokens: 2 });
     },
   );
 });

@@ -514,7 +514,11 @@ export async function reconcileKnowledgeLlmHeldBudget(
     WHERE id = ${input.runId}
       AND "executionStatus" = 'result_unknown'
       AND "settlementStatus" = 'held_maximum'
-      AND "failureCode" = 'finalization_failed'
+      AND "failureCode" IN (
+        'timeout_outcome_unknown',
+        'connection_outcome_unknown',
+        'finalization_failed'
+      )
     FOR UPDATE
   `);
   const run = runs[0];

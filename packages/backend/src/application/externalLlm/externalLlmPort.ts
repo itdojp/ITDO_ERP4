@@ -20,12 +20,26 @@ export type ExternalLlmUsage = {
   outputTokens: number;
 };
 
-export type ExternalLlmTextResult = {
+export type ExternalLlmUsageStatus =
+  'reported' | 'missing' | 'invalid' | 'ignored';
+
+export type ExternalLlmUsageResult =
+  | { usageStatus: 'reported'; usage: ExternalLlmUsage }
+  | { usageStatus: 'missing' | 'invalid' | 'ignored'; usage: null };
+
+type ExternalLlmTextResultBase = {
   provider: ExternalLlmProviderName;
   model: string;
   content: string;
-  usage: ExternalLlmUsage | null;
 };
+
+/**
+ * Successful provider content and usage accounting are deliberately separate.
+ * A valid result remains capturable when usage is missing or malformed, while
+ * callers must handle that state as usage-unknown rather than normal success.
+ */
+export type ExternalLlmTextResult = ExternalLlmTextResultBase &
+  ExternalLlmUsageResult;
 
 export type ExternalLlmFailureCode =
   | 'disabled'

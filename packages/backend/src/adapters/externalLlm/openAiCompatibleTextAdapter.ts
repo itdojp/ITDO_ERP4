@@ -2,7 +2,7 @@ import type {
   ExternalLlmTextPort,
   ExternalLlmTextRequest,
   ExternalLlmTextResult,
-  ExternalLlmUsage,
+  ExternalLlmUsageResult,
 } from '../../application/externalLlm/externalLlmPort.js';
 import { ExternalLlmProviderError } from '../../application/externalLlm/externalLlmPort.js';
 import { safeFetch } from '../../services/safeHttpClient.js';
@@ -31,18 +31,21 @@ function strictNonNegativeInteger(value: unknown): number | null {
     : null;
 }
 
-function parseOptionalUsage(value: unknown): ExternalLlmUsage | null {
-  if (value === undefined) return null;
+function parseOptionalUsage(value: unknown): ExternalLlmUsageResult {
+  if (value === undefined) return { usageStatus: 'missing', usage: null };
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    throw new ExternalLlmProviderError('usage_invalid', 'known_response');
+    return { usageStatus: 'invalid', usage: null };
   }
   const usage = value as Record<string, unknown>;
   const inputTokens = strictNonNegativeInteger(usage.prompt_tokens);
   const outputTokens = strictNonNegativeInteger(usage.completion_tokens);
   if (inputTokens === null || outputTokens === null) {
-    throw new ExternalLlmProviderError('usage_invalid', 'known_response');
+    return { usageStatus: 'invalid', usage: null };
   }
-  return { inputTokens, outputTokens };
+  return {
+    usageStatus: 'reported',
+    usage: { inputTokens, outputTokens },
+  };
 }
 
 function responseContent(value: unknown): string {
@@ -204,19 +207,26 @@ export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
           provider: 'openai',
           model: request.model,
           content: '',
+          usageStatus:
+            this.config.usagePolicy === 'ignore' ? 'ignored' : 'missing',
           usage: null,
         };
       }
       throw error;
     }
-    const usage =
+    const usageResult =
       this.config.usagePolicy === 'ignore'
-        ? null
+        ? ({ usageStatus: 'ignored', usage: null } as const)
         : parseOptionalUsage(
             body && typeof body === 'object' && !Array.isArray(body)
               ? (body as Record<string, unknown>).usage
               : undefined,
           );
-    return { provider: 'openai', model: request.model, content, usage };
+    return {
+      provider: 'openai',
+      model: request.model,
+      content,
+      ...usageResult,
+    };
   }
 }

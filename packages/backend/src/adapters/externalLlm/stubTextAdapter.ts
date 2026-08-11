@@ -27,6 +27,7 @@ export class StubExternalLlmTextAdapter implements ExternalLlmTextPort {
       provider: 'stub',
       model: request.model,
       content: 'Synthetic external LLM result.',
+      usageStatus: 'reported',
       usage: {
         inputTokens: Math.max(1, inputBytes * 2),
         outputTokens: 12,

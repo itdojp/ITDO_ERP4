@@ -112,6 +112,118 @@ async function policy({
   });
 }
 
+async function exerciseResultUnknownReconciliation({
+  runId,
+  keyCharacter,
+  payloadCharacter,
+  failureCode,
+}) {
+  const reserved = await service.reserve(
+    reservation({
+      runId,
+      userId: 'settlement-user',
+      keyHash: hash(keyCharacter),
+      payloadHash: hash(payloadCharacter),
+      maximumCostMicros: 60n,
+      inputCostMicrosPerMillion: 250_000n,
+      outputCostMicrosPerMillion: 350_000n,
+    }),
+  );
+  assert.equal(reserved.ok, true);
+  await prisma.$transaction(async (transaction) => {
+    await markKnowledgeLlmRunDispatched(transaction, {
+      runId,
+      actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor('settlement-user', `${runId}-dispatch`),
+      dispatchedAt: after(8_100),
+    });
+    await settleKnowledgeLlmBudget(transaction, {
+      runId,
+      actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor('settlement-user', `${runId}-unknown`),
+      completedAt: after(8_200),
+      settlement: {
+        type: 'hold',
+        executionStatus: 'result_unknown',
+        failureCode,
+      },
+    });
+  });
+
+  const resultContent = `Synthetic ${failureCode} reconciled result`;
+  await prisma.$transaction(async (transaction) => {
+    const conversation = await transaction.knowledgeConversation.create({
+      data: {
+        id: `${runId}-conversation`,
+        ownerUserId: 'settlement-user',
+        title: 'Synthetic result-unknown reconciliation',
+        sourceType: 'manual',
+        provider: 'stub',
+        model: 'stub-v1',
+        contentHash: hash(keyCharacter),
+        createdBy: 'settlement-user',
+        updatedBy: 'settlement-user',
+      },
+    });
+    await transaction.knowledgeConversationTurn.create({
+      data: {
+        conversationId: conversation.id,
+        sequence: 1,
+        role: 'user',
+        origin: 'user',
+        content: 'Synthetic prompt',
+        contentHash: conversationTurnHash('Synthetic prompt'),
+        createdBy: 'settlement-user',
+      },
+    });
+    const assistant = await transaction.knowledgeConversationTurn.create({
+      data: {
+        conversationId: conversation.id,
+        sequence: 2,
+        role: 'assistant',
+        origin: 'ai',
+        content: resultContent,
+        contentHash: conversationTurnHash(resultContent),
+        createdBy: 'settlement-user',
+      },
+    });
+    await transaction.knowledgeLlmProviderOutcome.create({
+      data: {
+        runId,
+        status: 'valid',
+        normalizedContent: resultContent,
+        contentHash: assistant.contentHash,
+        inputTokens: 40,
+        outputTokens: 10,
+        capturedAt: after(8_300),
+      },
+    });
+    await transaction.knowledgeLlmProviderOutcome.update({
+      where: { runId },
+      data: { normalizedContent: null, finalizedAt: after(8_400) },
+    });
+    await reconcileKnowledgeLlmHeldBudget(transaction, {
+      runId,
+      actorUserId: 'settlement-user',
+      auditActor: terminalAuditActor('settlement-user', `${runId}-reconcile`),
+      completedAt: after(8_500),
+      actualInputTokens: 40,
+      actualOutputTokens: 10,
+      actualCostMicros: 14n,
+      conversationId: conversation.id,
+      assistantTurnId: assistant.id,
+    });
+  });
+  const reconciled = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: runId },
+    include: { reservations: true },
+  });
+  assert.equal(reconciled.executionStatus, 'result_ready');
+  assert.equal(reconciled.settlementStatus, 'settled_actual');
+  assert.equal(reconciled.actualCostMicros, 14n);
+  assert.equal(reconciled.reservations[0].status, 'settled_actual');
+}
+
 try {
   await policy({
     id: 'policy-personal',
@@ -940,6 +1052,19 @@ try {
   assert.equal(reconciled.actualCostMicros, 14n);
   assert.equal(reconciled.reservations[0].status, 'settled_actual');
 
+  await exerciseResultUnknownReconciliation({
+    runId: 'run-settlement-reconcile-timeout',
+    keyCharacter: 'e',
+    payloadCharacter: 'a',
+    failureCode: 'timeout_outcome_unknown',
+  });
+  await exerciseResultUnknownReconciliation({
+    runId: 'run-settlement-reconcile-connection',
+    keyCharacter: '7',
+    payloadCharacter: 'b',
+    failureCode: 'connection_outcome_unknown',
+  });
+
   const releaseReservation = await service.reserve(
     reservation({
       runId: 'run-settlement-release',
@@ -1240,6 +1365,8 @@ try {
     'Synthetic result',
     'Synthetic usage-unknown result',
     'Synthetic normalized result',
+    'Synthetic timeout_outcome_unknown reconciled result',
+    'Synthetic connection_outcome_unknown reconciled result',
   ]) {
     assert.equal(serializedAudit.includes(canary), false, canary);
   }

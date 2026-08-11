@@ -187,11 +187,11 @@ typed immutable snapshot row だけから表示する。旧 client は relation 
 
 ### 9. external AI
 
-Knowledge Hubの外部AIは、Chat summary固有関数ではなく共有provider-neutral portへ依存する。共有adapterは一回のdispatchとtransport安全性だけを所有し、Knowledge側がselected context、exact source version、preview/confirm、ACL、budget reservation、idempotency、監査を所有する。Chatの既存prompt、`CHAT_EXTERNAL_LLM_*`、user/room rateは独立した互換wrapperに残す。
+Knowledge Hubの外部AIは、Chat summary固有関数ではなく共有provider-neutral portへ依存する。共有adapterは一回のdispatchとtransport安全性だけを所有し、Knowledge側がselected context、exact source version、preview/confirm、ACL、budget reservation、idempotency、監査を所有する。provider本文とusageは別々に正規化し、有効な本文にusage欠落または不正usageが付随する場合は本文を失わず明示的な`missing|invalid`状態を返す。Knowledge側はこれを通常成功にせずmaximum reservationを保持する。Chatの既存prompt、`CHAT_EXTERNAL_LLM_*`、user/room rateは独立した互換wrapperに残す。
 
 予算正本はPostgreSQLのversioned policy、月次period、run、request ledger、reservationである。personalはuser policy、organizationはuser/org policyを同一currencyで決定順lockし、hard limitを`settled + active + held + new maximum`で評価する。policyのIANA timezoneから月次UTC境界を算出し、process timezoneを使用しない。execution stateとsettlement stateを分離し、provider結果またはusageが不明なら通常successにせずmaximum reservationを保持する。
 
-provider call中はDB transactionを開かない。dispatch前にrun/reservation/auditとcatalog単価snapshotを確定し、provider callは自動retry・fallbackなしで一回だけ行う。normalized outcomeは本文をcaptureした未finalized rowとして保存し、DBがdomain-separated SHA-256を再計算してcontent hashを検証した後にだけ本文消去を伴うfinalizeを許可する。settlementはassistant/AI turnへのhash束縛、snapshot単価とusageからのactual cost再計算、typed完了／失敗／結果不明／usage不明auditを同じtransactionで確定する。`result_ready + held_maximum`はfinalized `usage_unknown` outcomeとassistant/AI turnが一致する場合だけ許可し、finalized outcomeの直接INSERTはDBで拒否する。安全なprovider outcome lookupがない場合のreconcileは再dispatchせず、unknown/held maximumを維持する。
+provider call中はDB transactionを開かない。dispatch前にrun/reservation/auditとcatalog単価snapshotを確定し、provider callは自動retry・fallbackなしで一回だけ行う。normalized outcomeは本文をcaptureした未finalized rowとして保存し、DBがdomain-separated SHA-256を再計算してcontent hashを検証した後にだけ本文消去を伴うfinalizeを許可する。settlementはassistant/AI turnへのhash束縛、snapshot単価とusageからのactual cost再計算、typed完了／失敗／結果不明／usage不明auditを同じtransactionで確定する。`result_ready + held_maximum`はfinalized `usage_unknown` outcomeとassistant/AI turnが一致する場合だけ許可し、finalized outcomeの直接INSERTはDBで拒否する。`result_unknown + held_maximum`の全許可failure codeは、同一runのvalid/finalized outcomeを後から安全に取得できた場合だけreconcile可能とする。安全なprovider outcome lookupがない場合は再dispatchせず、unknown/held maximumを維持する。
 
 selected contextはtyped FKとexact version/hashを持つimmutable rowで表現し、自由な`sourceType + sourceId`を正本にしない。assistant resultは同じownerの`KnowledgeConversation`と、そのconversationに属するassistant turnの複合FKへ結び付ける。provider outcomeは最大256 KiBのnormalized contentだけをfinalizationまで一時保持でき、finalize時に本文をconversation turnへ移してoutcome rowから消去する。
 
