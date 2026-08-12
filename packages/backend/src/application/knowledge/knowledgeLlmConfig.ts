@@ -24,6 +24,8 @@ export const knowledgeLlmLimits = {
   resultBytes: 256 * 1024,
   previewTokenBytes: 4096,
   previewTtlMs: 10 * 60 * 1000,
+  providerTimeoutMaxMs: 120_000,
+  reconcileGraceMs: 150_000,
   provenanceDepth: 1,
   serializableAttempts: 3,
 } as const;
@@ -258,7 +260,10 @@ function positiveInt(raw: string | undefined, fallback: number, key: string) {
     throw new KnowledgeLlmConfigurationError(key);
   }
   const value = Number(raw);
-  if (!Number.isSafeInteger(value) || value > 120_000) {
+  if (
+    !Number.isSafeInteger(value) ||
+    value > knowledgeLlmLimits.providerTimeoutMaxMs
+  ) {
     throw new KnowledgeLlmConfigurationError(key);
   }
   return value;

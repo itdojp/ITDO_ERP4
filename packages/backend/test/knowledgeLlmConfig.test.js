@@ -40,7 +40,12 @@ function selectedContext(representation, index = 0) {
 }
 
 test('Knowledge external LLM is disabled independently of Chat settings', async () => {
-  const { getKnowledgeLlmRuntimeConfig } = await configModule();
+  const { getKnowledgeLlmRuntimeConfig, knowledgeLlmLimits } =
+    await configModule();
+  assert.ok(
+    knowledgeLlmLimits.reconcileGraceMs >
+      knowledgeLlmLimits.providerTimeoutMaxMs,
+  );
   assert.deepEqual(
     getKnowledgeLlmRuntimeConfig({
       CHAT_EXTERNAL_LLM_PROVIDER: 'stub',

@@ -3,11 +3,41 @@ import Fastify from 'fastify';
 import test from 'node:test';
 
 import { mapErrorToResponse } from '../dist/services/errors.js';
+import { OpenAiCompatibleTextAdapter } from '../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js';
+import { StubExternalLlmTextAdapter } from '../dist/adapters/externalLlm/stubTextAdapter.js';
 
 process.env.DATABASE_URL ??=
   'postgresql://synthetic:synthetic@127.0.0.1:5432/synthetic?schema=public';
 
 const now = '2026-08-12T09:00:00.000Z';
+
+test('Knowledge route composition selects only the explicitly configured provider adapter', async () => {
+  const { createKnowledgeLlmProviderPort } = await import(
+    '../dist/routes/knowledgeLlmRuns.js'
+  );
+  assert.equal(
+    createKnowledgeLlmProviderPort({ provider: 'disabled', catalog: null }),
+    null,
+  );
+  assert.ok(
+    createKnowledgeLlmProviderPort({
+      provider: 'stub',
+      catalog: { version: 1, models: [] },
+    }) instanceof StubExternalLlmTextAdapter,
+  );
+  assert.ok(
+    createKnowledgeLlmProviderPort({
+      provider: 'openai',
+      catalog: { version: 1, models: [] },
+      apiKey: 'synthetic-route-only-key',
+      baseUrl: 'https://api.openai.com/v1',
+      timeoutMs: 120_000,
+      allowedHosts: ['api.openai.com'],
+      allowHttp: false,
+      allowPrivateIp: false,
+    }) instanceof OpenAiCompatibleTextAdapter,
+  );
+});
 
 function user(overrides = {}) {
   return {

@@ -58,7 +58,7 @@ type ReadClient = ContextClient &
   >;
 
 const serializableAttempts = knowledgeLlmLimits.serializableAttempts;
-const reconcileGraceMs = 60_000;
+const reconcileGraceMs = knowledgeLlmLimits.reconcileGraceMs;
 
 function retryable(error: unknown): boolean {
   if (typeof error !== 'object' || error === null || !('code' in error)) {

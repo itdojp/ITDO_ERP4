@@ -1067,7 +1067,7 @@ try {
     requestKey: 'disabled-reserved-key',
   });
   assert.ok(disabledReserved.providerRequestHash);
-  const reconcileClock = () => new Date(Date.now() + 120_000);
+  const reconcileClock = () => new Date(Date.now() + 180_000);
   const reconcileRunAdapter = new PrismaKnowledgeLlmRunAdapter(
     prisma,
     prisma,
@@ -1124,6 +1124,33 @@ try {
     expectedSources: aclLostDispatched.resolved.sources,
     expectedProviderRequestHash: aclLostDispatched.providerRequestHash,
   });
+  const inFlightReconcileService = createKnowledgeLlmRunService({
+    runtime: { provider: 'disabled', catalog: null },
+    providerPort: null,
+    budgetPort: budgetAdapter,
+    runPort: new PrismaKnowledgeLlmRunAdapter(
+      prisma,
+      prisma,
+      () => new Date(Date.now() + 120_000),
+    ),
+    tokenCodec: createKnowledgeLlmRunTokenCodec({
+      env: {
+        NODE_ENV: 'test',
+        KNOWLEDGE_CURSOR_SIGNING_SECRET:
+          'run-integration-inflight-secret-0000000000001',
+      },
+    }),
+  });
+  const inFlightReconcile = await inFlightReconcileService.reconcile({
+    actor,
+    auditActor: {
+      ...auditActor,
+      requestId: 'run-integration-inflight-reconcile',
+    },
+    runId: aclLostDispatchedId,
+  });
+  assert.equal(inFlightReconcile.executionStatus, 'dispatched');
+  assert.equal(inFlightReconcile.settlementStatus, 'reserved');
 
   await prisma.knowledgeItem.update({
     where: { id: item.id },
