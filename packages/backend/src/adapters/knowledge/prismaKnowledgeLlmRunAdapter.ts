@@ -36,6 +36,13 @@ import {
 } from './prismaKnowledgeLlmSettlementAdapter.js';
 import { buildKnowledgeSynthesisVisibilityWhere } from './prismaKnowledgeSynthesisVisibility.js';
 import { KnowledgeLlmProviderOutcomeMissingError } from './prismaKnowledgeLlmRunErrors.js';
+import {
+  knowledgeLlmConversationVisibilityWhere,
+  knowledgeLlmOwnerBoundaryMatches,
+  knowledgeLlmScopeMatches,
+  knowledgeLlmSourceCounts,
+  sameKnowledgeLlmSource,
+} from './prismaKnowledgeLlmRunHelpers.js';
 
 type Transaction = Prisma.TransactionClient;
 type TransactionHost = Pick<PrismaClient, '$transaction'>;
@@ -89,70 +96,6 @@ async function serializable<T>(
   throw lastError;
 }
 
-function sourceCounts(): KnowledgeLlmResolvedContext['sourceCounts'] {
-  return {
-    snapshot: 0,
-    annotation_revision: 0,
-    conversation_turn: 0,
-    synthesis_version: 0,
-    thread_promotion_message: 0,
-  };
-}
-
-function scopeMatches(
-  source: { scope: 'personal' | 'organization'; organizationId: string | null },
-  input: { scope: 'personal' | 'organization'; organizationId: string | null },
-) {
-  return (
-    source.scope === input.scope &&
-    (input.scope === 'personal'
-      ? source.organizationId === null
-      : source.organizationId === input.organizationId)
-  );
-}
-
-function ownerBoundaryMatches(
-  ownerUserId: string,
-  actor: KnowledgeActor,
-  input: { scope: 'personal' | 'organization' },
-) {
-  return input.scope === 'organization' || ownerUserId === actor.userId;
-}
-
-function conversationVisibilityWhere(
-  actor: KnowledgeActor,
-): Prisma.KnowledgeConversationWhereInput {
-  const itemVisibility = buildKnowledgeVisibilityWhere(actor);
-  return {
-    deletedAt: null,
-    OR: [
-      {
-        ownerUserId: actor.userId,
-        items: { none: {} },
-        llmRuns: { none: {} },
-      },
-      {
-        items: { some: {} },
-        llmRuns: { none: {} },
-        AND: { items: { every: { knowledgeItem: { is: itemVisibility } } } },
-      },
-    ],
-  };
-}
-
-function sameSource(
-  left: KnowledgeLlmSelectedContextSource,
-  right: KnowledgeLlmSelectedContextSource,
-) {
-  return (
-    left.sourceType === right.sourceType &&
-    left.sourceId === right.sourceId &&
-    left.exactSourceVersion === right.exactSourceVersion &&
-    left.exactSourceHash === right.exactSourceHash &&
-    left.representation === right.representation
-  );
-}
-
 async function resolveOne(
   client: ContextClient,
   input: {
@@ -190,8 +133,12 @@ async function resolveOne(
       if (
         !row?.sha256 ||
         !row.extractedText ||
-        !ownerBoundaryMatches(row.knowledgeItem.ownerUserId, actor, input) ||
-        !scopeMatches(row.knowledgeItem, input)
+        !knowledgeLlmOwnerBoundaryMatches(
+          row.knowledgeItem.ownerUserId,
+          actor,
+          input,
+        ) ||
+        !knowledgeLlmScopeMatches(row.knowledgeItem, input)
       ) {
         throw new KnowledgeLlmRunAccessError('not_found');
       }
@@ -231,8 +178,12 @@ async function resolveOne(
       });
       if (
         !row ||
-        !ownerBoundaryMatches(row.annotation.ownerUserId, actor, input) ||
-        !scopeMatches(row.annotation, input)
+        !knowledgeLlmOwnerBoundaryMatches(
+          row.annotation.ownerUserId,
+          actor,
+          input,
+        ) ||
+        !knowledgeLlmScopeMatches(row.annotation, input)
       ) {
         throw new KnowledgeLlmRunAccessError('not_found');
       }
@@ -253,7 +204,7 @@ async function resolveOne(
         where: {
           id: selector.sourceId,
           role: { in: ['user', 'assistant'] },
-          conversation: { is: conversationVisibilityWhere(actor) },
+          conversation: { is: knowledgeLlmConversationVisibilityWhere(actor) },
         },
         select: {
           id: true,
@@ -288,8 +239,11 @@ async function resolveOne(
         (items.length > 0 &&
           items.some(
             (item) =>
-              !ownerBoundaryMatches(item.ownerUserId, actor, input) ||
-              !scopeMatches(item, input),
+              !knowledgeLlmOwnerBoundaryMatches(
+                item.ownerUserId,
+                actor,
+                input,
+              ) || !knowledgeLlmScopeMatches(item, input),
           ))
       ) {
         throw new KnowledgeLlmRunAccessError('not_found');
@@ -356,8 +310,12 @@ async function resolveOne(
       });
       if (
         !row ||
-        !ownerBoundaryMatches(row.synthesis.ownerUserId, actor, input) ||
-        !scopeMatches(row.synthesis, input) ||
+        !knowledgeLlmOwnerBoundaryMatches(
+          row.synthesis.ownerUserId,
+          actor,
+          input,
+        ) ||
+        !knowledgeLlmScopeMatches(row.synthesis, input) ||
         row.sources.some(
           (source) =>
             (source.sourceConversation?.llmRuns.length ?? 0) > 0 ||
@@ -428,8 +386,12 @@ async function resolveOne(
       });
       if (
         !row ||
-        !ownerBoundaryMatches(row.promotion.ownerUserId, actor, input) ||
-        !scopeMatches(row.promotion, input)
+        !knowledgeLlmOwnerBoundaryMatches(
+          row.promotion.ownerUserId,
+          actor,
+          input,
+        ) ||
+        !knowledgeLlmScopeMatches(row.promotion, input)
       ) {
         throw new KnowledgeLlmRunAccessError('not_found');
       }
@@ -462,7 +424,7 @@ async function resolveContext(
     throw new KnowledgeLlmRunAccessError('not_found');
   }
   const itemIds = new Set<string>();
-  const counts = sourceCounts();
+  const counts = knowledgeLlmSourceCounts();
   const sources: KnowledgeLlmSelectedContextSource[] = [];
   const identities = new Set<string>();
   for (const selector of input.selectors) {
@@ -1016,7 +978,7 @@ export class PrismaKnowledgeLlmRunAdapter implements KnowledgeLlmRunPort {
           current.sources.some(
             (source, index) =>
               !input.expectedSources[index] ||
-              !sameSource(source, input.expectedSources[index]),
+              !sameKnowledgeLlmSource(source, input.expectedSources[index]),
           )
         ) {
           throw new KnowledgeLlmRunAccessError('stale_preview');
