@@ -65,7 +65,11 @@ test('LLM foundation is additive and separates execution from settlement', () =>
   );
   assert.match(
     migration,
-    /erp4_knowledge_llm_model_valid[\s\S]*?LENGTH\(value\) BETWEEN 1 AND 200[\s\S]*?BTRIM\([\s\S]*?U&'[\s\S]*?\\00A0[\s\S]*?\\2003[\s\S]*?\\FEFF[\s\S]*?value !~ U&'\[\\0001-\\001F\\007F-\\009F\]'/,
+    /erp4_knowledge_llm_model_valid[\s\S]*?LENGTH\(value\) BETWEEN 1 AND 200[\s\S]*?BTRIM\([\s\S]*?U&'[\s\S]*?\\00A0[\s\S]*?\\2003[\s\S]*?\\FEFF/,
+  );
+  assert.match(
+    migration,
+    /erp4_knowledge_llm_model_valid[\s\S]*?GENERATE_SERIES\(1, LEAST\(LENGTH\(value\), 201\)\)[\s\S]*?BETWEEN 1 AND 31[\s\S]*?BETWEEN 127 AND 159[\s\S]*?= 173[\s\S]*?IN \(1564, 1757, 1807, 2274, 6158, 65279, 69757, 69837, 917505\)[\s\S]*?BETWEEN 8203 AND 8207[\s\S]*?BETWEEN 917536 AND 917631/,
   );
   assert.match(
     migration,

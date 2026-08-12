@@ -77,6 +77,15 @@ test('envValidation: Chat custom OpenAI destination requires an independent host
   });
   assert.equal(allowlisted.status, 0, allowlisted.stderr);
 
+  const malformedAllowlist = runEnvValidation({
+    CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+    CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-only',
+    CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://provider.example/v1',
+    CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: 'provider.example,bad host',
+  });
+  assert.notEqual(malformedAllowlist.status, 0);
+  assert.match(malformedAllowlist.stderr, /CHAT_EXTERNAL_LLM_ALLOWED_HOSTS/);
+
   const nonStandardOpenAiPort = runEnvValidation({
     CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
     CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-only',

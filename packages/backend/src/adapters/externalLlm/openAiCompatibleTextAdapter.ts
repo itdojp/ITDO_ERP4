@@ -7,6 +7,7 @@ import type {
 } from '../../application/externalLlm/externalLlmPort.js';
 import {
   bindExternalLlmTextTransportRequest,
+  canonicalExternalLlmAllowedHost,
   ExternalLlmProviderError,
 } from '../../application/externalLlm/externalLlmPort.js';
 import {
@@ -90,10 +91,11 @@ function canonicalAllowedHosts(
   const hosts = [
     ...new Set(
       values
-        .map((value) => value.trim().toLowerCase())
-        .filter((value) => value.length > 0),
+        .map(canonicalExternalLlmAllowedHost)
+        .filter((value) => value !== null),
     ),
   ].sort();
+  if (hosts.length !== values.length) return null;
   const endpointHost = new URL(endpoint).hostname.toLowerCase();
   return hosts.length > 0 && hosts.includes(endpointHost) ? hosts : null;
 }

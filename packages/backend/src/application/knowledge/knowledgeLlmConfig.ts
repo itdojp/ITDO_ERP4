@@ -1,4 +1,5 @@
 import {
+  canonicalExternalLlmAllowedHost,
   externalLlmMessageFramingTokens,
   isCanonicalExternalLlmModel,
   type ExternalLlmProviderName,
@@ -273,13 +274,7 @@ function allowedHosts(raw: string | undefined): string[] {
     );
   }
   result.forEach((entry) => {
-    boundedText(entry, 253, 'KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS');
-    if (
-      !/^[a-z0-9.-]+$/.test(entry) ||
-      entry.startsWith('.') ||
-      entry.endsWith('.') ||
-      entry.includes('..')
-    ) {
+    if (canonicalExternalLlmAllowedHost(entry) !== entry) {
       throw new KnowledgeLlmConfigurationError(
         'KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS',
       );

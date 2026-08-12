@@ -145,6 +145,27 @@ test('getChatExternalLlmConfig rejects a custom destination without an independe
   );
 });
 
+test('getChatExternalLlmConfig rejects malformed or duplicate allowlist entries', async () => {
+  const { getChatExternalLlmConfig } =
+    await import('../dist/services/chatExternalLlm.js');
+  for (const allowedHosts of [
+    'provider.example,bad host',
+    'provider.example,provider.example',
+    'provider.example,.hidden.example',
+  ]) {
+    assert.throws(
+      () =>
+        getChatExternalLlmConfig({
+          CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+          CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+          CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://provider.example/v1',
+          CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: allowedHosts,
+        }),
+      /CHAT_EXTERNAL_LLM_ALLOWED_HOSTS/,
+    );
+  }
+});
+
 test('getChatExternalLlmConfig rejects unsafe production transport overrides', async () => {
   const { getChatExternalLlmConfig } =
     await import('../dist/services/chatExternalLlm.js');

@@ -480,6 +480,10 @@ try {
     ['em-space-padding', '\u2003stub-default\u2003'],
     ['ideographic-space-padding', '\u3000stub-default\u3000'],
     ['bom-padding', '\ufeffstub-default\ufeff'],
+    ['soft-hyphen-format', 'stub\u00admodel'],
+    ['zero-width-format', 'stub\u200bmodel'],
+    ['bidi-format', 'stub\u202emodel'],
+    ['supplementary-format', `stub${String.fromCodePoint(0xe0001)}model`],
     ['empty', ''],
     ['over-code-point-limit', '😀'.repeat(201)],
   ];

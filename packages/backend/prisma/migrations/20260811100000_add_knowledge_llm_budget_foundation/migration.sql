@@ -551,9 +551,10 @@ CREATE TRIGGER "KnowledgeLlmBudgetPeriod_boundary_guard"
   BEFORE INSERT OR UPDATE ON "KnowledgeLlmBudgetPeriod"
   FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_period_boundary_guard"();
 
--- Match ECMAScript TrimString plus the application C0/C1 control and
--- Unicode-code-point length contract. PostgreSQL's one-argument BTRIM only
--- removes U+0020 and is therefore too weak for canonical provider identities.
+-- Match ECMAScript TrimString plus the application C0/C1 control, Unicode
+-- 15.0 Format (Cf), and Unicode-code-point length contract. PostgreSQL's
+-- one-argument BTRIM only removes U+0020 and is therefore too weak for
+-- canonical provider identities.
 CREATE OR REPLACE FUNCTION "erp4_knowledge_llm_model_valid"(value TEXT)
 RETURNS BOOLEAN
 LANGUAGE SQL
@@ -567,7 +568,28 @@ AS $$
       value,
       U&'\0009\000A\000B\000C\000D\0020\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000\FEFF'
     )
-    AND value !~ U&'[\0001-\001F\007F-\009F]';
+    AND NOT EXISTS (
+      SELECT 1
+      FROM GENERATE_SERIES(1, LEAST(LENGTH(value), 201)) AS character_position
+      WHERE
+        ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 1 AND 31
+        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 127 AND 159
+        -- Unicode 15.0 General_Category=Format (Cf). This list mirrors the
+        -- application validator and is deliberately independent of DB locale.
+        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) = 173
+        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 1536 AND 1541
+        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) IN (1564, 1757, 1807, 2274, 6158, 65279, 69757, 69837, 917505)
+        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 2192 AND 2193
+        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 8203 AND 8207
+        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 8234 AND 8238
+        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 8288 AND 8292
+        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 8294 AND 8303
+        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 65529 AND 65531
+        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 78896 AND 78911
+        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 113824 AND 113827
+        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 119155 AND 119162
+        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 917536 AND 917631
+    );
 $$;
 
 ALTER TABLE "KnowledgeLlmRun"

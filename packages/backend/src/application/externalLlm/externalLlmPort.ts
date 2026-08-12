@@ -70,6 +70,35 @@ function hasUnpairedUtf16Surrogate(value: string): boolean {
   return false;
 }
 
+// Unicode 15.0 General_Category=Format (Cf). Keep this explicit list aligned
+// with the PostgreSQL model validator so Node/ICU upgrades cannot silently
+// change the persisted provider identity contract.
+function isUnicode15FormatCodePoint(codePoint: number): boolean {
+  return (
+    codePoint === 0x00ad ||
+    (codePoint >= 0x0600 && codePoint <= 0x0605) ||
+    codePoint === 0x061c ||
+    codePoint === 0x06dd ||
+    codePoint === 0x070f ||
+    (codePoint >= 0x0890 && codePoint <= 0x0891) ||
+    codePoint === 0x08e2 ||
+    codePoint === 0x180e ||
+    (codePoint >= 0x200b && codePoint <= 0x200f) ||
+    (codePoint >= 0x202a && codePoint <= 0x202e) ||
+    (codePoint >= 0x2060 && codePoint <= 0x2064) ||
+    (codePoint >= 0x2066 && codePoint <= 0x206f) ||
+    codePoint === 0xfeff ||
+    (codePoint >= 0xfff9 && codePoint <= 0xfffb) ||
+    codePoint === 0x110bd ||
+    codePoint === 0x110cd ||
+    (codePoint >= 0x13430 && codePoint <= 0x1343f) ||
+    (codePoint >= 0x1bca0 && codePoint <= 0x1bca3) ||
+    (codePoint >= 0x1d173 && codePoint <= 0x1d17a) ||
+    codePoint === 0xe0001 ||
+    (codePoint >= 0xe0020 && codePoint <= 0xe007f)
+  );
+}
+
 /**
  * Canonical provider model identity shared by configuration, requests,
  * budget persistence and mandatory audit validation.
@@ -85,8 +114,28 @@ export function isCanonicalExternalLlmModel(value: unknown): value is string {
   if (hasUnpairedUtf16Surrogate(value)) return false;
   return characters.every((character) => {
     const codePoint = character.codePointAt(0) ?? 0;
-    return !(codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f));
+    return !(
+      codePoint <= 0x1f ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      isUnicode15FormatCodePoint(codePoint)
+    );
   });
+}
+
+export function canonicalExternalLlmAllowedHost(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized.length < 1 ||
+    normalized.length > 253 ||
+    !/^[a-z0-9.-]+$/.test(normalized) ||
+    normalized.startsWith('.') ||
+    normalized.endsWith('.') ||
+    normalized.includes('..')
+  ) {
+    return null;
+  }
+  return normalized;
 }
 
 function assertExternalLlmTextRequest(request: ExternalLlmTextRequest): void {

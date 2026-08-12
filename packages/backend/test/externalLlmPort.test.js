@@ -263,6 +263,10 @@ test('canonical external LLM model identity rejects ECMAScript trim and C0/C1 co
     '\u2003stub-default\u2003',
     '\u3000stub-default\u3000',
     '\ufeffstub-default\ufeff',
+    'stub\u00admodel',
+    'stub\u200bmodel',
+    'stub\u202emodel',
+    `stub${String.fromCodePoint(0xe0001)}model`,
     'stub\nmodel',
     `stub${String.fromCodePoint(0x85)}model`,
     '\ud800',
@@ -403,7 +407,11 @@ test('OpenAI-compatible adapter rejects an empty or mismatched host allowlist be
   const { OpenAiCompatibleTextAdapter } =
     await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
   let dnsLookupCount = 0;
-  for (const allowedHosts of [[], ['other-provider.example']]) {
+  for (const allowedHosts of [
+    [],
+    ['other-provider.example'],
+    ['provider.example', 'bad host'],
+  ]) {
     const adapter = new OpenAiCompatibleTextAdapter({
       apiKey: 'synthetic-only',
       baseUrl: 'https://provider.example/v1',

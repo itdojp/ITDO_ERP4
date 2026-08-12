@@ -73,6 +73,17 @@ test('model catalog is strict, versioned and uses integer price strings', async 
       ),
     /KNOWLEDGE_LLM_MODEL_CATALOG_JSON/,
   );
+  for (const model of [
+    'stub\u00admodel',
+    'stub\u200bmodel',
+    'stub\u202emodel',
+    `stub${String.fromCodePoint(0xe0001)}model`,
+  ]) {
+    assert.throws(
+      () => parseKnowledgeLlmModelCatalog(catalog({ model })),
+      /KNOWLEDGE_LLM_MODEL_CATALOG_JSON/,
+    );
+  }
 });
 
 test('maximum reservation rounds each integer cost component up', async () => {
