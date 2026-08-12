@@ -207,6 +207,11 @@ test('conversation list and owner mutation use the linked-item ACL intersection 
   for (const [name, where] of calls) {
     const serialized = JSON.stringify(where);
     assert.match(serialized, /"items":\{"some":\{\}\}/, name);
+    assert.match(
+      serialized,
+      /"items":\{"some":\{\}\},"llmRuns":\{"none":\{\}\},"AND":\{"items":\{"every":/,
+      name,
+    );
     assert.match(serialized, /"items":\{"every":/, name);
     assert.match(serialized, /"knowledgeItem":\{"is":/, name);
     assert.match(serialized, /"ownerUserId":"owner-1"/, name);
@@ -586,6 +591,10 @@ test('conversation turn rows repeat the linked-item ACL intersection after the i
   const serialized = JSON.stringify(turnPredicate);
   assert.match(serialized, /"conversation":\{"is":/);
   assert.match(serialized, /"items":\{"some":\{\}\}/);
+  assert.match(
+    serialized,
+    /"items":\{"some":\{\}\},"llmRuns":\{"none":\{\}\},"AND":\{"items":\{"every":/,
+  );
   assert.match(serialized, /"items":\{"every":/);
   assert.match(serialized, /"knowledgeItem":\{"is":/);
   assert.match(serialized, /"ownerUserId":"owner-1"/);
