@@ -71,6 +71,7 @@ if grep -Eq 'KnowledgeLlm' <<<"$migration_diff"; then
 fi
 
 node "$ROOT_DIR/packages/backend/scripts/knowledge-llm-budget-integration.mjs"
+node "$ROOT_DIR/packages/backend/scripts/knowledge-llm-run-integration.mjs"
 npx --prefix "$ROOT_DIR/packages/backend" prisma migrate status \
   --config "$ROOT_DIR/packages/backend/prisma.config.ts" >/dev/null
 

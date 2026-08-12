@@ -36,6 +36,7 @@ import {
   threadPromotionSourceAuthorizesVersion,
   threadPromotionSourceAccessible,
 } from './prismaKnowledgeSynthesisVisibility.js';
+import { buildKnowledgeConversationVisibilityWhere } from './prismaKnowledgeConversationVisibility.js';
 
 export { PrismaKnowledgeProvenanceAuditWriter } from './prismaKnowledgeProvenanceAuditAdapter.js';
 
@@ -281,26 +282,6 @@ function beforePageBoundary(
       ],
     },
   ];
-}
-
-function conversationVisibilityWhere(
-  actor: KnowledgeActor,
-): Prisma.KnowledgeConversationWhereInput {
-  const itemVisibility = buildKnowledgeVisibilityWhere(actor);
-  return {
-    deletedAt: null,
-    OR: [
-      { ownerUserId: actor.userId, items: { none: {} } },
-      {
-        items: { some: {} },
-        AND: {
-          items: {
-            every: { knowledgeItem: { is: itemVisibility } },
-          },
-        },
-      },
-    ],
-  };
 }
 
 function annotationHistoryVisibilityWhere(
@@ -677,7 +658,7 @@ export class PrismaKnowledgeConversationRepository implements KnowledgeConversat
     const rows = await this.client.knowledgeConversation.findMany({
       where: {
         AND: [
-          conversationVisibilityWhere(input.actor),
+          buildKnowledgeConversationVisibilityWhere(input.actor),
           ...(input.knowledgeItemId !== undefined
             ? [
                 {
@@ -721,7 +702,7 @@ export class PrismaKnowledgeConversationRepository implements KnowledgeConversat
       where: {
         AND: [
           { id: input.conversationId },
-          conversationVisibilityWhere(input.actor),
+          buildKnowledgeConversationVisibilityWhere(input.actor),
         ],
       },
       include: conversationInclude,
@@ -760,7 +741,7 @@ export class PrismaKnowledgeConversationRepository implements KnowledgeConversat
       where: {
         AND: [
           { id: input.conversationId, ownerUserId: input.actor.userId },
-          conversationVisibilityWhere(input.actor),
+          buildKnowledgeConversationVisibilityWhere(input.actor),
         ],
       },
       include: conversationInclude,
@@ -844,7 +825,9 @@ export class PrismaKnowledgeConversationRepository implements KnowledgeConversat
     const rows = await this.client.knowledgeConversationTurn.findMany({
       where: {
         conversationId: input.conversationId,
-        conversation: { is: conversationVisibilityWhere(input.actor) },
+        conversation: {
+          is: buildKnowledgeConversationVisibilityWhere(input.actor),
+        },
         ...(input.boundary
           ? {
               OR: [
@@ -1033,7 +1016,7 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
             where: {
               AND: [
                 { id: identity.sourceId },
-                conversationVisibilityWhere(actor),
+                buildKnowledgeConversationVisibilityWhere(actor),
               ],
             },
             select: { id: true },
@@ -1045,7 +1028,9 @@ export class PrismaKnowledgeSynthesisRepository implements KnowledgeSynthesisRep
           await this.client.knowledgeConversationTurn.findFirst({
             where: {
               id: identity.sourceId,
-              conversation: { is: conversationVisibilityWhere(actor) },
+              conversation: {
+                is: buildKnowledgeConversationVisibilityWhere(actor),
+              },
             },
             select: { id: true },
           }),

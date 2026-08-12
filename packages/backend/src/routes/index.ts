@@ -69,6 +69,7 @@ import { registerKnowledgeConversationImportRoutes } from './knowledgeConversati
 import { registerKnowledgeSynthesisRoutes } from './knowledgeSyntheses.js';
 import { registerKnowledgeShareRoutes } from './knowledgeShares.js';
 import { registerKnowledgeThreadPromotionRoutes } from './knowledgeThreadPromotions.js';
+import { registerKnowledgeLlmRunRoutes } from './knowledgeLlmRuns.js';
 
 export async function registerRoutes(app: FastifyInstance) {
   await registerAuthRoutes(app);
@@ -141,4 +142,5 @@ export async function registerRoutes(app: FastifyInstance) {
   await registerKnowledgeSynthesisRoutes(app);
   await registerKnowledgeShareRoutes(app);
   await registerKnowledgeThreadPromotionRoutes(app);
+  await registerKnowledgeLlmRunRoutes(app);
 }

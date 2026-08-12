@@ -10,6 +10,7 @@ import { normalizeAuthIdentifier } from '../../services/authIdentifiers.js';
 type AuditClient = Pick<Prisma.TransactionClient, 'auditLog'>;
 
 const actionSet = new Set([
+  'knowledge_llm_previewed',
   'knowledge_llm_budget_reserved',
   'knowledge_llm_budget_blocked',
   'knowledge_llm_rate_blocked',
@@ -23,6 +24,7 @@ const actionSet = new Set([
 ]);
 const scopeSet = new Set(['personal', 'organization']);
 const reservationResultCodeSet = new Set([
+  'previewed',
   'reserved',
   'reused',
   'conflict',
@@ -54,6 +56,7 @@ const terminalFailureCodeSet = new Set([
   'finalization_failed',
 ]);
 const actionResultCodes: Record<string, ReadonlySet<string>> = {
+  knowledge_llm_previewed: new Set(['previewed']),
   knowledge_llm_budget_reserved: new Set(['reserved']),
   knowledge_llm_budget_blocked: new Set([
     'hard_blocked',
@@ -102,6 +105,8 @@ function auditMetadata(entry: KnowledgeLlmAuditEntry): Prisma.InputJsonObject {
     'operatorIntervention' in metadata
       ? metadata.operatorIntervention
       : undefined;
+  const sourceCounts =
+    'sourceCounts' in metadata ? metadata.sourceCounts : undefined;
   if (
     (metadata.provider !== 'stub' && metadata.provider !== 'openai') ||
     !isCanonicalExternalLlmModel(metadata.model) ||
@@ -116,7 +121,10 @@ function auditMetadata(entry: KnowledgeLlmAuditEntry): Prisma.InputJsonObject {
     !/^[A-Z]{3}$/.test(metadata.currency) ||
     !Number.isSafeInteger(metadata.policyCount) ||
     metadata.policyCount <
-      (metadata.resultCode === 'configuration_blocked' ? 0 : 1) ||
+      (metadata.resultCode === 'configuration_blocked' ||
+      metadata.resultCode === 'previewed'
+        ? 0
+        : 1) ||
     metadata.policyCount > 2 ||
     (!reservationResult && !terminalResult) ||
     !actionResultCodes[entry.action]?.has(metadata.resultCode)
@@ -138,6 +146,19 @@ function auditMetadata(entry: KnowledgeLlmAuditEntry): Prisma.InputJsonObject {
       actualOutputTokens !== undefined ||
       actualCostMicros !== undefined ||
       failureCode !== undefined)
+  ) {
+    throw new Error('knowledge_llm_audit_invalid');
+  }
+  if (
+    metadata.resultCode === 'previewed' &&
+    (entry.action !== 'knowledge_llm_previewed' ||
+      metadata.policyCount !== 0 ||
+      sourceCounts === undefined ||
+      Object.values(sourceCounts).some(
+        (count) => !Number.isSafeInteger(count) || count < 0,
+      ) ||
+      Object.values(sourceCounts).reduce((total, count) => total + count, 0) >
+        32)
   ) {
     throw new Error('knowledge_llm_audit_invalid');
   }
@@ -196,6 +217,7 @@ function auditMetadata(entry: KnowledgeLlmAuditEntry): Prisma.InputJsonObject {
     resultCode: metadata.resultCode,
     policyCount: metadata.policyCount,
     ...(reservationResult ? { softLimitWarning } : {}),
+    ...(metadata.resultCode === 'previewed' ? { sourceCounts } : {}),
     ...(completed
       ? { actualInputTokens, actualOutputTokens, actualCostMicros }
       : terminalResult && !dispatched

@@ -1,6 +1,58 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+test('Knowledge LLM preview audit stores only bounded source counts', async () => {
+  const { PrismaKnowledgeLlmAuditWriter } =
+    await import('../dist/adapters/knowledge/prismaKnowledgeLlmAuditAdapter.js');
+  let created;
+  const writer = new PrismaKnowledgeLlmAuditWriter({
+    auditLog: {
+      async create(input) {
+        created = input.data;
+        return input.data;
+      },
+    },
+  });
+  await writer.write({
+    action: 'knowledge_llm_previewed',
+    actor: {
+      userId: 'canonical-user',
+      requestId: 'synthetic-preview-request',
+      source: 'api',
+    },
+    targetTable: 'knowledge_llm_runs',
+    targetId: 'synthetic-preview-run',
+    metadata: {
+      provider: 'stub',
+      model: 'stub-v1',
+      scope: 'personal',
+      catalogVersion: 1,
+      estimatedInputTokens: 40,
+      maxOutputTokens: 20,
+      reservedCostMicros: '1',
+      currency: 'JPY',
+      sourceCounts: {
+        snapshots: 1,
+        annotationRevisions: 1,
+        conversationTurns: 0,
+        synthesisVersions: 0,
+        threadPromotionMessages: 0,
+      },
+      resultCode: 'previewed',
+      policyCount: 0,
+      softLimitWarning: false,
+    },
+  });
+  assert.deepEqual(created.metadata.sourceCounts, {
+    snapshots: 1,
+    annotationRevisions: 1,
+    conversationTurns: 0,
+    synthesisVersions: 0,
+    threadPromotionMessages: 0,
+  });
+  assert.equal(JSON.stringify(created.metadata).includes('source-id'), false);
+});
+
 test('Knowledge LLM audit keeps canonical user attribution and omits caller auth identifiers', async () => {
   const { PrismaKnowledgeLlmAuditWriter } =
     await import('../dist/adapters/knowledge/prismaKnowledgeLlmAuditAdapter.js');
