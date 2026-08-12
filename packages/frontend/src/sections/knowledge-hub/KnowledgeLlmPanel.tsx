@@ -346,7 +346,7 @@ export function KnowledgeLlmPanel(props: {
   const selectedModel = catalog?.models.find(
     (entry) => modelIdentity(entry.provider, entry.model) === model,
   );
-  const request = useMemo<KnowledgeLlmRequest | null>(() => {
+  const buildRequest = useCallback((): KnowledgeLlmRequest | null => {
     if (!catalog?.enabled || catalog.version === null || !selectedModel) {
       return null;
     }
@@ -394,6 +394,7 @@ export function KnowledgeLlmPanel(props: {
   };
 
   const handlePreview = async () => {
+    const request = buildRequest();
     if (!request || !catalog) return;
     const validation = validateKnowledgeLlmRequest({ request, catalog });
     if (validation) {
@@ -435,6 +436,7 @@ export function KnowledgeLlmPanel(props: {
   };
 
   const handleExecute = async () => {
+    const request = buildRequest();
     if (!request || !preview || !requestKey || !confirmed || commitAttempted) {
       return;
     }
