@@ -33,6 +33,9 @@ BACKUP_NODE_FILES=(
   scripts/storage-readiness-record.mjs
   scripts/storage-readiness-record.test.mjs
 )
+E2E_RUNTIME_SHELL_FILES=(
+  scripts/e2e-frontend.sh
+)
 
 printf '==> Checking ops shell script syntax\n'
 for file in "${OPS_SHELL_FILES[@]}"; do
@@ -41,6 +44,10 @@ for file in "${OPS_SHELL_FILES[@]}"; do
 done
 
 for file in "${BACKUP_SHELL_FILES[@]}"; do
+  bash -n "$file"
+  printf 'syntax ok: %s\n' "$file"
+done
+for file in "${E2E_RUNTIME_SHELL_FILES[@]}"; do
   bash -n "$file"
   printf 'syntax ok: %s\n' "$file"
 done
@@ -68,6 +75,33 @@ if grep -RInE '(rm[[:space:]].*(-r|-f|-rf|-fr)|git[[:space:]]+reset[[:space:]].*
   exit 1
 fi
 printf 'destructive or secret-exposing command guard ok\n'
+
+printf '==> Checking E2E external LLM isolation\n'
+grep -Fq 'CHAT_EXTERNAL_LLM_PROVIDER=stub' scripts/e2e-frontend.sh || {
+  printf 'E2E must force the Chat external LLM provider to the in-process stub.\n' >&2
+  exit 1
+}
+grep -Fq 'KNOWLEDGE_EXTERNAL_LLM_PROVIDER="$E2E_KNOWLEDGE_LLM_PROVIDER"' scripts/e2e-frontend.sh || {
+  printf 'E2E must bind the Knowledge provider to E2E_KNOWLEDGE_LLM_MODE.\n' >&2
+  exit 1
+}
+for key in \
+  CHAT_EXTERNAL_LLM_OPENAI_API_KEY \
+  CHAT_EXTERNAL_LLM_OPENAI_BASE_URL \
+  CHAT_EXTERNAL_LLM_ALLOWED_HOSTS \
+  CHAT_EXTERNAL_LLM_ALLOW_HTTP \
+  CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP \
+  KNOWLEDGE_EXTERNAL_LLM_OPENAI_API_KEY \
+  KNOWLEDGE_EXTERNAL_LLM_OPENAI_BASE_URL \
+  KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS \
+  KNOWLEDGE_EXTERNAL_LLM_ALLOW_HTTP \
+  KNOWLEDGE_EXTERNAL_LLM_ALLOW_PRIVATE_IP; do
+  grep -Fq -- "-u $key" scripts/e2e-frontend.sh || {
+    printf 'E2E backend launch must remove inherited external LLM setting: %s\n' "$key" >&2
+    exit 1
+  }
+done
+printf 'E2E external LLM isolation ok\n'
 
 require_env_key() {
   local file="$1"

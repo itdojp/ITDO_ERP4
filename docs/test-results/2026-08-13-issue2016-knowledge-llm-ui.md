@@ -8,6 +8,7 @@
 - environment: local synthetic E2E（ephemeral PostgreSQL / backend / frontend / Playwright）
 - provider: 明示有効化したin-process stubだけ
 - 実外部接続／実API key: なし
+- E2E process isolation: Chat providerは固定stub、Chat／Knowledgeの外部destination・credential環境変数はbackend子processから除去
 
 ## 検証対象
 
@@ -43,13 +44,14 @@ canaryはexact preview、provider request、run response、画面、監査／app
 
 | 分類 | 結果 |
 | --- | --- |
-| focused backend stub/test-hook/route/候補adapter | 25 / 25 PASS |
-| focused frontend model/API/component | 19 / 19 PASS |
+| focused backend stub/test-hook/route/候補adapter | 23 / 23 PASS |
+| focused frontend model/API/component | 16 / 16 PASS |
 | focused real-backend E2E（stub） | 1 / 1 PASS |
 | focused real-backend E2E（disabled） | 1 / 1 PASS |
 | focused real-backend E2E（JWT canonical identity + stub） | 1 / 1 PASS |
-| backend full | 2,336 / 2,336 PASS |
-| frontend full | 818 / 818 PASS |
+| ambient external-provider設定を注入したprocess isolation E2E | Knowledge + Chat summary 2 / 2 PASS、外部request 0件、canary log非含有 |
+| backend full | 2,343 / 2,343 PASS |
+| frontend full | 820 / 820 PASS |
 | full E2E | 155 PASS / 34既存条件付きskip / failure 0 |
 | UI core coverage | statements 73.63%、branches 66.65%、functions 73.28%、lines 76.39%（全threshold PASS） |
 | frontend build budget | PASS（initial JS gzip 158.4 KiB） |
