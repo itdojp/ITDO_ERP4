@@ -409,6 +409,47 @@ try {
       conversationId: completed.run.conversationId,
     }),
   );
+  const linkedResultConversation = await conversationRepository.addItem({
+    actor,
+    conversationId: completed.run.conversationId,
+    itemId: item.id,
+    relationType: 'context',
+    ordinal: 0,
+    expectedVersion: 1,
+  });
+  assert.ok(linkedResultConversation);
+  assert.ok(
+    await conversationRepository.findVisible({
+      actor,
+      conversationId: completed.run.conversationId,
+    }),
+  );
+  const completedAssistant =
+    await prisma.knowledgeConversationTurn.findFirstOrThrow({
+      where: {
+        conversationId: completed.run.conversationId,
+        role: 'assistant',
+      },
+    });
+  await assert.rejects(
+    service.preview({
+      actor,
+      auditActor: {
+        ...auditActor,
+        requestId: 'run-integration-llm-result-reselect',
+      },
+      request: {
+        ...request,
+        sources: [
+          {
+            sourceType: 'conversation_turn',
+            sourceId: completedAssistant.id,
+          },
+        ],
+      },
+    }),
+    (error) => error.status === 404 && error.code === 'not_found',
+  );
 
   const concurrentPreviewA = await service.preview({
     actor,

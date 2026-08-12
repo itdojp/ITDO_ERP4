@@ -18,6 +18,7 @@ export function buildKnowledgeConversationVisibilityWhere(
       },
       {
         items: { some: {} },
+        llmRuns: { none: {} },
         AND: {
           items: {
             every: { knowledgeItem: { is: itemVisibility } },
@@ -85,6 +86,7 @@ export function buildKnowledgeConversationVisibilityWhere(
       },
       {
         items: { some: {} },
+        llmRuns: { none: {} },
         AND: {
           items: {
             every: { knowledgeItem: { is: itemVisibility } },

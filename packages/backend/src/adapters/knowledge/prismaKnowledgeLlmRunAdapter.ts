@@ -127,6 +127,7 @@ function conversationVisibilityWhere(
       },
       {
         items: { some: {} },
+        llmRuns: { none: {} },
         AND: { items: { every: { knowledgeItem: { is: itemVisibility } } } },
       },
     ],
