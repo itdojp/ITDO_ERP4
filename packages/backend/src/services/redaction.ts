@@ -91,9 +91,10 @@ export async function readBoundedResponseText(
 }
 
 export type BoundedResponseTextResult = {
-  text: string;
+  text: string | null;
   rawBytesRead: number;
   exceededLimit: boolean;
+  invalidUtf8: boolean;
 };
 
 /**
@@ -113,7 +114,12 @@ export async function readBoundedResponseTextWithLimit(
     throw new Error('invalid_response_byte_limit');
   }
   if (!response.body) {
-    return { text: '', rawBytesRead: 0, exceededLimit: false };
+    return {
+      text: '',
+      rawBytesRead: 0,
+      exceededLimit: false,
+      invalidUtf8: false,
+    };
   }
   const reader = response.body.getReader();
   const chunks: Buffer[] = [];
@@ -134,9 +140,20 @@ export async function readBoundedResponseTextWithLimit(
     await reader.cancel().catch(() => undefined);
   }
   const retained = Buffer.concat(chunks);
+  let text: string | null = null;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(
+      retained.subarray(0, maxBytes),
+    );
+  } catch {
+    // Replacement decoding can expand one invalid byte to the three-byte
+    // U+FFFD representation and defeat a downstream persistence byte bound.
+    // Keep the raw byte accounting while reporting the encoding failure.
+  }
   return {
-    text: new TextDecoder().decode(retained.subarray(0, maxBytes)),
+    text,
     rawBytesRead: total,
     exceededLimit: total > maxBytes,
+    invalidUtf8: text === null,
   };
 }

@@ -218,6 +218,13 @@ async function readJsonBounded(response: Response, maximumBytes: number) {
       response.status,
     );
   }
+  if (bounded.invalidUtf8 || bounded.text === null) {
+    throw new ExternalLlmProviderError(
+      'malformed_response',
+      'known_response',
+      response.status,
+    );
+  }
   try {
     return JSON.parse(bounded.text) as unknown;
   } catch {

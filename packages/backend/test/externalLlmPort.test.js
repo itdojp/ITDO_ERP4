@@ -890,6 +890,42 @@ test('OpenAI-compatible adapter default rejects responses beyond the Knowledge o
   );
 });
 
+test('OpenAI-compatible adapter rejects invalid UTF-8 before replacement decoding can exceed the Knowledge bound', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  const raw = Buffer.concat([
+    Buffer.from('{"choices":[{"message":{"content":"', 'utf8'),
+    Buffer.alloc(100 * 1024, 0x80),
+    Buffer.from(
+      '"}}],"usage":{"prompt_tokens":10,"completion_tokens":2}}',
+      'utf8',
+    ),
+  ]);
+  assert.ok(raw.length < 256 * 1024);
+  assert.ok(raw.toString('utf8').includes('\ufffd'));
+  assert.ok(Buffer.byteLength(raw.toString('utf8'), 'utf8') > 256 * 1024);
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(raw);
+    },
+    async (baseUrl) => {
+      await assert.rejects(
+        complete(
+          openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl),
+          openAiRequest(),
+        ),
+        (error) => {
+          assert.equal(error.code, 'malformed_response');
+          assert.equal(error.outcome, 'known_response');
+          assert.equal(error.providerStatus, 200);
+          return true;
+        },
+      );
+    },
+  );
+});
+
 test('OpenAI-compatible adapter measures an oversized BOM response before UTF-8 decoding', async () => {
   const { OpenAiCompatibleTextAdapter } =
     await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
