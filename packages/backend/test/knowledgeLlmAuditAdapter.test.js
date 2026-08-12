@@ -140,6 +140,7 @@ test('Knowledge LLM audit measures model bounds by Unicode code points', async (
     'stub\u200bmodel',
     'stub\u202emodel',
     `stub${String.fromCodePoint(0xe0001)}model`,
+    `stub${String.fromCodePoint(0x110bd)}model`,
     `stub${String.fromCodePoint(0x85)}model`,
   ]) {
     await assert.rejects(

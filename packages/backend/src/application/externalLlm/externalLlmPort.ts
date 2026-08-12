@@ -73,29 +73,33 @@ function hasUnpairedUtf16Surrogate(value: string): boolean {
 // Unicode 15.0 General_Category=Format (Cf). Keep this explicit list aligned
 // with the PostgreSQL model validator so Node/ICU upgrades cannot silently
 // change the persisted provider identity contract.
+export const externalLlmUnicode15FormatCodePointRanges = [
+  [0x00ad, 0x00ad],
+  [0x0600, 0x0605],
+  [0x061c, 0x061c],
+  [0x06dd, 0x06dd],
+  [0x070f, 0x070f],
+  [0x0890, 0x0891],
+  [0x08e2, 0x08e2],
+  [0x180e, 0x180e],
+  [0x200b, 0x200f],
+  [0x202a, 0x202e],
+  [0x2060, 0x2064],
+  [0x2066, 0x206f],
+  [0xfeff, 0xfeff],
+  [0xfff9, 0xfffb],
+  [0x110bd, 0x110bd],
+  [0x110cd, 0x110cd],
+  [0x13430, 0x1343f],
+  [0x1bca0, 0x1bca3],
+  [0x1d173, 0x1d17a],
+  [0xe0001, 0xe0001],
+  [0xe0020, 0xe007f],
+] as const;
+
 function isUnicode15FormatCodePoint(codePoint: number): boolean {
-  return (
-    codePoint === 0x00ad ||
-    (codePoint >= 0x0600 && codePoint <= 0x0605) ||
-    codePoint === 0x061c ||
-    codePoint === 0x06dd ||
-    codePoint === 0x070f ||
-    (codePoint >= 0x0890 && codePoint <= 0x0891) ||
-    codePoint === 0x08e2 ||
-    codePoint === 0x180e ||
-    (codePoint >= 0x200b && codePoint <= 0x200f) ||
-    (codePoint >= 0x202a && codePoint <= 0x202e) ||
-    (codePoint >= 0x2060 && codePoint <= 0x2064) ||
-    (codePoint >= 0x2066 && codePoint <= 0x206f) ||
-    codePoint === 0xfeff ||
-    (codePoint >= 0xfff9 && codePoint <= 0xfffb) ||
-    codePoint === 0x110bd ||
-    codePoint === 0x110cd ||
-    (codePoint >= 0x13430 && codePoint <= 0x1343f) ||
-    (codePoint >= 0x1bca0 && codePoint <= 0x1bca3) ||
-    (codePoint >= 0x1d173 && codePoint <= 0x1d17a) ||
-    codePoint === 0xe0001 ||
-    (codePoint >= 0xe0020 && codePoint <= 0xe007f)
+  return externalLlmUnicode15FormatCodePointRanges.some(
+    ([first, last]) => codePoint >= first && codePoint <= last,
   );
 }
 

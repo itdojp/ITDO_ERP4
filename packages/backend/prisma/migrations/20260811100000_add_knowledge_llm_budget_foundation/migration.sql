@@ -574,21 +574,36 @@ AS $$
       WHERE
         ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 1 AND 31
         OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 127 AND 159
-        -- Unicode 15.0 General_Category=Format (Cf). This list mirrors the
-        -- application validator and is deliberately independent of DB locale.
-        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) = 173
-        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 1536 AND 1541
-        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) IN (1564, 1757, 1807, 2274, 6158, 65279, 69821, 69837, 917505)
-        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 2192 AND 2193
-        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 8203 AND 8207
-        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 8234 AND 8238
-        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 8288 AND 8292
-        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 8294 AND 8303
-        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 65529 AND 65531
-        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 78896 AND 78911
-        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 113824 AND 113827
-        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 119155 AND 119162
-        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 917536 AND 917631
+        OR EXISTS (
+          SELECT 1
+          FROM (VALUES
+            -- ERP4_UNICODE_15_CF_RANGES_BEGIN
+            (173, 173),
+            (1536, 1541),
+            (1564, 1564),
+            (1757, 1757),
+            (1807, 1807),
+            (2192, 2193),
+            (2274, 2274),
+            (6158, 6158),
+            (8203, 8207),
+            (8234, 8238),
+            (8288, 8292),
+            (8294, 8303),
+            (65279, 65279),
+            (65529, 65531),
+            (69821, 69821),
+            (69837, 69837),
+            (78896, 78911),
+            (113824, 113827),
+            (119155, 119162),
+            (917505, 917505),
+            (917536, 917631)
+            -- ERP4_UNICODE_15_CF_RANGES_END
+          ) AS format_range(first_code_point, last_code_point)
+          WHERE ASCII(SUBSTRING(value FROM character_position FOR 1))
+            BETWEEN format_range.first_code_point AND format_range.last_code_point
+        )
     );
 $$;
 

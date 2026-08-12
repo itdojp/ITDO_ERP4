@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import test from 'node:test';
 
@@ -251,8 +252,10 @@ test('canonical external LLM serialization rejects unpaired UTF-16 surrogates wi
 });
 
 test('canonical external LLM model identity rejects ECMAScript trim and C0/C1 controls', async () => {
-  const { isCanonicalExternalLlmModel } =
-    await import('../dist/application/externalLlm/externalLlmPort.js');
+  const {
+    externalLlmUnicode15FormatCodePointRanges,
+    isCanonicalExternalLlmModel,
+  } = await import('../dist/application/externalLlm/externalLlmPort.js');
   assert.equal(isCanonicalExternalLlmModel('x'), true);
   assert.equal(isCanonicalExternalLlmModel('😀'.repeat(200)), true);
   for (const model of [
@@ -273,6 +276,39 @@ test('canonical external LLM model identity rejects ECMAScript trim and C0/C1 co
   ]) {
     assert.equal(isCanonicalExternalLlmModel(model), false);
   }
+  for (const [first, last] of externalLlmUnicode15FormatCodePointRanges) {
+    assert.equal(
+      isCanonicalExternalLlmModel(`stub${String.fromCodePoint(first)}model`),
+      false,
+    );
+    assert.equal(
+      isCanonicalExternalLlmModel(`stub${String.fromCodePoint(last)}model`),
+      false,
+    );
+  }
+});
+
+test('Unicode 15.0 Format ranges are identical in application and migration', async () => {
+  const { externalLlmUnicode15FormatCodePointRanges } =
+    await import('../dist/application/externalLlm/externalLlmPort.js');
+  const migration = await readFile(
+    new URL(
+      '../prisma/migrations/20260811100000_add_knowledge_llm_budget_foundation/migration.sql',
+      import.meta.url,
+    ),
+    'utf8',
+  );
+  const rangeBlock = migration.match(
+    /ERP4_UNICODE_15_CF_RANGES_BEGIN([\s\S]*?)ERP4_UNICODE_15_CF_RANGES_END/,
+  );
+  assert.ok(rangeBlock);
+  const databaseRanges = [...rangeBlock[1].matchAll(/\((\d+),\s*(\d+)\)/g)].map(
+    (match) => [Number(match[1]), Number(match[2])],
+  );
+  assert.deepEqual(
+    databaseRanges,
+    externalLlmUnicode15FormatCodePointRanges.map((range) => [...range]),
+  );
 });
 
 async function withHttpServer(handler, callback) {

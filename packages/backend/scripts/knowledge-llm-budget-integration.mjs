@@ -17,6 +17,9 @@ import {
   knowledgeLlmMonthlyPeriod,
 } from '../dist/application/knowledge/knowledgeLlmBudgetUseCases.js';
 import {
+  externalLlmUnicode15FormatCodePointRanges,
+} from '../dist/application/externalLlm/externalLlmPort.js';
+import {
   knowledgeLlmContextEstimatedTokens,
   knowledgeLlmContextRepresentationHash,
 } from '../dist/application/knowledge/knowledgeLlmContext.js';
@@ -485,6 +488,7 @@ try {
     ['bidi-format', 'stub\u202emodel'],
     ['kaithi-number-sign-format', `stub${String.fromCodePoint(0x110bd)}model`],
     ['supplementary-format', `stub${String.fromCodePoint(0xe0001)}model`],
+    ['kaithi-number-sign-format', `stub${String.fromCodePoint(0x110bd)}model`],
     ['empty', ''],
     ['over-code-point-limit', '😀'.repeat(201)],
   ];
@@ -514,6 +518,22 @@ try {
       twoHundredOneCodePoints: false,
     },
   ]);
+  for (const [first, last] of externalLlmUnicode15FormatCodePointRanges) {
+    for (const codePoint of new Set([first, last])) {
+      const [result] = await prisma.$queryRaw`
+        SELECT "erp4_knowledge_llm_model_valid"(
+          ${`stub${String.fromCodePoint(codePoint)}model`}
+        ) AS valid
+      `;
+      assert.equal(
+        result.valid,
+        false,
+        `database must reject Unicode 15.0 Cf U+${codePoint
+          .toString(16)
+          .toUpperCase()}`,
+      );
+    }
+  }
   const renderedPromptRequest = {
     provider: 'stub',
     model: 'stub-default',
