@@ -83,3 +83,74 @@ test('budget adapter does not normalize an unknown database failure', async () =
     return true;
   });
 });
+
+test('budget adapter normalizes a trusted accounting period boundary rejection', async () => {
+  const { PrismaKnowledgeLlmBudgetAdapter } =
+    await import('../dist/adapters/knowledge/prismaKnowledgeLlmBudgetAdapter.js');
+  let attempts = 0;
+  let auditWrites = 0;
+  const adapter = new PrismaKnowledgeLlmBudgetAdapter({
+    async $transaction(callback) {
+      attempts += 1;
+      if (attempts === 2) {
+        return callback({
+          auditLog: {
+            async create() {
+              auditWrites += 1;
+            },
+          },
+        });
+      }
+      throw {
+        code: 'P2039',
+        meta: {
+          driverAdapterError: {
+            cause: {
+              originalCode: '23514',
+              originalMessage:
+                'KnowledgeLlmReservation must use the current trusted accounting period',
+            },
+          },
+        },
+      };
+    },
+  });
+
+  const result = await adapter.reserve(reservation());
+  assert.equal(attempts, 2);
+  assert.equal(auditWrites, 1);
+  assert.deepEqual(result, {
+    ok: false,
+    error: {
+      status: 400,
+      code: 'policy_mismatch',
+      message: 'Budget policy mismatch',
+    },
+  });
+});
+
+test('budget adapter does not normalize another P2039 database diagnostic', async () => {
+  const { PrismaKnowledgeLlmBudgetAdapter } =
+    await import('../dist/adapters/knowledge/prismaKnowledgeLlmBudgetAdapter.js');
+  const databaseFailure = {
+    code: 'P2039',
+    meta: {
+      driverAdapterError: {
+        cause: {
+          originalCode: '23514',
+          originalMessage: 'synthetic_other_constraint',
+        },
+      },
+    },
+  };
+  const adapter = new PrismaKnowledgeLlmBudgetAdapter({
+    async $transaction() {
+      throw databaseFailure;
+    },
+  });
+
+  await assert.rejects(adapter.reserve(reservation()), (error) => {
+    assert.equal(error, databaseFailure);
+    return true;
+  });
+});

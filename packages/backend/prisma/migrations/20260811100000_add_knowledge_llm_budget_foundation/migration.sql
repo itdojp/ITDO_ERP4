@@ -1741,7 +1741,8 @@ BEGIN
     END IF;
     IF accounted_at < period_start OR accounted_at >= period_end THEN
       RAISE EXCEPTION 'KnowledgeLlmReservation must use the current trusted accounting period'
-        USING ERRCODE = '23514';
+        USING ERRCODE = '23514',
+          CONSTRAINT = 'KnowledgeLlmReservation_current_accounting_period';
     END IF;
     IF committed_micros + NEW."maximumCostMicros"::NUMERIC
       > policy_hard_limit::NUMERIC

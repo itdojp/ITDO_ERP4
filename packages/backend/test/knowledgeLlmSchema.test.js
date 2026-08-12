@@ -303,6 +303,10 @@ test('reservation accounting timestamp and terminal values are immutable', () =>
   );
   assert.match(
     migration,
+    /CONSTRAINT = 'KnowledgeLlmReservation_current_accounting_period'/,
+  );
+  assert.match(
+    migration,
     /KnowledgeLlmReservation exceeds the locked hard budget limit/,
   );
   assert.match(

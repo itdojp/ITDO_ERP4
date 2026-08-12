@@ -676,6 +676,50 @@ try {
   );
 
   await policy({
+    id: 'policy-stale-accounting-period',
+    subjectType: 'user',
+    subjectId: 'stale-accounting-period-user',
+  });
+  const staleAccountingTimestamp = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15, 12, 0, 0),
+  );
+  const staleAccountingPeriodResult = await serviceAt(
+    staleAccountingTimestamp,
+  ).reserve(
+    reservation({
+      runId: 'run-stale-accounting-period',
+      userId: 'stale-accounting-period-user',
+      keyHash: hash('3'),
+      maximumCostMicros: 1n,
+    }),
+  );
+  assert.equal(staleAccountingPeriodResult.ok, false);
+  assert.equal(staleAccountingPeriodResult.error.code, 'policy_mismatch');
+  assert.equal(
+    await prisma.knowledgeLlmRun.count({
+      where: { id: 'run-stale-accounting-period' },
+    }),
+    0,
+  );
+  assert.equal(
+    await prisma.knowledgeLlmBudgetPeriod.count({
+      where: { policyId: 'policy-stale-accounting-period' },
+    }),
+    0,
+  );
+  assert.equal(
+    (
+      await prisma.auditLog.findFirstOrThrow({
+        where: {
+          action: 'knowledge_llm_budget_blocked',
+          targetId: 'run-stale-accounting-period',
+        },
+      })
+    ).metadata.resultCode,
+    'configuration_blocked',
+  );
+
+  await policy({
     id: 'policy-concurrent-replay',
     subjectType: 'user',
     subjectId: 'concurrent-replay-user',
@@ -2299,10 +2343,7 @@ try {
       await settleKnowledgeLlmBudget(transaction, {
         runId,
         actorUserId: 'token-ceiling-user',
-        auditActor: terminalAuditActor(
-          'token-ceiling-user',
-          `${runId}-hold`,
-        ),
+        auditActor: terminalAuditActor('token-ceiling-user', `${runId}-hold`),
         completedAt: after(780),
         settlement: {
           type: 'hold',
@@ -4575,6 +4616,7 @@ try {
       directHardLimitGuardVerified: true,
       directRateLimitGuardVerified: true,
       trustedReservationPeriodVerified: true,
+      staleAccountingPeriodTypedAndAudited: true,
       periodOfflineDriftDetected: true,
       periodOfflineReconciliationVerified: true,
       terminalDispatchTimestampImmutable: true,

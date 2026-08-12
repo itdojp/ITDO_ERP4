@@ -59,6 +59,39 @@ function retryable(error: unknown): boolean {
   return /40001|40P01/.test(text);
 }
 
+const currentAccountingPeriodConstraint =
+  'KnowledgeLlmReservation_current_accounting_period';
+const currentAccountingPeriodMessage =
+  'KnowledgeLlmReservation must use the current trusted accounting period';
+
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function currentAccountingPeriodRejected(error: unknown): boolean {
+  const candidate = objectRecord(error);
+  if (
+    !candidate ||
+    (candidate.code !== 'P2039' && candidate.code !== 'P2010')
+  ) {
+    return false;
+  }
+  const metadata = objectRecord(candidate.meta);
+  const driverError = objectRecord(metadata?.driverAdapterError);
+  const cause = objectRecord(driverError?.cause);
+  if (
+    cause?.originalCode === '23514' &&
+    cause.originalMessage === currentAccountingPeriodMessage
+  ) {
+    return true;
+  }
+  return (JSON.stringify(metadata) ?? '').includes(
+    currentAccountingPeriodConstraint,
+  );
+}
+
 function requiredSubjects(input: KnowledgeLlmReservationRequest) {
   const subjects: Array<{
     subjectType: 'user' | 'organization';
@@ -648,7 +681,10 @@ export class PrismaKnowledgeLlmBudgetAdapter implements KnowledgeLlmBudgetPort {
           { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
         );
       } catch (error) {
-        if (error instanceof KnowledgeLlmPolicyConfigurationError) {
+        if (
+          error instanceof KnowledgeLlmPolicyConfigurationError ||
+          currentAccountingPeriodRejected(error)
+        ) {
           await this.client.$transaction(async (transaction) => {
             await new PrismaKnowledgeLlmAuditWriter(transaction).write({
               action: 'knowledge_llm_budget_blocked',
