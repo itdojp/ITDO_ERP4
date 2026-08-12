@@ -166,7 +166,7 @@ Storage artifact migration:
 - `KNOWLEDGE_EXTERNAL_LLM_ALLOW_HTTP` / `KNOWLEDGE_EXTERNAL_LLM_ALLOW_PRIVATE_IP`は既定`false`。repository test用の明示設定でのみ有効化し、production sampleでは有効化しない
 - Chat summaryのprovider/model/rate契約は従来どおり独立しており、Knowledge Hubのuser/organization予算予約へ暗黙統合しない
 - 実provider keyによる検証とprovider cutoverは本設定追加のrepo-side完了範囲外
-- `scripts/e2e-frontend.sh`はephemeral repository E2Eだけで`stub`とsynthetic catalogを明示設定する。usage/result不明fixtureはcatalogでallowlistした専用stub modelに束縛し、process-globalなmode切替を行わない。`/__test__/knowledge-llm/configure`は`NODE_ENV!=production`かつ`E2E_ENABLE_TEST_HOOKS=1`かつadmin/mgmt認証時だけ登録され、canonical actor本人のsynthetic user budget policy作成に限定する。通常環境またはproductionで有効化しない
+- `scripts/e2e-frontend.sh`単体はKnowledge LLMをdisabledのまま起動する。機能E2Eは`E2E_KNOWLEDGE_LLM_MODE=stub`をCI、`make e2e`、release-readinessから明示し、スクリプトは`disabled|stub`以外を拒否して実provider設定を継承しない。E2E backendは`NODE_ENV=test`で起動する。usage/result不明fixtureは内部の固定synthetic catalogでallowlistした専用stub modelに束縛し、process-globalなmode切替を行わない。`/__test__/knowledge-llm/configure`は`NODE_ENV=test`、`E2E_ENABLE_TEST_HOOKS=1`、Knowledge provider=`stub`、admin/mgmtかつcanonical actor認証の全条件を満たす時だけ登録され、canonical actor本人のmarker所有synthetic user budget policy作成に限定する。通常環境、実provider、test以外の環境では有効化しない
 
 ## バックアップ/リストア
 

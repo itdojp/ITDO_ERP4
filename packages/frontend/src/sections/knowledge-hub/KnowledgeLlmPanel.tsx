@@ -11,27 +11,23 @@ import {
   executeKnowledgeLlmRun,
   fetchKnowledgeLlmBudget,
   fetchKnowledgeLlmCatalog,
+  fetchKnowledgeLlmContextCandidates,
   fetchKnowledgeLlmRun,
   previewKnowledgeLlmRun,
   reconcileKnowledgeLlmRun,
 } from './knowledgeLlmApi';
 import {
   formatKnowledgeLlmCost,
+  knowledgeLlmSourceTypes,
   knowledgeLlmRunNeedsReconciliation,
   validateKnowledgeLlmRequest,
   type KnowledgeLlmCandidate,
   type KnowledgeLlmCatalog,
+  type KnowledgeLlmContextCandidate,
   type KnowledgeLlmPreview,
   type KnowledgeLlmRequest,
   type KnowledgeLlmRun,
 } from './knowledgeLlmModel';
-import {
-  listKnowledgeAnnotations,
-  listKnowledgeConversations,
-  listKnowledgeConversationTurns,
-  getKnowledgeSynthesis,
-  listKnowledgeSyntheses,
-} from './knowledgeProvenanceApi';
 import { KnowledgeHubApiError } from './knowledgeHubApi';
 import {
   createKnowledgeRequestKey,
@@ -95,93 +91,46 @@ function candidateKey(sourceType: string, sourceId: string) {
 
 async function loadCandidates(input: {
   itemId: string;
-  snapshots: readonly KnowledgeSnapshot[];
+  scope: KnowledgeScope;
+  organizationId: string | null;
   signal: AbortSignal;
 }): Promise<KnowledgeLlmCandidate[]> {
-  const { itemId, signal } = input;
-  const candidates: KnowledgeLlmCandidate[] = [];
-  const readySnapshots = input.snapshots
-    .filter((snapshot) => snapshot.status === 'ready' && snapshot.sha256)
-    .sort((left, right) => right.version - left.version);
-  for (const [index, snapshot] of readySnapshots.entries()) {
-    candidates.push({
-      sourceType: 'snapshot',
-      sourceId: snapshot.id,
-      key: candidateKey('snapshot', snapshot.id),
-      label: `Snapshot version ${snapshot.version}`,
-      detail: `${formatKnowledgeBytes(snapshot.sizeBytes)} / SHA-256あり`,
-      selectable: true,
-      selectedByDefault: index === 0,
-    });
-  }
-
-  const [annotationsPage, conversationsPage, synthesesPage] = await Promise.all(
-    [
-      listKnowledgeAnnotations(itemId, { signal }),
-      listKnowledgeConversations({ knowledgeItemId: itemId, signal }),
-      listKnowledgeSyntheses(null, signal),
-    ],
+  const pages = await Promise.all(
+    knowledgeLlmSourceTypes.map(async (sourceType) => {
+      const items: KnowledgeLlmContextCandidate[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < 100; page += 1) {
+        const result = await fetchKnowledgeLlmContextCandidates({
+          itemId: input.itemId,
+          scope: input.scope,
+          organizationId: input.organizationId,
+          sourceType,
+          cursor,
+          signal: input.signal,
+        });
+        items.push(...result.items);
+        cursor = result.nextCursor;
+        if (!cursor) return items;
+      }
+      throw new KnowledgeHubApiError('invalid_response', null);
+    }),
   );
-  for (const annotation of annotationsPage.items) {
-    if (annotation.deletedAt) continue;
-    candidates.push({
-      sourceType: 'annotation_revision',
-      sourceId: annotation.revision.id,
-      key: candidateKey('annotation_revision', annotation.revision.id),
-      label: `本人annotation / ${annotation.kind} / revision ${annotation.currentRevision}`,
-      detail: `origin: ${annotation.origin}`,
+  const candidates = pages.flat();
+  let defaultSnapshotSelected = false;
+  return candidates.map((candidate) => {
+    const selectedByDefault =
+      candidate.sourceType === 'snapshot' && !defaultSnapshotSelected;
+    if (selectedByDefault) defaultSnapshotSelected = true;
+    return {
+      sourceType: candidate.sourceType,
+      sourceId: candidate.sourceId,
+      key: candidateKey(candidate.sourceType, candidate.sourceId),
+      label: `${sourceTypeLabels[candidate.sourceType]} / exact version ${candidate.exactSourceVersion}`,
+      detail: `${formatKnowledgeBytes(candidate.byteLength)} / ${formatKnowledgeDateTime(candidate.createdAt)}`,
       selectable: true,
-      selectedByDefault: false,
-    });
-  }
-
-  const conversationTurns = await Promise.all(
-    conversationsPage.items.map(async (conversation) => ({
-      conversation,
-      page: await listKnowledgeConversationTurns(conversation.id, null, signal),
-    })),
-  );
-  for (const { conversation, page } of conversationTurns) {
-    for (const turn of page.items) {
-      const selectable = turn.role === 'user' || turn.role === 'assistant';
-      candidates.push({
-        sourceType: 'conversation_turn',
-        sourceId: turn.id,
-        key: candidateKey('conversation_turn', turn.id),
-        label: `${conversation.title} / ${turn.role} turn ${turn.sequence}`,
-        detail: selectable
-          ? `origin: ${turn.origin}`
-          : `origin: ${turn.origin} / MVP送信対象外`,
-        selectable,
-        selectedByDefault: false,
-      });
-    }
-  }
-
-  const synthesisDetails = await Promise.all(
-    synthesesPage.items.map((synthesis) =>
-      getKnowledgeSynthesis(synthesis.id, signal),
-    ),
-  );
-  for (const detail of synthesisDetails) {
-    const linked = detail.currentVersion.sources.some(
-      (source) =>
-        source.accessible &&
-        source.kind === 'item' &&
-        source.sourceId === itemId,
-    );
-    if (!linked) continue;
-    candidates.push({
-      sourceType: 'synthesis_version',
-      sourceId: detail.currentVersion.id,
-      key: candidateKey('synthesis_version', detail.currentVersion.id),
-      label: `${detail.synthesis.title} / version ${detail.currentVersion.version}`,
-      detail: '結論・未解決質問を含むexact version',
-      selectable: true,
-      selectedByDefault: false,
-    });
-  }
-  return candidates.slice(0, 32);
+      selectedByDefault,
+    };
+  });
 }
 
 export function KnowledgeLlmPanel(props: {
@@ -278,7 +227,8 @@ export function KnowledgeLlmPanel(props: {
           }),
           loadCandidates({
             itemId: props.itemId,
-            snapshots: props.snapshots,
+            scope: props.itemScope,
+            organizationId: props.organizationId,
             signal: controller.signal,
           }),
         ]);

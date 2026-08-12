@@ -33,97 +33,98 @@ function boundedRequestsPerHour(value: unknown): number | null {
 
 function isTestHookEnabled() {
   return (
-    process.env.E2E_ENABLE_TEST_HOOKS === '1' &&
-    process.env.NODE_ENV !== 'production'
+    process.env.E2E_ENABLE_TEST_HOOKS === '1' && process.env.NODE_ENV === 'test'
   );
 }
 
 export async function registerTestHookRoutes(app: FastifyInstance) {
   if (!isTestHookEnabled()) return;
 
-  app.post(
-    '/__test__/knowledge-llm/configure',
-    {
-      preHandler: [
-        requireRole(['admin', 'mgmt']),
-        requireCanonicalKnowledgeActor,
-      ],
-    },
-    async (req, reply) => {
-      const body = (req.body || {}) as {
-        softLimitMicros?: unknown;
-        hardLimitMicros?: unknown;
-        requestsPerHour?: unknown;
-      };
-      const softLimitMicros = boundedMicros(body.softLimitMicros);
-      const hardLimitMicros = boundedMicros(body.hardLimitMicros);
-      const requestsPerHour = boundedRequestsPerHour(body.requestsPerHour);
-      const actorUserId = knowledgeActorFromRequest(req).userId;
-      if (
-        Object.keys(body).some(
-          (field) => !knowledgeLlmTestConfigFields.has(field),
-        ) ||
-        softLimitMicros === null ||
-        hardLimitMicros === null ||
-        softLimitMicros > hardLimitMicros ||
-        requestsPerHour === null ||
-        !actorUserId
-      ) {
-        return reply.code(400).send({
-          error: { code: 'INVALID_KNOWLEDGE_LLM_TEST_CONFIG' },
-        });
-      }
+  if (process.env.KNOWLEDGE_EXTERNAL_LLM_PROVIDER === 'stub') {
+    app.post(
+      '/__test__/knowledge-llm/configure',
+      {
+        preHandler: [
+          requireRole(['admin', 'mgmt']),
+          requireCanonicalKnowledgeActor,
+        ],
+      },
+      async (req, reply) => {
+        const body = (req.body || {}) as {
+          softLimitMicros?: unknown;
+          hardLimitMicros?: unknown;
+          requestsPerHour?: unknown;
+        };
+        const softLimitMicros = boundedMicros(body.softLimitMicros);
+        const hardLimitMicros = boundedMicros(body.hardLimitMicros);
+        const requestsPerHour = boundedRequestsPerHour(body.requestsPerHour);
+        const actorUserId = knowledgeActorFromRequest(req).userId;
+        if (
+          Object.keys(body).some(
+            (field) => !knowledgeLlmTestConfigFields.has(field),
+          ) ||
+          softLimitMicros === null ||
+          hardLimitMicros === null ||
+          softLimitMicros > hardLimitMicros ||
+          requestsPerHour === null ||
+          !actorUserId
+        ) {
+          return reply.code(400).send({
+            error: { code: 'INVALID_KNOWLEDGE_LLM_TEST_CONFIG' },
+          });
+        }
 
-      const existing = await prisma.knowledgeLlmBudgetPolicy.findMany({
-        where: { subjectType: 'user', subjectId: actorUserId },
-        select: { id: true, version: true, active: true, createdBy: true },
-      });
-      if (
-        existing.some(
-          (policy) =>
-            policy.active && policy.createdBy !== knowledgeLlmE2ePolicyMarker,
-        )
-      ) {
-        return reply.code(409).send({
-          error: { code: 'KNOWLEDGE_LLM_TEST_POLICY_CONFLICT' },
+        const existing = await prisma.knowledgeLlmBudgetPolicy.findMany({
+          where: { subjectType: 'user', subjectId: actorUserId },
+          select: { id: true, version: true, active: true, createdBy: true },
         });
-      }
-      const version =
-        existing.reduce(
-          (maximum, policy) => Math.max(maximum, policy.version),
-          0,
-        ) + 1;
-      await prisma.$transaction(async (transaction) => {
-        await transaction.knowledgeLlmBudgetPolicy.updateMany({
-          where: {
-            subjectType: 'user',
-            subjectId: actorUserId,
-            active: true,
-            createdBy: knowledgeLlmE2ePolicyMarker,
-          },
-          data: { active: false, updatedBy: knowledgeLlmE2ePolicyMarker },
+        if (
+          existing.some(
+            (policy) =>
+              policy.active && policy.createdBy !== knowledgeLlmE2ePolicyMarker,
+          )
+        ) {
+          return reply.code(409).send({
+            error: { code: 'KNOWLEDGE_LLM_TEST_POLICY_CONFLICT' },
+          });
+        }
+        const version =
+          existing.reduce(
+            (maximum, policy) => Math.max(maximum, policy.version),
+            0,
+          ) + 1;
+        await prisma.$transaction(async (transaction) => {
+          await transaction.knowledgeLlmBudgetPolicy.updateMany({
+            where: {
+              subjectType: 'user',
+              subjectId: actorUserId,
+              active: true,
+              createdBy: knowledgeLlmE2ePolicyMarker,
+            },
+            data: { active: false, updatedBy: knowledgeLlmE2ePolicyMarker },
+          });
+          await transaction.knowledgeLlmBudgetPolicy.create({
+            data: {
+              subjectType: 'user',
+              subjectId: actorUserId,
+              currency: 'JPY',
+              timezone: 'Asia/Tokyo',
+              softLimitMicros,
+              hardLimitMicros,
+              requestsPerHour,
+              version,
+              createdBy: knowledgeLlmE2ePolicyMarker,
+              updatedBy: knowledgeLlmE2ePolicyMarker,
+            },
+          });
         });
-        await transaction.knowledgeLlmBudgetPolicy.create({
-          data: {
-            subjectType: 'user',
-            subjectId: actorUserId,
-            currency: 'JPY',
-            timezone: 'Asia/Tokyo',
-            softLimitMicros,
-            hardLimitMicros,
-            requestsPerHour,
-            version,
-            createdBy: knowledgeLlmE2ePolicyMarker,
-            updatedBy: knowledgeLlmE2ePolicyMarker,
-          },
-        });
-      });
-      return {
-        budgetConfigured: true,
-        policyVersion: version,
-      };
-    },
-  );
+        return {
+          budgetConfigured: true,
+          policyVersion: version,
+        };
+      },
+    );
+  }
 
   app.post(
     '/__test__/evidence-snapshots/reset',

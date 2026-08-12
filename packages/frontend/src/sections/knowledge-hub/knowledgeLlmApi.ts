@@ -6,6 +6,7 @@ import {
   knowledgeLlmSourceTypes,
   type KnowledgeLlmBudget,
   type KnowledgeLlmCatalog,
+  type KnowledgeLlmContextCandidate,
   type KnowledgeLlmExecuteResult,
   type KnowledgeLlmPreview,
   type KnowledgeLlmProvider,
@@ -162,6 +163,19 @@ function normalizeRun(value: unknown): KnowledgeLlmRun {
   };
 }
 
+function normalizeContextCandidate(
+  value: unknown,
+): KnowledgeLlmContextCandidate {
+  const input = record(value);
+  return {
+    sourceType: sourceType(input.sourceType),
+    sourceId: text(input.sourceId),
+    exactSourceVersion: integer(input.exactSourceVersion, 1),
+    byteLength: integer(input.byteLength, 1),
+    createdAt: text(input.createdAt),
+  };
+}
+
 function normalizePreview(value: unknown): KnowledgeLlmPreview {
   const input = record(value);
   if (!Array.isArray(input.selectedSources)) invalid();
@@ -243,6 +257,34 @@ export async function fetchKnowledgeLlmBudget(input: {
       input.signal ? { signal: input.signal } : undefined,
     ),
   );
+}
+
+export async function fetchKnowledgeLlmContextCandidates(input: {
+  itemId: string;
+  scope: KnowledgeScope;
+  organizationId: string | null;
+  sourceType: KnowledgeLlmSourceType;
+  cursor?: string | null;
+  signal?: AbortSignal;
+}) {
+  const query = new URLSearchParams({
+    scope: input.scope,
+    sourceType: input.sourceType,
+    limit: '100',
+  });
+  if (input.organizationId) query.set('organizationId', input.organizationId);
+  if (input.cursor) query.set('cursor', input.cursor);
+  const value = record(
+    await requestLlm(
+      `/knowledge/items/${encodeURIComponent(input.itemId)}/llm-context-sources?${query.toString()}`,
+      input.signal ? { signal: input.signal } : undefined,
+    ),
+  );
+  if (!Array.isArray(value.items)) invalid();
+  return {
+    items: value.items.map(normalizeContextCandidate),
+    nextCursor: value.nextCursor === null ? null : text(value.nextCursor),
+  };
 }
 
 export async function previewKnowledgeLlmRun(

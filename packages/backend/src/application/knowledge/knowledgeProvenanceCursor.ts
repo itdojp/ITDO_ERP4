@@ -26,6 +26,7 @@ export const knowledgeProvenanceCursorKinds = [
   'conversation_turns',
   'syntheses',
   'synthesis_versions',
+  'llm_context_sources',
 ] as const;
 export type KnowledgeProvenanceCursorKind =
   (typeof knowledgeProvenanceCursorKinds)[number];

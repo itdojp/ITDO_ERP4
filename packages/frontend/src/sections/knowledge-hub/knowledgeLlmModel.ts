@@ -151,6 +151,12 @@ export type KnowledgeLlmCandidate = KnowledgeLlmSourceSelector & {
   selectedByDefault: boolean;
 };
 
+export type KnowledgeLlmContextCandidate = KnowledgeLlmSourceSelector & {
+  exactSourceVersion: number;
+  byteLength: number;
+  createdAt: string;
+};
+
 export const KNOWLEDGE_LLM_MAX_PROMPT_BYTES = 16 * 1024;
 export const KNOWLEDGE_LLM_MAX_SOURCES = 32;
 

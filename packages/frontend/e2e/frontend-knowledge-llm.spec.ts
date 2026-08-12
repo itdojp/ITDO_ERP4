@@ -55,9 +55,12 @@ function headers(state: E2eAuthState = authState) {
     'x-group-account-ids': state.groupAccountIds.join(','),
   };
   if (useJwtAuth) {
-    const token = state.userId === authState.userId ? adminJwtToken : outsiderJwtToken;
+    const token =
+      state.userId === authState.userId ? adminJwtToken : outsiderJwtToken;
     if (!token) {
-      throw new Error('[e2e] Knowledge LLM JWT fixture token is not configured');
+      throw new Error(
+        '[e2e] Knowledge LLM JWT fixture token is not configured',
+      );
     }
     result.Authorization = `Bearer ${token}`;
   }
@@ -243,11 +246,13 @@ async function configure(
 
 async function preview(panel: Locator, prompt: string) {
   await panel.getByLabel('外部LLMへの指示').fill(prompt);
-  const responsePromise = panel.page().waitForResponse(
-    (value) =>
-      value.request().method() === 'POST' &&
-      new URL(value.url()).pathname === '/knowledge/llm/runs/preview',
-  );
+  const responsePromise = panel
+    .page()
+    .waitForResponse(
+      (value) =>
+        value.request().method() === 'POST' &&
+        new URL(value.url()).pathname === '/knowledge/llm/runs/preview',
+    );
   await panel.getByRole('button', { name: '外部送信内容をプレビュー' }).click();
   const response = await responsePromise;
   if (!response.ok()) {
@@ -266,7 +271,9 @@ async function preview(panel: Locator, prompt: string) {
         status: response.status(),
         scope: posted.scope,
         organizationIdType:
-          posted.organizationId === null ? 'null' : typeof posted.organizationId,
+          posted.organizationId === null
+            ? 'null'
+            : typeof posted.organizationId,
         provider: posted.provider,
         model: posted.model,
         catalogVersion: posted.catalogVersion,
@@ -347,22 +354,18 @@ test('Knowledge external LLM selected context, budget, unknown states, and no-re
   }
 
   const latestSnapshot = panel.getByRole('checkbox', {
-    name: /Snapshot version 2/,
+    name: /Snapshot \/ exact version 2/,
   });
   await expect(latestSnapshot).toBeChecked({ timeout: actionTimeout });
   await expect(
-    panel.getByRole('checkbox', { name: /Snapshot version 1/ }),
+    panel.getByRole('checkbox', { name: /Snapshot \/ exact version 1/ }),
   ).not.toBeChecked();
   const assistantTurn = panel.getByRole('checkbox', {
-    name: /assistant turn 1/,
+    name: /会話turn \/ exact version 1/,
   });
-  const systemTurn = panel.getByRole('checkbox', { name: /system turn 2/ });
-  const toolTurn = panel.getByRole('checkbox', { name: /tool turn 3/ });
   await expect(assistantTurn).not.toBeChecked();
-  await expect(systemTurn).not.toBeChecked();
-  await expect(systemTurn).toBeDisabled();
-  await expect(toolTurn).not.toBeChecked();
-  await expect(toolTurn).toBeDisabled();
+  await expect(panel.getByText(/system turn/)).toHaveCount(0);
+  await expect(panel.getByText(/tool turn/)).toHaveCount(0);
 
   await preview(panel, '選択したsnapshotだけを検討してください。');
   await expect(panel).toContainText('SELECTED-SNAPSHOT-CONTEXT');
@@ -415,6 +418,21 @@ test('Knowledge external LLM selected context, budget, unknown states, and no-re
     },
   );
   expect(outsider.status()).toBe(404);
+  const outsiderCandidates = await request.get(
+    `${apiBase}/knowledge/items/${encodeURIComponent(context.item.id)}/llm-context-sources?scope=personal&sourceType=snapshot`,
+    {
+      headers: headers({
+        userId: useJwtAuth
+          ? 'e2e-outsider@example.com'
+          : `synthetic-outsider-${suffix}`,
+        roles: ['user'],
+        projectIds: [],
+        groupIds: [],
+        groupAccountIds: [],
+      }),
+    },
+  );
+  expect(outsiderCandidates.status()).toBe(404);
 
   await configure(request, '0', '9000000000000000000');
   await panel

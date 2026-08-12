@@ -12,12 +12,8 @@ const apiMocks = vi.hoisted(() => ({
   executeKnowledgeLlmRun: vi.fn(),
   fetchKnowledgeLlmBudget: vi.fn(),
   fetchKnowledgeLlmCatalog: vi.fn(),
+  fetchKnowledgeLlmContextCandidates: vi.fn(),
   fetchKnowledgeLlmRun: vi.fn(),
-  getKnowledgeSynthesis: vi.fn(),
-  listKnowledgeAnnotations: vi.fn(),
-  listKnowledgeConversations: vi.fn(),
-  listKnowledgeConversationTurns: vi.fn(),
-  listKnowledgeSyntheses: vi.fn(),
   previewKnowledgeLlmRun: vi.fn(),
   reconcileKnowledgeLlmRun: vi.fn(),
 }));
@@ -26,17 +22,11 @@ vi.mock('./knowledgeLlmApi', () => ({
   executeKnowledgeLlmRun: apiMocks.executeKnowledgeLlmRun,
   fetchKnowledgeLlmBudget: apiMocks.fetchKnowledgeLlmBudget,
   fetchKnowledgeLlmCatalog: apiMocks.fetchKnowledgeLlmCatalog,
+  fetchKnowledgeLlmContextCandidates:
+    apiMocks.fetchKnowledgeLlmContextCandidates,
   fetchKnowledgeLlmRun: apiMocks.fetchKnowledgeLlmRun,
   previewKnowledgeLlmRun: apiMocks.previewKnowledgeLlmRun,
   reconcileKnowledgeLlmRun: apiMocks.reconcileKnowledgeLlmRun,
-}));
-
-vi.mock('./knowledgeProvenanceApi', () => ({
-  getKnowledgeSynthesis: apiMocks.getKnowledgeSynthesis,
-  listKnowledgeAnnotations: apiMocks.listKnowledgeAnnotations,
-  listKnowledgeConversations: apiMocks.listKnowledgeConversations,
-  listKnowledgeConversationTurns: apiMocks.listKnowledgeConversationTurns,
-  listKnowledgeSyntheses: apiMocks.listKnowledgeSyntheses,
 }));
 
 import { KnowledgeLlmPanel } from './KnowledgeLlmPanel';
@@ -175,7 +165,7 @@ function renderPanel(
 }
 
 async function previewDefaultSource() {
-  await screen.findByText('Snapshot version 3');
+  await screen.findByText('Snapshot / exact version 3');
   fireEvent.change(screen.getByLabelText('外部LLMへの指示'), {
     target: { value: '選択内容だけを検討してください。' },
   });
@@ -188,119 +178,38 @@ async function previewDefaultSource() {
 beforeEach(() => {
   apiMocks.fetchKnowledgeLlmCatalog.mockResolvedValue(catalog);
   apiMocks.fetchKnowledgeLlmBudget.mockResolvedValue(budget);
-  apiMocks.listKnowledgeAnnotations.mockResolvedValue({
-    items: [
-      {
-        id: 'annotation-internal',
-        knowledgeItemId: 'item-1',
-        scope: 'personal',
-        kind: 'note',
-        origin: 'user',
-        currentRevision: 1,
-        deletedAt: null,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        revision: {
-          id: 'annotation-revision-internal',
-          annotationId: 'annotation-internal',
-          revision: 1,
-          kind: 'note',
-          origin: 'user',
-          content: 'UNSELECTED-ANNOTATION-CANARY',
-          createdAt: timestamp,
-        },
-      },
-    ],
-    nextCursor: null,
-  });
-  apiMocks.listKnowledgeConversations.mockResolvedValue({
-    items: [
-      {
-        id: 'conversation-internal',
-        title: 'Synthetic conversation',
-        sourceType: 'manual',
-        provider: null,
-        model: null,
-        capturedAt: timestamp,
-        importedAt: null,
-        version: 1,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        items: [],
-      },
-    ],
-    nextCursor: null,
-  });
-  apiMocks.listKnowledgeConversationTurns.mockResolvedValue({
-    items: [
-      {
-        id: 'turn-ai-internal',
-        conversationId: 'conversation-internal',
-        sequence: 1,
-        role: 'assistant',
-        origin: 'ai',
-        content: 'UNSELECTED-AI-CANARY',
-        name: null,
-        occurredAt: null,
-        createdAt: timestamp,
-      },
-      {
-        id: 'turn-system-internal',
-        conversationId: 'conversation-internal',
-        sequence: 2,
-        role: 'system',
-        origin: 'system',
-        content: 'UNSELECTED-SYSTEM-CANARY',
-        name: null,
-        occurredAt: null,
-        createdAt: timestamp,
-      },
-    ],
-    nextCursor: null,
-  });
-  apiMocks.listKnowledgeSyntheses.mockResolvedValue({
-    items: [
-      {
-        id: 'synthesis-internal',
-        scope: 'personal',
-        title: 'Synthetic synthesis',
-        currentVersion: 1,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      },
-    ],
-    nextCursor: null,
-  });
-  apiMocks.getKnowledgeSynthesis.mockResolvedValue({
-    synthesis: {
-      id: 'synthesis-internal',
-      scope: 'personal',
-      title: 'Synthetic synthesis',
-      currentVersion: 1,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    },
-    currentVersion: {
-      id: 'synthesis-version-internal',
-      synthesisId: 'synthesis-internal',
-      version: 1,
-      content: 'UNSELECTED-SYNTHESIS-CANARY',
-      unresolvedQuestions: [],
-      confidenceBasisPoints: 8000,
-      createdAt: timestamp,
-      sources: [
-        {
-          id: 'source-internal',
-          kind: 'item',
-          sourceId: 'item-1',
-          relationType: 'primary',
-          ordinal: 0,
-          accessible: true,
-          createdAt: timestamp,
-        },
-      ],
-    },
-  });
+  apiMocks.fetchKnowledgeLlmContextCandidates.mockImplementation(
+    async ({ sourceType }: { sourceType: string }) => ({
+      items:
+        sourceType === 'snapshot'
+          ? [
+              {
+                sourceType,
+                sourceId: 'snapshot-latest',
+                exactSourceVersion: 3,
+                byteLength: 100,
+                createdAt: timestamp,
+              },
+              {
+                sourceType,
+                sourceId: 'snapshot-old',
+                exactSourceVersion: 2,
+                byteLength: 100,
+                createdAt: timestamp,
+              },
+            ]
+          : [
+              {
+                sourceType,
+                sourceId: `${sourceType}-internal`,
+                exactSourceVersion: 1,
+                byteLength: 40,
+                createdAt: timestamp,
+              },
+            ],
+      nextCursor: null,
+    }),
+  );
   apiMocks.previewKnowledgeLlmRun.mockResolvedValue(preview());
   apiMocks.executeKnowledgeLlmRun.mockResolvedValue({
     created: true,
@@ -327,7 +236,7 @@ describe('KnowledgeLlmPanel', () => {
     renderPanel();
     expect(await screen.findByText(/外部LLMは無効です/)).toBeInTheDocument();
     expect(apiMocks.fetchKnowledgeLlmBudget).not.toHaveBeenCalled();
-    expect(apiMocks.listKnowledgeAnnotations).not.toHaveBeenCalled();
+    expect(apiMocks.fetchKnowledgeLlmContextCandidates).not.toHaveBeenCalled();
     expect(apiMocks.previewKnowledgeLlmRun).not.toHaveBeenCalled();
   });
 
@@ -336,9 +245,9 @@ describe('KnowledgeLlmPanel', () => {
     renderPanel({ onCommitBusyChange: onBusy });
     expect(
       await screen.findByRole('checkbox', {
-        name: /Synthetic conversation \/ system turn 2/,
+        name: /Chat promotion snapshot \/ exact version 1/,
       }),
-    ).toBeDisabled();
+    ).toBeEnabled();
     await previewDefaultSource();
 
     expect(apiMocks.previewKnowledgeLlmRun).toHaveBeenCalledWith(
@@ -365,6 +274,29 @@ describe('KnowledgeLlmPanel', () => {
     expect(onBusy).toHaveBeenNthCalledWith(1, true);
     expect(onBusy).toHaveBeenLastCalledWith(false);
     expect(screen.queryByText('conversation-internal')).not.toBeInTheDocument();
+  });
+
+  it('does not truncate the selectable candidate catalog at the 32-source execution limit', async () => {
+    apiMocks.fetchKnowledgeLlmContextCandidates.mockImplementation(
+      async ({ sourceType }: { sourceType: string }) => ({
+        items:
+          sourceType === 'snapshot'
+            ? Array.from({ length: 33 }, (_, index) => ({
+                sourceType,
+                sourceId: `snapshot-${33 - index}`,
+                exactSourceVersion: 33 - index,
+                byteLength: 10,
+                createdAt: timestamp,
+              }))
+            : [],
+        nextCursor: null,
+      }),
+    );
+    renderPanel();
+    expect(await screen.findByText('Snapshot / exact version 1')).toBeVisible();
+    expect(screen.getAllByRole('checkbox', { name: /Snapshot/ })).toHaveLength(
+      33,
+    );
   });
 
   it('purges the previous run reference before creating a new preview', async () => {
@@ -527,7 +459,7 @@ describe('KnowledgeLlmPanel', () => {
         }),
     );
     const view = renderPanel();
-    await screen.findByText('Snapshot version 3');
+    await screen.findByText('Snapshot / exact version 3');
     fireEvent.change(screen.getByLabelText('外部LLMへの指示'), {
       target: { value: '選択内容だけを検討してください。' },
     });

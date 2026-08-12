@@ -15,6 +15,7 @@
 | --- | --- | --- |
 | default-disabledとprovider request 0件 | PASS | disabled構成のfocused real-backend E2E |
 | allowlisted provider/model、最小context既定値 | PASS | frontend model/API/component test、focused E2E |
+| 全5 source種別のserver-side候補取得とページング | PASS | backend route/adapter、33件候補component test、focused E2E |
 | exact preview、明示confirm、integer最大予約額 | PASS | focused E2E、[preview画像](./2026-08-13-issue2016-knowledge-llm-ui/02-selected-context-preview.png) |
 | selected sourceだけの外部送信境界 | PASS | selected snapshotと非選択canaryを使うfocused E2E |
 | actual usage settlementとconversation provenance | PASS | stub reported-usage flow、backend PR B/C integration |
@@ -34,14 +35,16 @@
 - 非選択assistant／system／tool turn本文
 - Synthesis本文／未解決事項
 
+候補APIは選択中itemのACLを先に検証し、snapshot、annotation revision、user/assistant conversation turn、synthesis version、thread promotion messageを種別ごとに安定ページングする。最大32件は選択上限であり、候補一覧の切り捨てには使用しない。system/tool turnと再帰的LLM由来sourceは候補から除外する。
+
 canaryはexact preview、provider request、run response、画面、監査／application logへ含まれないことを検証する。内部ID、preview token、request key、provider request ID、API key、base URL、raw errorは文書・画像へ転記しない。
 
 ## 実行した検証
 
 | 分類 | 結果 |
 | --- | --- |
-| focused backend stub/test-hook/route | PASS |
-| focused frontend model/API/component | PASS |
+| focused backend stub/test-hook/route/候補adapter | 25 / 25 PASS |
+| focused frontend model/API/component | 19 / 19 PASS |
 | focused real-backend E2E（stub） | 1 / 1 PASS |
 | focused real-backend E2E（disabled） | 1 / 1 PASS |
 | focused real-backend E2E（JWT canonical identity + stub） | 1 / 1 PASS |

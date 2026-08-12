@@ -145,9 +145,14 @@ E2E_GREP="${E2E_GREP:-}"
 E2E_PLAYWRIGHT_EXTRA_ARGS="${E2E_PLAYWRIGHT_EXTRA_ARGS:-}"
 E2E_SERVICE_READY_TIMEOUT_SEC="${E2E_SERVICE_READY_TIMEOUT_SEC:-80}"
 E2E_SERVICE_READY_INTERVAL_SEC="${E2E_SERVICE_READY_INTERVAL_SEC:-1}"
-E2E_KNOWLEDGE_LLM_PROVIDER="${KNOWLEDGE_EXTERNAL_LLM_PROVIDER:-stub}"
+E2E_KNOWLEDGE_LLM_MODE="${E2E_KNOWLEDGE_LLM_MODE:-disabled}"
+if [[ "$E2E_KNOWLEDGE_LLM_MODE" != "disabled" && "$E2E_KNOWLEDGE_LLM_MODE" != "stub" ]]; then
+  echo "E2E_KNOWLEDGE_LLM_MODE must be disabled or stub" >&2
+  exit 1
+fi
+E2E_KNOWLEDGE_LLM_PROVIDER="$E2E_KNOWLEDGE_LLM_MODE"
 E2E_KNOWLEDGE_LLM_CATALOG_DEFAULT='{"version":1,"models":[{"provider":"stub","model":"stub-v1","enabled":true,"maxInputTokens":8192,"maxOutputTokens":1024,"inputCostMicrosPerMillion":"1000000","outputCostMicrosPerMillion":"2000000","currency":"JPY","capabilities":["text"]},{"provider":"stub","model":"stub-usage-missing-v1","enabled":true,"maxInputTokens":8192,"maxOutputTokens":1024,"inputCostMicrosPerMillion":"1000000","outputCostMicrosPerMillion":"2000000","currency":"JPY","capabilities":["text"]},{"provider":"stub","model":"stub-outcome-unknown-v1","enabled":true,"maxInputTokens":8192,"maxOutputTokens":1024,"inputCostMicrosPerMillion":"1000000","outputCostMicrosPerMillion":"2000000","currency":"JPY","capabilities":["text"]}]}'
-E2E_KNOWLEDGE_LLM_CATALOG_JSON="${KNOWLEDGE_LLM_MODEL_CATALOG_JSON:-$E2E_KNOWLEDGE_LLM_CATALOG_DEFAULT}"
+E2E_KNOWLEDGE_LLM_CATALOG_JSON="$E2E_KNOWLEDGE_LLM_CATALOG_DEFAULT"
 
 BACKEND_LOG="$ROOT_DIR/tmp/e2e-backend.log"
 FRONTEND_LOG="$ROOT_DIR/tmp/e2e-frontend.log"
@@ -424,7 +429,7 @@ if [[ "$E2E_AUTH_MODE" == "jwt" ]]; then
   seed_e2e_jwt_canonical_identities
 fi
 
-PORT="$BACKEND_PORT" AUTH_MODE="$E2E_AUTH_MODE" DATABASE_URL="$DATABASE_URL" \
+PORT="$BACKEND_PORT" NODE_ENV=test AUTH_MODE="$E2E_AUTH_MODE" DATABASE_URL="$DATABASE_URL" \
 E2E_ENABLE_TEST_HOOKS="${E2E_ENABLE_TEST_HOOKS:-1}" \
 ALLOWED_ORIGINS="http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT}" \
 CHAT_EXTERNAL_LLM_PROVIDER="${CHAT_EXTERNAL_LLM_PROVIDER:-stub}" \

@@ -87,7 +87,7 @@ coverage-frontend:
 coverage-frontend-core:
 	npm run coverage:ui-core --prefix packages/frontend
 e2e:
-	./scripts/e2e-frontend.sh
+	E2E_KNOWLEDGE_LLM_MODE=stub ./scripts/e2e-frontend.sh
 
 ui-evidence:
 	./scripts/e2e-ui-evidence.sh

@@ -281,6 +281,7 @@ jobs:
           E2E_TRACE_ON_FAILURE: 1
           E2E_SKIP_PLAYWRIGHT_INSTALL: 1
           E2E_SCOPE: ${{ github.event_name == 'pull_request' && 'core' || 'full' }}
+          E2E_KNOWLEDGE_LLM_MODE: stub
         run: ./scripts/e2e-frontend.sh
       - name: Upload e2e diagnostics (failure only)
         if: failure() || cancelled()

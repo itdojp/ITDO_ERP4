@@ -7,6 +7,7 @@ import {
   executeKnowledgeLlmRun,
   fetchKnowledgeLlmBudget,
   fetchKnowledgeLlmCatalog,
+  fetchKnowledgeLlmContextCandidates,
   fetchKnowledgeLlmRun,
   previewKnowledgeLlmRun,
   reconcileKnowledgeLlmRun,
@@ -85,6 +86,45 @@ function response(payload: unknown, status = 200) {
 beforeEach(() => apiResponse.mockReset());
 
 describe('knowledgeLlmApi', () => {
+  it('loads an allowlisted item-scoped context page and drops provider internals', async () => {
+    apiResponse.mockResolvedValueOnce(
+      response({
+        items: [
+          {
+            sourceType: 'thread_promotion_message',
+            sourceId: 'promotion-message/internal',
+            exactSourceVersion: 2,
+            byteLength: 42,
+            createdAt: timestamp,
+            content: 'must-drop',
+            providerKey: 'must-drop',
+          },
+        ],
+        nextCursor: 'opaque-cursor',
+        totalCount: 999,
+      }),
+    );
+    const page = await fetchKnowledgeLlmContextCandidates({
+      itemId: 'item/internal',
+      scope: 'organization',
+      organizationId: 'org/internal',
+      sourceType: 'thread_promotion_message',
+      cursor: 'cursor/internal',
+    });
+    expect(page.items[0]).toEqual({
+      sourceType: 'thread_promotion_message',
+      sourceId: 'promotion-message/internal',
+      exactSourceVersion: 2,
+      byteLength: 42,
+      createdAt: timestamp,
+    });
+    expect(page.items[0]).not.toHaveProperty('content');
+    expect(page).not.toHaveProperty('totalCount');
+    expect(apiResponse.mock.calls[0][0]).toBe(
+      '/knowledge/items/item%2Finternal/llm-context-sources?scope=organization&sourceType=thread_promotion_message&limit=100&organizationId=org%2Finternal&cursor=cursor%2Finternal',
+    );
+  });
+
   it('normalizes catalog and budget allowlists and binds the organization query', async () => {
     apiResponse
       .mockResolvedValueOnce(

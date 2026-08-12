@@ -5,6 +5,22 @@ import { buildServer } from '../dist/server.js';
 import { prisma } from '../dist/services/db.js';
 
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
+const STUB_CATALOG = JSON.stringify({
+  version: 1,
+  models: [
+    {
+      provider: 'stub',
+      model: 'stub-v1',
+      enabled: true,
+      maxInputTokens: 1024,
+      maxOutputTokens: 128,
+      inputCostMicrosPerMillion: '1',
+      outputCostMicrosPerMillion: '1',
+      currency: 'JPY',
+      capabilities: ['text'],
+    },
+  ],
+});
 
 function withPrismaStubs(stubs, fn) {
   const restores = [];
@@ -91,6 +107,37 @@ test('test hook route is disabled unless E2E_ENABLE_TEST_HOOKS=1', async () => {
   );
 });
 
+test('test hook routes are disabled outside NODE_ENV=test', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      NODE_ENV: 'development',
+      E2E_ENABLE_TEST_HOOKS: '1',
+      KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'stub',
+      KNOWLEDGE_LLM_MODEL_CATALOG_JSON: STUB_CATALOG,
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/__test__/knowledge-llm/configure',
+          headers: adminHeaders(),
+          payload: {
+            softLimitMicros: '0',
+            hardLimitMicros: '1',
+            requestsPerHour: 1,
+          },
+        });
+        assert.equal(res.statusCode, 404);
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
 test('test hook route requires admin or mgmt role', async () => {
   await withEnv(
     {
@@ -98,6 +145,8 @@ test('test hook route requires admin or mgmt role', async () => {
       AUTH_MODE: 'header',
       NODE_ENV: 'test',
       E2E_ENABLE_TEST_HOOKS: '1',
+      KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'stub',
+      KNOWLEDGE_LLM_MODEL_CATALOG_JSON: STUB_CATALOG,
     },
     async () => {
       const server = await buildServer({ logger: false });
@@ -125,6 +174,8 @@ test('knowledge LLM test hook requires admin or mgmt role', async () => {
       AUTH_MODE: 'header',
       NODE_ENV: 'test',
       E2E_ENABLE_TEST_HOOKS: '1',
+      KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'stub',
+      KNOWLEDGE_LLM_MODEL_CATALOG_JSON: STUB_CATALOG,
     },
     async () => {
       const server = await buildServer({ logger: false });
@@ -155,6 +206,8 @@ test('knowledge LLM test hook validates a bounded allowlisted configuration', as
       AUTH_MODE: 'header',
       NODE_ENV: 'test',
       E2E_ENABLE_TEST_HOOKS: '1',
+      KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'stub',
+      KNOWLEDGE_LLM_MODEL_CATALOG_JSON: STUB_CATALOG,
     },
     async () => {
       const server = await buildServer({ logger: false });
@@ -208,6 +261,8 @@ test('knowledge LLM test hook refuses to replace a non-test budget policy', asyn
       AUTH_MODE: 'header',
       NODE_ENV: 'test',
       E2E_ENABLE_TEST_HOOKS: '1',
+      KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'stub',
+      KNOWLEDGE_LLM_MODEL_CATALOG_JSON: STUB_CATALOG,
     },
     async () => {
       await withPrismaStubs(
@@ -255,6 +310,8 @@ test('knowledge LLM test hook replaces only marked test policy and returns no su
       AUTH_MODE: 'header',
       NODE_ENV: 'test',
       E2E_ENABLE_TEST_HOOKS: '1',
+      KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'stub',
+      KNOWLEDGE_LLM_MODEL_CATALOG_JSON: STUB_CATALOG,
     },
     async () => {
       let updateInput = null;
@@ -313,6 +370,36 @@ test('knowledge LLM test hook replaces only marked test policy and returns no su
       assert.equal(createInput?.data.hardLimitMicros, 20n);
       assert.equal(createInput?.data.requestsPerHour, 25);
       assert.equal(createInput?.data.version, 3);
+    },
+  );
+});
+
+test('knowledge LLM test hook is not registered unless the explicit stub provider is active', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      NODE_ENV: 'test',
+      E2E_ENABLE_TEST_HOOKS: '1',
+      KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'disabled',
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/__test__/knowledge-llm/configure',
+          headers: adminHeaders(),
+          payload: {
+            softLimitMicros: '1',
+            hardLimitMicros: '2',
+            requestsPerHour: 10,
+          },
+        });
+        assert.equal(res.statusCode, 404, res.body);
+      } finally {
+        await server.close();
+      }
     },
   );
 });

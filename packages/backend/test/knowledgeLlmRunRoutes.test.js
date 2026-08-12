@@ -12,9 +12,8 @@ process.env.DATABASE_URL ??=
 const now = '2026-08-12T09:00:00.000Z';
 
 test('Knowledge route composition selects only the explicitly configured provider adapter', async () => {
-  const { createKnowledgeLlmProviderPort } = await import(
-    '../dist/routes/knowledgeLlmRuns.js'
-  );
+  const { createKnowledgeLlmProviderPort } =
+    await import('../dist/routes/knowledgeLlmRuns.js');
   assert.equal(
     createKnowledgeLlmProviderPort({ provider: 'disabled', catalog: null }),
     null,
@@ -192,7 +191,11 @@ function service(overrides = {}) {
   };
 }
 
-async function build(routeService, requestUser = user()) {
+async function build(
+  routeService,
+  requestUser = user(),
+  routeDependencies = {},
+) {
   const { registerKnowledgeLlmRunRoutes } =
     await import('../dist/routes/knowledgeLlmRuns.js');
   const app = Fastify();
@@ -203,10 +206,78 @@ async function build(routeService, requestUser = user()) {
   app.addHook('onRequest', async (fastifyRequest) => {
     fastifyRequest.user = requestUser;
   });
-  await registerKnowledgeLlmRunRoutes(app, { service: routeService });
+  await registerKnowledgeLlmRunRoutes(app, {
+    service: routeService,
+    ...routeDependencies,
+  });
   await app.ready();
   return app;
 }
+
+test('context source page is item/scope bound, allowlisted, and cursor encoded', async (t) => {
+  let listInput;
+  let encodedInput;
+  const candidateService = {
+    list: async (input) => {
+      listInput = input;
+      return {
+        ok: true,
+        value: {
+          items: [
+            {
+              sourceType: 'thread_promotion_message',
+              sourceId: 'promotion-message-safe',
+              exactSourceVersion: 2,
+              byteLength: 42,
+              createdAt: new Date(now),
+              content: 'must-not-leak',
+            },
+          ],
+          nextBoundary: { updatedAt: new Date(now), id: 'boundary-safe' },
+        },
+      };
+    },
+  };
+  const cursor = {
+    decodePage: () => {
+      throw new Error('decode must not be called without a cursor');
+    },
+    encodePage: (input) => {
+      encodedInput = input;
+      return 'opaque-next-cursor';
+    },
+  };
+  const app = await build(service(), user(), { candidateService, cursor });
+  t.after(() => app.close());
+  const response = await app.inject({
+    method: 'GET',
+    url: '/knowledge/items/item%2Fsafe/llm-context-sources?scope=personal&sourceType=thread_promotion_message&limit=25',
+  });
+  assert.equal(response.statusCode, 200, response.body);
+  assert.equal(listInput.actor.userId, 'canonical-user');
+  assert.equal(listInput.itemId, 'item/safe');
+  assert.equal(listInput.scope, 'personal');
+  assert.equal(listInput.organizationId, null);
+  assert.equal(listInput.sourceType, 'thread_promotion_message');
+  assert.equal(listInput.limit, 25);
+  assert.deepEqual(response.json(), {
+    items: [
+      {
+        sourceType: 'thread_promotion_message',
+        sourceId: 'promotion-message-safe',
+        exactSourceVersion: 2,
+        byteLength: 42,
+        createdAt: now,
+      },
+    ],
+    nextCursor: 'opaque-next-cursor',
+  });
+  assert.equal(encodedInput.kind, 'llm_context_sources');
+  assert.equal(
+    encodedInput.parentId,
+    'item/safe\0personal\0\0thread_promotion_message',
+  );
+});
 
 test('catalog and preview expose allowlisted fields only', async (t) => {
   let previewInput;
