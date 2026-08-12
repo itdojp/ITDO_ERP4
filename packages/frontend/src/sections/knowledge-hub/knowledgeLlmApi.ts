@@ -79,7 +79,7 @@ function sourceType(value: unknown): KnowledgeLlmSourceType {
 function normalizeCatalog(value: unknown): KnowledgeLlmCatalog {
   const input = record(value);
   if (!Array.isArray(input.models)) invalid();
-  return {
+  const catalog: KnowledgeLlmCatalog = {
     enabled: boolean(input.enabled),
     provider: input.provider === null ? null : provider(input.provider),
     version: input.version === null ? null : integer(input.version, 1),
@@ -98,6 +98,16 @@ function normalizeCatalog(value: unknown): KnowledgeLlmCatalog {
       };
     }),
   };
+  if (
+    catalog.enabled &&
+    (catalog.provider === null ||
+      catalog.version === null ||
+      catalog.models.length === 0 ||
+      catalog.models.some((model) => model.provider !== catalog.provider))
+  ) {
+    invalid();
+  }
+  return catalog;
 }
 
 function normalizeBudget(value: unknown): KnowledgeLlmBudget {

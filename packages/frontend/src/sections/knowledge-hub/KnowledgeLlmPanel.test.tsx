@@ -630,6 +630,8 @@ describe('KnowledgeLlmPanel', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       '処理を完了できませんでした。再試行してください。',
     );
+    expect(apiMocks.fetchKnowledgeLlmBudget).not.toHaveBeenCalled();
+    expect(apiMocks.fetchKnowledgeLlmContextCandidates).not.toHaveBeenCalled();
     expect(screen.queryByText(/provider|502|API key/)).not.toBeInTheDocument();
   });
 });

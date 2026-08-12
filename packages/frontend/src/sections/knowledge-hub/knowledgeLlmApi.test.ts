@@ -275,6 +275,18 @@ describe('knowledgeLlmApi', () => {
     });
 
     apiResponse.mockResolvedValueOnce(
+      response({
+        enabled: true,
+        provider: null,
+        version: null,
+        models: [],
+      }),
+    );
+    await expect(fetchKnowledgeLlmCatalog()).rejects.toMatchObject({
+      code: 'invalid_response',
+    });
+
+    apiResponse.mockResolvedValueOnce(
       response(
         { error: { code: 'forbidden', message: 'private detail' } },
         403,

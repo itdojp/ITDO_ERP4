@@ -215,9 +215,16 @@ export function KnowledgeLlmPanel(props: {
         const nextCatalog = await fetchKnowledgeLlmCatalog(controller.signal);
         if (!isCurrent(generation) || controller.signal.aborted) return;
         setCatalog(nextCatalog);
-        if (!nextCatalog.enabled || nextCatalog.models.length === 0) {
+        if (!nextCatalog.enabled) {
           setStatus('success');
           return;
+        }
+        if (
+          nextCatalog.provider === null ||
+          nextCatalog.version === null ||
+          nextCatalog.models.length === 0
+        ) {
+          throw new KnowledgeHubApiError('invalid_response', 502);
         }
         const firstModel = nextCatalog.models[0];
         setModel(modelIdentity(firstModel.provider, firstModel.model));
