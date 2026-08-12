@@ -275,7 +275,16 @@ test('context source page is item/scope bound, allowlisted, and cursor encoded',
   assert.equal(encodedInput.kind, 'llm_context_sources');
   assert.equal(
     encodedInput.parentId,
-    'item/safe\0personal\0\0thread_promotion_message',
+    '["item/safe","personal",null,"thread_promotion_message"]',
+  );
+  assert.notEqual(
+    encodedInput.parentId,
+    JSON.stringify([
+      'item/safe\0personal',
+      'personal',
+      null,
+      'thread_promotion_message',
+    ]),
   );
 });
 

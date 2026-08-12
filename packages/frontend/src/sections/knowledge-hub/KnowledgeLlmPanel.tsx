@@ -36,7 +36,6 @@ import {
   isKnowledgeHubErrorCode,
   knowledgeHubErrorMessage,
   type KnowledgeScope,
-  type KnowledgeSnapshot,
 } from './knowledgeHubModel';
 
 type LoadStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -99,7 +98,8 @@ async function loadCandidates(input: {
     knowledgeLlmSourceTypes.map(async (sourceType) => {
       const items: KnowledgeLlmContextCandidate[] = [];
       let cursor: string | null = null;
-      for (let page = 0; page < 100; page += 1) {
+      const seenCursors = new Set<string>();
+      for (;;) {
         const result = await fetchKnowledgeLlmContextCandidates({
           itemId: input.itemId,
           scope: input.scope,
@@ -109,10 +109,14 @@ async function loadCandidates(input: {
           signal: input.signal,
         });
         items.push(...result.items);
-        cursor = result.nextCursor;
-        if (!cursor) return items;
+        const nextCursor = result.nextCursor;
+        if (!nextCursor) return items;
+        if (seenCursors.has(nextCursor)) {
+          throw new KnowledgeHubApiError('invalid_response', null);
+        }
+        seenCursors.add(nextCursor);
+        cursor = nextCursor;
       }
-      throw new KnowledgeHubApiError('invalid_response', null);
     }),
   );
   const candidates = pages.flat();
@@ -137,7 +141,6 @@ export function KnowledgeLlmPanel(props: {
   itemId: string;
   itemScope: KnowledgeScope;
   organizationId: string | null;
-  snapshots: readonly KnowledgeSnapshot[];
   onCommitBusyChange?: (busy: boolean) => void;
 }) {
   const { onCommitBusyChange } = props;
@@ -262,7 +265,6 @@ export function KnowledgeLlmPanel(props: {
     props.itemId,
     props.itemScope,
     props.organizationId,
-    props.snapshots,
   ]);
 
   const selectedModel = catalog?.models.find(

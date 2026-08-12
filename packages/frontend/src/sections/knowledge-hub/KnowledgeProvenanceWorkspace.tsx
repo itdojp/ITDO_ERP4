@@ -144,7 +144,6 @@ export function KnowledgeProvenanceWorkspace(props: {
                   itemId={props.itemId}
                   itemScope={props.itemScope}
                   organizationId={props.organizationId}
-                  snapshots={props.snapshots}
                   onCommitBusyChange={handleLlmCommitBusyChange}
                 />
               </div>

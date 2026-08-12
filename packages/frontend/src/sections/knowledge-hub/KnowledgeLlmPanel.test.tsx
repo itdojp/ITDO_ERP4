@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -31,7 +32,6 @@ vi.mock('./knowledgeLlmApi', () => ({
 
 import { KnowledgeLlmPanel } from './KnowledgeLlmPanel';
 import { KnowledgeHubApiError } from './knowledgeHubApi';
-import type { KnowledgeSnapshot } from './knowledgeHubModel';
 import type { KnowledgeLlmRun } from './knowledgeLlmModel';
 
 const timestamp = '2026-08-13T00:00:00.000Z';
@@ -60,28 +60,6 @@ const budget = {
   rateBlocked: false,
   subjects: [],
 };
-
-function snapshot(id: string, version: number): KnowledgeSnapshot {
-  return {
-    id,
-    knowledgeItemId: 'item-1',
-    version,
-    status: 'ready',
-    captureMethod: 'text',
-    sourceUrl: null,
-    originalName: `snapshot-${version}.txt`,
-    contentType: 'text/plain',
-    sizeBytes: 100,
-    sha256: 'a'.repeat(64),
-    failureCode: null,
-    capturedAt: timestamp,
-    capturedBy: 'actor',
-    readyAt: timestamp,
-    failedAt: null,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-}
 
 function run(overrides: Partial<KnowledgeLlmRun> = {}): KnowledgeLlmRun {
   return {
@@ -158,7 +136,6 @@ function renderPanel(
       itemId="item-1"
       itemScope="personal"
       organizationId={null}
-      snapshots={[snapshot('snapshot-old', 2), snapshot('snapshot-latest', 3)]}
       {...props}
     />,
   );
@@ -299,6 +276,96 @@ describe('KnowledgeLlmPanel', () => {
     );
   });
 
+  it('loads every server page beyond one hundred while rejecting cursor cycles', async () => {
+    apiMocks.fetchKnowledgeLlmContextCandidates.mockImplementation(
+      async ({
+        sourceType,
+        cursor,
+      }: {
+        sourceType: string;
+        cursor: string | null;
+      }) => {
+        if (sourceType !== 'snapshot') return { items: [], nextCursor: null };
+        const page = cursor ? Number(cursor.slice('page-'.length)) : 0;
+        return {
+          items: [
+            {
+              sourceType,
+              sourceId: `snapshot-${page}`,
+              exactSourceVersion: 101 - page,
+              byteLength: 10,
+              createdAt: timestamp,
+            },
+          ],
+          nextCursor: page < 100 ? `page-${page + 1}` : null,
+        };
+      },
+    );
+    renderPanel();
+    expect(await screen.findByText('Snapshot / exact version 1')).toBeVisible();
+    expect(screen.getAllByRole('checkbox', { name: /Snapshot/ })).toHaveLength(
+      101,
+    );
+
+    cleanup();
+    vi.clearAllMocks();
+    apiMocks.fetchKnowledgeLlmCatalog.mockResolvedValue(catalog);
+    apiMocks.fetchKnowledgeLlmBudget.mockResolvedValue(budget);
+    apiMocks.fetchKnowledgeLlmContextCandidates.mockImplementation(
+      async ({ sourceType }: { sourceType: string }) => ({
+        items: [],
+        nextCursor: sourceType === 'snapshot' ? 'repeated-cursor' : null,
+      }),
+    );
+    renderPanel();
+    expect(
+      await screen.findByText(
+        'サーバー応答を確認できませんでした。再試行してください。',
+      ),
+    ).toBeVisible();
+  });
+
+  it('retains an in-flight run across a same-item parent refresh', async () => {
+    let resolveExecution:
+      | ((value: {
+          created: boolean;
+          reused: boolean;
+          run: KnowledgeLlmRun;
+        }) => void)
+      | undefined;
+    apiMocks.executeKnowledgeLlmRun.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveExecution = resolve;
+        }),
+    );
+    const view = renderPanel();
+    await previewDefaultSource();
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: /上記のexact contentだけを外部providerへ送信/,
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: '明示confirmして1回だけ実行' }),
+    );
+
+    view.rerender(
+      <KnowledgeLlmPanel
+        itemId="item-1"
+        itemScope="personal"
+        organizationId={null}
+      />,
+    );
+    await act(async () => {
+      resolveExecution?.({ created: true, reused: false, run: run() });
+    });
+
+    expect(await screen.findByText('synthetic result')).toBeVisible();
+    expect(apiMocks.fetchKnowledgeLlmCatalog).toHaveBeenCalledTimes(1);
+    expect(apiMocks.executeKnowledgeLlmRun).toHaveBeenCalledTimes(1);
+  });
+
   it('purges the previous run reference before creating a new preview', async () => {
     renderPanel();
     await previewDefaultSource();
@@ -431,7 +498,6 @@ describe('KnowledgeLlmPanel', () => {
         itemId="item-2"
         itemScope="personal"
         organizationId={null}
-        snapshots={[]}
       />,
     );
     expect(await screen.findByText(/外部LLMは無効です/)).toBeInTheDocument();
@@ -471,7 +537,6 @@ describe('KnowledgeLlmPanel', () => {
         itemId="item-2"
         itemScope="personal"
         organizationId={null}
-        snapshots={[]}
       />,
     );
     expect(await screen.findByText(/外部LLMは無効です/)).toBeInTheDocument();
@@ -534,7 +599,6 @@ describe('KnowledgeLlmPanel', () => {
         itemId="item-2"
         itemScope="personal"
         organizationId={null}
-        snapshots={[]}
       />,
     );
     expect(await screen.findByText(/外部LLMは無効です/)).toBeInTheDocument();

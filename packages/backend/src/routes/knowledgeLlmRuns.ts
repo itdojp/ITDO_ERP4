@@ -410,7 +410,15 @@ export async function registerKnowledgeLlmRunRoutes(
         cursor?: string;
       };
       const organizationId = query.organizationId ?? null;
-      const parentId = `${itemId}\0${query.scope}\0${organizationId ?? ''}\0${query.sourceType}`;
+      // A structured tuple avoids delimiter ambiguity even if a bounded
+      // identifier contains control characters. Only its hash is persisted in
+      // the signed cursor envelope.
+      const parentId = JSON.stringify([
+        itemId,
+        query.scope,
+        organizationId,
+        query.sourceType,
+      ]);
       let boundary;
       try {
         boundary = query.cursor
