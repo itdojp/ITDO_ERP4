@@ -1,0 +1,731 @@
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
+import { Alert, Button, Card, Input, Textarea } from '../../ui';
+import {
+  executeKnowledgeLlmRun,
+  fetchKnowledgeLlmBudget,
+  fetchKnowledgeLlmCatalog,
+  fetchKnowledgeLlmRun,
+  previewKnowledgeLlmRun,
+  reconcileKnowledgeLlmRun,
+} from './knowledgeLlmApi';
+import {
+  formatKnowledgeLlmCost,
+  knowledgeLlmRunNeedsReconciliation,
+  validateKnowledgeLlmRequest,
+  type KnowledgeLlmCandidate,
+  type KnowledgeLlmCatalog,
+  type KnowledgeLlmPreview,
+  type KnowledgeLlmRequest,
+  type KnowledgeLlmRun,
+} from './knowledgeLlmModel';
+import {
+  listKnowledgeAnnotations,
+  listKnowledgeConversations,
+  listKnowledgeConversationTurns,
+  getKnowledgeSynthesis,
+  listKnowledgeSyntheses,
+} from './knowledgeProvenanceApi';
+import { KnowledgeHubApiError } from './knowledgeHubApi';
+import {
+  createKnowledgeRequestKey,
+  formatKnowledgeBytes,
+  formatKnowledgeDateTime,
+  isKnowledgeHubErrorCode,
+  knowledgeHubErrorMessage,
+  type KnowledgeScope,
+  type KnowledgeSnapshot,
+} from './knowledgeHubModel';
+
+type LoadStatus = 'idle' | 'loading' | 'success' | 'error';
+
+const sourceTypeLabels = {
+  snapshot: 'Snapshot',
+  annotation_revision: '本人annotation',
+  conversation_turn: '会話turn',
+  synthesis_version: 'Synthesis version',
+  thread_promotion_message: 'Chat promotion snapshot',
+} as const;
+
+const executionLabels = {
+  reserved: '予算予約済み',
+  dispatched: '送信済み・結果確認中',
+  result_ready: '結果あり',
+  failed: '失敗',
+  result_unknown: '結果不明',
+} as const;
+
+const settlementLabels = {
+  reserved: '予約中',
+  settled_actual: '実績精算済み',
+  released: '予約解放済み',
+  held_maximum: '最大予約額を保持',
+} as const;
+
+function safeError(error: unknown) {
+  if (
+    error instanceof KnowledgeHubApiError &&
+    isKnowledgeHubErrorCode(error.code)
+  ) {
+    return knowledgeHubErrorMessage(error.code);
+  }
+  return knowledgeHubErrorMessage('unknown_error');
+}
+
+function isAccessLoss(error: unknown) {
+  return (
+    error instanceof KnowledgeHubApiError &&
+    (error.code === 'not_found' || error.status === 403 || error.status === 404)
+  );
+}
+
+function modelIdentity(provider: string, model: string) {
+  return `${encodeURIComponent(provider)}:${encodeURIComponent(model)}`;
+}
+
+function candidateKey(sourceType: string, sourceId: string) {
+  return `${sourceType}:${sourceId}`;
+}
+
+async function loadCandidates(input: {
+  itemId: string;
+  snapshots: readonly KnowledgeSnapshot[];
+  signal: AbortSignal;
+}): Promise<KnowledgeLlmCandidate[]> {
+  const { itemId, signal } = input;
+  const candidates: KnowledgeLlmCandidate[] = [];
+  const readySnapshots = input.snapshots
+    .filter((snapshot) => snapshot.status === 'ready' && snapshot.sha256)
+    .sort((left, right) => right.version - left.version);
+  for (const [index, snapshot] of readySnapshots.entries()) {
+    candidates.push({
+      sourceType: 'snapshot',
+      sourceId: snapshot.id,
+      key: candidateKey('snapshot', snapshot.id),
+      label: `Snapshot version ${snapshot.version}`,
+      detail: `${formatKnowledgeBytes(snapshot.sizeBytes)} / SHA-256あり`,
+      selectable: true,
+      selectedByDefault: index === 0,
+    });
+  }
+
+  const [annotationsPage, conversationsPage, synthesesPage] = await Promise.all(
+    [
+      listKnowledgeAnnotations(itemId, { signal }),
+      listKnowledgeConversations({ knowledgeItemId: itemId, signal }),
+      listKnowledgeSyntheses(null, signal),
+    ],
+  );
+  for (const annotation of annotationsPage.items) {
+    if (annotation.deletedAt) continue;
+    candidates.push({
+      sourceType: 'annotation_revision',
+      sourceId: annotation.revision.id,
+      key: candidateKey('annotation_revision', annotation.revision.id),
+      label: `本人annotation / ${annotation.kind} / revision ${annotation.currentRevision}`,
+      detail: `origin: ${annotation.origin}`,
+      selectable: true,
+      selectedByDefault: false,
+    });
+  }
+
+  const conversationTurns = await Promise.all(
+    conversationsPage.items.map(async (conversation) => ({
+      conversation,
+      page: await listKnowledgeConversationTurns(conversation.id, null, signal),
+    })),
+  );
+  for (const { conversation, page } of conversationTurns) {
+    for (const turn of page.items) {
+      const selectable = turn.role === 'user' || turn.role === 'assistant';
+      candidates.push({
+        sourceType: 'conversation_turn',
+        sourceId: turn.id,
+        key: candidateKey('conversation_turn', turn.id),
+        label: `${conversation.title} / ${turn.role} turn ${turn.sequence}`,
+        detail: selectable
+          ? `origin: ${turn.origin}`
+          : `origin: ${turn.origin} / MVP送信対象外`,
+        selectable,
+        selectedByDefault: false,
+      });
+    }
+  }
+
+  const synthesisDetails = await Promise.all(
+    synthesesPage.items.map((synthesis) =>
+      getKnowledgeSynthesis(synthesis.id, signal),
+    ),
+  );
+  for (const detail of synthesisDetails) {
+    const linked = detail.currentVersion.sources.some(
+      (source) =>
+        source.accessible &&
+        source.kind === 'item' &&
+        source.sourceId === itemId,
+    );
+    if (!linked) continue;
+    candidates.push({
+      sourceType: 'synthesis_version',
+      sourceId: detail.currentVersion.id,
+      key: candidateKey('synthesis_version', detail.currentVersion.id),
+      label: `${detail.synthesis.title} / version ${detail.currentVersion.version}`,
+      detail: '結論・未解決質問を含むexact version',
+      selectable: true,
+      selectedByDefault: false,
+    });
+  }
+  return candidates.slice(0, 32);
+}
+
+export function KnowledgeLlmPanel(props: {
+  itemId: string;
+  itemScope: KnowledgeScope;
+  organizationId: string | null;
+  snapshots: readonly KnowledgeSnapshot[];
+  onCommitBusyChange?: (busy: boolean) => void;
+}) {
+  const { onCommitBusyChange } = props;
+  const generationRef = useRef(0);
+  const bootstrapAbortRef = useRef<AbortController | null>(null);
+  const previewAbortRef = useRef<AbortController | null>(null);
+  const readAbortRef = useRef<AbortController | null>(null);
+  const [status, setStatus] = useState<LoadStatus>('idle');
+  const [catalog, setCatalog] = useState<KnowledgeLlmCatalog | null>(null);
+  const [budget, setBudget] = useState<Awaited<
+    ReturnType<typeof fetchKnowledgeLlmBudget>
+  > | null>(null);
+  const [candidates, setCandidates] = useState<KnowledgeLlmCandidate[]>([]);
+  const [selectedKeys, setSelectedKeys] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [model, setModel] = useState('');
+  const [maxOutputTokens, setMaxOutputTokens] = useState('512');
+  const [prompt, setPrompt] = useState('');
+  const [preview, setPreview] = useState<KnowledgeLlmPreview | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [requestKey, setRequestKey] = useState<string | null>(null);
+  const [commitAttempted, setCommitAttempted] = useState(false);
+  const [run, setRun] = useState<KnowledgeLlmRun | null>(null);
+  const [runLookupId, setRunLookupId] = useState<string | null>(null);
+  const [reused, setReused] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [reading, setReading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const isCurrent = useCallback(
+    (generation: number) => generationRef.current === generation,
+    [],
+  );
+
+  const clearSensitiveResult = useCallback(() => {
+    previewAbortRef.current?.abort();
+    readAbortRef.current?.abort();
+    setPreview(null);
+    setConfirmed(false);
+    setRequestKey(null);
+    setCommitAttempted(false);
+    setRun(null);
+    setRunLookupId(null);
+    setReused(false);
+    setError(null);
+    setNotice(null);
+  }, []);
+
+  useEffect(() => {
+    const generation = generationRef.current + 1;
+    generationRef.current = generation;
+    bootstrapAbortRef.current?.abort();
+    previewAbortRef.current?.abort();
+    readAbortRef.current?.abort();
+    const controller = new AbortController();
+    bootstrapAbortRef.current = controller;
+    setStatus('loading');
+    setCatalog(null);
+    setBudget(null);
+    setCandidates([]);
+    setSelectedKeys(new Set());
+    setModel('');
+    setPrompt('');
+    setMaxOutputTokens('512');
+    clearSensitiveResult();
+
+    void (async () => {
+      try {
+        const nextCatalog = await fetchKnowledgeLlmCatalog(controller.signal);
+        if (!isCurrent(generation) || controller.signal.aborted) return;
+        setCatalog(nextCatalog);
+        if (!nextCatalog.enabled || nextCatalog.models.length === 0) {
+          setStatus('success');
+          return;
+        }
+        const firstModel = nextCatalog.models[0];
+        setModel(modelIdentity(firstModel.provider, firstModel.model));
+        setMaxOutputTokens(String(Math.min(512, firstModel.maxOutputTokens)));
+        const [nextBudget, nextCandidates] = await Promise.all([
+          fetchKnowledgeLlmBudget({
+            scope: props.itemScope,
+            organizationId: props.organizationId,
+            signal: controller.signal,
+          }),
+          loadCandidates({
+            itemId: props.itemId,
+            snapshots: props.snapshots,
+            signal: controller.signal,
+          }),
+        ]);
+        if (!isCurrent(generation) || controller.signal.aborted) return;
+        setBudget(nextBudget);
+        setCandidates(nextCandidates);
+        setSelectedKeys(
+          new Set(
+            nextCandidates
+              .filter((candidate) => candidate.selectedByDefault)
+              .map((candidate) => candidate.key),
+          ),
+        );
+        setStatus('success');
+      } catch (loadError) {
+        if (!isCurrent(generation) || controller.signal.aborted) return;
+        setError(safeError(loadError));
+        setStatus('error');
+      }
+    })();
+
+    return () => {
+      controller.abort();
+      previewAbortRef.current?.abort();
+      readAbortRef.current?.abort();
+      if (generationRef.current === generation) generationRef.current += 1;
+    };
+  }, [
+    clearSensitiveResult,
+    isCurrent,
+    props.itemId,
+    props.itemScope,
+    props.organizationId,
+    props.snapshots,
+  ]);
+
+  const selectedModel = catalog?.models.find(
+    (entry) => modelIdentity(entry.provider, entry.model) === model,
+  );
+  const request = useMemo<KnowledgeLlmRequest | null>(() => {
+    if (!catalog?.enabled || catalog.version === null || !selectedModel) {
+      return null;
+    }
+    return {
+      scope: props.itemScope,
+      organizationId:
+        props.itemScope === 'organization' ? props.organizationId : null,
+      provider: selectedModel.provider,
+      model: selectedModel.model,
+      catalogVersion: catalog.version,
+      userPrompt: prompt,
+      maxOutputTokens: Number(maxOutputTokens),
+      sources: candidates
+        .filter((candidate) => selectedKeys.has(candidate.key))
+        .map(({ sourceType, sourceId }) => ({ sourceType, sourceId })),
+    };
+  }, [
+    candidates,
+    catalog,
+    maxOutputTokens,
+    prompt,
+    props.itemScope,
+    props.organizationId,
+    selectedKeys,
+    selectedModel,
+  ]);
+
+  const invalidateDraft = useCallback(() => {
+    clearSensitiveResult();
+  }, [clearSensitiveResult]);
+
+  const toggleCandidate = (candidate: KnowledgeLlmCandidate) => {
+    if (!candidate.selectable) return;
+    invalidateDraft();
+    setSelectedKeys((current) => {
+      const next = new Set(current);
+      if (next.has(candidate.key)) next.delete(candidate.key);
+      else next.add(candidate.key);
+      return next;
+    });
+  };
+
+  const handlePreview = async () => {
+    if (!request || !catalog) return;
+    const validation = validateKnowledgeLlmRequest({ request, catalog });
+    if (validation) {
+      setError(validation);
+      return;
+    }
+    const generation = generationRef.current;
+    clearSensitiveResult();
+    const controller = new AbortController();
+    previewAbortRef.current = controller;
+    setPreviewing(true);
+    setError(null);
+    setNotice(null);
+    setPreview(null);
+    setConfirmed(false);
+    setRun(null);
+    try {
+      const next = await previewKnowledgeLlmRun(request, controller.signal);
+      if (!isCurrent(generation) || controller.signal.aborted) return;
+      setPreview(next);
+      setBudget(next.budget);
+      setRequestKey(createKnowledgeRequestKey());
+      setCommitAttempted(false);
+      setNotice('外部送信前のexact previewを作成しました。');
+    } catch (previewError) {
+      if (!isCurrent(generation) || controller.signal.aborted) return;
+      if (isAccessLoss(previewError)) clearSensitiveResult();
+      setError(safeError(previewError));
+    } finally {
+      if (isCurrent(generation)) setPreviewing(false);
+    }
+  };
+
+  const handleExecute = async () => {
+    if (!request || !preview || !requestKey || !confirmed || commitAttempted) {
+      return;
+    }
+    const generation = generationRef.current;
+    setCommitting(true);
+    setCommitAttempted(true);
+    setError(null);
+    setNotice(null);
+    onCommitBusyChange?.(true);
+    try {
+      const result = await executeKnowledgeLlmRun({
+        request,
+        previewToken: preview.previewToken,
+        requestKey,
+      });
+      if (!isCurrent(generation)) return;
+      setRun(result.run);
+      setRunLookupId(result.run.id);
+      setReused(result.reused);
+      setNotice(
+        result.reused
+          ? '同じ実行結果を再利用しました。providerへ再送していません。'
+          : '外部LLM実行の状態を確定しました。',
+      );
+    } catch (executeError) {
+      if (!isCurrent(generation)) return;
+      if (isAccessLoss(executeError)) {
+        clearSensitiveResult();
+        setError(safeError(executeError));
+      } else {
+        setRunLookupId(preview.runId);
+        setError(
+          executeError instanceof KnowledgeHubApiError &&
+            executeError.code === 'network_error'
+            ? '送信結果は不明です。自動再送せず「状態を確認」を実行してください。'
+            : safeError(executeError),
+        );
+      }
+    } finally {
+      if (isCurrent(generation)) setCommitting(false);
+      onCommitBusyChange?.(false);
+    }
+  };
+
+  const readRun = async (reconcile: boolean) => {
+    const target = run?.id ?? runLookupId;
+    if (!target) return;
+    const generation = generationRef.current;
+    readAbortRef.current?.abort();
+    const controller = new AbortController();
+    readAbortRef.current = controller;
+    setReading(true);
+    setError(null);
+    try {
+      const next = reconcile
+        ? await reconcileKnowledgeLlmRun(target, controller.signal)
+        : await fetchKnowledgeLlmRun(target, controller.signal);
+      if (!isCurrent(generation) || controller.signal.aborted) return;
+      setRun(next);
+      setRunLookupId(next.id);
+      setNotice(
+        reconcile
+          ? '保存済み証跡だけで再照合しました。providerへ再送していません。'
+          : '現在の実行状態を取得しました。',
+      );
+    } catch (readError) {
+      if (!isCurrent(generation) || controller.signal.aborted) return;
+      if (isAccessLoss(readError)) clearSensitiveResult();
+      setError(safeError(readError));
+    } finally {
+      if (isCurrent(generation)) setReading(false);
+    }
+  };
+
+  if (status === 'loading' || status === 'idle') {
+    return <p role="status">外部LLM設定と送信候補を確認しています。</p>;
+  }
+
+  if (status === 'error') {
+    return (
+      <div className="knowledge-llm-panel" aria-label="外部LLM対話">
+        <Alert variant="error">
+          {error ?? knowledgeHubErrorMessage('unknown_error')}
+        </Alert>
+      </div>
+    );
+  }
+
+  if (!catalog?.enabled) {
+    return (
+      <div className="knowledge-llm-panel" aria-label="外部LLM対話">
+        <Alert variant="info">
+          外部LLMは無効です。既定ではprovider requestを作成しません。
+        </Alert>
+        <p>有効化には管理者によるallowlist、予算、rate limit設定が必要です。</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="knowledge-llm-panel" aria-label="外部LLM対話">
+      <Alert variant="warning">
+        選択したsourceと指示だけを外部providerへ送信します。非選択source、provider
+        key、URL、private metadataは送信しません。
+      </Alert>
+      {error ? <Alert variant="error">{error}</Alert> : null}
+      {notice ? <Alert variant="success">{notice}</Alert> : null}
+      <Card padding="small">
+        <h3>1. Providerと送信source</h3>
+        <label>
+          許可されたmodel
+          <select
+            aria-label="許可されたmodel"
+            value={model}
+            onChange={(event) => {
+              invalidateDraft();
+              const next = event.target.value;
+              const definition = catalog.models.find(
+                (entry) => modelIdentity(entry.provider, entry.model) === next,
+              );
+              setModel(next);
+              if (definition) {
+                setMaxOutputTokens(
+                  String(Math.min(512, definition.maxOutputTokens)),
+                );
+              }
+            }}
+          >
+            {catalog.models.map((entry) => (
+              <option
+                key={`${entry.provider}:${entry.model}`}
+                value={modelIdentity(entry.provider, entry.model)}
+              >
+                {entry.provider} / {entry.model}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p>
+          catalog version {catalog.version} / provider allowlist:{' '}
+          {catalog.provider}
+        </p>
+        <fieldset>
+          <legend>外部送信するsource（既定は最新snapshotのみ）</legend>
+          {candidates.length === 0 ? (
+            <p>送信可能なready sourceがありません。</p>
+          ) : (
+            candidates.map((candidate) => (
+              <label
+                key={candidate.key}
+                className="knowledge-llm-source-option"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedKeys.has(candidate.key)}
+                  disabled={!candidate.selectable}
+                  onChange={() => toggleCandidate(candidate)}
+                />
+                <span>
+                  <strong>{candidate.label}</strong>
+                  <small>{candidate.detail}</small>
+                </span>
+              </label>
+            ))
+          )}
+        </fieldset>
+        <p>
+          選択 {selectedKeys.size}件 / 省略{' '}
+          {Math.max(0, candidates.length - selectedKeys.size)}件
+        </p>
+      </Card>
+
+      <Card padding="small">
+        <h3>2. 指示と上限</h3>
+        <Textarea
+          label="外部LLMへの指示"
+          value={prompt}
+          onChange={(event) => {
+            invalidateDraft();
+            setPrompt(event.target.value);
+          }}
+          rows={5}
+          maxLength={16 * 1024}
+        />
+        <Input
+          label="最大出力token数"
+          type="number"
+          min="1"
+          max={selectedModel?.maxOutputTokens ?? 4096}
+          value={maxOutputTokens}
+          onChange={(event) => {
+            invalidateDraft();
+            setMaxOutputTokens(event.target.value);
+          }}
+        />
+        <p>
+          user budget: {budget?.configured ? '設定済み' : '未設定'} / soft:{' '}
+          {budget?.softLimitWarning ? '警告あり' : '警告なし'} / hard:{' '}
+          {budget?.hardLimitBlocked ? '停止' : '利用可能'} / rate:{' '}
+          {budget?.rateBlocked ? '停止' : '利用可能'}
+        </p>
+        <Button loading={previewing} onClick={() => void handlePreview()}>
+          外部送信内容をプレビュー
+        </Button>
+      </Card>
+
+      {preview ? (
+        <Card padding="small">
+          <h3>3. Exact preview・明示confirm</h3>
+          <p>
+            推定input {preview.estimatedInputTokens} tokens / 最大output{' '}
+            {preview.maxOutputTokens} tokens / 最大予約額{' '}
+            {formatKnowledgeLlmCost(
+              preview.maximumCostMicros,
+              preview.currency,
+            )}
+          </p>
+          <p>有効期限: {formatKnowledgeDateTime(preview.expiresAt)}</p>
+          {preview.budget.softLimitWarning ? (
+            <Alert variant="warning">soft limitを超える見込みです。</Alert>
+          ) : null}
+          {preview.budget.hardLimitBlocked || preview.budget.rateBlocked ? (
+            <Alert variant="error">
+              hard limitまたはrate limitにより、providerへ送信できません。
+            </Alert>
+          ) : null}
+          <div className="knowledge-llm-exact-preview">
+            {preview.selectedSources.map((source) => (
+              <article key={`${source.sourceType}:${source.ordinal}`}>
+                <h4>
+                  {sourceTypeLabels[source.sourceType]} / exact version{' '}
+                  {source.exactSourceVersion}
+                </h4>
+                <p>
+                  {formatKnowledgeBytes(source.byteLength)} / SHA-256{' '}
+                  <code>{source.exactSourceHash}</code>
+                </p>
+                <pre>{source.content}</pre>
+              </article>
+            ))}
+          </div>
+          <label>
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(event) => setConfirmed(event.target.checked)}
+            />
+            上記のexact contentだけを外部providerへ送信することを確認しました
+          </label>
+          <Button
+            loading={committing}
+            disabled={
+              !confirmed ||
+              commitAttempted ||
+              !preview.budget.configured ||
+              preview.budget.hardLimitBlocked ||
+              preview.budget.rateBlocked
+            }
+            onClick={() => void handleExecute()}
+          >
+            明示confirmして1回だけ実行
+          </Button>
+        </Card>
+      ) : null}
+
+      {run || runLookupId ? (
+        <Card padding="small">
+          <h3>4. 実行状態・usage・cost provenance</h3>
+          {run ? (
+            <>
+              <p>
+                execution: {executionLabels[run.executionStatus]} / settlement:{' '}
+                {settlementLabels[run.settlementStatus]}
+              </p>
+              <p>
+                provider/model: {run.provider} / {run.model} / catalog version{' '}
+                {run.catalogVersion}
+              </p>
+              <p>
+                usage: input {run.actualInputTokens ?? '不明'} / output{' '}
+                {run.actualOutputTokens ?? '不明'} / actual cost{' '}
+                {formatKnowledgeLlmCost(run.actualCostMicros, run.currency)}
+              </p>
+              {run.settlementStatus === 'held_maximum' ? (
+                <Alert variant="warning">
+                  usageまたは結果の証跡が不明なため、最大予約額を保持しています。
+                </Alert>
+              ) : null}
+              {run.executionStatus === 'result_unknown' ? (
+                <Alert variant="warning">
+                  provider結果は不明です。自動retryや別provider
+                  fallbackは行いません。
+                </Alert>
+              ) : null}
+              {run.result ? (
+                <article aria-label="外部LLM結果">
+                  <h4>外部LLM結果</h4>
+                  <p>{run.result}</p>
+                </article>
+              ) : null}
+              {run.conversationId ? (
+                <p>Knowledge conversationへprovenance付きで保存済みです。</p>
+              ) : null}
+              {reused ? <p>idempotent replay: 既存runを再利用</p> : null}
+            </>
+          ) : (
+            <Alert variant="warning">
+              commit応答を確認できません。providerへ再送せず状態だけを取得できます。
+            </Alert>
+          )}
+          <div className="knowledge-llm-run-actions">
+            <Button
+              variant="ghost"
+              loading={reading}
+              onClick={() => void readRun(false)}
+            >
+              状態を確認
+            </Button>
+            {run && knowledgeLlmRunNeedsReconciliation(run) ? (
+              <Button
+                variant="ghost"
+                loading={reading}
+                onClick={() => void readRun(true)}
+              >
+                保存済み証跡で再照合
+              </Button>
+            ) : null}
+          </div>
+        </Card>
+      ) : null}
+    </div>
+  );
+}

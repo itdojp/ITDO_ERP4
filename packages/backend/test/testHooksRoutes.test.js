@@ -10,14 +10,15 @@ function withPrismaStubs(stubs, fn) {
   const restores = [];
   for (const [path, stub] of Object.entries(stubs)) {
     const [model, method] = path.split('.');
-    const target = prisma[model];
-    if (!target || typeof target[method] !== 'function') {
+    const target = method ? prisma[model] : prisma;
+    const targetMethod = method || model;
+    if (!target || typeof target[targetMethod] !== 'function') {
       throw new Error(`invalid stub target: ${path}`);
     }
-    const original = target[method];
-    target[method] = stub;
+    const original = target[targetMethod];
+    target[targetMethod] = stub;
     restores.push(() => {
-      target[method] = original;
+      target[targetMethod] = original;
     });
   }
   return Promise.resolve()
@@ -113,6 +114,205 @@ test('test hook route requires admin or mgmt role', async () => {
       } finally {
         await server.close();
       }
+    },
+  );
+});
+
+test('knowledge LLM test hook requires admin or mgmt role', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      NODE_ENV: 'test',
+      E2E_ENABLE_TEST_HOOKS: '1',
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        const res = await server.inject({
+          method: 'POST',
+          url: '/__test__/knowledge-llm/configure',
+          headers: userHeaders(),
+          payload: {
+            softLimitMicros: '1',
+            hardLimitMicros: '2',
+            requestsPerHour: 10,
+          },
+        });
+        assert.equal(res.statusCode, 403, res.body);
+        assert.equal(JSON.parse(res.body)?.error?.code, 'forbidden');
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('knowledge LLM test hook validates a bounded allowlisted configuration', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      NODE_ENV: 'test',
+      E2E_ENABLE_TEST_HOOKS: '1',
+    },
+    async () => {
+      const server = await buildServer({ logger: false });
+      try {
+        for (const payload of [
+          {
+            unexpected: 'field',
+            softLimitMicros: '1',
+            hardLimitMicros: '2',
+            requestsPerHour: 10,
+          },
+          {
+            softLimitMicros: '3',
+            hardLimitMicros: '2',
+            requestsPerHour: 10,
+          },
+          {
+            softLimitMicros: '1',
+            hardLimitMicros: '9223372036854775808',
+            requestsPerHour: 10,
+          },
+          {
+            softLimitMicros: '1',
+            hardLimitMicros: '2',
+            requestsPerHour: 0,
+          },
+        ]) {
+          const res = await server.inject({
+            method: 'POST',
+            url: '/__test__/knowledge-llm/configure',
+            headers: adminHeaders(),
+            payload,
+          });
+          assert.equal(res.statusCode, 400, res.body);
+          assert.equal(
+            JSON.parse(res.body)?.error?.code,
+            'INVALID_KNOWLEDGE_LLM_TEST_CONFIG',
+          );
+        }
+      } finally {
+        await server.close();
+      }
+    },
+  );
+});
+
+test('knowledge LLM test hook refuses to replace a non-test budget policy', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      NODE_ENV: 'test',
+      E2E_ENABLE_TEST_HOOKS: '1',
+    },
+    async () => {
+      await withPrismaStubs(
+        {
+          'knowledgeLlmBudgetPolicy.findMany': async () => [
+            {
+              id: 'policy-existing',
+              version: 4,
+              active: true,
+              createdBy: 'canonical-actor',
+            },
+          ],
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/__test__/knowledge-llm/configure',
+              headers: adminHeaders(),
+              payload: {
+                softLimitMicros: '1',
+                hardLimitMicros: '2',
+                requestsPerHour: 10,
+              },
+            });
+            assert.equal(res.statusCode, 409, res.body);
+            assert.equal(
+              JSON.parse(res.body)?.error?.code,
+              'KNOWLEDGE_LLM_TEST_POLICY_CONFLICT',
+            );
+          } finally {
+            await server.close();
+          }
+        },
+      );
+    },
+  );
+});
+
+test('knowledge LLM test hook replaces only marked test policy and returns no subject identifier', async () => {
+  await withEnv(
+    {
+      DATABASE_URL: process.env.DATABASE_URL || MIN_DATABASE_URL,
+      AUTH_MODE: 'header',
+      NODE_ENV: 'test',
+      E2E_ENABLE_TEST_HOOKS: '1',
+    },
+    async () => {
+      let updateInput = null;
+      let createInput = null;
+      await withPrismaStubs(
+        {
+          'knowledgeLlmBudgetPolicy.findMany': async () => [
+            {
+              id: 'policy-test',
+              version: 2,
+              active: true,
+              createdBy: '__erp4_e2e_knowledge_llm__',
+            },
+          ],
+          $transaction: async (operation) => operation(prisma),
+          'knowledgeLlmBudgetPolicy.updateMany': async (input) => {
+            updateInput = input;
+            return { count: 1 };
+          },
+          'knowledgeLlmBudgetPolicy.create': async (input) => {
+            createInput = input;
+            return { id: 'policy-new' };
+          },
+        },
+        async () => {
+          const server = await buildServer({ logger: false });
+          try {
+            const res = await server.inject({
+              method: 'POST',
+              url: '/__test__/knowledge-llm/configure',
+              headers: adminHeaders(),
+              payload: {
+                softLimitMicros: '10',
+                hardLimitMicros: '20',
+                requestsPerHour: 25,
+              },
+            });
+            assert.equal(res.statusCode, 200, res.body);
+            assert.deepEqual(JSON.parse(res.body), {
+              budgetConfigured: true,
+              policyVersion: 3,
+            });
+          } finally {
+            await server.close();
+          }
+        },
+      );
+      assert.deepEqual(updateInput?.where, {
+        subjectType: 'user',
+        subjectId: 'admin-user',
+        active: true,
+        createdBy: '__erp4_e2e_knowledge_llm__',
+      });
+      assert.equal(createInput?.data.subjectId, 'admin-user');
+      assert.equal(createInput?.data.softLimitMicros, 10n);
+      assert.equal(createInput?.data.hardLimitMicros, 20n);
+      assert.equal(createInput?.data.requestsPerHour, 25);
+      assert.equal(createInput?.data.version, 3);
     },
   );
 });

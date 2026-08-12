@@ -44,6 +44,34 @@ test('stub adapter never exceeds a small requested output limit', async () => {
   assert.equal(result.content.length, 1);
 });
 
+test('stub fixture models deterministically expose usage-missing and outcome-unknown without mutable process state', async () => {
+  const { StubExternalLlmTextAdapter } =
+    await import('../dist/adapters/externalLlm/stubTextAdapter.js');
+  const missing = await complete(new StubExternalLlmTextAdapter(), {
+    ...request,
+    model: 'stub-usage-missing-v1',
+  });
+  assert.equal(missing.usageStatus, 'missing');
+  assert.equal(missing.usage, null);
+  assert.equal(missing.content.includes('PRIVATE-CANARY'), false);
+
+  const prepared = await new StubExternalLlmTextAdapter().prepare({
+    ...request,
+    model: 'stub-outcome-unknown-v1',
+  });
+  await assert.rejects(prepared.dispatch(), (error) => {
+    assert.equal(error.code, 'connection_outcome_unknown');
+    assert.equal(error.outcome, 'unknown');
+    assert.equal(String(error).includes('PRIVATE-CANARY'), false);
+    return true;
+  });
+  await assert.rejects(prepared.dispatch(), (error) => {
+    assert.equal(error.code, 'connection_outcome_unknown');
+    assert.equal(error.outcome, 'unknown');
+    return true;
+  });
+});
+
 test('stub adapter rejects another provider before dispatch', async () => {
   const { StubExternalLlmTextAdapter } =
     await import('../dist/adapters/externalLlm/stubTextAdapter.js');

@@ -234,6 +234,7 @@ test('catalog and preview expose allowlisted fields only', async (t) => {
   });
   assert.equal(response.statusCode, 200, response.body);
   assert.equal(previewInput.actor.userId, 'canonical-user');
+  assert.equal(previewInput.request.organizationId, null);
   assert.equal(previewInput.request.sources[0].sourceId, 'snapshot-private');
   const text = JSON.stringify(response.json());
   assert.equal(text.includes('must-not-leak'), false);

@@ -31,17 +31,17 @@ vi.mock('../utils/download', () => ({ downloadResponseAsFile }));
 vi.mock('./knowledge-hub/KnowledgeProvenanceWorkspace', () => ({
   KnowledgeProvenanceWorkspace: ({
     itemLabel,
-    onShareCommitBusyChange,
+    onCommitBusyChange,
   }: {
     itemLabel: string;
-    onShareCommitBusyChange?: (busy: boolean) => void;
+    onCommitBusyChange?: (busy: boolean) => void;
   }) => (
     <div>
       provenance workspace: {itemLabel}
-      <button type="button" onClick={() => onShareCommitBusyChange?.(true)}>
+      <button type="button" onClick={() => onCommitBusyChange?.(true)}>
         共有確定を開始
       </button>
-      <button type="button" onClick={() => onShareCommitBusyChange?.(false)}>
+      <button type="button" onClick={() => onCommitBusyChange?.(false)}>
         共有確定を完了
       </button>
     </div>

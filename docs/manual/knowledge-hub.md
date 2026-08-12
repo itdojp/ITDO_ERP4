@@ -148,6 +148,32 @@ Knowledge share cardのthreadでは、選択したactive direct replyだけを�
 
 promote後のSynthesis本文とimmutable selected-message snapshotはdestination Knowledge ACLで保持されます。後からroom accessが失効した場合、live Chat identityやsource provenanceはredactされますが、room accessをKnowledge write権限へ昇格させることはありません。
 
+## 外部LLMへ選択したcontextだけを送信する
+
+`外部LLM対話` tabは管理者がKnowledge専用provider、model catalog、利用者予算を明示設定した場合だけ利用できます。既定は無効であり、Chat要約の設定やcredentialへfallbackしません。
+
+1. 対象itemを選択し、`外部LLM対話` tabを開きます。
+2. allowlistされたmodelを確認します。利用者が任意provider／modelを入力することはできません。
+3. 外部送信するsourceを選択します。既定選択は最新のready snapshotだけです。annotation revision、user／assistant conversation turn、Synthesis versionは必要なものだけを追加します。System／Tool turnは区別して表示されますが、このMVPでは送信できません。
+4. 指示と最大出力token数を入力し、`外部送信内容をプレビュー`を選択します。この時点ではprovider requestも予算予約も作成されません。
+5. exact source本文、version／SHA-256、選択／省略件数、推定input token、最大予約額、soft／hard／rate状態を確認します。
+6. `上記のexact contentだけを外部providerへ送信することを確認しました`を明示的に選択し、`明示confirmして1回だけ実行`します。
+
+実行中は同じintentとrequest keyを保護するため、Knowledge item／tab切替とInbox更新は一時的に無効になります。preview tokenとrequest keyは現在のcomponent memoryだけに保持され、localStorage、URL、画面へ保存されません。itemまたはtabを切り替えると、previewと表示中のprovider結果を破棄します。
+
+| 表示状態 | 意味 | 操作 |
+| --- | --- | --- |
+| `結果確定 / 実績精算済み` | 有効な本文とusageを保存し、actual costを精算済み | provenanceとKnowledge conversation保存を確認する |
+| `結果確定 / 最大予約額を保持` | 本文は保存されたがusage証跡が欠落または不正 | 自動再送せず、運用証跡がある場合だけ再照合する |
+| `結果不明 / 最大予約額を保持` | dispatch後の結果を安全に確定できない | `保存済み証跡で再照合`だけを実行する。再送はしない |
+| hard／rate block | provider dispatch前に予算またはrate guardで拒否 | 管理者にpolicyを確認し、新しいpreviewから再判断する |
+
+`保存済み証跡で再照合`はprovider requestを再送しません。安全な保存済みoutcomeがない場合は結果不明と最大予約額保持を維持します。同じ操作をやり直す場合も自動retryや別provider fallbackは行わず、新しいpreviewと明示confirmが必要です。API key、base URL、provider raw error、source internal IDはUIへ表示しません。
+
+![外部LLM selected-context preview](../test-results/2026-08-13-issue2016-knowledge-llm-ui/02-selected-context-preview.png)
+
+![外部LLM usage unknownとmaximum hold](../test-results/2026-08-13-issue2016-knowledge-llm-ui/03-budget-usage-unknown.png)
+
 ![本人annotationの改訂履歴](../test-results/2026-08-08-issue2013-knowledge-provenance-ui/01-annotation-revision-history.png)
 
 ![会話のroleとorigin timeline](../test-results/2026-08-08-issue2013-knowledge-provenance-ui/02-conversation-role-timeline.png)
@@ -186,3 +212,4 @@ promote後のSynthesis本文とimmutable selected-message snapshotはdestination
 - [Issue #2012 UI/E2E 検証結果](../test-results/2026-08-06-issue2012-knowledge-snapshot-ui.md)
 - [Issue #2013 annotation／会話／Synthesis UI検証結果](../test-results/2026-08-08-issue2013-knowledge-provenance-ui.md)
 - [Issue #2015 選択共有／Chat card／promote UI検証結果](../test-results/2026-08-10-issue2015-knowledge-share-promote-ui.md)
+- [Issue #2016 外部LLM selected-context／budget UI検証結果](../test-results/2026-08-13-issue2016-knowledge-llm-ui.md)

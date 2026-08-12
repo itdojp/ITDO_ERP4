@@ -166,6 +166,7 @@ Storage artifact migration:
 - `KNOWLEDGE_EXTERNAL_LLM_ALLOW_HTTP` / `KNOWLEDGE_EXTERNAL_LLM_ALLOW_PRIVATE_IP`は既定`false`。repository test用の明示設定でのみ有効化し、production sampleでは有効化しない
 - Chat summaryのprovider/model/rate契約は従来どおり独立しており、Knowledge Hubのuser/organization予算予約へ暗黙統合しない
 - 実provider keyによる検証とprovider cutoverは本設定追加のrepo-side完了範囲外
+- `scripts/e2e-frontend.sh`はephemeral repository E2Eだけで`stub`とsynthetic catalogを明示設定する。usage/result不明fixtureはcatalogでallowlistした専用stub modelに束縛し、process-globalなmode切替を行わない。`/__test__/knowledge-llm/configure`は`NODE_ENV!=production`かつ`E2E_ENABLE_TEST_HOOKS=1`かつadmin/mgmt認証時だけ登録され、canonical actor本人のsynthetic user budget policy作成に限定する。通常環境またはproductionで有効化しない
 
 ## バックアップ/リストア
 

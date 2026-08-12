@@ -2,6 +2,34 @@ import { FastifyInstance } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { prisma } from '../services/db.js';
 import { requireRole } from '../services/rbac.js';
+import {
+  knowledgeActorFromRequest,
+  requireCanonicalKnowledgeActor,
+} from './knowledgeRouteContext.js';
+
+const knowledgeLlmE2ePolicyMarker = '__erp4_e2e_knowledge_llm__';
+const knowledgeLlmTestConfigFields = new Set([
+  'softLimitMicros',
+  'hardLimitMicros',
+  'requestsPerHour',
+]);
+const maximumE2eCostMicros = 9_223_372_036_854_775_807n;
+
+function boundedMicros(value: unknown): bigint | null {
+  if (typeof value !== 'string' || !/^(0|[1-9][0-9]{0,18})$/.test(value)) {
+    return null;
+  }
+  const parsed = BigInt(value);
+  return parsed <= maximumE2eCostMicros ? parsed : null;
+}
+
+function boundedRequestsPerHour(value: unknown): number | null {
+  return Number.isSafeInteger(value) &&
+    Number(value) >= 1 &&
+    Number(value) <= 1000
+    ? Number(value)
+    : null;
+}
 
 function isTestHookEnabled() {
   return (
@@ -12,6 +40,90 @@ function isTestHookEnabled() {
 
 export async function registerTestHookRoutes(app: FastifyInstance) {
   if (!isTestHookEnabled()) return;
+
+  app.post(
+    '/__test__/knowledge-llm/configure',
+    {
+      preHandler: [
+        requireRole(['admin', 'mgmt']),
+        requireCanonicalKnowledgeActor,
+      ],
+    },
+    async (req, reply) => {
+      const body = (req.body || {}) as {
+        softLimitMicros?: unknown;
+        hardLimitMicros?: unknown;
+        requestsPerHour?: unknown;
+      };
+      const softLimitMicros = boundedMicros(body.softLimitMicros);
+      const hardLimitMicros = boundedMicros(body.hardLimitMicros);
+      const requestsPerHour = boundedRequestsPerHour(body.requestsPerHour);
+      const actorUserId = knowledgeActorFromRequest(req).userId;
+      if (
+        Object.keys(body).some(
+          (field) => !knowledgeLlmTestConfigFields.has(field),
+        ) ||
+        softLimitMicros === null ||
+        hardLimitMicros === null ||
+        softLimitMicros > hardLimitMicros ||
+        requestsPerHour === null ||
+        !actorUserId
+      ) {
+        return reply.code(400).send({
+          error: { code: 'INVALID_KNOWLEDGE_LLM_TEST_CONFIG' },
+        });
+      }
+
+      const existing = await prisma.knowledgeLlmBudgetPolicy.findMany({
+        where: { subjectType: 'user', subjectId: actorUserId },
+        select: { id: true, version: true, active: true, createdBy: true },
+      });
+      if (
+        existing.some(
+          (policy) =>
+            policy.active && policy.createdBy !== knowledgeLlmE2ePolicyMarker,
+        )
+      ) {
+        return reply.code(409).send({
+          error: { code: 'KNOWLEDGE_LLM_TEST_POLICY_CONFLICT' },
+        });
+      }
+      const version =
+        existing.reduce(
+          (maximum, policy) => Math.max(maximum, policy.version),
+          0,
+        ) + 1;
+      await prisma.$transaction(async (transaction) => {
+        await transaction.knowledgeLlmBudgetPolicy.updateMany({
+          where: {
+            subjectType: 'user',
+            subjectId: actorUserId,
+            active: true,
+            createdBy: knowledgeLlmE2ePolicyMarker,
+          },
+          data: { active: false, updatedBy: knowledgeLlmE2ePolicyMarker },
+        });
+        await transaction.knowledgeLlmBudgetPolicy.create({
+          data: {
+            subjectType: 'user',
+            subjectId: actorUserId,
+            currency: 'JPY',
+            timezone: 'Asia/Tokyo',
+            softLimitMicros,
+            hardLimitMicros,
+            requestsPerHour,
+            version,
+            createdBy: knowledgeLlmE2ePolicyMarker,
+            updatedBy: knowledgeLlmE2ePolicyMarker,
+          },
+        });
+      });
+      return {
+        budgetConfigured: true,
+        policyVersion: version,
+      };
+    },
+  );
 
   app.post(
     '/__test__/evidence-snapshots/reset',
