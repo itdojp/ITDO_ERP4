@@ -300,6 +300,33 @@ test('summarizeWithExternalLlm preserves malformed successful response fallback'
   );
 });
 
+test('summarizeWithExternalLlm preserves fallback for invalid UTF-8 success bodies', async () => {
+  const { summarizeWithExternalLlm } =
+    await import('../dist/services/chatExternalLlm.js');
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(Buffer.from([0x7b, 0x22, 0x78, 0x22, 0x3a, 0x22, 0xff]));
+    },
+    async (baseUrl) => {
+      await withEnv(
+        {
+          CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+          CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+          CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: `${baseUrl}/v1`,
+          CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: '127.0.0.1',
+          CHAT_EXTERNAL_LLM_ALLOW_HTTP: 'true',
+          CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: 'true',
+        },
+        async () => {
+          const result = await summarizeWithExternalLlm({ bodies: ['hello'] });
+          assert.equal(result.summary, '要約の生成に失敗しました（空の応答）');
+        },
+      );
+    },
+  );
+});
+
 test('summarizeWithExternalLlm preserves fallback when a received success body stalls', async () => {
   const { summarizeWithExternalLlm } =
     await import('../dist/services/chatExternalLlm.js');

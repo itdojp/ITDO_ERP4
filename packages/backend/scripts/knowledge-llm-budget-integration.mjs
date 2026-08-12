@@ -472,26 +472,43 @@ try {
   const renderedPromptRun = await prisma.knowledgeLlmRun.findUniqueOrThrow({
     where: { id: 'run-rendered-prompt' },
   });
-  await assert.rejects(
-    prisma.knowledgeLlmRun.create({
-      data: {
-        ...renderedPromptRun,
-        id: 'run-non-canonical-model-padding',
-        model: 'stub-default ',
-      },
-    }),
-    /KnowledgeLlmRun_identity_check/,
-  );
-  await assert.rejects(
-    prisma.knowledgeLlmRun.create({
-      data: {
-        ...renderedPromptRun,
-        id: 'run-non-canonical-model-control',
-        model: 'stub\nmodel',
-      },
-    }),
-    /KnowledgeLlmRun_identity_check/,
-  );
+  const invalidDirectInsertModels = [
+    ['ascii-padding', 'stub-default '],
+    ['c0-control', 'stub\nmodel'],
+    ['c1-control', `stub${String.fromCodePoint(0x85)}model`],
+    ['nbsp-padding', '\u00a0stub-default\u00a0'],
+    ['em-space-padding', '\u2003stub-default\u2003'],
+    ['ideographic-space-padding', '\u3000stub-default\u3000'],
+    ['bom-padding', '\ufeffstub-default\ufeff'],
+    ['empty', ''],
+    ['over-code-point-limit', '😀'.repeat(201)],
+  ];
+  for (const [name, model] of invalidDirectInsertModels) {
+    await assert.rejects(
+      prisma.knowledgeLlmRun.create({
+        data: {
+          ...renderedPromptRun,
+          id: `run-non-canonical-model-${name}`,
+          model,
+        },
+      }),
+      /KnowledgeLlmRun_identity_check/,
+      `direct INSERT must reject non-canonical model case: ${name}`,
+    );
+  }
+  const modelBoundaries = await prisma.$queryRaw`
+    SELECT
+      "erp4_knowledge_llm_model_valid"('x') AS "oneCodePoint",
+      "erp4_knowledge_llm_model_valid"(${'😀'.repeat(200)}) AS "twoHundredCodePoints",
+      "erp4_knowledge_llm_model_valid"(${'😀'.repeat(201)}) AS "twoHundredOneCodePoints"
+  `;
+  assert.deepEqual(modelBoundaries, [
+    {
+      oneCodePoint: true,
+      twoHundredCodePoints: true,
+      twoHundredOneCodePoints: false,
+    },
+  ]);
   const renderedPromptRequest = {
     provider: 'stub',
     model: 'stub-default',

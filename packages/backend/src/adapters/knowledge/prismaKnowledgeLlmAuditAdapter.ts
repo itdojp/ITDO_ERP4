@@ -4,6 +4,7 @@ import type {
   KnowledgeLlmAuditEntry,
   KnowledgeLlmAuditWriter,
 } from '../../application/knowledge/knowledgeLlmBudgetPorts.js';
+import { isCanonicalExternalLlmModel } from '../../application/externalLlm/externalLlmPort.js';
 import { normalizeAuthIdentifier } from '../../services/authIdentifiers.js';
 
 type AuditClient = Pick<Prisma.TransactionClient, 'auditLog'>;
@@ -101,15 +102,9 @@ function auditMetadata(entry: KnowledgeLlmAuditEntry): Prisma.InputJsonObject {
     'operatorIntervention' in metadata
       ? metadata.operatorIntervention
       : undefined;
-  const modelHasControl = [...metadata.model].some((character) => {
-    const codePoint = character.codePointAt(0) ?? 0;
-    return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f);
-  });
   if (
     (metadata.provider !== 'stub' && metadata.provider !== 'openai') ||
-    !metadata.model ||
-    [...metadata.model].length > 200 ||
-    modelHasControl ||
+    !isCanonicalExternalLlmModel(metadata.model) ||
     !scopeSet.has(metadata.scope) ||
     !Number.isSafeInteger(metadata.catalogVersion) ||
     metadata.catalogVersion < 1 ||

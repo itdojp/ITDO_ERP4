@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import {
   externalLlmConservativeInputTokens,
+  isCanonicalExternalLlmModel,
   type ExternalLlmTextRequestBindingPort,
   type ExternalLlmTextRequest,
 } from '../externalLlm/externalLlmPort.js';
@@ -140,7 +141,7 @@ function validInput(input: KnowledgeLlmReservationRequest): boolean {
     !boundedIdentifier(input.runId, 255) ||
     !validAuthIdentifier(input.actor.userId, 200) ||
     (input.provider !== 'stub' && input.provider !== 'openai') ||
-    !boundedIdentifier(input.model, 200) ||
+    !isCanonicalExternalLlmModel(input.model) ||
     input.inputCostMicrosPerMillion < 0n ||
     input.inputCostMicrosPerMillion > maximumDatabaseBigInt ||
     input.outputCostMicrosPerMillion < 0n ||

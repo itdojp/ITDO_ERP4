@@ -551,12 +551,29 @@ CREATE TRIGGER "KnowledgeLlmBudgetPeriod_boundary_guard"
   BEFORE INSERT OR UPDATE ON "KnowledgeLlmBudgetPeriod"
   FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_period_boundary_guard"();
 
+-- Match ECMAScript TrimString plus the application C0/C1 control and
+-- Unicode-code-point length contract. PostgreSQL's one-argument BTRIM only
+-- removes U+0020 and is therefore too weak for canonical provider identities.
+CREATE OR REPLACE FUNCTION "erp4_knowledge_llm_model_valid"(value TEXT)
+RETURNS BOOLEAN
+LANGUAGE SQL
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+AS $$
+  SELECT
+    LENGTH(value) BETWEEN 1 AND 200
+    AND value = BTRIM(
+      value,
+      U&'\0009\000A\000B\000C\000D\0020\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000\FEFF'
+    )
+    AND value !~ U&'[\0001-\001F\007F-\009F]';
+$$;
+
 ALTER TABLE "KnowledgeLlmRun"
   ADD CONSTRAINT "KnowledgeLlmRun_identity_check" CHECK (
     "erp4_knowledge_llm_auth_identifier_valid"("actorUserId", 200)
-    AND "model" = BTRIM("model")
-    AND LENGTH("model") BETWEEN 1 AND 200
-    AND "model" !~ '[[:cntrl:]]'
+    AND "erp4_knowledge_llm_model_valid"("model")
     AND "currency" ~ '^[A-Z]{3}$'
     AND "erp4_knowledge_llm_auth_identifier_valid"("createdBy", 200)
     AND "erp4_knowledge_llm_auth_identifier_valid"("updatedBy", 200)

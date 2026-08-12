@@ -132,6 +132,20 @@ test('Knowledge LLM audit measures model bounds by Unicode code points', async (
     }),
     /knowledge_llm_audit_invalid/,
   );
+  for (const model of [
+    '\u00a0stub-default',
+    'stub-default\u2003',
+    '\ufeffstub-default',
+    `stub${String.fromCodePoint(0x85)}model`,
+  ]) {
+    await assert.rejects(
+      writer.write({
+        ...entry,
+        metadata: { ...entry.metadata, model },
+      }),
+      /knowledge_llm_audit_invalid/,
+    );
+  }
 });
 
 test('Knowledge LLM operator billing reconciliation is distinctly attributable', async () => {

@@ -70,21 +70,30 @@ function hasUnpairedUtf16Surrogate(value: string): boolean {
   return false;
 }
 
+/**
+ * Canonical provider model identity shared by configuration, requests,
+ * budget persistence and mandatory audit validation.
+ *
+ * PostgreSQL enforces the same ECMAScript TrimString character set in
+ * `erp4_knowledge_llm_model_valid`. Keep both definitions covered by the
+ * direct-insert integration test when this contract changes.
+ */
+export function isCanonicalExternalLlmModel(value: unknown): value is string {
+  if (typeof value !== 'string' || value !== value.trim()) return false;
+  const characters = [...value];
+  if (characters.length < 1 || characters.length > 200) return false;
+  if (hasUnpairedUtf16Surrogate(value)) return false;
+  return characters.every((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return !(codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f));
+  });
+}
+
 function assertExternalLlmTextRequest(request: ExternalLlmTextRequest): void {
   const contexts = request.contextSections ?? [];
-  const modelHasControl =
-    typeof request.model === 'string' &&
-    [...request.model].some((character) => {
-      const codePoint = character.codePointAt(0) ?? 0;
-      return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f);
-    });
   if (
     (request.provider !== 'stub' && request.provider !== 'openai') ||
-    typeof request.model !== 'string' ||
-    request.model !== request.model.trim() ||
-    request.model.length < 1 ||
-    [...request.model].length > 200 ||
-    modelHasControl ||
+    !isCanonicalExternalLlmModel(request.model) ||
     typeof request.systemPrompt !== 'string' ||
     typeof request.userPrompt !== 'string' ||
     !Array.isArray(contexts) ||
@@ -100,7 +109,6 @@ function assertExternalLlmTextRequest(request: ExternalLlmTextRequest): void {
     throw new Error('external_llm_request_invalid');
   }
   if (
-    hasUnpairedUtf16Surrogate(request.model) ||
     hasUnpairedUtf16Surrogate(request.systemPrompt) ||
     hasUnpairedUtf16Surrogate(request.userPrompt) ||
     contexts.some(hasUnpairedUtf16Surrogate)

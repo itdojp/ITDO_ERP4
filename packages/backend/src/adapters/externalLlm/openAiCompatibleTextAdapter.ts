@@ -83,6 +83,21 @@ function canonicalEndpoint(baseUrl: string): string | null {
   }
 }
 
+function canonicalAllowedHosts(
+  values: readonly string[],
+  endpoint: string,
+): string[] | null {
+  const hosts = [
+    ...new Set(
+      values
+        .map((value) => value.trim().toLowerCase())
+        .filter((value) => value.length > 0),
+    ),
+  ].sort();
+  const endpointHost = new URL(endpoint).hostname.toLowerCase();
+  return hosts.length > 0 && hosts.includes(endpointHost) ? hosts : null;
+}
+
 function snapshotRequest(
   request: ExternalLlmTextRequest,
 ): ExternalLlmTextRequest {
@@ -252,10 +267,15 @@ export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
     );
     const timeoutMs = normalizeTimeoutMs(this.config.timeoutMs);
     const endpoint = canonicalEndpoint(this.config.baseUrl);
+    const allowedHosts =
+      endpoint === null
+        ? null
+        : canonicalAllowedHosts(this.config.allowedHosts, endpoint);
     if (
       maximumResponseBytes === null ||
       timeoutMs === null ||
-      endpoint === null
+      endpoint === null ||
+      allowedHosts === null
     ) {
       return null;
     }
@@ -264,7 +284,7 @@ export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
       endpoint,
       apiKey: this.config.apiKey,
       timeoutMs,
-      allowedHosts: [...this.config.allowedHosts],
+      allowedHosts,
       allowHttp: this.config.allowHttp,
       allowPrivateIp: this.config.allowPrivateIp,
       maximumResponseBytes,

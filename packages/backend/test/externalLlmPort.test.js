@@ -250,6 +250,27 @@ test('canonical external LLM serialization rejects unpaired UTF-16 surrogates wi
   );
 });
 
+test('canonical external LLM model identity rejects ECMAScript trim and C0/C1 controls', async () => {
+  const { isCanonicalExternalLlmModel } =
+    await import('../dist/application/externalLlm/externalLlmPort.js');
+  assert.equal(isCanonicalExternalLlmModel('x'), true);
+  assert.equal(isCanonicalExternalLlmModel('😀'.repeat(200)), true);
+  for (const model of [
+    '',
+    '😀'.repeat(201),
+    'stub-default ',
+    '\u00a0stub-default\u00a0',
+    '\u2003stub-default\u2003',
+    '\u3000stub-default\u3000',
+    '\ufeffstub-default\ufeff',
+    'stub\nmodel',
+    `stub${String.fromCodePoint(0x85)}model`,
+    '\ud800',
+  ]) {
+    assert.equal(isCanonicalExternalLlmModel(model), false);
+  }
+});
+
 async function withHttpServer(handler, callback) {
   const server = createServer(handler);
   await new Promise((resolve, reject) => {
@@ -376,6 +397,35 @@ test('OpenAI-compatible binding includes canonical destination and transport pol
   ]) {
     assert.notEqual(fingerprint(overrides), original);
   }
+});
+
+test('OpenAI-compatible adapter rejects an empty or mismatched host allowlist before dispatch', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  let dnsLookupCount = 0;
+  for (const allowedHosts of [[], ['other-provider.example']]) {
+    const adapter = new OpenAiCompatibleTextAdapter({
+      apiKey: 'synthetic-only',
+      baseUrl: 'https://provider.example/v1',
+      timeoutMs: 1_000,
+      allowedHosts,
+      allowHttp: false,
+      allowPrivateIp: false,
+      dnsLookupImpl: async () => {
+        dnsLookupCount += 1;
+        return [{ address: '93.184.216.34', family: 4 }];
+      },
+    });
+    assert.throws(
+      () => adapter.bind(openAiRequest()),
+      (error) => {
+        assert.equal(error.code, 'rejected_before_dispatch');
+        assert.equal(error.outcome, 'not_dispatched');
+        return true;
+      },
+    );
+  }
+  assert.equal(dnsLookupCount, 0);
 });
 
 test('OpenAI-compatible binding rejects credentialed or decorated destinations without provider I/O', async () => {

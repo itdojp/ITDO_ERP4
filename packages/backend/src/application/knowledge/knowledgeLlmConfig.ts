@@ -1,5 +1,6 @@
 import {
   externalLlmMessageFramingTokens,
+  isCanonicalExternalLlmModel,
   type ExternalLlmProviderName,
 } from '../externalLlm/externalLlmPort.js';
 
@@ -182,11 +183,12 @@ export function parseKnowledgeLlmModelCatalog(
       );
     }
     const provider: ExternalLlmProviderName = entry.provider;
-    const model = boundedText(
-      entry.model,
-      200,
-      'KNOWLEDGE_LLM_MODEL_CATALOG_JSON',
-    );
+    if (!isCanonicalExternalLlmModel(entry.model)) {
+      throw new KnowledgeLlmConfigurationError(
+        'KNOWLEDGE_LLM_MODEL_CATALOG_JSON',
+      );
+    }
+    const model = entry.model;
     const identity = `${provider}\0${model}`;
     if (seen.has(identity)) {
       throw new KnowledgeLlmConfigurationError(
