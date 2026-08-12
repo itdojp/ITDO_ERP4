@@ -3178,11 +3178,12 @@ model KnowledgeLlmReservation {
   actualCostMicros  BigInt?
   status            KnowledgeLlmSettlementStatus @default(reserved)
   createdAt         DateTime                     @default(now())
+  accountedAt       DateTime                     @default(now())
   updatedAt         DateTime                     @updatedAt
   settledAt         DateTime?
 
   @@unique([runId, budgetPeriodId])
-  @@index([budgetPeriodId, status, createdAt, id])
+  @@index([budgetPeriodId, status, accountedAt, id])
 }
 
 model KnowledgeLlmContextSource {

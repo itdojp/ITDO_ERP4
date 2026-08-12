@@ -128,6 +128,7 @@ CREATE TABLE "KnowledgeLlmReservation" (
     "actualCostMicros" BIGINT,
     "status" "KnowledgeLlmSettlementStatus" NOT NULL DEFAULT 'reserved',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "accountedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "settledAt" TIMESTAMP(3),
 
@@ -228,7 +229,7 @@ CREATE UNIQUE INDEX "KnowledgeLlmRequest_actorUserId_requestKeyHash_key" ON "Kno
 CREATE UNIQUE INDEX "KnowledgeLlmRequest_runId_actorUserId_key" ON "KnowledgeLlmRequest"("runId", "actorUserId");
 
 -- CreateIndex
-CREATE INDEX "KnowledgeLlmReservation_budgetPeriodId_status_createdAt_id_idx" ON "KnowledgeLlmReservation"("budgetPeriodId", "status", "createdAt", "id");
+CREATE INDEX "KnowledgeLlmReservation_budgetPeriodId_status_accountedAt_i_idx" ON "KnowledgeLlmReservation"("budgetPeriodId", "status", "accountedAt", "id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "KnowledgeLlmReservation_runId_budgetPeriodId_key" ON "KnowledgeLlmReservation"("runId", "budgetPeriodId");
@@ -1602,6 +1603,7 @@ DECLARE
   run_organization TEXT;
   run_currency TEXT;
   run_maximum BIGINT;
+  run_soft_limit_warning BOOLEAN;
   run_actual BIGINT;
   run_created_at TIMESTAMP(3);
   run_dispatched_at TIMESTAMP(3);
@@ -1609,30 +1611,92 @@ DECLARE
   period_start TIMESTAMP(3);
   period_end TIMESTAMP(3);
   period_currency TEXT;
+  period_timezone TEXT;
   policy_subject_type "KnowledgeLlmBudgetSubjectType";
   policy_subject_id TEXT;
   policy_active BOOLEAN;
+  policy_soft_limit BIGINT;
+  policy_hard_limit BIGINT;
+  policy_requests_per_hour INTEGER;
+  accounted_at TIMESTAMP(3);
+  committed_micros NUMERIC;
+  recent_request_count BIGINT;
+  mismatched_period_count INTEGER;
   duplicate_subject_count INTEGER;
 BEGIN
   IF TG_OP = 'INSERT' THEN
     SELECT "executionStatus", "settlementStatus", scope, "actorUserId",
-      "organizationId", currency, "maximumCostMicros", "createdAt",
-      "dispatchedAt"
+      "organizationId", currency, "maximumCostMicros", "softLimitWarning",
+      "createdAt", "dispatchedAt"
     INTO run_execution, run_settlement, run_scope, run_actor,
-      run_organization, run_currency, run_maximum, run_created_at,
-      run_dispatched_at
+      run_organization, run_currency, run_maximum, run_soft_limit_warning,
+      run_created_at, run_dispatched_at
     FROM "KnowledgeLlmRun"
     WHERE id = NEW."runId"
     FOR UPDATE;
 
     SELECT period."periodStartUtc", period."periodEndUtc", period.currency,
-      policy."subjectType", policy."subjectId", policy.active
-    INTO period_start, period_end, period_currency, policy_subject_type,
-      policy_subject_id, policy_active
+      period.timezone, policy."subjectType", policy."subjectId", policy.active,
+      policy."softLimitMicros", policy."hardLimitMicros",
+      policy."requestsPerHour"
+    INTO period_start, period_end, period_currency, period_timezone,
+      policy_subject_type, policy_subject_id, policy_active, policy_soft_limit,
+      policy_hard_limit, policy_requests_per_hour
     FROM "KnowledgeLlmBudgetPeriod" period
     JOIN "KnowledgeLlmBudgetPolicy" policy ON policy.id = period."policyId"
     WHERE period.id = NEW."budgetPeriodId"
-    FOR UPDATE OF period, policy;
+    FOR UPDATE OF policy;
+
+    -- Lock every current-window period for this subject in one global order.
+    -- This includes inactive policy versions, matching the application hard
+    -- limit and the settlement period-lock order.
+    PERFORM period.id
+    FROM "KnowledgeLlmBudgetPeriod" period
+    JOIN "KnowledgeLlmBudgetPolicy" policy ON policy.id = period."policyId"
+    WHERE policy."subjectType" = policy_subject_type
+      AND policy."subjectId" = policy_subject_id
+      AND period."periodEndUtc" > period_start
+      AND period."periodStartUtc" < period_end
+    ORDER BY period.id
+    FOR UPDATE OF period;
+
+    -- Assign the accounting instant only after the admission locks have been
+    -- acquired. A waiter that crosses an hourly or monthly boundary therefore
+    -- cannot retain an earlier pre-lock timestamp. The value cannot be
+    -- supplied or backdated by an application/SQL writer; provenance createdAt
+    -- remains tied to its run.
+    NEW."accountedAt" :=
+      (clock_timestamp() AT TIME ZONE 'UTC')::TIMESTAMP(3);
+    accounted_at := NEW."accountedAt";
+
+    SELECT
+      COALESCE(SUM(
+        period."activeReservedMicros"::NUMERIC
+        + period."settledActualMicros"::NUMERIC
+        + period."heldMaximumMicros"::NUMERIC
+      ), 0),
+      COUNT(*) FILTER (
+        WHERE period.currency <> period_currency
+          OR period.timezone <> period_timezone
+      )::INTEGER
+    INTO committed_micros, mismatched_period_count
+    FROM "KnowledgeLlmBudgetPeriod" period
+    JOIN "KnowledgeLlmBudgetPolicy" policy ON policy.id = period."policyId"
+    WHERE policy."subjectType" = policy_subject_type
+      AND policy."subjectId" = policy_subject_id
+      AND period."periodEndUtc" > period_start
+      AND period."periodStartUtc" < period_end;
+
+    SELECT COUNT(*)::BIGINT
+    INTO recent_request_count
+    FROM "KnowledgeLlmReservation" reservation
+    JOIN "KnowledgeLlmBudgetPeriod" period
+      ON period.id = reservation."budgetPeriodId"
+    JOIN "KnowledgeLlmBudgetPolicy" policy ON policy.id = period."policyId"
+    WHERE policy."subjectType" = policy_subject_type
+      AND policy."subjectId" = policy_subject_id
+      AND reservation."accountedAt" >= accounted_at - INTERVAL '1 hour'
+      AND reservation."accountedAt" <= accounted_at;
 
     IF run_execution IS NULL
       OR period_start IS NULL
@@ -1645,8 +1709,6 @@ BEGIN
       OR NEW."maximumCostMicros" <> run_maximum
       OR NEW."createdAt" <> run_created_at
       OR NEW."updatedAt" <> NEW."createdAt"
-      OR NEW."createdAt" < period_start
-      OR NEW."createdAt" >= period_end
       OR period_currency <> run_currency
       OR NOT policy_active
       OR NOT (
@@ -1662,6 +1724,32 @@ BEGIN
       )
     THEN
       RAISE EXCEPTION 'KnowledgeLlmReservation must be created with its initial run and matching budget subject'
+        USING ERRCODE = '23514';
+    END IF;
+
+    IF mismatched_period_count <> 0 THEN
+      RAISE EXCEPTION 'KnowledgeLlmReservation current budget periods must use matching accounting metadata'
+        USING ERRCODE = '23514';
+    END IF;
+    IF accounted_at < period_start OR accounted_at >= period_end THEN
+      RAISE EXCEPTION 'KnowledgeLlmReservation must use the current trusted accounting period'
+        USING ERRCODE = '23514';
+    END IF;
+    IF committed_micros + NEW."maximumCostMicros"::NUMERIC
+      > policy_hard_limit::NUMERIC
+    THEN
+      RAISE EXCEPTION 'KnowledgeLlmReservation exceeds the locked hard budget limit'
+        USING ERRCODE = '23514';
+    END IF;
+    IF committed_micros + NEW."maximumCostMicros"::NUMERIC
+        > policy_soft_limit::NUMERIC
+      AND NOT run_soft_limit_warning
+    THEN
+      RAISE EXCEPTION 'KnowledgeLlmReservation must preserve the soft budget warning'
+        USING ERRCODE = '23514';
+    END IF;
+    IF recent_request_count >= policy_requests_per_hour THEN
+      RAISE EXCEPTION 'KnowledgeLlmReservation exceeds the locked request rate limit'
         USING ERRCODE = '23514';
     END IF;
 
@@ -1709,6 +1797,7 @@ BEGIN
     OR OLD."budgetPeriodId" <> NEW."budgetPeriodId"
     OR OLD."maximumCostMicros" <> NEW."maximumCostMicros"
     OR OLD."createdAt" <> NEW."createdAt"
+    OR OLD."accountedAt" <> NEW."accountedAt"
   THEN
     RAISE EXCEPTION 'KnowledgeLlmReservation boundary is immutable'
       USING ERRCODE = '23514';

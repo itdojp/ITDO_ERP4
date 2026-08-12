@@ -247,6 +247,20 @@ test('request and selected context are immutable and exactly-one typed', () => {
 });
 
 test('reservation accounting timestamp and terminal values are immutable', () => {
+  const reservation = block('model', 'KnowledgeLlmReservation');
+  const reservationGuard = migration.slice(
+    migration.indexOf(
+      'CREATE FUNCTION "erp4_knowledge_llm_reservation_transition_guard"()',
+    ),
+    migration.indexOf(
+      'CREATE TRIGGER "KnowledgeLlmReservation_transition_guard"',
+    ),
+  );
+  assert.match(reservation, /accountedAt\s+DateTime\s+@default\(now\(\)\)/);
+  assert.match(
+    reservation,
+    /@@index\(\[budgetPeriodId, status, accountedAt, id\]\)/,
+  );
   assert.match(migration, /KnowledgeLlmReservation_timestamp_check/);
   assert.match(
     migration,
@@ -269,6 +283,27 @@ test('reservation accounting timestamp and terminal values are immutable', () =>
   assert.match(
     migration,
     /KnowledgeLlmReservation budget subject already reserved/,
+  );
+  assert.match(
+    migration,
+    /NEW\."accountedAt" :=\s+\(clock_timestamp\(\) AT TIME ZONE 'UTC'\)::TIMESTAMP\(3\)/,
+  );
+  assert.ok(
+    reservationGuard.indexOf('FOR UPDATE OF period;') <
+      reservationGuard.indexOf('NEW."accountedAt" :='),
+    'the database accounting clock must be sampled after admission locks',
+  );
+  assert.match(
+    migration,
+    /KnowledgeLlmReservation must use the current trusted accounting period/,
+  );
+  assert.match(
+    migration,
+    /KnowledgeLlmReservation exceeds the locked hard budget limit/,
+  );
+  assert.match(
+    migration,
+    /KnowledgeLlmReservation exceeds the locked request rate limit/,
   );
   assert.match(
     migration,

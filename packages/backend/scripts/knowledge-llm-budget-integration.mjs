@@ -639,11 +639,16 @@ try {
   const firstReservationTimestamp =
     await prisma.knowledgeLlmReservation.findFirstOrThrow({
       where: { runId: 'run-first' },
-      select: { createdAt: true },
+      select: { createdAt: true, accountedAt: true },
     });
   assert.equal(
     firstReservationTimestamp.createdAt.toISOString(),
     now.toISOString(),
+  );
+  assert.equal(firstReservationTimestamp.accountedAt >= now, true);
+  assert.equal(
+    firstReservationTimestamp.accountedAt.getTime() <= Date.now() + 1_000,
+    true,
   );
   const firstRun = await prisma.knowledgeLlmRun.findUniqueOrThrow({
     where: { id: 'run-first' },
@@ -770,6 +775,81 @@ try {
     0,
   );
 
+  const firstReservation =
+    await prisma.knowledgeLlmReservation.findFirstOrThrow({
+      where: { runId: firstRun.id },
+    });
+  const directRunData = ({
+    sourceRun,
+    runId,
+    requestKeyHash,
+    createdAt,
+    budgetPeriodId,
+    accountedAt = untrustedTimestampCanary,
+    softLimitWarning = sourceRun.softLimitWarning,
+  }) => ({
+    id: runId,
+    actorUserId: sourceRun.actorUserId,
+    scope: sourceRun.scope,
+    organizationId: sourceRun.organizationId,
+    provider: sourceRun.provider,
+    model: sourceRun.model,
+    catalogVersion: sourceRun.catalogVersion,
+    promptTemplateVersion: sourceRun.promptTemplateVersion,
+    requestPayloadHash: knowledgeTextHash('llm-direct-request', runId),
+    providerRequestHash: knowledgeTextHash('llm-direct-provider', runId),
+    selectedContextFingerprint: knowledgeTextHash('llm-direct-context', runId),
+    estimatedInputTokens: sourceRun.estimatedInputTokens,
+    maxOutputTokens: sourceRun.maxOutputTokens,
+    inputCostMicrosPerMillion: sourceRun.inputCostMicrosPerMillion,
+    outputCostMicrosPerMillion: sourceRun.outputCostMicrosPerMillion,
+    maximumCostMicros: sourceRun.maximumCostMicros,
+    softLimitWarning,
+    currency: sourceRun.currency,
+    createdAt,
+    createdBy: sourceRun.actorUserId,
+    updatedAt: createdAt,
+    updatedBy: sourceRun.actorUserId,
+    request: {
+      create: {
+        requestKeyHash,
+        requestPayloadHash: knowledgeTextHash('llm-direct-request', runId),
+        createdAt,
+        createdBy: sourceRun.actorUserId,
+      },
+    },
+    reservations: {
+      create: {
+        budgetPeriodId,
+        maximumCostMicros: sourceRun.maximumCostMicros,
+        createdAt,
+        accountedAt,
+        updatedAt: createdAt,
+      },
+    },
+  });
+  await assert.rejects(
+    prisma.knowledgeLlmRun.create({
+      data: directRunData({
+        sourceRun: firstRun,
+        runId: 'run-direct-hard-limit-bypass',
+        requestKeyHash: knowledgeTextHash(
+          'llm-test-request-key',
+          'direct-hard-limit-bypass',
+        ),
+        createdAt: now,
+        budgetPeriodId: firstReservation.budgetPeriodId,
+      }),
+    }),
+    /exceeds the locked hard budget limit/,
+  );
+  assert.equal(
+    await prisma.knowledgeLlmRun.count({
+      where: { id: 'run-direct-hard-limit-bypass' },
+    }),
+    0,
+  );
+
   await policy({
     id: 'policy-version-budget-v1',
     subjectType: 'user',
@@ -864,6 +944,82 @@ try {
   );
   assert.equal(versionRateBlocked.ok, false);
   assert.equal(versionRateBlocked.error.code, 'rate_limit');
+
+  const versionRateSourceRun = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: 'run-policy-version-rate-v1' },
+  });
+  const versionRateCurrentPeriod =
+    await prisma.knowledgeLlmBudgetPeriod.findFirstOrThrow({
+      where: { policyId: 'policy-version-rate-v2' },
+      orderBy: { periodStartUtc: 'desc' },
+    });
+  const directBackdatedAt = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+  await assert.rejects(
+    prisma.knowledgeLlmRun.create({
+      data: directRunData({
+        sourceRun: versionRateSourceRun,
+        runId: 'run-direct-rate-limit-bypass',
+        requestKeyHash: knowledgeTextHash(
+          'llm-test-request-key',
+          'direct-rate-limit-bypass',
+        ),
+        createdAt: directBackdatedAt,
+        budgetPeriodId: versionRateCurrentPeriod.id,
+        // A direct writer can set the warning bit. The database rate guard must
+        // still reject the second request independently of the soft threshold.
+        softLimitWarning: true,
+      }),
+    }),
+    /exceeds the locked request rate limit/,
+  );
+  assert.equal(
+    await prisma.knowledgeLlmRun.count({
+      where: { id: 'run-direct-rate-limit-bypass' },
+    }),
+    0,
+  );
+
+  const previousRateWindow = knowledgeLlmMonthlyPeriod(
+    new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15)),
+    versionRateCurrentPeriod.timezone,
+  );
+  const versionRatePreviousPeriod =
+    await prisma.knowledgeLlmBudgetPeriod.create({
+      data: {
+        id: 'period-direct-backdated-bypass',
+        policyId: 'policy-version-rate-v2',
+        periodStartUtc: previousRateWindow.start,
+        periodEndUtc: previousRateWindow.end,
+        timezone: versionRateCurrentPeriod.timezone,
+        currency: versionRateSourceRun.currency,
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+  const previousRateCreatedAt = new Date(
+    previousRateWindow.end.getTime() - 60_000,
+  );
+  await assert.rejects(
+    prisma.knowledgeLlmRun.create({
+      data: directRunData({
+        sourceRun: versionRateSourceRun,
+        runId: 'run-direct-prior-period-bypass',
+        requestKeyHash: knowledgeTextHash(
+          'llm-test-request-key',
+          'direct-prior-period-bypass',
+        ),
+        createdAt: previousRateCreatedAt,
+        budgetPeriodId: versionRatePreviousPeriod.id,
+      }),
+    }),
+    /must use the current trusted accounting period/,
+  );
+  assert.equal(
+    await prisma.knowledgeLlmRun.count({
+      where: { id: 'run-direct-prior-period-bypass' },
+    }),
+    0,
+  );
 
   await policy({
     id: 'policy-rollover-race-v1',
@@ -1001,8 +1157,11 @@ try {
     timezoneDriftPeriodsBefore,
   );
 
-  const previousMonthTimestamp = new Date('2026-08-31T23:45:00.000Z');
-  const currentMonthTimestamp = new Date('2026-09-01T00:30:00.000Z');
+  // The database assigns the reservation accounting instant. Use the current
+  // month on both policy versions to prove the rolling rate guard survives an
+  // inactive-to-active version change without relying on an injectable clock.
+  const previousPolicyTimestamp = new Date(now);
+  const currentPolicyTimestamp = new Date(now);
   await policy({
     id: 'policy-boundary-rollover-v1',
     subjectType: 'user',
@@ -1010,11 +1169,11 @@ try {
     soft: 1000n,
     hard: 1000n,
     rate: 1,
-    timezone: 'Etc/UTC',
+    timezone: 'UTC',
   });
   assert.equal(
     (
-      await serviceAt(previousMonthTimestamp).reserve(
+      await serviceAt(previousPolicyTimestamp).reserve(
         reservation({
           runId: 'run-policy-boundary-rollover-v1',
           userId: 'policy-boundary-rollover-user',
@@ -1040,7 +1199,7 @@ try {
     version: 2,
   });
   const boundaryRolloverRateBlocked = await serviceAt(
-    currentMonthTimestamp,
+    currentPolicyTimestamp,
   ).reserve(
     reservation({
       runId: 'run-policy-boundary-rollover-v2',
@@ -1058,6 +1217,13 @@ try {
     0,
   );
 
+  const priorMonthReference = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 15, 0, 0, 0),
+  );
+  const priorMonthWindow = knowledgeLlmMonthlyPeriod(
+    priorMonthReference,
+    'UTC',
+  );
   await prisma.knowledgeLlmBudgetPolicy.create({
     data: {
       id: 'policy-boundary-currency-v1',
@@ -1073,8 +1239,8 @@ try {
       updatedBy: 'synthetic-admin',
       periods: {
         create: {
-          periodStartUtc: new Date('2026-08-01T00:00:00.000Z'),
-          periodEndUtc: new Date('2026-09-01T00:00:00.000Z'),
+          periodStartUtc: priorMonthWindow.start,
+          periodEndUtc: priorMonthWindow.end,
           timezone: 'UTC',
           currency: 'USD',
         },
@@ -1096,7 +1262,7 @@ try {
     version: 2,
   });
   const boundaryCurrencyRollover = await serviceAt(
-    currentMonthTimestamp,
+    currentPolicyTimestamp,
   ).reserve(
     reservation({
       runId: 'run-policy-boundary-currency-v2',
@@ -1379,12 +1545,14 @@ try {
   }
   assert.equal(periodOrderResults[1].value.ok, true);
 
-  // At a month boundary the rolling rate window can span both the previous
-  // and current periods. Current-period IDs and historical-period IDs may
-  // have opposite subject order, so reservation must lock the complete union
-  // in one global ID order before loading either subject's usage.
+  // Inactive policy versions can retain a current-window period. Their IDs
+  // and the active user/organization period IDs may have opposite subject
+  // order, so admission must lock the complete union in one global ID order.
+  // The database supplies the accounting clock, therefore this deterministic
+  // race test uses the actual current monthly window rather than a future
+  // application-injected month boundary.
   await policy({
-    id: 'policy-historical-period-order-user',
+    id: 'policy-historical-period-order-user-v1',
     subjectType: 'user',
     subjectId: 'historical-period-order-user',
     soft: 100n,
@@ -1392,29 +1560,54 @@ try {
     timezone: 'UTC',
   });
   await policy({
-    id: 'policy-historical-period-order-org',
+    id: 'policy-historical-period-order-org-v1',
     subjectType: 'organization',
     subjectId: 'historical-period-order-org',
     soft: 100n,
     hard: 200n,
     timezone: 'UTC',
   });
-  const historicalBoundaryNow = new Date('2026-09-01T00:15:00.000Z');
+  await prisma.knowledgeLlmBudgetPolicy.updateMany({
+    where: {
+      id: {
+        in: [
+          'policy-historical-period-order-user-v1',
+          'policy-historical-period-order-org-v1',
+        ],
+      },
+    },
+    data: { active: false, updatedBy: 'synthetic-admin' },
+  });
+  await policy({
+    id: 'policy-historical-period-order-user-v2',
+    subjectType: 'user',
+    subjectId: 'historical-period-order-user',
+    soft: 100n,
+    hard: 200n,
+    timezone: 'UTC',
+    version: 2,
+  });
+  await policy({
+    id: 'policy-historical-period-order-org-v2',
+    subjectType: 'organization',
+    subjectId: 'historical-period-order-org',
+    soft: 100n,
+    hard: 200n,
+    timezone: 'UTC',
+    version: 2,
+  });
+  const historicalBoundaryNow = new Date(now);
   const historicalCurrentWindow = knowledgeLlmMonthlyPeriod(
     historicalBoundaryNow,
     'UTC',
   );
-  const historicalPriorWindow = {
-    start: new Date('2026-08-01T00:00:00.000Z'),
-    end: new Date('2026-09-01T00:00:00.000Z'),
-  };
   const historicalOrganizationFirst =
     await prisma.knowledgeLlmBudgetPeriod.create({
       data: {
-        id: '00000000-historical-prior-organization',
-        policyId: 'policy-historical-period-order-org',
-        periodStartUtc: historicalPriorWindow.start,
-        periodEndUtc: historicalPriorWindow.end,
+        id: '00000000-historical-version-organization',
+        policyId: 'policy-historical-period-order-org-v1',
+        periodStartUtc: historicalCurrentWindow.start,
+        periodEndUtc: historicalCurrentWindow.end,
         timezone: 'UTC',
         currency: 'JPY',
       },
@@ -1423,7 +1616,7 @@ try {
     data: [
       {
         id: '10000000-historical-current-user',
-        policyId: 'policy-historical-period-order-user',
+        policyId: 'policy-historical-period-order-user-v2',
         periodStartUtc: historicalCurrentWindow.start,
         periodEndUtc: historicalCurrentWindow.end,
         timezone: 'UTC',
@@ -1431,17 +1624,17 @@ try {
       },
       {
         id: '20000000-historical-current-organization',
-        policyId: 'policy-historical-period-order-org',
+        policyId: 'policy-historical-period-order-org-v2',
         periodStartUtc: historicalCurrentWindow.start,
         periodEndUtc: historicalCurrentWindow.end,
         timezone: 'UTC',
         currency: 'JPY',
       },
       {
-        id: 'zzzzzzzz-historical-prior-user',
-        policyId: 'policy-historical-period-order-user',
-        periodStartUtc: historicalPriorWindow.start,
-        periodEndUtc: historicalPriorWindow.end,
+        id: 'zzzzzzzz-historical-version-user',
+        policyId: 'policy-historical-period-order-user-v1',
+        periodStartUtc: historicalCurrentWindow.start,
+        periodEndUtc: historicalCurrentWindow.end,
         timezone: 'UTC',
         currency: 'JPY',
       },
@@ -1505,7 +1698,7 @@ try {
         await transaction.$queryRaw`
           SELECT id
           FROM "KnowledgeLlmBudgetPeriod"
-          WHERE id = 'zzzzzzzz-historical-prior-user'
+          WHERE id = 'zzzzzzzz-historical-version-user'
           FOR UPDATE
         `;
       },
@@ -1610,45 +1803,67 @@ try {
       updatedAt: priorReservationAt,
     },
   });
-  await prisma.knowledgeLlmRun.create({
-    data: {
-      id: 'run-rate-boundary-prior',
-      actorUserId: 'rate-boundary-user',
-      scope: 'personal',
-      provider: 'stub',
-      model: 'stub-v1',
-      catalogVersion: 1,
-      promptTemplateVersion: 1,
-      requestPayloadHash: hash('d'),
-      providerRequestHash: hash('c'),
-      selectedContextFingerprint: hash('e'),
-      estimatedInputTokens: 10,
-      maxOutputTokens: 10,
-      inputCostMicrosPerMillion: 100_000n,
-      outputCostMicrosPerMillion: 0n,
-      maximumCostMicros: 1n,
-      currency: 'JPY',
-      createdAt: priorReservationAt,
-      updatedAt: priorReservationAt,
-      createdBy: 'rate-boundary-user',
-      updatedBy: 'rate-boundary-user',
-      request: {
-        create: {
-          requestKeyHash: hash('f'),
-          requestPayloadHash: hash('d'),
-          createdAt: priorReservationAt,
-          createdBy: 'rate-boundary-user',
+  await prisma.$transaction(async (transaction) => {
+    // Seed a synthetic request that was admitted in the prior month. The
+    // production trigger must own accountedAt for live writes, so this
+    // ephemeral owner-only fixture disables user triggers only while it
+    // constructs an internally consistent historical ledger and counters.
+    await transaction.$executeRawUnsafe(
+      'SET LOCAL session_replication_role = replica',
+    );
+    await transaction.knowledgeLlmRun.create({
+      data: {
+        id: 'run-rate-boundary-prior',
+        actorUserId: 'rate-boundary-user',
+        scope: 'personal',
+        provider: 'stub',
+        model: 'stub-v1',
+        catalogVersion: 1,
+        promptTemplateVersion: 1,
+        requestPayloadHash: hash('d'),
+        providerRequestHash: hash('c'),
+        selectedContextFingerprint: hash('e'),
+        estimatedInputTokens: 10,
+        maxOutputTokens: 10,
+        inputCostMicrosPerMillion: 100_000n,
+        outputCostMicrosPerMillion: 0n,
+        maximumCostMicros: 1n,
+        currency: 'JPY',
+        createdAt: priorReservationAt,
+        updatedAt: priorReservationAt,
+        createdBy: 'rate-boundary-user',
+        updatedBy: 'rate-boundary-user',
+        request: {
+          create: {
+            requestKeyHash: hash('f'),
+            requestPayloadHash: hash('d'),
+            createdAt: priorReservationAt,
+            createdBy: 'rate-boundary-user',
+          },
+        },
+        reservations: {
+          create: {
+            budgetPeriodId: priorPeriod.id,
+            maximumCostMicros: 1n,
+            createdAt: priorReservationAt,
+            accountedAt: priorReservationAt,
+            updatedAt: priorReservationAt,
+          },
         },
       },
-      reservations: {
-        create: {
-          budgetPeriodId: priorPeriod.id,
-          maximumCostMicros: 1n,
-          createdAt: priorReservationAt,
-          updatedAt: priorReservationAt,
-        },
+    });
+    await transaction.knowledgeLlmBudgetPeriod.update({
+      where: { id: priorPeriod.id },
+      data: {
+        activeReservedMicros: 1n,
+        acceptedRequestCount: 1,
+        version: { increment: 1 },
+        updatedAt: priorReservationAt,
       },
-    },
+    });
+    await transaction.$executeRawUnsafe(
+      'SET LOCAL session_replication_role = origin',
+    );
   });
   const boundaryService = createKnowledgeLlmBudgetUseCases(
     new PrismaKnowledgeLlmBudgetAdapter(prisma),
@@ -4048,6 +4263,13 @@ try {
     /settlement must match its terminal run/,
   );
   await assert.rejects(
+    prisma.knowledgeLlmReservation.update({
+      where: { id: directlyMutableReservation.id },
+      data: { accountedAt: untrustedTimestampCanary },
+    }),
+    /boundary is immutable/,
+  );
+  await assert.rejects(
     prisma.knowledgeLlmRun.update({
       where: { id: lateRun.id },
       data: {
@@ -4350,6 +4572,9 @@ try {
       outcomeRunLockOrderVerified: true,
       runReservationAtomicityVerified: true,
       periodCounterMutationGuardVerified: true,
+      directHardLimitGuardVerified: true,
+      directRateLimitGuardVerified: true,
+      trustedReservationPeriodVerified: true,
       periodOfflineDriftDetected: true,
       periodOfflineReconciliationVerified: true,
       terminalDispatchTimestampImmutable: true,

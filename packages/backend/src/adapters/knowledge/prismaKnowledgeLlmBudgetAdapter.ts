@@ -370,7 +370,7 @@ async function loadSubjectUsage(
   >(Prisma.sql`
     SELECT
       COUNT(*) FILTER (
-        WHERE reservation."createdAt" >= ${hourAgo}
+        WHERE reservation."accountedAt" >= ${hourAgo}
       )::bigint AS "recentRequestCount"
     FROM "KnowledgeLlmReservation" reservation
     JOIN "KnowledgeLlmBudgetPeriod" period
@@ -380,8 +380,8 @@ async function loadSubjectUsage(
     WHERE historical_policy."subjectType" =
         CAST(${policy.subjectType} AS "KnowledgeLlmBudgetSubjectType")
       AND historical_policy."subjectId" = ${policy.subjectId}
-      AND reservation."createdAt" >= ${lockStart}
-      AND reservation."createdAt" < ${window.end}
+      AND reservation."accountedAt" >= ${lockStart}
+      AND reservation."accountedAt" < ${window.end}
   `);
   const result = usage[0];
   if (!result) throw new Error('knowledge_llm_period_mismatch');
