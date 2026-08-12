@@ -137,6 +137,12 @@ class CapturingStubProvider {
   async prepare(input) {
     this.state.providerPrepareCalls += 1;
     this.state.preparedProviderRequests.push(cloneProviderRequest(input));
+    if (this.mode === 'rejected_before_dispatch') {
+      throw new ExternalLlmProviderError(
+        'rejected_before_dispatch',
+        'not_dispatched',
+      );
+    }
     const prepared =
       input.provider === 'stub'
         ? await this.stub.prepare(input)
@@ -897,6 +903,21 @@ test('budget hard-limit and rate-limit failures propagate before provider dispat
       assert.equal(harness.state.conversationTurnWrites, 0);
     });
   }
+});
+
+test('provider pre-dispatch rejection is external failure without reservation or dispatch', async () => {
+  const harness = createHarness({ providerMode: 'rejected_before_dispatch' });
+  const previewResult = await preview(harness);
+
+  await assertRejectCode(
+    execute(harness, previewResult),
+    503,
+    'rejected_before_dispatch',
+  );
+  assert.equal(harness.state.providerPrepareCalls, 1);
+  assert.equal(harness.state.budgetReserveCalls, 0);
+  assert.equal(harness.state.providerDispatchCalls, 0);
+  assert.equal(harness.state.conversationTurnWrites, 0);
 });
 
 test('provider outcome unknown and finalization failure hold the maximum reservation without result', async (t) => {

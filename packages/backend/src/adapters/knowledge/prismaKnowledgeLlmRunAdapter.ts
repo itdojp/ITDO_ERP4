@@ -667,6 +667,13 @@ function trustedRunTimestamp(clock: () => Date): Date {
 function validateCapturedOutcome(
   outcome: KnowledgeLlmCapturedProviderOutcome,
 ): void {
+  if (
+    outcome === null ||
+    typeof outcome !== 'object' ||
+    Array.isArray(outcome)
+  ) {
+    throw new Error('knowledge_llm_outcome_invalid');
+  }
   const runtimeOutcome = outcome as unknown as Record<string, unknown>;
   if (runtimeOutcome.status === 'invalid') {
     const failureCodes = new Set([

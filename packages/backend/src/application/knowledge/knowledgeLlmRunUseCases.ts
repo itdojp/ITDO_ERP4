@@ -156,6 +156,7 @@ export class KnowledgeLlmRunError extends Error {
       | 'budget_hard_limit'
       | 'rate_limit'
       | 'reservation_conflict'
+      | 'rejected_before_dispatch'
       | 'execution_failed',
   ) {
     super(code);
@@ -365,6 +366,13 @@ function translateError(error: unknown): never {
       throw new KnowledgeLlmRunError(404, 'not_found');
     }
     throw new KnowledgeLlmRunError(409, 'stale_preview');
+  }
+  if (
+    error instanceof ExternalLlmProviderError &&
+    error.code === 'rejected_before_dispatch' &&
+    error.outcome === 'not_dispatched'
+  ) {
+    throw new KnowledgeLlmRunError(503, 'rejected_before_dispatch');
   }
   throw new KnowledgeLlmRunError(409, 'execution_failed');
 }

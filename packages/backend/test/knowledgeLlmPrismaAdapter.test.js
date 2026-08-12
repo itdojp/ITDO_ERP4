@@ -62,6 +62,9 @@ test('provider outcome capture rejects invalid runtime failure codes before pers
   };
 
   for (const outcome of [
+    null,
+    42,
+    [],
     { status: 'invalid' },
     { status: 'invalid', failureCode: 'usage_missing' },
     {
