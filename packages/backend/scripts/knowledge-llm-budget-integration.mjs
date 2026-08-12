@@ -1320,6 +1320,154 @@ try {
   }
   assert.equal(periodOrderResults[1].value.ok, true);
 
+  // At a month boundary the rolling rate window can span both the previous
+  // and current periods. Current-period IDs and historical-period IDs may
+  // have opposite subject order, so reservation must lock the complete union
+  // in one global ID order before loading either subject's usage.
+  await policy({
+    id: 'policy-historical-period-order-user',
+    subjectType: 'user',
+    subjectId: 'historical-period-order-user',
+    soft: 100n,
+    hard: 200n,
+    timezone: 'UTC',
+  });
+  await policy({
+    id: 'policy-historical-period-order-org',
+    subjectType: 'organization',
+    subjectId: 'historical-period-order-org',
+    soft: 100n,
+    hard: 200n,
+    timezone: 'UTC',
+  });
+  const historicalBoundaryNow = new Date('2026-09-01T00:15:00.000Z');
+  const historicalCurrentWindow = knowledgeLlmMonthlyPeriod(
+    historicalBoundaryNow,
+    'UTC',
+  );
+  const historicalPriorWindow = {
+    start: new Date('2026-08-01T00:00:00.000Z'),
+    end: new Date('2026-09-01T00:00:00.000Z'),
+  };
+  const historicalOrganizationFirst =
+    await prisma.knowledgeLlmBudgetPeriod.create({
+      data: {
+        id: '00000000-historical-prior-organization',
+        policyId: 'policy-historical-period-order-org',
+        periodStartUtc: historicalPriorWindow.start,
+        periodEndUtc: historicalPriorWindow.end,
+        timezone: 'UTC',
+        currency: 'JPY',
+      },
+    });
+  await prisma.knowledgeLlmBudgetPeriod.createMany({
+    data: [
+      {
+        id: '10000000-historical-current-user',
+        policyId: 'policy-historical-period-order-user',
+        periodStartUtc: historicalCurrentWindow.start,
+        periodEndUtc: historicalCurrentWindow.end,
+        timezone: 'UTC',
+        currency: 'JPY',
+      },
+      {
+        id: '20000000-historical-current-organization',
+        policyId: 'policy-historical-period-order-org',
+        periodStartUtc: historicalCurrentWindow.start,
+        periodEndUtc: historicalCurrentWindow.end,
+        timezone: 'UTC',
+        currency: 'JPY',
+      },
+      {
+        id: 'zzzzzzzz-historical-prior-user',
+        policyId: 'policy-historical-period-order-user',
+        periodStartUtc: historicalPriorWindow.start,
+        periodEndUtc: historicalPriorWindow.end,
+        timezone: 'UTC',
+        currency: 'JPY',
+      },
+    ],
+  });
+  const historicalLockApplicationName =
+    'erp4-knowledge-llm-historical-period-order';
+  const historicalLockUrl = new URL(process.env.DATABASE_URL);
+  historicalLockUrl.searchParams.set(
+    'application_name',
+    historicalLockApplicationName,
+  );
+  const historicalLockPrisma = new PrismaClient({
+    adapter: new PrismaPg({ connectionString: historicalLockUrl.toString() }),
+  });
+  const historicalLockService = createKnowledgeLlmBudgetUseCases(
+    new PrismaKnowledgeLlmBudgetAdapter(historicalLockPrisma),
+    { version: 1, models: catalogModels },
+    stubProvider,
+    () => new Date(historicalBoundaryNow.getTime()),
+  );
+  let signalHistoricalOrganizationPeriodLocked;
+  const historicalOrganizationPeriodLocked = new Promise((resolve) => {
+    signalHistoricalOrganizationPeriodLocked = resolve;
+  });
+  let releaseHistoricalOrganizationPeriod;
+  const historicalOrganizationPeriodRelease = new Promise((resolve) => {
+    releaseHistoricalOrganizationPeriod = resolve;
+  });
+  const heldHistoricalOrganizationPeriod = prisma.$transaction(
+    async (transaction) => {
+      await transaction.$queryRaw`
+        SELECT id
+        FROM "KnowledgeLlmBudgetPeriod"
+        WHERE id = ${historicalOrganizationFirst.id}
+        FOR UPDATE
+      `;
+      signalHistoricalOrganizationPeriodLocked();
+      await historicalOrganizationPeriodRelease;
+    },
+    { timeout: 15_000 },
+  );
+  await historicalOrganizationPeriodLocked;
+  const historicalPeriodOrderReservation = historicalLockService.reserve(
+    reservation({
+      runId: 'run-historical-period-order',
+      userId: 'historical-period-order-user',
+      organizationId: 'historical-period-order-org',
+      keyHash: hash('0'),
+      maximumCostMicros: 1n,
+    }),
+  );
+  let historicalPeriodOrderProbeError;
+  try {
+    await waitForNamedDatabaseLock(historicalLockApplicationName);
+    await prisma.$transaction(
+      async (transaction) => {
+        await transaction.$executeRawUnsafe(
+          "SET LOCAL lock_timeout = '1000ms'",
+        );
+        await transaction.$queryRaw`
+          SELECT id
+          FROM "KnowledgeLlmBudgetPeriod"
+          WHERE id = 'zzzzzzzz-historical-prior-user'
+          FOR UPDATE
+        `;
+      },
+      { timeout: 5_000 },
+    );
+  } catch (error) {
+    historicalPeriodOrderProbeError = error;
+  } finally {
+    releaseHistoricalOrganizationPeriod();
+  }
+  const historicalPeriodOrderResults = await Promise.allSettled([
+    heldHistoricalOrganizationPeriod,
+    historicalPeriodOrderReservation,
+  ]);
+  await historicalLockPrisma.$disconnect();
+  if (historicalPeriodOrderProbeError) throw historicalPeriodOrderProbeError;
+  for (const result of historicalPeriodOrderResults) {
+    if (result.status === 'rejected') throw result.reason;
+  }
+  assert.equal(historicalPeriodOrderResults[1].value.ok, true);
+
   await policy({
     id: 'policy-org-user',
     subjectType: 'user',
@@ -3727,6 +3875,7 @@ try {
       ambiguousMonthStartCanonicalized: true,
       periodCounterUpdateLockOrderVerified: true,
       reservationPeriodLockOrderVerified: true,
+      historicalPeriodLockOrderVerified: true,
       canonicalActorDatabaseBoundary: true,
       economicReplayConflict: true,
       concurrentReplayConvergence: true,

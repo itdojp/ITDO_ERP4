@@ -177,11 +177,11 @@ async function ensureAndLockPeriods(
     return { policy, window };
   });
 
-  // Settlement locks all periods for a run in global ID order. Lock every
-  // existing current period in that same order before any create/upsert-like
-  // operation can acquire an individual period row in policy enum order.
-  // Active policy locks serialize creation for the same subject, while a
-  // missing period cannot yet be visible to a concurrent settlement.
+  // Active policy locks serialize creation for the same subject, so current
+  // periods can be discovered/created without taking a period-row lock here.
+  // Existing current and historical period rows are locked together later in
+  // one global ID order. Locking only current rows here would invert that
+  // order at a month boundary when settlement already owns an older row.
   const predicate = Prisma.join(
     candidates.map(
       ({ policy, window }) => Prisma.sql`
@@ -207,7 +207,6 @@ async function ensureAndLockPeriods(
     FROM "KnowledgeLlmBudgetPeriod"
     WHERE ${predicate}
     ORDER BY id
-    FOR UPDATE
   `);
   const existingByPolicy = new Map(
     existing.map((period) => [period.policyId, period]),
@@ -236,14 +235,73 @@ async function ensureAndLockPeriods(
     periods.push({ policy, period, window });
   }
   periods.sort((left, right) => left.period.id.localeCompare(right.period.id));
-  await transaction.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-    SELECT id
-    FROM "KnowledgeLlmBudgetPeriod"
-    WHERE id IN (${Prisma.join(periods.map((entry) => entry.period.id))})
-    ORDER BY id
-    FOR UPDATE
-  `);
   return periods;
+}
+
+type LockedSubjectPeriod = {
+  id: string;
+  subjectType: 'user' | 'organization';
+  subjectId: string;
+  currency: string;
+  timezone: string;
+  periodStartUtc: Date;
+  periodEndUtc: Date;
+};
+
+function subjectKey(subject: {
+  subjectType: 'user' | 'organization';
+  subjectId: string;
+}) {
+  return `${subject.subjectType}\0${subject.subjectId}`;
+}
+
+async function lockSubjectUsagePeriods(
+  transaction: Transaction,
+  entries: Awaited<ReturnType<typeof ensureAndLockPeriods>>,
+  now: Date,
+) {
+  const predicates = entries.map(({ policy, window }) => {
+    const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+    const lockStart =
+      hourAgo.getTime() < window.start.getTime() ? hourAgo : window.start;
+    return Prisma.sql`
+      (
+        policy."subjectType" =
+          CAST(${policy.subjectType} AS "KnowledgeLlmBudgetSubjectType")
+        AND policy."subjectId" = ${policy.subjectId}
+        AND period."periodEndUtc" > ${lockStart}
+        AND period."periodStartUtc" < ${window.end}
+      )
+    `;
+  });
+  // Settlement locks the union of a run's period rows in global ID order.
+  // Reservation must use the same order across every required subject and
+  // every period overlapping the monthly/rolling-rate windows. Per-subject
+  // locking can deadlock at a month boundary when historical and current IDs
+  // have different relative order.
+  const locked = await transaction.$queryRaw<LockedSubjectPeriod[]>(Prisma.sql`
+    SELECT period.id,
+      policy."subjectType"::text AS "subjectType",
+      policy."subjectId" AS "subjectId",
+      period.currency,
+      period.timezone,
+      period."periodStartUtc",
+      period."periodEndUtc"
+    FROM "KnowledgeLlmBudgetPeriod" period
+    JOIN "KnowledgeLlmBudgetPolicy" policy
+      ON policy.id = period."policyId"
+    WHERE ${Prisma.join(predicates, ' OR ')}
+    ORDER BY period.id
+    FOR UPDATE OF period
+  `);
+  const bySubject = new Map<string, LockedSubjectPeriod[]>();
+  for (const period of locked) {
+    const key = subjectKey(period);
+    const subjectPeriods = bySubject.get(key) ?? [];
+    subjectPeriods.push(period);
+    bySubject.set(key, subjectPeriods);
+  }
+  return bySubject;
 }
 
 type SubjectUsage = {
@@ -253,37 +311,28 @@ type SubjectUsage = {
   timezoneMismatch: boolean;
 };
 
-async function loadAndLockSubjectUsage(
+async function loadSubjectUsage(
   transaction: Transaction,
   entry: Awaited<ReturnType<typeof ensureAndLockPeriods>>[number],
   now: Date,
+  lockedPeriods: LockedSubjectPeriod[],
 ): Promise<SubjectUsage> {
-  const { policy, window } = entry;
+  const { policy, period: currentPeriod, window } = entry;
   const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
   const lockStart =
     hourAgo.getTime() < window.start.getTime() ? hourAgo : window.start;
-  const lockedPeriods = await transaction.$queryRaw<
-    Array<{
-      id: string;
-      currency: string;
-      timezone: string;
-      periodStartUtc: Date;
-      periodEndUtc: Date;
-    }>
-  >(Prisma.sql`
-    SELECT period.id, period.currency, period.timezone,
-      period."periodStartUtc", period."periodEndUtc"
-    FROM "KnowledgeLlmBudgetPeriod" period
-    JOIN "KnowledgeLlmBudgetPolicy" policy
-      ON policy.id = period."policyId"
-    WHERE policy."subjectType" =
-        CAST(${policy.subjectType} AS "KnowledgeLlmBudgetSubjectType")
-      AND policy."subjectId" = ${policy.subjectId}
-      AND period."periodEndUtc" > ${lockStart}
-      AND period."periodStartUtc" < ${window.end}
-    ORDER BY period.id
-    FOR UPDATE OF period
-  `);
+  const lockedCurrentPeriod = lockedPeriods.find(
+    (period) => period.id === currentPeriod.id,
+  );
+  if (
+    !lockedCurrentPeriod ||
+    lockedCurrentPeriod.periodStartUtc.getTime() !== window.start.getTime() ||
+    lockedCurrentPeriod.periodEndUtc.getTime() !== window.end.getTime() ||
+    lockedCurrentPeriod.timezone !== policy.timezone ||
+    lockedCurrentPeriod.currency !== policy.currency
+  ) {
+    throw new KnowledgeLlmPolicyConfigurationError();
+  }
   // Keep the wider lock set for the rolling 60-minute request count, but only
   // compare accounting metadata for periods that overlap the current monthly
   // window. A completed prior-month period can remain in the wider set for up
@@ -456,9 +505,19 @@ async function reserveOnce(
     return failure(400, 'policy_mismatch');
   }
   const periods = await ensureAndLockPeriods(transaction, policies, input.now);
+  const lockedPeriodsBySubject = await lockSubjectUsagePeriods(
+    transaction,
+    periods,
+    input.now,
+  );
   const usages = new Map<string, SubjectUsage>();
   for (const entry of periods) {
-    const usage = await loadAndLockSubjectUsage(transaction, entry, input.now);
+    const usage = await loadSubjectUsage(
+      transaction,
+      entry,
+      input.now,
+      lockedPeriodsBySubject.get(subjectKey(entry.policy)) ?? [],
+    );
     if (usage.currencyMismatch || usage.timezoneMismatch) {
       // Roll back the current-period upsert before writing the mandatory
       // blocked audit in the outer transaction. A rejected reservation must
