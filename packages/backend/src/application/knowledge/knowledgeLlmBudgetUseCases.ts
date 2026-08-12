@@ -25,6 +25,7 @@ import {
   deriveKnowledgeLlmSelectedContext,
   validKnowledgeLlmContextFingerprintSources,
 } from './knowledgeLlmContext.js';
+import { sha256KnowledgeText } from './knowledgeProvenanceValidation.js';
 import { normalizeAuthIdentifier } from '../../services/authIdentifiers.js';
 
 const sha256Pattern = /^[0-9a-f]{64}$/;
@@ -114,6 +115,15 @@ function boundedIdentifier(value: string, maximum: number): boolean {
   );
 }
 
+function validPromptText(value: string, maximumBytes: number): boolean {
+  return (
+    typeof value === 'string' &&
+    !value.includes('\u0000') &&
+    Buffer.byteLength(value, 'utf8') >= 1 &&
+    Buffer.byteLength(value, 'utf8') <= maximumBytes
+  );
+}
+
 function validAuthIdentifier(value: string, maximum: number): boolean {
   try {
     return normalizeAuthIdentifier(value, maximum) === value;
@@ -156,11 +166,9 @@ export function prepareKnowledgeLlmReservation(
 ): KnowledgeLlmBudgetResult<PreparedKnowledgeLlmReservation> {
   if (
     typeof input.systemPrompt !== 'string' ||
-    typeof input.userPrompt !== 'string' ||
+    !validPromptText(input.userPrompt, knowledgeLlmLimits.userPromptBytes) ||
     Buffer.byteLength(input.systemPrompt, 'utf8') >
       knowledgeLlmLimits.systemPromptBytes ||
-    Buffer.byteLength(input.userPrompt, 'utf8') >
-      knowledgeLlmLimits.userPromptBytes ||
     !Array.isArray(input.selectedContextSources) ||
     (input.reservationInputTokenFloor !== undefined &&
       (!Number.isSafeInteger(input.reservationInputTokenFloor) ||
@@ -256,6 +264,8 @@ export function prepareKnowledgeLlmReservation(
     ),
     providerRequestHash,
     selectedContextFingerprint: selectedContext.fingerprint,
+    userPrompt: input.userPrompt,
+    userPromptHash: sha256KnowledgeText('llm-user-prompt', input.userPrompt),
     selectedContextSources: selectedContext.sources,
     estimatedInputTokens,
     maxOutputTokens: input.maxOutputTokens,
@@ -298,6 +308,9 @@ function validInput(input: KnowledgeLlmReservationRequest): boolean {
     !sha256Pattern.test(input.requestPayloadHash) ||
     !sha256Pattern.test(input.providerRequestHash) ||
     !sha256Pattern.test(input.selectedContextFingerprint) ||
+    !validPromptText(input.userPrompt, knowledgeLlmLimits.userPromptBytes) ||
+    input.userPromptHash !==
+      sha256KnowledgeText('llm-user-prompt', input.userPrompt) ||
     !validKnowledgeLlmContextFingerprintSources(
       input.selectedContextSources,
       input.selectedContextFingerprint,

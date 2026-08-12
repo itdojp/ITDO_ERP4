@@ -13,6 +13,13 @@ const migration = await readFile(
   ),
   'utf8',
 );
+const reconciliationMigration = await readFile(
+  new URL(
+    '../prisma/migrations/20260812130000_add_knowledge_llm_outcome_reconciliation/migration.sql',
+    import.meta.url,
+  ),
+  'utf8',
+);
 
 function block(kind, name) {
   const match = schema.match(
@@ -392,4 +399,132 @@ test('provider outcome retains only normalized bounded state for reconciliation'
   assert.match(evidenceGuard, /NEW\."createdBy" <> BTRIM\(NEW\."createdBy"\)/);
   assert.match(evidenceGuard, /NEW\."createdBy" = run_actor/);
   assert.match(migration, /KnowledgeLlmUsageEvidence_immutable/);
+});
+
+test('prompt snapshot is additive, one-to-one, bounded, and finalize-only', () => {
+  const run = block('model', 'KnowledgeLlmRun');
+  const prompt = block('model', 'KnowledgeLlmPromptSnapshot');
+  assert.match(run, /promptSnapshot\s+KnowledgeLlmPromptSnapshot\?/);
+  assert.match(
+    prompt,
+    /run\s+KnowledgeLlmRun\s+@relation\(fields: \[runId\], references: \[id\], onDelete: Restrict, onUpdate: Restrict\)/,
+  );
+  assert.match(prompt, /runId\s+String\s+@unique/);
+  assert.match(prompt, /normalizedPrompt\s+String\?\s+@db\.Text/);
+  assert.match(prompt, /promptHash\s+String/);
+  assert.match(prompt, /capturedAt\s+DateTime\s+@default\(now\(\)\)/);
+  assert.match(prompt, /finalizedAt\s+DateTime\?/);
+  assert.match(prompt, /createdBy\s+String/);
+
+  assert.match(
+    reconciliationMigration,
+    /CREATE TABLE "KnowledgeLlmPromptSnapshot"/,
+  );
+  assert.match(
+    reconciliationMigration,
+    /KnowledgeLlmPromptSnapshot_runId_fkey[\s\S]*?ON DELETE RESTRICT ON UPDATE RESTRICT/,
+  );
+  assert.match(
+    reconciliationMigration,
+    /KnowledgeLlmPromptSnapshot_shape_check[\s\S]*?OCTET_LENGTH\("normalizedPrompt"\) BETWEEN 1 AND 16384/,
+  );
+  assert.match(
+    reconciliationMigration,
+    /NEW\."createdBy" <> run_actor[\s\S]*?exact reserved run prompt and canonical actor/,
+  );
+  assert.match(
+    reconciliationMigration,
+    /KnowledgeLlmPromptSnapshot_finalize_only/,
+  );
+  assert.match(reconciliationMigration, /KnowledgeLlmPromptSnapshot_no_delete/);
+});
+
+test('prompt hash matches the application domain-separated SHA-256 contract', () => {
+  const hashFunction = reconciliationMigration.match(
+    /CREATE FUNCTION "erp4_knowledge_llm_prompt_hash"\(content TEXT\)[\s\S]*?\n\$\$;/,
+  )?.[0];
+  assert.ok(hashFunction);
+  assert.match(
+    hashFunction,
+    /convert_to\('erp4:knowledge:llm-user-prompt:v1', 'UTF8'\)/,
+  );
+  assert.match(hashFunction, /\|\| decode\('00', 'hex'\)/);
+  assert.match(hashFunction, /\|\| convert_to\(content, 'UTF8'\)/);
+});
+
+test('saved outcomes alone expand terminal recovery without weakening existing transitions', () => {
+  assert.match(
+    reconciliationMigration,
+    /CREATE OR REPLACE FUNCTION "erp4_knowledge_llm_run_transition_guard"\(\)/,
+  );
+  for (const preservedContract of [
+    'dispatch requires matching request ledger',
+    'dispatch requires contiguous context sources',
+    'actual settlement cost mismatch',
+    'result requires an assistant AI turn',
+    'request boundary is immutable',
+    'dispatch timestamp is immutable',
+    'provenance updates require a state transition',
+  ]) {
+    assert.match(reconciliationMigration, new RegExp(preservedContract));
+  }
+  assert.match(
+    reconciliationMigration,
+    /OLD\."executionStatus" = 'result_unknown'[\s\S]*?NEW\."executionStatus" IN \('result_ready', 'failed'\)/,
+  );
+  assert.match(
+    reconciliationMigration,
+    /OLD\."failureCode" = 'finalization_failed'[\s\S]*?outcome\.status = 'usage_unknown'[\s\S]*?outcome\."failureCode" = NEW\."failureCode"/,
+  );
+  assert.match(
+    reconciliationMigration,
+    /OLD\."failureCode" = 'finalization_failed'[\s\S]*?NEW\."executionStatus" = 'failed'[\s\S]*?outcome\.status = 'invalid'[\s\S]*?outcome\."failureCode" = NEW\."failureCode"/,
+  );
+  assert.doesNotMatch(
+    reconciliationMigration,
+    /DROP TABLE|DROP COLUMN|ALTER COLUMN|RENAME (?:TABLE|COLUMN)/,
+  );
+});
+
+test('finalized prompt and outcomes use deferred reverse commit consistency guards', () => {
+  assert.match(
+    reconciliationMigration,
+    /CREATE CONSTRAINT TRIGGER "KnowledgeLlmProviderOutcome_finalized_consistency"[\s\S]*?DEFERRABLE INITIALLY DEFERRED/,
+  );
+  assert.match(
+    reconciliationMigration,
+    /finalized KnowledgeLlmProviderOutcome requires exact conversation and actual settlement/,
+  );
+  assert.match(
+    reconciliationMigration,
+    /CREATE CONSTRAINT TRIGGER "KnowledgeLlmPromptSnapshot_finalized_consistency"[\s\S]*?DEFERRABLE INITIALLY DEFERRED/,
+  );
+  assert.match(
+    reconciliationMigration,
+    /prompt\."promptHash" =\s*"erp4_knowledge_llm_prompt_hash"\(user_turn\.content\)/,
+  );
+  assert.match(
+    reconciliationMigration,
+    /user_turn\.sequence \+ 1 = assistant\.sequence/,
+  );
+  assert.match(
+    reconciliationMigration,
+    /conversation\."contentHash" = encode\([\s\S]*?llm-conversation:v1/,
+  );
+});
+
+test('new capture triggers do not invert outcome-run-reservation-period lock order', () => {
+  const promptInsertGuard = reconciliationMigration.match(
+    /CREATE FUNCTION "erp4_knowledge_llm_prompt_snapshot_insert_guard"\(\)[\s\S]*?\n\$\$;/,
+  )?.[0];
+  assert.ok(promptInsertGuard);
+  assert.match(promptInsertGuard, /FROM "KnowledgeLlmRun"[\s\S]*?FOR UPDATE/);
+  assert.doesNotMatch(
+    promptInsertGuard,
+    /FROM "KnowledgeLlmProviderOutcome"|FROM "KnowledgeLlmReservation"|FROM "KnowledgeLlmBudgetPeriod"/,
+  );
+  assert.doesNotMatch(
+    reconciliationMigration,
+    /CREATE TRIGGER "KnowledgeLlmProviderOutcome_[^"]+"[\s\S]*?KnowledgeLlmReservation/,
+  );
 });

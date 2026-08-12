@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 import { StubExternalLlmTextAdapter } from '../dist/adapters/externalLlm/stubTextAdapter.js';
@@ -39,7 +40,12 @@ function selectedContext(representation, index = 0) {
 }
 
 test('Knowledge external LLM is disabled independently of Chat settings', async () => {
-  const { getKnowledgeLlmRuntimeConfig } = await configModule();
+  const { getKnowledgeLlmRuntimeConfig, knowledgeLlmLimits } =
+    await configModule();
+  assert.ok(
+    knowledgeLlmLimits.reconcileGraceMs >
+      knowledgeLlmLimits.providerTimeoutMaxMs,
+  );
   assert.deepEqual(
     getKnowledgeLlmRuntimeConfig({
       CHAT_EXTERNAL_LLM_PROVIDER: 'stub',
@@ -263,7 +269,7 @@ test('organization reservation fails closed when canonical organization differs'
     promptTemplateVersion: 1,
     requestKeyHash: 'a'.repeat(64),
     systemPrompt: '',
-    userPrompt: '',
+    userPrompt: 'Synthetic prompt',
     selectedContextSources: [],
     reservationInputTokenFloor: 100,
     maxOutputTokens: 100,
@@ -303,7 +309,7 @@ test('reservation rejects non-canonical actor and organization identifiers', asy
     promptTemplateVersion: 1,
     requestKeyHash: '9'.repeat(64),
     systemPrompt: '',
-    userPrompt: '',
+    userPrompt: 'Synthetic prompt',
     selectedContextSources: [],
     maxOutputTokens: 7,
   };
@@ -372,7 +378,7 @@ test('reservation pricing is resolved from the enabled catalog, not caller field
     requestKeyHash: 'd'.repeat(64),
     selectedContextFingerprint: 'f'.repeat(64), // ignored untrusted extra field
     systemPrompt: '',
-    userPrompt: '',
+    userPrompt: 'Synthetic prompt',
     selectedContextSources: [],
     reservationInputTokenFloor: 3,
     maxOutputTokens: 7,
@@ -387,8 +393,8 @@ test('reservation pricing is resolved from the enabled catalog, not caller field
   assert.equal(result.ok, true);
   assert.equal(received.inputCostMicrosPerMillion, 1_250_000n);
   assert.equal(received.outputCostMicrosPerMillion, 2_500_000n);
-  assert.equal(received.maximumCostMicros, 98n);
-  assert.equal(received.estimatedInputTokens, 64);
+  assert.equal(received.maximumCostMicros, 138n);
+  assert.equal(received.estimatedInputTokens, 96);
   assert.notEqual(received.requestPayloadHash, 'e'.repeat(64));
   assert.notEqual(received.selectedContextFingerprint, 'f'.repeat(64));
   assert.deepEqual(received.selectedContextSources, []);
@@ -399,15 +405,21 @@ test('reservation pricing is resolved from the enabled catalog, not caller field
       provider: 'stub',
       model: 'stub-v1',
       systemPrompt: '',
-      userPrompt: '',
+      userPrompt: 'Synthetic prompt',
       contextSections: [],
-      inputTokenCeiling: 64,
+      inputTokenCeiling: 96,
       maxOutputTokens: 7,
       temperatureBasisPoints: 0,
     }).requestFingerprint,
   );
   assert.equal('systemPrompt' in received, false);
-  assert.equal('userPrompt' in received, false);
+  assert.equal(received.userPrompt, 'Synthetic prompt');
+  assert.equal(
+    received.userPromptHash,
+    createHash('sha256')
+      .update('erp4:knowledge:llm-user-prompt:v1\0Synthetic prompt', 'utf8')
+      .digest('hex'),
+  );
   assert.equal(received.currency, 'JPY');
   assert.equal(received.now.toISOString(), '2026-08-12T00:00:00.000Z');
 });
@@ -427,7 +439,7 @@ test('reservation rejects stale, disabled, unknown and over-limit catalog select
     promptTemplateVersion: 1,
     requestKeyHash: '1'.repeat(64),
     systemPrompt: '',
-    userPrompt: '',
+    userPrompt: 'Synthetic prompt',
     selectedContextSources: [],
     reservationInputTokenFloor: 3,
     maxOutputTokens: 7,
@@ -573,7 +585,7 @@ test('reservation enforces raw user and selected-context byte limits independent
     promptTemplateVersion: 1,
     requestKeyHash: '7'.repeat(64),
     systemPrompt: '',
-    userPrompt: '',
+    userPrompt: 'Synthetic prompt',
     selectedContextSources: [],
     maxOutputTokens: 7,
   };

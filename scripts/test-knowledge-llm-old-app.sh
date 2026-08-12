@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BASE_SHA="${KNOWLEDGE_LLM_OLD_APP_BASE_SHA:-8a287700254b4be5215ab60382400fd174b066f6}"
-EXPECTED_BASE_SHA="8a287700254b4be5215ab60382400fd174b066f6"
+BASE_SHA="${KNOWLEDGE_LLM_OLD_APP_BASE_SHA:-e6d49dd3d2eda7a41001835b0b776bce4350b486}"
+EXPECTED_BASE_SHA="e6d49dd3d2eda7a41001835b0b776bce4350b486"
 POSTGRES_IMAGE="${POSTGRES_IMAGE:-docker.io/library/postgres:15@sha256:6ab12ad4395ee49ab49fe19530f7e183c5a9c97fc47cf687b3e281bec5f91ee4}"
 CONTAINER_NAME="erp4-knowledge-llm-old-app-$$"
 SCRATCH_ROOT="$ROOT_DIR/.codex-local/tmp/knowledge-llm-old-app-$$"

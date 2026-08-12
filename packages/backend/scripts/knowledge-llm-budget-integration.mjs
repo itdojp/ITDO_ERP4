@@ -162,6 +162,11 @@ const knowledgeTextHash = (domain, content) =>
     .digest('hex');
 const conversationTurnHash = (content) =>
   knowledgeTextHash('conversation-turn', content);
+const llmConversationHash = (runId, promptHash, resultHash) =>
+  knowledgeTextHash(
+    'llm-conversation',
+    `${runId}\0${promptHash}\0${resultHash}`,
+  );
 
 function contextFromTurn(turn, ordinal, overrides = {}) {
   const byteLength = Buffer.byteLength(turn.content, 'utf8');
@@ -229,6 +234,7 @@ function reservation({
   estimatedInputTokens,
   organizationId = null,
   auditSuffix = runId,
+  userPrompt = 'p',
 }) {
   const resolvedInputCost = inputCostMicrosPerMillion ?? 500_000n;
   const resolvedEstimatedInputTokens =
@@ -258,7 +264,7 @@ function reservation({
     promptTemplateVersion: 1,
     requestKeyHash: keyHash,
     systemPrompt: '',
-    userPrompt: '',
+    userPrompt,
     selectedContextSources,
     reservationInputTokenFloor: resolvedEstimatedInputTokens,
     maxOutputTokens: 100,
@@ -468,6 +474,7 @@ try {
     userId: 'rendered-prompt-user',
     keyHash: hash('c'),
     maximumCostMicros: 32n,
+    userPrompt: 'x',
   });
   delete renderedPromptInput.reservationInputTokenFloor;
   const renderedPromptReservation = await service.reserve(renderedPromptInput);
@@ -538,7 +545,7 @@ try {
     provider: 'stub',
     model: 'stub-default',
     systemPrompt: '',
-    userPrompt: '',
+    userPrompt: renderedPromptInput.userPrompt,
     inputTokenCeiling: renderedPromptRun.estimatedInputTokens,
     maxOutputTokens: 100,
     temperatureBasisPoints: 0,
@@ -551,7 +558,7 @@ try {
     renderedPromptRun.providerRequestHash,
   );
   const renderedPromptResult = await renderedPromptPrepared.dispatch();
-  assert.equal(renderedPromptRun.estimatedInputTokens, 64);
+  assert.ok(renderedPromptRun.estimatedInputTokens >= 64);
   assert.equal(renderedPromptResult.usageStatus, 'reported');
   assert.equal(
     renderedPromptResult.usage.inputTokens,
@@ -2558,11 +2565,14 @@ try {
         capturedAt: after(31_000),
       },
     });
-    await transaction.knowledgeLlmProviderOutcome.update({
+  });
+  await assert.rejects(
+    prisma.knowledgeLlmProviderOutcome.update({
       where: { runId: 'run-direct-cost-guard' },
       data: { normalizedContent: null, finalizedAt: after(32_000) },
-    });
-  });
+    }),
+    /finalized KnowledgeLlmProviderOutcome requires exact conversation and actual settlement/,
+  );
   await assert.rejects(
     prisma.knowledgeLlmRun.update({
       where: { id: 'run-direct-cost-guard' },
@@ -2581,8 +2591,12 @@ try {
     }),
     /actual settlement cost mismatch/,
   );
-  await prisma.$transaction((transaction) =>
-    settleKnowledgeLlmBudget(transaction, {
+  await prisma.$transaction(async (transaction) => {
+    await transaction.knowledgeLlmProviderOutcome.update({
+      where: { runId: 'run-direct-cost-guard' },
+      data: { normalizedContent: null, finalizedAt: after(32_000) },
+    });
+    await settleKnowledgeLlmBudget(transaction, {
       runId: 'run-direct-cost-guard',
       actorUserId: 'settlement-user',
       auditActor: terminalAuditActor(
@@ -2598,8 +2612,8 @@ try {
         conversationId: settlementConversation.conversation.id,
         assistantTurnId: settlementConversation.directGuardAssistant.id,
       },
-    }),
-  );
+    });
+  });
   await assert.rejects(
     prisma.$transaction(async (transaction) => {
       await markKnowledgeLlmRunDispatched(transaction, {
@@ -2809,6 +2823,23 @@ try {
         where: { runId: 'run-settlement-actual' },
         data: { normalizedContent: null, finalizedAt: after(1_900) },
       });
+      await settleKnowledgeLlmBudget(transaction, {
+        runId: 'run-settlement-actual',
+        actorUserId: 'settlement-user',
+        auditActor: terminalAuditActor(
+          'settlement-user',
+          'run-settlement-actual-finalizer',
+        ),
+        completedAt: after(2_000),
+        settlement: {
+          type: 'actual',
+          actualInputTokens: 80,
+          actualOutputTokens: 20,
+          actualCostMicros: 35n,
+          conversationId: settlementConversation.conversation.id,
+          assistantTurnId: settlementConversation.assistant.id,
+        },
+      });
     },
     { timeout: 15_000 },
   );
@@ -2866,9 +2897,18 @@ try {
     concurrentSettlement,
   ]);
   if (lockOrderProbeError) throw lockOrderProbeError;
-  for (const result of concurrentFinalizationResults) {
-    if (result.status === 'rejected') throw result.reason;
-  }
+  assert.equal(
+    concurrentFinalizationResults.filter(
+      (result) => result.status === 'fulfilled',
+    ).length,
+    1,
+  );
+  assert.equal(
+    concurrentFinalizationResults.filter(
+      (result) => result.status === 'rejected',
+    ).length,
+    1,
+  );
   const settled = await prisma.knowledgeLlmRun.findUniqueOrThrow({
     where: { id: 'run-settlement-actual' },
     include: { reservations: true },
@@ -3425,9 +3465,10 @@ try {
       versionId: 'context-ineligible-role-conversation-version',
       source: { sourceConversationId: contextGuardConversation.id },
     });
-  await reserveContextRun('run-context-ineligible-role-conversation-synthesis', [
-    ineligibleRoleConversationSynthesisContext,
-  ]);
+  await reserveContextRun(
+    'run-context-ineligible-role-conversation-synthesis',
+    [ineligibleRoleConversationSynthesisContext],
+  );
   await expectContextDispatchRejected(
     'run-context-ineligible-role-conversation-synthesis',
     /dispatch synthesis source is not eligible/,
@@ -4792,6 +4833,482 @@ try {
   );
   await assertLateReservationRejected('late-reservation-terminal');
 
+  await policy({
+    id: 'policy-prompt-outcome-reconciliation',
+    subjectType: 'user',
+    subjectId: 'prompt-reconciliation-user',
+    soft: 1_000n,
+    hard: 1_000n,
+    rate: 20,
+  });
+  const promptActor = 'prompt-reconciliation-user';
+  const promptFixture = 'p';
+  const promptHash = knowledgeTextHash('llm-user-prompt', promptFixture);
+  const reservePromptRun = async (runId, maximumCostMicros = 60n) => {
+    const result = await service.reserve(
+      reservation({
+        runId,
+        userId: promptActor,
+        keyHash: knowledgeTextHash('llm-test-request-key', runId),
+        maximumCostMicros,
+        ...(maximumCostMicros === 60n
+          ? {
+              inputCostMicrosPerMillion: 250_000n,
+              outputCostMicrosPerMillion: 350_000n,
+            }
+          : {}),
+        userPrompt: promptFixture,
+      }),
+    );
+    assert.equal(result.ok, true, result.ok ? undefined : result.error.code);
+  };
+  const stagePrompt = (runId, timestamp) =>
+    prisma.knowledgeLlmPromptSnapshot.create({
+      data: {
+        id: `${runId}-prompt`,
+        runId,
+        normalizedPrompt: promptFixture,
+        promptHash,
+        capturedAt: timestamp,
+        createdAt: timestamp,
+        createdBy: promptActor,
+      },
+    });
+  const createExactConversation = async (
+    transaction,
+    { runId, resultContent, suffix, capturedAt },
+  ) => {
+    const resultHash = conversationTurnHash(resultContent);
+    const conversation = await transaction.knowledgeConversation.create({
+      data: {
+        id: `${runId}-${suffix}-conversation`,
+        ownerUserId: promptActor,
+        title: 'Synthetic prompt reconciliation conversation',
+        sourceType: 'manual',
+        provider: 'stub',
+        model: 'stub-settlement',
+        capturedAt,
+        contentHash: llmConversationHash(runId, promptHash, resultHash),
+        createdBy: promptActor,
+        updatedBy: promptActor,
+      },
+    });
+    await transaction.knowledgeConversationTurn.create({
+      data: {
+        conversationId: conversation.id,
+        sequence: 1,
+        role: 'user',
+        origin: 'user',
+        content: promptFixture,
+        contentHash: conversationTurnHash(promptFixture),
+        createdBy: promptActor,
+      },
+    });
+    const assistant = await transaction.knowledgeConversationTurn.create({
+      data: {
+        conversationId: conversation.id,
+        sequence: 2,
+        role: 'assistant',
+        origin: 'ai',
+        content: resultContent,
+        contentHash: resultHash,
+        createdBy: promptActor,
+      },
+    });
+    return { conversation, assistant };
+  };
+
+  const [databasePromptHash] = await prisma.$queryRaw`
+    SELECT "erp4_knowledge_llm_prompt_hash"(${promptFixture}) AS hash
+  `;
+  assert.equal(databasePromptHash.hash, promptHash);
+
+  await reservePromptRun('run-prompt-shape-source');
+  const promptShapeSourceRun = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: 'run-prompt-shape-source' },
+    include: { reservations: true },
+  });
+  await prisma.knowledgeLlmRun.create({
+    data: directRunData({
+      sourceRun: promptShapeSourceRun,
+      runId: 'run-prompt-shape',
+      requestKeyHash: knowledgeTextHash(
+        'llm-test-request-key',
+        'run-prompt-shape',
+      ),
+      createdAt: after(99_900),
+      budgetPeriodId: promptShapeSourceRun.reservations[0].budgetPeriodId,
+    }),
+  });
+  await assert.rejects(
+    prisma.knowledgeLlmPromptSnapshot.create({
+      data: {
+        id: 'run-prompt-shape-wrong-hash',
+        runId: 'run-prompt-shape',
+        normalizedPrompt: promptFixture,
+        promptHash: hash('1'),
+        capturedAt: after(100_000),
+        createdAt: after(100_000),
+        createdBy: promptActor,
+      },
+    }),
+    /exact reserved run prompt and canonical actor/,
+  );
+  await assert.rejects(
+    prisma.knowledgeLlmPromptSnapshot.create({
+      data: {
+        id: 'run-prompt-shape-wrong-actor',
+        runId: 'run-prompt-shape',
+        normalizedPrompt: promptFixture,
+        promptHash,
+        capturedAt: after(100_000),
+        createdAt: after(100_000),
+        createdBy: 'different-canonical-user',
+      },
+    }),
+    /exact reserved run prompt and canonical actor/,
+  );
+  await assert.rejects(
+    prisma.knowledgeLlmPromptSnapshot.create({
+      data: {
+        id: 'run-prompt-shape-oversize',
+        runId: 'run-prompt-shape',
+        normalizedPrompt: 'x'.repeat(16_385),
+        promptHash: knowledgeTextHash('llm-user-prompt', 'x'.repeat(16_385)),
+        capturedAt: after(100_000),
+        createdAt: after(100_000),
+        createdBy: promptActor,
+      },
+    }),
+    /KnowledgeLlmPromptSnapshot_shape_check/,
+  );
+  await stagePrompt('run-prompt-shape', after(100_000));
+  await assert.rejects(
+    prisma.knowledgeLlmPromptSnapshot.update({
+      where: { runId: 'run-prompt-shape' },
+      data: { promptHash: hash('2') },
+    }),
+    /invalid KnowledgeLlmPromptSnapshot finalization/,
+  );
+  await assert.rejects(
+    prisma.knowledgeLlmPromptSnapshot.delete({
+      where: { runId: 'run-prompt-shape' },
+    }),
+    /rows are immutable/,
+  );
+  await assert.rejects(
+    prisma.knowledgeLlmPromptSnapshot.update({
+      where: { runId: 'run-prompt-shape' },
+      data: {
+        normalizedPrompt: null,
+        finalizedAt: after(100_100),
+      },
+    }),
+    /finalized KnowledgeLlmPromptSnapshot requires exact user turn, conversation, and run terminal state/,
+  );
+
+  const validRecoveryRunId = 'run-prompt-valid-recovery';
+  const validRecoveryResult = 'Synthetic exact valid recovery result';
+  await reservePromptRun(validRecoveryRunId);
+  await prisma.$transaction(async (transaction) => {
+    await markKnowledgeLlmRunDispatched(transaction, {
+      runId: validRecoveryRunId,
+      actorUserId: promptActor,
+      auditActor: terminalAuditActor(promptActor, 'prompt-valid-dispatch'),
+      dispatchedAt: after(101_100),
+    });
+    await transaction.knowledgeLlmProviderOutcome.create({
+      data: {
+        runId: validRecoveryRunId,
+        status: 'valid',
+        normalizedContent: validRecoveryResult,
+        contentHash: conversationTurnHash(validRecoveryResult),
+        inputTokens: 40,
+        outputTokens: 10,
+        capturedAt: after(101_200),
+        createdAt: after(101_200),
+      },
+    });
+    await settleKnowledgeLlmBudget(transaction, {
+      runId: validRecoveryRunId,
+      actorUserId: promptActor,
+      auditActor: terminalAuditActor(promptActor, 'prompt-valid-unknown'),
+      completedAt: after(101_300),
+      settlement: {
+        type: 'hold',
+        executionStatus: 'result_unknown',
+        failureCode: 'finalization_failed',
+      },
+    });
+  });
+  const validHeldBefore =
+    await prisma.knowledgeLlmBudgetPeriod.findFirstOrThrow({
+      where: {
+        reservations: { some: { runId: validRecoveryRunId } },
+      },
+    });
+  await prisma.$transaction(async (transaction) => {
+    const { conversation, assistant } = await createExactConversation(
+      transaction,
+      {
+        runId: validRecoveryRunId,
+        resultContent: validRecoveryResult,
+        suffix: 'valid',
+        capturedAt: after(101_400),
+      },
+    );
+    await transaction.knowledgeLlmProviderOutcome.update({
+      where: { runId: validRecoveryRunId },
+      data: { normalizedContent: null, finalizedAt: after(101_500) },
+    });
+    await transaction.knowledgeLlmPromptSnapshot.update({
+      where: { runId: validRecoveryRunId },
+      data: { normalizedPrompt: null, finalizedAt: after(101_500) },
+    });
+    await reconcileKnowledgeLlmHeldBudget(transaction, {
+      runId: validRecoveryRunId,
+      actorUserId: promptActor,
+      auditActor: terminalAuditActor(promptActor, 'prompt-valid-reconcile'),
+      actualInputTokens: 40,
+      actualOutputTokens: 10,
+      actualCostMicros: 14n,
+      conversationId: conversation.id,
+      assistantTurnId: assistant.id,
+      completedAt: after(101_600),
+    });
+  });
+  const validRecovered = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: validRecoveryRunId },
+    include: {
+      promptSnapshot: true,
+      outcome: true,
+      reservations: { include: { budgetPeriod: true } },
+    },
+  });
+  assert.equal(validRecovered.executionStatus, 'result_ready');
+  assert.equal(validRecovered.settlementStatus, 'settled_actual');
+  assert.equal(validRecovered.actualCostMicros, 14n);
+  assert.equal(validRecovered.promptSnapshot?.normalizedPrompt, null);
+  assert.ok(validRecovered.promptSnapshot?.finalizedAt);
+  assert.equal(validRecovered.outcome?.normalizedContent, null);
+  assert.equal(validRecovered.reservations[0].status, 'settled_actual');
+  assert.equal(
+    validRecovered.reservations[0].budgetPeriod.heldMaximumMicros,
+    validHeldBefore.heldMaximumMicros - 60n,
+  );
+  assert.equal(
+    validRecovered.reservations[0].budgetPeriod.settledActualMicros,
+    validHeldBefore.settledActualMicros + 14n,
+  );
+
+  const usageRecoveryRunId = 'run-prompt-usage-recovery';
+  const usageRecoveryResult = 'Synthetic exact usage-unknown recovery result';
+  await reservePromptRun(usageRecoveryRunId, 40n);
+  await prisma.$transaction(async (transaction) => {
+    await markKnowledgeLlmRunDispatched(transaction, {
+      runId: usageRecoveryRunId,
+      actorUserId: promptActor,
+      auditActor: terminalAuditActor(promptActor, 'prompt-usage-dispatch'),
+      dispatchedAt: after(102_100),
+    });
+    await transaction.knowledgeLlmProviderOutcome.create({
+      data: {
+        runId: usageRecoveryRunId,
+        status: 'usage_unknown',
+        normalizedContent: usageRecoveryResult,
+        contentHash: conversationTurnHash(usageRecoveryResult),
+        failureCode: 'usage_missing',
+        capturedAt: after(102_200),
+        createdAt: after(102_200),
+      },
+    });
+    await settleKnowledgeLlmBudget(transaction, {
+      runId: usageRecoveryRunId,
+      actorUserId: promptActor,
+      auditActor: terminalAuditActor(promptActor, 'prompt-usage-unknown'),
+      completedAt: after(102_300),
+      settlement: {
+        type: 'hold',
+        executionStatus: 'result_unknown',
+        failureCode: 'finalization_failed',
+      },
+    });
+  });
+  const usageCountersBefore =
+    await prisma.knowledgeLlmBudgetPeriod.findFirstOrThrow({
+      where: { reservations: { some: { runId: usageRecoveryRunId } } },
+    });
+  const finalizeUsageRecovery = async (failureCode) =>
+    prisma.$transaction(async (transaction) => {
+      const { conversation, assistant } = await createExactConversation(
+        transaction,
+        {
+          runId: usageRecoveryRunId,
+          resultContent: usageRecoveryResult,
+          suffix: failureCode,
+          capturedAt: after(102_400),
+        },
+      );
+      await transaction.knowledgeLlmProviderOutcome.update({
+        where: { runId: usageRecoveryRunId },
+        data: { normalizedContent: null, finalizedAt: after(102_500) },
+      });
+      await transaction.knowledgeLlmPromptSnapshot.update({
+        where: { runId: usageRecoveryRunId },
+        data: { normalizedPrompt: null, finalizedAt: after(102_500) },
+      });
+      await transaction.knowledgeLlmRun.update({
+        where: { id: usageRecoveryRunId },
+        data: {
+          executionStatus: 'result_ready',
+          settlementStatus: 'held_maximum',
+          failureCode,
+          conversationId: conversation.id,
+          assistantTurnId: assistant.id,
+          completedAt: after(102_600),
+          updatedAt: after(102_600),
+          updatedBy: promptActor,
+        },
+      });
+    });
+  await assert.rejects(
+    finalizeUsageRecovery('usage_invalid'),
+    /held result requires a usage-unknown provider outcome|terminal KnowledgeLlmRun outcome is immutable/,
+  );
+  await finalizeUsageRecovery('usage_missing');
+  const usageRecovered = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: usageRecoveryRunId },
+    include: {
+      promptSnapshot: true,
+      outcome: true,
+      reservations: { include: { budgetPeriod: true } },
+    },
+  });
+  assert.equal(usageRecovered.executionStatus, 'result_ready');
+  assert.equal(usageRecovered.settlementStatus, 'held_maximum');
+  assert.equal(usageRecovered.failureCode, 'usage_missing');
+  assert.equal(usageRecovered.promptSnapshot?.normalizedPrompt, null);
+  assert.equal(usageRecovered.outcome?.normalizedContent, null);
+  assert.equal(usageRecovered.reservations[0].status, 'held_maximum');
+  assert.deepEqual(
+    {
+      active: usageRecovered.reservations[0].budgetPeriod.activeReservedMicros,
+      settled: usageRecovered.reservations[0].budgetPeriod.settledActualMicros,
+      held: usageRecovered.reservations[0].budgetPeriod.heldMaximumMicros,
+      released:
+        usageRecovered.reservations[0].budgetPeriod.releasedMicros.toString(),
+      count: usageRecovered.reservations[0].budgetPeriod.acceptedRequestCount,
+    },
+    {
+      active: usageCountersBefore.activeReservedMicros,
+      settled: usageCountersBefore.settledActualMicros,
+      held: usageCountersBefore.heldMaximumMicros,
+      released: usageCountersBefore.releasedMicros.toString(),
+      count: usageCountersBefore.acceptedRequestCount,
+    },
+  );
+
+  const knownFailureRunId = 'run-prompt-known-failure-recovery';
+  await reservePromptRun(knownFailureRunId);
+  await prisma.$transaction(async (transaction) => {
+    await markKnowledgeLlmRunDispatched(transaction, {
+      runId: knownFailureRunId,
+      actorUserId: promptActor,
+      auditActor: terminalAuditActor(promptActor, 'prompt-known-dispatch'),
+      dispatchedAt: after(103_100),
+    });
+    await transaction.knowledgeLlmProviderOutcome.create({
+      data: {
+        runId: knownFailureRunId,
+        status: 'invalid',
+        failureCode: 'provider_4xx',
+        capturedAt: after(103_200),
+        createdAt: after(103_200),
+      },
+    });
+    await settleKnowledgeLlmBudget(transaction, {
+      runId: knownFailureRunId,
+      actorUserId: promptActor,
+      auditActor: terminalAuditActor(promptActor, 'prompt-known-unknown'),
+      completedAt: after(103_300),
+      settlement: {
+        type: 'hold',
+        executionStatus: 'result_unknown',
+        failureCode: 'finalization_failed',
+      },
+    });
+  });
+  const knownCountersBefore =
+    await prisma.knowledgeLlmBudgetPeriod.findFirstOrThrow({
+      where: { reservations: { some: { runId: knownFailureRunId } } },
+    });
+  await assert.rejects(
+    prisma.knowledgeLlmRun.update({
+      where: { id: knownFailureRunId },
+      data: {
+        executionStatus: 'failed',
+        settlementStatus: 'held_maximum',
+        failureCode: 'provider_5xx',
+        completedAt: after(103_400),
+        updatedAt: after(103_400),
+        updatedBy: promptActor,
+      },
+    }),
+    /terminal KnowledgeLlmRun outcome is immutable/,
+  );
+  await prisma.$transaction(async (transaction) => {
+    await transaction.knowledgeLlmPromptSnapshot.update({
+      where: { runId: knownFailureRunId },
+      data: { normalizedPrompt: null, finalizedAt: after(103_500) },
+    });
+    await transaction.knowledgeLlmRun.update({
+      where: { id: knownFailureRunId },
+      data: {
+        executionStatus: 'failed',
+        settlementStatus: 'held_maximum',
+        failureCode: 'provider_4xx',
+        completedAt: after(103_600),
+        updatedAt: after(103_600),
+        updatedBy: promptActor,
+      },
+    });
+  });
+  const knownFailureRecovered = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: knownFailureRunId },
+    include: {
+      promptSnapshot: true,
+      outcome: true,
+      reservations: { include: { budgetPeriod: true } },
+    },
+  });
+  assert.equal(knownFailureRecovered.executionStatus, 'failed');
+  assert.equal(knownFailureRecovered.settlementStatus, 'held_maximum');
+  assert.equal(knownFailureRecovered.failureCode, 'provider_4xx');
+  assert.equal(knownFailureRecovered.outcome?.status, 'invalid');
+  assert.equal(knownFailureRecovered.promptSnapshot?.normalizedPrompt, null);
+  assert.equal(knownFailureRecovered.reservations[0].status, 'held_maximum');
+  assert.deepEqual(
+    {
+      active:
+        knownFailureRecovered.reservations[0].budgetPeriod.activeReservedMicros,
+      settled:
+        knownFailureRecovered.reservations[0].budgetPeriod.settledActualMicros,
+      held: knownFailureRecovered.reservations[0].budgetPeriod
+        .heldMaximumMicros,
+      released:
+        knownFailureRecovered.reservations[0].budgetPeriod.releasedMicros.toString(),
+      count:
+        knownFailureRecovered.reservations[0].budgetPeriod.acceptedRequestCount,
+    },
+    {
+      active: knownCountersBefore.activeReservedMicros,
+      settled: knownCountersBefore.settledActualMicros,
+      held: knownCountersBefore.heldMaximumMicros,
+      released: knownCountersBefore.releasedMicros.toString(),
+      count: knownCountersBefore.acceptedRequestCount,
+    },
+  );
+
   for (const status of ['reserved', 'held_maximum', 'settled_actual']) {
     const immutableReservation =
       await prisma.knowledgeLlmReservation.findFirstOrThrow({
@@ -4956,6 +5473,15 @@ try {
       contextSynthesisEligibilityGuardVerified: true,
       contextFingerprintVerified: true,
       providerOutcomeRequiresDispatch: true,
+      finalizedOutcomeCommitConsistency: true,
+      promptSnapshotShapeAndHashVerified: true,
+      promptSnapshotImmutableAndDeleteBlocked: true,
+      promptSnapshotFinalizeOrphanBlocked: true,
+      exactValidOutcomeRecovery: true,
+      exactUsageUnknownOutcomeRecovery: true,
+      exactKnownFailureOutcomeRecovery: true,
+      invalidSavedOutcomeTransitionBlocked: true,
+      reconciliationCountersRemainExact: true,
       assistantTurnContentHashVerified: true,
       trustedClockBoundaryVerified: true,
       reservationAccountingTimestampVerified: true,

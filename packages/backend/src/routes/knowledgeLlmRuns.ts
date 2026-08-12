@@ -1,12 +1,15 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 
 import { StubExternalLlmTextAdapter } from '../adapters/externalLlm/stubTextAdapter.js';
+import { OpenAiCompatibleTextAdapter } from '../adapters/externalLlm/openAiCompatibleTextAdapter.js';
 import { PrismaKnowledgeLlmBudgetAdapter } from '../adapters/knowledge/prismaKnowledgeLlmBudgetAdapter.js';
 import { prismaKnowledgeLlmRunAdapter } from '../adapters/knowledge/prismaKnowledgeLlmRunAdapter.js';
 import {
   getKnowledgeLlmRuntimeConfig,
   knowledgeLlmLimits,
+  type KnowledgeLlmRuntimeConfig,
 } from '../application/knowledge/knowledgeLlmConfig.js';
+import type { ExternalLlmTextPort } from '../application/externalLlm/externalLlmPort.js';
 import {
   createKnowledgeLlmRunService,
   KnowledgeLlmRunError,
@@ -254,17 +257,35 @@ function sendError(reply: FastifyReply, error: unknown) {
   );
 }
 
+export function createKnowledgeLlmProviderPort(
+  runtime: KnowledgeLlmRuntimeConfig,
+): ExternalLlmTextPort | null {
+  if (runtime.provider === 'stub') return new StubExternalLlmTextAdapter();
+  if (runtime.provider !== 'openai') return null;
+  return new OpenAiCompatibleTextAdapter({
+    apiKey: runtime.apiKey,
+    baseUrl: runtime.baseUrl,
+    timeoutMs: runtime.timeoutMs,
+    allowedHosts: runtime.allowedHosts,
+    allowHttp: runtime.allowHttp,
+    allowPrivateIp: runtime.allowPrivateIp,
+    maximumResponseBytes: knowledgeLlmLimits.resultBytes,
+    malformedSuccessPolicy: 'reject',
+    usagePolicy: 'strict',
+  });
+}
+
 export async function registerKnowledgeLlmRunRoutes(
   app: FastifyInstance,
   dependencies: { service?: KnowledgeLlmRunService } = {},
 ) {
   const runtime = dependencies.service ? null : getKnowledgeLlmRuntimeConfig();
+  const providerPort = runtime ? createKnowledgeLlmProviderPort(runtime) : null;
   const service =
     dependencies.service ??
     createKnowledgeLlmRunService({
       runtime: runtime!,
-      providerPort:
-        runtime?.provider === 'stub' ? new StubExternalLlmTextAdapter() : null,
+      providerPort,
       budgetPort: new PrismaKnowledgeLlmBudgetAdapter(prisma),
       runPort: prismaKnowledgeLlmRunAdapter,
     });

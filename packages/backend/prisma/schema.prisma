@@ -3144,6 +3144,7 @@ model KnowledgeLlmRun {
   request                    KnowledgeLlmRequest?
   contextSources             KnowledgeLlmContextSource[]
   reservations               KnowledgeLlmReservation[]
+  promptSnapshot             KnowledgeLlmPromptSnapshot?
   outcome                    KnowledgeLlmProviderOutcome?
   usageEvidence              KnowledgeLlmUsageEvidence?
 
@@ -3221,6 +3222,20 @@ model KnowledgeLlmContextSource {
   @@index([sourceConversationTurnId])
   @@index([sourceSynthesisVersionId])
   @@index([sourceThreadPromotionMessageId])
+}
+
+model KnowledgeLlmPromptSnapshot {
+  id               String          @id @default(uuid())
+  run              KnowledgeLlmRun @relation(fields: [runId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  runId            String          @unique
+  normalizedPrompt String?         @db.Text
+  promptHash       String
+  capturedAt       DateTime        @default(now())
+  finalizedAt      DateTime?
+  createdAt        DateTime        @default(now())
+  createdBy        String
+
+  @@index([finalizedAt, capturedAt, id])
 }
 
 model KnowledgeLlmProviderOutcome {

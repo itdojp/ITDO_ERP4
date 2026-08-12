@@ -28,6 +28,7 @@ import {
 import {
   KnowledgeLlmRunAccessError,
   type KnowledgeLlmBudgetPreview,
+  type KnowledgeLlmCapturedProviderOutcome,
   type KnowledgeLlmRunPort,
   type KnowledgeLlmRunRecord,
   type KnowledgeLlmSourceSelector,
@@ -155,6 +156,7 @@ export class KnowledgeLlmRunError extends Error {
       | 'budget_hard_limit'
       | 'rate_limit'
       | 'reservation_conflict'
+      | 'rejected_before_dispatch'
       | 'execution_failed',
   ) {
     super(code);
@@ -365,6 +367,13 @@ function translateError(error: unknown): never {
     }
     throw new KnowledgeLlmRunError(409, 'stale_preview');
   }
+  if (
+    error instanceof ExternalLlmProviderError &&
+    error.code === 'rejected_before_dispatch' &&
+    error.outcome === 'not_dispatched'
+  ) {
+    throw new KnowledgeLlmRunError(503, 'rejected_before_dispatch');
+  }
   throw new KnowledgeLlmRunError(409, 'execution_failed');
 }
 
@@ -423,7 +432,7 @@ export function createKnowledgeLlmRunService(input: {
 
   function requireEnabled() {
     if (
-      input.runtime.provider !== 'stub' ||
+      input.runtime.provider === 'disabled' ||
       !catalog ||
       !input.providerPort ||
       !budgetUseCases
@@ -440,7 +449,7 @@ export function createKnowledgeLlmRunService(input: {
 
   return {
     catalog() {
-      if (input.runtime.provider !== 'stub' || !catalog) {
+      if (input.runtime.provider === 'disabled' || !catalog) {
         return {
           enabled: false as const,
           provider: null,
@@ -720,10 +729,90 @@ export function createKnowledgeLlmRunService(input: {
           expectedProviderRequestHash:
             preparedReservation.value.request.providerRequestHash,
         });
+        const settleCapturedOutcome = async (
+          outcome: KnowledgeLlmCapturedProviderOutcome,
+        ): Promise<KnowledgeLlmRunRecord> => {
+          try {
+            await input.runPort.captureProviderOutcome({
+              actor: options.actor,
+              runId: replay.runId,
+              outcome,
+            });
+          } catch {
+            // The port performs exact durable readback for a capture whose
+            // commit result became unknown. Any remaining error means there
+            // is no verified matching outcome, so never finalize another row.
+            const held = await input.runPort.holdResultUnknown({
+              actor: options.actor,
+              auditActor: options.auditActor,
+              runId: replay.runId,
+              failureCode: 'finalization_failed',
+            });
+            const visible = await input.runPort.findOwned({
+              actor: options.actor,
+              runId: held.id,
+            });
+            if (!visible) throw new KnowledgeLlmRunAccessError('not_found');
+            return visible;
+          }
+          let finalized: KnowledgeLlmRunRecord;
+          try {
+            finalized = await input.runPort.finalizeCapturedOutcome({
+              actor: options.actor,
+              auditActor: options.auditActor,
+              runId: replay.runId,
+            });
+          } catch {
+            try {
+              finalized = await input.runPort.holdResultUnknown({
+                actor: options.actor,
+                auditActor: options.auditActor,
+                runId: replay.runId,
+                failureCode: 'finalization_failed',
+              });
+            } catch {
+              const winner = await input.runPort.findOwned({
+                actor: options.actor,
+                runId: replay.runId,
+              });
+              if (winner) return winner;
+              throw new KnowledgeLlmRunError(409, 'execution_failed');
+            }
+          }
+          // Accounting may converge after source ACL loss, but a response
+          // carrying result/provenance remains current-ACL fail closed.
+          const visible = await input.runPort.findOwned({
+            actor: options.actor,
+            runId: finalized.id,
+          });
+          if (!visible) throw new KnowledgeLlmRunAccessError('not_found');
+          return visible;
+        };
         let providerResult;
         try {
           providerResult = await preparedProvider.dispatch();
         } catch (error) {
+          if (
+            error instanceof ExternalLlmProviderError &&
+            [
+              'provider_4xx',
+              'provider_5xx',
+              'malformed_response',
+              'response_oversize',
+              'empty_result',
+            ].includes(error.code)
+          ) {
+            const failed = await settleCapturedOutcome({
+              status: 'invalid',
+              failureCode: error.code as
+                | 'provider_4xx'
+                | 'provider_5xx'
+                | 'malformed_response'
+                | 'response_oversize'
+                | 'empty_result',
+            });
+            return { created: true, reused: false, run: mapRun(failed) };
+          }
           const failureCode =
             error instanceof ExternalLlmProviderError &&
             (error.code === 'timeout_outcome_unknown' ||
@@ -736,75 +825,61 @@ export function createKnowledgeLlmRunService(input: {
             runId: replay.runId,
             failureCode,
           });
-          return { created: true, reused: false, run: mapRun(held) };
-        }
-        if (
-          !isPersistenceCompatibleExternalLlmText(providerResult.content) ||
-          Buffer.byteLength(providerResult.content, 'utf8') < 1 ||
-          Buffer.byteLength(providerResult.content, 'utf8') >
-            knowledgeLlmLimits.resultBytes
-        ) {
-          const held = await input.runPort.holdResultUnknown({
+          const visible = await input.runPort.findOwned({
             actor: options.actor,
-            auditActor: options.auditActor,
-            runId: replay.runId,
-            failureCode: 'finalization_failed',
+            runId: held.id,
           });
-          return { created: true, reused: false, run: mapRun(held) };
+          if (!visible) throw new KnowledgeLlmRunAccessError('not_found');
+          return { created: true, reused: false, run: mapRun(visible) };
+        }
+        const resultContent: unknown = providerResult.content;
+        if (!isPersistenceCompatibleExternalLlmText(resultContent)) {
+          const failed = await settleCapturedOutcome({
+            status: 'invalid',
+            failureCode: 'malformed_response',
+          });
+          return { created: true, reused: false, run: mapRun(failed) };
+        }
+        const resultBytes = Buffer.byteLength(resultContent, 'utf8');
+        if (resultBytes < 1) {
+          const failed = await settleCapturedOutcome({
+            status: 'invalid',
+            failureCode: 'empty_result',
+          });
+          return { created: true, reused: false, run: mapRun(failed) };
+        }
+        if (resultBytes > knowledgeLlmLimits.resultBytes) {
+          const failed = await settleCapturedOutcome({
+            status: 'invalid',
+            failureCode: 'response_oversize',
+          });
+          return { created: true, reused: false, run: mapRun(failed) };
         }
         if (
           providerResult.usageStatus !== 'reported' ||
           !providerResult.usage
         ) {
-          try {
-            const usageUnknown = await input.runPort.finalizeUsageUnknownResult(
-              {
-                actor: options.actor,
-                auditActor: options.auditActor,
-                runId: replay.runId,
-                userPrompt: request.userPrompt,
-                resultContent: providerResult.content,
-                failureCode:
-                  providerResult.usageStatus === 'invalid'
-                    ? 'usage_invalid'
-                    : 'usage_missing',
-              },
-            );
-            return {
-              created: true,
-              reused: false,
-              run: mapRun(usageUnknown),
-            };
-          } catch {
-            const held = await input.runPort.holdResultUnknown({
-              actor: options.actor,
-              auditActor: options.auditActor,
-              runId: replay.runId,
-              failureCode: 'finalization_failed',
-            });
-            return { created: true, reused: false, run: mapRun(held) };
-          }
-        }
-        try {
-          const completed = await input.runPort.finalizeReportedResult({
-            actor: options.actor,
-            auditActor: options.auditActor,
-            runId: replay.runId,
-            userPrompt: request.userPrompt,
-            resultContent: providerResult.content,
-            inputTokens: providerResult.usage.inputTokens,
-            outputTokens: providerResult.usage.outputTokens,
+          const usageUnknown = await settleCapturedOutcome({
+            status: 'usage_unknown',
+            normalizedContent: resultContent,
+            failureCode:
+              providerResult.usageStatus === 'invalid'
+                ? 'usage_invalid'
+                : 'usage_missing',
           });
-          return { created: true, reused: false, run: mapRun(completed) };
-        } catch {
-          const held = await input.runPort.holdResultUnknown({
-            actor: options.actor,
-            auditActor: options.auditActor,
-            runId: replay.runId,
-            failureCode: 'finalization_failed',
-          });
-          return { created: true, reused: false, run: mapRun(held) };
+          return {
+            created: true,
+            reused: false,
+            run: mapRun(usageUnknown),
+          };
         }
+        const completed = await settleCapturedOutcome({
+          status: 'valid',
+          normalizedContent: resultContent,
+          inputTokens: providerResult.usage.inputTokens,
+          outputTokens: providerResult.usage.outputTokens,
+        });
+        return { created: true, reused: false, run: mapRun(completed) };
       } catch (error) {
         translateError(error);
       }
