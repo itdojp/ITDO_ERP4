@@ -544,6 +544,8 @@ mutationする。
 
 #### provider/budget foundation contract
 
+- read-only budget previewはreservation時のauthoritative判定と同じsubject境界を使用する。active policy IDだけのcounterを表示せず、personalではuser、organizationではuserとorganizationについて、current monthly windowと重なるinactive policy versionのperiod counterおよび直近60分のreservationをsubject単位で集計する。policy、period、rolling usageは同一`RepeatableRead` snapshotで読み、soft limit、hard limit、rate limitを同じ定義で警告・停止する。current window内のhistorical periodでcurrencyまたはtimezoneがactive policyと一致しない場合は、利用可能と誤表示せずfail closedにする。
+
 - host allowlistはraw入力をUnicode case fold前にprintable ASCII検証し、IPv6 literalはURL側の角括弧を除いたcanonical表現で比較する。
 - actual input usageは予約済みconservative input estimate、actual output usageは要求したmax outputを超えてはならない。超過usageは`usage_invalid + held_maximum`として通常settlementしない。hard-limit残高へ戻した累積release counterは`NUMERIC(38,0)`のinteger micro-unitで保持する。
 

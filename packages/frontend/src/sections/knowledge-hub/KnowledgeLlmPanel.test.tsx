@@ -254,6 +254,14 @@ describe('KnowledgeLlmPanel', () => {
     expect(screen.queryByText('conversation-internal')).not.toBeInTheDocument();
   });
 
+  it('labels the combined organization budget without exposing subject identifiers', async () => {
+    renderPanel({ itemScope: 'organization', organizationId: 'org-internal' });
+    expect(
+      await screen.findByText(/適用予算（user \+ organization）/),
+    ).toBeVisible();
+    expect(screen.queryByText('org-internal')).not.toBeInTheDocument();
+  });
+
   it('selects the highest ready snapshot version even when candidate timestamps are non-monotonic', async () => {
     apiMocks.fetchKnowledgeLlmContextCandidates.mockImplementation(
       async ({ sourceType }: { sourceType: string }) => ({
@@ -700,6 +708,91 @@ describe('KnowledgeLlmPanel', () => {
     expect(apiMocks.executeKnowledgeLlmRun).toHaveBeenCalledTimes(1);
     expect(screen.getByText(/providerへ再送していません/)).toBeInTheDocument();
   });
+
+  it.each([
+    {
+      name: 'reserved budget before dispatch',
+      pending: run({
+        executionStatus: 'reserved',
+        settlementStatus: 'reserved',
+        actualInputTokens: null,
+        actualOutputTokens: null,
+        actualCostMicros: null,
+        failureCode: null,
+        result: null,
+        conversationId: null,
+        dispatchedAt: null,
+        completedAt: null,
+      }),
+      reconciled: run({
+        executionStatus: 'failed',
+        settlementStatus: 'released',
+        actualInputTokens: null,
+        actualOutputTokens: null,
+        actualCostMicros: null,
+        failureCode: 'rejected_before_dispatch',
+        result: null,
+        conversationId: null,
+        dispatchedAt: null,
+      }),
+    },
+    {
+      name: 'dispatched budget with unknown result',
+      pending: run({
+        executionStatus: 'dispatched',
+        settlementStatus: 'reserved',
+        actualInputTokens: null,
+        actualOutputTokens: null,
+        actualCostMicros: null,
+        failureCode: null,
+        result: null,
+        conversationId: null,
+        completedAt: null,
+      }),
+      reconciled: run({
+        executionStatus: 'result_unknown',
+        settlementStatus: 'held_maximum',
+        actualInputTokens: null,
+        actualOutputTokens: null,
+        actualCostMicros: null,
+        failureCode: 'finalization_failed',
+        result: null,
+        conversationId: null,
+      }),
+    },
+  ])(
+    'offers read-only reconciliation for $name',
+    async ({ pending, reconciled }) => {
+      apiMocks.executeKnowledgeLlmRun.mockResolvedValue({
+        created: true,
+        reused: false,
+        run: pending,
+      });
+      apiMocks.reconcileKnowledgeLlmRun.mockResolvedValue(reconciled);
+      renderPanel();
+      await previewDefaultSource();
+      fireEvent.click(
+        screen.getByRole('checkbox', {
+          name: /上記のexact contentだけを外部providerへ送信/,
+        }),
+      );
+      fireEvent.click(
+        screen.getByRole('button', { name: '明示confirmして1回だけ実行' }),
+      );
+
+      expect(await screen.findByText(/実行状態は確定待ちです/)).toBeVisible();
+      fireEvent.click(
+        screen.getByRole('button', { name: '保存済み証跡で再照合' }),
+      );
+      await waitFor(() => {
+        expect(apiMocks.reconcileKnowledgeLlmRun).toHaveBeenCalledTimes(1);
+      });
+      expect(apiMocks.executeKnowledgeLlmRun).toHaveBeenCalledTimes(1);
+      expect(
+        screen.getByText(/providerへ再送していません/),
+      ).toBeInTheDocument();
+    },
+  );
 
   it('drops a stale bootstrap response after the selected item changes', async () => {
     let resolveFirst: ((value: typeof catalog) => void) | undefined;

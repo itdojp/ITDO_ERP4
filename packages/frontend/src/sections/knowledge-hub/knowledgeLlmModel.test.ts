@@ -116,5 +116,19 @@ describe('knowledgeLlmModel', () => {
         executionStatus: 'result_unknown',
       }),
     ).toBe(true);
+    expect(
+      knowledgeLlmRunNeedsReconciliation({
+        ...run,
+        executionStatus: 'reserved',
+        settlementStatus: 'reserved',
+      }),
+    ).toBe(true);
+    expect(
+      knowledgeLlmRunNeedsReconciliation({
+        ...run,
+        executionStatus: 'dispatched',
+        settlementStatus: 'reserved',
+      }),
+    ).toBe(true);
   });
 });

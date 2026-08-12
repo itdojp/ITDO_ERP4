@@ -217,6 +217,9 @@ export function formatKnowledgeLlmCost(value: string | null, currency: string) {
 export function knowledgeLlmRunNeedsReconciliation(run: KnowledgeLlmRun) {
   return (
     run.executionStatus === 'result_unknown' ||
-    run.settlementStatus === 'held_maximum'
+    run.settlementStatus === 'held_maximum' ||
+    (run.settlementStatus === 'reserved' &&
+      (run.executionStatus === 'reserved' ||
+        run.executionStatus === 'dispatched'))
   );
 }

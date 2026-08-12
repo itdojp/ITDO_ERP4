@@ -639,7 +639,9 @@ export function KnowledgeLlmPanel(props: {
           disabled={interactionBusy}
         />
         <p>
-          user budget: {budget?.configured ? '設定済み' : '未設定'} / soft:{' '}
+          適用予算（
+          {props.itemScope === 'organization' ? 'user + organization' : 'user'}
+          ）: {budget?.configured ? '設定済み' : '未設定'} / soft:{' '}
           {budget?.softLimitWarning ? '警告あり' : '警告なし'} / hard:{' '}
           {budget?.hardLimitBlocked ? '停止' : '利用可能'} / rate:{' '}
           {budget?.rateBlocked ? '停止' : '利用可能'}
@@ -742,6 +744,13 @@ export function KnowledgeLlmPanel(props: {
                 <Alert variant="warning">
                   provider結果は不明です。自動retryや別provider
                   fallbackは行いません。
+                </Alert>
+              ) : null}
+              {run.settlementStatus === 'reserved' &&
+              (run.executionStatus === 'reserved' ||
+                run.executionStatus === 'dispatched') ? (
+                <Alert variant="warning">
+                  実行状態は確定待ちです。再照合はgrace期間後にbudget状態を収束させ、providerへ再送しません。
                 </Alert>
               ) : null}
               {run.result ? (

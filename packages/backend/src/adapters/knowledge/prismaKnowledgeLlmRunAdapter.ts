@@ -11,7 +11,6 @@ import {
   ceilCostMicros,
   knowledgeLlmLimits,
 } from '../../application/knowledge/knowledgeLlmConfig.js';
-import { knowledgeLlmMonthlyPeriod } from '../../application/knowledge/knowledgeLlmBudgetUseCases.js';
 import {
   KnowledgeLlmRunAccessError,
   type KnowledgeLlmBudgetPreview,
@@ -28,11 +27,12 @@ import {
 import { prisma } from '../../services/db.js';
 import { buildKnowledgeVisibilityWhere } from './prismaKnowledgeItemAdapter.js';
 import { buildKnowledgeLlmSynthesisVersionVisibilityWhere } from './prismaKnowledgeConversationVisibility.js';
-import {
-  knowledgeLlmBudgetSubjects,
-  withKnowledgeReadSnapshot,
-} from './prismaKnowledgeLlmAdapterSupport.js';
+import { withKnowledgeReadSnapshot } from './prismaKnowledgeLlmAdapterSupport.js';
 import { PrismaKnowledgeLlmAuditWriter } from './prismaKnowledgeLlmAuditAdapter.js';
+import {
+  loadKnowledgeLlmBudgetPreview,
+  type KnowledgeLlmBudgetPreviewClient,
+} from './prismaKnowledgeLlmBudgetPreview.js';
 import {
   markKnowledgeLlmRunDispatched,
   reconcileKnowledgeLlmHeldBudget,
@@ -60,14 +60,10 @@ type ContextClient = Pick<
   | 'knowledgeThreadPromotionMessage'
 >;
 type ReadClient = ContextClient &
+  KnowledgeLlmBudgetPreviewClient &
   Pick<
     Transaction,
-    | 'knowledgeLlmBudgetPolicy'
-    | 'knowledgeLlmBudgetPeriod'
-    | 'knowledgeLlmReservation'
-    | 'knowledgeLlmRequest'
-    | 'knowledgeLlmRun'
-    | 'knowledgeLlmProviderOutcome'
+    'knowledgeLlmRequest' | 'knowledgeLlmRun' | 'knowledgeLlmProviderOutcome'
   >;
 
 const serializableAttempts = knowledgeLlmLimits.serializableAttempts;
@@ -793,101 +789,9 @@ export class PrismaKnowledgeLlmRunAdapter implements KnowledgeLlmRunPort {
   async budgetPreview(
     input: Parameters<KnowledgeLlmRunPort['budgetPreview']>[0],
   ): Promise<KnowledgeLlmBudgetPreview> {
-    const expected = knowledgeLlmBudgetSubjects(input);
-    const policies = await this.readClient.knowledgeLlmBudgetPolicy.findMany({
-      where: {
-        active: true,
-        OR: expected.map((subject) => ({
-          subjectType: subject.subjectType,
-          subjectId: subject.subjectId,
-        })),
-      },
-      orderBy: [{ subjectType: 'asc' }, { subjectId: 'asc' }],
-    });
-    if (policies.length !== expected.length) {
-      return {
-        configured: false,
-        policyCount: policies.length,
-        currency: null,
-        softLimitWarning: false,
-        hardLimitBlocked: true,
-        rateBlocked: false,
-        subjects: [],
-      };
-    }
-    const currencies = new Set(policies.map((policy) => policy.currency));
-    if (currencies.size !== 1) {
-      return {
-        configured: false,
-        policyCount: policies.length,
-        currency: null,
-        softLimitWarning: false,
-        hardLimitBlocked: true,
-        rateBlocked: false,
-        subjects: [],
-      };
-    }
-    const oneHourAgo = new Date(input.now.getTime() - 60 * 60 * 1000);
-    const subjects = await Promise.all(
-      policies.map(async (policy) => {
-        const periodWindow = knowledgeLlmMonthlyPeriod(
-          input.now,
-          policy.timezone,
-        );
-        const period =
-          await this.readClient.knowledgeLlmBudgetPeriod.findUnique({
-            where: {
-              policyId_periodStartUtc: {
-                policyId: policy.id,
-                periodStartUtc: periodWindow.start,
-              },
-            },
-          });
-        const acceptedRequestsLastHour =
-          await this.readClient.knowledgeLlmReservation.count({
-            where: {
-              budgetPeriod: { policyId: policy.id },
-              accountedAt: { gte: oneHourAgo, lte: input.now },
-            },
-          });
-        return {
-          subjectType: policy.subjectType,
-          currency: policy.currency,
-          softLimitMicros: policy.softLimitMicros,
-          hardLimitMicros: policy.hardLimitMicros,
-          activeReservedMicros: period?.activeReservedMicros ?? 0n,
-          settledActualMicros: period?.settledActualMicros ?? 0n,
-          heldMaximumMicros: period?.heldMaximumMicros ?? 0n,
-          requestsPerHour: policy.requestsPerHour,
-          acceptedRequestsLastHour,
-        };
-      }),
+    return withKnowledgeReadSnapshot(this.host, this.readClient, (client) =>
+      loadKnowledgeLlmBudgetPreview(client, input),
     );
-    const afterReservation = subjects.map(
-      (subject) =>
-        subject.activeReservedMicros +
-        subject.settledActualMicros +
-        subject.heldMaximumMicros +
-        input.maximumCostMicros,
-    );
-    return {
-      configured: true,
-      policyCount: subjects.length,
-      currency: policies[0]?.currency ?? null,
-      softLimitWarning: subjects.some(
-        (subject, index) =>
-          (afterReservation[index] ?? 0n) > subject.softLimitMicros,
-      ),
-      hardLimitBlocked: subjects.some(
-        (subject, index) =>
-          (afterReservation[index] ?? 0n) > subject.hardLimitMicros,
-      ),
-      rateBlocked: subjects.some(
-        (subject) =>
-          subject.acceptedRequestsLastHour >= subject.requestsPerHour,
-      ),
-      subjects,
-    };
   }
 
   async writePreviewAudit(

@@ -26,6 +26,8 @@
 | 同一itemの親画面再読込中もin-flight runを保持 | PASS | deterministic component test |
 | read-only reconciliation | PASS | 保存済みoutcomeだけを照合するfocused E2E |
 | hard limit blockとprovider request 0件 | PASS | synthetic user policy fixture |
+| policy version更新後のbudget/rate preview継続 | PASS | user／organization subject単位のunit test、PostgreSQL 15でinactive versionの月次counter／rolling rateを継続集計 |
+| stale reserved／dispatched runの再照合導線 | PASS | model／component test。provider dispatchは1回のまま、grace期間後のlocal accounting収束だけを実行 |
 | outsider 404とresponse allowlist | PASS | direct API negative E2E、frontend normalization test |
 | 375px responsive layout／semantic label | PASS | component test、sanitized screenshot |
 

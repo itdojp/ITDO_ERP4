@@ -161,12 +161,13 @@ promote後のSynthesis本文とimmutable selected-message snapshotはdestination
 
 実行中は同じintentとrequest keyを保護するため、Knowledge item／tab切替とInbox更新は一時的に無効になります。preview tokenとrequest keyは現在のcomponent memoryだけに保持され、localStorage、URL、画面へ保存されません。itemまたはtabを切り替えると、previewと表示中のprovider結果を破棄します。
 
-| 表示状態 | 意味 | 操作 |
-| --- | --- | --- |
-| `結果確定 / 実績精算済み` | 有効な本文とusageを保存し、actual costを精算済み | provenanceとKnowledge conversation保存を確認する |
-| `結果確定 / 最大予約額を保持` | 本文は保存されたがusage証跡が欠落または不正 | 自動再送せず、運用証跡がある場合だけ再照合する |
-| `結果不明 / 最大予約額を保持` | dispatch後の結果を安全に確定できない | `保存済み証跡で再照合`だけを実行する。再送はしない |
-| hard／rate block | provider dispatch前に予算またはrate guardで拒否 | 管理者にpolicyを確認し、新しいpreviewから再判断する |
+| 表示状態                                              | 意味                                             | 操作                                                                                                                                          |
+| ----------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `結果確定 / 実績精算済み`                             | 有効な本文とusageを保存し、actual costを精算済み | provenanceとKnowledge conversation保存を確認する                                                                                              |
+| `結果確定 / 最大予約額を保持`                         | 本文は保存されたがusage証跡が欠落または不正      | 自動再送せず、運用証跡がある場合だけ再照合する                                                                                                |
+| `結果不明 / 最大予約額を保持`                         | dispatch後の結果を安全に確定できない             | `保存済み証跡で再照合`だけを実行する。再送はしない                                                                                            |
+| `予算予約済み`または`送信済み・結果確認中` / `予約中` | grace期間中またはlocal finalizationが未完了      | grace期間後に`保存済み証跡で再照合`を実行する。providerへ再送せず、未dispatchなら予約を解放し、dispatch済みで結果不明なら最大予約額を保持する |
+| hard／rate block                                      | provider dispatch前に予算またはrate guardで拒否  | 管理者にpolicyを確認し、新しいpreviewから再判断する                                                                                           |
 
 `保存済み証跡で再照合`はprovider requestを再送しません。安全な保存済みoutcomeがない場合は結果不明と最大予約額保持を維持します。同じ操作をやり直す場合も自動retryや別provider fallbackは行わず、新しいpreviewと明示confirmが必要です。API key、base URL、provider raw error、source internal IDはUIへ表示しません。
 

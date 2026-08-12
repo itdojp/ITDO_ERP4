@@ -71,6 +71,134 @@ test('context resolution, request replay, and run detail use one repeatable-read
   ]);
 });
 
+test('budget preview carries monthly and rolling usage across policy versions by subject', async () => {
+  const isolationLevels = [];
+  const periodQueries = [];
+  const reservationQueries = [];
+  const policies = [
+    {
+      id: 'active-user-v2',
+      subjectType: 'user',
+      subjectId: actor.userId,
+      currency: 'JPY',
+      timezone: 'Asia/Tokyo',
+      softLimitMicros: 90n,
+      hardLimitMicros: 100n,
+      requestsPerHour: 2,
+      version: 2,
+      active: true,
+    },
+    {
+      id: 'active-org-v2',
+      subjectType: 'organization',
+      subjectId: actor.organizationId,
+      currency: 'JPY',
+      timezone: 'Asia/Tokyo',
+      softLimitMicros: 90n,
+      hardLimitMicros: 100n,
+      requestsPerHour: 4,
+      version: 2,
+      active: true,
+    },
+  ];
+  const transaction = {
+    knowledgeLlmBudgetPolicy: {
+      findMany: async () => policies,
+    },
+    knowledgeLlmBudgetPeriod: {
+      findMany: async (query) => {
+        periodQueries.push(query);
+        const subjectType = query.where.policy.is.subjectType;
+        return subjectType === 'user'
+          ? [
+              {
+                currency: 'JPY',
+                timezone: 'Asia/Tokyo',
+                activeReservedMicros: 5n,
+                settledActualMicros: 0n,
+                heldMaximumMicros: 0n,
+              },
+              {
+                currency: 'JPY',
+                timezone: 'Asia/Tokyo',
+                activeReservedMicros: 0n,
+                settledActualMicros: 90n,
+                heldMaximumMicros: 0n,
+              },
+            ]
+          : [
+              {
+                currency: 'JPY',
+                timezone: 'Asia/Tokyo',
+                activeReservedMicros: 10n,
+                settledActualMicros: 40n,
+                heldMaximumMicros: 10n,
+              },
+            ];
+      },
+    },
+    knowledgeLlmReservation: {
+      count: async (query) => {
+        reservationQueries.push(query);
+        return query.where.budgetPeriod.is.policy.is.subjectType === 'user'
+          ? 2
+          : 1;
+      },
+    },
+  };
+  const adapter = new PrismaKnowledgeLlmRunAdapter(
+    {
+      $transaction: async (work, options) => {
+        isolationLevels.push(options?.isolationLevel);
+        return work(transaction);
+      },
+    },
+    transaction,
+    () => new Date('2026-08-13T00:00:00.000Z'),
+  );
+
+  const preview = await adapter.budgetPreview({
+    actor,
+    scope: 'organization',
+    organizationId: actor.organizationId,
+    maximumCostMicros: 10n,
+    now: new Date('2026-08-13T00:00:00.000Z'),
+  });
+
+  assert.deepEqual(isolationLevels, ['RepeatableRead']);
+  assert.equal(preview.configured, true);
+  assert.equal(preview.softLimitWarning, true);
+  assert.equal(preview.hardLimitBlocked, true);
+  assert.equal(preview.rateBlocked, true);
+  assert.deepEqual(
+    preview.subjects.map((subject) => ({
+      subjectType: subject.subjectType,
+      committed:
+        subject.activeReservedMicros +
+        subject.settledActualMicros +
+        subject.heldMaximumMicros,
+      acceptedRequestsLastHour: subject.acceptedRequestsLastHour,
+    })),
+    [
+      {
+        subjectType: 'user',
+        committed: 95n,
+        acceptedRequestsLastHour: 2,
+      },
+      {
+        subjectType: 'organization',
+        committed: 60n,
+        acceptedRequestsLastHour: 1,
+      },
+    ],
+  );
+  assert.equal(periodQueries.length, 2);
+  assert.equal(reservationQueries.length, 2);
+  for (const query of [...periodQueries, ...reservationQueries]) {
+    assert.doesNotMatch(JSON.stringify(query), /active-user-v2|active-org-v2/);
+  }
+});
+
 test('conversation turn source resolution excludes LLM result conversations from item-based visibility', async () => {
   let turnPredicate;
   const adapter = new PrismaKnowledgeLlmRunAdapter(
