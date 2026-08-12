@@ -1,8 +1,12 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { isIP } from 'node:net';
+import { BlockList, isIP } from 'node:net';
 import { Readable } from 'node:stream';
+import {
+  canonicalExternalHosts,
+  canonicalExternalUrl,
+} from './externalHostIdentity.js';
 
 export type DnsLookupResult = Array<{ address: string; family?: number }>;
 
@@ -22,23 +26,29 @@ export type SafeHttpOptions = {
 
 export class SafeHttpError extends Error {
   code: string;
+  status: number | null;
 
-  constructor(code: string, message?: string) {
+  constructor(code: string, message?: string, status: number | null = null) {
     super(message || code);
     this.code = code;
+    this.status = status;
   }
 }
 
 function normalizeAllowedHosts(raw?: Iterable<string>) {
   if (!raw) return new Set<string>();
-  const hosts = new Set<string>();
-  for (const value of raw) {
-    const trimmed = String(value).trim().toLowerCase();
-    if (trimmed) hosts.add(trimmed);
-  }
-  return hosts;
+  const hosts = canonicalExternalHosts([...raw], 100);
+  if (hosts === null) throw new SafeHttpError('host_not_allowed');
+  return new Set(hosts);
 }
 
+/**
+ * Non-global special-purpose ranges are synchronized from the IANA IPv4 and
+ * IPv6 Special-Purpose Address Registries (last updated 2025-10-09). When
+ * either registry changes, this list and its literal/DNS regression tests must
+ * be reviewed together. Globally reachable 192.0.0.9 and 192.0.0.10 remain
+ * explicit exceptions to their otherwise non-global parent allocation.
+ */
 function isPrivateIPv4(ip: string): boolean {
   const parts = ip.split('.').map((value) => Number(value));
   if (parts.length !== 4) return true;
@@ -55,7 +65,9 @@ function isPrivateIPv4(ip: string): boolean {
   if (a === 169 && b === 254) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 192 && b === 168) return true;
+  if (a === 192 && b === 0 && c === 0) return d !== 9 && d !== 10;
   if (a === 192 && b === 0 && c === 2) return true;
+  if (a === 192 && b === 88 && c === 99) return true;
   if (a === 100 && b >= 64 && b <= 127) return true;
   if (a === 198 && (b === 18 || b === 19)) return true;
   if (a === 198 && b === 51 && c === 100) return true;
@@ -64,19 +76,43 @@ function isPrivateIPv4(ip: string): boolean {
   return false;
 }
 
+const blockedIpv6 = new BlockList();
+for (const [network, prefix] of [
+  ['::', 128],
+  ['::1', 128],
+  ['::', 96],
+  // Reject every IPv4-mapped address. Node may otherwise translate a compact
+  // mapped literal such as ::ffff:7f00:1 into a loopback socket destination.
+  ['::ffff:0:0', 96],
+  ['64:ff9b::', 96],
+  ['64:ff9b:1::', 48],
+  ['100::', 64],
+  ['100:0:0:1::', 64],
+  // Fail closed for the IETF protocol-assignment parent. Some narrowly scoped
+  // anycast exceptions are globally reachable, but ERP4 provider traffic does
+  // not rely on special-purpose destinations.
+  ['2001::', 23],
+  ['2001:2::', 48],
+  ['2001:10::', 28],
+  ['2001:20::', 28],
+  ['2001:db8::', 32],
+  ['2002::', 16],
+  ['3fff::', 20],
+  ['5f00::', 16],
+  ['fc00::', 7],
+  ['fe80::', 10],
+  ['fec0::', 10],
+  ['ff00::', 8],
+] as const) {
+  blockedIpv6.addSubnet(network, prefix, 'ipv6');
+}
+
 function isPrivateIPv6(ip: string): boolean {
-  const normalized = ip.toLowerCase();
-  if (normalized === '::' || normalized === '::1') return true;
-  if (normalized.startsWith('fe80:')) return true;
-  if (normalized.startsWith('fec0:')) return true;
-  if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
-  if (normalized.startsWith('ff')) return true;
-  if (normalized.startsWith('2001:db8')) return true;
-  if (normalized.startsWith('::ffff:')) {
-    const tail = normalized.slice('::ffff:'.length);
-    if (isIP(tail) === 4) return isPrivateIPv4(tail);
+  try {
+    return blockedIpv6.check(ip, 'ipv6');
+  } catch {
+    return true;
   }
-  return false;
 }
 
 function isPrivateAddress(address: string): boolean {
@@ -89,9 +125,13 @@ function isPrivateAddress(address: string): boolean {
 function normalizeResolvedAddresses(resolved: DnsLookupResult) {
   return resolved.map((entry) => {
     const version = isIP(entry.address);
+    const declaredFamily = entry.family ?? version;
     return {
       address: entry.address,
-      family: entry.family || (version === 6 ? 6 : version === 4 ? 4 : 0),
+      family:
+        (version === 4 || version === 6) && declaredFamily === version
+          ? version
+          : 0,
     };
   });
 }
@@ -128,6 +168,30 @@ async function ensurePublicHost(
   return normalized;
 }
 
+async function resolvePermittedHost(
+  hostname: string,
+  lookupImpl: (hostname: string) => Promise<DnsLookupResult>,
+): Promise<DnsLookupResult> {
+  const literalVersion = isIP(hostname);
+  if (literalVersion) {
+    return [{ address: hostname, family: literalVersion }];
+  }
+  let resolved: DnsLookupResult;
+  try {
+    resolved = await lookupImpl(hostname);
+  } catch {
+    throw new SafeHttpError('dns_lookup_failed');
+  }
+  if (!Array.isArray(resolved) || resolved.length === 0) {
+    throw new SafeHttpError('dns_lookup_failed');
+  }
+  const normalized = normalizeResolvedAddresses(resolved);
+  if (normalized.some((entry) => !entry.family)) {
+    throw new SafeHttpError('dns_lookup_failed');
+  }
+  return normalized;
+}
+
 function resolveDnsLookup(
   custom?: (hostname: string) => Promise<DnsLookupResult>,
 ) {
@@ -142,34 +206,26 @@ async function validateExternalUrlForFetch(
   rawUrl: string,
   options: SafeHttpOptions = {},
 ): Promise<ValidatedExternalUrl> {
-  let url: URL;
-  try {
-    url = new URL(rawUrl);
-  } catch {
+  const canonical = canonicalExternalUrl(rawUrl);
+  if (canonical === null) {
     throw new SafeHttpError('invalid_url');
   }
+  const { url, hostname } = canonical;
   const protocol = url.protocol.toLowerCase();
   const allowHttp = options.allowHttp === true;
   if (protocol !== 'https:' && !(allowHttp && protocol === 'http:')) {
     throw new SafeHttpError('insecure_scheme');
   }
-  const hostname = url.hostname.toLowerCase();
-  if (!hostname) {
-    throw new SafeHttpError('missing_hostname');
-  }
-
   const allowedHosts = normalizeAllowedHosts(options.allowedHosts);
   if (allowedHosts.size > 0 && !allowedHosts.has(hostname)) {
     throw new SafeHttpError('host_not_allowed');
   }
 
+  const lookup = resolveDnsLookup(options.dnsLookupImpl);
   const pinnedAddresses =
     options.allowPrivateIp === true
-      ? []
-      : await ensurePublicHost(
-          hostname,
-          resolveDnsLookup(options.dnsLookupImpl),
-        );
+      ? await resolvePermittedHost(hostname, lookup)
+      : await ensurePublicHost(hostname, lookup);
   return { url, pinnedAddresses };
 }
 
@@ -181,28 +237,51 @@ export async function validateExternalUrl(
   return url;
 }
 
-function pinnedAddressForLookup(pinnedAddresses: DnsLookupResult) {
-  const preferred =
-    pinnedAddresses.find((entry) => entry.family === 4) || pinnedAddresses[0];
-  if (!preferred?.address || !preferred.family) {
-    return null;
-  }
-  return preferred;
-}
-
 export function createPinnedLookupForTest(pinnedAddresses: DnsLookupResult) {
-  const pinned = pinnedAddressForLookup(pinnedAddresses);
-  if (!pinned) return undefined;
+  const normalized = normalizeResolvedAddresses(pinnedAddresses).filter(
+    (entry) => entry.family === 4 || entry.family === 6,
+  );
+  if (normalized.length === 0) return undefined;
   return (
     _hostname: string,
-    _options: unknown,
+    options: number | { all?: boolean; family?: number | string },
     callback: (
-      err: NodeJS.ErrnoException | null,
-      address: string,
-      family: number,
+      error: NodeJS.ErrnoException | null,
+      address?: string | DnsLookupResult,
+      family?: number,
     ) => void,
   ) => {
-    callback(null, pinned.address, pinned.family || 4);
+    const requestedFamily =
+      typeof options === 'number'
+        ? options
+        : options?.family === 'IPv4'
+          ? 4
+          : options?.family === 'IPv6'
+            ? 6
+            : Number(options?.family || 0);
+    const matching = requestedFamily
+      ? normalized.filter((entry) => entry.family === requestedFamily)
+      : normalized;
+    if (matching.length === 0) {
+      const error = new Error(
+        'pinned address family unavailable',
+      ) as NodeJS.ErrnoException;
+      error.code = 'EAI_ADDRFAMILY';
+      callback(error);
+      return;
+    }
+    if (typeof options === 'object' && options?.all === true) {
+      callback(
+        null,
+        matching.map((entry) => ({
+          address: entry.address,
+          family: entry.family,
+        })),
+      );
+      return;
+    }
+    const pinned = matching.find((entry) => entry.family === 4) ?? matching[0];
+    callback(null, pinned.address, pinned.family);
   };
 }
 
@@ -243,17 +322,36 @@ function responseHeadersFromNode(
   return output;
 }
 
+async function withPreDispatchTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(
+      () => reject(new SafeHttpError('pre_dispatch_timeout')),
+      timeoutMs,
+    );
+  });
+  try {
+    return await Promise.race([operation, expired]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 async function pinnedRequestFetch(
   url: URL,
   init: RequestInit,
   options: {
+    body: Buffer | undefined;
     pinnedAddresses: DnsLookupResult;
     timeoutMs: number;
     headers: Headers;
     onResponseSettled: () => void;
   },
 ) {
-  const body = await requestBodyToBuffer(init.body);
+  const body = options.body;
   const requestImpl = url.protocol === 'http:' ? httpRequest : httpsRequest;
   const lookup = createPinnedLookupForTest(options.pinnedAddresses);
 
@@ -294,7 +392,7 @@ async function pinnedRequestFetch(
         const status = response.statusCode || 0;
         if (status >= 300 && status < 400) {
           response.destroy();
-          reject(new SafeHttpError('redirect_blocked'));
+          reject(new SafeHttpError('redirect_blocked', undefined, status));
           return;
         }
         try {
@@ -343,58 +441,101 @@ async function pinnedRequestFetch(
   });
 }
 
+export type PreparedSafeHttpRequest = {
+  /** A prepared request is single-use so callers cannot accidentally retry. */
+  dispatch(): Promise<Response>;
+};
+
+export async function prepareSafeFetch(
+  rawUrl: string,
+  init: RequestInit = {},
+  options: SafeHttpOptions = {},
+): Promise<PreparedSafeHttpRequest> {
+  const timeoutMs = Number.isFinite(options.timeoutMs)
+    ? Math.max(1, Math.floor(options.timeoutMs as number))
+    : 5000;
+  // Snapshot caller-owned inputs before the first await. The prepared request
+  // must not change if its source RequestInit/options objects are mutated.
+  const preparedOptions: SafeHttpOptions = {
+    ...options,
+    allowedHosts:
+      options.allowedHosts === undefined
+        ? undefined
+        : [...options.allowedHosts],
+  };
+  const bodyInput = init.body;
+  const method = init.method;
+  const callerSignal = init.signal;
+  const initialHeaders = new Headers(init.headers || {});
+  const [{ url: validatedUrl, pinnedAddresses }, body] =
+    await withPreDispatchTimeout(
+      Promise.all([
+        validateExternalUrlForFetch(rawUrl, preparedOptions),
+        requestBodyToBuffer(bodyInput),
+      ]),
+      timeoutMs,
+    );
+  const userAgent = (preparedOptions.userAgent || '').trim() || 'ITDO_ERP4/0.1';
+  const headers = initialHeaders;
+  if (!headers.has('User-Agent')) {
+    headers.set('User-Agent', userAgent);
+  }
+  let dispatched = false;
+  return {
+    async dispatch() {
+      if (dispatched) throw new SafeHttpError('request_already_dispatched');
+      dispatched = true;
+      const controller = new AbortController();
+      const abortFromCaller = () => {
+        controller.abort();
+      };
+      if (callerSignal) {
+        if (callerSignal.aborted) {
+          abortFromCaller();
+        } else {
+          callerSignal.addEventListener('abort', abortFromCaller, {
+            once: true,
+          });
+        }
+      }
+      // Provider/network timeout starts only when dispatch starts. DNS/body
+      // preparation has its own bounded pre-dispatch timeout above.
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      timer.unref?.();
+      let cleanedUp = false;
+      const cleanup = () => {
+        if (cleanedUp) return;
+        cleanedUp = true;
+        clearTimeout(timer);
+        if (callerSignal) {
+          callerSignal.removeEventListener('abort', abortFromCaller);
+        }
+      };
+      try {
+        return await pinnedRequestFetch(
+          validatedUrl,
+          { method, signal: controller.signal },
+          {
+            body,
+            pinnedAddresses,
+            timeoutMs,
+            headers,
+            onResponseSettled: cleanup,
+          },
+        );
+      } catch (error) {
+        cleanup();
+        throw error;
+      }
+    },
+  };
+}
+
 export async function safeFetch(
   rawUrl: string,
   init: RequestInit = {},
   options: SafeHttpOptions = {},
 ) {
-  const { url: validatedUrl, pinnedAddresses } =
-    await validateExternalUrlForFetch(rawUrl, options);
-  const timeoutMs = Number.isFinite(options.timeoutMs)
-    ? Math.max(1, Math.floor(options.timeoutMs as number))
-    : 5000;
-  const userAgent = (options.userAgent || '').trim() || 'ITDO_ERP4/0.1';
-
-  const controller = new AbortController();
-  const callerSignal = init.signal;
-  const abortFromCaller = () => {
-    controller.abort();
-  };
-  if (callerSignal) {
-    if (callerSignal.aborted) {
-      abortFromCaller();
-    } else {
-      callerSignal.addEventListener('abort', abortFromCaller, { once: true });
-    }
-  }
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  timer.unref?.();
-  let cleanedUp = false;
-  const cleanup = () => {
-    if (cleanedUp) return;
-    cleanedUp = true;
-    clearTimeout(timer);
-    if (callerSignal) {
-      callerSignal.removeEventListener('abort', abortFromCaller);
-    }
-  };
-  try {
-    const headers = new Headers(init.headers || {});
-    if (!headers.has('User-Agent')) {
-      headers.set('User-Agent', userAgent);
-    }
-    return await pinnedRequestFetch(
-      validatedUrl,
-      { ...init, signal: controller.signal },
-      {
-        pinnedAddresses,
-        timeoutMs,
-        headers,
-        onResponseSettled: cleanup,
-      },
-    );
-  } catch (error) {
-    cleanup();
-    throw error;
-  }
+  const prepared = await prepareSafeFetch(rawUrl, init, options);
+  return prepared.dispatch();
 }

@@ -49,6 +49,7 @@ test('summarizeWithExternalLlm blocks private endpoint by default', async () => 
       CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
       CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
       CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://127.0.0.1/v1',
+      CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: '127.0.0.1',
       CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: '',
     },
     async () => {
@@ -58,6 +59,167 @@ test('summarizeWithExternalLlm blocks private endpoint by default', async () => 
       );
     },
   );
+});
+
+test('getChatExternalLlmConfig preserves the default OpenAI destination allowlist', async () => {
+  const { getChatExternalLlmConfig } =
+    await import('../dist/services/chatExternalLlm.js');
+  await withEnv(
+    {
+      CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+      CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+      CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: null,
+      CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: null,
+      CHAT_EXTERNAL_LLM_ALLOW_HTTP: null,
+      CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: null,
+      NODE_ENV: 'development',
+    },
+    async () => {
+      const config = getChatExternalLlmConfig();
+      assert.equal(config.provider, 'openai');
+      assert.deepEqual(config.allowedHosts, ['api.openai.com']);
+      assert.equal(config.allowHttp, false);
+      assert.equal(config.allowPrivateIp, false);
+    },
+  );
+});
+
+test('getChatExternalLlmConfig treats a non-standard OpenAI port as a custom destination', async () => {
+  const { getChatExternalLlmConfig } =
+    await import('../dist/services/chatExternalLlm.js');
+  await withEnv(
+    {
+      CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+      CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+      CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://api.openai.com:444/v1',
+      CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: null,
+      CHAT_EXTERNAL_LLM_ALLOW_HTTP: null,
+      CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: null,
+      NODE_ENV: 'development',
+    },
+    async () => {
+      assert.throws(
+        () => getChatExternalLlmConfig(),
+        /CHAT_EXTERNAL_LLM_ALLOWED_HOSTS/,
+      );
+    },
+  );
+
+  await withEnv(
+    {
+      CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+      CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+      CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://api.openai.com:443/v1',
+      CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: null,
+      CHAT_EXTERNAL_LLM_ALLOW_HTTP: null,
+      CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: null,
+      NODE_ENV: 'development',
+    },
+    async () => {
+      const config = getChatExternalLlmConfig();
+      assert.equal(config.provider, 'openai');
+      assert.deepEqual(config.allowedHosts, ['api.openai.com']);
+    },
+  );
+});
+
+test('getChatExternalLlmConfig rejects a custom destination without an independent allowlist', async () => {
+  const { getChatExternalLlmConfig } =
+    await import('../dist/services/chatExternalLlm.js');
+  await withEnv(
+    {
+      CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+      CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+      CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://provider.example/v1',
+      CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: null,
+      CHAT_EXTERNAL_LLM_ALLOW_HTTP: null,
+      CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: null,
+      NODE_ENV: 'development',
+    },
+    async () => {
+      assert.throws(
+        () => getChatExternalLlmConfig(),
+        /CHAT_EXTERNAL_LLM_ALLOWED_HOSTS/,
+      );
+    },
+  );
+});
+
+test('getChatExternalLlmConfig rejects malformed or duplicate allowlist entries', async () => {
+  const { getChatExternalLlmConfig } =
+    await import('../dist/services/chatExternalLlm.js');
+  for (const allowedHosts of [
+    'provider.example,bad host',
+    'provider.example,provider.example',
+    'provider.example,.hidden.example',
+    'K.example',
+  ]) {
+    assert.throws(
+      () =>
+        getChatExternalLlmConfig({
+          CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+          CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+          CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://provider.example/v1',
+          CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: allowedHosts,
+        }),
+      /CHAT_EXTERNAL_LLM_ALLOWED_HOSTS/,
+    );
+  }
+});
+
+test('getChatExternalLlmConfig accepts canonical unbracketed IPv6 allowlist entries', async () => {
+  const { getChatExternalLlmConfig } =
+    await import('../dist/services/chatExternalLlm.js');
+  const config = getChatExternalLlmConfig({
+    CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+    CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+    CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://[2606:4700:4700::1111]/v1',
+    CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: '2606:4700:4700::1111',
+  });
+  assert.equal(config.provider, 'openai');
+  assert.deepEqual(config.allowedHosts, ['2606:4700:4700::1111']);
+});
+
+test('getChatExternalLlmConfig rejects a raw Unicode destination before URL normalization', async () => {
+  const { getChatExternalLlmConfig } =
+    await import('../dist/services/chatExternalLlm.js');
+  assert.throws(
+    () =>
+      getChatExternalLlmConfig({
+        CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+        CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+        CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://K.example/v1',
+        CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: 'k.example',
+      }),
+    /CHAT_EXTERNAL_LLM_OPENAI_BASE_URL/,
+  );
+});
+
+test('getChatExternalLlmConfig rejects unsafe production transport overrides', async () => {
+  const { getChatExternalLlmConfig } =
+    await import('../dist/services/chatExternalLlm.js');
+  for (const unsafe of [
+    { CHAT_EXTERNAL_LLM_ALLOW_HTTP: 'true', NODE_ENV: ' Production ' },
+    { CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: 'true', NODE_ENV: 'PRODUCTION' },
+  ]) {
+    await withEnv(
+      {
+        CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+        CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+        CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://provider.example/v1',
+        CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: 'provider.example',
+        CHAT_EXTERNAL_LLM_ALLOW_HTTP: null,
+        CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: null,
+        ...unsafe,
+      },
+      async () => {
+        assert.throws(
+          () => getChatExternalLlmConfig(),
+          /CHAT_EXTERNAL_LLM_ALLOW_(?:HTTP|PRIVATE_IP)/,
+        );
+      },
+    );
+  }
 });
 
 test('summarizeWithExternalLlm uses guarded fetch for allowed host', async () => {
@@ -95,13 +257,45 @@ test('summarizeWithExternalLlm uses guarded fetch for allowed host', async () =>
   );
 });
 
-test('summarizeWithExternalLlm redacts bounded provider error diagnostics', async () => {
+test('summarizeWithExternalLlm retains the historical response limit above the Knowledge bound', async () => {
+  const { summarizeWithExternalLlm } =
+    await import('../dist/services/chatExternalLlm.js');
+  const summary = `- 概要: ${'x'.repeat(256 * 1024)}`;
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
+        JSON.stringify({ choices: [{ message: { content: summary } }] }),
+      );
+    },
+    async (baseUrl) => {
+      await withEnv(
+        {
+          CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+          CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+          CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: `${baseUrl}/v1`,
+          CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: '127.0.0.1',
+          CHAT_EXTERNAL_LLM_ALLOW_HTTP: 'true',
+          CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: 'true',
+        },
+        async () => {
+          const result = await summarizeWithExternalLlm({ bodies: ['hello'] });
+          assert.equal(result.summary, summary);
+        },
+      );
+    },
+  );
+});
+
+test('summarizeWithExternalLlm discards provider error bodies', async () => {
   const { summarizeWithExternalLlm } =
     await import('../dist/services/chatExternalLlm.js');
   await withHttpServer(
     (_request, response) => {
       response.writeHead(502, { 'content-type': 'text/plain' });
-      response.end(`token=sk_secret_value ${'x'.repeat(2000)}`);
+      response.end(
+        `token=sk-live-1234567890abcdef secret prompt ${'x'.repeat(2000)}`,
+      );
     },
     async (baseUrl) => {
       await withEnv(
@@ -117,12 +311,154 @@ test('summarizeWithExternalLlm redacts bounded provider error diagnostics', asyn
           await assert.rejects(
             summarizeWithExternalLlm({ bodies: ['secret prompt'] }),
             (error) => {
-              assert.match(error.message, /openai_error_502/);
-              assert.equal(error.message.includes('sk_secret_value'), false);
-              assert.ok(error.message.length < 260);
+              assert.equal(error.message, 'openai_error_502');
+              assert.equal(error.message.includes('sk-live'), false);
+              assert.equal(error.message.includes('secret prompt'), false);
               return true;
             },
           );
+        },
+      );
+    },
+  );
+});
+
+test('summarizeWithExternalLlm preserves malformed successful response fallback', async () => {
+  const { summarizeWithExternalLlm } =
+    await import('../dist/services/chatExternalLlm.js');
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end('{not-json');
+    },
+    async (baseUrl) => {
+      await withEnv(
+        {
+          CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+          CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+          CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: `${baseUrl}/v1`,
+          CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: '127.0.0.1',
+          CHAT_EXTERNAL_LLM_ALLOW_HTTP: 'true',
+          CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: 'true',
+        },
+        async () => {
+          const result = await summarizeWithExternalLlm({ bodies: ['hello'] });
+          assert.equal(result.summary, '要約の生成に失敗しました（空の応答）');
+        },
+      );
+    },
+  );
+});
+
+test('summarizeWithExternalLlm preserves fallback for invalid UTF-8 success bodies', async () => {
+  const { summarizeWithExternalLlm } =
+    await import('../dist/services/chatExternalLlm.js');
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(Buffer.from([0x7b, 0x22, 0x78, 0x22, 0x3a, 0x22, 0xff]));
+    },
+    async (baseUrl) => {
+      await withEnv(
+        {
+          CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+          CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+          CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: `${baseUrl}/v1`,
+          CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: '127.0.0.1',
+          CHAT_EXTERNAL_LLM_ALLOW_HTTP: 'true',
+          CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: 'true',
+        },
+        async () => {
+          const result = await summarizeWithExternalLlm({ bodies: ['hello'] });
+          assert.equal(result.summary, '要約の生成に失敗しました（空の応答）');
+        },
+      );
+    },
+  );
+});
+
+test('summarizeWithExternalLlm preserves fallback when a received success body stalls', async () => {
+  const { summarizeWithExternalLlm } =
+    await import('../dist/services/chatExternalLlm.js');
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.write('{"choices":');
+    },
+    async (baseUrl) => {
+      await withEnv(
+        {
+          CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+          CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+          CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: `${baseUrl}/v1`,
+          CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: '127.0.0.1',
+          CHAT_EXTERNAL_LLM_ALLOW_HTTP: 'true',
+          CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: 'true',
+          CHAT_EXTERNAL_LLM_TIMEOUT_MS: '30',
+          NODE_ENV: 'test',
+        },
+        async () => {
+          const result = await summarizeWithExternalLlm({ bodies: ['hello'] });
+          assert.equal(result.summary, '要約の生成に失敗しました（空の応答）');
+        },
+      );
+    },
+  );
+});
+
+test('summarizeWithExternalLlm preserves empty successful response fallback', async () => {
+  const { summarizeWithExternalLlm } =
+    await import('../dist/services/chatExternalLlm.js');
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ choices: [] }));
+    },
+    async (baseUrl) => {
+      await withEnv(
+        {
+          CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+          CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+          CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: `${baseUrl}/v1`,
+          CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: '127.0.0.1',
+          CHAT_EXTERNAL_LLM_ALLOW_HTTP: 'true',
+          CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: 'true',
+        },
+        async () => {
+          const result = await summarizeWithExternalLlm({ bodies: ['hello'] });
+          assert.equal(result.summary, '要約の生成に失敗しました（空の応答）');
+        },
+      );
+    },
+  );
+});
+
+test('summarizeWithExternalLlm ignores provider usage for Chat compatibility', async () => {
+  const { summarizeWithExternalLlm } =
+    await import('../dist/services/chatExternalLlm.js');
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
+        JSON.stringify({
+          choices: [{ message: { content: '- 概要: テスト' } }],
+          usage: { prompt_tokens: 'unknown', completion_tokens: -1 },
+        }),
+      );
+    },
+    async (baseUrl) => {
+      await withEnv(
+        {
+          CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+          CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+          CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: `${baseUrl}/v1`,
+          CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: '127.0.0.1',
+          CHAT_EXTERNAL_LLM_ALLOW_HTTP: 'true',
+          CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: 'true',
+        },
+        async () => {
+          const result = await summarizeWithExternalLlm({ bodies: ['hello'] });
+          assert.match(result.summary, /概要/);
         },
       );
     },

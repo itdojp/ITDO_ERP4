@@ -1,5 +1,9 @@
-import { safeFetch } from './safeHttpClient.js';
-import { readBoundedResponseText, redactSensitiveText } from './redaction.js';
+import {
+  canonicalExternalLlmAllowedHosts,
+  canonicalExternalLlmUrlHostname,
+  ExternalLlmProviderError,
+} from '../application/externalLlm/externalLlmPort.js';
+import { OpenAiCompatibleTextAdapter } from '../adapters/externalLlm/openAiCompatibleTextAdapter.js';
 
 type ExternalLlmProvider = 'disabled' | 'stub' | 'openai';
 
@@ -12,6 +16,9 @@ type ChatExternalLlmConfig =
       apiKey: string;
       baseUrl: string;
       timeoutMs: number;
+      allowedHosts: string[];
+      allowHttp: boolean;
+      allowPrivateIp: boolean;
     };
 
 type ChatExternalLlmRateLimit = {
@@ -41,37 +48,114 @@ function parsePositiveInt(raw: string | undefined, fallback: number) {
 
 function parseAllowedHosts(raw: string | undefined) {
   if (!raw) return [];
-  return raw
-    .split(',')
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
+  return canonicalExternalLlmAllowedHosts(raw.split(','), 20);
 }
 
-export function getChatExternalLlmConfig(): ChatExternalLlmConfig {
-  const provider = normalizeProvider(process.env.CHAT_EXTERNAL_LLM_PROVIDER);
+export class ChatExternalLlmConfigurationError extends Error {
+  readonly name = 'ChatExternalLlmConfigurationError';
+  constructor(readonly key: string) {
+    super(`invalid_chat_external_llm_configuration:${key}`);
+  }
+}
+
+const defaultOpenAiBaseUrl = 'https://api.openai.com/v1';
+
+function resolveOpenAiTransportConfig(baseUrl: string, env: NodeJS.ProcessEnv) {
+  const destinationHost = canonicalExternalLlmUrlHostname(baseUrl);
+  let parsedUrl: URL;
+  try {
+    if (destinationHost === null) throw new Error('invalid_host');
+    parsedUrl = new URL(baseUrl);
+  } catch {
+    throw new ChatExternalLlmConfigurationError(
+      'CHAT_EXTERNAL_LLM_OPENAI_BASE_URL',
+    );
+  }
+  const allowHttp = env.CHAT_EXTERNAL_LLM_ALLOW_HTTP === 'true';
+  const allowPrivateIp = env.CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP === 'true';
+  if (
+    parsedUrl.username ||
+    parsedUrl.password ||
+    parsedUrl.search ||
+    parsedUrl.hash ||
+    (parsedUrl.protocol !== 'https:' &&
+      !(allowHttp && parsedUrl.protocol === 'http:'))
+  ) {
+    throw new ChatExternalLlmConfigurationError(
+      'CHAT_EXTERNAL_LLM_OPENAI_BASE_URL',
+    );
+  }
+  const nodeEnv = (env.NODE_ENV ?? '').trim().toLowerCase();
+  if (nodeEnv === 'production' && (allowHttp || allowPrivateIp)) {
+    throw new ChatExternalLlmConfigurationError(
+      allowHttp
+        ? 'CHAT_EXTERNAL_LLM_ALLOW_HTTP'
+        : 'CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP',
+    );
+  }
+
+  let allowedHosts = parseAllowedHosts(env.CHAT_EXTERNAL_LLM_ALLOWED_HOSTS);
+  if (allowedHosts === null) {
+    throw new ChatExternalLlmConfigurationError(
+      'CHAT_EXTERNAL_LLM_ALLOWED_HOSTS',
+    );
+  }
+  const isDefaultDestination =
+    destinationHost !== null &&
+    parsedUrl.protocol === 'https:' &&
+    destinationHost === 'api.openai.com' &&
+    parsedUrl.port === '' &&
+    (parsedUrl.pathname === '/v1' || parsedUrl.pathname === '/v1/');
+  // Preserve the historical zero-configuration OpenAI endpoint while making
+  // every custom destination opt in through an independent host allowlist.
+  if (allowedHosts.length === 0 && isDefaultDestination) {
+    allowedHosts = ['api.openai.com'];
+  }
+  if (
+    destinationHost === null ||
+    allowedHosts.length === 0 ||
+    !allowedHosts.includes(destinationHost)
+  ) {
+    throw new ChatExternalLlmConfigurationError(
+      'CHAT_EXTERNAL_LLM_ALLOWED_HOSTS',
+    );
+  }
+  return { allowedHosts, allowHttp, allowPrivateIp };
+}
+
+export function getChatExternalLlmConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): ChatExternalLlmConfig {
+  const provider = normalizeProvider(env.CHAT_EXTERNAL_LLM_PROVIDER);
   if (provider === 'stub') {
     return {
       provider: 'stub',
-      model: (process.env.CHAT_EXTERNAL_LLM_MODEL || 'stub').trim() || 'stub',
+      model: (env.CHAT_EXTERNAL_LLM_MODEL || 'stub').trim() || 'stub',
     };
   }
   if (provider === 'openai') {
-    const apiKey = process.env.CHAT_EXTERNAL_LLM_OPENAI_API_KEY?.trim();
+    const apiKey = env.CHAT_EXTERNAL_LLM_OPENAI_API_KEY?.trim();
     if (!apiKey) return { provider: 'disabled' };
     const baseUrl = (
-      process.env.CHAT_EXTERNAL_LLM_OPENAI_BASE_URL ||
-      'https://api.openai.com/v1'
+      env.CHAT_EXTERNAL_LLM_OPENAI_BASE_URL || defaultOpenAiBaseUrl
     )
       .trim()
       .replace(/\/$/, '');
     const model =
-      (process.env.CHAT_EXTERNAL_LLM_MODEL || 'gpt-4o-mini').trim() ||
-      'gpt-4o-mini';
+      (env.CHAT_EXTERNAL_LLM_MODEL || 'gpt-4o-mini').trim() || 'gpt-4o-mini';
     const timeoutMs = parsePositiveInt(
-      process.env.CHAT_EXTERNAL_LLM_TIMEOUT_MS,
+      env.CHAT_EXTERNAL_LLM_TIMEOUT_MS,
       15_000,
     );
-    return { provider: 'openai', model, apiKey, baseUrl, timeoutMs };
+    const transport = resolveOpenAiTransportConfig(baseUrl, env);
+    return {
+      provider: 'openai',
+      model,
+      apiKey,
+      baseUrl,
+      timeoutMs,
+      ...transport,
+    };
   }
   return { provider: 'disabled' };
 }
@@ -143,62 +227,52 @@ export async function summarizeWithExternalLlm(options: {
   }
 
   const prompt = buildSummaryPrompt({ bodies: options.bodies });
-  const url = `${config.baseUrl}/chat/completions`;
-  const allowedHosts = parseAllowedHosts(
-    process.env.CHAT_EXTERNAL_LLM_ALLOWED_HOSTS,
-  );
-  const res = await safeFetch(
-    url,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: config.model,
-        temperature: 0.2,
-        messages: [
-          { role: 'system', content: prompt.system },
-          { role: 'user', content: prompt.user },
-        ],
-        max_tokens: 600,
-      }),
-    },
-    {
-      timeoutMs: config.timeoutMs,
-      allowedHosts,
-      allowHttp: process.env.CHAT_EXTERNAL_LLM_ALLOW_HTTP === 'true',
-      allowPrivateIp: process.env.CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP === 'true',
-    },
-  );
-
-  if (!res.ok) {
-    const text = await readBoundedResponseText(res, 1024).catch(() => '');
-    const diagnostic = redactSensitiveText(text, 200);
-    const suffix = diagnostic ? `: ${diagnostic}` : '';
-    throw new Error(`openai_error_${res.status}${suffix}`);
+  const adapter = new OpenAiCompatibleTextAdapter({
+    apiKey: config.apiKey,
+    baseUrl: config.baseUrl,
+    timeoutMs: config.timeoutMs,
+    allowedHosts: config.allowedHosts,
+    allowHttp: config.allowHttp,
+    allowPrivateIp: config.allowPrivateIp,
+    // The pre-existing Chat summary contract treats a malformed successful
+    // response as an empty summary and does not account provider usage.
+    // It also retains the historical 1 MiB transport response limit, while
+    // Knowledge callers keep the 256 KiB strict persistence-safe default.
+    maximumResponseBytes: 1024 * 1024,
+    malformedSuccessPolicy: 'empty',
+    usagePolicy: 'ignore',
+  });
+  let content: string;
+  try {
+    const prepared = await adapter.prepare({
+      provider: 'openai',
+      model: config.model,
+      systemPrompt: prompt.system,
+      userPrompt: prompt.user,
+      inputTokenCeiling: 2_147_483_647,
+      maxOutputTokens: 600,
+      temperatureBasisPoints: 2_000,
+    });
+    const result = await prepared.dispatch();
+    content = result.content;
+  } catch (error) {
+    if (
+      error instanceof ExternalLlmProviderError &&
+      error.providerStatus !== null
+    ) {
+      throw new Error(`openai_error_${error.providerStatus}`);
+    }
+    if (
+      error instanceof ExternalLlmProviderError &&
+      error.outcome === 'not_dispatched' &&
+      error.preDispatchDiagnostic !== null
+    ) {
+      // Preserve the pre-existing Chat diagnostic code while the shared port
+      // keeps a complete provider-neutral certainty classification.
+      throw new Error(error.preDispatchDiagnostic);
+    }
+    throw error;
   }
-
-  const data = (await res.json().catch(() => null)) as {
-    id?: unknown;
-    choices?: unknown;
-  } | null;
-  const choice0 =
-    data && Array.isArray(data.choices) ? (data.choices[0] as unknown) : null;
-  const content =
-    choice0 &&
-    typeof choice0 === 'object' &&
-    choice0 !== null &&
-    'message' in choice0 &&
-    typeof (choice0 as { message?: unknown }).message === 'object' &&
-    (choice0 as { message?: { content?: unknown } }).message &&
-    typeof (choice0 as { message?: { content?: unknown } }).message?.content ===
-      'string'
-      ? (
-          (choice0 as { message: { content: string } }).message.content || ''
-        ).trim()
-      : '';
 
   return {
     provider: 'openai',

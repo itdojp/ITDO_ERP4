@@ -237,6 +237,71 @@ enum KnowledgeThreadPromotionAuthorCategory {
   user
 }
 
+enum KnowledgeLlmProvider {
+  stub
+  openai
+}
+
+enum KnowledgeLlmRunScope {
+  personal
+  organization
+}
+
+enum KnowledgeLlmBudgetSubjectType {
+  user
+  organization
+}
+
+enum KnowledgeLlmExecutionStatus {
+  reserved
+  dispatched
+  result_ready
+  failed
+  result_unknown
+}
+
+enum KnowledgeLlmSettlementStatus {
+  reserved
+  settled_actual
+  released
+  held_maximum
+}
+
+enum KnowledgeLlmContextSourceType {
+  snapshot
+  annotation_revision
+  conversation_turn
+  synthesis_version
+  thread_promotion_message
+}
+
+enum KnowledgeLlmOutcomeStatus {
+  valid
+  usage_unknown
+  invalid
+}
+
+enum KnowledgeLlmUsageEvidenceSource {
+  operator_billing
+}
+
+enum KnowledgeLlmFailureCode {
+  disabled
+  budget_hard_limit
+  rate_limit
+  rejected_before_dispatch
+  provider_4xx
+  provider_5xx
+  malformed_response
+  response_oversize
+  empty_result
+  timeout_outcome_unknown
+  connection_outcome_unknown
+  usage_missing
+  usage_invalid
+  finalization_failed
+}
+
 model Customer {
   id                    String    @id @default(uuid())
   code                  String    @unique
@@ -2363,6 +2428,7 @@ model KnowledgeSnapshot {
   updatedAt          DateTime                       @updatedAt
   synthesisSources   KnowledgeSynthesisSource[]
   shareSnapshots     KnowledgeShareSnapshot[]
+  llmContextSources  KnowledgeLlmContextSource[]
 
   @@unique([knowledgeItemId, version])
   @@unique([id, knowledgeItemId, version])
@@ -2542,17 +2608,18 @@ model KnowledgeAnnotation {
 }
 
 model KnowledgeAnnotationRevision {
-  id               String                             @id @default(uuid())
-  annotation       KnowledgeAnnotation                @relation(fields: [annotationId], references: [id], onDelete: Restrict)
-  annotationId     String
-  revision         Int
-  kind             KnowledgeAnnotationKind
-  origin           KnowledgeProvenanceOrigin
-  content          String                             @db.Text
-  createdAt        DateTime                           @default(now())
-  createdBy        String
-  synthesisSources KnowledgeSynthesisSource[]
-  shareSnapshots   KnowledgeShareAnnotationSnapshot[]
+  id                String                             @id @default(uuid())
+  annotation        KnowledgeAnnotation                @relation(fields: [annotationId], references: [id], onDelete: Restrict)
+  annotationId      String
+  revision          Int
+  kind              KnowledgeAnnotationKind
+  origin            KnowledgeProvenanceOrigin
+  content           String                             @db.Text
+  createdAt         DateTime                           @default(now())
+  createdBy         String
+  synthesisSources  KnowledgeSynthesisSource[]
+  shareSnapshots    KnowledgeShareAnnotationSnapshot[]
+  llmContextSources KnowledgeLlmContextSource[]
 
   @@unique([annotationId, revision])
   @@unique([id, annotationId, revision])
@@ -2582,6 +2649,7 @@ model KnowledgeConversation {
   importRequests     KnowledgeConversationImportRequest[]
   synthesisSources   KnowledgeSynthesisSource[]
   shareTurnSnapshots KnowledgeShareTurnSnapshot[]
+  llmRuns            KnowledgeLlmRun[]
 
   @@unique([ownerUserId, idempotencyHash])
   @@unique([id, ownerUserId])
@@ -2623,20 +2691,22 @@ model KnowledgeConversationItem {
 }
 
 model KnowledgeConversationTurn {
-  id               String                       @id @default(uuid())
-  conversation     KnowledgeConversation        @relation(fields: [conversationId], references: [id], onDelete: Restrict)
-  conversationId   String
-  sequence         Int
-  role             KnowledgeConversationRole
-  origin           KnowledgeProvenanceOrigin
-  content          String                       @db.Text
-  name             String?
-  occurredAt       DateTime?
-  contentHash      String
-  createdAt        DateTime                     @default(now())
-  createdBy        String
-  synthesisSources KnowledgeSynthesisSource[]
-  shareSnapshots   KnowledgeShareTurnSnapshot[]
+  id                String                       @id @default(uuid())
+  conversation      KnowledgeConversation        @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+  conversationId    String
+  sequence          Int
+  role              KnowledgeConversationRole
+  origin            KnowledgeProvenanceOrigin
+  content           String                       @db.Text
+  name              String?
+  occurredAt        DateTime?
+  contentHash       String
+  createdAt         DateTime                     @default(now())
+  createdBy         String
+  synthesisSources  KnowledgeSynthesisSource[]
+  shareSnapshots    KnowledgeShareTurnSnapshot[]
+  llmContextSources KnowledgeLlmContextSource[]
+  llmAssistantRuns  KnowledgeLlmRun[]            @relation("KnowledgeLlmAssistantTurn")
 
   @@unique([conversationId, sequence])
   @@unique([id, conversationId])
@@ -2680,6 +2750,7 @@ model KnowledgeSynthesisVersion {
   usedAsSource          KnowledgeSynthesisSource[]        @relation("KnowledgeSynthesisVersionReferenced")
   shareSnapshots        KnowledgeShareSynthesisSnapshot[]
   threadPromotions      KnowledgeThreadPromotion[]
+  llmContextSources     KnowledgeLlmContextSource[]
 
   @@unique([synthesisId, version])
   @@unique([id, synthesisId, version])
@@ -2952,6 +3023,7 @@ model KnowledgeThreadPromotionMessage {
   contentHash            String
   createdAt              DateTime                               @default(now())
   createdBy              String
+  llmContextSources      KnowledgeLlmContextSource[]
 
   @@unique([promotionId, ordinal])
   @@unique([promotionId, sourceMessageId])
@@ -2989,6 +3061,198 @@ model KnowledgeSynthesisGroupGrant {
   @@unique([synthesisId, groupAccountId])
   @@index([groupAccountId, revokedAt, synthesisId])
   @@index([synthesisId, revokedAt, groupAccountId])
+}
+
+model KnowledgeLlmBudgetPolicy {
+  id              String                        @id @default(uuid())
+  subjectType     KnowledgeLlmBudgetSubjectType
+  subjectId       String
+  currency        String
+  timezone        String
+  softLimitMicros BigInt
+  hardLimitMicros BigInt
+  requestsPerHour Int
+  version         Int                           @default(1)
+  active          Boolean                       @default(true)
+  createdAt       DateTime                      @default(now())
+  createdBy       String
+  updatedAt       DateTime                      @updatedAt
+  updatedBy       String
+  periods         KnowledgeLlmBudgetPeriod[]
+
+  @@unique([subjectType, subjectId, version])
+  @@index([subjectType, subjectId, active, version])
+}
+
+model KnowledgeLlmBudgetPeriod {
+  id                   String                    @id @default(uuid())
+  policy               KnowledgeLlmBudgetPolicy  @relation(fields: [policyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  policyId             String
+  periodStartUtc       DateTime
+  periodEndUtc         DateTime
+  timezone             String
+  currency             String
+  activeReservedMicros BigInt                    @default(0)
+  settledActualMicros  BigInt                    @default(0)
+  heldMaximumMicros    BigInt                    @default(0)
+  releasedMicros       Decimal                   @default(0) @db.Decimal(38, 0)
+  acceptedRequestCount Int                       @default(0)
+  version              Int                       @default(1)
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+  reservations         KnowledgeLlmReservation[]
+
+  @@unique([policyId, periodStartUtc])
+  @@index([policyId, periodEndUtc, periodStartUtc])
+}
+
+model KnowledgeLlmRun {
+  id                         String                       @id @default(uuid())
+  actorUserId                String
+  scope                      KnowledgeLlmRunScope
+  organizationId             String?
+  provider                   KnowledgeLlmProvider
+  model                      String
+  catalogVersion             Int
+  promptTemplateVersion      Int
+  requestPayloadHash         String
+  providerRequestHash        String
+  selectedContextFingerprint String
+  estimatedInputTokens       Int
+  maxOutputTokens            Int
+  inputCostMicrosPerMillion  BigInt
+  outputCostMicrosPerMillion BigInt
+  maximumCostMicros          BigInt
+  softLimitWarning           Boolean                      @default(false)
+  actualInputTokens          Int?
+  actualOutputTokens         Int?
+  actualCostMicros           BigInt?
+  currency                   String
+  executionStatus            KnowledgeLlmExecutionStatus  @default(reserved)
+  settlementStatus           KnowledgeLlmSettlementStatus @default(reserved)
+  failureCode                KnowledgeLlmFailureCode?
+  conversation               KnowledgeConversation?       @relation(fields: [conversationId, actorUserId], references: [id, ownerUserId], onDelete: Restrict, onUpdate: Restrict)
+  conversationId             String?
+  assistantTurn              KnowledgeConversationTurn?   @relation("KnowledgeLlmAssistantTurn", fields: [assistantTurnId, conversationId], references: [id, conversationId], onDelete: Restrict, onUpdate: Restrict)
+  assistantTurnId            String?                      @unique
+  createdAt                  DateTime                     @default(now())
+  createdBy                  String
+  updatedAt                  DateTime                     @updatedAt
+  updatedBy                  String
+  dispatchedAt               DateTime?
+  completedAt                DateTime?
+  request                    KnowledgeLlmRequest?
+  contextSources             KnowledgeLlmContextSource[]
+  reservations               KnowledgeLlmReservation[]
+  outcome                    KnowledgeLlmProviderOutcome?
+  usageEvidence              KnowledgeLlmUsageEvidence?
+
+  @@unique([id, actorUserId])
+  @@index([actorUserId, createdAt, id])
+  @@index([organizationId, createdAt, id])
+  @@index([executionStatus, settlementStatus, updatedAt, id])
+}
+
+model KnowledgeLlmRequest {
+  id                 String          @id @default(uuid())
+  actorUserId        String
+  requestKeyHash     String
+  requestPayloadHash String
+  run                KnowledgeLlmRun @relation(fields: [runId, actorUserId], references: [id, actorUserId], onDelete: Restrict, onUpdate: Restrict)
+  runId              String          @unique
+  createdAt          DateTime        @default(now())
+  createdBy          String
+
+  @@unique([actorUserId, requestKeyHash])
+  @@unique([runId, actorUserId])
+  @@index([runId, actorUserId])
+}
+
+model KnowledgeLlmReservation {
+  id                String                       @id @default(uuid())
+  run               KnowledgeLlmRun              @relation(fields: [runId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  runId             String
+  budgetPeriod      KnowledgeLlmBudgetPeriod     @relation(fields: [budgetPeriodId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  budgetPeriodId    String
+  maximumCostMicros BigInt
+  actualCostMicros  BigInt?
+  status            KnowledgeLlmSettlementStatus @default(reserved)
+  createdAt         DateTime                     @default(now())
+  accountedAt       DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+  settledAt         DateTime?
+
+  @@unique([runId, budgetPeriodId])
+  @@index([budgetPeriodId, status, accountedAt, id])
+}
+
+model KnowledgeLlmContextSource {
+  id                             String                           @id @default(uuid())
+  run                            KnowledgeLlmRun                  @relation(fields: [runId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  runId                          String
+  sourceType                     KnowledgeLlmContextSourceType
+  ordinal                        Int
+  sourceSnapshot                 KnowledgeSnapshot?               @relation(fields: [sourceSnapshotId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourceSnapshotId               String?
+  sourceAnnotationRevision       KnowledgeAnnotationRevision?     @relation(fields: [sourceAnnotationRevisionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourceAnnotationRevisionId     String?
+  sourceConversationTurn         KnowledgeConversationTurn?       @relation(fields: [sourceConversationTurnId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourceConversationTurnId       String?
+  sourceSynthesisVersion         KnowledgeSynthesisVersion?       @relation(fields: [sourceSynthesisVersionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourceSynthesisVersionId       String?
+  sourceThreadPromotionMessage   KnowledgeThreadPromotionMessage? @relation(fields: [sourceThreadPromotionMessageId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  sourceThreadPromotionMessageId String?
+  exactSourceVersion             Int
+  exactSourceHash                String
+  representationHash             String
+  byteLength                     Int
+  estimatedTokens                Int
+  createdAt                      DateTime                         @default(now())
+  createdBy                      String
+
+  @@unique([runId, ordinal])
+  @@unique([runId, sourceSnapshotId])
+  @@unique([runId, sourceAnnotationRevisionId])
+  @@unique([runId, sourceConversationTurnId])
+  @@unique([runId, sourceSynthesisVersionId])
+  @@unique([runId, sourceThreadPromotionMessageId])
+  @@index([sourceSnapshotId])
+  @@index([sourceAnnotationRevisionId])
+  @@index([sourceConversationTurnId])
+  @@index([sourceSynthesisVersionId])
+  @@index([sourceThreadPromotionMessageId])
+}
+
+model KnowledgeLlmProviderOutcome {
+  id                String                    @id @default(uuid())
+  run               KnowledgeLlmRun           @relation(fields: [runId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  runId             String                    @unique
+  status            KnowledgeLlmOutcomeStatus
+  normalizedContent String?                   @db.Text
+  contentHash       String?
+  inputTokens       Int?
+  outputTokens      Int?
+  failureCode       KnowledgeLlmFailureCode?
+  capturedAt        DateTime                  @default(now())
+  finalizedAt       DateTime?
+  createdAt         DateTime                  @default(now())
+
+  @@index([status, finalizedAt, capturedAt, id])
+}
+
+model KnowledgeLlmUsageEvidence {
+  id               String                          @id @default(uuid())
+  run              KnowledgeLlmRun                 @relation(fields: [runId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  runId            String                          @unique
+  source           KnowledgeLlmUsageEvidenceSource
+  inputTokens      Int
+  outputTokens     Int
+  actualCostMicros BigInt
+  evidenceHash     String
+  createdAt        DateTime                        @default(now())
+  createdBy        String
+
+  @@index([source, createdAt, id])
 }
 
 model ReassignmentLog {

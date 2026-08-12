@@ -38,6 +38,147 @@ function runEnvValidation(overrides = {}) {
   return runNodeScript(script, overrides);
 }
 
+const VALID_KNOWLEDGE_LLM_STUB_CATALOG = JSON.stringify({
+  version: 1,
+  models: [
+    {
+      provider: 'stub',
+      model: 'stub-v1',
+      enabled: true,
+      maxInputTokens: 524288,
+      maxOutputTokens: 4096,
+      inputCostMicrosPerMillion: '0',
+      outputCostMicrosPerMillion: '0',
+      currency: 'JPY',
+      capabilities: ['text'],
+    },
+  ],
+});
+
+test('envValidation: Knowledge external LLM remains disabled when only Chat stub is enabled', () => {
+  const result = runEnvValidation({ CHAT_EXTERNAL_LLM_PROVIDER: 'stub' });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test('envValidation: Chat custom OpenAI destination requires an independent host allowlist', () => {
+  const missingAllowlist = runEnvValidation({
+    CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+    CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-only',
+    CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://provider.example/v1',
+  });
+  assert.notEqual(missingAllowlist.status, 0);
+  assert.match(missingAllowlist.stderr, /CHAT_EXTERNAL_LLM_ALLOWED_HOSTS/);
+
+  const allowlisted = runEnvValidation({
+    CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+    CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-only',
+    CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://provider.example/v1',
+    CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: 'provider.example',
+  });
+  assert.equal(allowlisted.status, 0, allowlisted.stderr);
+
+  const malformedAllowlist = runEnvValidation({
+    CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+    CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-only',
+    CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://provider.example/v1',
+    CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: 'provider.example,bad host',
+  });
+  assert.notEqual(malformedAllowlist.status, 0);
+  assert.match(malformedAllowlist.stderr, /CHAT_EXTERNAL_LLM_ALLOWED_HOSTS/);
+
+  const nonStandardOpenAiPort = runEnvValidation({
+    CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+    CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-only',
+    CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://api.openai.com:444/v1',
+  });
+  assert.notEqual(nonStandardOpenAiPort.status, 0);
+  assert.match(
+    nonStandardOpenAiPort.stderr,
+    /CHAT_EXTERNAL_LLM_ALLOWED_HOSTS/,
+  );
+
+  const canonicalDefaultPort = runEnvValidation({
+    CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+    CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-only',
+    CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://api.openai.com:443/v1',
+  });
+  assert.equal(canonicalDefaultPort.status, 0, canonicalDefaultPort.stderr);
+});
+
+test('envValidation: Chat production transport overrides fail closed after NODE_ENV normalization', () => {
+  const productionBase = {
+    NODE_ENV: ' Production ',
+    KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
+    AUTH_MODE: 'jwt_bff',
+    JWT_ISSUER: 'https://accounts.google.com',
+    JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
+    JWT_JWKS_URL: 'https://www.googleapis.com/oauth2/v3/certs',
+    GOOGLE_OIDC_CLIENT_SECRET: 'synthetic-only',
+    GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
+    AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
+    CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+    CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-only',
+    CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://provider.example/v1',
+    CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: 'provider.example',
+  };
+  for (const [key, value] of [
+    ['CHAT_EXTERNAL_LLM_ALLOW_HTTP', 'true'],
+    ['CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP', 'true'],
+  ]) {
+    const result = runEnvValidation({ ...productionBase, [key]: value });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, new RegExp(key));
+  }
+});
+
+test('envValidation: Knowledge stub requires a strict model catalog', () => {
+  const missing = runEnvValidation({
+    KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'stub',
+  });
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /KNOWLEDGE_LLM_MODEL_CATALOG_JSON/);
+
+  const valid = runEnvValidation({
+    KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'stub',
+    KNOWLEDGE_LLM_MODEL_CATALOG_JSON: VALID_KNOWLEDGE_LLM_STUB_CATALOG,
+  });
+  assert.equal(valid.status, 0, valid.stderr);
+});
+
+test('envValidation: Knowledge openai never reuses Chat credentials or an unallowlisted host', () => {
+  const openAiCatalog = JSON.stringify({
+    ...JSON.parse(VALID_KNOWLEDGE_LLM_STUB_CATALOG),
+    models: [
+      {
+        ...JSON.parse(VALID_KNOWLEDGE_LLM_STUB_CATALOG).models[0],
+        provider: 'openai',
+      },
+    ],
+  });
+  const missingKnowledgeKey = runEnvValidation({
+    KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'openai',
+    KNOWLEDGE_LLM_MODEL_CATALOG_JSON: openAiCatalog,
+    CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'chat-key-must-not-be-reused',
+    KNOWLEDGE_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://api.example.test/v1',
+    KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS: 'api.example.test',
+  });
+  assert.notEqual(missingKnowledgeKey.status, 0);
+  assert.match(
+    missingKnowledgeKey.stderr,
+    /KNOWLEDGE_EXTERNAL_LLM_OPENAI_API_KEY/,
+  );
+
+  const unallowlisted = runEnvValidation({
+    KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'openai',
+    KNOWLEDGE_LLM_MODEL_CATALOG_JSON: openAiCatalog,
+    KNOWLEDGE_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-only',
+    KNOWLEDGE_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://api.example.test/v1',
+    KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS: 'other.example.test',
+  });
+  assert.notEqual(unallowlisted.status, 0);
+  assert.match(unallowlisted.stderr, /KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS/);
+});
+
 function runCurrentUserRequest(overrides = {}, headers = {}) {
   const script = `
     import { buildServer } from './dist/server.js';

@@ -89,3 +89,71 @@ export async function readBoundedResponseText(
   }
   return new TextDecoder().decode(Buffer.concat(chunks));
 }
+
+export type BoundedResponseTextResult = {
+  text: string | null;
+  rawBytesRead: number;
+  exceededLimit: boolean;
+  invalidUtf8: boolean;
+};
+
+/**
+ * Reads one raw byte beyond the contract boundary so callers can reject an
+ * oversized response before UTF-8 decoding changes its observable byte size
+ * (for example by consuming an initial BOM).
+ */
+export async function readBoundedResponseTextWithLimit(
+  response: Response,
+  maxBytes: number,
+): Promise<BoundedResponseTextResult> {
+  if (
+    !Number.isSafeInteger(maxBytes) ||
+    maxBytes < 0 ||
+    maxBytes >= Number.MAX_SAFE_INTEGER
+  ) {
+    throw new Error('invalid_response_byte_limit');
+  }
+  if (!response.body) {
+    return {
+      text: '',
+      rawBytesRead: 0,
+      exceededLimit: false,
+      invalidUtf8: false,
+    };
+  }
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  const readLimit = maxBytes + 1;
+  let total = 0;
+  try {
+    while (total < readLimit) {
+      const { done, value } = await reader.read();
+      if (done || !value) break;
+      const remaining = readLimit - total;
+      const chunk =
+        value.byteLength > remaining ? value.slice(0, remaining) : value;
+      chunks.push(Buffer.from(chunk));
+      total += chunk.byteLength;
+      if (value.byteLength > remaining) break;
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+  const retained = Buffer.concat(chunks);
+  let text: string | null = null;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(
+      retained.subarray(0, maxBytes),
+    );
+  } catch {
+    // Replacement decoding can expand one invalid byte to the three-byte
+    // U+FFFD representation and defeat a downstream persistence byte bound.
+    // Keep the raw byte accounting while reporting the encoding failure.
+  }
+  return {
+    text,
+    rawBytesRead: total,
+    exceededLimit: total > maxBytes,
+    invalidUtf8: text === null,
+  };
+}

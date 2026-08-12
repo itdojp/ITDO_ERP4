@@ -118,6 +118,7 @@ const layers = [
       'HTTP aggregation, cross-context read models, reports, dispatch/event entry points, or glue code that coordinates bounded contexts without defining a bounded context itself.',
     patterns: [
       '^src/application/backup/.+\\.ts$',
+      '^src/application/externalLlm/.+\\.ts$',
       '^src/application/dailyReports/.+\\.ts$',
       '^src/application/expenses/.+\\.ts$',
       '^src/application/identity/.+\\.ts$',
@@ -146,7 +147,7 @@ const layers = [
     patterns: [
       '^src/migration/(csv|legacyIds)\\.ts$',
       '^src/routes/validators(\\.ts|/.+\\.ts)$',
-      '^src/services/(authIdentifiers|authScopes|dueDateRule|errors|policyEnforcementPreset|rate|redaction|utils)\\.ts$',
+      '^src/services/(authIdentifiers|authScopes|dueDateRule|errors|externalHostIdentity|policyEnforcementPreset|rate|redaction|utils)\\.ts$',
       '^src/utils/(csv|date)\\.ts$',
     ],
   },
@@ -158,6 +159,7 @@ const layers = [
       'Database, audit, readiness, PDF, outbound notification transports, safe HTTP, and environment/runtime adapters used by multiple contexts.',
     patterns: [
       '^src/adapters/notifications/.+\\.ts$',
+      '^src/adapters/externalLlm/.+\\.ts$',
       '^src/adapters/knowledge/.+\\.ts$',
       '^src/adapters/storage/.+\\.ts$',
       '^src/cli/(googleDrive(Check|CheckService|ProvisionFolder|ProvisionService)|storageArtifactMigration|storageReadiness(Service)?)\\.ts$',
