@@ -97,3 +97,34 @@ test('provider outcome capture rejects invalid runtime failure codes before pers
 
   assert.equal(transactionStarted, false);
 });
+
+test('reconcile does not classify an arbitrary error by its message', async () => {
+  let transactionStarted = false;
+  const adapter = new PrismaKnowledgeLlmRunAdapter(
+    {
+      $transaction: async () => {
+        transactionStarted = true;
+      },
+    },
+    {},
+  );
+  adapter.finalizeCapturedOutcome = async () => {
+    throw new Error('knowledge_llm_outcome_missing');
+  };
+
+  await assert.rejects(
+    () =>
+      adapter.reconcile({
+        runId: 'run-1',
+        actor,
+        auditActor: {
+          requestId: 'request-1',
+          source: 'api',
+          principalUserId: actor.userId,
+          actorUserId: actor.userId,
+        },
+      }),
+    /knowledge_llm_outcome_missing/,
+  );
+  assert.equal(transactionStarted, false);
+});

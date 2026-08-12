@@ -35,6 +35,7 @@ import {
   settleKnowledgeLlmBudget,
 } from './prismaKnowledgeLlmSettlementAdapter.js';
 import { buildKnowledgeSynthesisVisibilityWhere } from './prismaKnowledgeSynthesisVisibility.js';
+import { KnowledgeLlmProviderOutcomeMissingError } from './prismaKnowledgeLlmRunErrors.js';
 
 type Transaction = Prisma.TransactionClient;
 type TransactionHost = Pick<PrismaClient, '$transaction'>;
@@ -1149,7 +1150,7 @@ export class PrismaKnowledgeLlmRunAdapter implements KnowledgeLlmRunPort {
       );
       const outcome = outcomes[0];
       if (!outcome || outcomes.length !== 1) {
-        throw new Error('knowledge_llm_outcome_missing');
+        throw new KnowledgeLlmProviderOutcomeMissingError();
       }
       const runs = await transaction.$queryRaw<
         Array<{
@@ -1466,10 +1467,7 @@ export class PrismaKnowledgeLlmRunAdapter implements KnowledgeLlmRunPort {
       await this.finalizeCapturedOutcome(input);
       return;
     } catch (error) {
-      if (
-        !(error instanceof Error) ||
-        error.message !== 'knowledge_llm_outcome_missing'
-      ) {
+      if (!(error instanceof KnowledgeLlmProviderOutcomeMissingError)) {
         throw error;
       }
     }
