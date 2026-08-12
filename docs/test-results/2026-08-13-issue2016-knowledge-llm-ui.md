@@ -16,13 +16,14 @@
 | --- | --- | --- |
 | default-disabledとprovider request 0件 | PASS | disabled構成のfocused real-backend E2E |
 | allowlisted provider/model、最小context既定値 | PASS | frontend model/API/component test、focused E2E |
-| 全5 source種別のserver-side候補取得とページング | PASS | backend route/adapter、33件候補component test、focused E2E |
+| 全5 source種別のserver-side候補取得とページング | PASS | backend route/adapter、101 page／cursor-cycle component test、focused E2E |
 | synthesis／promotionを含むselected item集計と10 item上限 | PASS | 実Prisma adapter unit（重複排除、3 item集計、11 item拒否） |
 | exact preview、明示confirm、integer最大予約額 | PASS | focused E2E、[preview画像](./2026-08-13-issue2016-knowledge-llm-ui/02-selected-context-preview.png) |
 | selected sourceだけの外部送信境界 | PASS | selected snapshotと非選択canaryを使うfocused E2E |
 | actual usage settlementとconversation provenance | PASS | stub reported-usage flow、backend PR B/C integration |
 | usage unknown／result unknown／held maximum | PASS | allowlisted専用stub modelとauthenticated budget test hook、[usage unknown画像](./2026-08-13-issue2016-knowledge-llm-ui/03-budget-usage-unknown.png) |
 | no automatic retry／no provider fallback | PASS | UI state、single-dispatch backend契約、focused E2E |
+| 同一itemの親画面再読込中もin-flight runを保持 | PASS | deterministic component test |
 | read-only reconciliation | PASS | 保存済みoutcomeだけを照合するfocused E2E |
 | hard limit blockとprovider request 0件 | PASS | synthetic user policy fixture |
 | outsider 404とresponse allowlist | PASS | direct API negative E2E、frontend normalization test |
@@ -45,8 +46,8 @@ canaryはexact preview、provider request、run response、画面、監査／app
 
 | 分類 | 結果 |
 | --- | --- |
-| focused backend stub/test-hook/route/候補／run adapter | 28 / 28 PASS |
-| focused frontend model/API/component | 16 / 16 PASS |
+| focused backend stub/test-hook/route/候補／run adapter | 70 / 70 PASS |
+| focused frontend model/API/component | 39 / 39 PASS |
 | focused real-backend E2E（stub） | 1 / 1 PASS |
 | focused real-backend E2E（disabled） | 1 / 1 PASS |
 | focused real-backend E2E（JWT canonical identity + stub） | 1 / 1 PASS |
