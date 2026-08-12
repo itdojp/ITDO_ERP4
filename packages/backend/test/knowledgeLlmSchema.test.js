@@ -298,6 +298,20 @@ test('reservation accounting timestamp and terminal values are immutable', () =>
     /period\."periodEndUtc" > admission_started_at - INTERVAL '1 hour'/,
   );
   assert.match(
+    reservationGuard,
+    /ORDER BY policy\."subjectType", policy\."subjectId", policy\.id\s+FOR UPDATE OF policy/,
+  );
+  assert.match(
+    reservationGuard,
+    /run_scope = 'organization'[\s\S]*?policy\."subjectType" = 'organization'[\s\S]*?policy\."subjectId" = run_organization/,
+  );
+  assert.ok(
+    reservationGuard.indexOf(
+      'ORDER BY policy."subjectType", policy."subjectId", policy.id',
+    ) < reservationGuard.indexOf('ORDER BY period.id'),
+    'all required policies must be locked before the global period union',
+  );
+  assert.match(
     migration,
     /KnowledgeLlmReservation must use the current trusted accounting period/,
   );

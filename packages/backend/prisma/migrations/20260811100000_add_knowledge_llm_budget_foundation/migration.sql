@@ -1642,6 +1642,28 @@ BEGIN
     WHERE id = NEW."runId"
     FOR UPDATE;
 
+    -- A database writer can insert an organization run's user and
+    -- organization reservations in either order. Lock every required active
+    -- policy in the same order as the application admission path before
+    -- taking any period lock, so opposite reservation row order cannot form a
+    -- user-policy/organization-policy cycle.
+    PERFORM policy.id
+    FROM "KnowledgeLlmBudgetPolicy" policy
+    WHERE policy.active
+      AND (
+        (
+          policy."subjectType" = 'user'
+          AND policy."subjectId" = run_actor
+        )
+        OR (
+          run_scope = 'organization'
+          AND policy."subjectType" = 'organization'
+          AND policy."subjectId" = run_organization
+        )
+      )
+    ORDER BY policy."subjectType", policy."subjectId", policy.id
+    FOR UPDATE OF policy;
+
     SELECT period."periodStartUtc", period."periodEndUtc", period.currency,
       period.timezone, policy."subjectType", policy."subjectId", policy.active,
       policy."softLimitMicros", policy."hardLimitMicros",
@@ -1651,18 +1673,27 @@ BEGIN
       policy_hard_limit, policy_requests_per_hour
     FROM "KnowledgeLlmBudgetPeriod" period
     JOIN "KnowledgeLlmBudgetPolicy" policy ON policy.id = period."policyId"
-    WHERE period.id = NEW."budgetPeriodId"
-    FOR UPDATE OF policy;
+    WHERE period.id = NEW."budgetPeriodId";
 
-    -- Lock every current-window and rolling-hour period for this subject in
-    -- one global order. This includes inactive policy versions and the prior
-    -- monthly period during the first hour after a boundary, matching the
-    -- application admission and settlement lock order.
+    -- Lock every current-window and rolling-hour period for all subjects
+    -- required by the run in one global order. This includes inactive policy
+    -- versions and the prior monthly period during the first hour after a
+    -- boundary. The first reservation row therefore owns the complete union;
+    -- later rows re-enter the same locks regardless of INSERT order.
     PERFORM period.id
     FROM "KnowledgeLlmBudgetPeriod" period
     JOIN "KnowledgeLlmBudgetPolicy" policy ON policy.id = period."policyId"
-    WHERE policy."subjectType" = policy_subject_type
-      AND policy."subjectId" = policy_subject_id
+    WHERE (
+        (
+          policy."subjectType" = 'user'
+          AND policy."subjectId" = run_actor
+        )
+        OR (
+          run_scope = 'organization'
+          AND policy."subjectType" = 'organization'
+          AND policy."subjectId" = run_organization
+        )
+      )
       AND period."periodEndUtc" > admission_started_at - INTERVAL '1 hour'
       AND period."periodStartUtc" < period_end
     ORDER BY period.id

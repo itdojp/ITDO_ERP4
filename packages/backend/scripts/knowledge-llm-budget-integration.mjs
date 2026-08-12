@@ -1794,6 +1794,161 @@ try {
     2,
   );
 
+  const organizationSourceRun = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: 'run-org' },
+    include: {
+      reservations: {
+        include: { budgetPeriod: { include: { policy: true } } },
+      },
+    },
+  });
+  const organizationUserPeriod = organizationSourceRun.reservations.find(
+    (entry) => entry.budgetPeriod.policy.subjectType === 'user',
+  ).budgetPeriod;
+  const organizationBudgetPeriod = organizationSourceRun.reservations.find(
+    (entry) => entry.budgetPeriod.policy.subjectType === 'organization',
+  ).budgetPeriod;
+  const directOrganizationRunData = (runId, requestKeyHash) => {
+    const data = directRunData({
+      sourceRun: organizationSourceRun,
+      runId,
+      requestKeyHash,
+      createdAt: now,
+      budgetPeriodId: organizationUserPeriod.id,
+    });
+    delete data.reservations;
+    return data;
+  };
+  await prisma.$transaction(async (transaction) => {
+    // Seed two internally consistent run/request intents without reservations.
+    // User triggers are disabled only for this owner-only ephemeral fixture;
+    // each concurrent transaction below must satisfy the live reservation
+    // admission and deferred consistency guards.
+    await transaction.$executeRawUnsafe(
+      'SET LOCAL session_replication_role = replica',
+    );
+    await transaction.knowledgeLlmRun.create({
+      data: directOrganizationRunData(
+        'run-direct-org-lock-order-a',
+        knowledgeTextHash('llm-test-request-key', 'direct-org-lock-order-a'),
+      ),
+    });
+    await transaction.knowledgeLlmRun.create({
+      data: directOrganizationRunData(
+        'run-direct-org-lock-order-b',
+        knowledgeTextHash('llm-test-request-key', 'direct-org-lock-order-b'),
+      ),
+    });
+    await transaction.$executeRawUnsafe(
+      'SET LOCAL session_replication_role = origin',
+    );
+  });
+  const directReservationData = (runId, budgetPeriodId) => ({
+    runId,
+    budgetPeriodId,
+    maximumCostMicros: organizationSourceRun.maximumCostMicros,
+    createdAt: now,
+    updatedAt: now,
+  });
+  let signalFirstDirectReservation;
+  const firstDirectReservationInserted = new Promise((resolve) => {
+    signalFirstDirectReservation = resolve;
+  });
+  let releaseFirstDirectWriter;
+  const firstDirectWriterRelease = new Promise((resolve) => {
+    releaseFirstDirectWriter = resolve;
+  });
+  const firstDirectWriter = prisma.$transaction(
+    async (transaction) => {
+      await transaction.knowledgeLlmReservation.create({
+        data: directReservationData(
+          'run-direct-org-lock-order-a',
+          organizationUserPeriod.id,
+        ),
+      });
+      signalFirstDirectReservation();
+      await firstDirectWriterRelease;
+      await transaction.knowledgeLlmReservation.create({
+        data: directReservationData(
+          'run-direct-org-lock-order-a',
+          organizationBudgetPeriod.id,
+        ),
+      });
+    },
+    { timeout: 15_000 },
+  );
+  await Promise.race([
+    firstDirectReservationInserted,
+    firstDirectWriter.then(
+      () => {
+        throw new Error(
+          'knowledge_llm_first_direct_writer_finished_before_release',
+        );
+      },
+      (error) => {
+        throw error;
+      },
+    ),
+  ]);
+  const directOrganizationLockApplicationName =
+    'erp4-knowledge-llm-direct-org-lock-order';
+  const directOrganizationLockUrl = new URL(process.env.DATABASE_URL);
+  directOrganizationLockUrl.searchParams.set(
+    'application_name',
+    directOrganizationLockApplicationName,
+  );
+  const directOrganizationLockPrisma = new PrismaClient({
+    adapter: new PrismaPg({
+      connectionString: directOrganizationLockUrl.toString(),
+    }),
+  });
+  const secondDirectWriter = directOrganizationLockPrisma.$transaction(
+    async (transaction) => {
+      await transaction.knowledgeLlmReservation.create({
+        data: directReservationData(
+          'run-direct-org-lock-order-b',
+          organizationBudgetPeriod.id,
+        ),
+      });
+      await transaction.knowledgeLlmReservation.create({
+        data: directReservationData(
+          'run-direct-org-lock-order-b',
+          organizationUserPeriod.id,
+        ),
+      });
+    },
+    { timeout: 15_000 },
+  );
+  let directOrganizationLockProbeError;
+  try {
+    await waitForNamedDatabaseLock(directOrganizationLockApplicationName);
+  } catch (error) {
+    directOrganizationLockProbeError = error;
+  } finally {
+    releaseFirstDirectWriter();
+  }
+  const directOrganizationLockResults = await Promise.allSettled([
+    firstDirectWriter,
+    secondDirectWriter,
+  ]);
+  await directOrganizationLockPrisma.$disconnect();
+  if (directOrganizationLockProbeError) {
+    throw directOrganizationLockProbeError;
+  }
+  for (const result of directOrganizationLockResults) {
+    if (result.status === 'rejected') throw result.reason;
+  }
+  assert.equal(
+    await prisma.knowledgeLlmReservation.count({
+      where: {
+        runId: {
+          in: ['run-direct-org-lock-order-a', 'run-direct-org-lock-order-b'],
+        },
+      },
+    }),
+    4,
+  );
+
   await policy({
     id: 'policy-rate',
     subjectType: 'user',
@@ -4561,6 +4716,7 @@ try {
       result: 'PASS',
       personalReservation: true,
       organizationDualReservation: true,
+      directOrganizationReservationLockOrderVerified: true,
       hardLimitRace: true,
       policyVersionBudgetCarryForward: true,
       policyVersionRateCarryForward: true,
