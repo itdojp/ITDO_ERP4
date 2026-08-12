@@ -175,5 +175,5 @@ export interface KnowledgeLlmRunPort {
     actor: KnowledgeActor;
     auditActor: KnowledgeAuditActorContext;
     runId: string;
-  }): Promise<KnowledgeLlmRunRecord>;
+  }): Promise<void>;
 }

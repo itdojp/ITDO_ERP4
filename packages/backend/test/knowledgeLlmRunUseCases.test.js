@@ -343,7 +343,6 @@ function createHarness(options = {}) {
       if (!run || run.actorUserId !== input.actor.userId) {
         throw new KnowledgeLlmRunAccessError('not_found');
       }
-      return { ...run };
     },
   };
 
@@ -411,7 +410,7 @@ function createHarness(options = {}) {
     tokenCodec,
     clock: () => new Date(state.now),
   });
-  return { state, service, provider, runPort, budgetPort };
+  return { state, service, provider, runPort, budgetPort, tokenCodec };
 }
 
 async function preview(harness, overrides = {}) {
@@ -852,6 +851,30 @@ test('reconcile delegates once to the run port and returns its allowlisted view'
   assert.equal(harness.state.reconcileCalls, 1);
   assert.equal(result.id, executed.run.id);
   assert.equal(result.executionStatus, 'result_unknown');
+  assert.equal(harness.state.providerDispatchCalls, 1);
+});
+
+test('reconcile remains available after the provider runtime is disabled', async () => {
+  const harness = createHarness({ providerMode: 'timeout' });
+  const previewResult = await preview(harness);
+  const executed = await execute(harness, previewResult);
+  const disabledService = createKnowledgeLlmRunService({
+    runtime: { provider: null, catalog: null },
+    providerPort: null,
+    budgetPort: harness.budgetPort,
+    runPort: harness.runPort,
+    tokenCodec: harness.tokenCodec,
+    clock: () => new Date(harness.state.now),
+  });
+
+  const result = await disabledService.reconcile({
+    actor,
+    auditActor,
+    runId: executed.run.id,
+  });
+
+  assert.equal(harness.state.reconcileCalls, 1);
+  assert.equal(result.id, executed.run.id);
   assert.equal(harness.state.providerDispatchCalls, 1);
 });
 

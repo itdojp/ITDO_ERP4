@@ -825,9 +825,14 @@ export function createKnowledgeLlmRunService(input: {
       auditActor: KnowledgeAuditActorContext;
       runId: string;
     }) {
-      requireEnabled();
       try {
-        return mapRun(await input.runPort.reconcile(options));
+        await input.runPort.reconcile(options);
+        const run = await input.runPort.findOwned({
+          actor: options.actor,
+          runId: options.runId,
+        });
+        if (!run) throw new KnowledgeLlmRunError(404, 'not_found');
+        return mapRun(run);
       } catch (error) {
         translateError(error);
       }

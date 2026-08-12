@@ -7,6 +7,8 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { StubExternalLlmTextAdapter } from '../dist/adapters/externalLlm/stubTextAdapter.js';
 import { PrismaKnowledgeLlmBudgetAdapter } from '../dist/adapters/knowledge/prismaKnowledgeLlmBudgetAdapter.js';
 import { PrismaKnowledgeLlmRunAdapter } from '../dist/adapters/knowledge/prismaKnowledgeLlmRunAdapter.js';
+import { PrismaKnowledgeConversationRepository } from '../dist/adapters/knowledge/prismaKnowledgeProvenanceAdapter.js';
+import { createKnowledgeLlmBudgetUseCases } from '../dist/application/knowledge/knowledgeLlmBudgetUseCases.js';
 import { createKnowledgeLlmRunService } from '../dist/application/knowledge/knowledgeLlmRunUseCases.js';
 import { createKnowledgeLlmRunTokenCodec } from '../dist/application/knowledge/knowledgeLlmRunToken.js';
 
@@ -228,11 +230,16 @@ try {
       };
     },
   };
+  const budgetAdapter = new PrismaKnowledgeLlmBudgetAdapter(prisma);
+  const runAdapter = new PrismaKnowledgeLlmRunAdapter(prisma, prisma);
+  const conversationRepository = new PrismaKnowledgeConversationRepository(
+    prisma,
+  );
   const service = createKnowledgeLlmRunService({
     runtime: { provider: 'stub', catalog },
     providerPort: provider,
-    budgetPort: new PrismaKnowledgeLlmBudgetAdapter(prisma),
-    runPort: new PrismaKnowledgeLlmRunAdapter(prisma, prisma),
+    budgetPort: budgetAdapter,
+    runPort: runAdapter,
     tokenCodec: createKnowledgeLlmRunTokenCodec({
       env: {
         NODE_ENV: 'test',
@@ -250,6 +257,45 @@ try {
     userPrompt: promptCanary,
     maxOutputTokens: 32,
     sources: [{ sourceType: 'snapshot', sourceId: snapshot.id }],
+  };
+  const reserveOnly = async ({ runId, requestKey, source = snapshot }) => {
+    const resolved = await runAdapter.resolveContext({
+      actor,
+      scope: 'personal',
+      organizationId: null,
+      selectors: [{ sourceType: 'snapshot', sourceId: source.id }],
+    });
+    const budgetService = createKnowledgeLlmBudgetUseCases(
+      budgetAdapter,
+      catalog,
+      provider,
+    );
+    const result = await budgetService.reserve({
+      runId,
+      actor,
+      auditActor: {
+        ...auditActor,
+        requestId: `run-integration-${runId}`,
+      },
+      scope: 'personal',
+      organizationId: null,
+      provider: 'stub',
+      model: 'stub-run-integration',
+      catalogVersion: 1,
+      promptTemplateVersion: 1,
+      requestKeyHash: hash(requestKey),
+      systemPrompt: 'Synthetic system instruction',
+      userPrompt: 'Synthetic reserved prompt',
+      selectedContextSources: resolved.sources,
+      maxOutputTokens: 32,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.value.created, true);
+    const stored = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+      where: { id: runId },
+      select: { providerRequestHash: true },
+    });
+    return { resolved, providerRequestHash: stored.providerRequestHash };
   };
 
   const outsiderItem = await prisma.knowledgeItem.create({
@@ -356,6 +402,87 @@ try {
       where: { llmRuns: { some: { id: completed.run.id } } },
     }),
     1,
+  );
+  assert.ok(
+    await conversationRepository.findVisible({
+      actor,
+      conversationId: completed.run.conversationId,
+    }),
+  );
+
+  const concurrentPreviewA = await service.preview({
+    actor,
+    auditActor: { ...auditActor, requestId: 'run-integration-concurrent-a' },
+    request,
+  });
+  const concurrentPreviewB = await service.preview({
+    actor,
+    auditActor: { ...auditActor, requestId: 'run-integration-concurrent-b' },
+    request,
+  });
+  assert.notEqual(concurrentPreviewA.runId, concurrentPreviewB.runId);
+  const concurrentReplay = await Promise.all([
+    service.execute({
+      actor,
+      auditActor: {
+        ...auditActor,
+        requestId: 'run-integration-concurrent-execute-a',
+      },
+      request,
+      previewToken: concurrentPreviewA.previewToken,
+      requestKey: 'run-integration-concurrent-key',
+      confirmed: true,
+    }),
+    service.execute({
+      actor,
+      auditActor: {
+        ...auditActor,
+        requestId: 'run-integration-concurrent-execute-b',
+      },
+      request,
+      previewToken: concurrentPreviewB.previewToken,
+      requestKey: 'run-integration-concurrent-key',
+      confirmed: true,
+    }),
+  ]);
+  assert.equal(concurrentReplay[0].run.id, concurrentReplay[1].run.id);
+  assert.deepEqual(
+    concurrentReplay
+      .map((result) => [result.created, result.reused])
+      .sort((left, right) => Number(left[0]) - Number(right[0])),
+    [
+      [false, true],
+      [true, false],
+    ],
+  );
+  assert.equal(dispatches, 2);
+  assert.equal(
+    await prisma.knowledgeLlmRun.count({
+      where: {
+        id: { in: [concurrentPreviewA.runId, concurrentPreviewB.runId] },
+      },
+    }),
+    1,
+  );
+  assert.equal(
+    await prisma.knowledgeLlmReservation.count({
+      where: { runId: concurrentReplay[0].run.id },
+    }),
+    1,
+  );
+  assert.equal(
+    await prisma.knowledgeConversation.count({
+      where: { llmRuns: { some: { id: concurrentReplay[0].run.id } } },
+    }),
+    1,
+  );
+  assert.equal(
+    await prisma.knowledgeConversationTurn.count({
+      where: {
+        conversation: { llmRuns: { some: { id: concurrentReplay[0].run.id } } },
+      },
+    }),
+    2,
   );
 
   await assert.rejects(
@@ -474,7 +601,21 @@ try {
   });
   assert.equal(organizationCompleted.run.executionStatus, 'result_ready');
   assert.equal(organizationCompleted.run.settlementStatus, 'settled_actual');
-  assert.equal(dispatches, 2);
+  assert.equal(dispatches, 3);
+  assert.ok(
+    await conversationRepository.findVisible({
+      actor,
+      conversationId: organizationCompleted.run.conversationId,
+    }),
+  );
+  assert.ok(
+    (
+      await conversationRepository.listVisible({ actor, limit: 100 })
+    ).items.some(
+      (conversation) =>
+        conversation.id === organizationCompleted.run.conversationId,
+    ),
+  );
   await prisma.knowledgeItemGroupGrant.delete({
     where: {
       knowledgeItemId_groupAccountId: {
@@ -487,6 +628,154 @@ try {
     service.detail({ actor, runId: organizationCompleted.run.id }),
     (error) => error.status === 404 && error.code === 'not_found',
   );
+  assert.equal(
+    await conversationRepository.findVisible({
+      actor,
+      conversationId: organizationCompleted.run.conversationId,
+    }),
+    null,
+  );
+  assert.equal(
+    (
+      await conversationRepository.listVisible({ actor, limit: 100 })
+    ).items.some(
+      (conversation) =>
+        conversation.id === organizationCompleted.run.conversationId,
+    ),
+    false,
+  );
+
+  const finalizationRaceId = 'run-integration-finalization-race';
+  const finalizationRace = await reserveOnly({
+    runId: finalizationRaceId,
+    requestKey: 'finalization-race-key',
+  });
+  await runAdapter.authorizeAndMarkDispatched({
+    actor,
+    auditActor: {
+      ...auditActor,
+      requestId: 'run-integration-finalization-race-dispatch',
+    },
+    runId: finalizationRaceId,
+    scope: 'personal',
+    organizationId: null,
+    selectors: [{ sourceType: 'snapshot', sourceId: snapshot.id }],
+    expectedSources: finalizationRace.resolved.sources,
+    expectedProviderRequestHash: finalizationRace.providerRequestHash,
+  });
+  const finalizationRaceAdapter = new PrismaKnowledgeLlmRunAdapter(
+    prisma,
+    prisma,
+    () => new Date(Date.now() + 120_000),
+  );
+  const finalizationRaceResults = await Promise.allSettled([
+    runAdapter.finalizeReportedResult({
+      actor,
+      auditActor: {
+        ...auditActor,
+        requestId: 'run-integration-finalization-race-result',
+      },
+      runId: finalizationRaceId,
+      userPrompt: 'Synthetic race prompt',
+      resultContent: 'Synthetic race result',
+      inputTokens: 20,
+      outputTokens: 10,
+    }),
+    finalizationRaceAdapter.reconcile({
+      actor,
+      auditActor: {
+        ...auditActor,
+        requestId: 'run-integration-finalization-race-reconcile',
+      },
+      runId: finalizationRaceId,
+    }),
+  ]);
+  assert.ok(
+    finalizationRaceResults.some((result) => result.status === 'fulfilled'),
+  );
+  const finalizationRaceRun = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: finalizationRaceId },
+  });
+  assert.ok(
+    (finalizationRaceRun.executionStatus === 'result_ready' &&
+      finalizationRaceRun.settlementStatus === 'settled_actual') ||
+      (finalizationRaceRun.executionStatus === 'result_unknown' &&
+        finalizationRaceRun.settlementStatus === 'held_maximum'),
+  );
+  assert.ok(
+    (await prisma.knowledgeConversation.count({
+      where: { llmRuns: { some: { id: finalizationRaceId } } },
+    })) <= 1,
+  );
+
+  const accountingBefore =
+    await prisma.knowledgeLlmBudgetPeriod.findFirstOrThrow({
+      where: { policy: { subjectType: 'user', subjectId: actor.userId } },
+      orderBy: { periodStartUtc: 'desc' },
+    });
+  const disabledReservedId = 'run-integration-disabled-reserved';
+  const disabledReserved = await reserveOnly({
+    runId: disabledReservedId,
+    requestKey: 'disabled-reserved-key',
+  });
+  assert.ok(disabledReserved.providerRequestHash);
+  const reconcileClock = () => new Date(Date.now() + 120_000);
+  const reconcileRunAdapter = new PrismaKnowledgeLlmRunAdapter(
+    prisma,
+    prisma,
+    reconcileClock,
+  );
+  const disabledService = createKnowledgeLlmRunService({
+    runtime: { provider: null, catalog: null },
+    providerPort: null,
+    budgetPort: budgetAdapter,
+    runPort: reconcileRunAdapter,
+    tokenCodec: createKnowledgeLlmRunTokenCodec({
+      env: {
+        NODE_ENV: 'test',
+        KNOWLEDGE_CURSOR_SIGNING_SECRET:
+          'run-integration-disabled-secret-00000000000001',
+      },
+    }),
+  });
+  const released = await disabledService.reconcile({
+    actor,
+    auditActor: {
+      ...auditActor,
+      requestId: 'run-integration-disabled-reconcile',
+    },
+    runId: disabledReservedId,
+  });
+  assert.equal(released.executionStatus, 'failed');
+  assert.equal(released.settlementStatus, 'released');
+  const releasedAgain = await disabledService.reconcile({
+    actor,
+    auditActor: {
+      ...auditActor,
+      requestId: 'run-integration-disabled-reconcile-again',
+    },
+    runId: disabledReservedId,
+  });
+  assert.equal(releasedAgain.settlementStatus, 'released');
+
+  const aclLostDispatchedId = 'run-integration-acl-lost-dispatched';
+  const aclLostDispatched = await reserveOnly({
+    runId: aclLostDispatchedId,
+    requestKey: 'acl-lost-dispatched-key',
+  });
+  await runAdapter.authorizeAndMarkDispatched({
+    actor,
+    auditActor: {
+      ...auditActor,
+      requestId: 'run-integration-acl-lost-dispatch',
+    },
+    runId: aclLostDispatchedId,
+    scope: 'personal',
+    organizationId: null,
+    selectors: [{ sourceType: 'snapshot', sourceId: snapshot.id }],
+    expectedSources: aclLostDispatched.resolved.sources,
+    expectedProviderRequestHash: aclLostDispatched.providerRequestHash,
+  });
 
   await prisma.knowledgeItem.update({
     where: { id: item.id },
@@ -499,6 +788,62 @@ try {
   await assert.rejects(
     service.detail({ actor, runId: completed.run.id }),
     (error) => error.status === 404 && error.code === 'not_found',
+  );
+  assert.equal(
+    await conversationRepository.findVisible({
+      actor,
+      conversationId: completed.run.conversationId,
+    }),
+    null,
+  );
+  await assert.rejects(
+    disabledService.reconcile({
+      actor,
+      auditActor: {
+        ...auditActor,
+        requestId: 'run-integration-acl-lost-reconcile',
+      },
+      runId: aclLostDispatchedId,
+    }),
+    (error) => error.status === 404 && error.code === 'not_found',
+  );
+  const heldAfterAclLoss = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: aclLostDispatchedId },
+  });
+  assert.equal(heldAfterAclLoss.executionStatus, 'result_unknown');
+  assert.equal(heldAfterAclLoss.settlementStatus, 'held_maximum');
+  const relevantRunIds = [disabledReservedId, aclLostDispatchedId];
+  const relevantReservations = await prisma.knowledgeLlmReservation.findMany({
+    where: { runId: { in: relevantRunIds } },
+    orderBy: { runId: 'asc' },
+  });
+  assert.equal(relevantReservations.length, 2);
+  const heldReservation = relevantReservations.find(
+    (reservation) => reservation.runId === aclLostDispatchedId,
+  );
+  const releasedReservation = relevantReservations.find(
+    (reservation) => reservation.runId === disabledReservedId,
+  );
+  assert.equal(heldReservation.status, 'held_maximum');
+  assert.equal(releasedReservation.status, 'released');
+  const relevantPeriods = await prisma.knowledgeLlmBudgetPeriod.findMany({
+    where: { reservations: { some: { runId: { in: relevantRunIds } } } },
+  });
+  assert.equal(relevantPeriods.length, 1);
+  assert.equal(
+    relevantPeriods[0].heldMaximumMicros - accountingBefore.heldMaximumMicros,
+    heldReservation.maximumCostMicros,
+  );
+  assert.equal(
+    (
+      BigInt(relevantPeriods[0].releasedMicros.toString()) -
+      BigInt(accountingBefore.releasedMicros.toString())
+    ).toString(),
+    releasedReservation.maximumCostMicros.toString(),
+  );
+  assert.equal(
+    relevantPeriods[0].activeReservedMicros,
+    accountingBefore.activeReservedMicros,
   );
 
   console.log('knowledge LLM run PostgreSQL integration: PASS');

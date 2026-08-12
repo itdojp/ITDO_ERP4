@@ -120,7 +120,11 @@ function conversationVisibilityWhere(
   return {
     deletedAt: null,
     OR: [
-      { ownerUserId: actor.userId, items: { none: {} } },
+      {
+        ownerUserId: actor.userId,
+        items: { none: {} },
+        llmRuns: { none: {} },
+      },
       {
         items: { some: {} },
         AND: { items: { every: { knowledgeItem: { is: itemVisibility } } } },
@@ -1023,13 +1027,17 @@ export class PrismaKnowledgeLlmRunAdapter implements KnowledgeLlmRunPort {
     return serializable(this.host, async (transaction) => {
       const row = await transaction.knowledgeLlmRun.findFirst({
         where: { id: input.runId, actorUserId: input.actor.userId },
-        include: runInclude,
+        select: {
+          id: true,
+          executionStatus: true,
+          settlementStatus: true,
+          updatedAt: true,
+        },
       });
       if (!row) throw new KnowledgeLlmRunAccessError('not_found');
-      await requireCurrentRunSourceAccess(transaction, input.actor, row);
       const now = this.clock();
       if (now.getTime() - row.updatedAt.getTime() < reconcileGraceMs) {
-        return mapRun(row);
+        return;
       }
       if (
         row.executionStatus === 'reserved' &&
@@ -1073,11 +1081,6 @@ export class PrismaKnowledgeLlmRunAdapter implements KnowledgeLlmRunPort {
           this.clock,
         );
       }
-      const reconciled = await transaction.knowledgeLlmRun.findUniqueOrThrow({
-        where: { id: row.id },
-        include: runInclude,
-      });
-      return mapRun(reconciled);
     });
   }
 }
