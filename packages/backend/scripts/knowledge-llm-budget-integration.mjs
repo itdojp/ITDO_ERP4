@@ -2928,41 +2928,71 @@ try {
     /accounting is immutable/,
   );
 
+  const contextFreezeConversation = await prisma.knowledgeConversation.create({
+    data: {
+      id: 'llm-context-freeze-conversation',
+      ownerUserId: 'settlement-user',
+      title: 'Synthetic independent context',
+      sourceType: 'manual',
+      contentHash: hash('6'),
+      createdBy: 'settlement-user',
+      updatedBy: 'settlement-user',
+      turns: {
+        create: [
+          {
+            id: 'llm-context-freeze-user-turn',
+            sequence: 1,
+            role: 'user',
+            origin: 'user',
+            content: 'Synthetic independent prompt',
+            contentHash: conversationTurnHash('Synthetic independent prompt'),
+            createdBy: 'settlement-user',
+          },
+          {
+            id: 'llm-context-freeze-assistant-turn',
+            sequence: 2,
+            role: 'assistant',
+            origin: 'ai',
+            content: 'Synthetic independent response',
+            contentHash: conversationTurnHash('Synthetic independent response'),
+            createdBy: 'settlement-user',
+          },
+        ],
+      },
+    },
+    include: { turns: { orderBy: { sequence: 'asc' } } },
+  });
+  const contextFreezeUser = contextFreezeConversation.turns[0];
+  const contextFreezeAssistant = contextFreezeConversation.turns[1];
   const contextFreezeSources = [
     {
       ordinal: 0,
       sourceType: 'conversation_turn',
-      sourceId: settlementConversation.assistant.id,
-      exactSourceVersion: settlementConversation.assistant.sequence,
-      exactSourceHash: settlementConversation.assistant.contentHash,
-      representation: settlementConversation.assistant.content,
+      sourceId: contextFreezeAssistant.id,
+      exactSourceVersion: contextFreezeAssistant.sequence,
+      exactSourceHash: contextFreezeAssistant.contentHash,
+      representation: contextFreezeAssistant.content,
       representationHash: knowledgeLlmContextRepresentationHash(
-        settlementConversation.assistant.content,
+        contextFreezeAssistant.content,
       ),
-      byteLength: Buffer.byteLength(
-        settlementConversation.assistant.content,
-        'utf8',
-      ),
+      byteLength: Buffer.byteLength(contextFreezeAssistant.content, 'utf8'),
       estimatedTokens: knowledgeLlmContextEstimatedTokens(
-        Buffer.byteLength(settlementConversation.assistant.content, 'utf8'),
+        Buffer.byteLength(contextFreezeAssistant.content, 'utf8'),
       ),
     },
     {
       ordinal: 1,
       sourceType: 'conversation_turn',
-      sourceId: settlementConversation.user.id,
-      exactSourceVersion: settlementConversation.user.sequence,
-      exactSourceHash: settlementConversation.user.contentHash,
-      representation: settlementConversation.user.content,
+      sourceId: contextFreezeUser.id,
+      exactSourceVersion: contextFreezeUser.sequence,
+      exactSourceHash: contextFreezeUser.contentHash,
+      representation: contextFreezeUser.content,
       representationHash: knowledgeLlmContextRepresentationHash(
-        settlementConversation.user.content,
+        contextFreezeUser.content,
       ),
-      byteLength: Buffer.byteLength(
-        settlementConversation.user.content,
-        'utf8',
-      ),
+      byteLength: Buffer.byteLength(contextFreezeUser.content, 'utf8'),
       estimatedTokens: knowledgeLlmContextEstimatedTokens(
-        Buffer.byteLength(settlementConversation.user.content, 'utf8'),
+        Buffer.byteLength(contextFreezeUser.content, 'utf8'),
       ),
     },
   ];
@@ -2986,7 +3016,7 @@ try {
   await assert.rejects(
     prisma.knowledgeLlmRun.update({
       where: { id: 'run-context-freeze' },
-      data: { conversationId: settlementConversation.conversation.id },
+      data: { conversationId: contextFreezeConversation.id },
     }),
     /conversation requires result transition|state_shape_check/,
   );
@@ -3044,7 +3074,7 @@ try {
       runId: 'run-context-gap',
       sourceType: 'conversation_turn',
       ordinal: 1,
-      sourceConversationTurnId: settlementConversation.user.id,
+      sourceConversationTurnId: contextFreezeUser.id,
       exactSourceVersion: contextFreezeSources[1].exactSourceVersion,
       exactSourceHash: contextFreezeSources[1].exactSourceHash,
       representationHash: contextFreezeSources[1].representationHash,
@@ -3266,6 +3296,139 @@ try {
       `context-invalid-${suffix}`,
     );
   }
+
+  const ineligibleSystemTurn = await prisma.knowledgeConversationTurn.create({
+    data: {
+      conversationId: contextGuardConversation.id,
+      sequence: 100,
+      role: 'system',
+      origin: 'system',
+      content: 'Synthetic system context must remain ineligible',
+      contentHash: conversationTurnHash(
+        'Synthetic system context must remain ineligible',
+      ),
+      createdBy: 'context-guard-user',
+    },
+  });
+  const ineligibleToolTurn = await prisma.knowledgeConversationTurn.create({
+    data: {
+      conversationId: contextGuardConversation.id,
+      sequence: 101,
+      role: 'tool',
+      origin: 'tool',
+      content: 'Synthetic tool context must remain ineligible',
+      contentHash: conversationTurnHash(
+        'Synthetic tool context must remain ineligible',
+      ),
+      createdBy: 'context-guard-user',
+    },
+  });
+  for (const [suffix, turn] of [
+    ['system', ineligibleSystemTurn],
+    ['tool', ineligibleToolTurn],
+  ]) {
+    const runId = `run-context-ineligible-${suffix}-turn`;
+    await reserveContextRun(runId, [contextFromTurn(turn, 0)]);
+    await expectContextDispatchRejected(
+      runId,
+      /dispatch conversation source is not eligible/,
+      `context-ineligible-${suffix}-turn`,
+    );
+  }
+
+  assert.ok(
+    await prisma.knowledgeLlmRun.count({
+      where: { conversationId: settlementConversation.conversation.id },
+    }),
+  );
+  await reserveContextRun('run-context-ineligible-llm-turn', [
+    contextFromTurn(settlementConversation.user, 0),
+  ]);
+  await expectContextDispatchRejected(
+    'run-context-ineligible-llm-turn',
+    /dispatch conversation source is not eligible/,
+    'context-ineligible-llm-turn',
+  );
+
+  async function createNestedLlmSynthesisContext({
+    synthesisId,
+    versionId,
+    source,
+  }) {
+    const synthesis = await prisma.knowledgeSynthesis.create({
+      data: {
+        id: synthesisId,
+        ownerUserId: 'context-guard-user',
+        scope: 'personal',
+        title: 'Synthetic LLM-derived synthesis',
+        createdBy: 'context-guard-user',
+        updatedBy: 'context-guard-user',
+        versions: {
+          create: {
+            id: versionId,
+            version: 1,
+            content: 'Synthetic LLM-derived synthesis content',
+            unresolvedQuestions: [],
+            createdBy: 'context-guard-user',
+            sources: {
+              create: {
+                relationType: 'supporting',
+                ordinal: 0,
+                createdBy: 'context-guard-user',
+                ...source,
+              },
+            },
+          },
+        },
+      },
+      include: { versions: true },
+    });
+    const version = synthesis.versions[0];
+    const byteLength = Buffer.byteLength(version.content, 'utf8');
+    return {
+      ordinal: 0,
+      sourceType: 'synthesis_version',
+      sourceId: version.id,
+      exactSourceVersion: version.version,
+      exactSourceHash: knowledgeTextHash('synthesis-version', version.content),
+      representation: version.content,
+      representationHash: knowledgeLlmContextRepresentationHash(
+        version.content,
+      ),
+      byteLength,
+      estimatedTokens: knowledgeLlmContextEstimatedTokens(byteLength),
+    };
+  }
+
+  const nestedLlmConversationContext = await createNestedLlmSynthesisContext({
+    synthesisId: 'context-llm-conversation-synthesis',
+    versionId: 'context-llm-conversation-version',
+    source: {
+      sourceConversationId: settlementConversation.conversation.id,
+    },
+  });
+  await reserveContextRun('run-context-ineligible-llm-conversation-synthesis', [
+    nestedLlmConversationContext,
+  ]);
+  await expectContextDispatchRejected(
+    'run-context-ineligible-llm-conversation-synthesis',
+    /dispatch synthesis source is not eligible/,
+    'context-ineligible-llm-conversation-synthesis',
+  );
+
+  const nestedLlmTurnContext = await createNestedLlmSynthesisContext({
+    synthesisId: 'context-llm-turn-synthesis',
+    versionId: 'context-llm-turn-version',
+    source: { sourceConversationTurnId: settlementConversation.user.id },
+  });
+  await reserveContextRun('run-context-ineligible-llm-turn-synthesis', [
+    nestedLlmTurnContext,
+  ]);
+  await expectContextDispatchRejected(
+    'run-context-ineligible-llm-turn-synthesis',
+    /dispatch synthesis source is not eligible/,
+    'context-ineligible-llm-turn-synthesis',
+  );
 
   await reserveContextRun(
     'run-context-fingerprint-mismatch',
@@ -4755,6 +4918,8 @@ try {
       contextAggregateBoundsVerified: true,
       contextSelectedItemBoundVerified: true,
       contextProvenanceDepthVerified: true,
+      contextConversationEligibilityGuardVerified: true,
+      contextSynthesisEligibilityGuardVerified: true,
       contextFingerprintVerified: true,
       providerOutcomeRequiresDispatch: true,
       assistantTurnContentHashVerified: true,
