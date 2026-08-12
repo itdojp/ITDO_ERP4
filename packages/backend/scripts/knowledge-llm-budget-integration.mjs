@@ -539,6 +539,7 @@ try {
     model: 'stub-default',
     systemPrompt: '',
     userPrompt: '',
+    inputTokenCeiling: renderedPromptRun.estimatedInputTokens,
     maxOutputTokens: 100,
     temperatureBasisPoints: 0,
   };
@@ -2048,7 +2049,9 @@ try {
         ),
         dispatchedAt: after(750),
       });
-      await transaction.knowledgeLlmProviderOutcome.create({
+    });
+    await assert.rejects(
+      prisma.knowledgeLlmProviderOutcome.create({
         data: {
           runId,
           status: 'valid',
@@ -2059,51 +2062,56 @@ try {
           createdAt: after(760),
           capturedAt: after(760),
         },
+      }),
+      /usage exceeds run token ceiling/,
+    );
+    await prisma.$transaction(async (transaction) => {
+      await transaction.knowledgeLlmProviderOutcome.create({
+        data: {
+          runId,
+          status: 'usage_unknown',
+          normalizedContent: assistant.content,
+          contentHash: assistant.contentHash,
+          failureCode: 'usage_invalid',
+          createdAt: after(765),
+          capturedAt: after(765),
+        },
       });
       await transaction.knowledgeLlmProviderOutcome.update({
         where: { runId },
         data: { normalizedContent: null, finalizedAt: after(770) },
       });
-    });
-    await assert.rejects(
-      prisma.$transaction((transaction) =>
-        settleKnowledgeLlmBudget(transaction, {
-          runId,
-          actorUserId: 'token-ceiling-user',
-          auditActor: terminalAuditActor(
-            'token-ceiling-user',
-            `${runId}-settle`,
-          ),
-          completedAt: after(780),
-          settlement: {
-            type: 'actual',
-            actualInputTokens: usage.inputTokens,
-            actualOutputTokens: usage.outputTokens,
-            actualCostMicros: 0n,
-            conversationId: tokenCeilingConversation.id,
-            assistantTurnId: assistant.id,
-          },
-        }),
-      ),
-      /knowledge_llm_settlement_invalid/,
-    );
-    await assert.rejects(
-      prisma.knowledgeLlmRun.update({
-        where: { id: runId },
-        data: {
+      await settleKnowledgeLlmBudget(transaction, {
+        runId,
+        actorUserId: 'token-ceiling-user',
+        auditActor: terminalAuditActor(
+          'token-ceiling-user',
+          `${runId}-hold`,
+        ),
+        completedAt: after(780),
+        settlement: {
+          type: 'hold',
           executionStatus: 'result_ready',
-          settlementStatus: 'settled_actual',
-          actualInputTokens: usage.inputTokens,
-          actualOutputTokens: usage.outputTokens,
-          actualCostMicros: 0n,
+          failureCode: 'usage_invalid',
           conversationId: tokenCeilingConversation.id,
           assistantTurnId: assistant.id,
-          completedAt: after(790),
-          updatedAt: after(790),
-          updatedBy: 'token-ceiling-user',
         },
-      }),
-      /actual usage exceeds reserved token ceiling/,
+      });
+    });
+    const heldCeilingRun = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+      where: { id: runId },
+      include: { outcome: true, reservations: true },
+    });
+    assert.equal(heldCeilingRun.executionStatus, 'result_ready');
+    assert.equal(heldCeilingRun.settlementStatus, 'held_maximum');
+    assert.equal(heldCeilingRun.failureCode, 'usage_invalid');
+    assert.equal(heldCeilingRun.outcome?.status, 'usage_unknown');
+    assert.equal(heldCeilingRun.outcome?.normalizedContent, null);
+    assert.equal(heldCeilingRun.outcome?.contentHash, assistant.contentHash);
+    assert.ok(
+      heldCeilingRun.reservations.every(
+        (entry) => entry.status === 'held_maximum',
+      ),
     );
   }
   const directCostGuardReservation = await service.reserve(
@@ -4061,7 +4069,7 @@ try {
         version: { increment: 1 },
       },
     }),
-    /counters must match reservation ledger/,
+    /counters may change only through reservation transitions/,
   );
   const directMutationRunAfter = await prisma.knowledgeLlmRun.findUniqueOrThrow(
     {
@@ -4253,6 +4261,38 @@ try {
     assert.equal(serializedAudit.includes(canary), false, canary);
   }
 
+  const offlineReconciliationPeriod =
+    await prisma.knowledgeLlmBudgetPeriod.findFirstOrThrow({
+      select: { id: true },
+      orderBy: { id: 'asc' },
+    });
+  await assert.rejects(
+    prisma.$transaction(async (transaction) => {
+      // The ephemeral integration role is the database owner. Disable user
+      // triggers only inside this rolled-back transaction to prove the
+      // explicit read-only reconciliation detects historical/manual drift.
+      await transaction.$executeRawUnsafe(
+        'SET LOCAL session_replication_role = replica',
+      );
+      await transaction.$executeRaw`
+        UPDATE "KnowledgeLlmBudgetPeriod"
+        SET "releasedMicros" = "releasedMicros" + 1
+        WHERE id = ${offlineReconciliationPeriod.id}
+      `;
+      await transaction.$queryRaw`
+        SELECT "erp4_knowledge_llm_assert_period_accounting"(
+          ${offlineReconciliationPeriod.id}
+        )::TEXT AS result
+      `;
+    }),
+    /counters must match reservation ledger/,
+  );
+  await prisma.$queryRaw`
+    SELECT "erp4_knowledge_llm_assert_period_accounting"(id)::TEXT AS result
+    FROM "KnowledgeLlmBudgetPeriod"
+    ORDER BY id
+  `;
+
   console.log(
     JSON.stringify({
       result: 'PASS',
@@ -4309,7 +4349,9 @@ try {
       runMaximumReservationRecalculationBlocked: true,
       outcomeRunLockOrderVerified: true,
       runReservationAtomicityVerified: true,
-      periodLedgerConsistencyVerified: true,
+      periodCounterMutationGuardVerified: true,
+      periodOfflineDriftDetected: true,
+      periodOfflineReconciliationVerified: true,
       terminalDispatchTimestampImmutable: true,
       terminalRunProvenanceImmutable: true,
       conversationStateGuard: true,

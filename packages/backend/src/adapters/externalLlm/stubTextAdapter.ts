@@ -27,6 +27,7 @@ function snapshotRequest(
       request.contextSections === undefined
         ? undefined
         : [...request.contextSections],
+    inputTokenCeiling: request.inputTokenCeiling,
     maxOutputTokens: request.maxOutputTokens,
     temperatureBasisPoints: request.temperatureBasisPoints,
   };
@@ -86,6 +87,9 @@ export class StubExternalLlmTextAdapter implements ExternalLlmTextPort {
     try {
       requestFingerprint = this.bind(requestSnapshot).requestFingerprint;
       inputTokens = externalLlmConservativeInputTokens(requestSnapshot);
+      if (inputTokens > requestSnapshot.inputTokenCeiling) {
+        throw new Error('input_token_ceiling_exceeded');
+      }
     } catch {
       throw new ExternalLlmProviderError(
         'rejected_before_dispatch',

@@ -313,6 +313,9 @@ export function getKnowledgeLlmRuntimeConfig(
     .replace(/\/$/, '');
   let parsedUrl: URL;
   try {
+    if (canonicalExternalLlmUrlHostname(baseUrl) === null) {
+      throw new Error('invalid_host');
+    }
     parsedUrl = new URL(baseUrl);
   } catch {
     throw new KnowledgeLlmConfigurationError(
@@ -348,7 +351,7 @@ export function getKnowledgeLlmRuntimeConfig(
     );
   }
   const hosts = allowedHosts(env.KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS);
-  const destinationHost = canonicalExternalLlmUrlHostname(parsedUrl);
+  const destinationHost = canonicalExternalLlmUrlHostname(baseUrl);
   if (
     destinationHost === null ||
     hosts.length === 0 ||

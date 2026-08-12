@@ -8,6 +8,7 @@ const request = {
   model: 'stub-v1',
   systemPrompt: 'Synthetic system instruction',
   userPrompt: 'PRIVATE-CANARY must not be echoed',
+  inputTokenCeiling: 2_147_483_647,
   maxOutputTokens: 64,
   temperatureBasisPoints: 0,
 };
@@ -145,6 +146,37 @@ test('canonical provider body preserves context boundaries against delimiter col
     { role: 'system', content: request.systemPrompt },
     { role: 'user', content: request.userPrompt },
   ]);
+});
+
+test('request and transport fingerprints bind the accepted input usage ceiling', async () => {
+  const {
+    bindExternalLlmTextRequest,
+    bindExternalLlmTextTransportRequest,
+    externalLlmTextTransportBindingSchemaVersion,
+  } = await import('../dist/application/externalLlm/externalLlmPort.js');
+  const lower = { ...request, inputTokenCeiling: 128 };
+  const higher = { ...request, inputTokenCeiling: 129 };
+  const transport = {
+    kind: 'local_stub',
+    destination: 'local://erp4/external-llm/stub/v1',
+  };
+
+  assert.equal(
+    externalLlmTextTransportBindingSchemaVersion,
+    'external-llm-text-transport-v2',
+  );
+  assert.equal(
+    bindExternalLlmTextRequest(lower).serializedBody,
+    bindExternalLlmTextRequest(higher).serializedBody,
+  );
+  assert.notEqual(
+    bindExternalLlmTextRequest(lower).requestFingerprint,
+    bindExternalLlmTextRequest(higher).requestFingerprint,
+  );
+  assert.notEqual(
+    bindExternalLlmTextTransportRequest(lower, transport).requestFingerprint,
+    bindExternalLlmTextTransportRequest(higher, transport).requestFingerprint,
+  );
 });
 
 test('adapter rejects malformed request fields during prepare', async () => {
@@ -315,6 +347,7 @@ test('external LLM allowlist hosts reject Unicode folding and normalize IPv6 lit
   const {
     bindExternalLlmTextTransportRequest,
     canonicalExternalLlmAllowedHost,
+    canonicalExternalLlmUrlHostname,
   } = await import('../dist/application/externalLlm/externalLlmPort.js');
   assert.equal(canonicalExternalLlmAllowedHost('API.EXAMPLE'), 'api.example');
   assert.equal(canonicalExternalLlmAllowedHost('K.example'), null);
@@ -322,6 +355,15 @@ test('external LLM allowlist hosts reject Unicode folding and normalize IPv6 lit
   assert.equal(
     canonicalExternalLlmAllowedHost('2606:4700:4700:0:0:0:0:1111'),
     '2606:4700:4700::1111',
+  );
+  assert.equal(canonicalExternalLlmUrlHostname('https://K.example/v1'), null);
+  assert.equal(
+    canonicalExternalLlmUrlHostname('https://k.example/日本語?q=文書'),
+    'k.example',
+  );
+  assert.equal(
+    canonicalExternalLlmUrlHostname('https://user@k.example/v1'),
+    null,
   );
   assert.throws(
     () =>
@@ -331,6 +373,24 @@ test('external LLM allowlist hosts reject Unicode folding and normalize IPv6 lit
           kind: 'openai_compatible_http',
           destination: 'https://k.example/v1/chat/completions',
           allowedHosts: ['K.example'],
+          allowHttp: false,
+          allowPrivateIp: false,
+          timeoutMs: 1_000,
+          maximumResponseBytes: 1_024,
+          malformedSuccessPolicy: 'reject',
+          usagePolicy: 'strict',
+        },
+      ),
+    /external_llm_transport_binding_invalid/,
+  );
+  assert.throws(
+    () =>
+      bindExternalLlmTextTransportRequest(
+        { ...request, provider: 'openai' },
+        {
+          kind: 'openai_compatible_http',
+          destination: 'https://K.example/v1/chat/completions',
+          allowedHosts: ['k.example'],
           allowHttp: false,
           allowPrivateIp: false,
           timeoutMs: 1_000,
@@ -1012,6 +1072,32 @@ test('OpenAI-compatible adapter marks output usage beyond the request ceiling as
             prompt_tokens: 0,
             completion_tokens: input.maxOutputTokens + 1,
           },
+        }),
+      );
+    },
+    async (baseUrl) => {
+      const result = await complete(
+        openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl),
+        input,
+      );
+      assert.equal(result.content, 'Synthetic result');
+      assert.equal(result.usageStatus, 'invalid');
+      assert.equal(result.usage, null);
+    },
+  );
+});
+
+test('OpenAI-compatible adapter preserves content and marks input usage beyond the request ceiling invalid', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  const input = { ...openAiRequest(), inputTokenCeiling: 10 };
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
+        JSON.stringify({
+          choices: [{ message: { content: 'Synthetic result' } }],
+          usage: { prompt_tokens: 11, completion_tokens: 1 },
         }),
       );
     },

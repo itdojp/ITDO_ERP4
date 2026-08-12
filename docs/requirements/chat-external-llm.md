@@ -26,6 +26,7 @@
 
 - `CHAT_EXTERNAL_LLM_OPENAI_API_KEY`
 - `CHAT_EXTERNAL_LLM_OPENAI_BASE_URL`（任意、既定: `https://api.openai.com/v1`）
+  - hostnameはWHATWG URL／IDNA正規化前のraw値をASCIIとして検証する。Unicode／IDN表記は拒否するため、必要な場合は運用者がASCII punycodeへ明示変換し、同じcanonical hostをallowlistへ設定する
 - `CHAT_EXTERNAL_LLM_ALLOWED_HOSTS`
   - カンマ区切りの接続先allowlist。custom base URLでは必須で、base URL hostを含める。raw値はUnicode case fold前にASCII検証し、IPv6 literalは角括弧なしcanonical表現で指定する
   - 既定の`https://api.openai.com/v1`だけは後方互換のため`api.openai.com`を暗黙allowlistとする

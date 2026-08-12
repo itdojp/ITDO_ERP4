@@ -246,6 +246,9 @@ type LockedSubjectPeriod = {
   timezone: string;
   periodStartUtc: Date;
   periodEndUtc: Date;
+  activeReservedMicros: bigint;
+  settledActualMicros: bigint;
+  heldMaximumMicros: bigint;
 };
 
 function subjectKey(subject: {
@@ -286,7 +289,10 @@ async function lockSubjectUsagePeriods(
       period.currency,
       period.timezone,
       period."periodStartUtc",
-      period."periodEndUtc"
+      period."periodEndUtc",
+      period."activeReservedMicros",
+      period."settledActualMicros",
+      period."heldMaximumMicros"
     FROM "KnowledgeLlmBudgetPeriod" period
     JOIN "KnowledgeLlmBudgetPolicy" policy
       ON policy.id = period."policyId"
@@ -348,30 +354,24 @@ async function loadSubjectUsage(
   const timezoneMismatch = currentWindowPeriods.some(
     (period) => period.timezone !== policy.timezone,
   );
-  const usage = await transaction.$queryRaw<Array<SubjectUsage>>(Prisma.sql`
+  // The locked period counters are maintained atomically by the reservation
+  // transition trigger. Avoid re-summing every monthly ledger row on each
+  // request; only the independently bounded rolling-hour count scans rows.
+  const committedMicros = currentWindowPeriods.reduce(
+    (total, period) =>
+      total +
+      period.activeReservedMicros +
+      period.settledActualMicros +
+      period.heldMaximumMicros,
+    0n,
+  );
+  const usage = await transaction.$queryRaw<
+    Array<{ recentRequestCount: bigint }>
+  >(Prisma.sql`
     SELECT
-      COALESCE(SUM(
-        CASE
-          WHEN reservation."createdAt" >= ${window.start}
-            AND reservation."createdAt" < ${window.end}
-            AND reservation.status = 'reserved'
-            THEN reservation."maximumCostMicros"
-          WHEN reservation."createdAt" >= ${window.start}
-            AND reservation."createdAt" < ${window.end}
-            AND reservation.status = 'held_maximum'
-            THEN reservation."maximumCostMicros"
-          WHEN reservation."createdAt" >= ${window.start}
-            AND reservation."createdAt" < ${window.end}
-            AND reservation.status = 'settled_actual'
-            THEN reservation."actualCostMicros"
-          ELSE 0
-        END
-      ), 0)::bigint AS "committedMicros",
       COUNT(*) FILTER (
         WHERE reservation."createdAt" >= ${hourAgo}
-      )::bigint AS "recentRequestCount",
-      ${currencyMismatch}::boolean AS "currencyMismatch",
-      ${timezoneMismatch}::boolean AS "timezoneMismatch"
+      )::bigint AS "recentRequestCount"
     FROM "KnowledgeLlmReservation" reservation
     JOIN "KnowledgeLlmBudgetPeriod" period
       ON period.id = reservation."budgetPeriodId"
@@ -385,7 +385,12 @@ async function loadSubjectUsage(
   `);
   const result = usage[0];
   if (!result) throw new Error('knowledge_llm_period_mismatch');
-  return result;
+  return {
+    committedMicros,
+    recentRequestCount: result.recentRequestCount,
+    currencyMismatch,
+    timezoneMismatch,
+  };
 }
 
 function auditMetadata(

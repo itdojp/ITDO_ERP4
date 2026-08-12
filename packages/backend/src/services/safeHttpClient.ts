@@ -3,6 +3,10 @@ import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { BlockList, isIP } from 'node:net';
 import { Readable } from 'node:stream';
+import {
+  canonicalExternalHosts,
+  canonicalExternalUrl,
+} from './externalHostIdentity.js';
 
 export type DnsLookupResult = Array<{ address: string; family?: number }>;
 
@@ -33,12 +37,9 @@ export class SafeHttpError extends Error {
 
 function normalizeAllowedHosts(raw?: Iterable<string>) {
   if (!raw) return new Set<string>();
-  const hosts = new Set<string>();
-  for (const value of raw) {
-    const trimmed = String(value).trim().toLowerCase();
-    if (trimmed) hosts.add(trimmed);
-  }
-  return hosts;
+  const hosts = canonicalExternalHosts([...raw], 100);
+  if (hosts === null) throw new SafeHttpError('host_not_allowed');
+  return new Set(hosts);
 }
 
 /**
@@ -205,26 +206,16 @@ async function validateExternalUrlForFetch(
   rawUrl: string,
   options: SafeHttpOptions = {},
 ): Promise<ValidatedExternalUrl> {
-  let url: URL;
-  try {
-    url = new URL(rawUrl);
-  } catch {
+  const canonical = canonicalExternalUrl(rawUrl);
+  if (canonical === null) {
     throw new SafeHttpError('invalid_url');
   }
+  const { url, hostname } = canonical;
   const protocol = url.protocol.toLowerCase();
   const allowHttp = options.allowHttp === true;
   if (protocol !== 'https:' && !(allowHttp && protocol === 'http:')) {
     throw new SafeHttpError('insecure_scheme');
   }
-  const rawHostname = url.hostname.toLowerCase();
-  const hostname =
-    rawHostname.startsWith('[') && rawHostname.endsWith(']')
-      ? rawHostname.slice(1, -1)
-      : rawHostname;
-  if (!hostname) {
-    throw new SafeHttpError('missing_hostname');
-  }
-
   const allowedHosts = normalizeAllowedHosts(options.allowedHosts);
   if (allowedHosts.size > 0 && !allowedHosts.has(hostname)) {
     throw new SafeHttpError('host_not_allowed');

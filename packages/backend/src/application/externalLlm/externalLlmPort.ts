@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
-import { isIP } from 'node:net';
+import {
+  canonicalExternalHost,
+  canonicalExternalHosts,
+  canonicalExternalUrl,
+} from '../../services/externalHostIdentity.js';
 
 /**
  * Provider-neutral text generation boundary shared by bounded contexts.
@@ -19,6 +23,8 @@ export type ExternalLlmTextRequest = {
   userPrompt: string;
   /** Ordered, caller-authorized context. Adapters render this deterministically. */
   contextSections?: readonly string[];
+  /** Maximum provider-reported input usage accepted for this exact request. */
+  inputTokenCeiling: number;
   maxOutputTokens: number;
   temperatureBasisPoints: number;
 };
@@ -36,7 +42,7 @@ export const externalLlmTextRequestSerializationSchemaVersion =
  * or interpreted differently.
  */
 export const externalLlmTextTransportBindingSchemaVersion =
-  'external-llm-text-transport-v1';
+  'external-llm-text-transport-v2';
 
 export type ExternalLlmTextTransportBinding =
   | {
@@ -128,30 +134,7 @@ export function isCanonicalExternalLlmModel(value: unknown): value is string {
 }
 
 export function canonicalExternalLlmAllowedHost(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  // Validate the raw value before Unicode case folding. Characters such as
-  // U+212A fold to ASCII and must not become an implicit allowlist grant.
-  if (!/^[\x21-\x7e]+$/.test(trimmed)) return null;
-  if (isIP(trimmed) === 6) {
-    // WHATWG URL produces one normalized representation for equivalent IPv6
-    // literals. The allowlist contract is deliberately unbracketed, matching
-    // safeHttpClient's comparison and DNS/pinning boundary.
-    const hostname = new URL(`http://[${trimmed}]/`).hostname;
-    return hostname.slice(1, -1).toLowerCase();
-  }
-  const normalized = trimmed.toLowerCase();
-  if (
-    normalized.length < 1 ||
-    normalized.length > 253 ||
-    !/^[A-Za-z0-9.-]+$/.test(trimmed) ||
-    normalized.startsWith('.') ||
-    normalized.endsWith('.') ||
-    normalized.includes('..')
-  ) {
-    return null;
-  }
-  return normalized;
+  return canonicalExternalHost(value);
 }
 
 /**
@@ -163,32 +146,12 @@ export function canonicalExternalLlmAllowedHosts(
   values: readonly unknown[],
   maximumHosts = 100,
 ): string[] | null {
-  if (
-    !Array.isArray(values) ||
-    !Number.isSafeInteger(maximumHosts) ||
-    maximumHosts < 0 ||
-    values.length > maximumHosts
-  ) {
-    return null;
-  }
-  const result = values.map(canonicalExternalLlmAllowedHost);
-  if (
-    result.some((host) => host === null) ||
-    new Set(result).size !== result.length
-  ) {
-    return null;
-  }
-  return (result as string[]).sort();
+  return canonicalExternalHosts(values, maximumHosts);
 }
 
-/** Canonical host identity for an already parsed provider endpoint URL. */
-export function canonicalExternalLlmUrlHostname(url: URL): string | null {
-  const rawHostname = url.hostname;
-  return canonicalExternalLlmAllowedHost(
-    rawHostname.startsWith('[') && rawHostname.endsWith(']')
-      ? rawHostname.slice(1, -1)
-      : rawHostname,
-  );
+/** Canonical host validated before URL case folding/IDNA processing. */
+export function canonicalExternalLlmUrlHostname(rawUrl: string): string | null {
+  return canonicalExternalUrl(rawUrl)?.hostname ?? null;
 }
 
 /** Text that can be hashed and persisted without UTF-8/SQL normalization. */
@@ -212,6 +175,9 @@ function assertExternalLlmTextRequest(request: ExternalLlmTextRequest): void {
     !Array.isArray(contexts) ||
     contexts.length > 64 ||
     contexts.some((content) => typeof content !== 'string') ||
+    !Number.isSafeInteger(request.inputTokenCeiling) ||
+    request.inputTokenCeiling < 1 ||
+    request.inputTokenCeiling > 2_147_483_647 ||
     !Number.isSafeInteger(request.maxOutputTokens) ||
     request.maxOutputTokens < 1 ||
     request.maxOutputTokens > 1_000_000 ||
@@ -311,12 +277,13 @@ export function bindExternalLlmTextRequest(request: ExternalLlmTextRequest): {
 } {
   const serializedBody = serializeExternalLlmTextRequestBody(request);
   const hash = createHash('sha256');
-  hash.update('erp4:external-llm:text-request-fingerprint:v2\0', 'utf8');
+  hash.update('erp4:external-llm:text-request-fingerprint:v3\0', 'utf8');
   updateFingerprintField(hash, request.provider);
   updateFingerprintField(
     hash,
     externalLlmTextRequestSerializationSchemaVersion,
   );
+  updateFingerprintField(hash, String(request.inputTokenCeiling));
   // This is the same byte sequence passed as prepareSafeFetch's string body.
   updateFingerprintField(hash, serializedBody);
   return {
@@ -334,12 +301,11 @@ function canonicalAllowedHosts(hosts: readonly string[]): string[] {
 }
 
 function canonicalHttpDestination(destination: string): string {
-  let parsed: URL;
-  try {
-    parsed = new URL(destination);
-  } catch {
+  const canonical = canonicalExternalUrl(destination);
+  if (canonical === null) {
     throw new Error('external_llm_transport_binding_invalid');
   }
+  const parsed = canonical.url;
   if (
     (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') ||
     !parsed.hostname ||
@@ -365,7 +331,7 @@ export function bindExternalLlmTextTransportRequest(
 ): { serializedBody: string; requestFingerprint: string } {
   const serializedBody = serializeExternalLlmTextRequestBody(request);
   const hash = createHash('sha256');
-  hash.update('erp4:external-llm:text-transport-fingerprint:v1\0', 'utf8');
+  hash.update('erp4:external-llm:text-transport-fingerprint:v2\0', 'utf8');
   updateFingerprintField(hash, request.provider);
   updateFingerprintField(
     hash,
@@ -373,6 +339,7 @@ export function bindExternalLlmTextTransportRequest(
   );
   updateFingerprintField(hash, externalLlmTextTransportBindingSchemaVersion);
   updateFingerprintField(hash, transport.kind);
+  updateFingerprintField(hash, String(request.inputTokenCeiling));
 
   if (transport.kind === 'local_stub') {
     if (transport.destination !== 'local://erp4/external-llm/stub/v1') {

@@ -81,10 +81,22 @@ export function buildKnowledgeLlmExternalRequest(input: {
   systemPrompt: string;
   userPrompt: string;
   contextSections: readonly string[];
+  inputTokenCeiling?: number;
   maxOutputTokens: number;
 }): ExternalLlmTextRequest {
+  const inputTokenCeiling =
+    input.inputTokenCeiling ??
+    externalLlmConservativeInputTokens(
+      {
+        systemPrompt: input.systemPrompt,
+        userPrompt: input.userPrompt,
+        contextSections: input.contextSections,
+      },
+      knowledgeLlmLimits.sourceFramingTokens,
+    );
   return {
     ...input,
+    inputTokenCeiling,
     temperatureBasisPoints: knowledgeLlmTemperatureBasisPoints,
   };
 }
@@ -220,7 +232,7 @@ export function createKnowledgeLlmBudgetUseCases(
         selectedContext = deriveKnowledgeLlmSelectedContext(
           input.selectedContextSources,
         );
-        const providerRequest = buildKnowledgeLlmExternalRequest({
+        const provisionalProviderRequest = buildKnowledgeLlmExternalRequest({
           provider: input.provider,
           model: input.model,
           systemPrompt: input.systemPrompt,
@@ -229,15 +241,24 @@ export function createKnowledgeLlmBudgetUseCases(
           maxOutputTokens: input.maxOutputTokens,
         });
         const derivedEstimate = externalLlmConservativeInputTokens(
-          providerRequest,
+          provisionalProviderRequest,
           knowledgeLlmLimits.sourceFramingTokens,
         );
-        providerRequestHash =
-          providerBindingPort.bind(providerRequest).requestFingerprint;
         estimatedInputTokens = Math.max(
           derivedEstimate,
           input.reservationInputTokenFloor ?? derivedEstimate,
         );
+        const providerRequest = buildKnowledgeLlmExternalRequest({
+          provider: input.provider,
+          model: input.model,
+          systemPrompt: input.systemPrompt,
+          userPrompt: input.userPrompt,
+          contextSections: selectedContext.representations,
+          inputTokenCeiling: estimatedInputTokens,
+          maxOutputTokens: input.maxOutputTokens,
+        });
+        providerRequestHash =
+          providerBindingPort.bind(providerRequest).requestFingerprint;
       } catch {
         return invalid();
       }

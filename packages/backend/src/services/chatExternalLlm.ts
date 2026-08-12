@@ -61,8 +61,10 @@ export class ChatExternalLlmConfigurationError extends Error {
 const defaultOpenAiBaseUrl = 'https://api.openai.com/v1';
 
 function resolveOpenAiTransportConfig(baseUrl: string, env: NodeJS.ProcessEnv) {
+  const destinationHost = canonicalExternalLlmUrlHostname(baseUrl);
   let parsedUrl: URL;
   try {
+    if (destinationHost === null) throw new Error('invalid_host');
     parsedUrl = new URL(baseUrl);
   } catch {
     throw new ChatExternalLlmConfigurationError(
@@ -98,7 +100,6 @@ function resolveOpenAiTransportConfig(baseUrl: string, env: NodeJS.ProcessEnv) {
       'CHAT_EXTERNAL_LLM_ALLOWED_HOSTS',
     );
   }
-  const destinationHost = canonicalExternalLlmUrlHostname(parsedUrl);
   const isDefaultDestination =
     destinationHost !== null &&
     parsedUrl.protocol === 'https:' &&
@@ -248,6 +249,7 @@ export async function summarizeWithExternalLlm(options: {
       model: config.model,
       systemPrompt: prompt.system,
       userPrompt: prompt.user,
+      inputTokenCeiling: 2_147_483_647,
       maxOutputTokens: 600,
       temperatureBasisPoints: 2_000,
     });

@@ -69,7 +69,9 @@ function normalizeTimeoutMs(value: number) {
 
 function canonicalEndpoint(baseUrl: string): string | null {
   try {
-    const parsed = new URL(`${baseUrl.replace(/\/$/, '')}/chat/completions`);
+    const endpoint = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
+    if (canonicalExternalLlmUrlHostname(endpoint) === null) return null;
+    const parsed = new URL(endpoint);
     if (
       (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') ||
       !parsed.hostname ||
@@ -92,7 +94,7 @@ function canonicalAllowedHosts(
 ): string[] | null {
   const hosts = canonicalExternalLlmAllowedHosts(values, 100);
   if (hosts === null) return null;
-  const endpointHost = canonicalExternalLlmUrlHostname(new URL(endpoint));
+  const endpointHost = canonicalExternalLlmUrlHostname(endpoint);
   if (endpointHost === null) return null;
   return hosts.length > 0 && hosts.includes(endpointHost) ? hosts : null;
 }
@@ -109,6 +111,7 @@ function snapshotRequest(
       request.contextSections === undefined
         ? undefined
         : [...request.contextSections],
+    inputTokenCeiling: request.inputTokenCeiling,
     maxOutputTokens: request.maxOutputTokens,
     temperatureBasisPoints: request.temperatureBasisPoints,
   };
@@ -127,6 +130,7 @@ function strictNonNegativeInteger(value: unknown): number | null {
 
 function parseOptionalUsage(
   value: unknown,
+  maximumInputTokens: number,
   maximumOutputTokens: number,
 ): ExternalLlmUsageResult {
   if (value === undefined) return { usageStatus: 'missing', usage: null };
@@ -139,6 +143,7 @@ function parseOptionalUsage(
   if (
     inputTokens === null ||
     outputTokens === null ||
+    inputTokens > maximumInputTokens ||
     outputTokens > maximumOutputTokens
   ) {
     return { usageStatus: 'invalid', usage: null };
@@ -541,6 +546,7 @@ export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
                 body && typeof body === 'object' && !Array.isArray(body)
                   ? (body as Record<string, unknown>).usage
                   : undefined,
+                requestSnapshot.inputTokenCeiling,
                 requestSnapshot.maxOutputTokens,
               );
         return {

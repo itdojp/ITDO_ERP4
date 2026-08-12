@@ -138,6 +138,17 @@ test('openai runtime requires separate key and an allowlisted base host', async 
       }),
     /KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS/,
   );
+  assert.throws(
+    () =>
+      getKnowledgeLlmRuntimeConfig({
+        KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'openai',
+        KNOWLEDGE_LLM_MODEL_CATALOG_JSON: openAiCatalog,
+        KNOWLEDGE_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-test-key',
+        KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS: 'k.example',
+        KNOWLEDGE_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://K.example/v1',
+      }),
+    /KNOWLEDGE_EXTERNAL_LLM_OPENAI_BASE_URL/,
+  );
   const ipv6 = getKnowledgeLlmRuntimeConfig({
     KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'openai',
     KNOWLEDGE_LLM_MODEL_CATALOG_JSON: openAiCatalog,
@@ -390,6 +401,7 @@ test('reservation pricing is resolved from the enabled catalog, not caller field
       systemPrompt: '',
       userPrompt: '',
       contextSections: [],
+      inputTokenCeiling: 64,
       maxOutputTokens: 7,
       temperatureBasisPoints: 0,
     }).requestFingerprint,

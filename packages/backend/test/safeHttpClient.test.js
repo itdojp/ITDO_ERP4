@@ -149,6 +149,43 @@ test('validateExternalUrl rejects host not in allowlist', async () => {
   );
 });
 
+test('validateExternalUrl rejects raw Unicode or userinfo authorities before URL normalization', async () => {
+  const { validateExternalUrl } = await loadSafeHttpClient();
+  for (const url of [
+    'https://K.example/path',
+    'https://例.example/path',
+    'https://user@provider.example/path',
+  ]) {
+    await assert.rejects(
+      validateExternalUrl(url, {
+        allowedHosts: ['k.example'],
+        dnsLookupImpl: publicLookup,
+      }),
+      (error) => error?.code === 'invalid_url',
+    );
+  }
+  const unicodePath = await validateExternalUrl(
+    'https://provider.example/日本語?q=文書',
+    {
+      allowedHosts: ['provider.example'],
+      dnsLookupImpl: publicLookup,
+    },
+  );
+  assert.equal(unicodePath.hostname, 'provider.example');
+});
+
+test('validateExternalUrl canonicalizes equivalent direct IPv6 allowlist forms', async () => {
+  const { validateExternalUrl } = await loadSafeHttpClient();
+  const url = await validateExternalUrl(
+    'https://[2606:4700:4700::1111]/resource',
+    {
+      allowedHosts: ['2606:4700:4700:0:0:0:0:1111'],
+      allowPrivateIp: true,
+    },
+  );
+  assert.equal(url.hostname, '[2606:4700:4700::1111]');
+});
+
 test('safeFetch bounds DNS lookup time before dispatch', async () => {
   const { safeFetch } = await loadSafeHttpClient();
   await assert.rejects(

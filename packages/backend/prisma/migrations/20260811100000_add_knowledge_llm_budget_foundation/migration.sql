@@ -489,6 +489,16 @@ DECLARE
   expected_period_end_utc TIMESTAMP;
 BEGIN
   IF TG_OP = 'UPDATE' THEN
+    IF (
+      OLD."activeReservedMicros" <> NEW."activeReservedMicros"
+      OR OLD."settledActualMicros" <> NEW."settledActualMicros"
+      OR OLD."heldMaximumMicros" <> NEW."heldMaximumMicros"
+      OR OLD."releasedMicros" <> NEW."releasedMicros"
+      OR OLD."acceptedRequestCount" <> NEW."acceptedRequestCount"
+    ) AND PG_TRIGGER_DEPTH() <> 2 THEN
+      RAISE EXCEPTION 'KnowledgeLlmBudgetPeriod counters may change only through reservation transitions'
+        USING ERRCODE = '23514';
+    END IF;
     IF OLD."policyId" <> NEW."policyId"
       OR OLD."periodStartUtc" <> NEW."periodStartUtc"
       OR OLD."periodEndUtc" <> NEW."periodEndUtc"
@@ -1887,6 +1897,10 @@ CREATE CONSTRAINT TRIGGER "KnowledgeLlmReservation_run_consistency"
   DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_reservation_run_consistency_trigger"();
 
+-- Period counters are maintained in O(1) by the reservation transition
+-- trigger. The period boundary guard rejects direct counter updates. The
+-- explicit read-only function below keeps full ledger verification available
+-- to offline operations without adding an O(n) scan to every request.
 CREATE FUNCTION "erp4_knowledge_llm_assert_period_accounting"(
   target_period_id TEXT
 )
@@ -1922,7 +1936,8 @@ BEGIN
     COALESCE(SUM(
       CASE
         WHEN status = 'released' THEN "maximumCostMicros"
-        WHEN status = 'settled_actual' THEN "maximumCostMicros" - "actualCostMicros"
+        WHEN status = 'settled_actual'
+          THEN "maximumCostMicros" - "actualCostMicros"
         ELSE 0
       END
     ), 0),
@@ -1943,36 +1958,6 @@ BEGIN
   END IF;
 END;
 $$;
-
-CREATE FUNCTION "erp4_knowledge_llm_reservation_period_consistency_trigger"()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  PERFORM "erp4_knowledge_llm_assert_period_accounting"(NEW."budgetPeriodId");
-  RETURN NEW;
-END;
-$$;
-
-CREATE CONSTRAINT TRIGGER "KnowledgeLlmReservation_period_consistency"
-  AFTER INSERT OR UPDATE ON "KnowledgeLlmReservation"
-  DEFERRABLE INITIALLY DEFERRED
-  FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_reservation_period_consistency_trigger"();
-
-CREATE FUNCTION "erp4_knowledge_llm_period_accounting_consistency_trigger"()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  PERFORM "erp4_knowledge_llm_assert_period_accounting"(NEW.id);
-  RETURN NEW;
-END;
-$$;
-
-CREATE CONSTRAINT TRIGGER "KnowledgeLlmBudgetPeriod_accounting_consistency"
-  AFTER INSERT OR UPDATE ON "KnowledgeLlmBudgetPeriod"
-  DEFERRABLE INITIALLY DEFERRED
-  FOR EACH ROW EXECUTE FUNCTION "erp4_knowledge_llm_period_accounting_consistency_trigger"();
 
 CREATE FUNCTION "erp4_knowledge_llm_content_hash"(content TEXT)
 RETURNS TEXT
@@ -2076,12 +2061,25 @@ AS $$
 DECLARE
   run_execution "KnowledgeLlmExecutionStatus";
   run_dispatched_at TIMESTAMP(3);
+  run_input_ceiling INTEGER;
+  run_output_ceiling INTEGER;
 BEGIN
-  SELECT "executionStatus", "dispatchedAt"
-  INTO run_execution, run_dispatched_at
+  SELECT "executionStatus", "dispatchedAt", "estimatedInputTokens",
+    "maxOutputTokens"
+  INTO run_execution, run_dispatched_at, run_input_ceiling, run_output_ceiling
   FROM "KnowledgeLlmRun"
   WHERE id = NEW."runId"
   FOR UPDATE;
+
+  IF OLD.status = 'valid'
+    AND (
+      OLD."inputTokens" > run_input_ceiling
+      OR OLD."outputTokens" > run_output_ceiling
+    )
+  THEN
+    RAISE EXCEPTION 'KnowledgeLlmProviderOutcome usage exceeds run token ceiling'
+      USING ERRCODE = '23514';
+  END IF;
 
   IF OLD."runId" <> NEW."runId"
     OR OLD."status" <> NEW."status"
@@ -2116,12 +2114,25 @@ AS $$
 DECLARE
   run_execution "KnowledgeLlmExecutionStatus";
   run_dispatched_at TIMESTAMP(3);
+  run_input_ceiling INTEGER;
+  run_output_ceiling INTEGER;
 BEGIN
-  SELECT "executionStatus", "dispatchedAt"
-  INTO run_execution, run_dispatched_at
+  SELECT "executionStatus", "dispatchedAt", "estimatedInputTokens",
+    "maxOutputTokens"
+  INTO run_execution, run_dispatched_at, run_input_ceiling, run_output_ceiling
   FROM "KnowledgeLlmRun"
   WHERE id = NEW."runId"
   FOR UPDATE;
+
+  IF NEW.status = 'valid'
+    AND (
+      NEW."inputTokens" > run_input_ceiling
+      OR NEW."outputTokens" > run_output_ceiling
+    )
+  THEN
+    RAISE EXCEPTION 'KnowledgeLlmProviderOutcome usage exceeds run token ceiling'
+      USING ERRCODE = '23514';
+  END IF;
 
   IF run_execution IS NULL
     OR run_execution NOT IN ('dispatched', 'result_unknown')

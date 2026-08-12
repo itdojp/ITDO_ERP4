@@ -174,7 +174,15 @@ test('budget policy and periods enforce explicit subject, timezone and integer l
     /releasedMicros\s+Decimal\s+@default\(0\)\s+@db\.Decimal\(38, 0\)/,
   );
   assert.match(migration, /"releasedMicros" NUMERIC\(38,0\)/);
-  assert.match(migration, /expected_released NUMERIC\(38,0\)/);
+  assert.match(
+    migration,
+    /KnowledgeLlmBudgetPeriod counters may change only through reservation transitions/,
+  );
+  assert.match(migration, /erp4_knowledge_llm_assert_period_accounting/);
+  assert.doesNotMatch(
+    migration,
+    /CREATE CONSTRAINT TRIGGER "KnowledgeLlm(BudgetPeriod_accounting|Reservation_period)_consistency"/,
+  );
   assert.match(migration, /KnowledgeLlmBudgetPeriod_boundary_guard/);
   assert.match(
     migration,
@@ -276,15 +284,16 @@ test('reservation accounting timestamp and terminal values are immutable', () =>
   );
   assert.match(
     migration,
-    /KnowledgeLlmBudgetPeriod counters must match reservation ledger/,
+    /KnowledgeLlmBudgetPeriod counters may change only through reservation transitions/,
   );
   assert.match(
     migration,
     /CREATE CONSTRAINT TRIGGER "KnowledgeLlmRun_reservation_consistency"[\s\S]*DEFERRABLE INITIALLY DEFERRED/,
   );
-  assert.match(
+  assert.match(migration, /erp4_knowledge_llm_assert_period_accounting/);
+  assert.doesNotMatch(
     migration,
-    /CREATE CONSTRAINT TRIGGER "KnowledgeLlmReservation_period_consistency"[\s\S]*DEFERRABLE INITIALLY DEFERRED/,
+    /CREATE CONSTRAINT TRIGGER "KnowledgeLlm(BudgetPeriod_accounting|Reservation_period)_consistency"/,
   );
 });
 
@@ -298,6 +307,10 @@ test('provider outcome retains only normalized bounded state for reconciliation'
   assert.match(
     migration,
     /KnowledgeLlmProviderOutcome requires provider dispatch/,
+  );
+  assert.match(
+    migration,
+    /KnowledgeLlmProviderOutcome usage exceeds run token ceiling/,
   );
   assert.match(migration, /NEW\."capturedAt" < run_dispatched_at/);
   assert.match(
