@@ -578,7 +578,7 @@ AS $$
         -- application validator and is deliberately independent of DB locale.
         OR ASCII(SUBSTRING(value FROM character_position FOR 1)) = 173
         OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 1536 AND 1541
-        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) IN (1564, 1757, 1807, 2274, 6158, 65279, 69757, 69837, 917505)
+        OR ASCII(SUBSTRING(value FROM character_position FOR 1)) IN (1564, 1757, 1807, 2274, 6158, 65279, 69821, 69837, 917505)
         OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 2192 AND 2193
         OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 8203 AND 8207
         OR ASCII(SUBSTRING(value FROM character_position FOR 1)) BETWEEN 8234 AND 8238

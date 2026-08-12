@@ -483,6 +483,7 @@ try {
     ['soft-hyphen-format', 'stub\u00admodel'],
     ['zero-width-format', 'stub\u200bmodel'],
     ['bidi-format', 'stub\u202emodel'],
+    ['kaithi-number-sign-format', `stub${String.fromCodePoint(0x110bd)}model`],
     ['supplementary-format', `stub${String.fromCodePoint(0xe0001)}model`],
     ['empty', ''],
     ['over-code-point-limit', '😀'.repeat(201)],
