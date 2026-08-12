@@ -46,6 +46,121 @@ test('conversation turn source resolution excludes LLM result conversations from
   assert.match(serialized, /"active":true/);
 });
 
+function synthesisSource(overrides = {}) {
+  return {
+    sourceKnowledgeItemId: null,
+    sourceSnapshot: null,
+    sourceAnnotation: null,
+    sourceAnnotationRevision: null,
+    sourceConversation: null,
+    sourceConversationTurn: null,
+    sourceSynthesisVersionId: null,
+    sourceThreadPromotionId: null,
+    ...overrides,
+  };
+}
+
+test('synthesis and thread-promotion context count their directly bound Knowledge items', async () => {
+  const adapter = new PrismaKnowledgeLlmRunAdapter(
+    {},
+    {
+      knowledgeSynthesisVersion: {
+        findFirst: async () => ({
+          id: 'synthesis-version-1',
+          version: 2,
+          content: 'bounded synthesis',
+          synthesis: {
+            ownerUserId: actor.userId,
+            scope: 'personal',
+            organizationId: null,
+          },
+          sources: [
+            synthesisSource({ sourceKnowledgeItemId: 'item-1' }),
+            synthesisSource({
+              sourceSnapshot: { knowledgeItemId: 'item-1' },
+            }),
+            synthesisSource({
+              sourceConversation: {
+                llmRuns: [],
+                turns: [],
+                items: [{ knowledgeItemId: 'item-2' }],
+              },
+            }),
+          ],
+        }),
+      },
+      knowledgeThreadPromotionMessage: {
+        findFirst: async () => ({
+          id: 'promotion-message-1',
+          ordinal: 0,
+          content: 'bounded promoted reply',
+          contentHash: 'a'.repeat(64),
+          promotion: {
+            ownerUserId: actor.userId,
+            scope: 'personal',
+            organizationId: null,
+            sourceShare: { sourceKnowledgeItemId: 'item-3' },
+          },
+        }),
+      },
+    },
+  );
+
+  const resolved = await adapter.resolveContext({
+    actor,
+    scope: 'personal',
+    organizationId: null,
+    selectors: [
+      { sourceType: 'synthesis_version', sourceId: 'synthesis-version-1' },
+      {
+        sourceType: 'thread_promotion_message',
+        sourceId: 'promotion-message-1',
+      },
+    ],
+  });
+
+  assert.equal(resolved.selectedItemCount, 3);
+});
+
+test('synthesis context rejects more than ten directly bound Knowledge items', async () => {
+  const adapter = new PrismaKnowledgeLlmRunAdapter(
+    {},
+    {
+      knowledgeSynthesisVersion: {
+        findFirst: async () => ({
+          id: 'synthesis-version-many-items',
+          version: 1,
+          content: 'bounded synthesis',
+          synthesis: {
+            ownerUserId: actor.userId,
+            scope: 'personal',
+            organizationId: null,
+          },
+          sources: Array.from({ length: 11 }, (_, index) =>
+            synthesisSource({ sourceKnowledgeItemId: `item-${index + 1}` }),
+          ),
+        }),
+      },
+    },
+  );
+
+  await assert.rejects(
+    () =>
+      adapter.resolveContext({
+        actor,
+        scope: 'personal',
+        organizationId: null,
+        selectors: [
+          {
+            sourceType: 'synthesis_version',
+            sourceId: 'synthesis-version-many-items',
+          },
+        ],
+      }),
+    /not_found/,
+  );
+});
+
 test('provider outcome capture rejects invalid runtime failure codes before persistence', async () => {
   let transactionStarted = false;
   const adapter = new PrismaKnowledgeLlmRunAdapter(

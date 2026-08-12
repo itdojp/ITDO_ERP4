@@ -318,6 +318,14 @@ async function resolveOne(
           },
           sources: {
             select: {
+              sourceKnowledgeItemId: true,
+              sourceSnapshot: { select: { knowledgeItemId: true } },
+              sourceAnnotation: { select: { knowledgeItemId: true } },
+              sourceAnnotationRevision: {
+                select: {
+                  annotation: { select: { knowledgeItemId: true } },
+                },
+              },
               sourceConversation: {
                 select: {
                   llmRuns: { select: { id: true }, take: 1 },
@@ -326,13 +334,17 @@ async function resolveOne(
                     select: { id: true },
                     take: 1,
                   },
+                  items: { select: { knowledgeItemId: true } },
                 },
               },
               sourceConversationTurn: {
                 select: {
                   role: true,
                   conversation: {
-                    select: { llmRuns: { select: { id: true }, take: 1 } },
+                    select: {
+                      llmRuns: { select: { id: true }, take: 1 },
+                      items: { select: { knowledgeItemId: true } },
+                    },
                   },
                 },
               },
@@ -362,6 +374,23 @@ async function resolveOne(
       ) {
         throw new KnowledgeLlmRunAccessError('not_found');
       }
+      for (const source of row.sources) {
+        const directItemIds = [
+          source.sourceKnowledgeItemId,
+          source.sourceSnapshot?.knowledgeItemId,
+          source.sourceAnnotation?.knowledgeItemId,
+          source.sourceAnnotationRevision?.annotation.knowledgeItemId,
+          ...(source.sourceConversation?.items.map(
+            (item) => item.knowledgeItemId,
+          ) ?? []),
+          ...(source.sourceConversationTurn?.conversation.items.map(
+            (item) => item.knowledgeItemId,
+          ) ?? []),
+        ];
+        for (const itemId of directItemIds) {
+          if (itemId) input.itemIds.add(itemId);
+        }
+      }
       return {
         sourceType: selector.sourceType,
         sourceId: row.id,
@@ -388,7 +417,12 @@ async function resolveOne(
           content: true,
           contentHash: true,
           promotion: {
-            select: { ownerUserId: true, scope: true, organizationId: true },
+            select: {
+              ownerUserId: true,
+              scope: true,
+              organizationId: true,
+              sourceShare: { select: { sourceKnowledgeItemId: true } },
+            },
           },
         },
       });
@@ -399,6 +433,7 @@ async function resolveOne(
       ) {
         throw new KnowledgeLlmRunAccessError('not_found');
       }
+      input.itemIds.add(row.promotion.sourceShare.sourceKnowledgeItemId);
       return {
         sourceType: selector.sourceType,
         sourceId: row.id,
