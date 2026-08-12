@@ -68,3 +68,10 @@
 
 `./scripts/e2e-frontend.sh` は、外部送信を行わないように既定で `CHAT_EXTERNAL_LLM_PROVIDER=stub` を有効化して実行します。
 （明示的に環境変数を指定した場合はそちらが優先されます）
+
+## 6. Knowledge Hubとの共有境界
+
+- Knowledge HubはChat要約routeやChat固有promptを直接呼び出さず、provider-neutral text portの`bind`／`prepare`／単一`dispatch`だけを共有します。
+- `CHAT_EXTERNAL_LLM_*`はChat専用の後方互換設定です。Knowledge Hubは`KNOWLEDGE_EXTERNAL_LLM_*`とversioned model catalogを使用し、Chat設定へfallbackしません。
+- Chatの公式room ACL、user/room rate limit、要約response契約は変更しません。Knowledge側のselected context、exact source ACL、preview/confirm、user/organization budget、idempotency、conversation provenanceはKnowledge bounded contextが所有します。
+- repository-side testでは両機能にstub/fakeを使用できますが、Knowledge stubの成功を実provider検証として扱いません。OpenAI-compatible adapterを有効にする後続段階でも自動retry、provider/model fallback、API keyのlog/audit保存を禁止します。

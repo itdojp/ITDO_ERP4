@@ -53,6 +53,7 @@ export type KnowledgeLlmReservationCommand = Omit<
   | 'maximumCostMicros'
   | 'currency'
   | 'now'
+  | 'selectedContextSources'
 > & {
   /** Exact system prompt that will be dispatched; never persisted by the budget port. */
   systemPrompt: string;
@@ -102,6 +103,7 @@ export interface KnowledgeLlmBudgetPort {
 }
 
 export type KnowledgeLlmAuditAction =
+  | 'knowledge_llm_previewed'
   | 'knowledge_llm_budget_reserved'
   | 'knowledge_llm_budget_blocked'
   | 'knowledge_llm_rate_blocked'
@@ -137,7 +139,15 @@ export type KnowledgeLlmAuditMetadata =
       maxOutputTokens: number;
       reservedCostMicros: string;
       currency: string;
+      sourceCounts?: {
+        snapshots: number;
+        annotationRevisions: number;
+        conversationTurns: number;
+        synthesisVersions: number;
+        threadPromotionMessages: number;
+      };
       resultCode:
+        | 'previewed'
         | 'reserved'
         | 'reused'
         | 'conflict'

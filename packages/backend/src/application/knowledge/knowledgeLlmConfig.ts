@@ -21,6 +21,7 @@ export const knowledgeLlmLimits = {
   userPromptBytes: 16 * 1024,
   systemPromptBytes: 8 * 1024,
   maximumOutputTokens: 4096,
+  resultBytes: 256 * 1024,
   previewTokenBytes: 4096,
   previewTtlMs: 10 * 60 * 1000,
   provenanceDepth: 1,

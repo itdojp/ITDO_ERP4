@@ -137,6 +137,138 @@ function trustedTimestamp(clock: KnowledgeLlmClock): Date {
   return new Date(timestamp.getTime());
 }
 
+export type PreparedKnowledgeLlmReservation = {
+  request: KnowledgeLlmReservationRequest;
+  externalRequest: ExternalLlmTextRequest;
+};
+
+/**
+ * Builds the exact provider payload and its maximum-cost reservation without
+ * mutating budget state. Preview and confirmed execution share this one
+ * derivation so the preview token cannot bind economics that differ from the
+ * eventual reservation.
+ */
+export function prepareKnowledgeLlmReservation(
+  input: KnowledgeLlmReservationCommand,
+  catalog: KnowledgeLlmModelCatalog | null,
+  providerBindingPort: ExternalLlmTextRequestBindingPort,
+  clock: KnowledgeLlmClock = () => new Date(),
+): KnowledgeLlmBudgetResult<PreparedKnowledgeLlmReservation> {
+  if (
+    typeof input.systemPrompt !== 'string' ||
+    typeof input.userPrompt !== 'string' ||
+    Buffer.byteLength(input.systemPrompt, 'utf8') >
+      knowledgeLlmLimits.systemPromptBytes ||
+    Buffer.byteLength(input.userPrompt, 'utf8') >
+      knowledgeLlmLimits.userPromptBytes ||
+    !Array.isArray(input.selectedContextSources) ||
+    (input.reservationInputTokenFloor !== undefined &&
+      (!Number.isSafeInteger(input.reservationInputTokenFloor) ||
+        input.reservationInputTokenFloor < 1))
+  ) {
+    return invalid();
+  }
+  let selectedContext: ReturnType<typeof deriveKnowledgeLlmSelectedContext>;
+  let estimatedInputTokens: number;
+  let providerRequestHash: string;
+  let externalRequest: ExternalLlmTextRequest;
+  try {
+    selectedContext = deriveKnowledgeLlmSelectedContext(
+      input.selectedContextSources,
+    );
+    const provisionalProviderRequest = buildKnowledgeLlmExternalRequest({
+      provider: input.provider,
+      model: input.model,
+      systemPrompt: input.systemPrompt,
+      userPrompt: input.userPrompt,
+      contextSections: selectedContext.representations,
+      maxOutputTokens: input.maxOutputTokens,
+    });
+    const derivedEstimate = externalLlmConservativeInputTokens(
+      provisionalProviderRequest,
+      knowledgeLlmLimits.sourceFramingTokens,
+    );
+    estimatedInputTokens = Math.max(
+      derivedEstimate,
+      input.reservationInputTokenFloor ?? derivedEstimate,
+    );
+    externalRequest = buildKnowledgeLlmExternalRequest({
+      provider: input.provider,
+      model: input.model,
+      systemPrompt: input.systemPrompt,
+      userPrompt: input.userPrompt,
+      contextSections: selectedContext.representations,
+      inputTokenCeiling: estimatedInputTokens,
+      maxOutputTokens: input.maxOutputTokens,
+    });
+    providerRequestHash =
+      providerBindingPort.bind(externalRequest).requestFingerprint;
+  } catch {
+    return invalid();
+  }
+  const model = catalog?.models.find(
+    (candidate) =>
+      candidate.enabled &&
+      candidate.provider === input.provider &&
+      candidate.model === input.model,
+  );
+  if (
+    !catalog ||
+    !model ||
+    input.catalogVersion !== catalog.version ||
+    estimatedInputTokens > model.maxInputTokens ||
+    input.maxOutputTokens > model.maxOutputTokens
+  ) {
+    return invalid();
+  }
+  let maximumCostMicros: bigint;
+  try {
+    maximumCostMicros = maximumReservationMicros({
+      model,
+      estimatedInputTokens,
+      maxOutputTokens: input.maxOutputTokens,
+    });
+  } catch {
+    return invalid();
+  }
+  const resolved: KnowledgeLlmReservationRequest = {
+    runId: input.runId,
+    actor: input.actor,
+    auditActor: input.auditActor,
+    scope: input.scope,
+    organizationId: input.organizationId,
+    provider: input.provider,
+    model: input.model,
+    catalogVersion: catalog.version,
+    promptTemplateVersion: input.promptTemplateVersion,
+    requestKeyHash: input.requestKeyHash,
+    requestPayloadHash: reservationPayloadHash(
+      input,
+      selectedContext.fingerprint,
+      providerRequestHash,
+      {
+        estimatedInputTokens,
+        inputCostMicrosPerMillion: model.inputCostMicrosPerMillion,
+        outputCostMicrosPerMillion: model.outputCostMicrosPerMillion,
+        maximumCostMicros,
+        currency: model.currency,
+      },
+    ),
+    providerRequestHash,
+    selectedContextFingerprint: selectedContext.fingerprint,
+    selectedContextSources: selectedContext.sources,
+    estimatedInputTokens,
+    maxOutputTokens: input.maxOutputTokens,
+    inputCostMicrosPerMillion: model.inputCostMicrosPerMillion,
+    outputCostMicrosPerMillion: model.outputCostMicrosPerMillion,
+    maximumCostMicros,
+    currency: model.currency,
+    now: trustedTimestamp(clock),
+  };
+  if (!validInput(resolved)) return invalid();
+  return { ok: true, value: { request: resolved, externalRequest } };
+}
+
 function validInput(input: KnowledgeLlmReservationRequest): boolean {
   let expectedMaximumCost: bigint;
   try {
@@ -211,118 +343,14 @@ export function createKnowledgeLlmBudgetUseCases(
     async reserve(
       input: KnowledgeLlmReservationCommand,
     ): Promise<KnowledgeLlmBudgetResult<KnowledgeLlmReservationRecord>> {
-      if (
-        typeof input.systemPrompt !== 'string' ||
-        typeof input.userPrompt !== 'string' ||
-        Buffer.byteLength(input.systemPrompt, 'utf8') >
-          knowledgeLlmLimits.systemPromptBytes ||
-        Buffer.byteLength(input.userPrompt, 'utf8') >
-          knowledgeLlmLimits.userPromptBytes ||
-        !Array.isArray(input.selectedContextSources) ||
-        (input.reservationInputTokenFloor !== undefined &&
-          (!Number.isSafeInteger(input.reservationInputTokenFloor) ||
-            input.reservationInputTokenFloor < 1))
-      ) {
-        return invalid();
-      }
-      let selectedContext: ReturnType<typeof deriveKnowledgeLlmSelectedContext>;
-      let estimatedInputTokens: number;
-      let providerRequestHash: string;
-      try {
-        selectedContext = deriveKnowledgeLlmSelectedContext(
-          input.selectedContextSources,
-        );
-        const provisionalProviderRequest = buildKnowledgeLlmExternalRequest({
-          provider: input.provider,
-          model: input.model,
-          systemPrompt: input.systemPrompt,
-          userPrompt: input.userPrompt,
-          contextSections: selectedContext.representations,
-          maxOutputTokens: input.maxOutputTokens,
-        });
-        const derivedEstimate = externalLlmConservativeInputTokens(
-          provisionalProviderRequest,
-          knowledgeLlmLimits.sourceFramingTokens,
-        );
-        estimatedInputTokens = Math.max(
-          derivedEstimate,
-          input.reservationInputTokenFloor ?? derivedEstimate,
-        );
-        const providerRequest = buildKnowledgeLlmExternalRequest({
-          provider: input.provider,
-          model: input.model,
-          systemPrompt: input.systemPrompt,
-          userPrompt: input.userPrompt,
-          contextSections: selectedContext.representations,
-          inputTokenCeiling: estimatedInputTokens,
-          maxOutputTokens: input.maxOutputTokens,
-        });
-        providerRequestHash =
-          providerBindingPort.bind(providerRequest).requestFingerprint;
-      } catch {
-        return invalid();
-      }
-      const model = catalogSnapshot?.models.find(
-        (candidate) =>
-          candidate.enabled &&
-          candidate.provider === input.provider &&
-          candidate.model === input.model,
+      const prepared = prepareKnowledgeLlmReservation(
+        input,
+        catalogSnapshot,
+        providerBindingPort,
+        clock,
       );
-      if (
-        !catalogSnapshot ||
-        !model ||
-        input.catalogVersion !== catalogSnapshot.version ||
-        estimatedInputTokens > model.maxInputTokens ||
-        input.maxOutputTokens > model.maxOutputTokens
-      ) {
-        return invalid();
-      }
-      let maximumCostMicros: bigint;
-      try {
-        maximumCostMicros = maximumReservationMicros({
-          model,
-          estimatedInputTokens,
-          maxOutputTokens: input.maxOutputTokens,
-        });
-      } catch {
-        return invalid();
-      }
-      const resolved: KnowledgeLlmReservationRequest = {
-        runId: input.runId,
-        actor: input.actor,
-        auditActor: input.auditActor,
-        scope: input.scope,
-        organizationId: input.organizationId,
-        provider: input.provider,
-        model: input.model,
-        catalogVersion: catalogSnapshot.version,
-        promptTemplateVersion: input.promptTemplateVersion,
-        requestKeyHash: input.requestKeyHash,
-        requestPayloadHash: reservationPayloadHash(
-          input,
-          selectedContext.fingerprint,
-          providerRequestHash,
-          {
-            estimatedInputTokens,
-            inputCostMicrosPerMillion: model.inputCostMicrosPerMillion,
-            outputCostMicrosPerMillion: model.outputCostMicrosPerMillion,
-            maximumCostMicros,
-            currency: model.currency,
-          },
-        ),
-        providerRequestHash,
-        selectedContextFingerprint: selectedContext.fingerprint,
-        selectedContextSources: selectedContext.sources,
-        estimatedInputTokens,
-        maxOutputTokens: input.maxOutputTokens,
-        inputCostMicrosPerMillion: model.inputCostMicrosPerMillion,
-        outputCostMicrosPerMillion: model.outputCostMicrosPerMillion,
-        maximumCostMicros,
-        currency: model.currency,
-        now: trustedTimestamp(clock),
-      };
-      if (!validInput(resolved)) return invalid();
-      return port.reserve(resolved);
+      if (!prepared.ok) return prepared;
+      return port.reserve(prepared.value.request);
     },
   };
 }
