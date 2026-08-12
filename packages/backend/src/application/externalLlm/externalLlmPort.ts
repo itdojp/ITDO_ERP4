@@ -154,6 +154,43 @@ export function canonicalExternalLlmAllowedHost(value: unknown): string | null {
   return normalized;
 }
 
+/**
+ * Canonicalizes one complete allowlist without silently discarding malformed
+ * or duplicate entries. Every caller must pass raw entries here before case
+ * folding so Unicode lookalikes cannot become implicit host grants.
+ */
+export function canonicalExternalLlmAllowedHosts(
+  values: readonly unknown[],
+  maximumHosts = 100,
+): string[] | null {
+  if (
+    !Array.isArray(values) ||
+    !Number.isSafeInteger(maximumHosts) ||
+    maximumHosts < 0 ||
+    values.length > maximumHosts
+  ) {
+    return null;
+  }
+  const result = values.map(canonicalExternalLlmAllowedHost);
+  if (
+    result.some((host) => host === null) ||
+    new Set(result).size !== result.length
+  ) {
+    return null;
+  }
+  return (result as string[]).sort();
+}
+
+/** Canonical host identity for an already parsed provider endpoint URL. */
+export function canonicalExternalLlmUrlHostname(url: URL): string | null {
+  const rawHostname = url.hostname;
+  return canonicalExternalLlmAllowedHost(
+    rawHostname.startsWith('[') && rawHostname.endsWith(']')
+      ? rawHostname.slice(1, -1)
+      : rawHostname,
+  );
+}
+
 /** Text that can be hashed and persisted without UTF-8/SQL normalization. */
 export function isPersistenceCompatibleExternalLlmText(
   value: unknown,
@@ -289,30 +326,8 @@ export function bindExternalLlmTextRequest(request: ExternalLlmTextRequest): {
 }
 
 function canonicalAllowedHosts(hosts: readonly string[]): string[] {
-  if (!Array.isArray(hosts) || hosts.length > 100) {
-    throw new Error('external_llm_transport_binding_invalid');
-  }
-  const result = [
-    ...new Set(
-      hosts
-        .map((host) =>
-          typeof host === 'string' ? host.trim().toLowerCase() : '',
-        )
-        .filter(Boolean),
-    ),
-  ].sort();
-  if (
-    result.some(
-      (host) =>
-        Buffer.byteLength(host, 'utf8') > 253 ||
-        host.includes('\0') ||
-        [...host].some((character) => {
-          const codePoint = character.codePointAt(0) ?? 0;
-          return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f);
-        }) ||
-        hasUnpairedUtf16Surrogate(host),
-    )
-  ) {
+  const result = canonicalExternalLlmAllowedHosts(hosts, 100);
+  if (result === null) {
     throw new Error('external_llm_transport_binding_invalid');
   }
   return result;

@@ -312,14 +312,34 @@ test('Unicode 15.0 Format ranges are identical in application and migration', as
 });
 
 test('external LLM allowlist hosts reject Unicode folding and normalize IPv6 literals', async () => {
-  const { canonicalExternalLlmAllowedHost } =
-    await import('../dist/application/externalLlm/externalLlmPort.js');
+  const {
+    bindExternalLlmTextTransportRequest,
+    canonicalExternalLlmAllowedHost,
+  } = await import('../dist/application/externalLlm/externalLlmPort.js');
   assert.equal(canonicalExternalLlmAllowedHost('API.EXAMPLE'), 'api.example');
   assert.equal(canonicalExternalLlmAllowedHost('K.example'), null);
   assert.equal(canonicalExternalLlmAllowedHost('[2606:4700:4700::1111]'), null);
   assert.equal(
     canonicalExternalLlmAllowedHost('2606:4700:4700:0:0:0:0:1111'),
     '2606:4700:4700::1111',
+  );
+  assert.throws(
+    () =>
+      bindExternalLlmTextTransportRequest(
+        { ...request, provider: 'openai' },
+        {
+          kind: 'openai_compatible_http',
+          destination: 'https://k.example/v1/chat/completions',
+          allowedHosts: ['K.example'],
+          allowHttp: false,
+          allowPrivateIp: false,
+          timeoutMs: 1_000,
+          maximumResponseBytes: 1_024,
+          malformedSuccessPolicy: 'reject',
+          usagePolicy: 'strict',
+        },
+      ),
+    /external_llm_transport_binding_invalid/,
   );
 });
 
@@ -970,6 +990,35 @@ test('OpenAI-compatible adapter marks usage outside PostgreSQL INTEGER as invali
       const result = await complete(
         openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl),
         openAiRequest(),
+      );
+      assert.equal(result.content, 'Synthetic result');
+      assert.equal(result.usageStatus, 'invalid');
+      assert.equal(result.usage, null);
+    },
+  );
+});
+
+test('OpenAI-compatible adapter marks output usage beyond the request ceiling as invalid', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  const input = openAiRequest();
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
+        JSON.stringify({
+          choices: [{ message: { content: 'Synthetic result' } }],
+          usage: {
+            prompt_tokens: 0,
+            completion_tokens: input.maxOutputTokens + 1,
+          },
+        }),
+      );
+    },
+    async (baseUrl) => {
+      const result = await complete(
+        openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl),
+        input,
       );
       assert.equal(result.content, 'Synthetic result');
       assert.equal(result.usageStatus, 'invalid');

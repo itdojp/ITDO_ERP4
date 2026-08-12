@@ -16,9 +16,7 @@ import {
   createKnowledgeLlmBudgetUseCases,
   knowledgeLlmMonthlyPeriod,
 } from '../dist/application/knowledge/knowledgeLlmBudgetUseCases.js';
-import {
-  externalLlmUnicode15FormatCodePointRanges,
-} from '../dist/application/externalLlm/externalLlmPort.js';
+import { externalLlmUnicode15FormatCodePointRanges } from '../dist/application/externalLlm/externalLlmPort.js';
 import {
   knowledgeLlmContextEstimatedTokens,
   knowledgeLlmContextRepresentationHash,
@@ -46,6 +44,8 @@ const catalogModels = [
   ['stub-result', 250_000n, 350_000n],
   ['stub-settlement', 250_000n, 750_000n],
   ['stub-context', 1n, 0n],
+  ['stub-zero-cost', 0n, 0n],
+  ['stub-released-counter-boundary', 5_000_000_000_000_000_000n, 0n],
 ].map(([model, inputCostMicrosPerMillion, outputCostMicrosPerMillion]) => ({
   provider: 'stub',
   model,
@@ -680,17 +680,17 @@ try {
   const concurrentReplayInput = reservation({
     runId: 'run-concurrent-replay',
     userId: 'concurrent-replay-user',
-    keyHash: knowledgeTextHash(
-      'llm-test-request-key',
-      'concurrent-replay',
-    ),
+    keyHash: knowledgeTextHash('llm-test-request-key', 'concurrent-replay'),
     maximumCostMicros: 1n,
   });
   const concurrentReplay = await Promise.all([
     service.reserve(concurrentReplayInput),
     service.reserve(concurrentReplayInput),
   ]);
-  assert.equal(concurrentReplay.every((result) => result.ok), true);
+  assert.equal(
+    concurrentReplay.every((result) => result.ok),
+    true,
+  );
   assert.deepEqual(
     concurrentReplay
       .map((result) => result.value.created)
@@ -1133,9 +1133,7 @@ try {
     prisma.knowledgeLlmBudgetPeriod.create({
       data: {
         ...noncanonicalPeriod,
-        periodStartUtc: new Date(
-          currentWindow.start.getTime() + 86_400_000,
-        ),
+        periodStartUtc: new Date(currentWindow.start.getTime() + 86_400_000),
         periodEndUtc: new Date(currentWindow.end.getTime() + 86_400_000),
       },
     }),
@@ -1200,17 +1198,16 @@ try {
     ambiguousMonthWindow.start.toISOString(),
     '2020-11-01T05:00:00.000Z',
   );
-  const ambiguousMonthPeriod =
-    await prisma.knowledgeLlmBudgetPeriod.create({
-      data: {
-        id: 'period-ambiguous-month-start',
-        policyId: 'policy-ambiguous-month-start',
-        periodStartUtc: ambiguousMonthWindow.start,
-        periodEndUtc: ambiguousMonthWindow.end,
-        timezone: 'America/Havana',
-        currency: 'JPY',
-      },
-    });
+  const ambiguousMonthPeriod = await prisma.knowledgeLlmBudgetPeriod.create({
+    data: {
+      id: 'period-ambiguous-month-start',
+      policyId: 'policy-ambiguous-month-start',
+      periodStartUtc: ambiguousMonthWindow.start,
+      periodEndUtc: ambiguousMonthWindow.end,
+      timezone: 'America/Havana',
+      currency: 'JPY',
+    },
+  });
   await assert.rejects(
     prisma.knowledgeLlmBudgetPeriod.create({
       data: {
@@ -1285,17 +1282,16 @@ try {
     timezone: 'UTC',
   });
   const periodOrderWindow = knowledgeLlmMonthlyPeriod(now, 'UTC');
-  const organizationFirstPeriod =
-    await prisma.knowledgeLlmBudgetPeriod.create({
-      data: {
-        id: '00000000-period-order-organization',
-        policyId: 'policy-period-order-org',
-        periodStartUtc: periodOrderWindow.start,
-        periodEndUtc: periodOrderWindow.end,
-        timezone: 'UTC',
-        currency: 'JPY',
-      },
-    });
+  const organizationFirstPeriod = await prisma.knowledgeLlmBudgetPeriod.create({
+    data: {
+      id: '00000000-period-order-organization',
+      policyId: 'policy-period-order-org',
+      periodStartUtc: periodOrderWindow.start,
+      periodEndUtc: periodOrderWindow.end,
+      timezone: 'UTC',
+      currency: 'JPY',
+    },
+  });
   const userSecondPeriod = await prisma.knowledgeLlmBudgetPeriod.create({
     data: {
       id: 'zzzzzzzz-period-order-user',
@@ -1718,6 +1714,63 @@ try {
     rate: 100,
   });
   await policy({
+    id: 'policy-released-counter-boundary',
+    subjectType: 'user',
+    subjectId: 'released-counter-boundary-user',
+    soft: 8_000_000_000_000_000_000n,
+    hard: 9_000_000_000_000_000_000n,
+    rate: 10,
+  });
+  await policy({
+    id: 'policy-token-ceiling-guard',
+    subjectType: 'user',
+    subjectId: 'token-ceiling-user',
+    soft: 1_000n,
+    hard: 2_000n,
+    rate: 10,
+  });
+  const releasedCounterInputCost = 5_000_000_000_000_000_000n;
+  const firstReleasedCounterReservation = await service.reserve(
+    reservation({
+      runId: 'run-released-counter-release',
+      userId: 'released-counter-boundary-user',
+      keyHash: knowledgeTextHash(
+        'llm-test-request-key',
+        'released-counter-release',
+      ),
+      maximumCostMicros: 5_000_000_000_000_000_000n,
+      inputCostMicrosPerMillion: releasedCounterInputCost,
+      estimatedInputTokens: 1_000_000,
+    }),
+  );
+  assert.equal(firstReleasedCounterReservation.ok, true);
+  await prisma.$transaction((transaction) =>
+    settleKnowledgeLlmBudget(transaction, {
+      runId: 'run-released-counter-release',
+      actorUserId: 'released-counter-boundary-user',
+      auditActor: terminalAuditActor(
+        'released-counter-boundary-user',
+        'released-counter-release',
+      ),
+      completedAt: after(700),
+      settlement: { type: 'release', failureCode: 'disabled' },
+    }),
+  );
+  const secondReleasedCounterReservation = await service.reserve(
+    reservation({
+      runId: 'run-released-counter-actual',
+      userId: 'released-counter-boundary-user',
+      keyHash: knowledgeTextHash(
+        'llm-test-request-key',
+        'released-counter-actual',
+      ),
+      maximumCostMicros: 5_000_000_000_000_000_000n,
+      inputCostMicrosPerMillion: releasedCounterInputCost,
+      estimatedInputTokens: 1_000_000,
+    }),
+  );
+  assert.equal(secondReleasedCounterReservation.ok, true);
+  await policy({
     id: 'policy-invalid-settlement-state',
     subjectType: 'user',
     subjectId: 'invalid-settlement-state-user',
@@ -1835,6 +1888,224 @@ try {
       return { conversation, user, assistant, directGuardAssistant };
     },
   );
+  const releasedCounterConversation = await prisma.knowledgeConversation.create(
+    {
+      data: {
+        id: 'llm-released-counter-conversation',
+        ownerUserId: 'released-counter-boundary-user',
+        title: 'Synthetic released counter conversation',
+        sourceType: 'manual',
+        provider: 'stub',
+        model: 'stub-released-counter-boundary',
+        contentHash: hash('2'),
+        createdBy: 'released-counter-boundary-user',
+        updatedBy: 'released-counter-boundary-user',
+        turns: {
+          create: {
+            sequence: 1,
+            role: 'assistant',
+            origin: 'ai',
+            content: 'Synthetic released counter result',
+            contentHash: conversationTurnHash(
+              'Synthetic released counter result',
+            ),
+            createdBy: 'released-counter-boundary-user',
+          },
+        },
+      },
+      include: { turns: true },
+    },
+  );
+  await prisma.$transaction(async (transaction) => {
+    await markKnowledgeLlmRunDispatched(transaction, {
+      runId: 'run-released-counter-actual',
+      actorUserId: 'released-counter-boundary-user',
+      auditActor: terminalAuditActor(
+        'released-counter-boundary-user',
+        'released-counter-actual-dispatch',
+      ),
+      dispatchedAt: after(710),
+    });
+    await transaction.knowledgeLlmProviderOutcome.create({
+      data: {
+        runId: 'run-released-counter-actual',
+        status: 'valid',
+        normalizedContent: 'Synthetic released counter result',
+        contentHash: releasedCounterConversation.turns[0].contentHash,
+        inputTokens: 1,
+        outputTokens: 0,
+        createdAt: after(720),
+        capturedAt: after(720),
+      },
+    });
+    await transaction.knowledgeLlmProviderOutcome.update({
+      where: { runId: 'run-released-counter-actual' },
+      data: { normalizedContent: null, finalizedAt: after(730) },
+    });
+    await settleKnowledgeLlmBudget(transaction, {
+      runId: 'run-released-counter-actual',
+      actorUserId: 'released-counter-boundary-user',
+      auditActor: terminalAuditActor(
+        'released-counter-boundary-user',
+        'released-counter-actual-settle',
+      ),
+      completedAt: after(740),
+      settlement: {
+        type: 'actual',
+        actualInputTokens: 1,
+        actualOutputTokens: 0,
+        actualCostMicros: 5_000_000_000_000n,
+        conversationId: releasedCounterConversation.id,
+        assistantTurnId: releasedCounterConversation.turns[0].id,
+      },
+    });
+  });
+  const releasedCounterRun = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: 'run-released-counter-actual' },
+    include: { reservations: true },
+  });
+  const releasedCounterPeriod =
+    await prisma.knowledgeLlmBudgetPeriod.findUniqueOrThrow({
+      where: { id: releasedCounterRun.reservations[0].budgetPeriodId },
+    });
+  assert.equal(
+    releasedCounterPeriod.releasedMicros.toString(),
+    '9999995000000000000',
+  );
+
+  const tokenCeilingConversation = await prisma.knowledgeConversation.create({
+    data: {
+      id: 'llm-token-ceiling-conversation',
+      ownerUserId: 'token-ceiling-user',
+      title: 'Synthetic token ceiling conversation',
+      sourceType: 'manual',
+      provider: 'stub',
+      model: 'stub-zero-cost',
+      contentHash: hash('3'),
+      createdBy: 'token-ceiling-user',
+      updatedBy: 'token-ceiling-user',
+      turns: {
+        create: [
+          {
+            sequence: 1,
+            role: 'assistant',
+            origin: 'ai',
+            content: 'Synthetic input ceiling result',
+            contentHash: conversationTurnHash('Synthetic input ceiling result'),
+            createdBy: 'token-ceiling-user',
+          },
+          {
+            sequence: 2,
+            role: 'assistant',
+            origin: 'ai',
+            content: 'Synthetic output ceiling result',
+            contentHash: conversationTurnHash(
+              'Synthetic output ceiling result',
+            ),
+            createdBy: 'token-ceiling-user',
+          },
+        ],
+      },
+    },
+    include: { turns: { orderBy: { sequence: 'asc' } } },
+  });
+
+  for (const [suffix, usage, assistant, economics] of [
+    [
+      'input',
+      { inputTokens: 101, outputTokens: 0 },
+      tokenCeilingConversation.turns[0],
+      {
+        maximumCostMicros: 0n,
+        inputCostMicrosPerMillion: 0n,
+        estimatedInputTokens: 100,
+      },
+    ],
+    [
+      'output',
+      { inputTokens: 0, outputTokens: 101 },
+      tokenCeilingConversation.turns[1],
+      { maximumCostMicros: 100n },
+    ],
+  ]) {
+    const runId = `run-${suffix}-token-ceiling`;
+    const ceilingReservation = await service.reserve(
+      reservation({
+        runId,
+        userId: 'token-ceiling-user',
+        keyHash: knowledgeTextHash('llm-test-request-key', runId),
+        ...economics,
+      }),
+    );
+    assert.equal(ceilingReservation.ok, true);
+    await prisma.$transaction(async (transaction) => {
+      await markKnowledgeLlmRunDispatched(transaction, {
+        runId,
+        actorUserId: 'token-ceiling-user',
+        auditActor: terminalAuditActor(
+          'token-ceiling-user',
+          `${runId}-dispatch`,
+        ),
+        dispatchedAt: after(750),
+      });
+      await transaction.knowledgeLlmProviderOutcome.create({
+        data: {
+          runId,
+          status: 'valid',
+          normalizedContent: assistant.content,
+          contentHash: assistant.contentHash,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          createdAt: after(760),
+          capturedAt: after(760),
+        },
+      });
+      await transaction.knowledgeLlmProviderOutcome.update({
+        where: { runId },
+        data: { normalizedContent: null, finalizedAt: after(770) },
+      });
+    });
+    await assert.rejects(
+      prisma.$transaction((transaction) =>
+        settleKnowledgeLlmBudget(transaction, {
+          runId,
+          actorUserId: 'token-ceiling-user',
+          auditActor: terminalAuditActor(
+            'token-ceiling-user',
+            `${runId}-settle`,
+          ),
+          completedAt: after(780),
+          settlement: {
+            type: 'actual',
+            actualInputTokens: usage.inputTokens,
+            actualOutputTokens: usage.outputTokens,
+            actualCostMicros: 0n,
+            conversationId: tokenCeilingConversation.id,
+            assistantTurnId: assistant.id,
+          },
+        }),
+      ),
+      /knowledge_llm_settlement_invalid/,
+    );
+    await assert.rejects(
+      prisma.knowledgeLlmRun.update({
+        where: { id: runId },
+        data: {
+          executionStatus: 'result_ready',
+          settlementStatus: 'settled_actual',
+          actualInputTokens: usage.inputTokens,
+          actualOutputTokens: usage.outputTokens,
+          actualCostMicros: 0n,
+          conversationId: tokenCeilingConversation.id,
+          assistantTurnId: assistant.id,
+          completedAt: after(790),
+          updatedAt: after(790),
+          updatedBy: 'token-ceiling-user',
+        },
+      }),
+      /actual usage exceeds reserved token ceiling/,
+    );
+  }
   const directCostGuardReservation = await service.reserve(
     reservation({
       runId: 'run-direct-cost-guard',
@@ -2222,7 +2493,7 @@ try {
   // The same subject/period also contains the direct-cost-guard run. Both
   // reservations settle 100 maximum to 35 actual.
   assert.equal(settledPeriod.settledActualMicros, 70n);
-  assert.equal(settledPeriod.releasedMicros, 130n);
+  assert.equal(settledPeriod.releasedMicros.toString(), '130');
   await assert.rejects(
     prisma.knowledgeLlmReservation.update({
       where: { id: settled.reservations[0].id },
@@ -3754,7 +4025,7 @@ try {
     active: directlyMutableReservation.budgetPeriod.activeReservedMicros,
     settled: directlyMutableReservation.budgetPeriod.settledActualMicros,
     held: directlyMutableReservation.budgetPeriod.heldMaximumMicros,
-    released: directlyMutableReservation.budgetPeriod.releasedMicros,
+    released: directlyMutableReservation.budgetPeriod.releasedMicros.toString(),
     version: directlyMutableReservation.budgetPeriod.version,
   };
   await assert.rejects(
@@ -3786,7 +4057,7 @@ try {
     prisma.knowledgeLlmBudgetPeriod.update({
       where: { id: directlyMutableReservation.budgetPeriodId },
       data: {
-        releasedMicros: { increment: 1n },
+        releasedMicros: { increment: '1' },
         version: { increment: 1 },
       },
     }),
@@ -3811,7 +4082,7 @@ try {
       held: directMutationRunAfter.reservations[0].budgetPeriod
         .heldMaximumMicros,
       released:
-        directMutationRunAfter.reservations[0].budgetPeriod.releasedMicros,
+        directMutationRunAfter.reservations[0].budgetPeriod.releasedMicros.toString(),
       version: directMutationRunAfter.reservations[0].budgetPeriod.version,
     },
     directMutationAccountingBefore,
@@ -3840,8 +4111,7 @@ try {
     data: {
       id: 'period-late-reservation-insert',
       policyId: 'policy-late-reservation-insert',
-      periodStartUtc:
-        lateRun.reservations[0].budgetPeriod.periodStartUtc,
+      periodStartUtc: lateRun.reservations[0].budgetPeriod.periodStartUtc,
       periodEndUtc: lateRun.reservations[0].budgetPeriod.periodEndUtc,
       timezone: lateRun.reservations[0].budgetPeriod.timezone,
       currency: lateRun.currency,
@@ -3909,7 +4179,7 @@ try {
       active: immutableReservation.budgetPeriod.activeReservedMicros,
       settled: immutableReservation.budgetPeriod.settledActualMicros,
       held: immutableReservation.budgetPeriod.heldMaximumMicros,
-      released: immutableReservation.budgetPeriod.releasedMicros,
+      released: immutableReservation.budgetPeriod.releasedMicros.toString(),
       count: immutableReservation.budgetPeriod.acceptedRequestCount,
     };
     await assert.rejects(
@@ -3932,7 +4202,7 @@ try {
         active: periodAfter.activeReservedMicros,
         settled: periodAfter.settledActualMicros,
         held: periodAfter.heldMaximumMicros,
-        released: periodAfter.releasedMicros,
+        released: periodAfter.releasedMicros.toString(),
         count: periodAfter.acceptedRequestCount,
       },
       accountingBefore,
@@ -4011,6 +4281,8 @@ try {
       softLimitReplay: true,
       renderedPromptReservationBound: true,
       exactSettlement: true,
+      releasedCounterBeyondBigInt: true,
+      actualTokenCeilingsEnforced: true,
       heldMaximum: true,
       usageUnknownOutcomeBinding: true,
       usageUnknownReconciliation: true,

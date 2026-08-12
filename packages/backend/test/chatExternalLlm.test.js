@@ -152,6 +152,7 @@ test('getChatExternalLlmConfig rejects malformed or duplicate allowlist entries'
     'provider.example,bad host',
     'provider.example,provider.example',
     'provider.example,.hidden.example',
+    'K.example',
   ]) {
     assert.throws(
       () =>
@@ -164,6 +165,19 @@ test('getChatExternalLlmConfig rejects malformed or duplicate allowlist entries'
       /CHAT_EXTERNAL_LLM_ALLOWED_HOSTS/,
     );
   }
+});
+
+test('getChatExternalLlmConfig accepts canonical unbracketed IPv6 allowlist entries', async () => {
+  const { getChatExternalLlmConfig } =
+    await import('../dist/services/chatExternalLlm.js');
+  const config = getChatExternalLlmConfig({
+    CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+    CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+    CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://[2606:4700:4700::1111]/v1',
+    CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: '2606:4700:4700::1111',
+  });
+  assert.equal(config.provider, 'openai');
+  assert.deepEqual(config.allowedHosts, ['2606:4700:4700::1111']);
 });
 
 test('getChatExternalLlmConfig rejects unsafe production transport overrides', async () => {

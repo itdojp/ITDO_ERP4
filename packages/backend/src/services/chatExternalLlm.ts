@@ -1,5 +1,6 @@
 import {
-  canonicalExternalLlmAllowedHost,
+  canonicalExternalLlmAllowedHosts,
+  canonicalExternalLlmUrlHostname,
   ExternalLlmProviderError,
 } from '../application/externalLlm/externalLlmPort.js';
 import { OpenAiCompatibleTextAdapter } from '../adapters/externalLlm/openAiCompatibleTextAdapter.js';
@@ -47,15 +48,7 @@ function parsePositiveInt(raw: string | undefined, fallback: number) {
 
 function parseAllowedHosts(raw: string | undefined) {
   if (!raw) return [];
-  const candidates = raw.split(',').map(canonicalExternalLlmAllowedHost);
-  if (
-    candidates.length > 20 ||
-    candidates.some((value) => value === null) ||
-    new Set(candidates).size !== candidates.length
-  ) {
-    return null;
-  }
-  return candidates as string[];
+  return canonicalExternalLlmAllowedHosts(raw.split(','), 20);
 }
 
 export class ChatExternalLlmConfigurationError extends Error {
@@ -105,9 +98,11 @@ function resolveOpenAiTransportConfig(baseUrl: string, env: NodeJS.ProcessEnv) {
       'CHAT_EXTERNAL_LLM_ALLOWED_HOSTS',
     );
   }
+  const destinationHost = canonicalExternalLlmUrlHostname(parsedUrl);
   const isDefaultDestination =
+    destinationHost !== null &&
     parsedUrl.protocol === 'https:' &&
-    parsedUrl.hostname.toLowerCase() === 'api.openai.com' &&
+    destinationHost === 'api.openai.com' &&
     parsedUrl.port === '' &&
     (parsedUrl.pathname === '/v1' || parsedUrl.pathname === '/v1/');
   // Preserve the historical zero-configuration OpenAI endpoint while making
@@ -116,8 +111,9 @@ function resolveOpenAiTransportConfig(baseUrl: string, env: NodeJS.ProcessEnv) {
     allowedHosts = ['api.openai.com'];
   }
   if (
+    destinationHost === null ||
     allowedHosts.length === 0 ||
-    !allowedHosts.includes(parsedUrl.hostname.toLowerCase())
+    !allowedHosts.includes(destinationHost)
   ) {
     throw new ChatExternalLlmConfigurationError(
       'CHAT_EXTERNAL_LLM_ALLOWED_HOSTS',

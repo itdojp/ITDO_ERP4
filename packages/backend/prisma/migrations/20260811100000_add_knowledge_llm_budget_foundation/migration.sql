@@ -56,7 +56,10 @@ CREATE TABLE "KnowledgeLlmBudgetPeriod" (
     "activeReservedMicros" BIGINT NOT NULL DEFAULT 0,
     "settledActualMicros" BIGINT NOT NULL DEFAULT 0,
     "heldMaximumMicros" BIGINT NOT NULL DEFAULT 0,
-    "releasedMicros" BIGINT NOT NULL DEFAULT 0,
+    -- Released value is excluded from the hard-limit balance and can grow
+    -- across repeated reserve/release cycles. NUMERIC(38,0) safely contains
+    -- INTEGER request-count * BIGINT reservation without overflow.
+    "releasedMicros" NUMERIC(38,0) NOT NULL DEFAULT 0,
     "acceptedRequestCount" INTEGER NOT NULL DEFAULT 0,
     "version" INTEGER NOT NULL DEFAULT 1,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1296,6 +1299,12 @@ BEGIN
       RAISE EXCEPTION 'KnowledgeLlmRun actual settlement requires usage and cost'
         USING ERRCODE = '23514';
     END IF;
+    IF NEW."actualInputTokens" > OLD."estimatedInputTokens"
+      OR NEW."actualOutputTokens" > OLD."maxOutputTokens"
+    THEN
+      RAISE EXCEPTION 'KnowledgeLlmRun actual usage exceeds reserved token ceiling'
+        USING ERRCODE = '23514';
+    END IF;
     expected_actual_cost :=
       CEIL(
         NEW."actualInputTokens"::NUMERIC
@@ -1888,12 +1897,12 @@ DECLARE
   period_active BIGINT;
   period_settled BIGINT;
   period_held BIGINT;
-  period_released BIGINT;
+  period_released NUMERIC(38,0);
   period_count INTEGER;
   expected_active BIGINT;
   expected_settled BIGINT;
   expected_held BIGINT;
-  expected_released BIGINT;
+  expected_released NUMERIC(38,0);
   expected_count INTEGER;
 BEGIN
   SELECT "activeReservedMicros", "settledActualMicros", "heldMaximumMicros",

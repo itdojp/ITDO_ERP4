@@ -360,8 +360,10 @@ export async function settleKnowledgeLlmBudget(
       run.executionStatus !== 'dispatched' ||
       !Number.isSafeInteger(input.settlement.actualInputTokens) ||
       input.settlement.actualInputTokens < 0 ||
+      input.settlement.actualInputTokens > run.estimatedInputTokens ||
       !Number.isSafeInteger(input.settlement.actualOutputTokens) ||
       input.settlement.actualOutputTokens < 0 ||
+      input.settlement.actualOutputTokens > run.maxOutputTokens ||
       input.settlement.actualCostMicros < 0n ||
       input.settlement.actualCostMicros > run.maximumCostMicros
     ) {
@@ -645,6 +647,8 @@ export async function reconcileKnowledgeLlmHeldBudget(
   if (
     !run ||
     run.actorUserId !== actorUserId ||
+    input.actualInputTokens > run.estimatedInputTokens ||
+    input.actualOutputTokens > run.maxOutputTokens ||
     input.actualCostMicros > run.maximumCostMicros
   ) {
     throw new Error('knowledge_llm_reconcile_conflict');
@@ -825,7 +829,9 @@ export async function reconcileKnowledgeLlmUsageUnknownBudget(
   if (
     !run ||
     run.actorUserId !== runActorUserId ||
-    operatorUserId === run.actorUserId
+    operatorUserId === run.actorUserId ||
+    input.actualInputTokens > run.estimatedInputTokens ||
+    input.actualOutputTokens > run.maxOutputTokens
   ) {
     throw new Error('knowledge_llm_usage_reconcile_conflict');
   }

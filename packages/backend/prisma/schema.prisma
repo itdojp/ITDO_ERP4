@@ -3095,7 +3095,7 @@ model KnowledgeLlmBudgetPeriod {
   activeReservedMicros BigInt                    @default(0)
   settledActualMicros  BigInt                    @default(0)
   heldMaximumMicros    BigInt                    @default(0)
-  releasedMicros       BigInt                    @default(0)
+  releasedMicros       Decimal                   @default(0) @db.Decimal(38, 0)
   acceptedRequestCount Int                       @default(0)
   version              Int                       @default(1)
   createdAt            DateTime                  @default(now())

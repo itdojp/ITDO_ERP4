@@ -169,18 +169,25 @@ test('budget policy and periods enforce explicit subject, timezone and integer l
   assert.match(migration, /KnowledgeLlmBudgetPolicy_version_guard/);
   assert.match(migration, /"softLimitMicros" <= "hardLimitMicros"/);
   assert.match(migration, /KnowledgeLlmBudgetPeriod_counters_check/);
+  assert.match(
+    block('model', 'KnowledgeLlmBudgetPeriod'),
+    /releasedMicros\s+Decimal\s+@default\(0\)\s+@db\.Decimal\(38, 0\)/,
+  );
+  assert.match(migration, /"releasedMicros" NUMERIC\(38,0\)/);
+  assert.match(migration, /expected_released NUMERIC\(38,0\)/);
   assert.match(migration, /KnowledgeLlmBudgetPeriod_boundary_guard/);
   assert.match(
     migration,
     /IF TG_OP = 'UPDATE' THEN[\s\S]*?RETURN NEW;[\s\S]*?FOR SHARE;/,
   );
-  assert.match(
-    migration,
-    /NEW\."periodStartUtc" <> expected_period_start_utc/,
-  );
+  assert.match(migration, /NEW\."periodStartUtc" <> expected_period_start_utc/);
 });
 
 test('run settlement recomputes actual cost from immutable usage and price snapshots', () => {
+  assert.match(
+    migration,
+    /NEW\."actualInputTokens" > OLD\."estimatedInputTokens"[\s\S]*?NEW\."actualOutputTokens" > OLD\."maxOutputTokens"[\s\S]*?actual usage exceeds reserved token ceiling/,
+  );
   assert.match(
     migration,
     /erp4_knowledge_llm_run_transition_guard[\s\S]*?expected_actual_cost\s*:=\s*[\s\S]*?CEIL\([\s\S]*?NEW\."actualInputTokens"::NUMERIC[\s\S]*?OLD\."inputCostMicrosPerMillion"::NUMERIC[\s\S]*?\/ 1000000[\s\S]*?\+ CEIL\([\s\S]*?NEW\."actualOutputTokens"::NUMERIC[\s\S]*?OLD\."outputCostMicrosPerMillion"::NUMERIC[\s\S]*?\/ 1000000/,

@@ -1,5 +1,6 @@
 import {
-  canonicalExternalLlmAllowedHost,
+  canonicalExternalLlmAllowedHosts,
+  canonicalExternalLlmUrlHostname,
   externalLlmMessageFramingTokens,
   isCanonicalExternalLlmModel,
   type ExternalLlmProviderName,
@@ -264,22 +265,12 @@ function positiveInt(raw: string | undefined, fallback: number, key: string) {
 
 function allowedHosts(raw: string | undefined): string[] {
   if (!raw) return [];
-  const result = raw
-    .split(',')
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
-  if (result.length > 20 || new Set(result).size !== result.length) {
+  const result = canonicalExternalLlmAllowedHosts(raw.split(','), 20);
+  if (result === null) {
     throw new KnowledgeLlmConfigurationError(
       'KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS',
     );
   }
-  result.forEach((entry) => {
-    if (canonicalExternalLlmAllowedHost(entry) !== entry) {
-      throw new KnowledgeLlmConfigurationError(
-        'KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS',
-      );
-    }
-  });
   return result;
 }
 
@@ -357,7 +348,12 @@ export function getKnowledgeLlmRuntimeConfig(
     );
   }
   const hosts = allowedHosts(env.KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS);
-  if (hosts.length === 0 || !hosts.includes(parsedUrl.hostname.toLowerCase())) {
+  const destinationHost = canonicalExternalLlmUrlHostname(parsedUrl);
+  if (
+    destinationHost === null ||
+    hosts.length === 0 ||
+    !hosts.includes(destinationHost)
+  ) {
     throw new KnowledgeLlmConfigurationError(
       'KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS',
     );

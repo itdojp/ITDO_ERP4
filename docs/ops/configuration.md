@@ -155,14 +155,14 @@ Storage artifact migration:
 - `CHAT_EXTERNAL_LLM_PROVIDER=openai` の場合
   - `CHAT_EXTERNAL_LLM_OPENAI_API_KEY` 必須
   - `CHAT_EXTERNAL_LLM_OPENAI_BASE_URL` 指定時は `http(s)` URL
-  - `CHAT_EXTERNAL_LLM_ALLOWED_HOSTS`（カンマ区切り）へbase URL hostを必ず含める。既定の`https://api.openai.com/v1`だけは後方互換のため`api.openai.com`を暗黙allowlistとする
+  - `CHAT_EXTERNAL_LLM_ALLOWED_HOSTS`（カンマ区切り）へbase URL hostを必ず含める。hostはASCII、IPv6 literalは角括弧なしcanonical表現で指定する。既定の`https://api.openai.com/v1`だけは後方互換のため`api.openai.com`を暗黙allowlistとする
   - `CHAT_EXTERNAL_LLM_ALLOW_HTTP` / `CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP`（任意、既定: `false`）。productionでは`true`を拒否する
 
 外部LLM（Knowledge Hub、既定無効）:
 
 - `KNOWLEDGE_EXTERNAL_LLM_PROVIDER=disabled|stub|openai`（既定: `disabled`）。`CHAT_EXTERNAL_LLM_*`へfallbackしない
 - `stub|openai`では`KNOWLEDGE_LLM_MODEL_CATALOG_JSON`が必須。catalogはversion、allowlistされたprovider/model、input/output token上限、ISO 4217 currency、100万token当たりinteger micro-unit価格を持つ
-- `openai`では`KNOWLEDGE_EXTERNAL_LLM_OPENAI_API_KEY`、HTTPSの`KNOWLEDGE_EXTERNAL_LLM_OPENAI_BASE_URL`、base URL hostを含む`KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS`が必須
+- `openai`では`KNOWLEDGE_EXTERNAL_LLM_OPENAI_API_KEY`、HTTPSの`KNOWLEDGE_EXTERNAL_LLM_OPENAI_BASE_URL`、base URL hostを含む`KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS`が必須。hostはASCII、IPv6 literalは角括弧なしcanonical表現で指定する
 - `KNOWLEDGE_EXTERNAL_LLM_ALLOW_HTTP` / `KNOWLEDGE_EXTERNAL_LLM_ALLOW_PRIVATE_IP`は既定`false`。repository test用の明示設定でのみ有効化し、production sampleでは有効化しない
 - Chat summaryのprovider/model/rate契約は従来どおり独立しており、Knowledge Hubのuser/organization予算予約へ暗黙統合しない
 - 実provider keyによる検証とprovider cutoverは本設定追加のrepo-side完了範囲外

@@ -7,7 +7,8 @@ import type {
 } from '../../application/externalLlm/externalLlmPort.js';
 import {
   bindExternalLlmTextTransportRequest,
-  canonicalExternalLlmAllowedHost,
+  canonicalExternalLlmAllowedHosts,
+  canonicalExternalLlmUrlHostname,
   ExternalLlmProviderError,
   isPersistenceCompatibleExternalLlmText,
 } from '../../application/externalLlm/externalLlmPort.js';
@@ -89,20 +90,9 @@ function canonicalAllowedHosts(
   values: readonly string[],
   endpoint: string,
 ): string[] | null {
-  const hosts = [
-    ...new Set(
-      values
-        .map(canonicalExternalLlmAllowedHost)
-        .filter((value) => value !== null),
-    ),
-  ].sort();
-  if (hosts.length !== values.length) return null;
-  const rawEndpointHost = new URL(endpoint).hostname;
-  const endpointHost = canonicalExternalLlmAllowedHost(
-    rawEndpointHost.startsWith('[') && rawEndpointHost.endsWith(']')
-      ? rawEndpointHost.slice(1, -1)
-      : rawEndpointHost,
-  );
+  const hosts = canonicalExternalLlmAllowedHosts(values, 100);
+  if (hosts === null) return null;
+  const endpointHost = canonicalExternalLlmUrlHostname(new URL(endpoint));
   if (endpointHost === null) return null;
   return hosts.length > 0 && hosts.includes(endpointHost) ? hosts : null;
 }
@@ -135,7 +125,10 @@ function strictNonNegativeInteger(value: unknown): number | null {
     : null;
 }
 
-function parseOptionalUsage(value: unknown): ExternalLlmUsageResult {
+function parseOptionalUsage(
+  value: unknown,
+  maximumOutputTokens: number,
+): ExternalLlmUsageResult {
   if (value === undefined) return { usageStatus: 'missing', usage: null };
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return { usageStatus: 'invalid', usage: null };
@@ -143,7 +136,11 @@ function parseOptionalUsage(value: unknown): ExternalLlmUsageResult {
   const usage = value as Record<string, unknown>;
   const inputTokens = strictNonNegativeInteger(usage.prompt_tokens);
   const outputTokens = strictNonNegativeInteger(usage.completion_tokens);
-  if (inputTokens === null || outputTokens === null) {
+  if (
+    inputTokens === null ||
+    outputTokens === null ||
+    outputTokens > maximumOutputTokens
+  ) {
     return { usageStatus: 'invalid', usage: null };
   }
   return {
@@ -544,6 +541,7 @@ export class OpenAiCompatibleTextAdapter implements ExternalLlmTextPort {
                 body && typeof body === 'object' && !Array.isArray(body)
                   ? (body as Record<string, unknown>).usage
                   : undefined,
+                requestSnapshot.maxOutputTokens,
               );
         return {
           provider: 'openai',

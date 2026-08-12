@@ -130,6 +130,26 @@ test('openai runtime requires separate key and an allowlisted base host', async 
   assert.throws(
     () =>
       getKnowledgeLlmRuntimeConfig({
+        KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'openai',
+        KNOWLEDGE_LLM_MODEL_CATALOG_JSON: openAiCatalog,
+        KNOWLEDGE_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-test-key',
+        KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS: 'K.example',
+        KNOWLEDGE_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://k.example/v1',
+      }),
+    /KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS/,
+  );
+  const ipv6 = getKnowledgeLlmRuntimeConfig({
+    KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'openai',
+    KNOWLEDGE_LLM_MODEL_CATALOG_JSON: openAiCatalog,
+    KNOWLEDGE_EXTERNAL_LLM_OPENAI_API_KEY: 'synthetic-test-key',
+    KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS: '2606:4700:4700::1111',
+    KNOWLEDGE_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://[2606:4700:4700::1111]/v1',
+  });
+  assert.equal(ipv6.provider, 'openai');
+  assert.deepEqual(ipv6.allowedHosts, ['2606:4700:4700::1111']);
+  assert.throws(
+    () =>
+      getKnowledgeLlmRuntimeConfig({
         NODE_ENV: 'production',
         KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'openai',
         KNOWLEDGE_LLM_MODEL_CATALOG_JSON: openAiCatalog,
