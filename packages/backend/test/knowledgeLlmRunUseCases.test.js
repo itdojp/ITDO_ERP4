@@ -185,6 +185,7 @@ class CapturingStubProvider {
         }
         if (
           this.mode === 'invalid_content' ||
+          this.mode === 'non_string_content' ||
           this.mode === 'oversize_content'
         ) {
           const result = await prepared.dispatch();
@@ -193,6 +194,8 @@ class CapturingStubProvider {
             content:
               this.mode === 'invalid_content'
                 ? 'SYNTHETIC\u0000INVALID'
+                : this.mode === 'non_string_content'
+                  ? { canary: 'SYNTHETIC-NON-STRING' }
                 : 'x'.repeat(256 * 1024 + 1),
           };
         }
@@ -983,7 +986,11 @@ test('valid result with missing or invalid usage is retained with maximum reserv
 });
 
 test('invalid or oversized provider content is never persisted as a successful result', async (t) => {
-  for (const providerMode of ['invalid_content', 'oversize_content']) {
+  for (const providerMode of [
+    'invalid_content',
+    'non_string_content',
+    'oversize_content',
+  ]) {
     await t.test(providerMode, async () => {
       const harness = createHarness({ providerMode });
       const previewResult = await preview(harness);

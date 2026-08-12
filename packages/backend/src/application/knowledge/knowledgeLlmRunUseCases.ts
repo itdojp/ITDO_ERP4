@@ -824,23 +824,23 @@ export function createKnowledgeLlmRunService(input: {
           if (!visible) throw new KnowledgeLlmRunAccessError('not_found');
           return { created: true, reused: false, run: mapRun(visible) };
         }
-        if (
-          !isPersistenceCompatibleExternalLlmText(providerResult.content) ||
-          Buffer.byteLength(providerResult.content, 'utf8') < 1
-        ) {
+        const resultContent: unknown = providerResult.content;
+        if (!isPersistenceCompatibleExternalLlmText(resultContent)) {
           const failed = await settleCapturedOutcome({
             status: 'invalid',
-            failureCode:
-              Buffer.byteLength(providerResult.content, 'utf8') < 1
-                ? 'empty_result'
-                : 'malformed_response',
+            failureCode: 'malformed_response',
           });
           return { created: true, reused: false, run: mapRun(failed) };
         }
-        if (
-          Buffer.byteLength(providerResult.content, 'utf8') >
-          knowledgeLlmLimits.resultBytes
-        ) {
+        const resultBytes = Buffer.byteLength(resultContent, 'utf8');
+        if (resultBytes < 1) {
+          const failed = await settleCapturedOutcome({
+            status: 'invalid',
+            failureCode: 'empty_result',
+          });
+          return { created: true, reused: false, run: mapRun(failed) };
+        }
+        if (resultBytes > knowledgeLlmLimits.resultBytes) {
           const failed = await settleCapturedOutcome({
             status: 'invalid',
             failureCode: 'response_oversize',
@@ -853,7 +853,7 @@ export function createKnowledgeLlmRunService(input: {
         ) {
           const usageUnknown = await settleCapturedOutcome({
             status: 'usage_unknown',
-            normalizedContent: providerResult.content,
+            normalizedContent: resultContent,
             failureCode:
               providerResult.usageStatus === 'invalid'
                 ? 'usage_invalid'
@@ -867,7 +867,7 @@ export function createKnowledgeLlmRunService(input: {
         }
         const completed = await settleCapturedOutcome({
           status: 'valid',
-          normalizedContent: providerResult.content,
+          normalizedContent: resultContent,
           inputTokens: providerResult.usage.inputTokens,
           outputTokens: providerResult.usage.outputTokens,
         });
