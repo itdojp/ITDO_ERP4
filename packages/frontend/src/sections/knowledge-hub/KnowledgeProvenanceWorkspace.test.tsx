@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const busyNotificationOrder: string[] = [];
+
 vi.mock('./KnowledgeAnnotationPanel', () => ({
   KnowledgeAnnotationPanel: () => <div>annotation panel</div>,
 }));
@@ -24,7 +26,13 @@ vi.mock('./KnowledgeLlmPanel', () => ({
   }) => (
     <div>
       llm panel / {props.itemId} / {props.organizationId ?? 'personal'}
-      <button type="button" onClick={() => props.onCommitBusyChange?.(true)}>
+      <button
+        type="button"
+        onClick={() => {
+          props.onCommitBusyChange?.(true);
+          busyNotificationOrder.push('llm-child-returned');
+        }}
+      >
         LLM確定を開始
       </button>
       <button type="button" onClick={() => props.onCommitBusyChange?.(false)}>
@@ -180,7 +188,10 @@ describe('KnowledgeProvenanceWorkspace', () => {
   });
 
   it('keeps the LLM panel mounted and locks other tabs during dispatch', () => {
-    const onCommitBusyChange = vi.fn();
+    busyNotificationOrder.length = 0;
+    const onCommitBusyChange = vi.fn((busy: boolean) => {
+      if (busy) busyNotificationOrder.push('parent-notified');
+    });
     render(
       <KnowledgeProvenanceWorkspace
         itemId="item-1"
@@ -193,6 +204,10 @@ describe('KnowledgeProvenanceWorkspace', () => {
     );
     fireEvent.click(screen.getByRole('tab', { name: '外部LLM対話' }));
     fireEvent.click(screen.getByRole('button', { name: 'LLM確定を開始' }));
+    expect(busyNotificationOrder).toEqual([
+      'parent-notified',
+      'llm-child-returned',
+    ]);
     expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
     expect(screen.getByRole('tab', { name: 'Chatへ共有' })).toBeDisabled();
     expect(screen.getByText(/llm panel \/ item-1/)).toBeVisible();

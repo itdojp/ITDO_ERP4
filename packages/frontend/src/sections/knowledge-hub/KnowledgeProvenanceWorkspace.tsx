@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Alert, Card, Tabs } from '../../ui';
 import type { KnowledgeScope, KnowledgeSnapshot } from './knowledgeHubModel';
@@ -35,6 +35,9 @@ export function KnowledgeProvenanceWorkspace(props: {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('annotations');
   const [shareCommitBusy, setShareCommitBusy] = useState(false);
   const [llmCommitBusy, setLlmCommitBusy] = useState(false);
+  const shareCommitBusyRef = useRef(false);
+  const llmCommitBusyRef = useRef(false);
+  const lastNotifiedCommitBusyRef = useRef<boolean | null>(null);
   const commitBusy = shareCommitBusy || llmCommitBusy;
   const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<WorkspaceTab>>(
     () => new Set(['annotations']),
@@ -58,17 +61,36 @@ export function KnowledgeProvenanceWorkspace(props: {
     });
   };
 
-  const handleShareCommitBusyChange = useCallback((busy: boolean) => {
-    setShareCommitBusy(busy);
-  }, []);
+  const notifyCommitBusy = useCallback(
+    (busy: boolean) => {
+      if (lastNotifiedCommitBusyRef.current === busy) return;
+      lastNotifiedCommitBusyRef.current = busy;
+      onCommitBusyChange?.(busy);
+    },
+    [onCommitBusyChange],
+  );
 
-  const handleLlmCommitBusyChange = useCallback((busy: boolean) => {
-    setLlmCommitBusy(busy);
-  }, []);
+  const handleShareCommitBusyChange = useCallback(
+    (busy: boolean) => {
+      shareCommitBusyRef.current = busy;
+      setShareCommitBusy(busy);
+      notifyCommitBusy(busy || llmCommitBusyRef.current);
+    },
+    [notifyCommitBusy],
+  );
+
+  const handleLlmCommitBusyChange = useCallback(
+    (busy: boolean) => {
+      llmCommitBusyRef.current = busy;
+      setLlmCommitBusy(busy);
+      notifyCommitBusy(busy || shareCommitBusyRef.current);
+    },
+    [notifyCommitBusy],
+  );
 
   useEffect(() => {
-    onCommitBusyChange?.(commitBusy);
-  }, [commitBusy, onCommitBusyChange]);
+    notifyCommitBusy(commitBusy);
+  }, [commitBusy, notifyCommitBusy]);
 
   return (
     <Card className="knowledge-provenance-workspace" padding="small">
