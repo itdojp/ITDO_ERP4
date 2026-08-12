@@ -70,6 +70,7 @@ const failureCodeValues = [
 
 const nullableStringSchema = {
   type: ['string', 'null'],
+  minLength: 1,
 } as const;
 const nullableCostSchema = {
   anyOf: [{ type: 'string', pattern: '^[0-9]+$' }, { type: 'null' }],

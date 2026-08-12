@@ -250,6 +250,17 @@ describe('knowledgeLlmApi', () => {
     expect(apiResponse.mock.calls[1][1].method).toBe('POST');
   });
 
+  it('fails closed when execute returns a non-object envelope', async () => {
+    apiResponse.mockResolvedValueOnce(response(null));
+    await expect(
+      executeKnowledgeLlmRun({
+        request,
+        previewToken: 'opaque-token',
+        requestKey: 'opaque-request-key',
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_response' });
+  });
+
   it('fails closed on invalid provider/status/hash and normalizes 403/404 identically', async () => {
     apiResponse.mockResolvedValueOnce(
       response({

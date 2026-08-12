@@ -354,7 +354,7 @@ test('execute forwards explicit confirmation and strips internal ledger fields',
   );
 });
 
-test('route rejects unknown top-level and nested source fields', async (t) => {
+test('route rejects unknown fields and empty nullable identifiers', async (t) => {
   const app = await build(service());
   t.after(() => app.close());
   const topLevel = await app.inject({
@@ -377,6 +377,12 @@ test('route rejects unknown top-level and nested source fields', async (t) => {
     }),
   });
   assert.equal(nested.statusCode, 400, nested.body);
+  const emptyOrganization = await app.inject({
+    method: 'POST',
+    url: '/knowledge/llm/runs/preview',
+    payload: request({ organizationId: '' }),
+  });
+  assert.equal(emptyOrganization.statusCode, 400, emptyOrganization.body);
 });
 
 test('canonical Knowledge identity is required before run access', async (t) => {

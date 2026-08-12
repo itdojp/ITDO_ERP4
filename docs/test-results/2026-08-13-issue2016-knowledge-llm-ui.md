@@ -47,7 +47,7 @@ canaryはexact preview、provider request、run response、画面、監査／app
 | 分類 | 結果 |
 | --- | --- |
 | focused backend stub/test-hook/route/候補／run adapter | 70 / 70 PASS |
-| focused frontend model/API/component | 39 / 39 PASS |
+| focused frontend model/API/component | 40 / 40 PASS |
 | focused real-backend E2E（stub） | 1 / 1 PASS |
 | focused real-backend E2E（disabled） | 1 / 1 PASS |
 | focused real-backend E2E（JWT canonical identity + stub） | 1 / 1 PASS |

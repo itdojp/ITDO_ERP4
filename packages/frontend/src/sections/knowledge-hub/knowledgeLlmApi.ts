@@ -304,14 +304,16 @@ export async function executeKnowledgeLlmRun(input: {
   previewToken: string;
   requestKey: string;
 }) {
-  const payload = await requestLlm(
-    '/knowledge/llm/runs',
-    json({
-      ...input.request,
-      previewToken: input.previewToken,
-      requestKey: input.requestKey,
-      confirmed: true,
-    }),
+  const payload = record(
+    await requestLlm(
+      '/knowledge/llm/runs',
+      json({
+        ...input.request,
+        previewToken: input.previewToken,
+        requestKey: input.requestKey,
+        confirmed: true,
+      }),
+    ),
   );
   return {
     created: boolean(payload.created),
