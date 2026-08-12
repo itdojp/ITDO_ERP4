@@ -30,7 +30,12 @@ export type OpenAiCompatibleTextAdapterConfig = {
   dnsLookupImpl?: SafeHttpOptions['dnsLookupImpl'];
 };
 
-const defaultMaximumResponseBytes = 1024 * 1024;
+// Knowledge provider outcomes are persisted behind a 256 KiB database bound.
+// Keep the strict shared default at that boundary so a successful transport
+// result can always enter the Knowledge finalization path. Chat opts into its
+// historical 1 MiB response limit explicitly at composition time.
+const defaultMaximumResponseBytes = 256 * 1024;
+const maximumAllowedResponseBytes = 1024 * 1024;
 
 type OpenAiRequestSnapshot = {
   request: ExternalLlmTextRequest;
@@ -50,7 +55,7 @@ function normalizeMaximumResponseBytes(value: number | undefined) {
   const normalized = value ?? defaultMaximumResponseBytes;
   return Number.isSafeInteger(normalized) &&
     normalized >= 1 &&
-    normalized <= defaultMaximumResponseBytes
+    normalized <= maximumAllowedResponseBytes
     ? normalized
     : null;
 }

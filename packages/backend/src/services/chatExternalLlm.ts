@@ -226,7 +226,9 @@ export async function summarizeWithExternalLlm(options: {
     allowPrivateIp: config.allowPrivateIp,
     // The pre-existing Chat summary contract treats a malformed successful
     // response as an empty summary and does not account provider usage.
-    // Knowledge callers keep the adapter defaults (strict/strict).
+    // It also retains the historical 1 MiB transport response limit, while
+    // Knowledge callers keep the 256 KiB strict persistence-safe default.
+    maximumResponseBytes: 1024 * 1024,
     malformedSuccessPolicy: 'empty',
     usagePolicy: 'ignore',
   });

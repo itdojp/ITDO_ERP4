@@ -861,6 +861,35 @@ test('OpenAI-compatible adapter rejects a response beyond the byte limit even wh
   );
 });
 
+test('OpenAI-compatible adapter default rejects responses beyond the Knowledge outcome persistence bound', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  const oversized = JSON.stringify({
+    choices: [{ message: { content: 'x'.repeat(256 * 1024) } }],
+    usage: { prompt_tokens: 10, completion_tokens: 2 },
+  });
+  assert.ok(Buffer.byteLength(oversized, 'utf8') > 256 * 1024);
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(oversized);
+    },
+    async (baseUrl) => {
+      await assert.rejects(
+        complete(
+          openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl),
+          openAiRequest(),
+        ),
+        (error) => {
+          assert.equal(error.code, 'response_oversize');
+          assert.equal(error.outcome, 'known_response');
+          return true;
+        },
+      );
+    },
+  );
+});
+
 test('OpenAI-compatible adapter measures an oversized BOM response before UTF-8 decoding', async () => {
   const { OpenAiCompatibleTextAdapter } =
     await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');

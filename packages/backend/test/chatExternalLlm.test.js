@@ -207,6 +207,36 @@ test('summarizeWithExternalLlm uses guarded fetch for allowed host', async () =>
   );
 });
 
+test('summarizeWithExternalLlm retains the historical response limit above the Knowledge bound', async () => {
+  const { summarizeWithExternalLlm } =
+    await import('../dist/services/chatExternalLlm.js');
+  const summary = `- 概要: ${'x'.repeat(256 * 1024)}`;
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
+        JSON.stringify({ choices: [{ message: { content: summary } }] }),
+      );
+    },
+    async (baseUrl) => {
+      await withEnv(
+        {
+          CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
+          CHAT_EXTERNAL_LLM_OPENAI_API_KEY: 'dummy-key',
+          CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: `${baseUrl}/v1`,
+          CHAT_EXTERNAL_LLM_ALLOWED_HOSTS: '127.0.0.1',
+          CHAT_EXTERNAL_LLM_ALLOW_HTTP: 'true',
+          CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP: 'true',
+        },
+        async () => {
+          const result = await summarizeWithExternalLlm({ bodies: ['hello'] });
+          assert.equal(result.summary, summary);
+        },
+      );
+    },
+  );
+});
+
 test('summarizeWithExternalLlm discards provider error bodies', async () => {
   const { summarizeWithExternalLlm } =
     await import('../dist/services/chatExternalLlm.js');
