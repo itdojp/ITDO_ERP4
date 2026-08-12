@@ -667,21 +667,57 @@ function trustedRunTimestamp(clock: () => Date): Date {
 function validateCapturedOutcome(
   outcome: KnowledgeLlmCapturedProviderOutcome,
 ): void {
-  if (outcome.status === 'invalid') return;
+  const runtimeOutcome = outcome as unknown as Record<string, unknown>;
+  if (runtimeOutcome.status === 'invalid') {
+    const failureCodes = new Set([
+      'provider_4xx',
+      'provider_5xx',
+      'malformed_response',
+      'response_oversize',
+      'empty_result',
+    ]);
+    if (
+      !failureCodes.has(runtimeOutcome.failureCode as string) ||
+      runtimeOutcome.normalizedContent !== undefined ||
+      runtimeOutcome.inputTokens !== undefined ||
+      runtimeOutcome.outputTokens !== undefined
+    ) {
+      throw new Error('knowledge_llm_outcome_invalid');
+    }
+    return;
+  }
+  if (runtimeOutcome.status === 'usage_unknown') {
+    const failureCodes = new Set(['usage_missing', 'usage_invalid']);
+    if (
+      !failureCodes.has(runtimeOutcome.failureCode as string) ||
+      runtimeOutcome.inputTokens !== undefined ||
+      runtimeOutcome.outputTokens !== undefined
+    ) {
+      throw new Error('knowledge_llm_outcome_invalid');
+    }
+  } else if (runtimeOutcome.status !== 'valid') {
+    throw new Error('knowledge_llm_outcome_invalid');
+  } else if (runtimeOutcome.failureCode !== undefined) {
+    throw new Error('knowledge_llm_outcome_invalid');
+  }
+  const normalizedContent = runtimeOutcome.normalizedContent;
   if (
-    !isPersistenceCompatibleExternalLlmText(outcome.normalizedContent) ||
-    Buffer.byteLength(outcome.normalizedContent, 'utf8') < 1 ||
-    Buffer.byteLength(outcome.normalizedContent, 'utf8') >
+    typeof normalizedContent !== 'string' ||
+    !isPersistenceCompatibleExternalLlmText(normalizedContent) ||
+    Buffer.byteLength(normalizedContent, 'utf8') < 1 ||
+    Buffer.byteLength(normalizedContent, 'utf8') >
       knowledgeLlmLimits.resultBytes
   ) {
     throw new Error('knowledge_llm_outcome_invalid');
   }
   if (
-    outcome.status === 'valid' &&
-    (!Number.isSafeInteger(outcome.inputTokens) ||
-      outcome.inputTokens < 0 ||
-      !Number.isSafeInteger(outcome.outputTokens) ||
-      outcome.outputTokens < 0)
+    runtimeOutcome.status === 'valid' &&
+    (typeof runtimeOutcome.inputTokens !== 'number' ||
+      !Number.isSafeInteger(runtimeOutcome.inputTokens) ||
+      runtimeOutcome.inputTokens < 0 ||
+      typeof runtimeOutcome.outputTokens !== 'number' ||
+      !Number.isSafeInteger(runtimeOutcome.outputTokens) ||
+      runtimeOutcome.outputTokens < 0)
   ) {
     throw new Error('knowledge_llm_outcome_invalid');
   }
