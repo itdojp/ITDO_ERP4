@@ -472,6 +472,26 @@ try {
   const renderedPromptRun = await prisma.knowledgeLlmRun.findUniqueOrThrow({
     where: { id: 'run-rendered-prompt' },
   });
+  await assert.rejects(
+    prisma.knowledgeLlmRun.create({
+      data: {
+        ...renderedPromptRun,
+        id: 'run-non-canonical-model-padding',
+        model: 'stub-default ',
+      },
+    }),
+    /KnowledgeLlmRun_identity_check/,
+  );
+  await assert.rejects(
+    prisma.knowledgeLlmRun.create({
+      data: {
+        ...renderedPromptRun,
+        id: 'run-non-canonical-model-control',
+        model: 'stub\nmodel',
+      },
+    }),
+    /KnowledgeLlmRun_identity_check/,
+  );
   const renderedPromptRequest = {
     provider: 'stub',
     model: 'stub-default',

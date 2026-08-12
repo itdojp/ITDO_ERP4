@@ -554,7 +554,9 @@ CREATE TRIGGER "KnowledgeLlmBudgetPeriod_boundary_guard"
 ALTER TABLE "KnowledgeLlmRun"
   ADD CONSTRAINT "KnowledgeLlmRun_identity_check" CHECK (
     "erp4_knowledge_llm_auth_identifier_valid"("actorUserId", 200)
-    AND LENGTH(BTRIM("model")) BETWEEN 1 AND 200
+    AND "model" = BTRIM("model")
+    AND LENGTH("model") BETWEEN 1 AND 200
+    AND "model" !~ '[[:cntrl:]]'
     AND "currency" ~ '^[A-Z]{3}$'
     AND "erp4_knowledge_llm_auth_identifier_valid"("createdBy", 200)
     AND "erp4_knowledge_llm_auth_identifier_valid"("updatedBy", 200)
