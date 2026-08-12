@@ -297,13 +297,14 @@ export function KnowledgeLlmPanel(props: {
     selectedKeys,
     selectedModel,
   ]);
+  const interactionBusy = previewing || committing || reading;
 
   const invalidateDraft = useCallback(() => {
     clearSensitiveResult();
   }, [clearSensitiveResult]);
 
   const toggleCandidate = (candidate: KnowledgeLlmCandidate) => {
-    if (!candidate.selectable) return;
+    if (!candidate.selectable || interactionBusy) return;
     invalidateDraft();
     setSelectedKeys((current) => {
       const next = new Set(current);
@@ -462,7 +463,9 @@ export function KnowledgeLlmPanel(props: {
           <select
             aria-label="許可されたmodel"
             value={model}
+            disabled={interactionBusy}
             onChange={(event) => {
+              if (interactionBusy) return;
               invalidateDraft();
               const next = event.target.value;
               const definition = catalog.models.find(
@@ -490,7 +493,7 @@ export function KnowledgeLlmPanel(props: {
           catalog version {catalog.version} / provider allowlist:{' '}
           {catalog.provider}
         </p>
-        <fieldset>
+        <fieldset disabled={interactionBusy}>
           <legend>外部送信するsource（既定は最新snapshotのみ）</legend>
           {candidates.length === 0 ? (
             <p>送信可能なready sourceがありません。</p>
@@ -503,7 +506,7 @@ export function KnowledgeLlmPanel(props: {
                 <input
                   type="checkbox"
                   checked={selectedKeys.has(candidate.key)}
-                  disabled={!candidate.selectable}
+                  disabled={!candidate.selectable || interactionBusy}
                   onChange={() => toggleCandidate(candidate)}
                 />
                 <span>
@@ -526,9 +529,11 @@ export function KnowledgeLlmPanel(props: {
           label="外部LLMへの指示"
           value={prompt}
           onChange={(event) => {
+            if (interactionBusy) return;
             invalidateDraft();
             setPrompt(event.target.value);
           }}
+          disabled={interactionBusy}
           rows={5}
           maxLength={16 * 1024}
         />
@@ -539,9 +544,11 @@ export function KnowledgeLlmPanel(props: {
           max={selectedModel?.maxOutputTokens ?? 4096}
           value={maxOutputTokens}
           onChange={(event) => {
+            if (interactionBusy) return;
             invalidateDraft();
             setMaxOutputTokens(event.target.value);
           }}
+          disabled={interactionBusy}
         />
         <p>
           user budget: {budget?.configured ? '設定済み' : '未設定'} / soft:{' '}
@@ -549,7 +556,11 @@ export function KnowledgeLlmPanel(props: {
           {budget?.hardLimitBlocked ? '停止' : '利用可能'} / rate:{' '}
           {budget?.rateBlocked ? '停止' : '利用可能'}
         </p>
-        <Button loading={previewing} onClick={() => void handlePreview()}>
+        <Button
+          loading={previewing}
+          disabled={interactionBusy}
+          onClick={() => void handlePreview()}
+        >
           外部送信内容をプレビュー
         </Button>
       </Card>
@@ -593,6 +604,7 @@ export function KnowledgeLlmPanel(props: {
             <input
               type="checkbox"
               checked={confirmed}
+              disabled={interactionBusy}
               onChange={(event) => setConfirmed(event.target.checked)}
             />
             上記のexact contentだけを外部providerへ送信することを確認しました
@@ -602,6 +614,7 @@ export function KnowledgeLlmPanel(props: {
             disabled={
               !confirmed ||
               commitAttempted ||
+              interactionBusy ||
               !preview.budget.configured ||
               preview.budget.hardLimitBlocked ||
               preview.budget.rateBlocked

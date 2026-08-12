@@ -350,6 +350,19 @@ describe('KnowledgeLlmPanel', () => {
       screen.getByRole('button', { name: '明示confirmして1回だけ実行' }),
     );
 
+    expect(screen.getByLabelText('許可されたmodel')).toBeDisabled();
+    expect(screen.getByLabelText('外部LLMへの指示')).toBeDisabled();
+    expect(screen.getByLabelText('最大出力token数')).toBeDisabled();
+    expect(
+      screen.getByRole('checkbox', { name: /Snapshot \/ exact version 3/ }),
+    ).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('外部LLMへの指示'), {
+      target: { value: 'STALE-DRAFT' },
+    });
+    expect(screen.getByLabelText('外部LLMへの指示')).toHaveValue(
+      '選択内容だけを検討してください。',
+    );
+
     view.rerender(
       <KnowledgeLlmPanel
         itemId="item-1"
