@@ -205,6 +205,12 @@ describe('request key and presentation helpers', () => {
     expect(knowledgeHubErrorMessage('snapshot_storage_pending')).not.toMatch(
       /provider|token|secret/i,
     );
+    expect(knowledgeHubErrorMessage('preview_token_expired')).toBe(
+      'プレビューの有効期限が切れました。もう一度プレビューしてください。',
+    );
+    expect(knowledgeHubErrorMessage('preview_token_invalid')).toBe(
+      '内容がプレビュー時点から変わりました。もう一度プレビューしてください。',
+    );
     expect(formatKnowledgeBytes(1024)).toBe('1.0 KiB');
     expect(formatKnowledgeBytes(null)).toBe('-');
   });

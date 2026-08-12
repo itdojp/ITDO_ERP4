@@ -339,9 +339,9 @@ const errorMessages: Record<KnowledgeHubErrorCode, string> = {
   policy_mismatch: '予算設定と選択scopeが一致しません。',
   policy_not_found: '外部LLMの予算設定がありません。管理者へ確認してください。',
   preview_token_expired:
-    '取込プレビューの有効期限が切れました。もう一度プレビューしてください。',
+    'プレビューの有効期限が切れました。もう一度プレビューしてください。',
   preview_token_invalid:
-    '取込内容がプレビュー時点から変わりました。もう一度プレビューしてください。',
+    '内容がプレビュー時点から変わりました。もう一度プレビューしてください。',
   rate_limit:
     '実行回数の上限に達しています。外部LLMへ再送せず、時間を置いてください。',
   rejected_before_dispatch:

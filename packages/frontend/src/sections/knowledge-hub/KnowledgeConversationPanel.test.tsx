@@ -538,7 +538,7 @@ describe('KnowledgeConversationPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '取込を確定' }));
     expect(
       await screen.findByText(
-        '取込プレビューの有効期限が切れました。もう一度プレビューしてください。',
+        'プレビューの有効期限が切れました。もう一度プレビューしてください。',
       ),
     ).toBeVisible();
     expect(
