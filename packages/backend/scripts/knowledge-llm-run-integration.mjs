@@ -499,6 +499,54 @@ try {
     (error) => error.status === 404 && error.code === 'not_found',
   );
 
+  const nestedConversationSynthesis = await prisma.knowledgeSynthesis.create({
+    data: {
+      id: 'run-integration-nested-llm-conversation-synthesis',
+      ownerUserId: actor.userId,
+      scope: 'personal',
+      title: 'Synthetic synthesis derived from an LLM conversation',
+      createdBy: actor.userId,
+      updatedBy: actor.userId,
+      versions: {
+        create: {
+          id: 'run-integration-nested-llm-conversation-version',
+          version: 1,
+          content: 'Synthetic synthesis derived from an LLM conversation',
+          unresolvedQuestions: [],
+          createdBy: actor.userId,
+          sources: {
+            create: {
+              relationType: 'primary',
+              ordinal: 0,
+              sourceConversationId: completed.run.conversationId,
+              createdBy: actor.userId,
+            },
+          },
+        },
+      },
+    },
+  });
+  assert.ok(nestedConversationSynthesis);
+  await assert.rejects(
+    service.preview({
+      actor,
+      auditActor: {
+        ...auditActor,
+        requestId: 'run-integration-nested-conversation-reselect',
+      },
+      request: {
+        ...request,
+        sources: [
+          {
+            sourceType: 'synthesis_version',
+            sourceId: 'run-integration-nested-llm-conversation-version',
+          },
+        ],
+      },
+    }),
+    (error) => error.status === 404 && error.code === 'not_found',
+  );
+
   const concurrentPreviewA = await service.preview({
     actor,
     auditActor: { ...auditActor, requestId: 'run-integration-concurrent-a' },
