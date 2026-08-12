@@ -312,6 +312,16 @@ async function resolveOne(
           },
           sources: {
             select: {
+              sourceConversation: {
+                select: { llmRuns: { select: { id: true }, take: 1 } },
+              },
+              sourceConversationTurn: {
+                select: {
+                  conversation: {
+                    select: { llmRuns: { select: { id: true }, take: 1 } },
+                  },
+                },
+              },
               sourceSynthesisVersionId: true,
               sourceThreadPromotionId: true,
             },
@@ -324,6 +334,9 @@ async function resolveOne(
         !scopeMatches(row.synthesis, input) ||
         row.sources.some(
           (source) =>
+            (source.sourceConversation?.llmRuns.length ?? 0) > 0 ||
+            (source.sourceConversationTurn?.conversation.llmRuns.length ?? 0) >
+              0 ||
             source.sourceSynthesisVersionId !== null ||
             source.sourceThreadPromotionId !== null,
         )
