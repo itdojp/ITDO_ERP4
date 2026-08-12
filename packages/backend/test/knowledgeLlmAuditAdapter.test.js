@@ -296,4 +296,32 @@ test('Knowledge LLM saved failure reconciliation records only allowlisted termin
     JSON.stringify(created.metadata).includes('provider body'),
     false,
   );
+
+  await assert.rejects(
+    writer.write({
+      action: 'knowledge_llm_reconciled',
+      actor: {
+        userId: 'canonical-user',
+        requestId: 'synthetic-reconcile-request',
+        source: 'api',
+      },
+      targetTable: 'knowledge_llm_runs',
+      targetId: 'synthetic-run',
+      metadata: {
+        provider: 'openai',
+        model: 'allowlisted-model',
+        scope: 'personal',
+        catalogVersion: 1,
+        estimatedInputTokens: 10,
+        maxOutputTokens: 20,
+        reservedCostMicros: '10',
+        currency: 'JPY',
+        resultCode: 'reconciled',
+        failureCode: 'provider_5xx',
+        policyCount: 1,
+        operatorIntervention: 'billing_evidence',
+      },
+    }),
+    /knowledge_llm_audit_invalid/,
+  );
 });

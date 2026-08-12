@@ -135,7 +135,8 @@ function auditMetadata(entry: KnowledgeLlmAuditEntry): Prisma.InputJsonObject {
     operatorIntervention !== undefined &&
     (operatorIntervention !== 'billing_evidence' ||
       entry.action !== 'knowledge_llm_reconciled' ||
-      metadata.resultCode !== 'reconciled')
+      metadata.resultCode !== 'reconciled' ||
+      failureCode !== undefined)
   ) {
     throw new Error('knowledge_llm_audit_invalid');
   }
