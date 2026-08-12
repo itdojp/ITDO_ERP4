@@ -254,6 +254,121 @@ describe('KnowledgeLlmPanel', () => {
     expect(screen.queryByText('conversation-internal')).not.toBeInTheDocument();
   });
 
+  it('selects the highest ready snapshot version even when candidate timestamps are non-monotonic', async () => {
+    apiMocks.fetchKnowledgeLlmContextCandidates.mockImplementation(
+      async ({ sourceType }: { sourceType: string }) => ({
+        items:
+          sourceType === 'snapshot'
+            ? [
+                {
+                  sourceType,
+                  sourceId: 'snapshot-older-version-newer-timestamp',
+                  exactSourceVersion: 1,
+                  byteLength: 100,
+                  createdAt: '2026-08-13T01:00:00.000Z',
+                },
+                {
+                  sourceType,
+                  sourceId: 'snapshot-latest-version-older-timestamp',
+                  exactSourceVersion: 2,
+                  byteLength: 100,
+                  createdAt: '2026-08-12T01:00:00.000Z',
+                },
+              ]
+            : [],
+        nextCursor: null,
+      }),
+    );
+    renderPanel();
+
+    expect(
+      await screen.findByRole('checkbox', {
+        name: /Snapshot \/ exact version 1/,
+      }),
+    ).not.toBeChecked();
+    expect(
+      screen.getByRole('checkbox', { name: /Snapshot \/ exact version 2/ }),
+    ).toBeChecked();
+    fireEvent.change(screen.getByLabelText('外部LLMへの指示'), {
+      target: { value: '選択内容だけを検討してください。' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: '外部送信内容をプレビュー' }),
+    );
+
+    await screen.findByRole('heading', {
+      name: '3. Exact preview・明示confirm',
+    });
+    expect(apiMocks.previewKnowledgeLlmRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sources: [
+          {
+            sourceType: 'snapshot',
+            sourceId: 'snapshot-latest-version-older-timestamp',
+          },
+        ],
+      }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it('keeps raw candidate identifiers out of rendered selection state while preserving the selector', async () => {
+    apiMocks.fetchKnowledgeLlmContextCandidates.mockImplementation(
+      async ({ sourceType }: { sourceType: string }) => ({
+        items:
+          sourceType === 'snapshot'
+            ? [
+                {
+                  sourceType,
+                  sourceId: 'opaque:first:identifier',
+                  exactSourceVersion: 2,
+                  byteLength: 100,
+                  createdAt: timestamp,
+                },
+                {
+                  sourceType,
+                  sourceId: 'opaque:second:identifier',
+                  exactSourceVersion: 1,
+                  byteLength: 100,
+                  createdAt: timestamp,
+                },
+              ]
+            : [],
+        nextCursor: null,
+      }),
+    );
+    renderPanel();
+
+    const first = await screen.findByRole('checkbox', {
+      name: /Snapshot \/ exact version 2/,
+    });
+    const second = screen.getByRole('checkbox', {
+      name: /Snapshot \/ exact version 1/,
+    });
+    expect(document.body).not.toHaveTextContent('opaque:first:identifier');
+    expect(document.body).not.toHaveTextContent('opaque:second:identifier');
+    fireEvent.click(first);
+    fireEvent.click(second);
+    fireEvent.change(screen.getByLabelText('外部LLMへの指示'), {
+      target: { value: '選択内容だけを検討してください。' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: '外部送信内容をプレビュー' }),
+    );
+
+    await screen.findByRole('heading', {
+      name: '3. Exact preview・明示confirm',
+    });
+    expect(apiMocks.previewKnowledgeLlmRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sources: [
+          { sourceType: 'snapshot', sourceId: 'opaque:second:identifier' },
+        ],
+      }),
+      expect.any(AbortSignal),
+    );
+  });
+
   it('fails closed without finalizing the preview when secure request keys are unavailable', async () => {
     vi.stubGlobal('crypto', undefined);
     renderPanel();

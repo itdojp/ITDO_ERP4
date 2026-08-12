@@ -143,7 +143,8 @@ export type KnowledgeLlmExecuteResult = {
   run: KnowledgeLlmRun;
 };
 
-export type KnowledgeLlmCandidate = KnowledgeLlmSourceSelector & {
+export type KnowledgeLlmCandidate = {
+  sourceType: KnowledgeLlmSourceType;
   key: string;
   label: string;
   detail: string;

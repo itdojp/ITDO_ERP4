@@ -27,6 +27,7 @@ import {
   type KnowledgeLlmPreview,
   type KnowledgeLlmRequest,
   type KnowledgeLlmRun,
+  type KnowledgeLlmSourceSelector,
 } from './knowledgeLlmModel';
 import { KnowledgeHubApiError } from './knowledgeHubApi';
 import {
@@ -84,8 +85,47 @@ function modelIdentity(provider: string, model: string) {
   return `${encodeURIComponent(provider)}:${encodeURIComponent(model)}`;
 }
 
-function candidateKey(sourceType: string, sourceId: string) {
-  return `${sourceType}:${sourceId}`;
+type CandidateLoad = {
+  candidates: KnowledgeLlmCandidate[];
+  selectors: ReadonlyArray<{
+    key: string;
+    selector: KnowledgeLlmSourceSelector;
+  }>;
+};
+
+type CandidateSelectorRegistry = {
+  replace(entries: CandidateLoad['selectors']): void;
+  resolve(keys: readonly string[]): KnowledgeLlmSourceSelector[];
+  clear(): void;
+};
+
+const candidateSelectorStores = new WeakMap<
+  object,
+  ReadonlyMap<string, KnowledgeLlmSourceSelector>
+>();
+
+function createCandidateSelectorRegistry(): CandidateSelectorRegistry {
+  const owner = {};
+  candidateSelectorStores.set(owner, new Map());
+  return {
+    replace(entries) {
+      candidateSelectorStores.set(
+        owner,
+        new Map(entries.map((entry) => [entry.key, entry.selector])),
+      );
+    },
+    resolve(keys) {
+      const store = candidateSelectorStores.get(owner);
+      if (!store) return [];
+      return keys.flatMap((key) => {
+        const selector = store.get(key);
+        return selector ? [selector] : [];
+      });
+    },
+    clear() {
+      candidateSelectorStores.set(owner, new Map());
+    },
+  };
 }
 
 async function loadCandidates(input: {
@@ -93,7 +133,7 @@ async function loadCandidates(input: {
   scope: KnowledgeScope;
   organizationId: string | null;
   signal: AbortSignal;
-}): Promise<KnowledgeLlmCandidate[]> {
+}): Promise<CandidateLoad> {
   const pages = await Promise.all(
     knowledgeLlmSourceTypes.map(async (sourceType) => {
       const items: KnowledgeLlmContextCandidate[] = [];
@@ -122,21 +162,39 @@ async function loadCandidates(input: {
     }),
   );
   const candidates = pages.flat();
+  const latestSnapshotVersion = candidates.reduce(
+    (latest, candidate) =>
+      candidate.sourceType === 'snapshot'
+        ? Math.max(latest, candidate.exactSourceVersion)
+        : latest,
+    Number.NEGATIVE_INFINITY,
+  );
   let defaultSnapshotSelected = false;
-  return candidates.map((candidate) => {
+  const selectors: Array<CandidateLoad['selectors'][number]> = [];
+  const views = candidates.map((candidate, index) => {
     const selectedByDefault =
-      candidate.sourceType === 'snapshot' && !defaultSnapshotSelected;
+      candidate.sourceType === 'snapshot' &&
+      candidate.exactSourceVersion === latestSnapshotVersion &&
+      !defaultSnapshotSelected;
     if (selectedByDefault) defaultSnapshotSelected = true;
+    const key = `candidate-${index}`;
+    selectors.push({
+      key,
+      selector: {
+        sourceType: candidate.sourceType,
+        sourceId: candidate.sourceId,
+      },
+    });
     return {
       sourceType: candidate.sourceType,
-      sourceId: candidate.sourceId,
-      key: candidateKey(candidate.sourceType, candidate.sourceId),
+      key,
       label: `${sourceTypeLabels[candidate.sourceType]} / exact version ${candidate.exactSourceVersion}`,
       detail: `${formatKnowledgeBytes(candidate.byteLength)} / ${formatKnowledgeDateTime(candidate.createdAt)}`,
       selectable: true,
       selectedByDefault,
     };
   });
+  return { candidates: views, selectors };
 }
 
 export function KnowledgeLlmPanel(props: {
@@ -147,6 +205,10 @@ export function KnowledgeLlmPanel(props: {
 }) {
   const { onCommitBusyChange } = props;
   const generationRef = useRef(0);
+  const candidateSelectorRegistry = useMemo(
+    () => createCandidateSelectorRegistry(),
+    [],
+  );
   const bootstrapAbortRef = useRef<AbortController | null>(null);
   const previewAbortRef = useRef<AbortController | null>(null);
   const readAbortRef = useRef<AbortController | null>(null);
@@ -205,6 +267,7 @@ export function KnowledgeLlmPanel(props: {
     setStatus('loading');
     setCatalog(null);
     setBudget(null);
+    candidateSelectorRegistry.clear();
     setCandidates([]);
     setSelectedKeys(new Set());
     setModel('');
@@ -231,7 +294,7 @@ export function KnowledgeLlmPanel(props: {
         const firstModel = nextCatalog.models[0];
         setModel(modelIdentity(firstModel.provider, firstModel.model));
         setMaxOutputTokens(String(Math.min(512, firstModel.maxOutputTokens)));
-        const [nextBudget, nextCandidates] = await Promise.all([
+        const [nextBudget, nextCandidateLoad] = await Promise.all([
           fetchKnowledgeLlmBudget({
             scope: props.itemScope,
             organizationId: props.organizationId,
@@ -246,10 +309,11 @@ export function KnowledgeLlmPanel(props: {
         ]);
         if (!isCurrent(generation) || controller.signal.aborted) return;
         setBudget(nextBudget);
-        setCandidates(nextCandidates);
+        candidateSelectorRegistry.replace(nextCandidateLoad.selectors);
+        setCandidates(nextCandidateLoad.candidates);
         setSelectedKeys(
           new Set(
-            nextCandidates
+            nextCandidateLoad.candidates
               .filter((candidate) => candidate.selectedByDefault)
               .map((candidate) => candidate.key),
           ),
@@ -265,11 +329,13 @@ export function KnowledgeLlmPanel(props: {
 
     return () => {
       controller.abort();
+      candidateSelectorRegistry.clear();
       previewAbortRef.current?.abort();
       readAbortRef.current?.abort();
       if (generationRef.current === generation) generationRef.current += 1;
     };
   }, [
+    candidateSelectorRegistry,
     clearSensitiveResult,
     isCurrent,
     props.itemId,
@@ -293,12 +359,15 @@ export function KnowledgeLlmPanel(props: {
       catalogVersion: catalog.version,
       userPrompt: prompt,
       maxOutputTokens: Number(maxOutputTokens),
-      sources: candidates
-        .filter((candidate) => selectedKeys.has(candidate.key))
-        .map(({ sourceType, sourceId }) => ({ sourceType, sourceId })),
+      sources: candidateSelectorRegistry.resolve(
+        candidates
+          .filter((candidate) => selectedKeys.has(candidate.key))
+          .map((candidate) => candidate.key),
+      ),
     };
   }, [
     candidates,
+    candidateSelectorRegistry,
     catalog,
     maxOutputTokens,
     prompt,
