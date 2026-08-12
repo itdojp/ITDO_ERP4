@@ -1618,6 +1618,7 @@ DECLARE
   policy_soft_limit BIGINT;
   policy_hard_limit BIGINT;
   policy_requests_per_hour INTEGER;
+  admission_started_at TIMESTAMP(3);
   accounted_at TIMESTAMP(3);
   committed_micros NUMERIC;
   recent_request_count BIGINT;
@@ -1625,6 +1626,12 @@ DECLARE
   duplicate_subject_count INTEGER;
 BEGIN
   IF TG_OP = 'INSERT' THEN
+    -- Capture a trusted lower bound before lock acquisition. The eventual
+    -- accounting instant is sampled after locks; this earlier value is used
+    -- only to lock a safe superset of the rolling-hour periods.
+    admission_started_at :=
+      (clock_timestamp() AT TIME ZONE 'UTC')::TIMESTAMP(3);
+
     SELECT "executionStatus", "settlementStatus", scope, "actorUserId",
       "organizationId", currency, "maximumCostMicros", "softLimitWarning",
       "createdAt", "dispatchedAt"
@@ -1647,15 +1654,16 @@ BEGIN
     WHERE period.id = NEW."budgetPeriodId"
     FOR UPDATE OF policy;
 
-    -- Lock every current-window period for this subject in one global order.
-    -- This includes inactive policy versions, matching the application hard
-    -- limit and the settlement period-lock order.
+    -- Lock every current-window and rolling-hour period for this subject in
+    -- one global order. This includes inactive policy versions and the prior
+    -- monthly period during the first hour after a boundary, matching the
+    -- application admission and settlement lock order.
     PERFORM period.id
     FROM "KnowledgeLlmBudgetPeriod" period
     JOIN "KnowledgeLlmBudgetPolicy" policy ON policy.id = period."policyId"
     WHERE policy."subjectType" = policy_subject_type
       AND policy."subjectId" = policy_subject_id
-      AND period."periodEndUtc" > period_start
+      AND period."periodEndUtc" > admission_started_at - INTERVAL '1 hour'
       AND period."periodStartUtc" < period_end
     ORDER BY period.id
     FOR UPDATE OF period;

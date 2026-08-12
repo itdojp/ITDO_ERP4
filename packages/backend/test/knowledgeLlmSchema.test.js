@@ -294,6 +294,10 @@ test('reservation accounting timestamp and terminal values are immutable', () =>
     'the database accounting clock must be sampled after admission locks',
   );
   assert.match(
+    reservationGuard,
+    /period\."periodEndUtc" > admission_started_at - INTERVAL '1 hour'/,
+  );
+  assert.match(
     migration,
     /KnowledgeLlmReservation must use the current trusted accounting period/,
   );
