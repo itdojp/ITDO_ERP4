@@ -154,7 +154,7 @@ promote後のSynthesis本文とimmutable selected-message snapshotはdestination
 
 1. 対象itemを選択し、`外部LLM対話` tabを開きます。
 2. allowlistされたmodelを確認します。利用者が任意provider／modelを入力することはできません。
-3. 外部送信するsourceを選択します。既定選択は最新のready snapshotだけです。annotation revision、user／assistant conversation turn、Synthesis versionは必要なものだけを追加します。System／Tool turnは区別して表示されますが、このMVPでは送信できません。
+3. 外部送信するsourceを選択します。既定選択は最新のready snapshotだけです。annotation revision、user／assistant conversation turn、Synthesis versionは必要なものだけを追加します。System／Tool turnはこのMVPでは候補APIの段階で除外され、画面にも表示されません。
 4. 指示と最大出力token数を入力し、`外部送信内容をプレビュー`を選択します。この時点ではprovider requestも予算予約も作成されません。
 5. exact source本文、version／SHA-256、選択／省略件数、推定input token、最大予約額、soft／hard／rate状態を確認します。
 6. `上記のexact contentだけを外部providerへ送信することを確認しました`を明示的に選択し、`明示confirmして1回だけ実行`します。
