@@ -311,6 +311,18 @@ test('Unicode 15.0 Format ranges are identical in application and migration', as
   );
 });
 
+test('external LLM allowlist hosts reject Unicode folding and normalize IPv6 literals', async () => {
+  const { canonicalExternalLlmAllowedHost } =
+    await import('../dist/application/externalLlm/externalLlmPort.js');
+  assert.equal(canonicalExternalLlmAllowedHost('API.EXAMPLE'), 'api.example');
+  assert.equal(canonicalExternalLlmAllowedHost('K.example'), null);
+  assert.equal(canonicalExternalLlmAllowedHost('[2606:4700:4700::1111]'), null);
+  assert.equal(
+    canonicalExternalLlmAllowedHost('2606:4700:4700:0:0:0:0:1111'),
+    '2606:4700:4700::1111',
+  );
+});
+
 async function withHttpServer(handler, callback) {
   const server = createServer(handler);
   await new Promise((resolve, reject) => {
@@ -470,6 +482,23 @@ test('OpenAI-compatible adapter rejects an empty or mismatched host allowlist be
     );
   }
   assert.equal(dnsLookupCount, 0);
+});
+
+test('OpenAI-compatible binding compares IPv6 endpoints with an unbracketed canonical allowlist', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  const adapter = new OpenAiCompatibleTextAdapter({
+    apiKey: 'synthetic-only',
+    baseUrl: 'https://[2606:4700:4700:0:0:0:0:1111]/v1',
+    timeoutMs: 1_000,
+    allowedHosts: ['2606:4700:4700::1111'],
+    allowHttp: false,
+    allowPrivateIp: false,
+  });
+  assert.match(
+    adapter.bind(openAiRequest()).requestFingerprint,
+    /^[a-f0-9]{64}$/,
+  );
 });
 
 test('OpenAI-compatible binding rejects credentialed or decorated destinations without provider I/O', async () => {
@@ -922,6 +951,58 @@ test('OpenAI-compatible adapter returns strictly parsed reported usage', async (
       assert.deepEqual(result.usage, { inputTokens: 10, outputTokens: 2 });
     },
   );
+});
+
+test('OpenAI-compatible adapter marks usage outside PostgreSQL INTEGER as invalid', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  await withHttpServer(
+    (_request, response) => {
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(
+        JSON.stringify({
+          choices: [{ message: { content: 'Synthetic result' } }],
+          usage: { prompt_tokens: 2_147_483_648, completion_tokens: 0 },
+        }),
+      );
+    },
+    async (baseUrl) => {
+      const result = await complete(
+        openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl),
+        openAiRequest(),
+      );
+      assert.equal(result.content, 'Synthetic result');
+      assert.equal(result.usageStatus, 'invalid');
+      assert.equal(result.usage, null);
+    },
+  );
+});
+
+test('OpenAI-compatible adapter rejects persistence-incompatible successful content', async () => {
+  const { OpenAiCompatibleTextAdapter } =
+    await import('../dist/adapters/externalLlm/openAiCompatibleTextAdapter.js');
+  for (const content of ['a\u0000b', 'a\ud800b']) {
+    await withHttpServer(
+      (_request, response) => {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ choices: [{ message: { content } }] }));
+      },
+      async (baseUrl) => {
+        await assert.rejects(
+          complete(
+            openAiAdapter(OpenAiCompatibleTextAdapter, baseUrl),
+            openAiRequest(),
+          ),
+          (error) => {
+            assert.equal(error.code, 'malformed_response');
+            assert.equal(error.outcome, 'known_response');
+            assert.equal(error.providerStatus, 200);
+            return true;
+          },
+        );
+      },
+    );
+  }
 });
 
 test('OpenAI-compatible adapter rejects a response beyond the byte limit even when its prefix is valid JSON', async () => {

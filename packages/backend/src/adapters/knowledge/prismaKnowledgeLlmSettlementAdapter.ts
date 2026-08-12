@@ -214,8 +214,11 @@ export async function markKnowledgeLlmRunDispatched(
     input.actorUserId,
     'knowledge_llm_dispatch_conflict',
   );
-  const runs = await transaction.$queryRaw<Array<LockedRun>>(Prisma.sql`
-    SELECT id, "actorUserId", scope, provider, model, "providerRequestHash", "catalogVersion",
+  const runs = await transaction.$queryRaw<
+    Array<LockedRun & { requestPayloadHash: string }>
+  >(Prisma.sql`
+    SELECT id, "actorUserId", scope, provider, model, "requestPayloadHash",
+      "providerRequestHash", "catalogVersion",
       "estimatedInputTokens", "maxOutputTokens", currency,
       "executionStatus", "settlementStatus", "inputCostMicrosPerMillion",
       "outputCostMicrosPerMillion", "maximumCostMicros"
@@ -230,6 +233,20 @@ export async function markKnowledgeLlmRunDispatched(
     run.providerRequestHash !== input.expectedProviderRequestHash ||
     run.executionStatus !== 'reserved' ||
     run.settlementStatus !== 'reserved'
+  ) {
+    throw new Error('knowledge_llm_dispatch_conflict');
+  }
+  const requests = await transaction.$queryRaw<
+    Array<{ actorUserId: string; requestPayloadHash: string }>
+  >(Prisma.sql`
+    SELECT "actorUserId", "requestPayloadHash"
+    FROM "KnowledgeLlmRequest"
+    WHERE "runId" = ${input.runId}
+  `);
+  if (
+    requests.length !== 1 ||
+    requests[0]?.actorUserId !== actorUserId ||
+    requests[0]?.requestPayloadHash !== run.requestPayloadHash
   ) {
     throw new Error('knowledge_llm_dispatch_conflict');
   }

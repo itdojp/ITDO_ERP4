@@ -222,6 +222,10 @@ test('request and selected context are immutable and exactly-one typed', () => {
   );
   assert.match(
     migration,
+    /KnowledgeLlmRun dispatch requires matching request ledger/,
+  );
+  assert.match(
+    migration,
     /KnowledgeLlmRun_assistantTurnId_conversationId_fkey/,
   );
   assert.doesNotMatch(source, /sourceId\s+String/);

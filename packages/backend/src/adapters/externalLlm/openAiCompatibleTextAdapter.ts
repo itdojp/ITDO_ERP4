@@ -9,6 +9,7 @@ import {
   bindExternalLlmTextTransportRequest,
   canonicalExternalLlmAllowedHost,
   ExternalLlmProviderError,
+  isPersistenceCompatibleExternalLlmText,
 } from '../../application/externalLlm/externalLlmPort.js';
 import {
   prepareSafeFetch,
@@ -96,7 +97,13 @@ function canonicalAllowedHosts(
     ),
   ].sort();
   if (hosts.length !== values.length) return null;
-  const endpointHost = new URL(endpoint).hostname.toLowerCase();
+  const rawEndpointHost = new URL(endpoint).hostname;
+  const endpointHost = canonicalExternalLlmAllowedHost(
+    rawEndpointHost.startsWith('[') && rawEndpointHost.endsWith(']')
+      ? rawEndpointHost.slice(1, -1)
+      : rawEndpointHost,
+  );
+  if (endpointHost === null) return null;
   return hosts.length > 0 && hosts.includes(endpointHost) ? hosts : null;
 }
 
@@ -117,8 +124,13 @@ function snapshotRequest(
   };
 }
 
+const maximumPostgresInteger = 2_147_483_647;
+
 function strictNonNegativeInteger(value: unknown): number | null {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+  return typeof value === 'number' &&
+    Number.isSafeInteger(value) &&
+    value >= 0 &&
+    value <= maximumPostgresInteger
     ? value
     : null;
 }
@@ -173,6 +185,13 @@ function responseContent(value: unknown, providerStatus: number): string {
   if (!normalized) {
     throw new ExternalLlmProviderError(
       'empty_result',
+      'known_response',
+      providerStatus,
+    );
+  }
+  if (!isPersistenceCompatibleExternalLlmText(normalized)) {
+    throw new ExternalLlmProviderError(
+      'malformed_response',
       'known_response',
       providerStatus,
     );

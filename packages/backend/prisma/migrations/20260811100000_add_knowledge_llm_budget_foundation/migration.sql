@@ -1249,6 +1249,16 @@ BEGIN
   IF OLD."executionStatus" = 'reserved'
     AND NEW."executionStatus" = 'dispatched'
   THEN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM "KnowledgeLlmRequest" request
+      WHERE request."runId" = NEW.id
+        AND request."actorUserId" = NEW."actorUserId"
+        AND request."requestPayloadHash" = NEW."requestPayloadHash"
+    ) THEN
+      RAISE EXCEPTION 'KnowledgeLlmRun dispatch requires matching request ledger'
+        USING ERRCODE = '23514';
+    END IF;
     PERFORM "erp4_knowledge_llm_validate_context"(
       NEW.id,
       NEW."selectedContextFingerprint",

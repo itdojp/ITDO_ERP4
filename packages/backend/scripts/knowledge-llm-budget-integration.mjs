@@ -3648,6 +3648,70 @@ try {
   assert.equal(terminalAuditRollback.reservations[0].status, 'reserved');
 
   await policy({
+    id: 'policy-missing-request-ledger',
+    subjectType: 'user',
+    subjectId: 'missing-request-ledger-user',
+    hard: 1000n,
+  });
+  const missingRequestLedgerReservation = await service.reserve(
+    reservation({
+      runId: 'run-missing-request-ledger',
+      userId: 'missing-request-ledger-user',
+      keyHash: knowledgeTextHash(
+        'llm-test-request-key',
+        'missing-request-ledger-key',
+      ),
+      maximumCostMicros: 10n,
+    }),
+  );
+  assert.equal(
+    missingRequestLedgerReservation.ok,
+    true,
+    missingRequestLedgerReservation.ok
+      ? undefined
+      : missingRequestLedgerReservation.error.code,
+  );
+  await assert.rejects(
+    prisma.$transaction(async (transaction) => {
+      // Simulate a direct database writer that created an otherwise complete
+      // run but omitted its immutable request ledger. The DDL and delete are
+      // transaction-local and roll back with the expected dispatch failure.
+      await transaction.$executeRawUnsafe(
+        'ALTER TABLE "KnowledgeLlmRequest" DISABLE TRIGGER "KnowledgeLlmRequest_immutable"',
+      );
+      await transaction.knowledgeLlmRequest.delete({
+        where: { runId: 'run-missing-request-ledger' },
+      });
+      await transaction.$executeRawUnsafe(
+        'ALTER TABLE "KnowledgeLlmRequest" ENABLE TRIGGER "KnowledgeLlmRequest_immutable"',
+      );
+      await transaction.$executeRaw`
+        UPDATE "KnowledgeLlmRun"
+        SET "executionStatus" = 'dispatched',
+          "dispatchedAt" = ${after(12_500)},
+          "updatedAt" = ${after(12_500)},
+          "updatedBy" = 'missing-request-ledger-user'
+        WHERE id = 'run-missing-request-ledger'
+      `;
+    }),
+    /dispatch requires matching request ledger/,
+  );
+  assert.equal(
+    await prisma.knowledgeLlmRequest.count({
+      where: { runId: 'run-missing-request-ledger' },
+    }),
+    1,
+  );
+  assert.equal(
+    (
+      await prisma.knowledgeLlmRun.findUniqueOrThrow({
+        where: { id: 'run-missing-request-ledger' },
+      })
+    ).executionStatus,
+    'reserved',
+  );
+
+  await policy({
     id: 'policy-audit-rollback',
     subjectType: 'user',
     subjectId: 'audit-rollback-user',
@@ -3982,6 +4046,7 @@ try {
       concurrentUsageReconciliation: true,
       auditRollback: true,
       terminalAuditRollback: true,
+      requestLedgerRequiredBeforeDispatch: true,
     }),
   );
 } finally {

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isIP } from 'node:net';
 
 /**
  * Provider-neutral text generation boundary shared by bounded contexts.
@@ -128,11 +129,22 @@ export function isCanonicalExternalLlmModel(value: unknown): value is string {
 
 export function canonicalExternalLlmAllowedHost(value: unknown): string | null {
   if (typeof value !== 'string') return null;
-  const normalized = value.trim().toLowerCase();
+  const trimmed = value.trim();
+  // Validate the raw value before Unicode case folding. Characters such as
+  // U+212A fold to ASCII and must not become an implicit allowlist grant.
+  if (!/^[\x21-\x7e]+$/.test(trimmed)) return null;
+  if (isIP(trimmed) === 6) {
+    // WHATWG URL produces one normalized representation for equivalent IPv6
+    // literals. The allowlist contract is deliberately unbracketed, matching
+    // safeHttpClient's comparison and DNS/pinning boundary.
+    const hostname = new URL(`http://[${trimmed}]/`).hostname;
+    return hostname.slice(1, -1).toLowerCase();
+  }
+  const normalized = trimmed.toLowerCase();
   if (
     normalized.length < 1 ||
     normalized.length > 253 ||
-    !/^[a-z0-9.-]+$/.test(normalized) ||
+    !/^[A-Za-z0-9.-]+$/.test(trimmed) ||
     normalized.startsWith('.') ||
     normalized.endsWith('.') ||
     normalized.includes('..')
@@ -140,6 +152,17 @@ export function canonicalExternalLlmAllowedHost(value: unknown): string | null {
     return null;
   }
   return normalized;
+}
+
+/** Text that can be hashed and persisted without UTF-8/SQL normalization. */
+export function isPersistenceCompatibleExternalLlmText(
+  value: unknown,
+): value is string {
+  return (
+    typeof value === 'string' &&
+    !value.includes('\u0000') &&
+    !hasUnpairedUtf16Surrogate(value)
+  );
 }
 
 function assertExternalLlmTextRequest(request: ExternalLlmTextRequest): void {
