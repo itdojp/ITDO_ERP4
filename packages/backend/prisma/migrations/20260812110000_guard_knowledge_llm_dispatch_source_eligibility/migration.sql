@@ -41,6 +41,16 @@ BEGIN
         AND (
           EXISTS (
             SELECT 1
+            FROM "KnowledgeConversationTurn" conversation_turn
+            WHERE conversation_turn."conversationId" = provenance."sourceConversationId"
+              AND conversation_turn.role NOT IN ('user', 'assistant')
+          )
+          OR (
+            provenance."sourceConversationTurnId" IS NOT NULL
+            AND provenance_turn.role NOT IN ('user', 'assistant')
+          )
+          OR EXISTS (
+            SELECT 1
             FROM "KnowledgeLlmRun" prior_run
             WHERE prior_run."conversationId" = provenance."sourceConversationId"
           )

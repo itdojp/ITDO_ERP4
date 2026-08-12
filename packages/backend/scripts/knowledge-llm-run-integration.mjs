@@ -356,6 +356,143 @@ try {
     (error) => error.status === 404 && error.code === 'not_found',
   );
 
+  const roleBoundaryConversation = await prisma.knowledgeConversation.create({
+    data: {
+      id: 'run-integration-role-boundary-conversation',
+      ownerUserId: actor.userId,
+      title: 'Synthetic role boundary conversation',
+      sourceType: 'manual',
+      contentHash: hash('run-integration-role-boundary-conversation'),
+      createdBy: actor.userId,
+      updatedBy: actor.userId,
+    },
+  });
+  for (const [sequence, role] of ['system', 'tool'].entries()) {
+    const content = `Synthetic ${role} turn must remain ineligible`;
+    const turn = await prisma.knowledgeConversationTurn.create({
+      data: {
+        id: `run-integration-${role}-turn`,
+        conversationId: roleBoundaryConversation.id,
+        sequence: sequence + 1,
+        role,
+        origin: role,
+        content,
+        contentHash: hash(content),
+        createdBy: actor.userId,
+      },
+    });
+    await assert.rejects(
+      service.preview({
+        actor,
+        auditActor: {
+          ...auditActor,
+          requestId: `run-integration-${role}-turn-reselect`,
+        },
+        request: {
+          ...request,
+          sources: [
+            { sourceType: 'conversation_turn', sourceId: turn.id },
+          ],
+        },
+      }),
+      (error) => error.status === 404 && error.code === 'not_found',
+    );
+
+    const synthesisVersionId = `run-integration-${role}-turn-synthesis-version`;
+    await prisma.knowledgeSynthesis.create({
+      data: {
+        id: `run-integration-${role}-turn-synthesis`,
+        ownerUserId: actor.userId,
+        scope: 'personal',
+        title: `Synthetic ${role} turn synthesis`,
+        createdBy: actor.userId,
+        updatedBy: actor.userId,
+        versions: {
+          create: {
+            id: synthesisVersionId,
+            version: 1,
+            content: `Synthetic synthesis derived from a ${role} turn`,
+            unresolvedQuestions: [],
+            createdBy: actor.userId,
+            sources: {
+              create: {
+                relationType: 'primary',
+                ordinal: 0,
+                sourceConversationTurnId: turn.id,
+                createdBy: actor.userId,
+              },
+            },
+          },
+        },
+      },
+    });
+    await assert.rejects(
+      service.preview({
+        actor,
+        auditActor: {
+          ...auditActor,
+          requestId: `run-integration-${role}-turn-synthesis-reselect`,
+        },
+        request: {
+          ...request,
+          sources: [
+            { sourceType: 'synthesis_version', sourceId: synthesisVersionId },
+          ],
+        },
+      }),
+      (error) => error.status === 404 && error.code === 'not_found',
+    );
+  }
+
+  const roleBoundaryConversationSynthesisVersionId =
+    'run-integration-role-boundary-conversation-synthesis-version';
+  await prisma.knowledgeSynthesis.create({
+    data: {
+      id: 'run-integration-role-boundary-conversation-synthesis',
+      ownerUserId: actor.userId,
+      scope: 'personal',
+      title: 'Synthetic role boundary conversation synthesis',
+      createdBy: actor.userId,
+      updatedBy: actor.userId,
+      versions: {
+        create: {
+          id: roleBoundaryConversationSynthesisVersionId,
+          version: 1,
+          content: 'Synthetic synthesis derived from an ineligible conversation',
+          unresolvedQuestions: [],
+          createdBy: actor.userId,
+          sources: {
+            create: {
+              relationType: 'primary',
+              ordinal: 0,
+              sourceConversationId: roleBoundaryConversation.id,
+              createdBy: actor.userId,
+            },
+          },
+        },
+      },
+    },
+  });
+  await assert.rejects(
+    service.preview({
+      actor,
+      auditActor: {
+        ...auditActor,
+        requestId: 'run-integration-role-boundary-conversation-reselect',
+      },
+      request: {
+        ...request,
+        sources: [
+          {
+            sourceType: 'synthesis_version',
+            sourceId: roleBoundaryConversationSynthesisVersionId,
+          },
+        ],
+      },
+    }),
+    (error) => error.status === 404 && error.code === 'not_found',
+  );
+
   const beforePreview = await prisma.knowledgeLlmRun.count({
     where: { actorUserId: actor.userId },
   });

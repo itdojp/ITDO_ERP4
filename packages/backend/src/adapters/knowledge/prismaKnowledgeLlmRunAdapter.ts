@@ -313,10 +313,18 @@ async function resolveOne(
           sources: {
             select: {
               sourceConversation: {
-                select: { llmRuns: { select: { id: true }, take: 1 } },
+                select: {
+                  llmRuns: { select: { id: true }, take: 1 },
+                  turns: {
+                    where: { role: { in: ['system', 'tool'] } },
+                    select: { id: true },
+                    take: 1,
+                  },
+                },
               },
               sourceConversationTurn: {
                 select: {
+                  role: true,
                   conversation: {
                     select: { llmRuns: { select: { id: true }, take: 1 } },
                   },
@@ -335,6 +343,11 @@ async function resolveOne(
         row.sources.some(
           (source) =>
             (source.sourceConversation?.llmRuns.length ?? 0) > 0 ||
+            (source.sourceConversation?.turns.length ?? 0) > 0 ||
+            (source.sourceConversationTurn !== null &&
+              !['user', 'assistant'].includes(
+                source.sourceConversationTurn.role,
+              )) ||
             (source.sourceConversationTurn?.conversation.llmRuns.length ?? 0) >
               0 ||
             source.sourceSynthesisVersionId !== null ||

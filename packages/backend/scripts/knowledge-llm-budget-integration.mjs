@@ -3400,6 +3400,40 @@ try {
     };
   }
 
+  for (const [suffix, turn] of [
+    ['system', ineligibleSystemTurn],
+    ['tool', ineligibleToolTurn],
+  ]) {
+    const ineligibleRoleSynthesisContext =
+      await createNestedLlmSynthesisContext({
+        synthesisId: `context-${suffix}-turn-synthesis`,
+        versionId: `context-${suffix}-turn-version`,
+        source: { sourceConversationTurnId: turn.id },
+      });
+    const runId = `run-context-ineligible-${suffix}-turn-synthesis`;
+    await reserveContextRun(runId, [ineligibleRoleSynthesisContext]);
+    await expectContextDispatchRejected(
+      runId,
+      /dispatch synthesis source is not eligible/,
+      `context-ineligible-${suffix}-turn-synthesis`,
+    );
+  }
+
+  const ineligibleRoleConversationSynthesisContext =
+    await createNestedLlmSynthesisContext({
+      synthesisId: 'context-ineligible-role-conversation-synthesis',
+      versionId: 'context-ineligible-role-conversation-version',
+      source: { sourceConversationId: contextGuardConversation.id },
+    });
+  await reserveContextRun('run-context-ineligible-role-conversation-synthesis', [
+    ineligibleRoleConversationSynthesisContext,
+  ]);
+  await expectContextDispatchRejected(
+    'run-context-ineligible-role-conversation-synthesis',
+    /dispatch synthesis source is not eligible/,
+    'context-ineligible-role-conversation-synthesis',
+  );
+
   const nestedLlmConversationContext = await createNestedLlmSynthesisContext({
     synthesisId: 'context-llm-conversation-synthesis',
     versionId: 'context-llm-conversation-version',
