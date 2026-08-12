@@ -200,6 +200,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('KnowledgeLlmPanel', () => {
@@ -251,6 +252,101 @@ describe('KnowledgeLlmPanel', () => {
     expect(onBusy).toHaveBeenNthCalledWith(1, true);
     expect(onBusy).toHaveBeenLastCalledWith(false);
     expect(screen.queryByText('conversation-internal')).not.toBeInTheDocument();
+  });
+
+  it('fails closed without finalizing the preview when secure request keys are unavailable', async () => {
+    vi.stubGlobal('crypto', undefined);
+    renderPanel();
+    await screen.findByText('Snapshot / exact version 3');
+    fireEvent.change(screen.getByLabelText('外部LLMへの指示'), {
+      target: { value: '選択内容だけを検討してください。' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: '外部送信内容をプレビュー' }),
+    );
+
+    expect(
+      await screen.findByText(
+        '処理を完了できませんでした。再試行してください。',
+      ),
+    ).toBeVisible();
+    expect(apiMocks.previewKnowledgeLlmRun).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByRole('heading', { name: '3. Exact preview・明示confirm' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('SELECTED-SNAPSHOT')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: '明示confirmして1回だけ実行' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/secure_request_key_unavailable/),
+    ).not.toBeInTheDocument();
+    expect(apiMocks.executeKnowledgeLlmRun).not.toHaveBeenCalled();
+  });
+
+  it('aborts remaining bootstrap pages after a parallel fatal load failure', async () => {
+    let rejectBudget: ((reason?: unknown) => void) | undefined;
+    let secondPageSignal: AbortSignal | undefined;
+    const snapshotCursors: Array<string | null> = [];
+    apiMocks.fetchKnowledgeLlmBudget.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectBudget = reject;
+        }),
+    );
+    apiMocks.fetchKnowledgeLlmContextCandidates.mockImplementation(
+      async ({
+        sourceType,
+        cursor,
+        signal,
+      }: {
+        sourceType: string;
+        cursor: string | null;
+        signal: AbortSignal;
+      }) => {
+        if (sourceType !== 'snapshot') {
+          return { items: [], nextCursor: null };
+        }
+        snapshotCursors.push(cursor);
+        if (cursor === null) {
+          return { items: [], nextCursor: 'snapshot-page-2' };
+        }
+        secondPageSignal = signal;
+        return await new Promise<{ items: []; nextCursor: string }>(
+          (resolve) => {
+            signal.addEventListener(
+              'abort',
+              () => resolve({ items: [], nextCursor: 'snapshot-page-3' }),
+              { once: true },
+            );
+          },
+        );
+      },
+    );
+    renderPanel();
+    await waitFor(() => {
+      expect(snapshotCursors).toEqual([null, 'snapshot-page-2']);
+    });
+
+    await act(async () => {
+      rejectBudget?.(new KnowledgeHubApiError('unknown_error', 502));
+    });
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '処理を完了できませんでした。再試行してください。',
+    );
+    expect(secondPageSignal?.aborted).toBe(true);
+    const callsAtError =
+      apiMocks.fetchKnowledgeLlmContextCandidates.mock.calls.length;
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(apiMocks.fetchKnowledgeLlmContextCandidates).toHaveBeenCalledTimes(
+      callsAtError,
+    );
+    expect(snapshotCursors).toEqual([null, 'snapshot-page-2']);
+    expect(apiMocks.fetchKnowledgeLlmBudget).toHaveBeenCalledTimes(1);
   });
 
   it('does not truncate the selectable candidate catalog at the 32-source execution limit', async () => {

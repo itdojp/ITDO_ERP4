@@ -6,7 +6,12 @@ import type {
   KnowledgeLlmContextCandidatePort,
 } from '../../application/knowledge/knowledgeLlmRunPorts.js';
 import { prisma } from '../../services/db.js';
+import { buildKnowledgeLlmSynthesisVersionVisibilityWhere } from './prismaKnowledgeConversationVisibility.js';
 import { buildKnowledgeVisibilityWhere } from './prismaKnowledgeItemAdapter.js';
+import {
+  type KnowledgeReadSnapshotHost,
+  withKnowledgeReadSnapshot,
+} from './prismaKnowledgeLlmAdapterSupport.js';
 import { buildKnowledgeSynthesisVisibilityWhere } from './prismaKnowledgeSynthesisVisibility.js';
 
 type ReadClient = Pick<
@@ -62,11 +67,24 @@ function conversationVisibilityWhere(
 
 export class PrismaKnowledgeLlmContextCandidateAdapter implements KnowledgeLlmContextCandidatePort {
   constructor(
-    private readonly readClient: ReadClient = prisma as unknown as ReadClient,
+    private readonly readClient: ReadClient &
+      KnowledgeReadSnapshotHost<ReadClient> = prisma as unknown as ReadClient &
+      KnowledgeReadSnapshotHost<ReadClient>,
   ) {}
 
   async list(input: Parameters<KnowledgeLlmContextCandidatePort['list']>[0]) {
-    const item = await this.readClient.knowledgeItem.findFirst({
+    return withKnowledgeReadSnapshot(
+      this.readClient,
+      this.readClient,
+      (client) => this.listWithClient(client, input),
+    );
+  }
+
+  private async listWithClient(
+    readClient: ReadClient,
+    input: Parameters<KnowledgeLlmContextCandidatePort['list']>[0],
+  ) {
+    const item = await readClient.knowledgeItem.findFirst({
       where: {
         id: input.itemId,
         ...buildKnowledgeVisibilityWhere(input.actor),
@@ -116,7 +134,7 @@ export class PrismaKnowledgeLlmContextCandidateAdapter implements KnowledgeLlmCo
     };
 
     if (input.sourceType === 'snapshot') {
-      const rows = await this.readClient.knowledgeSnapshot.findMany({
+      const rows = await readClient.knowledgeSnapshot.findMany({
         where: {
           knowledgeItemId: item.id,
           status: 'ready',
@@ -147,7 +165,7 @@ export class PrismaKnowledgeLlmContextCandidateAdapter implements KnowledgeLlmCo
     }
 
     if (input.sourceType === 'annotation_revision') {
-      const rows = await this.readClient.knowledgeAnnotationRevision.findMany({
+      const rows = await readClient.knowledgeAnnotationRevision.findMany({
         where: {
           annotation: {
             is: { knowledgeItemId: item.id, deletedAt: null },
@@ -175,7 +193,7 @@ export class PrismaKnowledgeLlmContextCandidateAdapter implements KnowledgeLlmCo
     }
 
     if (input.sourceType === 'conversation_turn') {
-      const rows = await this.readClient.knowledgeConversationTurn.findMany({
+      const rows = await readClient.knowledgeConversationTurn.findMany({
         where: {
           role: { in: ['user', 'assistant'] },
           conversation: {
@@ -261,9 +279,12 @@ export class PrismaKnowledgeLlmContextCandidateAdapter implements KnowledgeLlmCo
           },
         ],
       };
-      const rows = await this.readClient.knowledgeSynthesisVersion.findMany({
+      const rows = await readClient.knowledgeSynthesisVersion.findMany({
         where: {
-          synthesis: { is: { ...synthesisVisibility, ...synthesisScope } },
+          AND: [
+            buildKnowledgeLlmSynthesisVersionVisibilityWhere(input.actor),
+            { synthesis: { is: synthesisScope } },
+          ],
           sources: {
             some: relatedToItem,
             none: {
@@ -313,28 +334,26 @@ export class PrismaKnowledgeLlmContextCandidateAdapter implements KnowledgeLlmCo
       );
     }
 
-    const rows = await this.readClient.knowledgeThreadPromotionMessage.findMany(
-      {
-        where: {
-          promotion: {
-            is: {
-              ...synthesisScope,
-              sourceShare: { is: { sourceKnowledgeItemId: item.id } },
-              destinationSynthesis: { is: synthesisVisibility },
-            },
+    const rows = await readClient.knowledgeThreadPromotionMessage.findMany({
+      where: {
+        promotion: {
+          is: {
+            ...synthesisScope,
+            sourceShare: { is: { sourceKnowledgeItemId: item.id } },
+            destinationSynthesis: { is: synthesisVisibility },
           },
-          ...boundary,
         },
-        select: {
-          id: true,
-          ordinal: true,
-          content: true,
-          createdAt: true,
-        },
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take,
+        ...boundary,
       },
-    );
+      select: {
+        id: true,
+        ordinal: true,
+        content: true,
+        createdAt: true,
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take,
+    });
     return page(
       rows.map((row) => ({
         sourceType: input.sourceType,

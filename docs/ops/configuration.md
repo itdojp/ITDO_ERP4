@@ -161,6 +161,7 @@ Storage artifact migration:
 外部LLM（Knowledge Hub、既定無効）:
 
 - `KNOWLEDGE_EXTERNAL_LLM_PROVIDER=disabled|stub|openai`（既定: `disabled`）。`CHAT_EXTERNAL_LLM_*`へfallbackしない
+- `stub`は`NODE_ENV=test|development`でのみ有効。staging、production、`NODE_ENV`未指定では起動時にfail closedとする
 - `stub|openai`では`KNOWLEDGE_LLM_MODEL_CATALOG_JSON`が必須。catalogはversion、allowlistされたprovider/model、input/output token上限、ISO 4217 currency、100万token当たりinteger micro-unit価格を持つ
 - `openai`では`KNOWLEDGE_EXTERNAL_LLM_OPENAI_API_KEY`、HTTPSの`KNOWLEDGE_EXTERNAL_LLM_OPENAI_BASE_URL`、base URL hostを含む`KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS`が必須。hostはASCII、IPv6 literalは角括弧なしcanonical表現で指定する
 - `KNOWLEDGE_EXTERNAL_LLM_ALLOW_HTTP` / `KNOWLEDGE_EXTERNAL_LLM_ALLOW_PRIVATE_IP`は既定`false`。repository test用の明示設定でのみ有効化し、production sampleでは有効化しない

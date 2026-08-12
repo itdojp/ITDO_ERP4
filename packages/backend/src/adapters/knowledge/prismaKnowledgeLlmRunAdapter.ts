@@ -27,6 +27,11 @@ import {
 } from '../../application/knowledge/knowledgeProvenanceValidation.js';
 import { prisma } from '../../services/db.js';
 import { buildKnowledgeVisibilityWhere } from './prismaKnowledgeItemAdapter.js';
+import { buildKnowledgeLlmSynthesisVersionVisibilityWhere } from './prismaKnowledgeConversationVisibility.js';
+import {
+  knowledgeLlmBudgetSubjects,
+  withKnowledgeReadSnapshot,
+} from './prismaKnowledgeLlmAdapterSupport.js';
 import { PrismaKnowledgeLlmAuditWriter } from './prismaKnowledgeLlmAuditAdapter.js';
 import {
   markKnowledgeLlmRunDispatched,
@@ -261,7 +266,7 @@ async function resolveOne(
       const row = await client.knowledgeSynthesisVersion.findFirst({
         where: {
           id: selector.sourceId,
-          synthesis: { is: buildKnowledgeSynthesisVisibilityWhere(actor) },
+          AND: buildKnowledgeLlmSynthesisVersionVisibilityWhere(actor),
         },
         select: {
           id: true,
@@ -772,24 +777,6 @@ function sameCapturedOutcome(
   );
 }
 
-function expectedPolicySubjects(input: {
-  actor: KnowledgeActor;
-  scope: 'personal' | 'organization';
-  organizationId: string | null;
-}) {
-  return [
-    { subjectType: 'user' as const, subjectId: input.actor.userId },
-    ...(input.scope === 'organization' && input.organizationId
-      ? [
-          {
-            subjectType: 'organization' as const,
-            subjectId: input.organizationId,
-          },
-        ]
-      : []),
-  ];
-}
-
 export class PrismaKnowledgeLlmRunAdapter implements KnowledgeLlmRunPort {
   constructor(
     private readonly host: TransactionHost = prisma,
@@ -798,13 +785,15 @@ export class PrismaKnowledgeLlmRunAdapter implements KnowledgeLlmRunPort {
   ) {}
 
   resolveContext(input: Parameters<KnowledgeLlmRunPort['resolveContext']>[0]) {
-    return resolveContext(this.readClient, input);
+    return withKnowledgeReadSnapshot(this.host, this.readClient, (client) =>
+      resolveContext(client, input),
+    );
   }
 
   async budgetPreview(
     input: Parameters<KnowledgeLlmRunPort['budgetPreview']>[0],
   ): Promise<KnowledgeLlmBudgetPreview> {
-    const expected = expectedPolicySubjects(input);
+    const expected = knowledgeLlmBudgetSubjects(input);
     const policies = await this.readClient.knowledgeLlmBudgetPolicy.findMany({
       where: {
         active: true,
@@ -938,32 +927,40 @@ export class PrismaKnowledgeLlmRunAdapter implements KnowledgeLlmRunPort {
   async findByRequestKey(
     input: Parameters<KnowledgeLlmRunPort['findByRequestKey']>[0],
   ) {
-    const request = await this.readClient.knowledgeLlmRequest.findFirst({
-      where: {
-        actorUserId: input.actor.userId,
-        requestKeyHash: input.requestKeyHash,
+    return withKnowledgeReadSnapshot(
+      this.host,
+      this.readClient,
+      async (client) => {
+        const request = await client.knowledgeLlmRequest.findFirst({
+          where: {
+            actorUserId: input.actor.userId,
+            requestKeyHash: input.requestKeyHash,
+          },
+          include: { run: { include: runInclude } },
+        });
+        if (request) {
+          await requireCurrentRunSourceAccess(client, input.actor, request.run);
+        }
+        return request ? mapRun(request.run) : null;
       },
-      include: { run: { include: runInclude } },
-    });
-    if (request) {
-      await requireCurrentRunSourceAccess(
-        this.readClient,
-        input.actor,
-        request.run,
-      );
-    }
-    return request ? mapRun(request.run) : null;
+    );
   }
 
   async findOwned(input: Parameters<KnowledgeLlmRunPort['findOwned']>[0]) {
-    const row = await this.readClient.knowledgeLlmRun.findFirst({
-      where: { id: input.runId, actorUserId: input.actor.userId },
-      include: runInclude,
-    });
-    if (row) {
-      await requireCurrentRunSourceAccess(this.readClient, input.actor, row);
-    }
-    return row ? mapRun(row) : null;
+    return withKnowledgeReadSnapshot(
+      this.host,
+      this.readClient,
+      async (client) => {
+        const row = await client.knowledgeLlmRun.findFirst({
+          where: { id: input.runId, actorUserId: input.actor.userId },
+          include: runInclude,
+        });
+        if (row) {
+          await requireCurrentRunSourceAccess(client, input.actor, row);
+        }
+        return row ? mapRun(row) : null;
+      },
+    );
   }
 
   async authorizeAndMarkDispatched(

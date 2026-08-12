@@ -100,6 +100,7 @@ async function loadCandidates(input: {
       let cursor: string | null = null;
       const seenCursors = new Set<string>();
       for (;;) {
+        if (input.signal.aborted) return items;
         const result = await fetchKnowledgeLlmContextCandidates({
           itemId: input.itemId,
           scope: input.scope,
@@ -108,6 +109,7 @@ async function loadCandidates(input: {
           cursor,
           signal: input.signal,
         });
+        if (input.signal.aborted) return items;
         items.push(...result.items);
         const nextCursor = result.nextCursor;
         if (!nextCursor) return items;
@@ -255,6 +257,7 @@ export function KnowledgeLlmPanel(props: {
         setStatus('success');
       } catch (loadError) {
         if (!isCurrent(generation) || controller.signal.aborted) return;
+        controller.abort();
         setError(safeError(loadError));
         setStatus('error');
       }
@@ -341,9 +344,16 @@ export function KnowledgeLlmPanel(props: {
     try {
       const next = await previewKnowledgeLlmRun(request, controller.signal);
       if (!isCurrent(generation) || controller.signal.aborted) return;
+      let nextRequestKey: string;
+      try {
+        nextRequestKey = createKnowledgeRequestKey();
+      } catch {
+        setError(knowledgeHubErrorMessage('unknown_error'));
+        return;
+      }
       setPreview(next);
       setBudget(next.budget);
-      setRequestKey(createKnowledgeRequestKey());
+      setRequestKey(nextRequestKey);
       setCommitAttempted(false);
       setNotice('外部送信前のexact previewを作成しました。');
     } catch (previewError) {
@@ -620,6 +630,7 @@ export function KnowledgeLlmPanel(props: {
             loading={committing}
             disabled={
               !confirmed ||
+              !requestKey ||
               commitAttempted ||
               interactionBusy ||
               !preview.budget.configured ||

@@ -133,16 +133,28 @@ test('envValidation: Chat production transport overrides fail closed after NODE_
 
 test('envValidation: Knowledge stub requires a strict model catalog', () => {
   const missing = runEnvValidation({
+    NODE_ENV: 'test',
     KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'stub',
   });
   assert.notEqual(missing.status, 0);
   assert.match(missing.stderr, /KNOWLEDGE_LLM_MODEL_CATALOG_JSON/);
 
   const valid = runEnvValidation({
+    NODE_ENV: 'test',
     KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'stub',
     KNOWLEDGE_LLM_MODEL_CATALOG_JSON: VALID_KNOWLEDGE_LLM_STUB_CATALOG,
   });
   assert.equal(valid.status, 0, valid.stderr);
+
+  for (const nodeEnvironment of ['production', 'staging']) {
+    const rejected = runEnvValidation({
+      NODE_ENV: nodeEnvironment,
+      KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'stub',
+      KNOWLEDGE_LLM_MODEL_CATALOG_JSON: VALID_KNOWLEDGE_LLM_STUB_CATALOG,
+    });
+    assert.notEqual(rejected.status, 0);
+    assert.match(rejected.stderr, /KNOWLEDGE_EXTERNAL_LLM_PROVIDER/);
+  }
 });
 
 test('envValidation: Knowledge openai never reuses Chat credentials or an unallowlisted host', () => {

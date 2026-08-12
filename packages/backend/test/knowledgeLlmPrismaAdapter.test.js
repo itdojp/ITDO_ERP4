@@ -2,12 +2,74 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { PrismaKnowledgeLlmRunAdapter } from '../dist/adapters/knowledge/prismaKnowledgeLlmRunAdapter.js';
+import { buildKnowledgeConversationVisibilityWhere } from '../dist/adapters/knowledge/prismaKnowledgeConversationVisibility.js';
 
 const actor = {
   userId: 'owner-1',
   organizationId: 'org-1',
   groupAccountIds: ['group-1'],
 };
+
+test('LLM result conversation visibility rechecks every direct synthesis source', () => {
+  const predicate = buildKnowledgeConversationVisibilityWhere(actor);
+  const serialized = JSON.stringify(predicate);
+  assert.match(serialized, /"sourceSynthesisVersion":\{"is":/);
+  assert.match(serialized, /"sources":\{"some":\{\},"every":/);
+  assert.match(serialized, /"sourceKnowledgeItem":\{"is":/);
+  assert.match(serialized, /"sourceAnnotationRevision":\{"is":/);
+  assert.match(serialized, /"sourceConversationTurn":\{"is":/);
+});
+
+test('context resolution, request replay, and run detail use one repeatable-read snapshot', async () => {
+  const isolationLevels = [];
+  const transaction = {
+    knowledgeSnapshot: {
+      findFirst: async () => ({
+        id: 'snapshot-1',
+        version: 1,
+        sha256: 'a'.repeat(64),
+        extractedText: 'bounded source',
+        knowledgeItem: {
+          id: 'item-1',
+          ownerUserId: actor.userId,
+          scope: 'personal',
+          organizationId: null,
+        },
+      }),
+    },
+    knowledgeLlmRequest: { findFirst: async () => null },
+    knowledgeLlmRun: { findFirst: async () => null },
+  };
+  const adapter = new PrismaKnowledgeLlmRunAdapter(
+    {
+      $transaction: async (work, options) => {
+        isolationLevels.push(options?.isolationLevel);
+        return work(transaction);
+      },
+    },
+    transaction,
+  );
+
+  await adapter.resolveContext({
+    actor,
+    scope: 'personal',
+    organizationId: null,
+    selectors: [{ sourceType: 'snapshot', sourceId: 'snapshot-1' }],
+  });
+  assert.equal(
+    await adapter.findByRequestKey({
+      actor,
+      requestKeyHash: 'b'.repeat(64),
+    }),
+    null,
+  );
+  assert.equal(await adapter.findOwned({ actor, runId: 'run-1' }), null);
+  assert.deepEqual(isolationLevels, [
+    'RepeatableRead',
+    'RepeatableRead',
+    'RepeatableRead',
+  ]);
+});
 
 test('conversation turn source resolution excludes LLM result conversations from item-based visibility', async () => {
   let turnPredicate;
@@ -61,33 +123,37 @@ function synthesisSource(overrides = {}) {
 }
 
 test('synthesis and thread-promotion context count their directly bound Knowledge items', async () => {
+  let synthesisPredicate;
   const adapter = new PrismaKnowledgeLlmRunAdapter(
     {},
     {
       knowledgeSynthesisVersion: {
-        findFirst: async () => ({
-          id: 'synthesis-version-1',
-          version: 2,
-          content: 'bounded synthesis',
-          synthesis: {
-            ownerUserId: actor.userId,
-            scope: 'personal',
-            organizationId: null,
-          },
-          sources: [
-            synthesisSource({ sourceKnowledgeItemId: 'item-1' }),
-            synthesisSource({
-              sourceSnapshot: { knowledgeItemId: 'item-1' },
-            }),
-            synthesisSource({
-              sourceConversation: {
-                llmRuns: [],
-                turns: [],
-                items: [{ knowledgeItemId: 'item-2' }],
-              },
-            }),
-          ],
-        }),
+        findFirst: async ({ where }) => {
+          synthesisPredicate = where;
+          return {
+            id: 'synthesis-version-1',
+            version: 2,
+            content: 'bounded synthesis',
+            synthesis: {
+              ownerUserId: actor.userId,
+              scope: 'personal',
+              organizationId: null,
+            },
+            sources: [
+              synthesisSource({ sourceKnowledgeItemId: 'item-1' }),
+              synthesisSource({
+                sourceSnapshot: { knowledgeItemId: 'item-1' },
+              }),
+              synthesisSource({
+                sourceConversation: {
+                  llmRuns: [],
+                  turns: [],
+                  items: [{ knowledgeItemId: 'item-2' }],
+                },
+              }),
+            ],
+          };
+        },
       },
       knowledgeThreadPromotionMessage: {
         findFirst: async () => ({
@@ -120,6 +186,10 @@ test('synthesis and thread-promotion context count their directly bound Knowledg
   });
 
   assert.equal(resolved.selectedItemCount, 3);
+  const serialized = JSON.stringify(synthesisPredicate);
+  assert.match(serialized, /"sources":\{"some":\{\},"every":/);
+  assert.match(serialized, /"sourceKnowledgeItem":\{"is":/);
+  assert.match(serialized, /"sourceConversation":\{"is":/);
 });
 
 test('synthesis context rejects more than ten directly bound Knowledge items', async () => {
