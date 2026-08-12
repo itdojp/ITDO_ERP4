@@ -76,6 +76,28 @@ export type KnowledgeLlmBudgetPreview = {
   subjects: KnowledgeLlmBudgetSubjectSummary[];
 };
 
+export type KnowledgeLlmCapturedProviderOutcome =
+  | {
+      status: 'valid';
+      normalizedContent: string;
+      inputTokens: number;
+      outputTokens: number;
+    }
+  | {
+      status: 'usage_unknown';
+      normalizedContent: string;
+      failureCode: 'usage_missing' | 'usage_invalid';
+    }
+  | {
+      status: 'invalid';
+      failureCode:
+        | 'provider_4xx'
+        | 'provider_5xx'
+        | 'malformed_response'
+        | 'response_oversize'
+        | 'empty_result';
+    };
+
 export class KnowledgeLlmRunAccessError extends Error {
   readonly name = 'KnowledgeLlmRunAccessError';
   constructor(
@@ -142,23 +164,21 @@ export interface KnowledgeLlmRunPort {
     expectedProviderRequestHash: string;
   }): Promise<void>;
 
-  finalizeReportedResult(input: {
+  /**
+   * Persists one normalized provider outcome in an independent transaction.
+   * Replays may only confirm the exact same immutable outcome.
+   */
+  captureProviderOutcome(input: {
     actor: KnowledgeActor;
-    auditActor: KnowledgeAuditActorContext;
     runId: string;
-    userPrompt: string;
-    resultContent: string;
-    inputTokens: number;
-    outputTokens: number;
-  }): Promise<KnowledgeLlmRunRecord>;
+    outcome: KnowledgeLlmCapturedProviderOutcome;
+  }): Promise<void>;
 
-  finalizeUsageUnknownResult(input: {
+  /** Finalizes a previously captured outcome without provider redispatch. */
+  finalizeCapturedOutcome(input: {
     actor: KnowledgeActor;
     auditActor: KnowledgeAuditActorContext;
     runId: string;
-    userPrompt: string;
-    resultContent: string;
-    failureCode: 'usage_missing' | 'usage_invalid';
   }): Promise<KnowledgeLlmRunRecord>;
 
   holdResultUnknown(input: {

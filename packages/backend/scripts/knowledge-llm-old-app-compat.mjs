@@ -10,7 +10,7 @@ const databaseUrl = new URL(process.env.DATABASE_URL || '');
 
 if (
   process.env.KNOWLEDGE_LLM_OLD_APP_CONFIRM !== '1' ||
-  baseline !== '8a287700254b4be5215ab60382400fd174b066f6' ||
+  baseline !== 'e6d49dd3d2eda7a41001835b0b776bce4350b486' ||
   !oldRoot ||
   !currentRoot ||
   !['seed', 'current-row', 'old-after'].includes(mode) ||
@@ -118,8 +118,84 @@ if (mode === 'seed') {
         body: 'Old application still writes Chat rows',
       },
     });
+    const [budgetAdapterModule, stubAdapterModule, budgetUseCaseModule] =
+      await Promise.all([
+        import(
+          pathToFileURL(
+            `${oldRoot}/packages/backend/dist/adapters/knowledge/prismaKnowledgeLlmBudgetAdapter.js`,
+          ).href
+        ),
+        import(
+          pathToFileURL(
+            `${oldRoot}/packages/backend/dist/adapters/externalLlm/stubTextAdapter.js`,
+          ).href
+        ),
+        import(
+          pathToFileURL(
+            `${oldRoot}/packages/backend/dist/application/knowledge/knowledgeLlmBudgetUseCases.js`,
+          ).href
+        ),
+      ]);
+    const oldService = budgetUseCaseModule.createKnowledgeLlmBudgetUseCases(
+      new budgetAdapterModule.PrismaKnowledgeLlmBudgetAdapter(prisma),
+      {
+        version: 1,
+        models: [
+          {
+            provider: 'stub',
+            model: 'stub-old-app-compat',
+            enabled: true,
+            maxInputTokens: 10_000,
+            maxOutputTokens: 100,
+            inputCostMicrosPerMillion: 0n,
+            outputCostMicrosPerMillion: 0n,
+            currency: 'JPY',
+            capabilities: ['text'],
+          },
+        ],
+      },
+      new stubAdapterModule.StubExternalLlmTextAdapter(),
+      () => new Date(),
+    );
+    const reserved = await oldService.reserve({
+      runId: 'knowledge-llm-old-app-run-after-expand',
+      actor: { userId: 'old-app-user', groupAccountIds: [] },
+      auditActor: {
+        requestId: 'knowledge-llm-old-app-run-after-expand',
+        source: 'api',
+      },
+      scope: 'personal',
+      organizationId: null,
+      provider: 'stub',
+      model: 'stub-old-app-compat',
+      catalogVersion: 1,
+      promptTemplateVersion: 1,
+      requestKeyHash: 'a'.repeat(64),
+      systemPrompt: '',
+      userPrompt: 'Synthetic old application prompt',
+      selectedContextSources: [],
+      reservationInputTokenFloor: 1,
+      maxOutputTokens: 1,
+    });
+    assert.equal(reserved.ok, true);
+    assert.ok(
+      await prisma.knowledgeLlmRun.findUnique({
+        where: { id: 'knowledge-llm-old-app-run-after-expand' },
+      }),
+    );
   } finally {
     await prisma.$disconnect();
+  }
+  const currentPrisma = client(currentRequire);
+  try {
+    const currentRun = await currentPrisma.knowledgeLlmRun.findUniqueOrThrow({
+      where: { id: 'knowledge-llm-old-app-run-after-expand' },
+      include: { promptSnapshot: true, reservations: true },
+    });
+    assert.equal(currentRun.promptSnapshot, null);
+    assert.equal(currentRun.reservations.length, 1);
+  } finally {
+    await currentPrisma.$disconnect();
   }
 }
 

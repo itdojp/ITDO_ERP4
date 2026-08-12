@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 const hash = (character) => character.repeat(64);
@@ -23,6 +24,10 @@ function reservation() {
     requestPayloadHash: hash('b'),
     providerRequestHash: hash('d'),
     selectedContextFingerprint: hash('c'),
+    userPrompt: 'Synthetic prompt',
+    userPromptHash: createHash('sha256')
+      .update('erp4:knowledge:llm-user-prompt:v1\0Synthetic prompt', 'utf8')
+      .digest('hex'),
     selectedContextSources: [],
     estimatedInputTokens: 10,
     maxOutputTokens: 10,

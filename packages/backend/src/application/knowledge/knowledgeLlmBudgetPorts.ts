@@ -31,6 +31,10 @@ export type KnowledgeLlmReservationRequest = {
   requestPayloadHash: string;
   providerRequestHash: string;
   selectedContextFingerprint: string;
+  /** Exact user prompt staged durably before dispatch and scrubbed after finalization. */
+  userPrompt: string;
+  /** Domain-separated hash used to prove the staged prompt was not replaced. */
+  userPromptHash: string;
   /** Derived immutable provenance rows persisted with the reservation transaction. */
   selectedContextSources: readonly KnowledgeLlmContextFingerprintSource[];
   estimatedInputTokens: number;
@@ -48,6 +52,8 @@ export type KnowledgeLlmReservationCommand = Omit<
   | 'requestPayloadHash'
   | 'providerRequestHash'
   | 'selectedContextFingerprint'
+  | 'userPrompt'
+  | 'userPromptHash'
   | 'inputCostMicrosPerMillion'
   | 'outputCostMicrosPerMillion'
   | 'maximumCostMicros'

@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 
 import { StubExternalLlmTextAdapter } from '../adapters/externalLlm/stubTextAdapter.js';
+import { OpenAiCompatibleTextAdapter } from '../adapters/externalLlm/openAiCompatibleTextAdapter.js';
 import { PrismaKnowledgeLlmBudgetAdapter } from '../adapters/knowledge/prismaKnowledgeLlmBudgetAdapter.js';
 import { prismaKnowledgeLlmRunAdapter } from '../adapters/knowledge/prismaKnowledgeLlmRunAdapter.js';
 import {
@@ -259,12 +260,27 @@ export async function registerKnowledgeLlmRunRoutes(
   dependencies: { service?: KnowledgeLlmRunService } = {},
 ) {
   const runtime = dependencies.service ? null : getKnowledgeLlmRuntimeConfig();
+  const providerPort =
+    runtime?.provider === 'stub'
+      ? new StubExternalLlmTextAdapter()
+      : runtime?.provider === 'openai'
+        ? new OpenAiCompatibleTextAdapter({
+            apiKey: runtime.apiKey,
+            baseUrl: runtime.baseUrl,
+            timeoutMs: runtime.timeoutMs,
+            allowedHosts: runtime.allowedHosts,
+            allowHttp: runtime.allowHttp,
+            allowPrivateIp: runtime.allowPrivateIp,
+            maximumResponseBytes: knowledgeLlmLimits.resultBytes,
+            malformedSuccessPolicy: 'reject',
+            usagePolicy: 'strict',
+          })
+        : null;
   const service =
     dependencies.service ??
     createKnowledgeLlmRunService({
       runtime: runtime!,
-      providerPort:
-        runtime?.provider === 'stub' ? new StubExternalLlmTextAdapter() : null,
+      providerPort,
       budgetPort: new PrismaKnowledgeLlmBudgetAdapter(prisma),
       runPort: prismaKnowledgeLlmRunAdapter,
     });

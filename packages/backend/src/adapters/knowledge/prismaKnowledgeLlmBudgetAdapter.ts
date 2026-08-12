@@ -625,6 +625,15 @@ async function reserveOnce(
           createdBy: input.actor.userId,
         },
       },
+      promptSnapshot: {
+        create: {
+          normalizedPrompt: input.userPrompt,
+          promptHash: input.userPromptHash,
+          capturedAt: input.now,
+          createdAt: input.now,
+          createdBy: input.actor.userId,
+        },
+      },
       contextSources: {
         create: input.selectedContextSources.map((source) =>
           contextSourceCreateData(input, source),

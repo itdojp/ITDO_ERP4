@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 
 import type { KnowledgeActor } from '../../application/knowledge/knowledgeItemPorts.js';
+import { isPersistenceCompatibleExternalLlmText } from '../../application/externalLlm/externalLlmPort.js';
 import {
   deriveKnowledgeLlmSelectedContext,
   type KnowledgeLlmContextSourceType,
@@ -14,6 +15,7 @@ import { knowledgeLlmMonthlyPeriod } from '../../application/knowledge/knowledge
 import {
   KnowledgeLlmRunAccessError,
   type KnowledgeLlmBudgetPreview,
+  type KnowledgeLlmCapturedProviderOutcome,
   type KnowledgeLlmResolvedContext,
   type KnowledgeLlmRunPort,
   type KnowledgeLlmRunRecord,
@@ -28,6 +30,8 @@ import { buildKnowledgeVisibilityWhere } from './prismaKnowledgeItemAdapter.js';
 import { PrismaKnowledgeLlmAuditWriter } from './prismaKnowledgeLlmAuditAdapter.js';
 import {
   markKnowledgeLlmRunDispatched,
+  reconcileKnowledgeLlmHeldBudget,
+  reconcileKnowledgeLlmHeldOutcome,
   settleKnowledgeLlmBudget,
 } from './prismaKnowledgeLlmSettlementAdapter.js';
 import { buildKnowledgeSynthesisVisibilityWhere } from './prismaKnowledgeSynthesisVisibility.js';
@@ -50,6 +54,7 @@ type ReadClient = ContextClient &
     | 'knowledgeLlmReservation'
     | 'knowledgeLlmRequest'
     | 'knowledgeLlmRun'
+    | 'knowledgeLlmProviderOutcome'
   >;
 
 const serializableAttempts = knowledgeLlmLimits.serializableAttempts;
@@ -638,6 +643,94 @@ async function createResultConversation(
   return { conversation, assistant, resultHash };
 }
 
+type StoredProviderOutcome = {
+  id: string;
+  runId: string;
+  status: 'valid' | 'usage_unknown' | 'invalid';
+  normalizedContent: string | null;
+  contentHash: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  failureCode: string | null;
+  capturedAt: Date;
+  finalizedAt: Date | null;
+};
+
+function trustedRunTimestamp(clock: () => Date): Date {
+  const value = clock();
+  if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
+    throw new Error('knowledge_llm_clock_invalid');
+  }
+  return new Date(value.getTime());
+}
+
+function validateCapturedOutcome(
+  outcome: KnowledgeLlmCapturedProviderOutcome,
+): void {
+  if (outcome.status === 'invalid') return;
+  if (
+    !isPersistenceCompatibleExternalLlmText(outcome.normalizedContent) ||
+    Buffer.byteLength(outcome.normalizedContent, 'utf8') < 1 ||
+    Buffer.byteLength(outcome.normalizedContent, 'utf8') >
+      knowledgeLlmLimits.resultBytes
+  ) {
+    throw new Error('knowledge_llm_outcome_invalid');
+  }
+  if (
+    outcome.status === 'valid' &&
+    (!Number.isSafeInteger(outcome.inputTokens) ||
+      outcome.inputTokens < 0 ||
+      !Number.isSafeInteger(outcome.outputTokens) ||
+      outcome.outputTokens < 0)
+  ) {
+    throw new Error('knowledge_llm_outcome_invalid');
+  }
+}
+
+function sameCapturedOutcome(
+  stored: StoredProviderOutcome,
+  outcome: KnowledgeLlmCapturedProviderOutcome,
+): boolean {
+  if (stored.status !== outcome.status) return false;
+  if (outcome.status === 'invalid') {
+    return (
+      stored.normalizedContent === null &&
+      stored.contentHash === null &&
+      stored.inputTokens === null &&
+      stored.outputTokens === null &&
+      stored.failureCode === outcome.failureCode
+    );
+  }
+  const expectedHash = sha256KnowledgeText(
+    'conversation-turn',
+    outcome.normalizedContent,
+  );
+  const exactContentAvailable =
+    stored.normalizedContent === outcome.normalizedContent;
+  const exactContentAlreadyFinalized =
+    stored.normalizedContent === null &&
+    stored.finalizedAt !== null &&
+    stored.contentHash === expectedHash;
+  if (
+    (!exactContentAvailable && !exactContentAlreadyFinalized) ||
+    stored.contentHash !== expectedHash
+  ) {
+    return false;
+  }
+  if (outcome.status === 'usage_unknown') {
+    return (
+      stored.inputTokens === null &&
+      stored.outputTokens === null &&
+      stored.failureCode === outcome.failureCode
+    );
+  }
+  return (
+    stored.inputTokens === outcome.inputTokens &&
+    stored.outputTokens === outcome.outputTokens &&
+    stored.failureCode === null
+  );
+}
+
 function expectedPolicySubjects(input: {
   actor: KnowledgeActor;
   scope: 'personal' | 'organization';
@@ -886,133 +979,408 @@ export class PrismaKnowledgeLlmRunAdapter implements KnowledgeLlmRunPort {
     if (rejection) throw rejection;
   }
 
-  async finalizeReportedResult(
-    input: Parameters<KnowledgeLlmRunPort['finalizeReportedResult']>[0],
-  ): Promise<KnowledgeLlmRunRecord> {
-    return serializable(this.host, async (transaction) => {
-      const run = await transaction.knowledgeLlmRun.findFirstOrThrow({
-        where: {
-          id: input.runId,
-          actorUserId: input.actor.userId,
-          executionStatus: 'dispatched',
-          settlementStatus: 'reserved',
-        },
-      });
-      const { conversation, assistant, resultHash } =
-        await createResultConversation(transaction, {
-          runId: run.id,
-          provider: run.provider,
-          model: run.model,
-          actorUserId: input.actor.userId,
-          userPrompt: input.userPrompt,
-          resultContent: input.resultContent,
-          capturedAt: this.clock(),
-        });
-      const outcomeCapturedAt = this.clock();
-      await transaction.knowledgeLlmProviderOutcome.create({
-        data: {
-          runId: run.id,
-          status: 'valid',
-          normalizedContent: input.resultContent,
-          contentHash: resultHash,
-          inputTokens: input.inputTokens,
-          outputTokens: input.outputTokens,
-          capturedAt: outcomeCapturedAt,
-          createdAt: outcomeCapturedAt,
-        },
-      });
-      await transaction.knowledgeLlmProviderOutcome.update({
-        where: { runId: run.id },
-        data: { normalizedContent: null, finalizedAt: this.clock() },
-      });
-      const actualCostMicros =
-        ceilCostMicros(input.inputTokens, run.inputCostMicrosPerMillion) +
-        ceilCostMicros(input.outputTokens, run.outputCostMicrosPerMillion);
-      await settleKnowledgeLlmBudget(
-        transaction,
-        {
-          runId: run.id,
-          actorUserId: input.actor.userId,
-          auditActor: knowledgeProvenanceAuditActor(
-            input.actor,
-            input.auditActor,
-          ),
-          settlement: {
-            type: 'actual',
-            actualInputTokens: input.inputTokens,
-            actualOutputTokens: input.outputTokens,
-            actualCostMicros,
-            conversationId: conversation.id,
-            assistantTurnId: assistant.id,
+  async captureProviderOutcome(
+    input: Parameters<KnowledgeLlmRunPort['captureProviderOutcome']>[0],
+  ): Promise<void> {
+    validateCapturedOutcome(input.outcome);
+    const capture = async () =>
+      serializable(this.host, async (transaction) => {
+        const existing = await transaction.$queryRaw<StoredProviderOutcome[]>(
+          Prisma.sql`
+          SELECT id, "runId", status, "normalizedContent", "contentHash",
+            "inputTokens", "outputTokens", "failureCode", "capturedAt",
+            "finalizedAt"
+          FROM "KnowledgeLlmProviderOutcome"
+          WHERE "runId" = ${input.runId}
+          FOR UPDATE
+        `,
+        );
+        const runs = await transaction.$queryRaw<
+          Array<{
+            id: string;
+            actorUserId: string;
+            estimatedInputTokens: number;
+            maxOutputTokens: number;
+            executionStatus: string;
+            settlementStatus: string;
+          }>
+        >(Prisma.sql`
+          SELECT id, "actorUserId", "estimatedInputTokens", "maxOutputTokens",
+            "executionStatus", "settlementStatus"
+          FROM "KnowledgeLlmRun"
+          WHERE id = ${input.runId}
+          FOR UPDATE
+        `);
+        const run = runs[0];
+        if (!run || run.actorUserId !== input.actor.userId) {
+          throw new KnowledgeLlmRunAccessError('not_found');
+        }
+        if (existing.length > 0) {
+          if (
+            existing.length !== 1 ||
+            !existing[0] ||
+            !sameCapturedOutcome(existing[0], input.outcome)
+          ) {
+            throw new Error('knowledge_llm_outcome_conflict');
+          }
+          return;
+        }
+        if (
+          run.executionStatus !== 'dispatched' ||
+          run.settlementStatus !== 'reserved' ||
+          (input.outcome.status === 'valid' &&
+            (input.outcome.inputTokens > run.estimatedInputTokens ||
+              input.outcome.outputTokens > run.maxOutputTokens))
+        ) {
+          throw new Error('knowledge_llm_outcome_conflict');
+        }
+        const capturedAt = trustedRunTimestamp(this.clock);
+        const content =
+          input.outcome.status === 'invalid'
+            ? null
+            : input.outcome.normalizedContent;
+        await transaction.knowledgeLlmProviderOutcome.create({
+          data: {
+            runId: input.runId,
+            status: input.outcome.status,
+            normalizedContent: content,
+            contentHash:
+              content === null
+                ? null
+                : sha256KnowledgeText('conversation-turn', content),
+            inputTokens:
+              input.outcome.status === 'valid'
+                ? input.outcome.inputTokens
+                : null,
+            outputTokens:
+              input.outcome.status === 'valid'
+                ? input.outcome.outputTokens
+                : null,
+            failureCode:
+              input.outcome.status === 'valid'
+                ? null
+                : input.outcome.failureCode,
+            capturedAt,
+            createdAt: capturedAt,
           },
-        },
-        this.clock,
-      );
-      const result = await transaction.knowledgeLlmRun.findUniqueOrThrow({
-        where: { id: run.id },
-        include: runInclude,
+        });
       });
-      return mapRun(result);
-    });
+    try {
+      await capture();
+    } catch (error) {
+      // A client/driver can lose the commit acknowledgement after PostgreSQL
+      // committed. Read back only the exact immutable outcome; a mismatch or
+      // absence remains a hard capture failure and is never finalized.
+      const stored =
+        await this.readClient.knowledgeLlmProviderOutcome.findFirst({
+          where: {
+            runId: input.runId,
+            run: { actorUserId: input.actor.userId },
+          },
+        });
+      if (
+        !stored ||
+        !sameCapturedOutcome(
+          stored as unknown as StoredProviderOutcome,
+          input.outcome,
+        )
+      ) {
+        throw error;
+      }
+    }
   }
 
-  async finalizeUsageUnknownResult(
-    input: Parameters<KnowledgeLlmRunPort['finalizeUsageUnknownResult']>[0],
+  async finalizeCapturedOutcome(
+    input: Parameters<KnowledgeLlmRunPort['finalizeCapturedOutcome']>[0],
   ): Promise<KnowledgeLlmRunRecord> {
     return serializable(this.host, async (transaction) => {
-      const run = await transaction.knowledgeLlmRun.findFirstOrThrow({
-        where: {
-          id: input.runId,
-          actorUserId: input.actor.userId,
-          executionStatus: 'dispatched',
-          settlementStatus: 'reserved',
-        },
-      });
-      const { conversation, assistant, resultHash } =
-        await createResultConversation(transaction, {
+      const outcomes = await transaction.$queryRaw<StoredProviderOutcome[]>(
+        Prisma.sql`
+          SELECT id, "runId", status, "normalizedContent", "contentHash",
+            "inputTokens", "outputTokens", "failureCode", "capturedAt",
+            "finalizedAt"
+          FROM "KnowledgeLlmProviderOutcome"
+          WHERE "runId" = ${input.runId}
+          FOR UPDATE
+        `,
+      );
+      const outcome = outcomes[0];
+      if (!outcome || outcomes.length !== 1) {
+        throw new Error('knowledge_llm_outcome_missing');
+      }
+      const runs = await transaction.$queryRaw<
+        Array<{
+          id: string;
+          actorUserId: string;
+          provider: 'stub' | 'openai';
+          model: string;
+          executionStatus: string;
+          settlementStatus: string;
+          inputCostMicrosPerMillion: bigint;
+          outputCostMicrosPerMillion: bigint;
+        }>
+      >(Prisma.sql`
+        SELECT id, "actorUserId", provider, model, "executionStatus",
+          "settlementStatus", "inputCostMicrosPerMillion",
+          "outputCostMicrosPerMillion"
+        FROM "KnowledgeLlmRun"
+        WHERE id = ${input.runId}
+        FOR UPDATE
+      `);
+      const run = runs[0];
+      if (!run || run.actorUserId !== input.actor.userId) {
+        throw new KnowledgeLlmRunAccessError('not_found');
+      }
+      if (
+        outcome.finalizedAt !== null ||
+        (outcome.status === 'invalid' &&
+          run.executionStatus === 'failed' &&
+          run.settlementStatus === 'held_maximum')
+      ) {
+        const existing = await transaction.knowledgeLlmRun.findUniqueOrThrow({
+          where: { id: run.id },
+          include: runInclude,
+        });
+        if (
+          !['result_ready', 'failed'].includes(existing.executionStatus) ||
+          !['settled_actual', 'held_maximum'].includes(
+            existing.settlementStatus,
+          )
+        ) {
+          throw new Error('knowledge_llm_finalization_conflict');
+        }
+        return mapRun(existing);
+      }
+      const recoverHeld =
+        run.executionStatus === 'result_unknown' &&
+        run.settlementStatus === 'held_maximum';
+      if (
+        !recoverHeld &&
+        !(
+          run.executionStatus === 'dispatched' &&
+          run.settlementStatus === 'reserved'
+        )
+      ) {
+        throw new Error('knowledge_llm_finalization_conflict');
+      }
+      const prompts = await transaction.$queryRaw<
+        Array<{
+          normalizedPrompt: string | null;
+          promptHash: string;
+          finalizedAt: Date | null;
+        }>
+      >(Prisma.sql`
+        SELECT "normalizedPrompt", "promptHash", "finalizedAt"
+        FROM "KnowledgeLlmPromptSnapshot"
+        WHERE "runId" = ${input.runId}
+        FOR UPDATE
+      `);
+      const prompt = prompts[0];
+      if (
+        !prompt ||
+        prompts.length !== 1 ||
+        prompt.finalizedAt !== null ||
+        prompt.normalizedPrompt === null ||
+        prompt.promptHash !==
+          sha256KnowledgeText('llm-user-prompt', prompt.normalizedPrompt)
+      ) {
+        throw new Error('knowledge_llm_prompt_snapshot_invalid');
+      }
+
+      let conversationId: string | null = null;
+      let assistantTurnId: string | null = null;
+      if (outcome.status !== 'invalid') {
+        if (
+          outcome.normalizedContent === null ||
+          outcome.contentHash !==
+            sha256KnowledgeText(
+              'conversation-turn',
+              outcome.normalizedContent,
+            ) ||
+          (outcome.status === 'valid' &&
+            (outcome.inputTokens === null || outcome.outputTokens === null)) ||
+          (outcome.status === 'usage_unknown' &&
+            (outcome.inputTokens !== null || outcome.outputTokens !== null))
+        ) {
+          throw new Error('knowledge_llm_outcome_invalid');
+        }
+        const created = await createResultConversation(transaction, {
           runId: run.id,
           provider: run.provider,
           model: run.model,
           actorUserId: input.actor.userId,
-          userPrompt: input.userPrompt,
-          resultContent: input.resultContent,
-          capturedAt: this.clock(),
+          userPrompt: prompt.normalizedPrompt,
+          resultContent: outcome.normalizedContent,
+          capturedAt: outcome.capturedAt,
         });
-      const outcomeCapturedAt = this.clock();
-      await transaction.knowledgeLlmProviderOutcome.create({
-        data: {
-          runId: run.id,
-          status: 'usage_unknown',
-          normalizedContent: input.resultContent,
-          contentHash: resultHash,
-          failureCode: input.failureCode,
-          capturedAt: outcomeCapturedAt,
-          createdAt: outcomeCapturedAt,
-        },
-      });
-      await transaction.knowledgeLlmProviderOutcome.update({
-        where: { runId: run.id },
-        data: { normalizedContent: null, finalizedAt: this.clock() },
-      });
-      await settleKnowledgeLlmBudget(
-        transaction,
-        {
-          runId: run.id,
-          actorUserId: input.actor.userId,
-          auditActor: knowledgeProvenanceAuditActor(
-            input.actor,
-            input.auditActor,
-          ),
-          settlement: {
-            type: 'hold',
-            executionStatus: 'result_ready',
-            failureCode: input.failureCode,
-            conversationId: conversation.id,
-            assistantTurnId: assistant.id,
-          },
-        },
-        this.clock,
+        conversationId = created.conversation.id;
+        assistantTurnId = created.assistant.id;
+      } else if (
+        outcome.normalizedContent !== null ||
+        outcome.contentHash !== null ||
+        outcome.inputTokens !== null ||
+        outcome.outputTokens !== null
+      ) {
+        throw new Error('knowledge_llm_outcome_invalid');
+      }
+      const finalizedAt = trustedRunTimestamp(this.clock);
+      if (outcome.status !== 'invalid') {
+        await transaction.knowledgeLlmProviderOutcome.update({
+          where: { runId: run.id },
+          data: { normalizedContent: null, finalizedAt },
+        });
+      }
+      const scrubbed = await transaction.$executeRaw(Prisma.sql`
+        UPDATE "KnowledgeLlmPromptSnapshot"
+        SET "normalizedPrompt" = NULL, "finalizedAt" = ${finalizedAt}
+        WHERE "runId" = ${run.id}
+          AND "normalizedPrompt" IS NOT NULL
+          AND "finalizedAt" IS NULL
+      `);
+      if (scrubbed !== 1) {
+        throw new Error('knowledge_llm_prompt_snapshot_invalid');
+      }
+      const auditActor = knowledgeProvenanceAuditActor(
+        input.actor,
+        input.auditActor,
       );
+      if (outcome.status === 'valid') {
+        if (
+          outcome.inputTokens === null ||
+          outcome.outputTokens === null ||
+          !conversationId ||
+          !assistantTurnId
+        ) {
+          throw new Error('knowledge_llm_outcome_invalid');
+        }
+        const actualCostMicros =
+          ceilCostMicros(outcome.inputTokens, run.inputCostMicrosPerMillion) +
+          ceilCostMicros(outcome.outputTokens, run.outputCostMicrosPerMillion);
+        if (recoverHeld) {
+          await reconcileKnowledgeLlmHeldBudget(
+            transaction,
+            {
+              runId: run.id,
+              actorUserId: input.actor.userId,
+              auditActor,
+              actualInputTokens: outcome.inputTokens,
+              actualOutputTokens: outcome.outputTokens,
+              actualCostMicros,
+              conversationId,
+              assistantTurnId,
+            },
+            this.clock,
+          );
+        } else {
+          await settleKnowledgeLlmBudget(
+            transaction,
+            {
+              runId: run.id,
+              actorUserId: input.actor.userId,
+              auditActor,
+              settlement: {
+                type: 'actual',
+                actualInputTokens: outcome.inputTokens,
+                actualOutputTokens: outcome.outputTokens,
+                actualCostMicros,
+                conversationId,
+                assistantTurnId,
+              },
+            },
+            this.clock,
+          );
+        }
+      } else if (outcome.status === 'usage_unknown') {
+        if (
+          (outcome.failureCode !== 'usage_missing' &&
+            outcome.failureCode !== 'usage_invalid') ||
+          !conversationId ||
+          !assistantTurnId
+        ) {
+          throw new Error('knowledge_llm_outcome_invalid');
+        }
+        if (recoverHeld) {
+          await reconcileKnowledgeLlmHeldOutcome(
+            transaction,
+            {
+              runId: run.id,
+              actorUserId: input.actor.userId,
+              auditActor,
+              settlement: {
+                type: 'usage_unknown',
+                failureCode: outcome.failureCode,
+                conversationId,
+                assistantTurnId,
+              },
+            },
+            this.clock,
+          );
+        } else {
+          await settleKnowledgeLlmBudget(
+            transaction,
+            {
+              runId: run.id,
+              actorUserId: input.actor.userId,
+              auditActor,
+              settlement: {
+                type: 'hold',
+                executionStatus: 'result_ready',
+                failureCode: outcome.failureCode,
+                conversationId,
+                assistantTurnId,
+              },
+            },
+            this.clock,
+          );
+        }
+      } else {
+        const failureCodes = new Set([
+          'provider_4xx',
+          'provider_5xx',
+          'malformed_response',
+          'response_oversize',
+          'empty_result',
+        ] as const);
+        if (
+          !outcome.failureCode ||
+          !failureCodes.has(outcome.failureCode as never)
+        ) {
+          throw new Error('knowledge_llm_outcome_invalid');
+        }
+        const failureCode = outcome.failureCode as
+          | 'provider_4xx'
+          | 'provider_5xx'
+          | 'malformed_response'
+          | 'response_oversize'
+          | 'empty_result';
+        if (recoverHeld) {
+          await reconcileKnowledgeLlmHeldOutcome(
+            transaction,
+            {
+              runId: run.id,
+              actorUserId: input.actor.userId,
+              auditActor,
+              settlement: { type: 'failed', failureCode },
+            },
+            this.clock,
+          );
+        } else {
+          await settleKnowledgeLlmBudget(
+            transaction,
+            {
+              runId: run.id,
+              actorUserId: input.actor.userId,
+              auditActor,
+              settlement: {
+                type: 'hold',
+                executionStatus: 'failed',
+                failureCode,
+              },
+            },
+            this.clock,
+          );
+        }
+      }
       const result = await transaction.knowledgeLlmRun.findUniqueOrThrow({
         where: { id: run.id },
         include: runInclude,
@@ -1051,6 +1419,17 @@ export class PrismaKnowledgeLlmRunAdapter implements KnowledgeLlmRunPort {
   }
 
   async reconcile(input: Parameters<KnowledgeLlmRunPort['reconcile']>[0]) {
+    try {
+      await this.finalizeCapturedOutcome(input);
+      return;
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        error.message !== 'knowledge_llm_outcome_missing'
+      ) {
+        throw error;
+      }
+    }
     return serializable(this.host, async (transaction) => {
       const row = await transaction.knowledgeLlmRun.findFirst({
         where: { id: input.runId, actorUserId: input.actor.userId },

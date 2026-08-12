@@ -390,9 +390,7 @@ try {
         },
         request: {
           ...request,
-          sources: [
-            { sourceType: 'conversation_turn', sourceId: turn.id },
-          ],
+          sources: [{ sourceType: 'conversation_turn', sourceId: turn.id }],
         },
       }),
       (error) => error.status === 404 && error.code === 'not_found',
@@ -458,7 +456,8 @@ try {
         create: {
           id: roleBoundaryConversationSynthesisVersionId,
           version: 1,
-          content: 'Synthetic synthesis derived from an ineligible conversation',
+          content:
+            'Synthetic synthesis derived from an ineligible conversation',
           unresolvedQuestions: [],
           createdBy: actor.userId,
           sources: {
@@ -942,18 +941,39 @@ try {
     prisma,
     () => new Date(Date.now() + 120_000),
   );
+  await runAdapter.captureProviderOutcome({
+    actor,
+    runId: finalizationRaceId,
+    outcome: {
+      status: 'valid',
+      normalizedContent: 'Synthetic race result',
+      inputTokens: 20,
+      outputTokens: 10,
+    },
+  });
+  await assert.rejects(
+    runAdapter.captureProviderOutcome({
+      actor: outsider,
+      runId: finalizationRaceId,
+      outcome: {
+        status: 'valid',
+        normalizedContent: 'Synthetic race result',
+        inputTokens: 20,
+        outputTokens: 10,
+      },
+    }),
+    (error) =>
+      error?.name === 'KnowledgeLlmRunAccessError' &&
+      error?.code === 'not_found',
+  );
   const finalizationRaceResults = await Promise.allSettled([
-    runAdapter.finalizeReportedResult({
+    runAdapter.finalizeCapturedOutcome({
       actor,
       auditActor: {
         ...auditActor,
         requestId: 'run-integration-finalization-race-result',
       },
       runId: finalizationRaceId,
-      userPrompt: 'Synthetic race prompt',
-      resultContent: 'Synthetic race result',
-      inputTokens: 20,
-      outputTokens: 10,
     }),
     finalizationRaceAdapter.reconcile({
       actor,
@@ -970,16 +990,70 @@ try {
   const finalizationRaceRun = await prisma.knowledgeLlmRun.findUniqueOrThrow({
     where: { id: finalizationRaceId },
   });
-  assert.ok(
-    (finalizationRaceRun.executionStatus === 'result_ready' &&
-      finalizationRaceRun.settlementStatus === 'settled_actual') ||
-      (finalizationRaceRun.executionStatus === 'result_unknown' &&
-        finalizationRaceRun.settlementStatus === 'held_maximum'),
-  );
+  assert.equal(finalizationRaceRun.executionStatus, 'result_ready');
+  assert.equal(finalizationRaceRun.settlementStatus, 'settled_actual');
   assert.ok(
     (await prisma.knowledgeConversation.count({
       where: { llmRuns: { some: { id: finalizationRaceId } } },
     })) <= 1,
+  );
+
+  const captureAckRaceId = 'run-integration-capture-ack-race';
+  const captureAckRace = await reserveOnly({
+    runId: captureAckRaceId,
+    requestKey: 'capture-ack-race-key',
+  });
+  await runAdapter.authorizeAndMarkDispatched({
+    actor,
+    auditActor: {
+      ...auditActor,
+      requestId: 'run-integration-capture-ack-race-dispatch',
+    },
+    runId: captureAckRaceId,
+    scope: 'personal',
+    organizationId: null,
+    selectors: [{ sourceType: 'snapshot', sourceId: snapshot.id }],
+    expectedSources: captureAckRace.resolved.sources,
+    expectedProviderRequestHash: captureAckRace.providerRequestHash,
+  });
+  const commitUnknownHost = {
+    async $transaction(callback, options) {
+      await prisma.$transaction(callback, options);
+      await runAdapter.finalizeCapturedOutcome({
+        actor,
+        auditActor: {
+          ...auditActor,
+          requestId: 'run-integration-capture-ack-race-finalize',
+        },
+        runId: captureAckRaceId,
+      });
+      throw new Error('synthetic_capture_commit_ack_unknown');
+    },
+  };
+  const commitUnknownAdapter = new PrismaKnowledgeLlmRunAdapter(
+    commitUnknownHost,
+    prisma,
+  );
+  await commitUnknownAdapter.captureProviderOutcome({
+    actor,
+    runId: captureAckRaceId,
+    outcome: {
+      status: 'valid',
+      normalizedContent: 'Synthetic capture acknowledgment race result',
+      inputTokens: 20,
+      outputTokens: 10,
+    },
+  });
+  const captureAckRaceRun = await prisma.knowledgeLlmRun.findUniqueOrThrow({
+    where: { id: captureAckRaceId },
+  });
+  assert.equal(captureAckRaceRun.executionStatus, 'result_ready');
+  assert.equal(captureAckRaceRun.settlementStatus, 'settled_actual');
+  assert.equal(
+    await prisma.knowledgeConversation.count({
+      where: { llmRuns: { some: { id: captureAckRaceId } } },
+    }),
+    1,
   );
 
   const accountingBefore =
@@ -1000,7 +1074,7 @@ try {
     reconcileClock,
   );
   const disabledService = createKnowledgeLlmRunService({
-    runtime: { provider: null, catalog: null },
+    runtime: { provider: 'disabled', catalog: null },
     providerPort: null,
     budgetPort: budgetAdapter,
     runPort: reconcileRunAdapter,
@@ -1086,6 +1160,12 @@ try {
   });
   assert.equal(heldAfterAclLoss.executionStatus, 'result_unknown');
   assert.equal(heldAfterAclLoss.settlementStatus, 'held_maximum');
+  const heldAfterAclLossPrompt =
+    await prisma.knowledgeLlmPromptSnapshot.findUniqueOrThrow({
+      where: { runId: aclLostDispatchedId },
+    });
+  assert.equal(heldAfterAclLossPrompt.normalizedPrompt, null);
+  assert.ok(heldAfterAclLossPrompt.finalizedAt);
   const relevantRunIds = [disabledReservedId, aclLostDispatchedId];
   const relevantReservations = await prisma.knowledgeLlmReservation.findMany({
     where: { runId: { in: relevantRunIds } },

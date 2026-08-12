@@ -162,8 +162,11 @@ function auditMetadata(entry: KnowledgeLlmAuditEntry): Prisma.InputJsonObject {
   ) {
     throw new Error('knowledge_llm_audit_invalid');
   }
+  const reconciledFailure =
+    metadata.resultCode === 'reconciled' && failureCode !== undefined;
   const completed =
-    metadata.resultCode === 'completed' || metadata.resultCode === 'reconciled';
+    metadata.resultCode === 'completed' ||
+    (metadata.resultCode === 'reconciled' && !reconciledFailure);
   const dispatched = metadata.resultCode === 'dispatched';
   if (
     completed &&

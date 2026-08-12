@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { StubExternalLlmTextAdapter } from '../dist/adapters/externalLlm/stubTextAdapter.js';
-import { ExternalLlmProviderError } from '../dist/application/externalLlm/externalLlmPort.js';
+import {
+  bindExternalLlmTextRequest,
+  ExternalLlmProviderError,
+} from '../dist/application/externalLlm/externalLlmPort.js';
 import {
   createKnowledgeLlmRunService,
   KnowledgeLlmRunError,
@@ -33,6 +36,22 @@ const modelCatalog = {
     {
       provider: 'stub',
       model: 'stub-v1',
+      enabled: true,
+      maxInputTokens: 1_000_000,
+      maxOutputTokens: 4096,
+      inputCostMicrosPerMillion: 100_000n,
+      outputCostMicrosPerMillion: 200_000n,
+      currency: 'JPY',
+      capabilities: ['text'],
+    },
+  ],
+};
+const openAiModelCatalog = {
+  version: 8,
+  models: [
+    {
+      provider: 'openai',
+      model: 'synthetic-openai-compatible-v1',
       enabled: true,
       maxInputTokens: 1_000_000,
       maxOutputTokens: 4096,
@@ -110,13 +129,27 @@ class CapturingStubProvider {
   bind(input) {
     this.state.providerBindCalls += 1;
     this.state.boundProviderRequests.push(cloneProviderRequest(input));
-    return this.stub.bind(input);
+    return input.provider === 'stub'
+      ? this.stub.bind(input)
+      : bindExternalLlmTextRequest(input);
   }
 
   async prepare(input) {
     this.state.providerPrepareCalls += 1;
     this.state.preparedProviderRequests.push(cloneProviderRequest(input));
-    const prepared = await this.stub.prepare(input);
+    const prepared =
+      input.provider === 'stub'
+        ? await this.stub.prepare(input)
+        : {
+            ...bindExternalLlmTextRequest(input),
+            dispatch: async () => ({
+              provider: 'openai',
+              model: input.model,
+              content: 'SYNTHETIC-OPENAI-COMPATIBLE-RESULT',
+              usageStatus: 'reported',
+              usage: { inputTokens: 12, outputTokens: 7 },
+            }),
+          };
     return {
       requestFingerprint: prepared.requestFingerprint,
       dispatch: async () => {
@@ -126,6 +159,20 @@ class CapturingStubProvider {
             'timeout_outcome_unknown',
             'unknown',
           );
+        }
+        if (
+          [
+            'provider_4xx',
+            'provider_5xx',
+            'malformed_response',
+            'response_oversize',
+            'empty_result',
+          ].includes(this.mode)
+        ) {
+          throw new ExternalLlmProviderError(this.mode, 'known_response');
+        }
+        if (this.mode === 'acl_loss_after_dispatch') {
+          this.state.currentAccess = false;
         }
         if (this.mode === 'missing_usage' || this.mode === 'invalid_usage') {
           return {
@@ -198,9 +245,9 @@ function createHarness(options = {}) {
     providerPrepareCalls: 0,
     providerDispatchCalls: 0,
     authorizeCalls: 0,
+    captureCalls: 0,
     finalizeCalls: 0,
-    finalizeUsageUnknownCalls: 0,
-    finalizeUsageUnknownInputs: [],
+    captureInputs: [],
     holdCalls: 0,
     reconcileCalls: 0,
     conversationTurnWrites: 0,
@@ -212,10 +259,13 @@ function createHarness(options = {}) {
     preparedProviderRequests: [],
     runsById: new Map(),
     runsByRequestKey: new Map(),
+    outcomesByRunId: new Map(),
     budgetFailure: options.budgetFailure ?? null,
     resolveFailure: null,
+    currentAccess: true,
     authorizeFailure: null,
     finalizeFailure: options.finalizeFailure ?? false,
+    captureFailure: options.captureFailure ?? false,
     sources: new Map([
       [
         'selected-source-id',
@@ -276,6 +326,9 @@ function createHarness(options = {}) {
     },
 
     async findOwned(input) {
+      if (!state.currentAccess) {
+        throw new KnowledgeLlmRunAccessError('not_found');
+      }
       const found = state.runsById.get(input.runId);
       return found?.actorUserId === input.actor.userId ? { ...found } : null;
     },
@@ -290,38 +343,48 @@ function createHarness(options = {}) {
       run.dispatchedAt = new Date(state.now);
     },
 
-    async finalizeReportedResult(input) {
+    async captureProviderOutcome(input) {
+      state.captureCalls += 1;
+      state.captureInputs.push(structuredClone(input));
+      if (state.captureFailure) throw new Error('synthetic_capture_failure');
+      const existing = state.outcomesByRunId.get(input.runId);
+      if (existing) {
+        assert.deepEqual(existing, input.outcome);
+        return;
+      }
+      state.outcomesByRunId.set(input.runId, structuredClone(input.outcome));
+    },
+
+    async finalizeCapturedOutcome(input) {
       state.finalizeCalls += 1;
       state.finalizeInputs.push(structuredClone(input));
       if (state.finalizeFailure) throw new Error('synthetic_finalize_failure');
       const run = state.runsById.get(input.runId);
       assert.ok(run);
-      run.executionStatus = 'result_ready';
-      run.settlementStatus = 'settled_actual';
-      run.actualInputTokens = input.inputTokens;
-      run.actualOutputTokens = input.outputTokens;
-      run.actualCostMicros = 3n;
-      run.resultContent = input.resultContent;
-      run.conversationId = 'synthetic-conversation';
-      run.assistantTurnId = 'synthetic-assistant-turn';
+      const outcome = state.outcomesByRunId.get(input.runId);
+      assert.ok(outcome);
+      if (outcome.status === 'invalid') {
+        run.executionStatus = 'failed';
+        run.settlementStatus = 'held_maximum';
+        run.failureCode = outcome.failureCode;
+      } else {
+        run.executionStatus = 'result_ready';
+        run.resultContent = outcome.normalizedContent;
+        run.conversationId = 'synthetic-conversation';
+        run.assistantTurnId = 'synthetic-assistant-turn';
+        state.conversationTurnWrites += 2;
+        if (outcome.status === 'valid') {
+          run.settlementStatus = 'settled_actual';
+          run.actualInputTokens = outcome.inputTokens;
+          run.actualOutputTokens = outcome.outputTokens;
+          run.actualCostMicros = 3n;
+          run.failureCode = null;
+        } else {
+          run.settlementStatus = 'held_maximum';
+          run.failureCode = outcome.failureCode;
+        }
+      }
       run.completedAt = new Date(state.now);
-      state.conversationTurnWrites += 2;
-      return { ...run };
-    },
-
-    async finalizeUsageUnknownResult(input) {
-      state.finalizeUsageUnknownCalls += 1;
-      state.finalizeUsageUnknownInputs.push(structuredClone(input));
-      const run = state.runsById.get(input.runId);
-      assert.ok(run);
-      run.executionStatus = 'result_ready';
-      run.settlementStatus = 'held_maximum';
-      run.failureCode = input.failureCode;
-      run.resultContent = input.resultContent;
-      run.conversationId = 'synthetic-conversation';
-      run.assistantTurnId = 'synthetic-assistant-turn';
-      run.completedAt = new Date(state.now);
-      state.conversationTurnWrites += 2;
       return { ...run };
     },
 
@@ -342,6 +405,12 @@ function createHarness(options = {}) {
       const run = state.runsById.get(input.runId);
       if (!run || run.actorUserId !== input.actor.userId) {
         throw new KnowledgeLlmRunAccessError('not_found');
+      }
+      if (
+        run.executionStatus === 'result_unknown' &&
+        state.outcomesByRunId.has(input.runId)
+      ) {
+        await runPort.finalizeCapturedOutcome(input);
       }
     },
   };
@@ -465,6 +534,55 @@ test('disabled runtime performs no provider, budget, source, or audit work', asy
   assert.deepEqual(harness.state.previewAudits, []);
 });
 
+test('enabled OpenAI-compatible runtime uses the same bounded run contract without fallback or retry', async () => {
+  const harness = createHarness({
+    runtime: {
+      provider: 'openai',
+      catalog: openAiModelCatalog,
+      apiKey: 'synthetic-placeholder',
+      baseUrl: 'https://synthetic.invalid/v1',
+      timeoutMs: 1000,
+      allowedHosts: ['synthetic.invalid'],
+      allowHttp: false,
+      allowPrivateIp: false,
+    },
+  });
+  const requestOverrides = {
+    provider: 'openai',
+    model: 'synthetic-openai-compatible-v1',
+    catalogVersion: openAiModelCatalog.version,
+  };
+
+  assert.deepEqual(harness.service.catalog(), {
+    enabled: true,
+    provider: 'openai',
+    version: openAiModelCatalog.version,
+    models: [
+      {
+        provider: 'openai',
+        model: 'synthetic-openai-compatible-v1',
+        maxInputTokens: 1_000_000,
+        maxOutputTokens: 4096,
+        inputCostMicrosPerMillion: '100000',
+        outputCostMicrosPerMillion: '200000',
+        currency: 'JPY',
+      },
+    ],
+  });
+  const previewResult = await preview(harness, { request: requestOverrides });
+  const result = await execute(harness, previewResult, {
+    request: requestOverrides,
+  });
+
+  assert.equal(result.run.executionStatus, 'result_ready');
+  assert.equal(result.run.settlementStatus, 'settled_actual');
+  assert.equal(result.run.result, 'SYNTHETIC-OPENAI-COMPATIBLE-RESULT');
+  assert.equal(harness.state.providerPrepareCalls, 1);
+  assert.equal(harness.state.providerDispatchCalls, 1);
+  assert.equal(harness.state.captureCalls, 1);
+  assert.equal(harness.state.finalizeCalls, 1);
+});
+
 test('budget summary rejects invalid personal and organization scope before repository access', async () => {
   const harness = createHarness();
 
@@ -568,6 +686,7 @@ test('valid stub execution reserves, dispatches once, and persists reported usag
   assert.equal(harness.state.providerPrepareCalls, 1);
   assert.equal(harness.state.providerDispatchCalls, 1);
   assert.equal(harness.state.authorizeCalls, 1);
+  assert.equal(harness.state.captureCalls, 1);
   assert.equal(harness.state.finalizeCalls, 1);
   assert.equal(harness.state.holdCalls, 0);
   assert.equal(harness.state.conversationTurnWrites, 2);
@@ -737,6 +856,18 @@ test('ACL loss and exact source change fail closed without reservation or dispat
   });
 });
 
+test('ACL loss after dispatch permits accounting finalization but returns no result content', async () => {
+  const harness = createHarness({ providerMode: 'acl_loss_after_dispatch' });
+  const previewResult = await preview(harness);
+
+  await assertRejectCode(execute(harness, previewResult), 404, 'not_found');
+  const stored = [...harness.state.runsById.values()][0];
+  assert.equal(stored.executionStatus, 'result_ready');
+  assert.equal(stored.settlementStatus, 'settled_actual');
+  assert.equal(harness.state.providerDispatchCalls, 1);
+  assert.equal(harness.state.conversationTurnWrites, 2);
+});
+
 test('budget hard-limit and rate-limit failures propagate before provider dispatch', async (t) => {
   for (const failure of [
     { status: 409, code: 'budget_hard_limit' },
@@ -773,6 +904,11 @@ test('provider outcome unknown and finalization failure hold the maximum reserva
       failureCode: 'timeout_outcome_unknown',
     },
     {
+      name: 'outcome capture failure',
+      options: { captureFailure: true },
+      failureCode: 'finalization_failed',
+    },
+    {
       name: 'result finalization failure',
       options: { finalizeFailure: true },
       failureCode: 'finalization_failed',
@@ -793,6 +929,33 @@ test('provider outcome unknown and finalization failure hold the maximum reserva
   }
 });
 
+test('known provider failures are captured once and terminate failed without retry or fallback', async (t) => {
+  for (const failureCode of [
+    'provider_4xx',
+    'provider_5xx',
+    'malformed_response',
+    'response_oversize',
+    'empty_result',
+  ]) {
+    await t.test(failureCode, async () => {
+      const harness = createHarness({ providerMode: failureCode });
+      const previewResult = await preview(harness);
+      const result = await execute(harness, previewResult);
+
+      assert.equal(result.run.executionStatus, 'failed');
+      assert.equal(result.run.settlementStatus, 'held_maximum');
+      assert.equal(result.run.failureCode, failureCode);
+      assert.equal(result.run.result, null);
+      assert.equal(harness.state.providerPrepareCalls, 1);
+      assert.equal(harness.state.providerDispatchCalls, 1);
+      assert.equal(harness.state.captureCalls, 1);
+      assert.equal(harness.state.finalizeCalls, 1);
+      assert.equal(harness.state.holdCalls, 0);
+      assert.equal(harness.state.conversationTurnWrites, 0);
+    });
+  }
+});
+
 test('valid result with missing or invalid usage is retained with maximum reservation held', async (t) => {
   for (const [providerMode, expectedFailureCode] of [
     ['missing_usage', 'usage_missing'],
@@ -807,9 +970,9 @@ test('valid result with missing or invalid usage is retained with maximum reserv
       assert.equal(result.run.settlementStatus, 'held_maximum');
       assert.equal(result.run.failureCode, expectedFailureCode);
       assert.equal(result.run.result, 'SYNTHETIC-PROVIDER-RESULT');
-      assert.equal(harness.state.finalizeUsageUnknownCalls, 1);
+      assert.equal(harness.state.captureCalls, 1);
       assert.equal(
-        harness.state.finalizeUsageUnknownInputs[0].failureCode,
+        harness.state.captureInputs[0].outcome.failureCode,
         expectedFailureCode,
       );
       assert.equal(harness.state.holdCalls, 0);
@@ -826,11 +989,17 @@ test('invalid or oversized provider content is never persisted as a successful r
       const previewResult = await preview(harness);
       const result = await execute(harness, previewResult);
 
-      assert.equal(result.run.executionStatus, 'result_unknown');
+      assert.equal(result.run.executionStatus, 'failed');
       assert.equal(result.run.settlementStatus, 'held_maximum');
-      assert.equal(result.run.failureCode, 'finalization_failed');
+      assert.equal(
+        result.run.failureCode,
+        providerMode === 'oversize_content'
+          ? 'response_oversize'
+          : 'malformed_response',
+      );
       assert.equal(result.run.result, null);
-      assert.equal(harness.state.finalizeCalls, 0);
+      assert.equal(harness.state.captureCalls, 1);
+      assert.equal(harness.state.finalizeCalls, 1);
       assert.equal(harness.state.conversationTurnWrites, 0);
       assert.equal(harness.state.providerDispatchCalls, 1);
     });
@@ -854,12 +1023,36 @@ test('reconcile delegates once to the run port and returns its allowlisted view'
   assert.equal(harness.state.providerDispatchCalls, 1);
 });
 
+test('reconcile finalizes a saved local outcome without redispatch', async () => {
+  const harness = createHarness({ finalizeFailure: true });
+  const previewResult = await preview(harness);
+  const executed = await execute(harness, previewResult);
+  assert.equal(executed.run.executionStatus, 'result_unknown');
+  assert.equal(executed.run.failureCode, 'finalization_failed');
+  assert.equal(harness.state.providerDispatchCalls, 1);
+  assert.equal(harness.state.captureCalls, 1);
+
+  harness.state.finalizeFailure = false;
+  const reconciled = await harness.service.reconcile({
+    actor,
+    auditActor,
+    runId: executed.run.id,
+  });
+
+  assert.equal(reconciled.executionStatus, 'result_ready');
+  assert.equal(reconciled.settlementStatus, 'settled_actual');
+  assert.equal(reconciled.result, 'Synthetic ex');
+  assert.equal(harness.state.providerDispatchCalls, 1);
+  assert.equal(harness.state.captureCalls, 1);
+  assert.equal(harness.state.conversationTurnWrites, 2);
+});
+
 test('reconcile remains available after the provider runtime is disabled', async () => {
   const harness = createHarness({ providerMode: 'timeout' });
   const previewResult = await preview(harness);
   const executed = await execute(harness, previewResult);
   const disabledService = createKnowledgeLlmRunService({
-    runtime: { provider: null, catalog: null },
+    runtime: { provider: 'disabled', catalog: null },
     providerPort: null,
     budgetPort: harness.budgetPort,
     runPort: harness.runPort,

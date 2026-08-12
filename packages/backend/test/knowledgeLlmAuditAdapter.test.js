@@ -249,3 +249,51 @@ test('Knowledge LLM operator billing reconciliation is distinctly attributable',
   assert.equal(created.reasonCode, 'knowledge_llm_operator_reconciled');
   assert.equal(created.metadata.operatorIntervention, 'billing_evidence');
 });
+
+test('Knowledge LLM saved failure reconciliation records only allowlisted terminal metadata', async () => {
+  const { PrismaKnowledgeLlmAuditWriter } =
+    await import('../dist/adapters/knowledge/prismaKnowledgeLlmAuditAdapter.js');
+  let created;
+  const writer = new PrismaKnowledgeLlmAuditWriter({
+    auditLog: {
+      async create(input) {
+        created = input.data;
+        return input.data;
+      },
+    },
+  });
+
+  await writer.write({
+    action: 'knowledge_llm_reconciled',
+    actor: {
+      userId: 'canonical-user',
+      requestId: 'synthetic-reconcile-request',
+      source: 'api',
+    },
+    targetTable: 'knowledge_llm_runs',
+    targetId: 'synthetic-run',
+    metadata: {
+      provider: 'openai',
+      model: 'allowlisted-model',
+      scope: 'personal',
+      catalogVersion: 1,
+      estimatedInputTokens: 10,
+      maxOutputTokens: 20,
+      reservedCostMicros: '10',
+      currency: 'JPY',
+      resultCode: 'reconciled',
+      failureCode: 'provider_5xx',
+      policyCount: 1,
+    },
+  });
+
+  assert.equal(created.metadata.resultCode, 'reconciled');
+  assert.equal(created.metadata.failureCode, 'provider_5xx');
+  assert.equal('actualInputTokens' in created.metadata, false);
+  assert.equal('actualOutputTokens' in created.metadata, false);
+  assert.equal('actualCostMicros' in created.metadata, false);
+  assert.equal(
+    JSON.stringify(created.metadata).includes('provider body'),
+    false,
+  );
+});
