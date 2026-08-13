@@ -1013,7 +1013,7 @@ describe('KnowledgeLlmPanel', () => {
       });
       expect(apiMocks.executeKnowledgeLlmRun).toHaveBeenCalledTimes(1);
       expect(
-        screen.getByText(/providerへ再送していません/),
+        await screen.findByText(/providerへ再送していません/),
       ).toBeInTheDocument();
     },
   );
