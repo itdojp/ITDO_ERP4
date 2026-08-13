@@ -6,6 +6,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 
 import { StubExternalLlmTextAdapter } from '../dist/adapters/externalLlm/stubTextAdapter.js';
 import { PrismaKnowledgeLlmBudgetAdapter } from '../dist/adapters/knowledge/prismaKnowledgeLlmBudgetAdapter.js';
+import { PrismaKnowledgeLlmContextCandidateAdapter } from '../dist/adapters/knowledge/prismaKnowledgeLlmContextCandidateAdapter.js';
 import { PrismaKnowledgeLlmRunAdapter } from '../dist/adapters/knowledge/prismaKnowledgeLlmRunAdapter.js';
 import { PrismaKnowledgeConversationRepository } from '../dist/adapters/knowledge/prismaKnowledgeProvenanceAdapter.js';
 import { createKnowledgeLlmBudgetUseCases } from '../dist/application/knowledge/knowledgeLlmBudgetUseCases.js';
@@ -888,6 +889,224 @@ try {
       (conversation) =>
         conversation.id === organizationCompleted.run.conversationId,
     ),
+  );
+
+  const secondaryOrganizationItem = await prisma.knowledgeItem.create({
+    data: {
+      id: 'run-integration-secondary-organization-item',
+      ownerUserId: 'run-integration-secondary-owner',
+      scope: 'organization',
+      organizationId: actor.organizationId,
+      sourceType: 'manual',
+      title: 'Synthetic secondary organization item',
+      createdBy: 'run-integration-secondary-owner',
+      updatedBy: 'run-integration-secondary-owner',
+      groupGrants: {
+        create: {
+          groupAccountId: actor.groupAccountIds[0],
+          createdBy: 'run-integration-secondary-owner',
+        },
+      },
+    },
+  });
+  const synthesisVersionId = 'run-integration-organization-synthesis-version';
+  await prisma.knowledgeSynthesis.create({
+    data: {
+      id: 'run-integration-organization-synthesis',
+      ownerUserId: 'run-integration-synthesis-owner',
+      scope: 'organization',
+      organizationId: actor.organizationId,
+      title: 'Synthetic organization synthesis',
+      createdBy: 'run-integration-synthesis-owner',
+      updatedBy: 'run-integration-synthesis-owner',
+      groupGrants: {
+        create: {
+          groupAccountId: actor.groupAccountIds[0],
+          createdBy: 'run-integration-synthesis-owner',
+          updatedBy: 'run-integration-synthesis-owner',
+        },
+      },
+      versions: {
+        create: {
+          id: synthesisVersionId,
+          version: 1,
+          content: 'Selected organization synthesis content',
+          unresolvedQuestions: [],
+          createdBy: 'run-integration-synthesis-owner',
+          sources: {
+            create: [
+              {
+                relationType: 'primary',
+                ordinal: 0,
+                sourceKnowledgeItemId: organizationItem.id,
+                createdBy: 'run-integration-synthesis-owner',
+              },
+              {
+                relationType: 'supporting',
+                ordinal: 1,
+                sourceKnowledgeItemId: secondaryOrganizationItem.id,
+                createdBy: 'run-integration-synthesis-owner',
+              },
+            ],
+          },
+        },
+      },
+    },
+  });
+  const synthesisRequest = {
+    ...organizationRequest,
+    userPrompt: 'Selected synthesis prompt',
+    sources: [
+      { sourceType: 'synthesis_version', sourceId: synthesisVersionId },
+    ],
+  };
+  const candidateAdapter = new PrismaKnowledgeLlmContextCandidateAdapter(
+    prisma,
+  );
+  const candidatesBeforeRevoke = await candidateAdapter.list({
+    actor,
+    itemId: organizationItem.id,
+    scope: 'organization',
+    organizationId: actor.organizationId,
+    sourceType: 'synthesis_version',
+    limit: 10,
+    boundary: null,
+  });
+  assert.ok(
+    candidatesBeforeRevoke?.items.some(
+      (candidate) => candidate.sourceId === synthesisVersionId,
+    ),
+  );
+  const synthesisPreview = await service.preview({
+    actor,
+    auditActor: {
+      ...auditActor,
+      requestId: 'run-integration-synthesis-preview',
+    },
+    request: synthesisRequest,
+  });
+  const staleSynthesisPreview = await service.preview({
+    actor,
+    auditActor: {
+      ...auditActor,
+      requestId: 'run-integration-stale-synthesis-preview',
+    },
+    request: synthesisRequest,
+  });
+  const synthesisCompleted = await service.execute({
+    actor,
+    auditActor: {
+      ...auditActor,
+      requestId: 'run-integration-synthesis-execute',
+    },
+    request: synthesisRequest,
+    previewToken: synthesisPreview.previewToken,
+    requestKey: 'run-integration-synthesis-request-key',
+    confirmed: true,
+  });
+  assert.equal(dispatches, 4);
+  assert.ok(
+    await conversationRepository.findVisible({
+      actor,
+      conversationId: synthesisCompleted.run.conversationId,
+    }),
+  );
+  await prisma.knowledgeItemGroupGrant.delete({
+    where: {
+      knowledgeItemId_groupAccountId: {
+        knowledgeItemId: secondaryOrganizationItem.id,
+        groupAccountId: actor.groupAccountIds[0],
+      },
+    },
+  });
+  const candidatesAfterRevoke = await candidateAdapter.list({
+    actor,
+    itemId: organizationItem.id,
+    scope: 'organization',
+    organizationId: actor.organizationId,
+    sourceType: 'synthesis_version',
+    limit: 10,
+    boundary: null,
+  });
+  assert.equal(
+    candidatesAfterRevoke?.items.some(
+      (candidate) => candidate.sourceId === synthesisVersionId,
+    ),
+    false,
+  );
+  await assert.rejects(
+    service.preview({
+      actor,
+      auditActor: {
+        ...auditActor,
+        requestId: 'run-integration-revoked-synthesis-preview',
+      },
+      request: synthesisRequest,
+    }),
+    (error) => error.status === 404 && error.code === 'not_found',
+  );
+  await assert.rejects(
+    service.execute({
+      actor,
+      auditActor: {
+        ...auditActor,
+        requestId: 'run-integration-stale-synthesis-execute',
+      },
+      request: synthesisRequest,
+      previewToken: staleSynthesisPreview.previewToken,
+      requestKey: 'run-integration-stale-synthesis-request-key',
+      confirmed: true,
+    }),
+    (error) =>
+      error.status === 404 &&
+      ['not_found', 'stale_preview'].includes(error.code),
+  );
+  assert.equal(dispatches, 4);
+  await assert.rejects(
+    service.detail({ actor, runId: synthesisCompleted.run.id }),
+    (error) => error.status === 404 && error.code === 'not_found',
+  );
+  assert.equal(
+    await conversationRepository.findVisible({
+      actor,
+      conversationId: synthesisCompleted.run.conversationId,
+    }),
+    null,
+  );
+  assert.equal(
+    (
+      await conversationRepository.listVisible({ actor, limit: 100 })
+    ).items.some(
+      (conversation) =>
+        conversation.id === synthesisCompleted.run.conversationId,
+    ),
+    false,
+  );
+  await prisma.knowledgeItemGroupGrant.create({
+    data: {
+      knowledgeItemId: secondaryOrganizationItem.id,
+      groupAccountId: actor.groupAccountIds[0],
+      createdBy: 'run-integration-secondary-owner',
+    },
+  });
+  await prisma.knowledgeItem.update({
+    where: { id: secondaryOrganizationItem.id },
+    data: {
+      deletedAt: new Date(),
+      deletedReason: 'owner_request',
+      updatedBy: 'run-integration-secondary-owner',
+    },
+  });
+  await assert.rejects(
+    service.preview({
+      actor,
+      auditActor: {
+        ...auditActor,
+        requestId: 'run-integration-deleted-synthesis-preview',
+      },
+      request: synthesisRequest,
+    }),
+    (error) => error.status === 404 && error.code === 'not_found',
   );
   await prisma.knowledgeItemGroupGrant.delete({
     where: {

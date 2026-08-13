@@ -4,11 +4,11 @@ import type { KnowledgeActor } from '../../application/knowledge/knowledgeItemPo
 import { buildKnowledgeVisibilityWhere } from './prismaKnowledgeItemAdapter.js';
 import { buildKnowledgeSynthesisVisibilityWhere } from './prismaKnowledgeSynthesisVisibility.js';
 
-export function buildKnowledgeConversationVisibilityWhere(
+function buildStandaloneConversationVisibilityWhere(
   actor: KnowledgeActor,
 ): Prisma.KnowledgeConversationWhereInput {
   const itemVisibility = buildKnowledgeVisibilityWhere(actor);
-  const standaloneConversationVisibility = {
+  return {
     deletedAt: null,
     OR: [
       {
@@ -26,7 +26,84 @@ export function buildKnowledgeConversationVisibilityWhere(
         },
       },
     ],
-  } satisfies Prisma.KnowledgeConversationWhereInput;
+  };
+}
+
+/**
+ * LLM synthesis context deliberately excludes nested synthesis and thread
+ * promotion provenance. Within that bounded subset, a non-owner may use a
+ * version only while every direct provenance source remains currently
+ * readable. Owners retain the existing synthesis-history contract.
+ */
+export function buildKnowledgeLlmSynthesisVersionVisibilityWhere(
+  actor: KnowledgeActor,
+): Prisma.KnowledgeSynthesisVersionWhereInput {
+  const itemVisibility = buildKnowledgeVisibilityWhere(actor);
+  const standaloneConversationVisibility =
+    buildStandaloneConversationVisibilityWhere(actor);
+  const sourceVisibility = {
+    OR: [
+      {
+        sourceKnowledgeItem: { is: itemVisibility },
+      },
+      {
+        sourceSnapshot: {
+          is: { knowledgeItem: { is: itemVisibility } },
+        },
+      },
+      {
+        sourceAnnotation: {
+          is: {
+            deletedAt: null,
+            knowledgeItem: { is: itemVisibility },
+          },
+        },
+      },
+      {
+        sourceAnnotationRevision: {
+          is: {
+            annotation: {
+              is: {
+                deletedAt: null,
+                knowledgeItem: { is: itemVisibility },
+              },
+            },
+          },
+        },
+      },
+      {
+        sourceConversation: {
+          is: standaloneConversationVisibility,
+        },
+      },
+      {
+        sourceConversationTurn: {
+          is: { conversation: { is: standaloneConversationVisibility } },
+        },
+      },
+    ],
+  } satisfies Prisma.KnowledgeSynthesisSourceWhereInput;
+  return {
+    AND: [
+      {
+        synthesis: { is: buildKnowledgeSynthesisVisibilityWhere(actor) },
+      },
+      {
+        OR: [
+          { synthesis: { is: { ownerUserId: actor.userId } } },
+          { sources: { some: {}, every: sourceVisibility } },
+        ],
+      },
+    ],
+  };
+}
+
+export function buildKnowledgeConversationVisibilityWhere(
+  actor: KnowledgeActor,
+): Prisma.KnowledgeConversationWhereInput {
+  const itemVisibility = buildKnowledgeVisibilityWhere(actor);
+  const standaloneConversationVisibility =
+    buildStandaloneConversationVisibilityWhere(actor);
   const sourceVisibility = {
     OR: [
       {
@@ -56,9 +133,7 @@ export function buildKnowledgeConversationVisibilityWhere(
       },
       {
         sourceSynthesisVersion: {
-          is: {
-            synthesis: { is: buildKnowledgeSynthesisVisibilityWhere(actor) },
-          },
+          is: buildKnowledgeLlmSynthesisVersionVisibilityWhere(actor),
         },
       },
       {

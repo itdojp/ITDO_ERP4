@@ -55,6 +55,31 @@ test('Knowledge external LLM is disabled independently of Chat settings', async 
   );
 });
 
+test('explicit stub provider is limited to test and development', async () => {
+  const { getKnowledgeLlmRuntimeConfig } = await configModule();
+  for (const nodeEnvironment of [' Production ', 'staging', undefined]) {
+    assert.throws(
+      () =>
+        getKnowledgeLlmRuntimeConfig({
+          ...(nodeEnvironment ? { NODE_ENV: nodeEnvironment } : {}),
+          KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'stub',
+          KNOWLEDGE_LLM_MODEL_CATALOG_JSON: catalog(),
+        }),
+      /KNOWLEDGE_EXTERNAL_LLM_PROVIDER/,
+    );
+  }
+  for (const nodeEnvironment of ['test', ' development ']) {
+    assert.equal(
+      getKnowledgeLlmRuntimeConfig({
+        NODE_ENV: nodeEnvironment,
+        KNOWLEDGE_EXTERNAL_LLM_PROVIDER: 'stub',
+        KNOWLEDGE_LLM_MODEL_CATALOG_JSON: catalog(),
+      }).provider,
+      'stub',
+    );
+  }
+});
+
 test('model catalog is strict, versioned and uses integer price strings', async () => {
   const { parseKnowledgeLlmModelCatalog } = await configModule();
   const parsed = parseKnowledgeLlmModelCatalog(catalog());

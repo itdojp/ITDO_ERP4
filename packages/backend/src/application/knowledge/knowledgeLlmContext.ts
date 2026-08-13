@@ -3,12 +3,15 @@ import { createHash } from 'node:crypto';
 import { knowledgeLlmLimits } from './knowledgeLlmConfig.js';
 import { sha256KnowledgeText } from './knowledgeProvenanceValidation.js';
 
+export const knowledgeLlmContextSourceTypes = [
+  'snapshot',
+  'annotation_revision',
+  'conversation_turn',
+  'synthesis_version',
+  'thread_promotion_message',
+] as const;
 export type KnowledgeLlmContextSourceType =
-  | 'snapshot'
-  | 'annotation_revision'
-  | 'conversation_turn'
-  | 'synthesis_version'
-  | 'thread_promotion_message';
+  (typeof knowledgeLlmContextSourceTypes)[number];
 
 export type KnowledgeLlmSelectedContextSource = {
   sourceType: KnowledgeLlmContextSourceType;

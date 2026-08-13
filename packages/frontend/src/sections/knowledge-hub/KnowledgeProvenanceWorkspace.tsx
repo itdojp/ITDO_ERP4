@@ -1,18 +1,21 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Alert, Card, Tabs } from '../../ui';
 import type { KnowledgeScope, KnowledgeSnapshot } from './knowledgeHubModel';
 import { KnowledgeAnnotationPanel } from './KnowledgeAnnotationPanel';
 import { KnowledgeConversationPanel } from './KnowledgeConversationPanel';
+import { KnowledgeLlmPanel } from './KnowledgeLlmPanel';
 import { KnowledgeSharePanel } from './KnowledgeSharePanel';
 import { KnowledgeSynthesisPanel } from './KnowledgeSynthesisPanel';
 
-type WorkspaceTab = 'annotations' | 'conversations' | 'syntheses' | 'share';
+type WorkspaceTab =
+  'annotations' | 'conversations' | 'syntheses' | 'external-llm' | 'share';
 
 const workspaceTabs = [
   { id: 'annotations', label: '本人annotation' },
   { id: 'conversations', label: '会話・取込' },
   { id: 'syntheses', label: 'Synthesis・結論' },
+  { id: 'external-llm', label: '外部LLM対話' },
   { id: 'share', label: 'Chatへ共有' },
 ] as const;
 
@@ -24,19 +27,33 @@ export function KnowledgeProvenanceWorkspace(props: {
   itemId: string;
   itemLabel: string;
   itemScope: KnowledgeScope;
+  organizationId: string | null;
   snapshots: readonly KnowledgeSnapshot[];
-  onShareCommitBusyChange?: (busy: boolean) => void;
+  onCommitBusyChange?: (busy: boolean) => void;
 }) {
-  const { onShareCommitBusyChange } = props;
+  const { onCommitBusyChange } = props;
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('annotations');
   const [shareCommitBusy, setShareCommitBusy] = useState(false);
+  const [llmCommitBusy, setLlmCommitBusy] = useState(false);
+  const shareCommitBusyRef = useRef(false);
+  const llmCommitBusyRef = useRef(false);
+  const lastNotifiedCommitBusyRef = useRef<boolean | null>(null);
+  const commitBusy = shareCommitBusy || llmCommitBusy;
   const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<WorkspaceTab>>(
     () => new Set(['annotations']),
   );
 
   const selectTab = (value: string) => {
     if (!isWorkspaceTab(value)) return;
-    if (shareCommitBusy && value !== 'share') return;
+    if (
+      commitBusy &&
+      !(
+        (shareCommitBusy && value === 'share') ||
+        (llmCommitBusy && value === 'external-llm')
+      )
+    ) {
+      return;
+    }
     setActiveTab(value);
     setVisitedTabs((current) => {
       if (current.has(value)) return current;
@@ -44,13 +61,36 @@ export function KnowledgeProvenanceWorkspace(props: {
     });
   };
 
+  const notifyCommitBusy = useCallback(
+    (busy: boolean) => {
+      if (lastNotifiedCommitBusyRef.current === busy) return;
+      lastNotifiedCommitBusyRef.current = busy;
+      onCommitBusyChange?.(busy);
+    },
+    [onCommitBusyChange],
+  );
+
   const handleShareCommitBusyChange = useCallback(
     (busy: boolean) => {
+      shareCommitBusyRef.current = busy;
       setShareCommitBusy(busy);
-      onShareCommitBusyChange?.(busy);
+      notifyCommitBusy(busy || llmCommitBusyRef.current);
     },
-    [onShareCommitBusyChange],
+    [notifyCommitBusy],
   );
+
+  const handleLlmCommitBusyChange = useCallback(
+    (busy: boolean) => {
+      llmCommitBusyRef.current = busy;
+      setLlmCommitBusy(busy);
+      notifyCommitBusy(busy || shareCommitBusyRef.current);
+    },
+    [notifyCommitBusy],
+  );
+
+  useEffect(() => {
+    notifyCommitBusy(commitBusy);
+  }, [commitBusy, notifyCommitBusy]);
 
   return (
     <Card className="knowledge-provenance-workspace" padding="small">
@@ -67,9 +107,9 @@ export function KnowledgeProvenanceWorkspace(props: {
         元snapshot、本人annotation、会話turn、Synthesisは別entityとして履歴を保持します。
         外部情報・引用・本人意見・AI・System・Tool・結論をlabelでも区別します。
       </Alert>
-      {shareCommitBusy ? (
+      {commitBusy ? (
         <Alert variant="warning">
-          Chat共有の確定結果を保持するため、完了するまでtabとKnowledge
+          外部処理の確定結果を保持するため、完了するまでtabとKnowledge
           itemの切り替えを停止しています。
         </Alert>
       ) : null}
@@ -80,7 +120,12 @@ export function KnowledgeProvenanceWorkspace(props: {
         ariaLabel="Knowledge provenance機能"
         items={workspaceTabs.map((tab) => ({
           ...tab,
-          disabled: shareCommitBusy && tab.id !== 'share',
+          disabled:
+            commitBusy &&
+            !(
+              (shareCommitBusy && tab.id === 'share') ||
+              (llmCommitBusy && tab.id === 'external-llm')
+            ),
         }))}
         renderPanel={() => (
           <div className="knowledge-provenance-retained-panels">
@@ -111,6 +156,17 @@ export function KnowledgeProvenanceWorkspace(props: {
                 <KnowledgeSynthesisPanel
                   itemId={props.itemId}
                   itemScope={props.itemScope}
+                />
+              </div>
+            ) : null}
+            {activeTab === 'external-llm' ? (
+              <div className="knowledge-provenance-retained-panel">
+                <KnowledgeLlmPanel
+                  key={props.itemId}
+                  itemId={props.itemId}
+                  itemScope={props.itemScope}
+                  organizationId={props.organizationId}
+                  onCommitBusyChange={handleLlmCommitBusyChange}
                 />
               </div>
             ) : null}

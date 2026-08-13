@@ -304,7 +304,15 @@ export function getKnowledgeLlmRuntimeConfig(
       'KNOWLEDGE_LLM_MODEL_CATALOG_JSON',
     );
   }
-  if (provider === 'stub') return { provider, catalog };
+  const nodeEnvironment = env.NODE_ENV?.trim().toLowerCase();
+  if (provider === 'stub') {
+    if (nodeEnvironment !== 'test' && nodeEnvironment !== 'development') {
+      throw new KnowledgeLlmConfigurationError(
+        'KNOWLEDGE_EXTERNAL_LLM_PROVIDER',
+      );
+    }
+    return { provider, catalog };
+  }
 
   const apiKey = env.KNOWLEDGE_EXTERNAL_LLM_OPENAI_API_KEY?.trim();
   if (!apiKey) {
@@ -330,7 +338,6 @@ export function getKnowledgeLlmRuntimeConfig(
   }
   const allowHttp = env.KNOWLEDGE_EXTERNAL_LLM_ALLOW_HTTP === 'true';
   const allowPrivateIp = env.KNOWLEDGE_EXTERNAL_LLM_ALLOW_PRIVATE_IP === 'true';
-  const nodeEnvironment = env.NODE_ENV?.trim().toLowerCase();
   if (nodeEnvironment === 'production' && (allowHttp || allowPrivateIp)) {
     throw new KnowledgeLlmConfigurationError(
       allowHttp

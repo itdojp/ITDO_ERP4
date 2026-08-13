@@ -283,6 +283,9 @@ export function validateKnowledgeCapture(
 }
 
 export type KnowledgeHubErrorCode =
+  | 'budget_hard_limit'
+  | 'confirmation_required'
+  | 'execution_failed'
   | 'forbidden'
   | 'idempotency_conflict'
   | 'import_conflict'
@@ -292,8 +295,14 @@ export type KnowledgeHubErrorCode =
   | 'invalid_response'
   | 'network_error'
   | 'not_found'
+  | 'knowledge_llm_disabled'
+  | 'policy_mismatch'
+  | 'policy_not_found'
   | 'preview_token_expired'
   | 'preview_token_invalid'
+  | 'rate_limit'
+  | 'rejected_before_dispatch'
+  | 'reservation_conflict'
   | 'snapshot_capture_failed'
   | 'snapshot_capture_timeout'
   | 'snapshot_content_invalid'
@@ -306,9 +315,14 @@ export type KnowledgeHubErrorCode =
   | 'snapshot_storage_failed'
   | 'snapshot_storage_pending'
   | 'unknown_error'
+  | 'stale_preview'
   | 'version_conflict';
 
 const errorMessages: Record<KnowledgeHubErrorCode, string> = {
+  budget_hard_limit: '利用上限に達しているため、外部LLMへ送信していません。',
+  confirmation_required: '外部送信内容を確認して明示的に同意してください。',
+  execution_failed:
+    '実行結果を確定できませんでした。自動再送せず、状態を確認してください。',
   forbidden: 'この操作を実行する権限がありません。',
   idempotency_conflict:
     '同じ保存操作の内容が一致しません。画面を再読込してください。',
@@ -321,10 +335,19 @@ const errorMessages: Record<KnowledgeHubErrorCode, string> = {
   invalid_response: 'サーバー応答を確認できませんでした。再試行してください。',
   network_error: 'サーバーへ接続できませんでした。通信状態を確認してください。',
   not_found: '対象が見つからないか、現在の権限では参照できません。',
+  knowledge_llm_disabled: '外部LLMは無効です。管理者設定を確認してください。',
+  policy_mismatch: '予算設定と選択scopeが一致しません。',
+  policy_not_found: '外部LLMの予算設定がありません。管理者へ確認してください。',
   preview_token_expired:
-    '取込プレビューの有効期限が切れました。もう一度プレビューしてください。',
+    'プレビューの有効期限が切れました。もう一度プレビューしてください。',
   preview_token_invalid:
-    '取込内容がプレビュー時点から変わりました。もう一度プレビューしてください。',
+    '内容がプレビュー時点から変わりました。もう一度プレビューしてください。',
+  rate_limit:
+    '実行回数の上限に達しています。外部LLMへ再送せず、時間を置いてください。',
+  rejected_before_dispatch:
+    '外部LLMへの送信前に拒否されました。設定を確認してください。',
+  reservation_conflict:
+    '予算予約が競合しました。外部LLMへ再送せず、状態を確認してください。',
   snapshot_capture_failed: '元情報の取得に失敗しました。',
   snapshot_capture_timeout: '元情報の取得が時間内に完了しませんでした。',
   snapshot_content_invalid: '内容またはファイル形式を確認できませんでした。',
@@ -340,6 +363,8 @@ const errorMessages: Record<KnowledgeHubErrorCode, string> = {
   snapshot_storage_pending:
     '保存結果を確認中です。自動再送せず、再照合してください。',
   unknown_error: '処理を完了できませんでした。再試行してください。',
+  stale_preview:
+    'sourceまたは権限がプレビュー後に変わりました。もう一度プレビューしてください。',
   version_conflict: '項目が更新されています。再読込してください。',
 };
 

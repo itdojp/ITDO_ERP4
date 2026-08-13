@@ -2,6 +2,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const busyNotificationOrder: string[] = [];
+
 vi.mock('./KnowledgeAnnotationPanel', () => ({
   KnowledgeAnnotationPanel: () => <div>annotation panel</div>,
 }));
@@ -15,6 +17,29 @@ vi.mock('./KnowledgeConversationPanel', () => ({
 }));
 vi.mock('./KnowledgeSynthesisPanel', () => ({
   KnowledgeSynthesisPanel: () => <div>synthesis panel</div>,
+}));
+vi.mock('./KnowledgeLlmPanel', () => ({
+  KnowledgeLlmPanel: (props: {
+    itemId: string;
+    organizationId: string | null;
+    onCommitBusyChange?: (busy: boolean) => void;
+  }) => (
+    <div>
+      llm panel / {props.itemId} / {props.organizationId ?? 'personal'}
+      <button
+        type="button"
+        onClick={() => {
+          props.onCommitBusyChange?.(true);
+          busyNotificationOrder.push('llm-child-returned');
+        }}
+      >
+        LLM確定を開始
+      </button>
+      <button type="button" onClick={() => props.onCommitBusyChange?.(false)}>
+        LLM確定を完了
+      </button>
+    </div>
+  ),
 }));
 vi.mock('./KnowledgeSharePanel', () => ({
   KnowledgeSharePanel: (props: {
@@ -48,6 +73,7 @@ describe('KnowledgeProvenanceWorkspace', () => {
         itemId="item-1"
         itemLabel="検証Knowledge"
         itemScope="personal"
+        organizationId={null}
         snapshots={[
           {
             id: 'snapshot-1',
@@ -96,6 +122,9 @@ describe('KnowledgeProvenanceWorkspace', () => {
       'draft value',
     );
 
+    fireEvent.click(screen.getByRole('tab', { name: '外部LLM対話' }));
+    expect(screen.getByText('llm panel / item-1 / personal')).toBeVisible();
+
     fireEvent.click(screen.getByRole('tab', { name: 'Chatへ共有' }));
     expect(
       screen.getByText(
@@ -118,39 +147,71 @@ describe('KnowledgeProvenanceWorkspace', () => {
         itemId="sensitive-item-id"
         itemLabel="組織ナレッジ"
         itemScope="organization"
+        organizationId="sensitive-organization-id"
         snapshots={[]}
       />,
     );
     expect(screen.getByText('組織scope', { exact: false })).toBeVisible();
     expect(document.body).not.toHaveTextContent('sensitive-item-id');
+    expect(document.body).not.toHaveTextContent('sensitive-organization-id');
   });
 
   it('keeps the share panel mounted and locks other tabs during a non-abortable commit', () => {
-    const onShareCommitBusyChange = vi.fn();
+    const onCommitBusyChange = vi.fn();
     render(
       <KnowledgeProvenanceWorkspace
         itemId="item-1"
         itemLabel="確定中Knowledge"
         itemScope="personal"
+        organizationId={null}
         snapshots={[]}
-        onShareCommitBusyChange={onShareCommitBusyChange}
+        onCommitBusyChange={onCommitBusyChange}
       />,
     );
 
     fireEvent.click(screen.getByRole('tab', { name: 'Chatへ共有' }));
     fireEvent.click(screen.getByRole('button', { name: '共有確定を開始' }));
 
-    expect(onShareCommitBusyChange).toHaveBeenLastCalledWith(true);
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
     expect(screen.getByRole('tab', { name: '本人annotation' })).toBeDisabled();
     expect(screen.getByRole('tab', { name: '会話・取込' })).toBeDisabled();
     expect(screen.getByRole('tab', { name: 'Synthesis・結論' })).toBeDisabled();
+    expect(screen.getByRole('tab', { name: '外部LLM対話' })).toBeDisabled();
     expect(screen.getByText(/確定結果を保持するため/)).toBeVisible();
     expect(screen.getByText(/share panel \/ item-1/)).toBeVisible();
 
     fireEvent.click(screen.getByRole('button', { name: '共有確定を完了' }));
-    expect(onShareCommitBusyChange).toHaveBeenLastCalledWith(false);
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(false);
     expect(screen.getByRole('tab', { name: '本人annotation' })).toBeEnabled();
     fireEvent.click(screen.getByRole('tab', { name: '本人annotation' }));
     expect(screen.queryByText(/share panel \/ item-1/)).toBeNull();
+  });
+
+  it('keeps the LLM panel mounted and locks other tabs while its dispatch intent is unresolved', () => {
+    busyNotificationOrder.length = 0;
+    const onCommitBusyChange = vi.fn((busy: boolean) => {
+      if (busy) busyNotificationOrder.push('parent-notified');
+    });
+    render(
+      <KnowledgeProvenanceWorkspace
+        itemId="item-1"
+        itemLabel="LLM実行Knowledge"
+        itemScope="personal"
+        organizationId={null}
+        snapshots={[]}
+        onCommitBusyChange={onCommitBusyChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole('tab', { name: '外部LLM対話' }));
+    fireEvent.click(screen.getByRole('button', { name: 'LLM確定を開始' }));
+    expect(busyNotificationOrder).toEqual([
+      'parent-notified',
+      'llm-child-returned',
+    ]);
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
+    expect(screen.getByRole('tab', { name: 'Chatへ共有' })).toBeDisabled();
+    expect(screen.getByText(/llm panel \/ item-1/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'LLM確定を完了' }));
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(false);
   });
 });

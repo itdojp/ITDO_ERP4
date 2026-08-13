@@ -11,7 +11,6 @@ import {
   ceilCostMicros,
   knowledgeLlmLimits,
 } from '../../application/knowledge/knowledgeLlmConfig.js';
-import { knowledgeLlmMonthlyPeriod } from '../../application/knowledge/knowledgeLlmBudgetUseCases.js';
 import {
   KnowledgeLlmRunAccessError,
   type KnowledgeLlmBudgetPreview,
@@ -27,7 +26,13 @@ import {
 } from '../../application/knowledge/knowledgeProvenanceValidation.js';
 import { prisma } from '../../services/db.js';
 import { buildKnowledgeVisibilityWhere } from './prismaKnowledgeItemAdapter.js';
+import { buildKnowledgeLlmSynthesisVersionVisibilityWhere } from './prismaKnowledgeConversationVisibility.js';
+import { withKnowledgeReadSnapshot } from './prismaKnowledgeLlmAdapterSupport.js';
 import { PrismaKnowledgeLlmAuditWriter } from './prismaKnowledgeLlmAuditAdapter.js';
+import {
+  loadKnowledgeLlmBudgetPreview,
+  type KnowledgeLlmBudgetPreviewClient,
+} from './prismaKnowledgeLlmBudgetPreview.js';
 import {
   markKnowledgeLlmRunDispatched,
   reconcileKnowledgeLlmHeldBudget,
@@ -36,6 +41,13 @@ import {
 } from './prismaKnowledgeLlmSettlementAdapter.js';
 import { buildKnowledgeSynthesisVisibilityWhere } from './prismaKnowledgeSynthesisVisibility.js';
 import { KnowledgeLlmProviderOutcomeMissingError } from './prismaKnowledgeLlmRunErrors.js';
+import {
+  knowledgeLlmConversationVisibilityWhere,
+  knowledgeLlmOwnerBoundaryMatches,
+  knowledgeLlmScopeMatches,
+  knowledgeLlmSourceCounts,
+  sameKnowledgeLlmSource,
+} from './prismaKnowledgeLlmRunHelpers.js';
 
 type Transaction = Prisma.TransactionClient;
 type TransactionHost = Pick<PrismaClient, '$transaction'>;
@@ -48,14 +60,10 @@ type ContextClient = Pick<
   | 'knowledgeThreadPromotionMessage'
 >;
 type ReadClient = ContextClient &
+  KnowledgeLlmBudgetPreviewClient &
   Pick<
     Transaction,
-    | 'knowledgeLlmBudgetPolicy'
-    | 'knowledgeLlmBudgetPeriod'
-    | 'knowledgeLlmReservation'
-    | 'knowledgeLlmRequest'
-    | 'knowledgeLlmRun'
-    | 'knowledgeLlmProviderOutcome'
+    'knowledgeLlmRequest' | 'knowledgeLlmRun' | 'knowledgeLlmProviderOutcome'
   >;
 
 const serializableAttempts = knowledgeLlmLimits.serializableAttempts;
@@ -87,70 +95,6 @@ async function serializable<T>(
     }
   }
   throw lastError;
-}
-
-function sourceCounts(): KnowledgeLlmResolvedContext['sourceCounts'] {
-  return {
-    snapshot: 0,
-    annotation_revision: 0,
-    conversation_turn: 0,
-    synthesis_version: 0,
-    thread_promotion_message: 0,
-  };
-}
-
-function scopeMatches(
-  source: { scope: 'personal' | 'organization'; organizationId: string | null },
-  input: { scope: 'personal' | 'organization'; organizationId: string | null },
-) {
-  return (
-    source.scope === input.scope &&
-    (input.scope === 'personal'
-      ? source.organizationId === null
-      : source.organizationId === input.organizationId)
-  );
-}
-
-function ownerBoundaryMatches(
-  ownerUserId: string,
-  actor: KnowledgeActor,
-  input: { scope: 'personal' | 'organization' },
-) {
-  return input.scope === 'organization' || ownerUserId === actor.userId;
-}
-
-function conversationVisibilityWhere(
-  actor: KnowledgeActor,
-): Prisma.KnowledgeConversationWhereInput {
-  const itemVisibility = buildKnowledgeVisibilityWhere(actor);
-  return {
-    deletedAt: null,
-    OR: [
-      {
-        ownerUserId: actor.userId,
-        items: { none: {} },
-        llmRuns: { none: {} },
-      },
-      {
-        items: { some: {} },
-        llmRuns: { none: {} },
-        AND: { items: { every: { knowledgeItem: { is: itemVisibility } } } },
-      },
-    ],
-  };
-}
-
-function sameSource(
-  left: KnowledgeLlmSelectedContextSource,
-  right: KnowledgeLlmSelectedContextSource,
-) {
-  return (
-    left.sourceType === right.sourceType &&
-    left.sourceId === right.sourceId &&
-    left.exactSourceVersion === right.exactSourceVersion &&
-    left.exactSourceHash === right.exactSourceHash &&
-    left.representation === right.representation
-  );
 }
 
 async function resolveOne(
@@ -190,8 +134,12 @@ async function resolveOne(
       if (
         !row?.sha256 ||
         !row.extractedText ||
-        !ownerBoundaryMatches(row.knowledgeItem.ownerUserId, actor, input) ||
-        !scopeMatches(row.knowledgeItem, input)
+        !knowledgeLlmOwnerBoundaryMatches(
+          row.knowledgeItem.ownerUserId,
+          actor,
+          input,
+        ) ||
+        !knowledgeLlmScopeMatches(row.knowledgeItem, input)
       ) {
         throw new KnowledgeLlmRunAccessError('not_found');
       }
@@ -231,8 +179,12 @@ async function resolveOne(
       });
       if (
         !row ||
-        !ownerBoundaryMatches(row.annotation.ownerUserId, actor, input) ||
-        !scopeMatches(row.annotation, input)
+        !knowledgeLlmOwnerBoundaryMatches(
+          row.annotation.ownerUserId,
+          actor,
+          input,
+        ) ||
+        !knowledgeLlmScopeMatches(row.annotation, input)
       ) {
         throw new KnowledgeLlmRunAccessError('not_found');
       }
@@ -253,7 +205,7 @@ async function resolveOne(
         where: {
           id: selector.sourceId,
           role: { in: ['user', 'assistant'] },
-          conversation: { is: conversationVisibilityWhere(actor) },
+          conversation: { is: knowledgeLlmConversationVisibilityWhere(actor) },
         },
         select: {
           id: true,
@@ -288,8 +240,11 @@ async function resolveOne(
         (items.length > 0 &&
           items.some(
             (item) =>
-              !ownerBoundaryMatches(item.ownerUserId, actor, input) ||
-              !scopeMatches(item, input),
+              !knowledgeLlmOwnerBoundaryMatches(
+                item.ownerUserId,
+                actor,
+                input,
+              ) || !knowledgeLlmScopeMatches(item, input),
           ))
       ) {
         throw new KnowledgeLlmRunAccessError('not_found');
@@ -307,7 +262,7 @@ async function resolveOne(
       const row = await client.knowledgeSynthesisVersion.findFirst({
         where: {
           id: selector.sourceId,
-          synthesis: { is: buildKnowledgeSynthesisVisibilityWhere(actor) },
+          AND: buildKnowledgeLlmSynthesisVersionVisibilityWhere(actor),
         },
         select: {
           id: true,
@@ -318,6 +273,14 @@ async function resolveOne(
           },
           sources: {
             select: {
+              sourceKnowledgeItemId: true,
+              sourceSnapshot: { select: { knowledgeItemId: true } },
+              sourceAnnotation: { select: { knowledgeItemId: true } },
+              sourceAnnotationRevision: {
+                select: {
+                  annotation: { select: { knowledgeItemId: true } },
+                },
+              },
               sourceConversation: {
                 select: {
                   llmRuns: { select: { id: true }, take: 1 },
@@ -326,13 +289,17 @@ async function resolveOne(
                     select: { id: true },
                     take: 1,
                   },
+                  items: { select: { knowledgeItemId: true } },
                 },
               },
               sourceConversationTurn: {
                 select: {
                   role: true,
                   conversation: {
-                    select: { llmRuns: { select: { id: true }, take: 1 } },
+                    select: {
+                      llmRuns: { select: { id: true }, take: 1 },
+                      items: { select: { knowledgeItemId: true } },
+                    },
                   },
                 },
               },
@@ -344,8 +311,12 @@ async function resolveOne(
       });
       if (
         !row ||
-        !ownerBoundaryMatches(row.synthesis.ownerUserId, actor, input) ||
-        !scopeMatches(row.synthesis, input) ||
+        !knowledgeLlmOwnerBoundaryMatches(
+          row.synthesis.ownerUserId,
+          actor,
+          input,
+        ) ||
+        !knowledgeLlmScopeMatches(row.synthesis, input) ||
         row.sources.some(
           (source) =>
             (source.sourceConversation?.llmRuns.length ?? 0) > 0 ||
@@ -361,6 +332,23 @@ async function resolveOne(
         )
       ) {
         throw new KnowledgeLlmRunAccessError('not_found');
+      }
+      for (const source of row.sources) {
+        const directItemIds = [
+          source.sourceKnowledgeItemId,
+          source.sourceSnapshot?.knowledgeItemId,
+          source.sourceAnnotation?.knowledgeItemId,
+          source.sourceAnnotationRevision?.annotation.knowledgeItemId,
+          ...(source.sourceConversation?.items.map(
+            (item) => item.knowledgeItemId,
+          ) ?? []),
+          ...(source.sourceConversationTurn?.conversation.items.map(
+            (item) => item.knowledgeItemId,
+          ) ?? []),
+        ];
+        for (const itemId of directItemIds) {
+          if (itemId) input.itemIds.add(itemId);
+        }
       }
       return {
         sourceType: selector.sourceType,
@@ -388,17 +376,27 @@ async function resolveOne(
           content: true,
           contentHash: true,
           promotion: {
-            select: { ownerUserId: true, scope: true, organizationId: true },
+            select: {
+              ownerUserId: true,
+              scope: true,
+              organizationId: true,
+              sourceShare: { select: { sourceKnowledgeItemId: true } },
+            },
           },
         },
       });
       if (
         !row ||
-        !ownerBoundaryMatches(row.promotion.ownerUserId, actor, input) ||
-        !scopeMatches(row.promotion, input)
+        !knowledgeLlmOwnerBoundaryMatches(
+          row.promotion.ownerUserId,
+          actor,
+          input,
+        ) ||
+        !knowledgeLlmScopeMatches(row.promotion, input)
       ) {
         throw new KnowledgeLlmRunAccessError('not_found');
       }
+      input.itemIds.add(row.promotion.sourceShare.sourceKnowledgeItemId);
       return {
         sourceType: selector.sourceType,
         sourceId: row.id,
@@ -427,7 +425,7 @@ async function resolveContext(
     throw new KnowledgeLlmRunAccessError('not_found');
   }
   const itemIds = new Set<string>();
-  const counts = sourceCounts();
+  const counts = knowledgeLlmSourceCounts();
   const sources: KnowledgeLlmSelectedContextSource[] = [];
   const identities = new Set<string>();
   for (const selector of input.selectors) {
@@ -775,24 +773,6 @@ function sameCapturedOutcome(
   );
 }
 
-function expectedPolicySubjects(input: {
-  actor: KnowledgeActor;
-  scope: 'personal' | 'organization';
-  organizationId: string | null;
-}) {
-  return [
-    { subjectType: 'user' as const, subjectId: input.actor.userId },
-    ...(input.scope === 'organization' && input.organizationId
-      ? [
-          {
-            subjectType: 'organization' as const,
-            subjectId: input.organizationId,
-          },
-        ]
-      : []),
-  ];
-}
-
 export class PrismaKnowledgeLlmRunAdapter implements KnowledgeLlmRunPort {
   constructor(
     private readonly host: TransactionHost = prisma,
@@ -801,107 +781,17 @@ export class PrismaKnowledgeLlmRunAdapter implements KnowledgeLlmRunPort {
   ) {}
 
   resolveContext(input: Parameters<KnowledgeLlmRunPort['resolveContext']>[0]) {
-    return resolveContext(this.readClient, input);
+    return withKnowledgeReadSnapshot(this.host, this.readClient, (client) =>
+      resolveContext(client, input),
+    );
   }
 
   async budgetPreview(
     input: Parameters<KnowledgeLlmRunPort['budgetPreview']>[0],
   ): Promise<KnowledgeLlmBudgetPreview> {
-    const expected = expectedPolicySubjects(input);
-    const policies = await this.readClient.knowledgeLlmBudgetPolicy.findMany({
-      where: {
-        active: true,
-        OR: expected.map((subject) => ({
-          subjectType: subject.subjectType,
-          subjectId: subject.subjectId,
-        })),
-      },
-      orderBy: [{ subjectType: 'asc' }, { subjectId: 'asc' }],
-    });
-    if (policies.length !== expected.length) {
-      return {
-        configured: false,
-        policyCount: policies.length,
-        currency: null,
-        softLimitWarning: false,
-        hardLimitBlocked: true,
-        rateBlocked: false,
-        subjects: [],
-      };
-    }
-    const currencies = new Set(policies.map((policy) => policy.currency));
-    if (currencies.size !== 1) {
-      return {
-        configured: false,
-        policyCount: policies.length,
-        currency: null,
-        softLimitWarning: false,
-        hardLimitBlocked: true,
-        rateBlocked: false,
-        subjects: [],
-      };
-    }
-    const oneHourAgo = new Date(input.now.getTime() - 60 * 60 * 1000);
-    const subjects = await Promise.all(
-      policies.map(async (policy) => {
-        const periodWindow = knowledgeLlmMonthlyPeriod(
-          input.now,
-          policy.timezone,
-        );
-        const period =
-          await this.readClient.knowledgeLlmBudgetPeriod.findUnique({
-            where: {
-              policyId_periodStartUtc: {
-                policyId: policy.id,
-                periodStartUtc: periodWindow.start,
-              },
-            },
-          });
-        const acceptedRequestsLastHour =
-          await this.readClient.knowledgeLlmReservation.count({
-            where: {
-              budgetPeriod: { policyId: policy.id },
-              accountedAt: { gte: oneHourAgo, lte: input.now },
-            },
-          });
-        return {
-          subjectType: policy.subjectType,
-          currency: policy.currency,
-          softLimitMicros: policy.softLimitMicros,
-          hardLimitMicros: policy.hardLimitMicros,
-          activeReservedMicros: period?.activeReservedMicros ?? 0n,
-          settledActualMicros: period?.settledActualMicros ?? 0n,
-          heldMaximumMicros: period?.heldMaximumMicros ?? 0n,
-          requestsPerHour: policy.requestsPerHour,
-          acceptedRequestsLastHour,
-        };
-      }),
+    return withKnowledgeReadSnapshot(this.host, this.readClient, (client) =>
+      loadKnowledgeLlmBudgetPreview(client, input),
     );
-    const afterReservation = subjects.map(
-      (subject) =>
-        subject.activeReservedMicros +
-        subject.settledActualMicros +
-        subject.heldMaximumMicros +
-        input.maximumCostMicros,
-    );
-    return {
-      configured: true,
-      policyCount: subjects.length,
-      currency: policies[0]?.currency ?? null,
-      softLimitWarning: subjects.some(
-        (subject, index) =>
-          (afterReservation[index] ?? 0n) > subject.softLimitMicros,
-      ),
-      hardLimitBlocked: subjects.some(
-        (subject, index) =>
-          (afterReservation[index] ?? 0n) > subject.hardLimitMicros,
-      ),
-      rateBlocked: subjects.some(
-        (subject) =>
-          subject.acceptedRequestsLastHour >= subject.requestsPerHour,
-      ),
-      subjects,
-    };
   }
 
   async writePreviewAudit(
@@ -941,32 +831,40 @@ export class PrismaKnowledgeLlmRunAdapter implements KnowledgeLlmRunPort {
   async findByRequestKey(
     input: Parameters<KnowledgeLlmRunPort['findByRequestKey']>[0],
   ) {
-    const request = await this.readClient.knowledgeLlmRequest.findFirst({
-      where: {
-        actorUserId: input.actor.userId,
-        requestKeyHash: input.requestKeyHash,
+    return withKnowledgeReadSnapshot(
+      this.host,
+      this.readClient,
+      async (client) => {
+        const request = await client.knowledgeLlmRequest.findFirst({
+          where: {
+            actorUserId: input.actor.userId,
+            requestKeyHash: input.requestKeyHash,
+          },
+          include: { run: { include: runInclude } },
+        });
+        if (request) {
+          await requireCurrentRunSourceAccess(client, input.actor, request.run);
+        }
+        return request ? mapRun(request.run) : null;
       },
-      include: { run: { include: runInclude } },
-    });
-    if (request) {
-      await requireCurrentRunSourceAccess(
-        this.readClient,
-        input.actor,
-        request.run,
-      );
-    }
-    return request ? mapRun(request.run) : null;
+    );
   }
 
   async findOwned(input: Parameters<KnowledgeLlmRunPort['findOwned']>[0]) {
-    const row = await this.readClient.knowledgeLlmRun.findFirst({
-      where: { id: input.runId, actorUserId: input.actor.userId },
-      include: runInclude,
-    });
-    if (row) {
-      await requireCurrentRunSourceAccess(this.readClient, input.actor, row);
-    }
-    return row ? mapRun(row) : null;
+    return withKnowledgeReadSnapshot(
+      this.host,
+      this.readClient,
+      async (client) => {
+        const row = await client.knowledgeLlmRun.findFirst({
+          where: { id: input.runId, actorUserId: input.actor.userId },
+          include: runInclude,
+        });
+        if (row) {
+          await requireCurrentRunSourceAccess(client, input.actor, row);
+        }
+        return row ? mapRun(row) : null;
+      },
+    );
   }
 
   async authorizeAndMarkDispatched(
@@ -981,7 +879,7 @@ export class PrismaKnowledgeLlmRunAdapter implements KnowledgeLlmRunPort {
           current.sources.some(
             (source, index) =>
               !input.expectedSources[index] ||
-              !sameSource(source, input.expectedSources[index]),
+              !sameKnowledgeLlmSource(source, input.expectedSources[index]),
           )
         ) {
           throw new KnowledgeLlmRunAccessError('stale_preview');

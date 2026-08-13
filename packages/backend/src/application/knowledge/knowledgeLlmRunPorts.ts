@@ -2,6 +2,7 @@ import type {
   KnowledgeActor,
   KnowledgeAuditActorContext,
 } from './knowledgeItemPorts.js';
+import type { KnowledgePageBoundary } from './knowledgeProvenancePorts.js';
 import type {
   KnowledgeLlmContextSourceType,
   KnowledgeLlmSelectedContextSource,
@@ -15,6 +16,31 @@ export type KnowledgeLlmSourceSelector = {
   sourceType: KnowledgeLlmContextSourceType;
   sourceId: string;
 };
+
+export type KnowledgeLlmContextCandidate = {
+  sourceType: KnowledgeLlmContextSourceType;
+  sourceId: string;
+  exactSourceVersion: number;
+  byteLength: number;
+  createdAt: Date;
+};
+
+export type KnowledgeLlmContextCandidatePage = {
+  items: KnowledgeLlmContextCandidate[];
+  nextBoundary: KnowledgePageBoundary | null;
+};
+
+export interface KnowledgeLlmContextCandidatePort {
+  list(input: {
+    actor: KnowledgeActor;
+    itemId: string;
+    scope: 'personal' | 'organization';
+    organizationId: string | null;
+    sourceType: KnowledgeLlmContextSourceType;
+    limit: number;
+    boundary?: KnowledgePageBoundary;
+  }): Promise<KnowledgeLlmContextCandidatePage | null>;
+}
 
 export type KnowledgeLlmResolvedContext = {
   sources: KnowledgeLlmSelectedContextSource[];
@@ -125,6 +151,7 @@ export interface KnowledgeLlmRunPort {
     scope: KnowledgeLlmRunScope;
     organizationId: string | null;
     maximumCostMicros: bigint;
+    expectedCurrency: string | null;
     now: Date;
   }): Promise<KnowledgeLlmBudgetPreview>;
 

@@ -15,6 +15,9 @@ const stubTransport = {
   destination: 'local://erp4/external-llm/stub/v1' as const,
 };
 
+const usageMissingFixtureModel = 'stub-usage-missing-v1';
+const outcomeUnknownFixtureModel = 'stub-outcome-unknown-v1';
+
 function snapshotRequest(
   request: ExternalLlmTextRequest,
 ): ExternalLlmTextRequest {
@@ -109,6 +112,21 @@ export class StubExternalLlmTextAdapter implements ExternalLlmTextPort {
           );
         }
         dispatched = true;
+        if (model === outcomeUnknownFixtureModel) {
+          throw new ExternalLlmProviderError(
+            'connection_outcome_unknown',
+            'unknown',
+          );
+        }
+        if (model === usageMissingFixtureModel) {
+          return {
+            provider: 'stub',
+            model,
+            content,
+            usageStatus: 'missing',
+            usage: null,
+          };
+        }
         return {
           provider: 'stub',
           model,

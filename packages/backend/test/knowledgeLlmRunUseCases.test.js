@@ -249,6 +249,7 @@ function createHarness(options = {}) {
     nextRunId: 1,
     resolveCalls: 0,
     budgetPreviewCalls: 0,
+    budgetPreviewInputs: [],
     budgetReserveCalls: 0,
     providerBindCalls: 0,
     providerPrepareCalls: 0,
@@ -320,8 +321,9 @@ function createHarness(options = {}) {
       return { sources, sourceCounts: counts, selectedItemCount: 1 };
     },
 
-    async budgetPreview() {
+    async budgetPreview(input) {
       state.budgetPreviewCalls += 1;
+      state.budgetPreviewInputs.push(structuredClone(input));
       return budgetPreview(options.budgetPreview);
     },
 
@@ -616,6 +618,20 @@ test('budget summary rejects invalid personal and organization scope before repo
   assert.equal(harness.state.budgetPreviewCalls, 0);
 });
 
+test('budget summary remains model-independent while request preview binds catalog currency', async () => {
+  const harness = createHarness();
+
+  await harness.service.budget({
+    actor,
+    scope: 'personal',
+    organizationId: null,
+  });
+  assert.equal(harness.state.budgetPreviewInputs[0].expectedCurrency, null);
+
+  await preview(harness);
+  assert.equal(harness.state.budgetPreviewInputs[1].expectedCurrency, 'JPY');
+});
+
 test('preview is mutation-free and binds only explicitly selected source context', async () => {
   const harness = createHarness();
   const result = await preview(harness);
@@ -639,6 +655,8 @@ test('preview is mutation-free and binds only explicitly selected source context
   assert.equal(harness.state.providerDispatchCalls, 0);
   assert.equal(harness.state.runsById.size, 0);
   assert.equal(harness.state.conversationTurnWrites, 0);
+  assert.equal(harness.state.budgetPreviewInputs.length, 1);
+  assert.equal(harness.state.budgetPreviewInputs[0].expectedCurrency, 'JPY');
   assert.ok(harness.state.boundProviderRequests.length > 0);
   for (const providerRequest of harness.state.boundProviderRequests) {
     assert.deepEqual(providerRequest.contextSections, ['SELECTED-CONTEXT']);

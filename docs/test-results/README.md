@@ -41,6 +41,11 @@
 - [Storage artifact migration evidence template](storage-artifact-migration-template.md)
 - [Storage／backup統合readiness 記録テンプレート](storage-readiness-template.md)
 
+### 2026-08-13
+
+- [Issue #2016 Knowledge external LLM UI / E2E 検証](2026-08-13-issue2016-knowledge-llm-ui.md)
+  - 証跡: [docs/test-results/2026-08-13-issue2016-knowledge-llm-ui/](2026-08-13-issue2016-knowledge-llm-ui/)
+
 ### 2026-08-10
 
 - [Issue #2015 Knowledge selective share / Chat card / promote UI 検証](2026-08-10-issue2015-knowledge-share-promote-ui.md)

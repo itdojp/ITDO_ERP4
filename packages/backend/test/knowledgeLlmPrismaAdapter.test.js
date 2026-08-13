@@ -2,12 +2,250 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { PrismaKnowledgeLlmRunAdapter } from '../dist/adapters/knowledge/prismaKnowledgeLlmRunAdapter.js';
+import { buildKnowledgeConversationVisibilityWhere } from '../dist/adapters/knowledge/prismaKnowledgeConversationVisibility.js';
 
 const actor = {
   userId: 'owner-1',
   organizationId: 'org-1',
   groupAccountIds: ['group-1'],
 };
+
+test('LLM result conversation visibility rechecks every direct synthesis source', () => {
+  const predicate = buildKnowledgeConversationVisibilityWhere(actor);
+  const serialized = JSON.stringify(predicate);
+  assert.match(serialized, /"sourceSynthesisVersion":\{"is":/);
+  assert.match(serialized, /"sources":\{"some":\{\},"every":/);
+  assert.match(serialized, /"sourceKnowledgeItem":\{"is":/);
+  assert.match(serialized, /"sourceAnnotationRevision":\{"is":/);
+  assert.match(serialized, /"sourceConversationTurn":\{"is":/);
+});
+
+test('context resolution, request replay, and run detail use one repeatable-read snapshot', async () => {
+  const isolationLevels = [];
+  const transaction = {
+    knowledgeSnapshot: {
+      findFirst: async () => ({
+        id: 'snapshot-1',
+        version: 1,
+        sha256: 'a'.repeat(64),
+        extractedText: 'bounded source',
+        knowledgeItem: {
+          id: 'item-1',
+          ownerUserId: actor.userId,
+          scope: 'personal',
+          organizationId: null,
+        },
+      }),
+    },
+    knowledgeLlmRequest: { findFirst: async () => null },
+    knowledgeLlmRun: { findFirst: async () => null },
+  };
+  const adapter = new PrismaKnowledgeLlmRunAdapter(
+    {
+      $transaction: async (work, options) => {
+        isolationLevels.push(options?.isolationLevel);
+        return work(transaction);
+      },
+    },
+    transaction,
+  );
+
+  await adapter.resolveContext({
+    actor,
+    scope: 'personal',
+    organizationId: null,
+    selectors: [{ sourceType: 'snapshot', sourceId: 'snapshot-1' }],
+  });
+  assert.equal(
+    await adapter.findByRequestKey({
+      actor,
+      requestKeyHash: 'b'.repeat(64),
+    }),
+    null,
+  );
+  assert.equal(await adapter.findOwned({ actor, runId: 'run-1' }), null);
+  assert.deepEqual(isolationLevels, [
+    'RepeatableRead',
+    'RepeatableRead',
+    'RepeatableRead',
+  ]);
+});
+
+test('budget preview carries monthly and rolling usage across policy versions by subject', async () => {
+  const isolationLevels = [];
+  const periodQueries = [];
+  const reservationQueries = [];
+  const policies = [
+    {
+      id: 'active-user-v2',
+      subjectType: 'user',
+      subjectId: actor.userId,
+      currency: 'JPY',
+      timezone: 'Asia/Tokyo',
+      softLimitMicros: 90n,
+      hardLimitMicros: 100n,
+      requestsPerHour: 2,
+      version: 2,
+      active: true,
+    },
+    {
+      id: 'active-org-v2',
+      subjectType: 'organization',
+      subjectId: actor.organizationId,
+      currency: 'JPY',
+      timezone: 'Asia/Tokyo',
+      softLimitMicros: 90n,
+      hardLimitMicros: 100n,
+      requestsPerHour: 4,
+      version: 2,
+      active: true,
+    },
+  ];
+  const transaction = {
+    knowledgeLlmBudgetPolicy: {
+      findMany: async () => policies,
+    },
+    knowledgeLlmBudgetPeriod: {
+      findMany: async (query) => {
+        periodQueries.push(query);
+        const subjectType = query.where.policy.is.subjectType;
+        return subjectType === 'user'
+          ? [
+              {
+                currency: 'JPY',
+                timezone: 'Asia/Tokyo',
+                activeReservedMicros: 5n,
+                settledActualMicros: 0n,
+                heldMaximumMicros: 0n,
+              },
+              {
+                currency: 'JPY',
+                timezone: 'Asia/Tokyo',
+                activeReservedMicros: 0n,
+                settledActualMicros: 90n,
+                heldMaximumMicros: 0n,
+              },
+            ]
+          : [
+              {
+                currency: 'JPY',
+                timezone: 'Asia/Tokyo',
+                activeReservedMicros: 10n,
+                settledActualMicros: 40n,
+                heldMaximumMicros: 10n,
+              },
+            ];
+      },
+    },
+    knowledgeLlmReservation: {
+      count: async (query) => {
+        reservationQueries.push(query);
+        return query.where.budgetPeriod.is.policy.is.subjectType === 'user'
+          ? 2
+          : 1;
+      },
+    },
+  };
+  const adapter = new PrismaKnowledgeLlmRunAdapter(
+    {
+      $transaction: async (work, options) => {
+        isolationLevels.push(options?.isolationLevel);
+        return work(transaction);
+      },
+    },
+    transaction,
+    () => new Date('2026-08-13T00:00:00.000Z'),
+  );
+
+  const preview = await adapter.budgetPreview({
+    actor,
+    scope: 'organization',
+    organizationId: actor.organizationId,
+    maximumCostMicros: 10n,
+    expectedCurrency: 'JPY',
+    now: new Date('2026-08-13T00:00:00.000Z'),
+  });
+
+  assert.deepEqual(isolationLevels, ['RepeatableRead']);
+  assert.equal(preview.configured, true);
+  assert.equal(preview.softLimitWarning, true);
+  assert.equal(preview.hardLimitBlocked, true);
+  assert.equal(preview.rateBlocked, true);
+  assert.deepEqual(
+    preview.subjects.map((subject) => ({
+      subjectType: subject.subjectType,
+      committed:
+        subject.activeReservedMicros +
+        subject.settledActualMicros +
+        subject.heldMaximumMicros,
+      acceptedRequestsLastHour: subject.acceptedRequestsLastHour,
+    })),
+    [
+      {
+        subjectType: 'user',
+        committed: 95n,
+        acceptedRequestsLastHour: 2,
+      },
+      {
+        subjectType: 'organization',
+        committed: 60n,
+        acceptedRequestsLastHour: 1,
+      },
+    ],
+  );
+  assert.equal(periodQueries.length, 2);
+  assert.equal(reservationQueries.length, 2);
+  for (const query of [...periodQueries, ...reservationQueries]) {
+    assert.doesNotMatch(JSON.stringify(query), /active-user-v2|active-org-v2/);
+  }
+});
+
+test('request budget preview fails closed when catalog and policy currencies differ', async () => {
+  const transaction = {
+    knowledgeLlmBudgetPolicy: {
+      findMany: async ({ where }) =>
+        where.OR.map((subject, index) => ({
+          id: `policy-${index}`,
+          subjectType: subject.subjectType,
+          subjectId: subject.subjectId,
+          currency: 'JPY',
+          timezone: 'Asia/Tokyo',
+          softLimitMicros: 90n,
+          hardLimitMicros: 100n,
+          requestsPerHour: 2,
+          version: 1,
+          active: true,
+        })),
+    },
+    knowledgeLlmBudgetPeriod: {
+      findMany: async () => {
+        throw new Error('currency mismatch must fail before period reads');
+      },
+    },
+    knowledgeLlmReservation: {
+      count: async () => {
+        throw new Error('currency mismatch must fail before reservation reads');
+      },
+    },
+  };
+  const adapter = new PrismaKnowledgeLlmRunAdapter({}, transaction);
+
+  for (const input of [
+    { scope: 'personal', organizationId: null },
+    { scope: 'organization', organizationId: actor.organizationId },
+  ]) {
+    const preview = await adapter.budgetPreview({
+      actor,
+      ...input,
+      maximumCostMicros: 1n,
+      expectedCurrency: 'USD',
+      now: new Date('2026-08-13T00:00:00.000Z'),
+    });
+    assert.equal(preview.configured, false);
+    assert.equal(preview.hardLimitBlocked, true);
+    assert.equal(preview.subjects.length, 0);
+  }
+});
 
 test('conversation turn source resolution excludes LLM result conversations from item-based visibility', async () => {
   let turnPredicate;
@@ -44,6 +282,129 @@ test('conversation turn source resolution excludes LLM result conversations from
   assert.match(serialized, /"organizationId":"org-1"/);
   assert.match(serialized, /"groupAccountId":\{"in":\["group-1"\]\}/);
   assert.match(serialized, /"active":true/);
+});
+
+function synthesisSource(overrides = {}) {
+  return {
+    sourceKnowledgeItemId: null,
+    sourceSnapshot: null,
+    sourceAnnotation: null,
+    sourceAnnotationRevision: null,
+    sourceConversation: null,
+    sourceConversationTurn: null,
+    sourceSynthesisVersionId: null,
+    sourceThreadPromotionId: null,
+    ...overrides,
+  };
+}
+
+test('synthesis and thread-promotion context count their directly bound Knowledge items', async () => {
+  let synthesisPredicate;
+  const adapter = new PrismaKnowledgeLlmRunAdapter(
+    {},
+    {
+      knowledgeSynthesisVersion: {
+        findFirst: async ({ where }) => {
+          synthesisPredicate = where;
+          return {
+            id: 'synthesis-version-1',
+            version: 2,
+            content: 'bounded synthesis',
+            synthesis: {
+              ownerUserId: actor.userId,
+              scope: 'personal',
+              organizationId: null,
+            },
+            sources: [
+              synthesisSource({ sourceKnowledgeItemId: 'item-1' }),
+              synthesisSource({
+                sourceSnapshot: { knowledgeItemId: 'item-1' },
+              }),
+              synthesisSource({
+                sourceConversation: {
+                  llmRuns: [],
+                  turns: [],
+                  items: [{ knowledgeItemId: 'item-2' }],
+                },
+              }),
+            ],
+          };
+        },
+      },
+      knowledgeThreadPromotionMessage: {
+        findFirst: async () => ({
+          id: 'promotion-message-1',
+          ordinal: 0,
+          content: 'bounded promoted reply',
+          contentHash: 'a'.repeat(64),
+          promotion: {
+            ownerUserId: actor.userId,
+            scope: 'personal',
+            organizationId: null,
+            sourceShare: { sourceKnowledgeItemId: 'item-3' },
+          },
+        }),
+      },
+    },
+  );
+
+  const resolved = await adapter.resolveContext({
+    actor,
+    scope: 'personal',
+    organizationId: null,
+    selectors: [
+      { sourceType: 'synthesis_version', sourceId: 'synthesis-version-1' },
+      {
+        sourceType: 'thread_promotion_message',
+        sourceId: 'promotion-message-1',
+      },
+    ],
+  });
+
+  assert.equal(resolved.selectedItemCount, 3);
+  const serialized = JSON.stringify(synthesisPredicate);
+  assert.match(serialized, /"sources":\{"some":\{\},"every":/);
+  assert.match(serialized, /"sourceKnowledgeItem":\{"is":/);
+  assert.match(serialized, /"sourceConversation":\{"is":/);
+});
+
+test('synthesis context rejects more than ten directly bound Knowledge items', async () => {
+  const adapter = new PrismaKnowledgeLlmRunAdapter(
+    {},
+    {
+      knowledgeSynthesisVersion: {
+        findFirst: async () => ({
+          id: 'synthesis-version-many-items',
+          version: 1,
+          content: 'bounded synthesis',
+          synthesis: {
+            ownerUserId: actor.userId,
+            scope: 'personal',
+            organizationId: null,
+          },
+          sources: Array.from({ length: 11 }, (_, index) =>
+            synthesisSource({ sourceKnowledgeItemId: `item-${index + 1}` }),
+          ),
+        }),
+      },
+    },
+  );
+
+  await assert.rejects(
+    () =>
+      adapter.resolveContext({
+        actor,
+        scope: 'personal',
+        organizationId: null,
+        selectors: [
+          {
+            sourceType: 'synthesis_version',
+            sourceId: 'synthesis-version-many-items',
+          },
+        ],
+      }),
+    /not_found/,
+  );
 });
 
 test('provider outcome capture rejects invalid runtime failure codes before persistence', async () => {

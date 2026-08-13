@@ -145,6 +145,14 @@ E2E_GREP="${E2E_GREP:-}"
 E2E_PLAYWRIGHT_EXTRA_ARGS="${E2E_PLAYWRIGHT_EXTRA_ARGS:-}"
 E2E_SERVICE_READY_TIMEOUT_SEC="${E2E_SERVICE_READY_TIMEOUT_SEC:-80}"
 E2E_SERVICE_READY_INTERVAL_SEC="${E2E_SERVICE_READY_INTERVAL_SEC:-1}"
+E2E_KNOWLEDGE_LLM_MODE="${E2E_KNOWLEDGE_LLM_MODE:-disabled}"
+if [[ "$E2E_KNOWLEDGE_LLM_MODE" != "disabled" && "$E2E_KNOWLEDGE_LLM_MODE" != "stub" ]]; then
+  echo "E2E_KNOWLEDGE_LLM_MODE must be disabled or stub" >&2
+  exit 1
+fi
+E2E_KNOWLEDGE_LLM_PROVIDER="$E2E_KNOWLEDGE_LLM_MODE"
+E2E_KNOWLEDGE_LLM_CATALOG_DEFAULT='{"version":1,"models":[{"provider":"stub","model":"stub-v1","enabled":true,"maxInputTokens":8192,"maxOutputTokens":1024,"inputCostMicrosPerMillion":"1000000","outputCostMicrosPerMillion":"2000000","currency":"JPY","capabilities":["text"]},{"provider":"stub","model":"stub-usage-missing-v1","enabled":true,"maxInputTokens":8192,"maxOutputTokens":1024,"inputCostMicrosPerMillion":"1000000","outputCostMicrosPerMillion":"2000000","currency":"JPY","capabilities":["text"]},{"provider":"stub","model":"stub-outcome-unknown-v1","enabled":true,"maxInputTokens":8192,"maxOutputTokens":1024,"inputCostMicrosPerMillion":"1000000","outputCostMicrosPerMillion":"2000000","currency":"JPY","capabilities":["text"]}]}'
+E2E_KNOWLEDGE_LLM_CATALOG_JSON="$E2E_KNOWLEDGE_LLM_CATALOG_DEFAULT"
 
 BACKEND_LOG="$ROOT_DIR/tmp/e2e-backend.log"
 FRONTEND_LOG="$ROOT_DIR/tmp/e2e-frontend.log"
@@ -310,6 +318,62 @@ EOF
   )
 }
 
+seed_e2e_jwt_canonical_identities() {
+  (
+    cd "$ROOT_DIR/packages/backend"
+    E2E_JWT_ISSUER="$E2E_JWT_ISSUER" DATABASE_URL="$DATABASE_URL" \
+      node --input-type=module <<'EOF'
+import { prisma } from './dist/services/db.js';
+
+const issuer = process.env.E2E_JWT_ISSUER;
+if (!issuer) throw new Error('E2E_JWT_ISSUER is required');
+
+const fixtures = [
+  ['demo-user', 'E2E Admin'],
+  ['e2e-agent-outsider@example.com', 'E2E Outsider'],
+  ['e2e-agent-approval-required@example.com', 'E2E Approval Required'],
+  ['e2e-agent-evidence-required@example.com', 'E2E Evidence Required'],
+  ['e2e-agent-reason-required@example.com', 'E2E Reason Required'],
+];
+
+try {
+  for (const [userName, displayName] of fixtures) {
+    const account = await prisma.userAccount.upsert({
+      where: { userName },
+      create: { userName, displayName, active: true },
+      update: {},
+      select: { id: true },
+    });
+    await prisma.userIdentity.upsert({
+      where: {
+        providerType_issuer_providerSubject: {
+          providerType: 'google_oidc',
+          issuer,
+          providerSubject: userName,
+        },
+      },
+      create: {
+        userAccountId: account.id,
+        providerType: 'google_oidc',
+        issuer,
+        providerSubject: userName,
+        status: 'active',
+      },
+      update: {
+        userAccountId: account.id,
+        status: 'active',
+        effectiveUntil: null,
+      },
+    });
+  }
+} finally {
+  await prisma.$disconnect();
+}
+EOF
+  )
+  echo "e2e JWT canonical identities seeded"
+}
+
 case "$E2E_DB_MODE" in
   podman)
     if [[ "$E2E_PODMAN_RESET" == "1" ]]; then
@@ -362,17 +426,35 @@ if [[ "$E2E_AUTH_MODE" == "jwt" ]]; then
   E2E_JWT_TOKEN_APPROVAL_REQUIRED="$(node --input-type=module -e "import fs from 'node:fs'; const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(data.tokens?.approvalRequired || ''));" "$JWT_BUNDLE_FILE")"
   E2E_JWT_TOKEN_EVIDENCE_REQUIRED="$(node --input-type=module -e "import fs from 'node:fs'; const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(data.tokens?.evidenceRequired || ''));" "$JWT_BUNDLE_FILE")"
   E2E_JWT_TOKEN_REASON_REQUIRED="$(node --input-type=module -e "import fs from 'node:fs'; const data = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); process.stdout.write(String(data.tokens?.reasonRequired || ''));" "$JWT_BUNDLE_FILE")"
+  seed_e2e_jwt_canonical_identities
 fi
 
-PORT="$BACKEND_PORT" AUTH_MODE="$E2E_AUTH_MODE" DATABASE_URL="$DATABASE_URL" \
-E2E_ENABLE_TEST_HOOKS="${E2E_ENABLE_TEST_HOOKS:-1}" \
-ALLOWED_ORIGINS="http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT}" \
-CHAT_EXTERNAL_LLM_PROVIDER="${CHAT_EXTERNAL_LLM_PROVIDER:-stub}" \
-RATE_LIMIT_AUTH_GUARD_MAX="${E2E_AUTH_GUARD_RATE_LIMIT_MAX:-6000}" \
-SCIM_BEARER_TOKEN="$E2E_SCIM_BEARER_TOKEN" \
-JWT_ISSUER="$E2E_JWT_ISSUER" \
-JWT_AUDIENCE="$E2E_JWT_AUDIENCE" \
-JWT_PUBLIC_KEY="$E2E_JWT_PUBLIC_KEY" \
+env \
+  -u CHAT_EXTERNAL_LLM_OPENAI_API_KEY \
+  -u CHAT_EXTERNAL_LLM_OPENAI_BASE_URL \
+  -u CHAT_EXTERNAL_LLM_ALLOWED_HOSTS \
+  -u CHAT_EXTERNAL_LLM_ALLOW_HTTP \
+  -u CHAT_EXTERNAL_LLM_ALLOW_PRIVATE_IP \
+  -u KNOWLEDGE_EXTERNAL_LLM_OPENAI_API_KEY \
+  -u KNOWLEDGE_EXTERNAL_LLM_OPENAI_BASE_URL \
+  -u KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS \
+  -u KNOWLEDGE_EXTERNAL_LLM_ALLOW_HTTP \
+  -u KNOWLEDGE_EXTERNAL_LLM_ALLOW_PRIVATE_IP \
+  PORT="$BACKEND_PORT" \
+  NODE_ENV=test \
+  AUTH_MODE="$E2E_AUTH_MODE" \
+  DATABASE_URL="$DATABASE_URL" \
+  E2E_ENABLE_TEST_HOOKS="${E2E_ENABLE_TEST_HOOKS:-1}" \
+  ALLOWED_ORIGINS="http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT}" \
+  CHAT_EXTERNAL_LLM_PROVIDER=stub \
+  CHAT_EXTERNAL_LLM_MODEL=stub \
+  KNOWLEDGE_EXTERNAL_LLM_PROVIDER="$E2E_KNOWLEDGE_LLM_PROVIDER" \
+  KNOWLEDGE_LLM_MODEL_CATALOG_JSON="$E2E_KNOWLEDGE_LLM_CATALOG_JSON" \
+  RATE_LIMIT_AUTH_GUARD_MAX="${E2E_AUTH_GUARD_RATE_LIMIT_MAX:-6000}" \
+  SCIM_BEARER_TOKEN="$E2E_SCIM_BEARER_TOKEN" \
+  JWT_ISSUER="$E2E_JWT_ISSUER" \
+  JWT_AUDIENCE="$E2E_JWT_AUDIENCE" \
+  JWT_PUBLIC_KEY="$E2E_JWT_PUBLIC_KEY" \
   node "$ROOT_DIR/packages/backend/dist/index.js" >"$BACKEND_LOG" 2>&1 &
 BACKEND_PID=$!
 if ! wait_for_url "${E2E_API_BASE}/health" "backend"; then

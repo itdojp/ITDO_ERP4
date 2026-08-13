@@ -148,6 +148,37 @@ Knowledge share cardのthreadでは、選択したactive direct replyだけを�
 
 promote後のSynthesis本文とimmutable selected-message snapshotはdestination Knowledge ACLで保持されます。後からroom accessが失効した場合、live Chat identityやsource provenanceはredactされますが、room accessをKnowledge write権限へ昇格させることはありません。
 
+## 外部LLMへ選択したcontextだけを送信する
+
+`外部LLM対話` tabは管理者がKnowledge専用provider、model catalog、利用者予算を明示設定した場合だけ利用できます。既定は無効であり、Chat要約の設定やcredentialへfallbackしません。
+
+1. 対象itemを選択し、`外部LLM対話` tabを開きます。
+2. allowlistされたmodelを確認します。利用者が任意provider／modelを入力することはできません。
+3. 外部送信するsourceを選択します。既定選択は最新のready snapshotだけです。annotation revision、user／assistant conversation turn、Synthesis versionは必要なものだけを追加します。System／Tool turnはこのMVPでは候補APIの段階で除外され、画面にも表示されません。
+4. 指示と最大出力token数を入力し、`外部送信内容をプレビュー`を選択します。この時点ではprovider requestも予算予約も作成されません。
+5. exact source本文、version／SHA-256、選択／省略件数、推定input token、最大予約額、soft／hard／rate状態を確認します。
+6. `上記のexact contentだけを外部providerへ送信することを確認しました`を明示的に選択し、`明示confirmして1回だけ実行`します。
+
+実行中、commitの送信段階を確定できない間、およびrunが`reserved`／`dispatched`の間は、同じintentとrequest keyを保護するためKnowledge item／tab切替とInbox更新が無効になります。preview tokenとrequest keyは現在のcomponent memoryだけに保持され、localStorage、URL、画面へ保存されません。commit前またはterminal runの表示中にitem／tabを切り替えた場合は、previewと表示中のprovider結果を破棄します。`result_ready`／`failed`／`result_unknown`へ到達するまでは、同じrunの状態確認だけを使用してください。
+
+| 表示状態                                              | 意味                                             | 操作                                                                                                                                          |
+| ----------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `結果確定 / 実績精算済み`                             | 有効な本文とusageを保存し、actual costを精算済み | provenanceとKnowledge conversation保存を確認する                                                                                              |
+| `結果確定 / 最大予約額を保持`                         | 本文は保存されたがusage証跡が欠落または不正      | 自動再送せず、運用証跡がある場合だけ再照合する                                                                                                |
+| `結果不明 / 最大予約額を保持`                         | dispatch後の結果を安全に確定できない             | `保存済み証跡で再照合`だけを実行する。再送はしない                                                                                            |
+| `予算予約済み`または`送信済み・結果確認中` / `予約中` | grace期間中またはlocal finalizationが未完了      | grace期間後に`保存済み証跡で再照合`を実行する。providerへ再送せず、未dispatchなら予約を解放し、dispatch済みで結果不明なら最大予約額を保持する |
+| hard／rate block                                      | provider dispatch前に予算またはrate guardで拒否  | 管理者にpolicyを確認し、新しいpreviewから再判断する                                                                                           |
+
+`保存済み証跡で再照合`はprovider requestを再送しません。grace期間中または新しい保存済みoutcomeがない場合は「状態は変更されませんでした」と表示し、現在の予約／最大予約額保持を維持します。同じ操作をやり直す場合も自動retryや別provider fallbackは行わず、新しいpreviewと明示confirmが必要です。API key、base URL、provider raw error、source internal IDはUIへ表示しません。
+
+commit応答をnetwork errorで確認できない場合、または403／404等で送信前の拒否と送信後のACL失効を区別できない場合は、`状態を確認`だけを使用します。直後に「実行の作成状態をまだ確認できません」と表示されても、新しいpreview、別request key、別item／tabへの切替はできません。同じrunの状態確認を再度行うか、運用担当が保存済みrun／予算予約を確認してください。これは元のcommitが遅れて成立した場合の二重provider dispatchを防ぐためです。
+
+`preview_token_expired`、`stale_preview`、hard／rate block、policy不一致、providerの明示的な送信前拒否など、server error codeがprovider未送信を保証する場合だけintent lockを解除します。その場合は表示された原因を解消し、新しいpreviewから再確認します。HTTP statusだけを根拠に未送信と判断しません。
+
+![外部LLM selected-context preview](../test-results/2026-08-13-issue2016-knowledge-llm-ui/02-selected-context-preview.png)
+
+![外部LLM usage unknownとmaximum hold](../test-results/2026-08-13-issue2016-knowledge-llm-ui/03-budget-usage-unknown.png)
+
 ![本人annotationの改訂履歴](../test-results/2026-08-08-issue2013-knowledge-provenance-ui/01-annotation-revision-history.png)
 
 ![会話のroleとorigin timeline](../test-results/2026-08-08-issue2013-knowledge-provenance-ui/02-conversation-role-timeline.png)
@@ -186,3 +217,4 @@ promote後のSynthesis本文とimmutable selected-message snapshotはdestination
 - [Issue #2012 UI/E2E 検証結果](../test-results/2026-08-06-issue2012-knowledge-snapshot-ui.md)
 - [Issue #2013 annotation／会話／Synthesis UI検証結果](../test-results/2026-08-08-issue2013-knowledge-provenance-ui.md)
 - [Issue #2015 選択共有／Chat card／promote UI検証結果](../test-results/2026-08-10-issue2015-knowledge-share-promote-ui.md)
+- [Issue #2016 外部LLM selected-context／budget UI検証結果](../test-results/2026-08-13-issue2016-knowledge-llm-ui.md)

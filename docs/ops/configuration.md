@@ -161,11 +161,13 @@ Storage artifact migration:
 外部LLM（Knowledge Hub、既定無効）:
 
 - `KNOWLEDGE_EXTERNAL_LLM_PROVIDER=disabled|stub|openai`（既定: `disabled`）。`CHAT_EXTERNAL_LLM_*`へfallbackしない
+- `stub`は`NODE_ENV=test|development`でのみ有効。staging、production、`NODE_ENV`未指定では起動時にfail closedとする
 - `stub|openai`では`KNOWLEDGE_LLM_MODEL_CATALOG_JSON`が必須。catalogはversion、allowlistされたprovider/model、input/output token上限、ISO 4217 currency、100万token当たりinteger micro-unit価格を持つ
 - `openai`では`KNOWLEDGE_EXTERNAL_LLM_OPENAI_API_KEY`、HTTPSの`KNOWLEDGE_EXTERNAL_LLM_OPENAI_BASE_URL`、base URL hostを含む`KNOWLEDGE_EXTERNAL_LLM_ALLOWED_HOSTS`が必須。hostはASCII、IPv6 literalは角括弧なしcanonical表現で指定する
 - `KNOWLEDGE_EXTERNAL_LLM_ALLOW_HTTP` / `KNOWLEDGE_EXTERNAL_LLM_ALLOW_PRIVATE_IP`は既定`false`。repository test用の明示設定でのみ有効化し、production sampleでは有効化しない
 - Chat summaryのprovider/model/rate契約は従来どおり独立しており、Knowledge Hubのuser/organization予算予約へ暗黙統合しない
 - 実provider keyによる検証とprovider cutoverは本設定追加のrepo-side完了範囲外
+- `scripts/e2e-frontend.sh`単体はKnowledge LLMをdisabledのまま起動する。機能E2Eは`E2E_KNOWLEDGE_LLM_MODE=stub`をCI、`make e2e`、release-readinessから明示し、スクリプトは`disabled|stub`以外を拒否する。E2E backendは`NODE_ENV=test`で起動し、Chat providerを固定stubへ束縛するとともに、Chat／Knowledge双方のOpenAI API key、base URL、host allowlist、HTTP/private-IP overrideを子process環境から除去する。したがって、開発shellの実provider設定やcredentialを継承して外部requestを送信しない。usage/result不明fixtureは内部の固定synthetic catalogでallowlistした専用stub modelに束縛し、process-globalなmode切替を行わない。`/__test__/knowledge-llm/configure`は`NODE_ENV=test`、`E2E_ENABLE_TEST_HOOKS=1`、Knowledge provider=`stub`、admin/mgmtかつcanonical actor認証の全条件を満たす時だけ登録され、canonical actor本人のmarker所有synthetic user budget policy作成に限定する。通常環境、実provider、test以外の環境では有効化しない
 
 ## バックアップ/リストア
 

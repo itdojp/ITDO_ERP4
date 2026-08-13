@@ -491,6 +491,7 @@ export function createReleaseReadinessPlan(options = {}) {
           E2E_SCOPE: e2eScope,
           E2E_CAPTURE: "0",
           E2E_TRACE_ON_FAILURE: "1",
+          E2E_KNOWLEDGE_LLM_MODE: "stub",
         },
       },
     ),

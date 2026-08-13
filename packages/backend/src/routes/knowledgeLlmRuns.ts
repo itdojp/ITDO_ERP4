@@ -3,12 +3,23 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { StubExternalLlmTextAdapter } from '../adapters/externalLlm/stubTextAdapter.js';
 import { OpenAiCompatibleTextAdapter } from '../adapters/externalLlm/openAiCompatibleTextAdapter.js';
 import { PrismaKnowledgeLlmBudgetAdapter } from '../adapters/knowledge/prismaKnowledgeLlmBudgetAdapter.js';
+import { prismaKnowledgeLlmContextCandidateAdapter } from '../adapters/knowledge/prismaKnowledgeLlmContextCandidateAdapter.js';
 import { prismaKnowledgeLlmRunAdapter } from '../adapters/knowledge/prismaKnowledgeLlmRunAdapter.js';
 import {
   getKnowledgeLlmRuntimeConfig,
   knowledgeLlmLimits,
   type KnowledgeLlmRuntimeConfig,
 } from '../application/knowledge/knowledgeLlmConfig.js';
+import {
+  createKnowledgeLlmContextCandidateService,
+  type KnowledgeLlmContextCandidateService,
+} from '../application/knowledge/knowledgeLlmContextCandidates.js';
+import {
+  createKnowledgeProvenanceCursorCodec,
+  KnowledgeProvenanceCursorError,
+  type KnowledgeProvenanceCursorCodec,
+} from '../application/knowledge/knowledgeProvenanceCursor.js';
+import { knowledgeProvenanceLimits } from '../application/knowledge/knowledgeProvenancePorts.js';
 import type { ExternalLlmTextPort } from '../application/externalLlm/externalLlmPort.js';
 import {
   createKnowledgeLlmRunService,
@@ -26,8 +37,10 @@ import {
 } from './knowledgeRouteContext.js';
 import {
   knowledgeProvenanceErrorResponseSchema,
+  nullableStringSchema as provenanceNullableStringSchema,
   rejectUnknownKnowledgeArrayObjectFields,
   rejectUnknownKnowledgeBodyFields,
+  sendKnowledgeProvenanceResult,
 } from './knowledgeProvenanceSchemas.js';
 
 const allowedRoles = ['admin', 'mgmt', 'exec', 'user'] as const;
@@ -56,7 +69,7 @@ const failureCodeValues = [
 ] as const;
 
 const nullableStringSchema = {
-  anyOf: [{ type: 'string' }, { type: 'null' }],
+  type: ['string', 'null'],
 } as const;
 const nullableCostSchema = {
   anyOf: [{ type: 'string', pattern: '^[0-9]+$' }, { type: 'null' }],
@@ -277,7 +290,11 @@ export function createKnowledgeLlmProviderPort(
 
 export async function registerKnowledgeLlmRunRoutes(
   app: FastifyInstance,
-  dependencies: { service?: KnowledgeLlmRunService } = {},
+  dependencies: {
+    service?: KnowledgeLlmRunService;
+    candidateService?: KnowledgeLlmContextCandidateService;
+    cursor?: KnowledgeProvenanceCursorCodec;
+  } = {},
 ) {
   const runtime = dependencies.service ? null : getKnowledgeLlmRuntimeConfig();
   const providerPort = runtime ? createKnowledgeLlmProviderPort(runtime) : null;
@@ -289,6 +306,13 @@ export async function registerKnowledgeLlmRunRoutes(
       budgetPort: new PrismaKnowledgeLlmBudgetAdapter(prisma),
       runPort: prismaKnowledgeLlmRunAdapter,
     });
+  const candidateService =
+    dependencies.candidateService ??
+    createKnowledgeLlmContextCandidateService({
+      candidates: prismaKnowledgeLlmContextCandidateAdapter,
+    });
+  const cursor =
+    dependencies.cursor ?? createKnowledgeProvenanceCursorCodec(process.env);
   const preHandler = [
     requireCanonicalKnowledgeActor,
     requireRole(allowedRoles),
@@ -302,6 +326,147 @@ export async function registerKnowledgeLlmRunRoutes(
     429: knowledgeProvenanceErrorResponseSchema,
     503: knowledgeProvenanceErrorResponseSchema,
   } as const;
+
+  app.get(
+    '/knowledge/items/:itemId/llm-context-sources',
+    {
+      preHandler,
+      schema: {
+        tags: ['knowledge'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['itemId'],
+          properties: {
+            itemId: {
+              type: 'string',
+              minLength: 1,
+              maxLength: knowledgeProvenanceLimits.id,
+            },
+          },
+        },
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['scope', 'sourceType'],
+          properties: {
+            ...scopeProperties,
+            sourceType: { type: 'string', enum: sourceTypeValues },
+            limit: {
+              type: 'integer',
+              minimum: 1,
+              maximum: knowledgeProvenanceLimits.listLimit,
+              default: knowledgeProvenanceLimits.defaultListLimit,
+            },
+            cursor: {
+              type: 'string',
+              minLength: 1,
+              maxLength: knowledgeProvenanceLimits.cursor,
+            },
+          },
+        },
+        response: {
+          ...errorResponses,
+          200: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['items', 'nextCursor'],
+            properties: {
+              items: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: [
+                    'sourceType',
+                    'sourceId',
+                    'exactSourceVersion',
+                    'byteLength',
+                    'createdAt',
+                  ],
+                  properties: {
+                    sourceType: { type: 'string', enum: sourceTypeValues },
+                    sourceId: { type: 'string' },
+                    exactSourceVersion: { type: 'integer', minimum: 1 },
+                    byteLength: { type: 'integer', minimum: 1 },
+                    createdAt: { type: 'string', format: 'date-time' },
+                  },
+                },
+              },
+              nextCursor: provenanceNullableStringSchema,
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const actor = knowledgeActorFromRequest(request);
+      const { itemId } = request.params as { itemId: string };
+      const query = request.query as {
+        scope: 'personal' | 'organization';
+        organizationId?: string | null;
+        sourceType: (typeof sourceTypeValues)[number];
+        limit?: number;
+        cursor?: string;
+      };
+      const organizationId = query.organizationId ?? null;
+      // A structured tuple avoids delimiter ambiguity even if a bounded
+      // identifier contains control characters. Only its hash is persisted in
+      // the signed cursor envelope.
+      const parentId = JSON.stringify([
+        itemId,
+        query.scope,
+        organizationId,
+        query.sourceType,
+      ]);
+      let boundary;
+      try {
+        boundary = query.cursor
+          ? cursor.decodePage({
+              cursor: query.cursor,
+              kind: 'llm_context_sources',
+              parentId,
+              actor,
+            })
+          : undefined;
+      } catch (error) {
+        if (error instanceof KnowledgeProvenanceCursorError) {
+          return reply.code(400).send(
+            createApiErrorResponse('invalid_request', 'Invalid cursor', {
+              category: 'validation',
+            }),
+          );
+        }
+        throw error;
+      }
+      const result = await candidateService.list({
+        actor,
+        itemId,
+        scope: query.scope,
+        organizationId,
+        sourceType: query.sourceType,
+        limit: query.limit ?? knowledgeProvenanceLimits.defaultListLimit,
+        boundary,
+      });
+      return sendKnowledgeProvenanceResult(reply, result, (page) => ({
+        items: page.items.map((candidate) => ({
+          sourceType: candidate.sourceType,
+          sourceId: candidate.sourceId,
+          exactSourceVersion: candidate.exactSourceVersion,
+          byteLength: candidate.byteLength,
+          createdAt: candidate.createdAt.toISOString(),
+        })),
+        nextCursor: page.nextBoundary
+          ? cursor.encodePage({
+              kind: 'llm_context_sources',
+              parentId,
+              actor,
+              boundary: page.nextBoundary,
+            })
+          : null,
+      }));
+    },
+  );
 
   app.get(
     '/knowledge/llm/catalog',

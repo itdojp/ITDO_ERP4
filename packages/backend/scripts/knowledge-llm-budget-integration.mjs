@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 import { PrismaKnowledgeLlmBudgetAdapter } from '../dist/adapters/knowledge/prismaKnowledgeLlmBudgetAdapter.js';
+import { PrismaKnowledgeLlmRunAdapter } from '../dist/adapters/knowledge/prismaKnowledgeLlmRunAdapter.js';
 import { StubExternalLlmTextAdapter } from '../dist/adapters/externalLlm/stubTextAdapter.js';
 import {
   markKnowledgeLlmRunDispatched as markKnowledgeLlmRunDispatchedWithClock,
@@ -63,6 +64,11 @@ const service = createKnowledgeLlmBudgetUseCases(
   new PrismaKnowledgeLlmBudgetAdapter(prisma),
   { version: 1, models: catalogModels },
   stubProvider,
+  () => new Date(now.getTime()),
+);
+const runAdapter = new PrismaKnowledgeLlmRunAdapter(
+  prisma,
+  prisma,
   () => new Date(now.getTime()),
 );
 const serviceAt = (timestamp) =>
@@ -933,6 +939,21 @@ try {
     hard: 100n,
     version: 2,
   });
+  const versionBudgetPreview = await runAdapter.budgetPreview({
+    actor: {
+      userId: 'policy-version-budget-user',
+      organizationId: null,
+      groupAccountIds: [],
+    },
+    scope: 'personal',
+    organizationId: null,
+    maximumCostMicros: 50n,
+    expectedCurrency: 'JPY',
+    now,
+  });
+  assert.equal(versionBudgetPreview.configured, true);
+  assert.equal(versionBudgetPreview.hardLimitBlocked, true);
+  assert.equal(versionBudgetPreview.subjects[0]?.activeReservedMicros, 60n);
   const versionBudgetBlocked = await service.reserve(
     reservation({
       runId: 'run-policy-version-budget-blocked',
@@ -985,6 +1006,21 @@ try {
     rate: 1,
     version: 2,
   });
+  const versionRatePreview = await runAdapter.budgetPreview({
+    actor: {
+      userId: 'policy-version-rate-user',
+      organizationId: null,
+      groupAccountIds: [],
+    },
+    scope: 'personal',
+    organizationId: null,
+    maximumCostMicros: 1n,
+    expectedCurrency: 'JPY',
+    now,
+  });
+  assert.equal(versionRatePreview.configured, true);
+  assert.equal(versionRatePreview.rateBlocked, true);
+  assert.equal(versionRatePreview.subjects[0]?.acceptedRequestsLastHour, 1);
   const versionRateBlocked = await service.reserve(
     reservation({
       runId: 'run-policy-version-rate-blocked',
@@ -5433,7 +5469,9 @@ try {
       directOrganizationReservationLockOrderVerified: true,
       hardLimitRace: true,
       policyVersionBudgetCarryForward: true,
+      policyVersionBudgetPreviewCarryForward: true,
       policyVersionRateCarryForward: true,
+      policyVersionRatePreviewCarryForward: true,
       policyVersionRolloverRaceBlocked: true,
       policyTimezoneDriftBlocked: true,
       policyBoundaryRolloverRateCarryForward: true,

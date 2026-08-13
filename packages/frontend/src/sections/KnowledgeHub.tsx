@@ -122,7 +122,7 @@ export const KnowledgeHub: React.FC<{
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [captureBusy, setCaptureBusy] = useState(false);
-  const [shareCommitBusy, setShareCommitBusy] = useState(false);
+  const [externalCommitBusy, setExternalCommitBusy] = useState(false);
   const [downloadBusyId, setDownloadBusyId] = useState('');
   const [reconcileBusyId, setReconcileBusyId] = useState('');
   const [pendingAttempt, setPendingAttempt] = useState<PendingAttempt | null>(
@@ -133,24 +133,24 @@ export const KnowledgeHub: React.FC<{
   const snapshotLoadSequence = useRef(0);
   const deepLinkLoadSequence = useRef(0);
   const deepLinkAbortRef = useRef<AbortController | null>(null);
-  const shareCommitBusyRef = useRef(false);
+  const externalCommitBusyRef = useRef(false);
   const selectedItemIdRef = useRef('');
 
-  const handleShareCommitBusyChange = useCallback(
+  const handleExternalCommitBusyChange = useCallback(
     (busy: boolean) => {
-      shareCommitBusyRef.current = busy;
-      setShareCommitBusy(busy);
+      externalCommitBusyRef.current = busy;
+      setExternalCommitBusy(busy);
       onShareCommitBusyChange?.(busy);
     },
     [onShareCommitBusyChange],
   );
 
   const selectKnowledgeItem = useCallback((itemId: string) => {
-    if (shareCommitBusyRef.current) {
+    if (externalCommitBusyRef.current) {
       if (selectedItemIdRef.current === itemId) return true;
       setNotice({
         tone: 'warning',
-        text: 'Chat共有の確定結果を確認するまでKnowledge itemを切り替えられません。',
+        text: '外部処理の確定結果を確認するまでKnowledge itemを切り替えられません。',
       });
       return false;
     }
@@ -173,7 +173,7 @@ export const KnowledgeHub: React.FC<{
       const nextItems = await listKnowledgeInbox();
       if (itemLoadSequence.current !== sequence) return;
       setItems((currentItems) => {
-        if (!shareCommitBusyRef.current) return nextItems;
+        if (!externalCommitBusyRef.current) return nextItems;
         const currentSelection = currentItems.find(
           (item) => item.id === selectedItemIdRef.current,
         );
@@ -183,7 +183,7 @@ export const KnowledgeHub: React.FC<{
           : nextItems;
       });
       setSelectedItemId((current) => {
-        const next = shareCommitBusyRef.current
+        const next = externalCommitBusyRef.current
           ? current
           : current && nextItems.some((item) => item.id === current)
             ? current
@@ -194,7 +194,7 @@ export const KnowledgeHub: React.FC<{
       setItemsStatus('success');
     } catch (error) {
       if (itemLoadSequence.current !== sequence) return;
-      if (!shareCommitBusyRef.current) {
+      if (!externalCommitBusyRef.current) {
         setItems([]);
         selectedItemIdRef.current = '';
         setSelectedItemId('');
@@ -237,10 +237,10 @@ export const KnowledgeHub: React.FC<{
   useEffect(() => {
     const handleOpenEntity = (event: Event) => {
       if (!(event instanceof CustomEvent)) return;
-      if (shareCommitBusyRef.current) {
+      if (externalCommitBusyRef.current) {
         setNotice({
           tone: 'warning',
-          text: 'Chat共有の確定結果を確認するまでKnowledge itemを切り替えられません。',
+          text: '外部処理の確定結果を確認するまでKnowledge itemを切り替えられません。',
         });
         return;
       }
@@ -314,10 +314,10 @@ export const KnowledgeHub: React.FC<{
 
   const submitCapture = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (shareCommitBusyRef.current) {
+    if (externalCommitBusyRef.current) {
       setNotice({
         tone: 'warning',
-        text: 'Chat共有の確定結果を確認するまでInboxの保存操作を開始できません。',
+        text: '外部処理の確定結果を確認するまでInboxの保存操作を開始できません。',
       });
       return;
     }
@@ -589,7 +589,7 @@ export const KnowledgeHub: React.FC<{
               type="button"
               className="knowledge-hub-item-button"
               aria-pressed={item.id === selectedItemId}
-              disabled={shareCommitBusy}
+              disabled={externalCommitBusy}
               onClick={() => selectKnowledgeItem(item.id)}
             >
               <span className="knowledge-hub-item-title">
@@ -911,7 +911,7 @@ export const KnowledgeHub: React.FC<{
                 <Button
                   type="submit"
                   loading={captureBusy}
-                  disabled={shareCommitBusy}
+                  disabled={externalCommitBusy}
                 >
                   {destination === 'new'
                     ? 'Inboxへ保存'
@@ -932,7 +932,7 @@ export const KnowledgeHub: React.FC<{
                 size="small"
                 variant="ghost"
                 loading={itemsStatus === 'loading'}
-                disabled={shareCommitBusy}
+                disabled={externalCommitBusy}
                 onClick={() => void loadItems()}
               >
                 Inboxを再読込
@@ -981,8 +981,9 @@ export const KnowledgeHub: React.FC<{
             itemId={selectedItem.id}
             itemLabel={itemLabel(selectedItem)}
             itemScope={selectedItem.scope}
+            organizationId={selectedItem.organizationId}
             snapshots={snapshots}
-            onShareCommitBusyChange={handleShareCommitBusyChange}
+            onCommitBusyChange={handleExternalCommitBusyChange}
           />
         ) : (
           <AsyncStatePanel
