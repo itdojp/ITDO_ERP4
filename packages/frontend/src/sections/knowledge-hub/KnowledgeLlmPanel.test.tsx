@@ -141,6 +141,33 @@ function renderPanel(
   );
 }
 
+function renderPanelWithNavigationLock(onBusy: (busy: boolean) => void) {
+  function Harness() {
+    const [busy, setBusy] = React.useState(false);
+    const handleBusy = (next: boolean) => {
+      setBusy(next);
+      onBusy(next);
+    };
+    return (
+      <>
+        <button type="button" disabled={busy}>
+          別tabへ切替
+        </button>
+        <button type="button" disabled={busy}>
+          別itemへ切替
+        </button>
+        <KnowledgeLlmPanel
+          itemId="item-1"
+          itemScope="personal"
+          organizationId={null}
+          onCommitBusyChange={handleBusy}
+        />
+      </>
+    );
+  }
+  return render(<Harness />);
+}
+
 async function previewDefaultSource() {
   await screen.findByText('Snapshot / exact version 3');
   fireEvent.change(screen.getByLabelText('外部LLMへの指示'), {
@@ -648,14 +675,15 @@ describe('KnowledgeLlmPanel', () => {
     expect(screen.queryByText('SELECTED-SNAPSHOT')).not.toBeInTheDocument();
   });
 
-  it('keeps an uncertain commit lookup locked across a temporary not-found response', async () => {
+  it('keeps an uncertain commit lookup and parent navigation locked across a temporary not-found response', async () => {
+    const onCommitBusyChange = vi.fn();
     apiMocks.executeKnowledgeLlmRun.mockRejectedValueOnce(
       new KnowledgeHubApiError('network_error', null),
     );
     apiMocks.fetchKnowledgeLlmRun
       .mockRejectedValueOnce(new KnowledgeHubApiError('not_found', 404))
       .mockResolvedValueOnce(run());
-    renderPanel();
+    renderPanelWithNavigationLock(onCommitBusyChange);
     await previewDefaultSource();
     fireEvent.click(
       screen.getByRole('checkbox', {
@@ -669,6 +697,9 @@ describe('KnowledgeLlmPanel', () => {
     expect(
       await screen.findByText(/送信結果は不明です。自動再送せず/),
     ).toBeInTheDocument();
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
+    expect(screen.getByRole('button', { name: '別tabへ切替' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '別itemへ切替' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: '状態を確認' }));
     expect(
       await screen.findByText(/実行の作成状態をまだ確認できません/),
@@ -679,10 +710,84 @@ describe('KnowledgeLlmPanel', () => {
     ).toBeDisabled();
     expect(screen.getByLabelText('外部LLMへの指示')).toBeDisabled();
     expect(apiMocks.executeKnowledgeLlmRun).toHaveBeenCalledTimes(1);
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
 
     fireEvent.click(screen.getByRole('button', { name: '状態を確認' }));
     expect(await screen.findByText('synthetic result')).toBeInTheDocument();
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(false);
+    expect(screen.getByRole('button', { name: '別tabへ切替' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '別itemへ切替' })).toBeEnabled();
     expect(apiMocks.fetchKnowledgeLlmRun).toHaveBeenCalledTimes(2);
+    expect(apiMocks.executeKnowledgeLlmRun).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['preview_token_expired', 409],
+    ['stale_preview', 409],
+    ['budget_hard_limit', 409],
+    ['rate_limit', 429],
+  ] as const)(
+    'releases a definitely pre-dispatch %s rejection for a new preview',
+    async (code, status) => {
+      const onCommitBusyChange = vi.fn();
+      apiMocks.executeKnowledgeLlmRun.mockRejectedValueOnce(
+        new KnowledgeHubApiError(code, status),
+      );
+      renderPanel({ onCommitBusyChange });
+      await previewDefaultSource();
+      fireEvent.click(
+        screen.getByRole('checkbox', {
+          name: /上記のexact contentだけを外部providerへ送信/,
+        }),
+      );
+      fireEvent.click(
+        screen.getByRole('button', { name: '明示confirmして1回だけ実行' }),
+      );
+
+      await waitFor(() => {
+        expect(onCommitBusyChange).toHaveBeenLastCalledWith(false);
+      });
+      const previewButton = screen.getByRole('button', {
+        name: '外部送信内容をプレビュー',
+      });
+      expect(previewButton).toBeEnabled();
+      fireEvent.click(previewButton);
+      await waitFor(() => {
+        expect(apiMocks.previewKnowledgeLlmRun).toHaveBeenCalledTimes(2);
+      });
+      expect(apiMocks.executeKnowledgeLlmRun).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('preserves the same run intent when commit returns an ambiguous not-found', async () => {
+    const onCommitBusyChange = vi.fn();
+    apiMocks.executeKnowledgeLlmRun.mockRejectedValueOnce(
+      new KnowledgeHubApiError('not_found', 404),
+    );
+    apiMocks.fetchKnowledgeLlmRun.mockResolvedValueOnce(run());
+    renderPanel({ onCommitBusyChange });
+    await previewDefaultSource();
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: /上記のexact contentだけを外部providerへ送信/,
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: '明示confirmして1回だけ実行' }),
+    );
+
+    expect(
+      await screen.findByText(
+        /送信前の拒否か送信後の権限失効かを判別できません/,
+      ),
+    ).toBeInTheDocument();
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
+    expect(
+      screen.getByRole('button', { name: '外部送信内容をプレビュー' }),
+    ).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '状態を確認' }));
+    expect(await screen.findByText('synthetic result')).toBeInTheDocument();
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(false);
     expect(apiMocks.executeKnowledgeLlmRun).toHaveBeenCalledTimes(1);
   });
 

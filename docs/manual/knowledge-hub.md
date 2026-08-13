@@ -159,7 +159,7 @@ promote後のSynthesis本文とimmutable selected-message snapshotはdestination
 5. exact source本文、version／SHA-256、選択／省略件数、推定input token、最大予約額、soft／hard／rate状態を確認します。
 6. `上記のexact contentだけを外部providerへ送信することを確認しました`を明示的に選択し、`明示confirmして1回だけ実行`します。
 
-実行中は同じintentとrequest keyを保護するため、Knowledge item／tab切替とInbox更新は一時的に無効になります。preview tokenとrequest keyは現在のcomponent memoryだけに保持され、localStorage、URL、画面へ保存されません。itemまたはtabを切り替えると、previewと表示中のprovider結果を破棄します。
+実行中、およびcommitの送信段階を確定できない間は、同じintentとrequest keyを保護するためKnowledge item／tab切替とInbox更新が無効になります。preview tokenとrequest keyは現在のcomponent memoryだけに保持され、localStorage、URL、画面へ保存されません。commit前または確定済みrunの表示中にitem／tabを切り替えた場合は、previewと表示中のprovider結果を破棄します。
 
 | 表示状態                                              | 意味                                             | 操作                                                                                                                                          |
 | ----------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -171,7 +171,9 @@ promote後のSynthesis本文とimmutable selected-message snapshotはdestination
 
 `保存済み証跡で再照合`はprovider requestを再送しません。grace期間中または新しい保存済みoutcomeがない場合は「状態は変更されませんでした」と表示し、現在の予約／最大予約額保持を維持します。同じ操作をやり直す場合も自動retryや別provider fallbackは行わず、新しいpreviewと明示confirmが必要です。API key、base URL、provider raw error、source internal IDはUIへ表示しません。
 
-commit応答をnetwork errorで確認できない場合は、`状態を確認`だけを使用します。直後に「実行の作成状態をまだ確認できません」と表示されても、新しいpreviewや別request keyによる再実行はできません。同じrunの状態確認を再度行うか、運用担当が保存済みrun／予算予約を確認してください。これは元のcommitが遅れて成立した場合の二重provider dispatchを防ぐためです。
+commit応答をnetwork errorで確認できない場合、または403／404等で送信前の拒否と送信後のACL失効を区別できない場合は、`状態を確認`だけを使用します。直後に「実行の作成状態をまだ確認できません」と表示されても、新しいpreview、別request key、別item／tabへの切替はできません。同じrunの状態確認を再度行うか、運用担当が保存済みrun／予算予約を確認してください。これは元のcommitが遅れて成立した場合の二重provider dispatchを防ぐためです。
+
+`preview_token_expired`、`stale_preview`、hard／rate block、policy不一致、providerの明示的な送信前拒否など、server error codeがprovider未送信を保証する場合だけintent lockを解除します。その場合は表示された原因を解消し、新しいpreviewから再確認します。HTTP statusだけを根拠に未送信と判断しません。
 
 ![外部LLM selected-context preview](../test-results/2026-08-13-issue2016-knowledge-llm-ui/02-selected-context-preview.png)
 

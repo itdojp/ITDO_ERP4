@@ -31,6 +31,8 @@
 | source候補cursor機密性 | PASS | LLM候補cursorをAES-256-GCM認証暗号化し、request URL／base64url segmentからsource IDを復元できない回帰test |
 | stale reserved／dispatched runの再照合導線 | PASS | model／component test。provider dispatchは1回のまま、grace期間後のlocal accounting収束だけを実行 |
 | commit結果不明直後の一時404 | PASS | deterministic component test。preview／run lookupを保持してdraftをlockし、同じrun readだけを再試行、provider dispatchは1回 |
+| phase-aware commit拒否 | PASS | expired／stale preview、hard／rate blockは未送信確定として新previewを許可し、network／ambiguous 404は同一run intentを保持 |
+| unresolved intentの親画面lock | PASS | deterministic panel／workspace／Knowledge Hub test。network error後もtab／item切替を抑止し、同一run read成功時だけ解除 |
 | annotation候補ACL parity | PASS | candidate adapter test。personal ownerおよびorganization scope／organizationをDB predicateでpreview/commit resolverと同じ境界へ固定 |
 | outsider 404とresponse allowlist | PASS | direct API negative E2E、frontend normalization test |
 | 375px responsive layout／semantic label | PASS | component test、sanitized screenshot |
@@ -52,16 +54,16 @@ canaryはexact preview、provider request、run response、画面、監査／app
 
 | 分類 | 結果 |
 | --- | --- |
-| focused backend stub/test-hook/route/候補／run adapter | 70 / 70 PASS |
-| focused frontend model/API/component | 40 / 40 PASS |
+| focused backend stub/test-hook/route/候補／run adapter | 67 / 67 PASS |
+| focused frontend model/API/component | 53 / 53 PASS（phase-aware commit拒否と親画面lockを含む） |
 | focused real-backend E2E（stub） | 1 / 1 PASS |
 | focused real-backend E2E（disabled） | 1 / 1 PASS |
 | focused real-backend E2E（JWT canonical identity + stub） | 1 / 1 PASS |
 | ambient external-provider設定を注入したprocess isolation E2E | Knowledge + Chat summary 2 / 2 PASS、外部request 0件、canary log非含有 |
-| backend full | 2,355 / 2,355 PASS |
-| frontend full | 830 / 830 PASS |
+| backend full | 2,357 / 2,357 PASS |
+| frontend full | 836 / 836 PASS |
 | full E2E | 155 PASS / 34既存条件付きskip / failure 0 |
-| UI core coverage | statements 73.63%、branches 66.65%、functions 73.28%、lines 76.39%（全threshold PASS） |
+| UI core coverage | statements 73.66%、branches 66.68%、functions 73.29%、lines 76.42%（全threshold PASS） |
 | frontend build budget | PASS（initial JS gzip 158.4 KiB） |
 | lint／format／typecheck／build／audit／ops-quality | PASS |
 | bounded-context dependency／coverage | PASS |

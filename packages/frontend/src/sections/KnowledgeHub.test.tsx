@@ -39,10 +39,10 @@ vi.mock('./knowledge-hub/KnowledgeProvenanceWorkspace', () => ({
     <div>
       provenance workspace: {itemLabel}
       <button type="button" onClick={() => onCommitBusyChange?.(true)}>
-        共有確定を開始
+        外部確定intentを保持
       </button>
       <button type="button" onClick={() => onCommitBusyChange?.(false)}>
-        共有確定を完了
+        外部確定intentを解放
       </button>
     </div>
   ),
@@ -140,7 +140,7 @@ describe('KnowledgeHub', () => {
     ).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('keeps the selected item mounted while a share commit owns its in-memory result', async () => {
+  it('keeps the selected item mounted while an external commit intent remains unresolved', async () => {
     const first = makeItem({ id: 'item-1', title: '共有確定元' });
     const second = makeItem({ id: 'item-2', title: '切替候補' });
     apiMocks.listKnowledgeInbox.mockResolvedValue([first, second]);
@@ -150,7 +150,9 @@ describe('KnowledgeHub', () => {
     expect(
       await screen.findByText('provenance workspace: 共有確定元'),
     ).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: '共有確定を開始' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: '外部確定intentを保持' }),
+    );
 
     const secondItem = screen.getByRole('button', { name: /切替候補/ });
     expect(secondItem).toBeDisabled();
@@ -169,7 +171,9 @@ describe('KnowledgeHub', () => {
       ),
     ).toBeVisible();
 
-    fireEvent.click(screen.getByRole('button', { name: '共有確定を完了' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: '外部確定intentを解放' }),
+    );
     expect(secondItem).toBeEnabled();
     fireEvent.click(secondItem);
     expect(
@@ -213,7 +217,9 @@ describe('KnowledgeHub', () => {
     await waitFor(() =>
       expect(apiMocks.captureKnowledgeTextOrUrl).toHaveBeenCalledTimes(1),
     );
-    fireEvent.click(screen.getByRole('button', { name: '共有確定を開始' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: '外部確定intentを保持' }),
+    );
 
     await act(async () => {
       rejectCapture(new KnowledgeHubApiError('unknown_error', 500));

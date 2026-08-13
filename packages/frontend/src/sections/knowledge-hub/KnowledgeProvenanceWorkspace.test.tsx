@@ -187,7 +187,7 @@ describe('KnowledgeProvenanceWorkspace', () => {
     expect(screen.queryByText(/share panel \/ item-1/)).toBeNull();
   });
 
-  it('keeps the LLM panel mounted and locks other tabs during dispatch', () => {
+  it('keeps the LLM panel mounted and locks other tabs while its dispatch intent is unresolved', () => {
     busyNotificationOrder.length = 0;
     const onCommitBusyChange = vi.fn((busy: boolean) => {
       if (busy) busyNotificationOrder.push('parent-notified');

@@ -36,6 +36,7 @@ import {
   formatKnowledgeDateTime,
   isKnowledgeHubErrorCode,
   knowledgeHubErrorMessage,
+  type KnowledgeHubErrorCode,
   type KnowledgeScope,
 } from './knowledgeHubModel';
 
@@ -79,6 +80,39 @@ function isAccessLoss(error: unknown) {
     error instanceof KnowledgeHubApiError &&
     (error.code === 'not_found' || error.status === 403 || error.status === 404)
   );
+}
+
+const definitelyNotDispatchedCodes = new Set<KnowledgeHubErrorCode>([
+  'budget_hard_limit',
+  'confirmation_required',
+  'idempotency_conflict',
+  'invalid_request',
+  'knowledge_llm_disabled',
+  'policy_mismatch',
+  'policy_not_found',
+  'preview_token_expired',
+  'preview_token_invalid',
+  'rate_limit',
+  'rejected_before_dispatch',
+  'reservation_conflict',
+  'stale_preview',
+]);
+
+function isDefinitelyNotDispatched(error: unknown) {
+  return (
+    error instanceof KnowledgeHubApiError &&
+    definitelyNotDispatchedCodes.has(error.code)
+  );
+}
+
+function uncertainExecuteMessage(error: unknown) {
+  if (error instanceof KnowledgeHubApiError && error.code === 'network_error') {
+    return '送信結果は不明です。自動再送せず「状態を確認」を実行してください。';
+  }
+  if (isAccessLoss(error)) {
+    return '送信前の拒否か送信後の権限失効かを判別できません。新しく実行せず、同じrunの「状態を確認」を実行してください。';
+  }
+  return `${safeError(error)} 自動再送せず、同じrunの「状態を確認」を実行してください。`;
 }
 
 function modelIdentity(provider: string, model: string) {
@@ -450,6 +484,7 @@ export function KnowledgeLlmPanel(props: {
     setError(null);
     setNotice(null);
     onCommitBusyChange?.(true);
+    let releaseDispatchIntent = false;
     try {
       const result = await executeKnowledgeLlmRun({
         request,
@@ -460,6 +495,7 @@ export function KnowledgeLlmPanel(props: {
       setRun(result.run);
       setRunLookupId(result.run.id);
       setReused(result.reused);
+      releaseDispatchIntent = true;
       setNotice(
         result.reused
           ? '同じ実行結果を再利用しました。providerへ再送していません。'
@@ -467,21 +503,17 @@ export function KnowledgeLlmPanel(props: {
       );
     } catch (executeError) {
       if (!isCurrent(generation)) return;
-      if (isAccessLoss(executeError)) {
+      if (isDefinitelyNotDispatched(executeError)) {
         clearSensitiveResult();
         setError(safeError(executeError));
+        releaseDispatchIntent = true;
       } else {
         setRunLookupId(preview.runId);
-        setError(
-          executeError instanceof KnowledgeHubApiError &&
-            executeError.code === 'network_error'
-            ? '送信結果は不明です。自動再送せず「状態を確認」を実行してください。'
-            : safeError(executeError),
-        );
+        setError(uncertainExecuteMessage(executeError));
       }
     } finally {
       if (isCurrent(generation)) setCommitting(false);
-      onCommitBusyChange?.(false);
+      if (releaseDispatchIntent) onCommitBusyChange?.(false);
     }
   };
 
@@ -512,6 +544,7 @@ export function KnowledgeLlmPanel(props: {
         next.completedAt === run.completedAt;
       setRun(next);
       setRunLookupId(next.id);
+      if (unresolvedCommit) onCommitBusyChange?.(false);
       setNotice(
         reconcile
           ? stateUnchanged
@@ -526,7 +559,10 @@ export function KnowledgeLlmPanel(props: {
           '実行の作成状態をまだ確認できません。新しく実行せず、同じrunの「状態を確認」を再実行してください。',
         );
       } else {
-        if (isAccessLoss(readError)) clearSensitiveResult();
+        if (isAccessLoss(readError)) {
+          clearSensitiveResult();
+          onCommitBusyChange?.(false);
+        }
         setError(safeError(readError));
       }
     } finally {
