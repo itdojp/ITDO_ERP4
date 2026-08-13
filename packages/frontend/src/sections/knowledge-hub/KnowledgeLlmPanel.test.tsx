@@ -648,6 +648,44 @@ describe('KnowledgeLlmPanel', () => {
     expect(screen.queryByText('SELECTED-SNAPSHOT')).not.toBeInTheDocument();
   });
 
+  it('keeps an uncertain commit lookup locked across a temporary not-found response', async () => {
+    apiMocks.executeKnowledgeLlmRun.mockRejectedValueOnce(
+      new KnowledgeHubApiError('network_error', null),
+    );
+    apiMocks.fetchKnowledgeLlmRun
+      .mockRejectedValueOnce(new KnowledgeHubApiError('not_found', 404))
+      .mockResolvedValueOnce(run());
+    renderPanel();
+    await previewDefaultSource();
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: /上記のexact contentだけを外部providerへ送信/,
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: '明示confirmして1回だけ実行' }),
+    );
+
+    expect(
+      await screen.findByText(/送信結果は不明です。自動再送せず/),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '状態を確認' }));
+    expect(
+      await screen.findByText(/実行の作成状態をまだ確認できません/),
+    ).toBeInTheDocument();
+    expect(screen.getByText('SELECTED-SNAPSHOT')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '外部送信内容をプレビュー' }),
+    ).toBeDisabled();
+    expect(screen.getByLabelText('外部LLMへの指示')).toBeDisabled();
+    expect(apiMocks.executeKnowledgeLlmRun).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: '状態を確認' }));
+    expect(await screen.findByText('synthetic result')).toBeInTheDocument();
+    expect(apiMocks.fetchKnowledgeLlmRun).toHaveBeenCalledTimes(2);
+    expect(apiMocks.executeKnowledgeLlmRun).toHaveBeenCalledTimes(1);
+  });
+
   it('shows soft warning and blocks execution for hard/rate limits', async () => {
     apiMocks.previewKnowledgeLlmRun.mockResolvedValue(
       preview({

@@ -171,6 +171,8 @@ promote後のSynthesis本文とimmutable selected-message snapshotはdestination
 
 `保存済み証跡で再照合`はprovider requestを再送しません。grace期間中または新しい保存済みoutcomeがない場合は「状態は変更されませんでした」と表示し、現在の予約／最大予約額保持を維持します。同じ操作をやり直す場合も自動retryや別provider fallbackは行わず、新しいpreviewと明示confirmが必要です。API key、base URL、provider raw error、source internal IDはUIへ表示しません。
 
+commit応答をnetwork errorで確認できない場合は、`状態を確認`だけを使用します。直後に「実行の作成状態をまだ確認できません」と表示されても、新しいpreviewや別request keyによる再実行はできません。同じrunの状態確認を再度行うか、運用担当が保存済みrun／予算予約を確認してください。これは元のcommitが遅れて成立した場合の二重provider dispatchを防ぐためです。
+
 ![外部LLM selected-context preview](../test-results/2026-08-13-issue2016-knowledge-llm-ui/02-selected-context-preview.png)
 
 ![外部LLM usage unknownとmaximum hold](../test-results/2026-08-13-issue2016-knowledge-llm-ui/03-budget-usage-unknown.png)

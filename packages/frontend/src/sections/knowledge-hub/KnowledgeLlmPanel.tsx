@@ -376,14 +376,17 @@ export function KnowledgeLlmPanel(props: {
     selectedKeys,
     selectedModel,
   ]);
+  const unresolvedCommit =
+    commitAttempted && run === null && runLookupId !== null;
   const interactionBusy = previewing || committing || reading;
+  const draftLocked = interactionBusy || unresolvedCommit;
 
   const invalidateDraft = useCallback(() => {
     clearSensitiveResult();
   }, [clearSensitiveResult]);
 
   const toggleCandidate = (candidate: KnowledgeLlmCandidate) => {
-    if (!candidate.selectable || interactionBusy) return;
+    if (!candidate.selectable || draftLocked) return;
     invalidateDraft();
     setSelectedKeys((current) => {
       const next = new Set(current);
@@ -394,6 +397,7 @@ export function KnowledgeLlmPanel(props: {
   };
 
   const handlePreview = async () => {
+    if (unresolvedCommit) return;
     const request = buildRequest();
     if (!request || !catalog) return;
     const validation = validateKnowledgeLlmRequest({ request, catalog });
@@ -517,8 +521,14 @@ export function KnowledgeLlmPanel(props: {
       );
     } catch (readError) {
       if (!isCurrent(generation) || controller.signal.aborted) return;
-      if (isAccessLoss(readError)) clearSensitiveResult();
-      setError(safeError(readError));
+      if (isAccessLoss(readError) && unresolvedCommit) {
+        setError(
+          '実行の作成状態をまだ確認できません。新しく実行せず、同じrunの「状態を確認」を再実行してください。',
+        );
+      } else {
+        if (isAccessLoss(readError)) clearSensitiveResult();
+        setError(safeError(readError));
+      }
     } finally {
       if (isCurrent(generation)) setReading(false);
     }
@@ -564,9 +574,9 @@ export function KnowledgeLlmPanel(props: {
           <select
             aria-label="許可されたmodel"
             value={model}
-            disabled={interactionBusy}
+            disabled={draftLocked}
             onChange={(event) => {
-              if (interactionBusy) return;
+              if (draftLocked) return;
               invalidateDraft();
               const next = event.target.value;
               const definition = catalog.models.find(
@@ -594,7 +604,7 @@ export function KnowledgeLlmPanel(props: {
           catalog version {catalog.version} / provider allowlist:{' '}
           {catalog.provider}
         </p>
-        <fieldset disabled={interactionBusy}>
+        <fieldset disabled={draftLocked}>
           <legend>外部送信するsource（既定は最新snapshotのみ）</legend>
           {candidates.length === 0 ? (
             <p>送信可能なready sourceがありません。</p>
@@ -607,7 +617,7 @@ export function KnowledgeLlmPanel(props: {
                 <input
                   type="checkbox"
                   checked={selectedKeys.has(candidate.key)}
-                  disabled={!candidate.selectable || interactionBusy}
+                  disabled={!candidate.selectable || draftLocked}
                   onChange={() => toggleCandidate(candidate)}
                 />
                 <span>
@@ -630,11 +640,11 @@ export function KnowledgeLlmPanel(props: {
           label="外部LLMへの指示"
           value={prompt}
           onChange={(event) => {
-            if (interactionBusy) return;
+            if (draftLocked) return;
             invalidateDraft();
             setPrompt(event.target.value);
           }}
-          disabled={interactionBusy}
+          disabled={draftLocked}
           rows={5}
           maxLength={16 * 1024}
         />
@@ -645,11 +655,11 @@ export function KnowledgeLlmPanel(props: {
           max={selectedModel?.maxOutputTokens ?? 4096}
           value={maxOutputTokens}
           onChange={(event) => {
-            if (interactionBusy) return;
+            if (draftLocked) return;
             invalidateDraft();
             setMaxOutputTokens(event.target.value);
           }}
-          disabled={interactionBusy}
+          disabled={draftLocked}
         />
         <p>
           適用予算（
@@ -661,7 +671,7 @@ export function KnowledgeLlmPanel(props: {
         </p>
         <Button
           loading={previewing}
-          disabled={interactionBusy}
+          disabled={draftLocked}
           onClick={() => void handlePreview()}
         >
           外部送信内容をプレビュー
@@ -786,6 +796,7 @@ export function KnowledgeLlmPanel(props: {
             <Button
               variant="ghost"
               loading={reading}
+              disabled={reading}
               onClick={() => void readRun(false)}
             >
               状態を確認
@@ -794,6 +805,7 @@ export function KnowledgeLlmPanel(props: {
               <Button
                 variant="ghost"
                 loading={reading}
+                disabled={reading}
                 onClick={() => void readRun(true)}
               >
                 保存済み証跡で再照合

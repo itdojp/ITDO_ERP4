@@ -168,7 +168,16 @@ export class PrismaKnowledgeLlmContextCandidateAdapter implements KnowledgeLlmCo
       const rows = await readClient.knowledgeAnnotationRevision.findMany({
         where: {
           annotation: {
-            is: { knowledgeItemId: item.id, deletedAt: null },
+            is: {
+              knowledgeItemId: item.id,
+              deletedAt: null,
+              scope: input.scope,
+              organizationId:
+                input.scope === 'organization' ? input.organizationId : null,
+              ...(input.scope === 'personal'
+                ? { ownerUserId: input.actor.userId }
+                : {}),
+            },
           },
           ...boundary,
         },

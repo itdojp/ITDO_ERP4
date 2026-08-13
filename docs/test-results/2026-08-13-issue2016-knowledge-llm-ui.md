@@ -30,6 +30,8 @@
 | catalog／policy currency整合 | PASS | request-specific previewがcatalog currencyを束縛し、personal／organizationとも不一致をreservation前にfail closed |
 | source候補cursor機密性 | PASS | LLM候補cursorをAES-256-GCM認証暗号化し、request URL／base64url segmentからsource IDを復元できない回帰test |
 | stale reserved／dispatched runの再照合導線 | PASS | model／component test。provider dispatchは1回のまま、grace期間後のlocal accounting収束だけを実行 |
+| commit結果不明直後の一時404 | PASS | deterministic component test。preview／run lookupを保持してdraftをlockし、同じrun readだけを再試行、provider dispatchは1回 |
+| annotation候補ACL parity | PASS | candidate adapter test。personal ownerおよびorganization scope／organizationをDB predicateでpreview/commit resolverと同じ境界へ固定 |
 | outsider 404とresponse allowlist | PASS | direct API negative E2E、frontend normalization test |
 | 375px responsive layout／semantic label | PASS | component test、sanitized screenshot |
 

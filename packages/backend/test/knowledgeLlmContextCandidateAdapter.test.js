@@ -112,6 +112,81 @@ test('context candidate listing applies item visibility before returning non-emp
   });
 });
 
+test('annotation revision candidates apply the same owner and scope boundary as preview execution', async () => {
+  let annotationQuery;
+  const adapter = new PrismaKnowledgeLlmContextCandidateAdapter({
+    knowledgeItem: {
+      findFirst: async () => ({
+        id: 'item-1',
+        ownerUserId: actor.userId,
+        scope: 'personal',
+        organizationId: null,
+      }),
+    },
+    knowledgeAnnotationRevision: {
+      findMany: async (query) => {
+        annotationQuery = query;
+        return [];
+      },
+    },
+  });
+
+  await adapter.list({
+    actor,
+    itemId: 'item-1',
+    scope: 'personal',
+    organizationId: null,
+    sourceType: 'annotation_revision',
+    limit: 10,
+    boundary: null,
+  });
+
+  assert.deepEqual(annotationQuery.where.annotation.is, {
+    knowledgeItemId: 'item-1',
+    deletedAt: null,
+    scope: 'personal',
+    organizationId: null,
+    ownerUserId: actor.userId,
+  });
+});
+
+test('organization annotation candidates reject personal or other-organization rows in the database query', async () => {
+  let annotationQuery;
+  const adapter = new PrismaKnowledgeLlmContextCandidateAdapter({
+    knowledgeItem: {
+      findFirst: async () => ({
+        id: 'item-1',
+        ownerUserId: 'source-owner',
+        scope: 'organization',
+        organizationId: actor.organizationId,
+      }),
+    },
+    knowledgeAnnotationRevision: {
+      findMany: async (query) => {
+        annotationQuery = query;
+        return [];
+      },
+    },
+  });
+
+  await adapter.list({
+    actor,
+    itemId: 'item-1',
+    scope: 'organization',
+    organizationId: actor.organizationId,
+    sourceType: 'annotation_revision',
+    limit: 10,
+    boundary: null,
+  });
+
+  assert.deepEqual(annotationQuery.where.annotation.is, {
+    knowledgeItemId: 'item-1',
+    deletedAt: null,
+    scope: 'organization',
+    organizationId: actor.organizationId,
+  });
+});
+
 test('thread promotion candidate listing remains bound to the selected item and visible destination synthesis', async () => {
   let promotionQuery;
   const createdAt = new Date('2026-08-13T00:00:00.000Z');
