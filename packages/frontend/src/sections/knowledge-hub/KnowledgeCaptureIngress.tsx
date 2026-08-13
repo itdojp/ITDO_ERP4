@@ -57,7 +57,6 @@ const definiteCommitRejectionCodes = new Set([
   'forbidden',
   'idempotency_conflict',
   'invalid_request',
-  'not_found',
   'preview_token_expired',
   'preview_token_invalid',
 ]);
@@ -83,9 +82,11 @@ function resultEvent(draftId: string, outcome: 'committed' | 'discarded') {
 export function KnowledgeCaptureIngress({
   onCommitted,
   onCommitBusyChange,
+  mutationBlocked = false,
 }: {
   onCommitted?: (itemId: string) => void | Promise<void>;
   onCommitBusyChange?: (busy: boolean) => void;
+  mutationBlocked?: boolean;
 }) {
   const [draftId, setDraftId] = useState('');
   const [draft, setDraft] = useState<IncomingKnowledgeCaptureDraft | null>(
@@ -137,7 +138,12 @@ export function KnowledgeCaptureIngress({
 
   useEffect(() => {
     const receive = (event: Event) => {
-      if (mutationBusyRef.current || handoffLockedRef.current) return;
+      if (
+        mutationBlocked ||
+        mutationBusyRef.current ||
+        handoffLockedRef.current
+      )
+        return;
       const detail = eventDetail((event as CustomEvent).detail);
       if (!detail) return;
       const normalized = normalizeIncomingKnowledgeCapture(detail.draft);
@@ -160,7 +166,7 @@ export function KnowledgeCaptureIngress({
       operationAbortRef.current?.abort();
       generationRef.current += 1;
     };
-  }, [invalidatePreview]);
+  }, [invalidatePreview, mutationBlocked]);
 
   const updateDraft = (
     field: keyof IncomingKnowledgeCaptureDraft,
@@ -181,6 +187,10 @@ export function KnowledgeCaptureIngress({
   };
 
   const runPreview = async () => {
+    if (mutationBlocked) {
+      setError('別のKnowledge保存処理が完了するまでpreviewできません。');
+      return;
+    }
     if (!draft || selectedFields.length === 0) {
       setError('保存するfieldを1件以上選択してください。');
       return;
@@ -221,6 +231,10 @@ export function KnowledgeCaptureIngress({
   };
 
   const commit = async () => {
+    if (mutationBlocked) {
+      setError('別のKnowledge保存処理が完了するまで保存できません。');
+      return;
+    }
     if (!preview || !explicitlyConfirmed || !requestKeyRef.current) {
       setError('exact previewを確認してから保存してください。');
       return;
@@ -250,12 +264,14 @@ export function KnowledgeCaptureIngress({
       if (generationRef.current !== generation) return;
       setResult(value);
       handoffLockedRef.current = value.status !== 'ready';
-      onCommitBusyChange?.(value.status === 'pending');
       if (value.status === 'ready') {
         resultEvent(draftId, 'committed');
         await Promise.resolve(onCommitted?.(value.itemId)).catch(
           () => undefined,
         );
+        onCommitBusyChange?.(false);
+      } else {
+        onCommitBusyChange?.(true);
       }
     } catch (caught) {
       if (controller.signal.aborted || generationRef.current !== generation)
@@ -282,6 +298,10 @@ export function KnowledgeCaptureIngress({
   };
 
   const reconcile = async () => {
+    if (mutationBlocked) {
+      setError('別のKnowledge保存処理が完了するまで再照合できません。');
+      return;
+    }
     if (!preview || !requestKeyRef.current || !unresolved) return;
     const generation = generationRef.current + 1;
     generationRef.current = generation;
@@ -301,12 +321,14 @@ export function KnowledgeCaptureIngress({
       setResult(value);
       setUncertainCaptureId('');
       handoffLockedRef.current = value.status !== 'ready';
-      onCommitBusyChange?.(value.status === 'pending');
       if (value.status === 'ready') {
         resultEvent(draftId, 'committed');
         await Promise.resolve(onCommitted?.(value.itemId)).catch(
           () => undefined,
         );
+        onCommitBusyChange?.(false);
+      } else {
+        onCommitBusyChange?.(true);
       }
     } catch (caught) {
       if (controller.signal.aborted || generationRef.current !== generation)
@@ -333,6 +355,7 @@ export function KnowledgeCaptureIngress({
 
   if (!draft) return null;
   const handoffLocked = result !== null || Boolean(uncertainCaptureId);
+  const controlsBlocked = mutationBlocked || busy !== null || handoffLocked;
   return (
     <Card padding="small">
       <section aria-labelledby="knowledge-capture-ingress-title">
@@ -340,6 +363,11 @@ export function KnowledgeCaptureIngress({
         <p>
           外部入力はまだ保存されていません。送信fieldとscopeを確認し、preview後に明示確定してください。
         </p>
+        {mutationBlocked ? (
+          <Alert variant="warning">
+            別のKnowledge保存処理が完了するまで、このcaptureは開始できません。
+          </Alert>
+        ) : null}
         {error ? <Alert variant="error">{error}</Alert> : null}
         <div className="knowledge-capture-ingress-fields">
           {(
@@ -357,7 +385,7 @@ export function KnowledgeCaptureIngress({
                 <input
                   type="checkbox"
                   checked={selectedFields.includes(field)}
-                  disabled={busy !== null || handoffLocked}
+                  disabled={controlsBlocked}
                   onChange={() => toggleField(field)}
                 />{' '}
                 {fieldLabels[field]}
@@ -369,48 +397,48 @@ export function KnowledgeCaptureIngress({
           label="ページタイトル"
           value={draft.title ?? ''}
           maxLength={500}
-          disabled={busy !== null || handoffLocked}
+          disabled={controlsBlocked}
           onChange={(event) => updateDraft('title', event.target.value)}
         />
         <Input
           label="URL"
           value={draft.url ?? ''}
           maxLength={4096}
-          disabled={busy !== null || handoffLocked}
+          disabled={controlsBlocked}
           onChange={(event) => updateDraft('url', event.target.value)}
         />
         <Textarea
           label="選択テキスト"
           value={draft.selectedText ?? ''}
           rows={5}
-          disabled={busy !== null || handoffLocked}
+          disabled={controlsBlocked}
           onChange={(event) => updateDraft('selectedText', event.target.value)}
         />
         <Textarea
           label="説明"
           value={draft.description ?? ''}
           rows={3}
-          disabled={busy !== null || handoffLocked}
+          disabled={controlsBlocked}
           onChange={(event) => updateDraft('description', event.target.value)}
         />
         <Input
           label="著者"
           value={draft.author ?? ''}
           maxLength={500}
-          disabled={busy !== null || handoffLocked}
+          disabled={controlsBlocked}
           onChange={(event) => updateDraft('author', event.target.value)}
         />
         <Input
           label="公開日時"
           value={draft.publishedAt ?? ''}
           maxLength={200}
-          disabled={busy !== null || handoffLocked}
+          disabled={controlsBlocked}
           onChange={(event) => updateDraft('publishedAt', event.target.value)}
         />
         <Select
           label="source type"
           value={sourceType}
-          disabled={busy !== null || handoffLocked}
+          disabled={controlsBlocked}
           onChange={(event) => {
             invalidatePreview();
             setSourceType(event.target.value as KnowledgeSourceType);
@@ -423,7 +451,7 @@ export function KnowledgeCaptureIngress({
         <Select
           label="保存scope"
           value={scope}
-          disabled={busy !== null || handoffLocked}
+          disabled={controlsBlocked}
           onChange={(event) => {
             invalidatePreview();
             setScope(event.target.value as KnowledgeScope);
@@ -439,7 +467,7 @@ export function KnowledgeCaptureIngress({
               label="共有先グループアカウントID"
               value={groups}
               rows={2}
-              disabled={busy !== null || handoffLocked}
+              disabled={controlsBlocked}
               onChange={(event) => {
                 invalidatePreview();
                 setGroups(event.target.value);
@@ -449,7 +477,7 @@ export function KnowledgeCaptureIngress({
               <input
                 type="checkbox"
                 checked={organizationConfirmed}
-                disabled={busy !== null || handoffLocked}
+                disabled={controlsBlocked}
                 onChange={(event) =>
                   setOrganizationConfirmed(event.target.checked)
                 }
@@ -499,7 +527,7 @@ export function KnowledgeCaptureIngress({
               <input
                 type="checkbox"
                 checked={explicitlyConfirmed}
-                disabled={busy !== null || handoffLocked}
+                disabled={controlsBlocked}
                 onChange={(event) =>
                   setExplicitlyConfirmed(event.target.checked)
                 }
@@ -539,16 +567,14 @@ export function KnowledgeCaptureIngress({
           <Button
             variant="secondary"
             loading={busy === 'preview'}
-            disabled={busy !== null || handoffLocked}
+            disabled={controlsBlocked}
             onClick={() => void runPreview()}
           >
             Preview
           </Button>
           <Button
             loading={busy === 'commit'}
-            disabled={
-              !preview || !explicitlyConfirmed || busy !== null || handoffLocked
-            }
+            disabled={!preview || !explicitlyConfirmed || controlsBlocked}
             onClick={() => void commit()}
           >
             明示確定して保存
@@ -557,7 +583,7 @@ export function KnowledgeCaptureIngress({
             <Button
               variant="secondary"
               loading={busy === 'reconcile'}
-              disabled={busy !== null}
+              disabled={busy !== null || mutationBlocked}
               onClick={() => void reconcile()}
             >
               保存結果を再照合

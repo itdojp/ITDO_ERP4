@@ -101,7 +101,7 @@ function mapCapture(row: CaptureRow): KnowledgeCapture {
 
 function currentCaptureAccessWhere(input: {
   actor: KnowledgeActor;
-  captureId: string;
+  captureId?: string;
 }): Prisma.KnowledgeCaptureRequestWhereInput {
   const actorUserId = input.actor.userId.trim();
   const organizationId = input.actor.organizationId?.trim();
@@ -157,7 +157,7 @@ function currentCaptureAccessWhere(input: {
     });
   }
   return {
-    id: input.captureId,
+    ...(input.captureId ? { id: input.captureId } : {}),
     ownerUserId: actorUserId,
     OR: visibleScopes,
   };
@@ -315,11 +315,14 @@ export class PrismaKnowledgeCaptureRepository implements KnowledgeCaptureReposit
   }
 
   async findRecentByPayload(input: {
-    ownerUserId: string;
+    actor: KnowledgeActor;
     payloadHash: string;
   }) {
     const row = await this.client.knowledgeCaptureRequest.findFirst({
-      where: input,
+      where: {
+        ...currentCaptureAccessWhere({ actor: input.actor }),
+        payloadHash: input.payloadHash,
+      },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
     return row ? mapCapture(row) : null;

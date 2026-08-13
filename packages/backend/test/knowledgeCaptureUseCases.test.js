@@ -92,12 +92,14 @@ function createHarness(options = {}) {
           capture.ownerUserId === ownerUserId &&
           capture.requestKeyHash === requestKeyHash,
       ) ?? null,
-    findRecentByPayload: async ({ ownerUserId, payloadHash }) =>
-      [...captures.values()].find(
-        (capture) =>
-          capture.ownerUserId === ownerUserId &&
-          capture.payloadHash === payloadHash,
-      ) ?? null,
+    findRecentByPayload: async ({ actor: candidate, payloadHash }) =>
+      behavior.currentAccess
+        ? ([...captures.values()].find(
+            (capture) =>
+              capture.ownerUserId === candidate.userId &&
+              capture.payloadHash === payloadHash,
+          ) ?? null)
+        : null,
     hasCurrentAccess: async ({ actor: candidate, captureId }) => {
       const capture = captures.get(captureId);
       return Boolean(
@@ -392,6 +394,24 @@ test('same key with changed payload conflicts before artifact storage', async ()
   assert.equal(result.ok, false);
   assert.equal(result.code, 'idempotency_conflict');
   assert.equal(harness.stored.length, 1);
+});
+
+test('preview does not expose a duplicate whose current item access was revoked', async () => {
+  const harness = createHarness();
+  const { commit } = await previewAndCommit(harness);
+  assert.equal(commit.ok, true);
+  harness.behavior.currentAccess = false;
+
+  const secondPreview = await harness.service.preview({
+    actor,
+    auditActor: { requestId: 'hidden-duplicate-preview', source: 'api' },
+    request: request({ requestKey: 'new-opaque-client-key' }),
+  });
+  assert.equal(secondPreview.ok, true);
+  assert.deepEqual(secondPreview.value.duplicateCandidate, {
+    detected: false,
+    status: null,
+  });
 });
 
 test('organization requires explicit confirmation and active current groups', async () => {

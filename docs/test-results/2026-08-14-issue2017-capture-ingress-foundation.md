@@ -22,14 +22,14 @@
 
 | 分類                                                                    | 結果                                                                                   |
 | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| focused backend draft／token／use case／route／schema／CSRF             | 36 / 36 PASS                                                                            |
-| focused frontend model／API／component／BFF CSRF                        | 34 / 34 PASS                                                                            |
+| focused backend draft／token／use case／route／schema／CSRF             | 38 / 38 PASS                                                                           |
+| focused frontend model／API／component／mutation lock                   | 37 / 37 PASS                                                                           |
 | PostgreSQL 15 migration／idempotency／audit rollback／immutable trigger | PASS                                                                                   |
-| old-application実row read/write、health／ready                          | PASS                                                                                   |
+| 直前mainの旧Prisma application実row read/write、旧HTTP health／ready    | PASS                                                                                   |
 | OpenAPI export／non-breaking diff                                       | PASS                                                                                   |
 | backend／frontend lint、format、typecheck、build                        | PASS                                                                                   |
-| backend full coverage                                                   | 2,394 / 2,394 PASS、statements 75.54%、branches 72.27%、functions 85.67%、lines 75.54% |
-| frontend full／UI core coverage                                         | 872 / 872 PASS、statements 73.67%、branches 66.69%、functions 73.29%、lines 76.43%     |
+| backend full coverage                                                   | 2,396 / 2,396 PASS、statements 75.55%、branches 72.27%、functions 85.70%、lines 75.55% |
+| frontend full／UI core coverage                                         | 875 / 875 PASS、statements 73.71%、branches 66.74%、functions 73.34%、lines 76.47%     |
 | core E2E                                                                | 109 / 109 PASS                                                                         |
 | full E2E                                                                | 155 PASS／34既存条件付きskip／failure 0                                                |
 | lint／format／typecheck／build／audit／ops-quality                      | PASS                                                                                   |

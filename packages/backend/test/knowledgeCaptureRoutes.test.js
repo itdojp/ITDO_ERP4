@@ -130,6 +130,50 @@ test('capture routes expose allowlisted preview and pending state only', async (
   assert.equal(calls[0][1].actor.userId, 'owner-1');
 });
 
+test('capture preview exposes the sanitized transaction-conflict contract', async (t) => {
+  const service = {
+    async preview() {
+      return {
+        ok: false,
+        statusCode: 409,
+        code: 'capture_transaction_conflict',
+        message: 'Capture state changed concurrently',
+      };
+    },
+    async commit() {
+      throw new Error('unused');
+    },
+    async detail() {
+      throw new Error('unused');
+    },
+    async reconcile() {
+      throw new Error('unused');
+    },
+  };
+  const app = await build(service);
+  t.after(() => app.close());
+  const response = await app.inject({
+    method: 'POST',
+    url: '/knowledge/captures/preview',
+    payload: {
+      draft,
+      selectedFields: ['title'],
+      scope: 'personal',
+      organizationGroupAccountIds: [],
+      sourceType: 'manual',
+      requestKey: 'private-request-key',
+    },
+  });
+  assert.equal(response.statusCode, 409);
+  assert.deepEqual(response.json(), {
+    error: {
+      category: 'conflict',
+      code: 'capture_transaction_conflict',
+      message: 'Capture state changed concurrently',
+    },
+  });
+});
+
 test('capture HTTP parser allows bounded escaped envelopes above the canonical draft limit', async (t) => {
   let previewCalls = 0;
   const service = {

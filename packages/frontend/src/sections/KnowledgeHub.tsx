@@ -125,6 +125,7 @@ export const KnowledgeHub: React.FC<{
   const [captureBusy, setCaptureBusy] = useState(false);
   const [externalCommitBusy, setExternalCommitBusy] = useState(false);
   const [captureIngressBusy, setCaptureIngressBusy] = useState(false);
+  const [provenanceBusy, setProvenanceBusy] = useState(false);
   const [downloadBusyId, setDownloadBusyId] = useState('');
   const [reconcileBusyId, setReconcileBusyId] = useState('');
   const [pendingAttempt, setPendingAttempt] = useState<PendingAttempt | null>(
@@ -160,23 +161,34 @@ export const KnowledgeHub: React.FC<{
     [updateExternalCommitBusy],
   );
   const handleProvenanceBusyChange = useCallback(
-    (busy: boolean) => updateExternalCommitBusy('provenance', busy),
+    (busy: boolean) => {
+      setProvenanceBusy(busy);
+      updateExternalCommitBusy('provenance', busy);
+    },
     [updateExternalCommitBusy],
   );
 
-  const selectKnowledgeItem = useCallback((itemId: string) => {
-    if (externalCommitBusyRef.current) {
-      if (selectedItemIdRef.current === itemId) return true;
-      setNotice({
-        tone: 'warning',
-        text: '外部処理の確定結果を確認するまでKnowledge itemを切り替えられません。',
-      });
-      return false;
-    }
-    selectedItemIdRef.current = itemId;
-    setSelectedItemId(itemId);
-    return true;
-  }, []);
+  const selectKnowledgeItem = useCallback(
+    (itemId: string, owningIntent?: 'capture-ingress') => {
+      const busySources = externalCommitBusySourcesRef.current;
+      const ownedOnly =
+        owningIntent === 'capture-ingress' &&
+        busySources.size === 1 &&
+        busySources.has('capture-ingress');
+      if (externalCommitBusyRef.current && !ownedOnly) {
+        if (selectedItemIdRef.current === itemId) return true;
+        setNotice({
+          tone: 'warning',
+          text: '外部処理の確定結果を確認するまでKnowledge itemを切り替えられません。',
+        });
+        return false;
+      }
+      selectedItemIdRef.current = itemId;
+      setSelectedItemId(itemId);
+      return true;
+    },
+    [],
+  );
 
   const selectedItem = useMemo(
     () => items.find((item) => item.id === selectedItemId) ?? null,
@@ -791,10 +803,11 @@ export const KnowledgeHub: React.FC<{
       ) : null}
 
       <KnowledgeCaptureIngress
+        mutationBlocked={provenanceBusy}
         onCommitBusyChange={handleCaptureIngressBusyChange}
         onCommitted={async (itemId) => {
           await loadItems();
-          selectKnowledgeItem(itemId);
+          if (!selectKnowledgeItem(itemId, 'capture-ingress')) return;
           await loadSnapshots(itemId);
         }}
       />

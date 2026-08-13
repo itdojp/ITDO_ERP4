@@ -55,15 +55,34 @@ vi.mock('./knowledge-hub/KnowledgeProvenanceWorkspace', () => ({
 vi.mock('./knowledge-hub/KnowledgeCaptureIngress', () => ({
   KnowledgeCaptureIngress: ({
     onCommitBusyChange,
+    onCommitted,
+    mutationBlocked,
   }: {
     onCommitBusyChange?: (busy: boolean) => void;
+    onCommitted?: (itemId: string) => void | Promise<void>;
+    mutationBlocked?: boolean;
   }) => (
     <div>
+      <span>
+        {mutationBlocked ? 'capture ingress blocked' : 'capture ingress open'}
+      </span>
       <button type="button" onClick={() => onCommitBusyChange?.(true)}>
         capture intentを保持
       </button>
       <button type="button" onClick={() => onCommitBusyChange?.(false)}>
         capture intentを解放
+      </button>
+      <button
+        type="button"
+        disabled={mutationBlocked}
+        onClick={() => {
+          onCommitBusyChange?.(true);
+          void Promise.resolve(onCommitted?.('item-captured')).finally(() =>
+            onCommitBusyChange?.(false),
+          );
+        }}
+      >
+        capture保存完了を通知
       </button>
     </div>
   ),
@@ -217,6 +236,10 @@ describe('KnowledgeHub', () => {
     fireEvent.click(
       screen.getByRole('button', { name: '外部確定intentを保持' }),
     );
+    expect(screen.getByText('capture ingress blocked')).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: 'capture保存完了を通知' }),
+    ).toBeDisabled();
     expect(secondItem).toBeDisabled();
     expect(onShareCommitBusyChange).toHaveBeenLastCalledWith(true);
 
@@ -231,6 +254,65 @@ describe('KnowledgeHub', () => {
       screen.getByRole('button', { name: '外部確定intentを解放' }),
     );
     expect(secondItem).toBeEnabled();
+    expect(onShareCommitBusyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('keeps navigation locked while the capture completion refresh selects matching snapshots', async () => {
+    const onShareCommitBusyChange = vi.fn();
+    const first = makeItem({ id: 'item-1', title: '元の選択' });
+    const other = makeItem({ id: 'item-other', title: '手動切替候補' });
+    const captured = makeItem({
+      id: 'item-captured',
+      title: 'capture保存項目',
+    });
+    const firstSnapshot = makeSnapshot({
+      id: 'snapshot-first',
+      knowledgeItemId: first.id,
+      sha256: 'a'.repeat(64),
+    });
+    const capturedSnapshot = makeSnapshot({
+      id: 'snapshot-captured',
+      knowledgeItemId: captured.id,
+      sha256: 'c'.repeat(64),
+    });
+    let resolveRefresh!: (items: KnowledgeItem[]) => void;
+    apiMocks.listKnowledgeInbox.mockResolvedValue([first, other]);
+    apiMocks.listKnowledgeSnapshots.mockImplementation((itemId: string) =>
+      Promise.resolve(
+        itemId === captured.id ? [capturedSnapshot] : [firstSnapshot],
+      ),
+    );
+    render(<KnowledgeHub onShareCommitBusyChange={onShareCommitBusyChange} />);
+
+    const otherButton = await screen.findByRole('button', {
+      name: /手動切替候補/,
+    });
+    apiMocks.listKnowledgeInbox.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'capture保存完了を通知' }),
+    );
+    expect(apiMocks.listKnowledgeInbox).toHaveBeenCalledTimes(2);
+    expect(resolveRefresh).toBeTypeOf('function');
+    await waitFor(() =>
+      expect(onShareCommitBusyChange).toHaveBeenLastCalledWith(true),
+    );
+    expect(otherButton).not.toBeInTheDocument();
+    await act(async () => {
+      resolveRefresh([first, other, captured]);
+    });
+
+    expect(
+      await screen.findByText('provenance workspace: capture保存項目'),
+    ).toBeVisible();
+    expect(
+      await screen.findByRole('article', { name: 'version 1' }),
+    ).toHaveTextContent('c'.repeat(64));
+    expect(screen.getByRole('button', { name: /手動切替候補/ })).toBeEnabled();
     expect(onShareCommitBusyChange).toHaveBeenLastCalledWith(false);
   });
 

@@ -98,7 +98,7 @@ export interface KnowledgeCaptureRepository {
     requestKeyHash: string;
   }): Promise<KnowledgeCapture | null>;
   findRecentByPayload(input: {
-    ownerUserId: string;
+    actor: KnowledgeActor;
     payloadHash: string;
   }): Promise<KnowledgeCapture | null>;
   hasCurrentAccess(input: {

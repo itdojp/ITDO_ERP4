@@ -349,6 +349,14 @@ try {
   assert.equal(accessLossReconcile.ok, false);
   assert.equal(accessLossReconcile.statusCode, 404);
   assert.equal(accessLossReconcileCalls, 0);
+  const accessLossDuplicatePreview = await preview(accessLossService, {
+    ...accessLossValue,
+    requestKey: 'synthetic-access-loss-new-key',
+  });
+  assert.deepEqual(accessLossDuplicatePreview.duplicateCandidate, {
+    detected: false,
+    status: null,
+  });
 
   const auditText = JSON.stringify(
     await prisma.auditLog.findMany({

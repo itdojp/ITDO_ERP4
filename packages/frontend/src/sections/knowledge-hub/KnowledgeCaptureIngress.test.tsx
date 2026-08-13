@@ -159,6 +159,7 @@ describe('KnowledgeCaptureIngress', () => {
 
   it('acquires the parent navigation lock synchronously before commit I/O', async () => {
     let resolveCommit!: (value: unknown) => void;
+    let resolveRefresh!: () => void;
     api.commitKnowledgeCapture.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
@@ -166,7 +167,18 @@ describe('KnowledgeCaptureIngress', () => {
         }),
     );
     const onCommitBusyChange = vi.fn();
-    render(<KnowledgeCaptureIngress onCommitBusyChange={onCommitBusyChange} />);
+    const onCommitted = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+    render(
+      <KnowledgeCaptureIngress
+        onCommitted={onCommitted}
+        onCommitBusyChange={onCommitBusyChange}
+      />,
+    );
     deliver();
     fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
     await screen.findByRole('heading', { name: 'Exact preview' });
@@ -185,9 +197,32 @@ describe('KnowledgeCaptureIngress', () => {
       committedAt: '2026-08-14T00:00:01.000Z',
       failedAt: null,
     });
+    await waitFor(() => expect(onCommitted).toHaveBeenCalledWith('item-1'));
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
+    resolveRefresh();
     await waitFor(() =>
       expect(onCommitBusyChange).toHaveBeenLastCalledWith(false),
     );
+  });
+
+  it('rejects incoming drafts and mutations while another Knowledge mutation owns the lock', async () => {
+    const { rerender } = render(
+      <KnowledgeCaptureIngress mutationBlocked={true} />,
+    );
+    deliver();
+    expect(
+      screen.queryByRole('heading', { name: 'ブラウザー共有の確認' }),
+    ).not.toBeInTheDocument();
+
+    rerender(<KnowledgeCaptureIngress mutationBlocked={false} />);
+    deliver();
+    expect(
+      await screen.findByRole('heading', { name: 'ブラウザー共有の確認' }),
+    ).toBeVisible();
+    rerender(<KnowledgeCaptureIngress mutationBlocked={true} />);
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    expect(api.previewKnowledgeCapture).not.toHaveBeenCalled();
   });
 
   it('requires a second organization audience confirmation', async () => {
@@ -345,6 +380,35 @@ describe('KnowledgeCaptureIngress', () => {
       expect(api.commitKnowledgeCapture).toHaveBeenCalledTimes(1);
     },
   );
+
+  it('keeps a not-found response as result-unknown because it can occur after artifact I/O', async () => {
+    const onCommitBusyChange = vi.fn();
+    api.commitKnowledgeCapture.mockRejectedValueOnce(
+      new KnowledgeHubApiError('not_found', 404),
+    );
+    render(<KnowledgeCaptureIngress onCommitBusyChange={onCommitBusyChange} />);
+    deliver();
+    fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
+    await screen.findByRole('heading', { name: 'Exact preview' });
+    fireEvent.click(screen.getByLabelText('このexact previewを保存します'));
+    fireEvent.click(screen.getByRole('button', { name: '明示確定して保存' }));
+
+    expect(await screen.findByText(/保存結果が不明/)).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: '保存結果を再照合' }),
+    ).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeDisabled();
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
+
+    deliver({ title: 'A second handoff must not replace the locked intent' });
+    expect(screen.getByDisplayValue('Synthetic page')).toBeDisabled();
+    expect(
+      screen.queryByDisplayValue(
+        'A second handoff must not replace the locked intent',
+      ),
+    ).not.toBeInTheDocument();
+    expect(api.commitKnowledgeCapture).toHaveBeenCalledTimes(1);
+  });
 
   it('treats a server rejection as definite and requires a fresh preview', async () => {
     api.commitKnowledgeCapture.mockRejectedValueOnce(

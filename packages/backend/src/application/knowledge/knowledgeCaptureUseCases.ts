@@ -296,7 +296,7 @@ export function createKnowledgeCaptureService(dependencies: {
             return { authorized: false as const, duplicate: null };
           }
           const duplicate = await transaction.captures.findRecentByPayload({
-            ownerUserId: input.actor.userId,
+            actor: input.actor,
             payloadHash,
           });
           await transaction.audit.write({
