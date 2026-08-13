@@ -24,7 +24,8 @@ type CaptureDbClient = Pick<
   | 'knowledgeCaptureRequest'
   | 'knowledgeItem'
   | 'knowledgeSnapshot'
->;
+> &
+  Pick<Prisma.TransactionClient, '$queryRaw'>;
 
 type TransactionHost = {
   $transaction<T>(
@@ -97,6 +98,158 @@ function mapCapture(row: CaptureRow): KnowledgeCapture {
   };
 }
 
+function currentCaptureAccessWhere(input: {
+  actor: KnowledgeActor;
+  captureId: string;
+}): Prisma.KnowledgeCaptureRequestWhereInput {
+  const actorUserId = input.actor.userId.trim();
+  const organizationId = input.actor.organizationId?.trim();
+  const groupAccountIds = [
+    ...new Set(
+      input.actor.groupAccountIds.map((value) => value.trim()).filter(Boolean),
+    ),
+  ];
+  const visibleScopes: Prisma.KnowledgeCaptureRequestWhereInput[] = [
+    {
+      scope: 'personal',
+      organizationId: null,
+      knowledgeItem: {
+        is: {
+          ownerUserId: actorUserId,
+          scope: 'personal',
+          organizationId: null,
+          deletedAt: null,
+        },
+      },
+    },
+  ];
+  if (organizationId && groupAccountIds.length > 0) {
+    visibleScopes.push({
+      scope: 'organization',
+      organizationId,
+      knowledgeItem: {
+        is: {
+          ownerUserId: actorUserId,
+          scope: 'organization',
+          organizationId,
+          deletedAt: null,
+          groupGrants: {
+            some: {
+              groupAccountId: { in: groupAccountIds },
+              groupAccount: {
+                active: true,
+                memberships: {
+                  some: {
+                    userId: actorUserId,
+                    user: {
+                      active: true,
+                      deletedAt: null,
+                      organization: organizationId,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+  return {
+    id: input.captureId,
+    ownerUserId: actorUserId,
+    OR: visibleScopes,
+  };
+}
+
+async function lockCurrentCaptureAccess(
+  client: CaptureDbClient,
+  input: { actor: KnowledgeActor; captureId: string },
+) {
+  const actorUserId = input.actor.userId.trim();
+  const organizationId = input.actor.organizationId?.trim() ?? '';
+  const groupAccountIds = [
+    ...new Set(
+      input.actor.groupAccountIds.map((value) => value.trim()).filter(Boolean),
+    ),
+  ];
+  const organizationAccess =
+    organizationId && groupAccountIds.length > 0
+      ? Prisma.sql`
+          OR (
+            capture."scope" = 'organization'
+            AND capture."organizationId" = ${organizationId}
+            AND item."scope" = 'organization'
+            AND item."organizationId" = ${organizationId}
+            AND EXISTS (
+              SELECT 1
+              FROM "KnowledgeItemGroupGrant" grant_row
+              JOIN "GroupAccount" group_row
+                ON group_row."id" = grant_row."groupAccountId"
+              JOIN "UserGroup" membership_row
+                ON membership_row."groupId" = group_row."id"
+              JOIN "UserAccount" user_row
+                ON user_row."id" = membership_row."userId"
+              WHERE grant_row."knowledgeItemId" = item."id"
+                AND group_row."id" IN (${Prisma.join(groupAccountIds)})
+                AND group_row."active" = true
+                AND membership_row."userId" = ${actorUserId}
+                AND user_row."active" = true
+                AND user_row."deletedAt" IS NULL
+                AND user_row."organization" = ${organizationId}
+            )
+          )`
+      : Prisma.empty;
+  const captureRows = await client.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT capture."id"
+    FROM "KnowledgeCaptureRequest" capture
+    JOIN "KnowledgeItem" item
+      ON item."id" = capture."knowledgeItemId"
+     AND item."ownerUserId" = capture."ownerUserId"
+    WHERE capture."id" = ${input.captureId}
+      AND capture."ownerUserId" = ${actorUserId}
+      AND item."ownerUserId" = ${actorUserId}
+      AND item."deletedAt" IS NULL
+      AND (
+        (
+          capture."scope" = 'personal'
+          AND capture."organizationId" IS NULL
+          AND item."scope" = 'personal'
+          AND item."organizationId" IS NULL
+        )
+        ${organizationAccess}
+      )
+    FOR SHARE OF capture, item
+  `);
+  if (captureRows.length !== 1) return false;
+  if (!organizationId || groupAccountIds.length === 0) return true;
+  const capture = await client.knowledgeCaptureRequest.findUnique({
+    where: { id: input.captureId },
+    select: { knowledgeItemId: true, scope: true },
+  });
+  if (!capture || capture.scope === 'personal') return Boolean(capture);
+  const accessRows = await client.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+    SELECT grant_row."id"
+    FROM "KnowledgeItemGroupGrant" grant_row
+    JOIN "GroupAccount" group_row
+      ON group_row."id" = grant_row."groupAccountId"
+    JOIN "UserGroup" membership_row
+      ON membership_row."groupId" = group_row."id"
+     AND membership_row."userId" = ${actorUserId}
+    JOIN "UserAccount" user_row
+      ON user_row."id" = membership_row."userId"
+    WHERE grant_row."knowledgeItemId" = ${capture.knowledgeItemId}
+      AND group_row."id" IN (${Prisma.join(groupAccountIds)})
+      AND group_row."active" = true
+      AND user_row."active" = true
+      AND user_row."deletedAt" IS NULL
+      AND user_row."organization" = ${organizationId}
+    ORDER BY grant_row."id", group_row."id", membership_row."id", user_row."id"
+    FOR SHARE OF grant_row, group_row, membership_row, user_row
+  `);
+  return accessRows.length > 0;
+}
+
 export class PrismaKnowledgeCaptureRepository implements KnowledgeCaptureRepository {
   constructor(private readonly client: CaptureDbClient = prisma) {}
 
@@ -146,9 +299,17 @@ export class PrismaKnowledgeCaptureRepository implements KnowledgeCaptureReposit
     return row ? mapCapture(row) : null;
   }
 
+  async hasCurrentAccess(input: { actor: KnowledgeActor; captureId: string }) {
+    return (
+      (await this.client.knowledgeCaptureRequest.count({
+        where: currentCaptureAccessWhere(input),
+      })) === 1
+    );
+  }
+
   async findOwnedById(input: { actor: KnowledgeActor; captureId: string }) {
     const row = await this.client.knowledgeCaptureRequest.findFirst({
-      where: { id: input.captureId, ownerUserId: input.actor.userId },
+      where: currentCaptureAccessWhere(input),
     });
     return row ? mapCapture(row) : null;
   }
@@ -158,7 +319,7 @@ export class PrismaKnowledgeCaptureRepository implements KnowledgeCaptureReposit
     captureId: string;
   }) {
     const row = await this.client.knowledgeCaptureRequest.findFirst({
-      where: { id: input.captureId, ownerUserId: input.actor.userId },
+      where: currentCaptureAccessWhere(input),
       include: {
         snapshot: {
           select: {
@@ -225,6 +386,10 @@ export class PrismaKnowledgeCaptureRepository implements KnowledgeCaptureReposit
         originalName: 'knowledge-capture.txt',
         requestKeyHash: input.snapshotRequestKeyHash,
         requestPayloadHash: input.snapshotPayloadHash,
+        contentType: input.contentType,
+        extractedText: input.extractedText,
+        sha256: input.sha256,
+        sizeBytes: BigInt(input.sizeBytes),
         capturedAt: input.capturedAt,
         capturedBy: input.createdBy,
       },
@@ -248,37 +413,8 @@ export class PrismaKnowledgeCaptureRepository implements KnowledgeCaptureReposit
     return mapCapture(row);
   }
 
-  async recordMaterialized(input: {
-    captureId: string;
-    contentType: string;
-    extractedText: string;
-    sha256: string;
-    sizeBytes: number;
-  }) {
-    const capture = await this.client.knowledgeCaptureRequest.findUnique({
-      where: { id: input.captureId },
-    });
-    if (!capture || capture.status !== 'pending')
-      return capture ? mapCapture(capture) : null;
-    const changed = await this.client.knowledgeSnapshot.updateMany({
-      where: {
-        id: capture.snapshotId,
-        status: 'pending',
-        artifactId: null,
-        sha256: null,
-        sizeBytes: null,
-      },
-      data: {
-        contentType: input.contentType,
-        extractedText: input.extractedText,
-        sha256: input.sha256,
-        sizeBytes: BigInt(input.sizeBytes),
-      },
-    });
-    return changed.count === 1 ? mapCapture(capture) : null;
-  }
-
   async markReady(input: {
+    actor: KnowledgeActor;
     captureId: string;
     artifactId: string;
     contentType: string;
@@ -286,8 +422,9 @@ export class PrismaKnowledgeCaptureRepository implements KnowledgeCaptureReposit
     sizeBytes: number;
     committedAt: Date;
   }) {
-    const capture = await this.client.knowledgeCaptureRequest.findUnique({
-      where: { id: input.captureId },
+    if (!(await lockCurrentCaptureAccess(this.client, input))) return null;
+    const capture = await this.client.knowledgeCaptureRequest.findFirst({
+      where: currentCaptureAccessWhere(input),
     });
     if (!capture) return null;
     if (capture.status === 'ready') return mapCapture(capture);
@@ -324,12 +461,14 @@ export class PrismaKnowledgeCaptureRepository implements KnowledgeCaptureReposit
   }
 
   async markFailed(input: {
+    actor: KnowledgeActor;
     captureId: string;
     failedAt: Date;
     failureCode: 'snapshot_storage_failed';
   }) {
-    const capture = await this.client.knowledgeCaptureRequest.findUnique({
-      where: { id: input.captureId },
+    if (!(await lockCurrentCaptureAccess(this.client, input))) return null;
+    const capture = await this.client.knowledgeCaptureRequest.findFirst({
+      where: currentCaptureAccessWhere(input),
     });
     if (!capture) return null;
     if (capture.status === 'failed') return mapCapture(capture);

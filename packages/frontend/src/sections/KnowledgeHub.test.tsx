@@ -47,6 +47,22 @@ vi.mock('./knowledge-hub/KnowledgeProvenanceWorkspace', () => ({
     </div>
   ),
 }));
+vi.mock('./knowledge-hub/KnowledgeCaptureIngress', () => ({
+  KnowledgeCaptureIngress: ({
+    onCommitBusyChange,
+  }: {
+    onCommitBusyChange?: (busy: boolean) => void;
+  }) => (
+    <div>
+      <button type="button" onClick={() => onCommitBusyChange?.(true)}>
+        capture intentを保持
+      </button>
+      <button type="button" onClick={() => onCommitBusyChange?.(false)}>
+        capture intentを解放
+      </button>
+    </div>
+  ),
+}));
 
 import { KnowledgeHub } from './KnowledgeHub';
 import { KnowledgeHubApiError } from './knowledge-hub/knowledgeHubApi';
@@ -179,6 +195,36 @@ describe('KnowledgeHub', () => {
     expect(
       await screen.findByText('provenance workspace: 切替候補'),
     ).toBeVisible();
+  });
+
+  it('keeps navigation locked until every external commit source is resolved', async () => {
+    const onShareCommitBusyChange = vi.fn();
+    const first = makeItem({ id: 'item-1', title: '共有確定元' });
+    const second = makeItem({ id: 'item-2', title: '切替候補' });
+    apiMocks.listKnowledgeInbox.mockResolvedValue([first, second]);
+    render(<KnowledgeHub onShareCommitBusyChange={onShareCommitBusyChange} />);
+
+    const secondItem = await screen.findByRole('button', { name: /切替候補/ });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'capture intentを保持' }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: '外部確定intentを保持' }),
+    );
+    expect(secondItem).toBeDisabled();
+    expect(onShareCommitBusyChange).toHaveBeenLastCalledWith(true);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'capture intentを解放' }),
+    );
+    expect(secondItem).toBeDisabled();
+    expect(onShareCommitBusyChange).toHaveBeenLastCalledWith(true);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: '外部確定intentを解放' }),
+    );
+    expect(secondItem).toBeEnabled();
+    expect(onShareCommitBusyChange).toHaveBeenLastCalledWith(false);
   });
 
   it('does not replace the selected item snapshots when a concurrent capture recovery targets another item', async () => {

@@ -135,15 +135,29 @@ export const KnowledgeHub: React.FC<{
   const deepLinkLoadSequence = useRef(0);
   const deepLinkAbortRef = useRef<AbortController | null>(null);
   const externalCommitBusyRef = useRef(false);
+  const externalCommitBusySourcesRef = useRef(new Set<string>());
   const selectedItemIdRef = useRef('');
 
-  const handleExternalCommitBusyChange = useCallback(
-    (busy: boolean) => {
-      externalCommitBusyRef.current = busy;
-      setExternalCommitBusy(busy);
-      onShareCommitBusyChange?.(busy);
+  const updateExternalCommitBusy = useCallback(
+    (source: 'capture-ingress' | 'provenance', busy: boolean) => {
+      const sources = externalCommitBusySourcesRef.current;
+      if (busy) sources.add(source);
+      else sources.delete(source);
+      const nextBusy = sources.size > 0;
+      if (externalCommitBusyRef.current === nextBusy) return;
+      externalCommitBusyRef.current = nextBusy;
+      setExternalCommitBusy(nextBusy);
+      onShareCommitBusyChange?.(nextBusy);
     },
     [onShareCommitBusyChange],
+  );
+  const handleCaptureIngressBusyChange = useCallback(
+    (busy: boolean) => updateExternalCommitBusy('capture-ingress', busy),
+    [updateExternalCommitBusy],
+  );
+  const handleProvenanceBusyChange = useCallback(
+    (busy: boolean) => updateExternalCommitBusy('provenance', busy),
+    [updateExternalCommitBusy],
   );
 
   const selectKnowledgeItem = useCallback((itemId: string) => {
@@ -765,6 +779,7 @@ export const KnowledgeHub: React.FC<{
       ) : null}
 
       <KnowledgeCaptureIngress
+        onCommitBusyChange={handleCaptureIngressBusyChange}
         onCommitted={async (itemId) => {
           await loadItems();
           selectKnowledgeItem(itemId);
@@ -992,7 +1007,7 @@ export const KnowledgeHub: React.FC<{
             itemScope={selectedItem.scope}
             organizationId={selectedItem.organizationId}
             snapshots={snapshots}
-            onCommitBusyChange={handleExternalCommitBusyChange}
+            onCommitBusyChange={handleProvenanceBusyChange}
           />
         ) : (
           <AsyncStatePanel

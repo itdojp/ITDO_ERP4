@@ -52,6 +52,10 @@ export type KnowledgeCaptureCreateRecord = {
   snapshotId: string;
   snapshotRequestKeyHash: string;
   snapshotPayloadHash: string;
+  contentType: string;
+  extractedText: string;
+  sha256: string;
+  sizeBytes: number;
   selectedFieldCount: number;
   payloadByteCount: number;
   createdBy: string;
@@ -97,6 +101,10 @@ export interface KnowledgeCaptureRepository {
     ownerUserId: string;
     payloadHash: string;
   }): Promise<KnowledgeCapture | null>;
+  hasCurrentAccess(input: {
+    actor: KnowledgeActor;
+    captureId: string;
+  }): Promise<boolean>;
   findOwnedById(input: {
     actor: KnowledgeActor;
     captureId: string;
@@ -114,14 +122,8 @@ export interface KnowledgeCaptureRepository {
   createAggregate(
     input: KnowledgeCaptureCreateRecord,
   ): Promise<KnowledgeCapture>;
-  recordMaterialized(input: {
-    captureId: string;
-    contentType: string;
-    extractedText: string;
-    sha256: string;
-    sizeBytes: number;
-  }): Promise<KnowledgeCapture | null>;
   markReady(input: {
+    actor: KnowledgeActor;
     captureId: string;
     artifactId: string;
     contentType: string;
@@ -130,6 +132,7 @@ export interface KnowledgeCaptureRepository {
     committedAt: Date;
   }): Promise<KnowledgeCapture | null>;
   markFailed(input: {
+    actor: KnowledgeActor;
     captureId: string;
     failedAt: Date;
     failureCode: KnowledgeCaptureFailureCode;

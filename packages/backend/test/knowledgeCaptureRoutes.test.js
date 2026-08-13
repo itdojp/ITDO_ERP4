@@ -75,6 +75,7 @@ test('capture routes expose allowlisted preview and pending state only', async (
         ok: true,
         value: {
           captureId: 'capture-1',
+          requestCaptureId: 'capture-1',
           itemId: 'item-1',
           snapshotId: 'snapshot-1',
           status: 'pending',
@@ -126,6 +127,62 @@ test('capture routes expose allowlisted preview and pending state only', async (
   assert.equal(commit.json().status, 'pending');
   assert.equal(JSON.stringify(commit.json()).includes('providerKey'), false);
   assert.equal(calls[0][1].actor.userId, 'owner-1');
+});
+
+test('capture HTTP parser allows bounded escaped envelopes above the canonical draft limit', async (t) => {
+  let previewCalls = 0;
+  const service = {
+    preview: async () => {
+      previewCalls += 1;
+      return {
+        ok: true,
+        value: {
+          captureId: 'capture-large',
+          normalizedDraft: { ...draft, selectedText: 'accepted' },
+          selectedFields: ['selectedText'],
+          omittedFields: [],
+          scope: 'personal',
+          sourceType: 'manual',
+          fieldCount: 1,
+          byteCount: 1,
+          duplicateCandidate: { detected: false, status: null },
+          requiresOrganizationConfirmation: false,
+          previewToken: 'opaque-preview-token',
+          expiresAt: new Date('2026-08-14T00:10:00.000Z'),
+        },
+      };
+    },
+    commit: async () => {
+      throw new Error('unused');
+    },
+    detail: async () => {
+      throw new Error('unused');
+    },
+    reconcile: async () => {
+      throw new Error('unused');
+    },
+  };
+  const app = await build(service);
+  t.after(() => app.close());
+  const escaped = '\\'.repeat(64 * 1024);
+  const payload = {
+    draft: { ...draft, title: null, selectedText: escaped },
+    selectedFields: ['selectedText'],
+    scope: 'personal',
+    organizationGroupAccountIds: [],
+    sourceType: 'manual',
+  };
+  const raw = Buffer.from(JSON.stringify(payload), 'utf8');
+  assert.ok(raw.length > 128 * 1024);
+  assert.ok(raw.length < 288 * 1024);
+  const response = await app.inject({
+    method: 'POST',
+    url: '/knowledge/captures/preview',
+    headers: { 'content-type': 'application/json' },
+    payload: raw,
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(previewCalls, 1);
 });
 
 test('capture routes reject unsupported top-level fields before the service', async (t) => {

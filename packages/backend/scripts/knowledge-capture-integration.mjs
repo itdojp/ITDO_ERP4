@@ -246,14 +246,101 @@ try {
   assert.equal(unknownCommit.ok, true);
   assert.equal(unknownCommit.value.status, 'pending');
   assert.equal(uncertainStoreCalls, 1);
+  const unknownPendingSnapshot =
+    await prisma.knowledgeSnapshot.findUniqueOrThrow({
+      where: { id: unknownCommit.value.snapshotId },
+    });
+  assert.equal(unknownPendingSnapshot.status, 'pending');
+  assert.equal(unknownPendingSnapshot.contentType, 'text/plain');
+  assert.equal(unknownPendingSnapshot.sha256?.length, 64);
+  assert.equal(Number(unknownPendingSnapshot.sizeBytes) > 0, true);
+  assert.equal(
+    unknownPendingSnapshot.extractedText.includes(
+      'unknown-outcome-selected-body',
+    ),
+    true,
+  );
   const unknownReconciled = await currentService.reconcile({
     actor,
     auditActor: { source: 'api', requestId: crypto.randomUUID() },
-    captureId: unknownCommit.value.captureId,
+    captureId: unknownPreview.captureId,
+    request: {
+      ...unknownValue,
+      previewToken: unknownPreview.previewToken,
+      requestKey: 'synthetic-unknown-outcome-key',
+    },
   });
   assert.equal(unknownReconciled.ok, true);
   assert.equal(unknownReconciled.value.status, 'ready');
   assert.equal(uncertainStoreCalls, 1);
+
+  let accessLossStoreCalls = 0;
+  let accessLossReconcileCalls = 0;
+  const accessLossArtifacts = {
+    ...artifacts,
+    async store(input) {
+      accessLossStoreCalls += 1;
+      const stored = await artifacts.store(input);
+      const snapshotBeforeRevocation =
+        await prisma.knowledgeSnapshot.findUniqueOrThrow({
+          where: { id: input.snapshotId },
+          select: { knowledgeItemId: true },
+        });
+      const revokedItem = await prisma.knowledgeItem.update({
+        where: { id: snapshotBeforeRevocation.knowledgeItemId },
+        data: {
+          deletedAt: now,
+          deletedReason: 'owner_request',
+          updatedBy: actor.userId,
+        },
+      });
+      assert.notEqual(revokedItem.deletedAt, null);
+      return stored;
+    },
+    async reconcile(input) {
+      accessLossReconcileCalls += 1;
+      return artifacts.reconcile(input);
+    },
+  };
+  const accessLossService = service(unitOfWork, accessLossArtifacts);
+  const accessLossValue = request('access-loss-selected-body');
+  const accessLossPreview = await preview(
+    accessLossService,
+    accessLossValue,
+  );
+  const accessLossCommit = await commit(
+    accessLossService,
+    accessLossValue,
+    accessLossPreview,
+    'synthetic-access-loss-key',
+  );
+  assert.equal(accessLossStoreCalls, 1);
+  const accessLossCapture =
+    await prisma.knowledgeCaptureRequest.findUniqueOrThrow({
+      where: { id: accessLossPreview.captureId },
+      include: { knowledgeItem: true, snapshot: true },
+    });
+  assert.notEqual(accessLossCapture.knowledgeItem.deletedAt, null);
+  assert.equal(accessLossCapture.status, 'pending');
+  assert.equal(accessLossCapture.snapshot.status, 'pending');
+  assert.equal(accessLossCapture.snapshot.contentType, 'text/plain');
+  assert.equal(accessLossCapture.snapshot.sha256?.length, 64);
+  assert.equal(Number(accessLossCapture.snapshot.sizeBytes) > 0, true);
+  assert.equal(accessLossCommit.ok, false);
+  assert.equal(accessLossCommit.statusCode, 404);
+  const accessLossReconcile = await accessLossService.reconcile({
+    actor,
+    auditActor: { source: 'api', requestId: crypto.randomUUID() },
+    captureId: accessLossPreview.captureId,
+    request: {
+      ...accessLossValue,
+      previewToken: accessLossPreview.previewToken,
+      requestKey: 'synthetic-access-loss-key',
+    },
+  });
+  assert.equal(accessLossReconcile.ok, false);
+  assert.equal(accessLossReconcile.statusCode, 404);
+  assert.equal(accessLossReconcileCalls, 0);
 
   const auditText = JSON.stringify(
     await prisma.auditLog.findMany({
@@ -265,6 +352,7 @@ try {
     'selected-body',
     'unselected-description-canary',
     'unknown-outcome-selected-body',
+    'access-loss-selected-body',
     'synthetic-unknown-outcome-key',
     'example.invalid',
     'synthetic-request-key',
@@ -392,6 +480,8 @@ try {
       concurrentReplay: true,
       membershipLossFailsClosed: true,
       organizationChangeFailsClosed: true,
+      itemAccessLossFailsClosedBeforeFinalization: true,
+      pendingIntentMetadataPersistedBeforeArtifactIo: true,
       realArtifactAdapterReady: true,
       realArtifactReconcileNoResend: true,
       auditRollback: true,

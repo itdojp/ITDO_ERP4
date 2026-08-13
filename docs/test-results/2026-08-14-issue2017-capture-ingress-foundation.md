@@ -11,11 +11,11 @@
 ## 固定した境界
 
 - PWA／extension inputはKnowledge APIを直接mutationせず、allowlist済みcanonical draftとして既存Knowledge Hubの確認画面へ渡す。
-- title 500 code point、URL 4,096 UTF-8 bytes、selected text 64 KiB、description 16 KiB、author 500 code point、日時200 bytes、raw draft合計128 KiB、preview token 4 KiB、request key 200 code point、preview TTL 10分を上限とする。
-- HTTP(S)以外、credential URL、raw HTTP bodyの不正UTF-8、NUL、不要なcontrol、全`Bidi_Control`、ill-formed Unicode、nested object、prototype key、over-size payloadを保存前に拒否する。
+- title 500 code point、URL 4,096 UTF-8 bytes、selected text 64 KiB、description 16 KiB、author 500 code point、日時200 bytes、canonical draft合計128 KiB、JSON HTTP envelope 288 KiB、preview token 4 KiB、request key 200 code point、preview TTL 10分を上限とする。
+- HTTP(S)以外、credential URL、raw HTTP bodyの不正UTF-8、NUL、C0/C1 control、全`Bidi_Control`、ill-formed Unicode、nested object、prototype key、over-size payloadを保存前に拒否する。drop対象のunknown key/valueも同じUnicode検査を先に受ける。
 - scopeはpersonalが既定で、organizationはactor userのactive／非削除、current organization、live group membership、group activeの同一transaction再検査と追加confirmを必須とする。
 - preview tokenはactor、channel、capturedAt、選択field／payload、scope／organization／group、source type、purpose、expiryをdomain-separated HMACへ束縛する。本文とraw identifierはtokenへ格納しない。
-- opaque draft IDをserver-sideでactor-scoped HMAC化し、同じkey／payloadと同時replayを同じitem／snapshotへ収束させる。ledger HMACはcursor rotationから独立したproduction専用stable secretを使う。結果不明はpendingで保持し、自動再送せず既存artifactだけをreconcileする。frontendはnetwork、HTTP 5xx、invalid 2xx responseをresult-unknownとして同じcapture ID／request keyへlockする。
+- opaque draft IDをserver-sideでactor-scoped HMAC化し、同じkey／payloadと同時replayを同じitem／snapshotへ収束させる。ledger HMACはcursor rotationから独立したproduction専用stable secretを使う。item／snapshot intentはartifact I/O前にcontent type、selected text、SHA-256、sizeを保持する。結果不明はpendingで保持し、自動再送せず、署名済みpreview intentと同じrequest keyから既存ledger captureを解決して既存artifactだけをreconcileする。frontendはnetwork、HTTP 5xx、invalid 2xx responseをresult-unknownとして同じpreview intent／request keyへlockし、responseのrequest preview IDを照合する。
 - JWT BFF mutationはcookie／header double-submit CSRFを要求する。frontendはsame-originまたは設定済みAPI originだけへCSRF headerを付与する。
 
 ## 検証結果
@@ -37,7 +37,7 @@
 | docs index／image links、secret scan、`git diff --check` | PASS |
 | `RELEASE_E2E_SCOPE=core make release-readiness` | PASS（core E2E 109 / 109） |
 
-PostgreSQL fixtureはcapture 1件、item 1件、snapshot 1件へ収束し、同時replayで増殖しないこと、real local artifact adapterで`ready`になること、store後のunknown outcomeを新規storeなしでreconcileできること、organization groupの現行membership失効またはactor organization変更後はpreview／同一key replayが404でfail closedになること、mandatory audit failure時にbusiness mutationがrollbackすること、terminal ledgerのupdate／deleteをDBが拒否すること、非選択canaryがsnapshotへ存在しないことを検証した。Prisma adapterの`P2010`で内包されたSQLSTATE `40001|40P01`も最大3 attemptのbounded retry対象として固定した。
+PostgreSQL fixtureはcapture 1件、item 1件、snapshot 1件へ収束し、同時replayで増殖しないこと、real local artifact adapterで`ready`になること、store後のunknown outcomeを新規storeなしでreconcileできること、artifact I/O前にpending intentのmaterialization metadataが永続化されること、artifact store中のitem logical delete後はfinalizationとreconcileが404でfail closedとなりprovider再照合を行わないこと、organization groupの現行membership失効またはactor organization変更後はpreview／同一key replayが404でfail closedになること、mandatory audit failure時にbusiness mutationがrollbackすること、terminal ledgerのupdate／deleteをDBが拒否すること、非選択canaryがsnapshotへ存在しないことを検証した。Prisma adapterの`P2010`で内包されたSQLSTATE `40001|40P01`も最大3 attemptのbounded retry対象として固定した。
 
 ## 未実施範囲
 

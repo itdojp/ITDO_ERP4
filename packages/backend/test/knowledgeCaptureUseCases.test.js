@@ -48,13 +48,21 @@ function createHarness(options = {}) {
     storeOutcome: 'success',
     activeGroups: ['group-1'],
     memberGroups: ['group-1'],
+    currentAccess: true,
+    revokeAccessDuringStore: false,
     reconcileArtifact: null,
     ...options,
   };
   let idIndex = 0;
+  let previewIdIndex = 0;
   const ids = [
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  ];
+  const previewIds = [
+    '11111111-2222-4333-8444-123456789012',
+    '22222222-3333-4444-8555-234567890123',
+    '33333333-4444-4555-8666-345678901234',
   ];
   const repository = {
     countActiveGroupsForActor: async ({
@@ -81,6 +89,14 @@ function createHarness(options = {}) {
           capture.ownerUserId === ownerUserId &&
           capture.payloadHash === payloadHash,
       ) ?? null,
+    hasCurrentAccess: async ({ actor: candidate, captureId }) => {
+      const capture = captures.get(captureId);
+      return Boolean(
+        behavior.currentAccess &&
+          capture &&
+          capture.ownerUserId === candidate.userId,
+      );
+    },
     findOwnedById: async ({ actor: candidate, captureId }) => {
       const capture = captures.get(captureId);
       return capture?.ownerUserId === candidate.userId
@@ -89,7 +105,12 @@ function createHarness(options = {}) {
     },
     findOwnedArtifactState: async ({ actor: candidate, captureId }) => {
       const capture = captures.get(captureId);
-      if (!capture || capture.ownerUserId !== candidate.userId) return null;
+      if (
+        !behavior.currentAccess ||
+        !capture ||
+        capture.ownerUserId !== candidate.userId
+      )
+        return null;
       return {
         capture: structuredClone(capture),
         contentType: capture.contentType ?? null,
@@ -119,19 +140,23 @@ function createHarness(options = {}) {
         committedAt: null,
         failedAt: null,
         updatedAt: now,
+        contentType: input.contentType,
+        extractedText: input.extractedText,
+        sha256: input.sha256,
+        sizeBytes: input.sizeBytes,
       };
       captures.set(capture.id, capture);
       return structuredClone(capture);
     },
-    recordMaterialized: async ({ captureId, ...materialized }) => {
+    markReady: async ({ actor: candidate, captureId, committedAt }) => {
       const capture = captures.get(captureId);
-      if (!capture || capture.status !== 'pending') return null;
-      Object.assign(capture, materialized);
-      return structuredClone(capture);
-    },
-    markReady: async ({ captureId, committedAt }) => {
-      const capture = captures.get(captureId);
-      if (!capture || capture.status !== 'pending') return null;
+      if (
+        !behavior.currentAccess ||
+        !capture ||
+        capture.ownerUserId !== candidate.userId ||
+        capture.status !== 'pending'
+      )
+        return null;
       Object.assign(capture, {
         status: 'ready',
         committedAt,
@@ -139,9 +164,15 @@ function createHarness(options = {}) {
       });
       return structuredClone(capture);
     },
-    markFailed: async ({ captureId, failedAt, failureCode }) => {
+    markFailed: async ({ actor: candidate, captureId, failedAt, failureCode }) => {
       const capture = captures.get(captureId);
-      if (!capture || capture.status !== 'pending') return null;
+      if (
+        !behavior.currentAccess ||
+        !capture ||
+        capture.ownerUserId !== candidate.userId ||
+        capture.status !== 'pending'
+      )
+        return null;
       Object.assign(capture, {
         status: 'failed',
         failedAt,
@@ -162,6 +193,7 @@ function createHarness(options = {}) {
     store: async (input) => {
       assert.match(input.idempotencyNamespace, /^[a-f0-9]{64}$/);
       stored.push(structuredClone(input));
+      if (behavior.revokeAccessDuringStore) behavior.currentAccess = false;
       if (behavior.storeOutcome !== 'success') {
         throw new KnowledgeArtifactStoreError(behavior.storeOutcome);
       }
@@ -187,7 +219,7 @@ function createHarness(options = {}) {
   const tokenCodec = createKnowledgeCaptureTokenCodec({
     env,
     now: () => now,
-    randomId: () => '11111111-2222-4333-8444-123456789012',
+    randomId: () => previewIds[previewIdIndex++],
   });
   const service = createKnowledgeCaptureService({
     artifacts,
@@ -219,7 +251,7 @@ async function previewAndCommit(harness, overrides = {}) {
       requestKey: 'opaque-client-key',
     },
   });
-  return { preview, commit };
+  return { base, preview, commit };
 }
 
 test('preview is content-selective and commit atomically converges to one ready capture', async () => {
@@ -380,7 +412,7 @@ test('organization replay rechecks current membership before returning an existi
 
 test('unknown artifact outcome remains pending and reconcile never stores again', async () => {
   const harness = createHarness({ storeOutcome: 'unknown' });
-  const { commit } = await previewAndCommit(harness);
+  const { base, preview, commit } = await previewAndCommit(harness);
   assert.equal(commit.ok, true);
   assert.equal(commit.value.status, 'pending');
   const capture = [...harness.captures.values()][0];
@@ -396,13 +428,110 @@ test('unknown artifact outcome remains pending and reconcile never stores again'
   const reconciled = await harness.service.reconcile({
     actor,
     auditActor: { source: 'api' },
-    captureId: capture.id,
+    captureId: preview.value.captureId,
+    request: {
+      ...base,
+      previewToken: preview.value.previewToken,
+      requestKey: 'opaque-client-key',
+    },
   });
   assert.equal(reconciled.ok, true);
   assert.equal(reconciled.value.status, 'ready');
   assert.equal(harness.stored.length, 1);
   assert.equal(harness.reconciled.length, 1);
   assert.equal(harness.captures.size, 1);
+});
+
+test('lost replay response reconciles a prior ledger capture through the signed preview intent', async () => {
+  const harness = createHarness();
+  const first = await previewAndCommit(harness);
+  assert.equal(first.commit.ok, true);
+  const secondPreview = await harness.service.preview({
+    actor,
+    auditActor: {},
+    request: first.base,
+  });
+  assert.equal(secondPreview.ok, true);
+  assert.notEqual(
+    secondPreview.value.captureId,
+    first.commit.value.captureId,
+  );
+  const replay = await harness.service.commit({
+    actor,
+    auditActor: {},
+    request: {
+      ...first.base,
+      confirmed: true,
+      organizationConfirmed: false,
+      previewToken: secondPreview.value.previewToken,
+      requestKey: 'opaque-client-key',
+    },
+  });
+  assert.equal(replay.ok, true);
+  assert.equal(replay.value.captureId, first.commit.value.captureId);
+  assert.equal(
+    replay.value.requestCaptureId,
+    secondPreview.value.captureId,
+  );
+
+  const reconciled = await harness.service.reconcile({
+    actor,
+    auditActor: {},
+    captureId: secondPreview.value.captureId,
+    request: {
+      ...first.base,
+      previewToken: secondPreview.value.previewToken,
+      requestKey: 'opaque-client-key',
+    },
+  });
+  assert.equal(reconciled.ok, true);
+  assert.equal(reconciled.value.captureId, first.commit.value.captureId);
+  assert.equal(
+    reconciled.value.requestCaptureId,
+    secondPreview.value.captureId,
+  );
+  assert.equal(harness.stored.length, 1);
+});
+
+test('capture fails closed when current item access is lost before or during artifact I/O', async () => {
+  const beforeStore = createHarness({ currentAccess: false });
+  const before = await previewAndCommit(beforeStore);
+  assert.equal(before.commit.ok, false);
+  assert.equal(before.commit.statusCode, 404);
+  assert.equal(beforeStore.stored.length, 0);
+
+  const duringStore = createHarness({ revokeAccessDuringStore: true });
+  const during = await previewAndCommit(duringStore);
+  assert.equal(during.commit.ok, false);
+  assert.equal(during.commit.statusCode, 404);
+  assert.equal(duringStore.stored.length, 1);
+});
+
+test('capture rejects unsafe opaque request keys before ledger hashing', async () => {
+  for (const requestKey of ['\ud800', '\ufffd', '\u0000', '\u061c', '\u009b']) {
+    const harness = createHarness();
+    const value = request();
+    const preview = await harness.service.preview({
+      actor,
+      auditActor: {},
+      request: value,
+    });
+    assert.equal(preview.ok, true);
+    const result = await harness.service.commit({
+      actor,
+      auditActor: {},
+      request: {
+        ...value,
+        confirmed: true,
+        organizationConfirmed: false,
+        previewToken: preview.value.previewToken,
+        requestKey,
+      },
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'invalid_request');
+    assert.equal(harness.captures.size, 0);
+  }
 });
 
 test('deterministic storage failure preserves one failed aggregate', async () => {

@@ -28,6 +28,7 @@ describe('incoming knowledge capture normalization', () => {
     ['non-http URL', { url: 'javascript:alert(1)' }],
     ['credential URL', { url: 'https://user:opaque@example.invalid/' }],
     ['NUL', { selectedText: 'before\0after' }],
+    ['C1 control', { selectedText: 'before\u009bafter' }],
     ['replacement character', { selectedText: 'before\ufffdafter' }],
     ['Arabic letter mark', { selectedText: 'before\u061cafter' }],
     ['left-to-right mark', { selectedText: 'before\u200eafter' }],
@@ -37,6 +38,8 @@ describe('incoming knowledge capture normalization', () => {
     ['oversize title', { title: 't'.repeat(501) }],
     ['oversize selected text', { selectedText: 't'.repeat(64 * 1024 + 1) }],
     ['oversize unknown metadata', { unknownMetadata: 't'.repeat(128 * 1024) }],
+    ['unsafe unknown key', { ['unknown\u009bkey']: 'value' }],
+    ['unsafe unknown value', { unknownMetadata: 'before\ud800after' }],
     ['nested metadata', { unknownMetadata: { nested: true } }],
   ])('rejects %s before rendering', (_label, override) => {
     expect(normalizeIncomingKnowledgeCapture({ ...valid, ...override })).toBe(

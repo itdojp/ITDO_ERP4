@@ -28,6 +28,7 @@ export const knowledgeCaptureLimits = {
   authorCodePoints: 500,
   publishedAtBytes: 200,
   totalBytes: 128 * 1024,
+  httpEnvelopeBytes: 128 * 1024 * 2 + 32 * 1024,
   requestKeyCodePoints: 200,
   previewTokenBytes: 4 * 1024,
   previewTtlMs: 10 * 60 * 1000,
@@ -78,7 +79,7 @@ function hasForbiddenControl(value: string) {
       code === 11 ||
       code === 12 ||
       (code >= 14 && code <= 31) ||
-      code === 127 ||
+      (code >= 127 && code <= 159) ||
       code === 0xfffd ||
       code === 0xfeff ||
       code === 0x061c ||
@@ -104,7 +105,14 @@ function plainRecord(value: unknown) {
     invalid('capture_payload_invalid');
   }
   const record = value as Record<string, unknown>;
-  if (Object.keys(record).some((key) => forbiddenObjectKeys.has(key))) {
+  if (
+    Object.keys(record).some(
+      (key) =>
+        forbiddenObjectKeys.has(key) ||
+        hasForbiddenControl(key) ||
+        unpairedSurrogatePattern.test(key),
+    )
+  ) {
     invalid('capture_payload_invalid');
   }
   if (
@@ -116,7 +124,9 @@ function plainRecord(value: unknown) {
   }
   if (
     Object.values(record).some(
-      (entry) => typeof entry === 'string' && hasForbiddenControl(entry),
+      (entry) =>
+        typeof entry === 'string' &&
+        (hasForbiddenControl(entry) || unpairedSurrogatePattern.test(entry)),
     )
   ) {
     invalid('capture_payload_invalid');
@@ -184,7 +194,7 @@ function normalizeInstant(value: unknown, required: boolean) {
 }
 
 export function decodeKnowledgeCaptureJson(input: Buffer) {
-  if (input.length > knowledgeCaptureLimits.totalBytes) {
+  if (input.length > knowledgeCaptureLimits.httpEnvelopeBytes) {
     invalid('capture_payload_oversize');
   }
   let text: string;
@@ -198,6 +208,18 @@ export function decodeKnowledgeCaptureJson(input: Buffer) {
   } catch {
     invalid('capture_payload_invalid');
   }
+}
+
+export function isValidKnowledgeCaptureRequestKey(
+  value: unknown,
+): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    Array.from(value).length <= knowledgeCaptureLimits.requestKeyCodePoints &&
+    !hasForbiddenControl(value) &&
+    !unpairedSurrogatePattern.test(value)
+  );
 }
 
 export function normalizeKnowledgeCaptureDraft(

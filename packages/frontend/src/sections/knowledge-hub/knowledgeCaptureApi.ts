@@ -73,7 +73,10 @@ function draft(value: unknown): IncomingKnowledgeCaptureDraft {
   };
 }
 
-function result(value: unknown): KnowledgeCaptureResult {
+function result(
+  value: unknown,
+  expectedRequestCaptureId: string,
+): KnowledgeCaptureResult {
   if (!record(value)) throw new KnowledgeHubApiError('invalid_response', null);
   if (
     value.status !== 'pending' &&
@@ -84,8 +87,13 @@ function result(value: unknown): KnowledgeCaptureResult {
   }
   if (typeof value.reused !== 'boolean')
     throw new KnowledgeHubApiError('invalid_response', null);
+  const requestCaptureId = string(value.requestCaptureId);
+  if (requestCaptureId !== expectedRequestCaptureId) {
+    throw new KnowledgeHubApiError('invalid_response', null);
+  }
   return {
     captureId: string(value.captureId),
+    requestCaptureId,
     itemId: string(value.itemId),
     snapshotId: string(value.snapshotId),
     status: value.status,
@@ -161,8 +169,32 @@ export async function commitKnowledgeCapture(
   },
   signal?: AbortSignal,
 ) {
-  return result(
-    await requestKnowledgeJson('/knowledge/captures', {
+  const value = await requestKnowledgeJson('/knowledge/captures', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      draft: input.preview.draft,
+      selectedFields: input.preview.selectedFields,
+      scope: input.preview.scope,
+      organizationGroupAccountIds: input.preview.organizationGroupAccountIds,
+      sourceType: input.preview.sourceType,
+      confirmed: true,
+      organizationConfirmed: input.organizationConfirmed,
+      previewToken: input.preview.previewToken,
+      requestKey: input.requestKey,
+    }),
+    ...(signal ? { signal } : {}),
+  });
+  return result(value, input.preview.captureId);
+}
+
+export async function reconcileKnowledgeCapture(
+  input: { preview: KnowledgeCapturePreview; requestKey: string },
+  signal?: AbortSignal,
+) {
+  const value = await requestKnowledgeJson(
+    `/knowledge/captures/${encodeURIComponent(input.preview.captureId)}/reconcile`,
+    {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -171,29 +203,11 @@ export async function commitKnowledgeCapture(
         scope: input.preview.scope,
         organizationGroupAccountIds: input.preview.organizationGroupAccountIds,
         sourceType: input.preview.sourceType,
-        confirmed: true,
-        organizationConfirmed: input.organizationConfirmed,
         previewToken: input.preview.previewToken,
         requestKey: input.requestKey,
       }),
       ...(signal ? { signal } : {}),
-    }),
+    },
   );
-}
-
-export async function reconcileKnowledgeCapture(
-  captureId: string,
-  signal?: AbortSignal,
-) {
-  return result(
-    await requestKnowledgeJson(
-      `/knowledge/captures/${encodeURIComponent(captureId)}/reconcile`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-        ...(signal ? { signal } : {}),
-      },
-    ),
-  );
+  return result(value, input.preview.captureId);
 }

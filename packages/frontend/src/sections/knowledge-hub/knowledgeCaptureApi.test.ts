@@ -30,6 +30,7 @@ function response(payload: unknown, status = 200) {
 
 const resultPayload = {
   captureId: 'capture-1',
+  requestCaptureId: 'capture-1',
   itemId: 'item-1',
   snapshotId: 'snapshot-1',
   status: 'ready',
@@ -111,16 +112,74 @@ describe('knowledge capture API boundary', () => {
 
   it('reconciles by opaque capture ID with no payload replay', async () => {
     apiResponse.mockResolvedValueOnce(
-      response({ ...resultPayload, status: 'pending', committedAt: null }),
+      response({
+        ...resultPayload,
+        captureId: 'prior-capture',
+        requestCaptureId: 'capture/one',
+        status: 'pending',
+        committedAt: null,
+      }),
     );
-    await reconcileKnowledgeCapture('capture/one');
+    const preview = {
+      captureId: 'capture/one',
+      draft,
+      selectedFields: ['title', 'url'] as const,
+      omittedFields: ['description'] as const,
+      scope: 'personal' as const,
+      organizationGroupAccountIds: [],
+      sourceType: 'web' as const,
+      fieldCount: 2,
+      byteCount: 100,
+      duplicateCandidate: { detected: false, status: null },
+      requiresOrganizationConfirmation: false,
+      previewToken: 'opaque-token',
+      expiresAt: '2026-08-14T00:10:00.000Z',
+    };
+    const value = await reconcileKnowledgeCapture({
+      preview: preview as never,
+      requestKey: 'private-request-key',
+    });
     expect(apiResponse).toHaveBeenCalledWith(
       '/knowledge/captures/capture%2Fone/reconcile',
-      {
+      expect.objectContaining({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      },
+      }),
     );
+    const body = JSON.parse(apiResponse.mock.calls[0][1].body);
+    expect(body).toMatchObject({
+      previewToken: 'opaque-token',
+      requestKey: 'private-request-key',
+    });
+    expect(value.captureId).toBe('prior-capture');
+    expect(value.requestCaptureId).toBe('capture/one');
+  });
+
+  it('rejects a successful result that is not bound to the requested preview capture', async () => {
+    apiResponse.mockResolvedValueOnce(
+      response({ ...resultPayload, requestCaptureId: 'other-preview' }),
+    );
+    const preview = {
+      captureId: 'capture-1',
+      draft,
+      selectedFields: ['title', 'url'] as const,
+      omittedFields: ['description'] as const,
+      scope: 'personal' as const,
+      organizationGroupAccountIds: [],
+      sourceType: 'web' as const,
+      fieldCount: 2,
+      byteCount: 100,
+      duplicateCandidate: { detected: false, status: null },
+      requiresOrganizationConfirmation: false,
+      previewToken: 'opaque-token',
+      expiresAt: '2026-08-14T00:10:00.000Z',
+    };
+    await expect(
+      commitKnowledgeCapture({
+        preview: preview as never,
+        requestKey: 'private-request-key',
+        organizationConfirmed: false,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_response' });
   });
 });

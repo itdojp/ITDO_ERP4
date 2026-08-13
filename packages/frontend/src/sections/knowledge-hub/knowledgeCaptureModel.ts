@@ -43,6 +43,7 @@ export type KnowledgeCapturePreview = KnowledgeCaptureSubmission & {
 
 export type KnowledgeCaptureResult = {
   captureId: string;
+  requestCaptureId: string;
   itemId: string;
   snapshotId: string;
   status: 'pending' | 'ready' | 'failed';
@@ -100,7 +101,7 @@ function invalidUnicode(value: string) {
       code === 11 ||
       code === 12 ||
       (code >= 14 && code <= 31) ||
-      code === 127 ||
+      (code >= 127 && code <= 159) ||
       code === 0xfffd ||
       code === 0xfeff ||
       code === 0x061c ||
@@ -181,7 +182,9 @@ export function normalizeIncomingKnowledgeCapture(
     return null;
   }
   if (
-    Object.keys(value).some((key) => forbiddenObjectKeys.has(key)) ||
+    Object.keys(value).some(
+      (key) => forbiddenObjectKeys.has(key) || invalidUnicode(key),
+    ) ||
     Object.values(value).some(
       (entry) => typeof entry === 'object' && entry !== null,
     ) ||

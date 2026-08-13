@@ -36,10 +36,10 @@ import {
 } from './knowledgeRouteContext.js';
 
 const allowedRoles = ['admin', 'mgmt', 'exec', 'user'] as const;
-// JSON escaping can at most double the permitted canonical draft in the
-// supported scalar vocabulary.  Reject before parsing well below Fastify's
-// global body limit, then enforce the canonical 128 KiB bound in the service.
-const bodyLimit = knowledgeCaptureLimits.totalBytes * 2 + 32 * 1024;
+// Permit bounded JSON-escape overhead while retaining a fixed pre-parse
+// transport limit. The service independently enforces the canonical 128 KiB
+// draft limit; an excessively escaped representation is still rejected here.
+const bodyLimit = knowledgeCaptureLimits.httpEnvelopeBytes;
 
 const errorSchema = {
   type: 'object',
@@ -109,6 +109,7 @@ const captureResultSchema = {
   additionalProperties: false,
   required: [
     'captureId',
+    'requestCaptureId',
     'itemId',
     'snapshotId',
     'status',
@@ -120,6 +121,7 @@ const captureResultSchema = {
   ],
   properties: {
     captureId: { type: 'string' },
+    requestCaptureId: { type: 'string' },
     itemId: { type: 'string' },
     snapshotId: { type: 'string' },
     status: { type: 'string', enum: knowledgeCaptureStatuses },
@@ -229,6 +231,11 @@ const commitFields = [
   'previewToken',
   'requestKey',
 ] as const;
+const reconcileFields = [
+  ...previewFields,
+  'previewToken',
+  'requestKey',
+] as const;
 
 function sendFailure(reply: FastifyReply, result: KnowledgeCaptureFailure) {
   const category =
@@ -248,6 +255,7 @@ function sendFailure(reply: FastifyReply, result: KnowledgeCaptureFailure) {
 
 function serialize(value: {
   captureId: string;
+  requestCaptureId: string;
   itemId: string;
   snapshotId: string;
   status: KnowledgeCaptureStatus;
@@ -432,7 +440,9 @@ async function registerKnowledgeCaptureRouteHandlers(
   app.post(
     '/knowledge/captures/:captureId/reconcile',
     {
+      bodyLimit,
       preHandler: mutationHandlers,
+      preValidation: rejectUnknownBodyFields(reconcileFields),
       schema: {
         tags: ['knowledge'],
         params: {
@@ -443,12 +453,38 @@ async function registerKnowledgeCaptureRouteHandlers(
             captureId: { type: 'string', minLength: 1, maxLength: 100 },
           },
         },
-        body: { type: 'object', additionalProperties: false, maxProperties: 0 },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: [
+            'draft',
+            'selectedFields',
+            'scope',
+            'organizationGroupAccountIds',
+            'sourceType',
+            'previewToken',
+            'requestKey',
+          ],
+          properties: {
+            ...requestProperties,
+            previewToken: {
+              type: 'string',
+              minLength: 1,
+              maxLength: knowledgeCaptureLimits.previewTokenBytes,
+            },
+            requestKey: {
+              type: 'string',
+              minLength: 1,
+              maxLength: knowledgeCaptureLimits.requestKeyCodePoints,
+            },
+          },
+        },
         response: {
           200: captureResultSchema,
           400: errorSchema,
           403: errorSchema,
           404: errorSchema,
+          409: errorSchema,
           502: errorSchema,
         },
       },
@@ -458,6 +494,7 @@ async function registerKnowledgeCaptureRouteHandlers(
         actor: knowledgeActorFromRequest(request),
         auditActor: knowledgeAuditActorFromRequest(request),
         captureId: (request.params as { captureId: string }).captureId,
+        request: request.body as never,
       });
       if (!result.ok) return sendFailure(reply, result);
       return reply.send(serialize(result.value));

@@ -6,6 +6,7 @@ import {
 } from './knowledgeArtifactPort.js';
 import {
   canonicalizeKnowledgeCapture,
+  isValidKnowledgeCaptureRequestKey,
   knowledgeCaptureLimits,
   renderKnowledgeCaptureSnapshot,
   type CanonicalKnowledgeCapture,
@@ -142,9 +143,14 @@ function prepare(
   };
 }
 
-function captureResponse(capture: KnowledgeCapture, reused: boolean) {
+function captureResponse(
+  capture: KnowledgeCapture,
+  reused: boolean,
+  requestCaptureId = capture.id,
+) {
   return {
     captureId: capture.id,
+    requestCaptureId,
     itemId: capture.knowledgeItemId,
     snapshotId: capture.snapshotId,
     status: capture.status,
@@ -303,10 +309,7 @@ export function createKnowledgeCaptureService(dependencies: {
         input.request.confirmed !== true ||
         (prepared.binding.scope === 'organization' &&
           input.request.organizationConfirmed !== true) ||
-        typeof input.request.requestKey !== 'string' ||
-        input.request.requestKey.length === 0 ||
-        Array.from(input.request.requestKey).length >
-          knowledgeCaptureLimits.requestKeyCodePoints
+        !isValidKnowledgeCaptureRequestKey(input.request.requestKey)
       ) {
         return invalid();
       }
@@ -337,6 +340,7 @@ export function createKnowledgeCaptureService(dependencies: {
         'utf8',
       );
       const sha256 = createHash('sha256').update(body).digest('hex');
+      const contentType = 'text/plain';
       const itemId = randomId();
       const snapshotId = randomId();
       const intent = await dependencies.unitOfWork.run(async (transaction) => {
@@ -350,6 +354,14 @@ export function createKnowledgeCaptureService(dependencies: {
         if (existing) {
           if (existing.payloadHash !== payloadHash)
             return { kind: 'conflict' as const };
+          if (
+            !(await transaction.captures.hasCurrentAccess({
+              actor: input.actor,
+              captureId: existing.id,
+            }))
+          ) {
+            return { kind: 'not_found' as const };
+          }
           await transaction.audit.write({
             action: 'knowledge_capture_duplicate_detected',
             actor: auditActor(input.actor, input.auditActor),
@@ -397,6 +409,10 @@ export function createKnowledgeCaptureService(dependencies: {
             )
             .digest('hex'),
           snapshotPayloadHash: prepared.canonical.payloadHash,
+          contentType,
+          extractedText: body.toString('utf8'),
+          sha256,
+          sizeBytes: body.length,
           selectedFieldCount: prepared.canonical.selectedFields.length,
           payloadByteCount: prepared.canonical.payloadByteCount,
           createdBy: input.actor.userId,
@@ -424,26 +440,21 @@ export function createKnowledgeCaptureService(dependencies: {
       }
       if (intent.kind === 'not_found') return notFound();
       if (intent.kind === 'existing') {
-        return { ok: true, value: captureResponse(intent.capture, true) };
+        return {
+          ok: true,
+          value: captureResponse(intent.capture, true, verified.captureId),
+        };
       }
 
-      const contentType = 'text/plain';
-      try {
-        const recorded = await dependencies.unitOfWork.run((transaction) =>
-          transaction.captures.recordMaterialized({
+      const accessBeforeStore = await dependencies.unitOfWork.run(
+        (transaction) =>
+          transaction.captures.hasCurrentAccess({
+            actor: input.actor,
             captureId: intent.capture.id,
-            contentType,
-            extractedText: body.toString('utf8'),
-            sha256,
-            sizeBytes: body.length,
           }),
-        );
-        if (!recorded) {
-          return { ok: true, value: captureResponse(intent.capture, false) };
-        }
-      } catch (error) {
-        reportInternalError(error);
-        return { ok: true, value: captureResponse(intent.capture, false) };
+      );
+      if (!accessBeforeStore) {
+        return notFound();
       }
 
       let artifact: Awaited<ReturnType<KnowledgeArtifactPort['store']>>;
@@ -466,6 +477,7 @@ export function createKnowledgeCaptureService(dependencies: {
           const failedCapture = await dependencies.unitOfWork.run(
             async (transaction) => {
               const failed = await transaction.captures.markFailed({
+                actor: input.actor,
                 captureId: intent.capture.id,
                 failedAt: now(),
                 failureCode: 'snapshot_storage_failed',
@@ -488,7 +500,18 @@ export function createKnowledgeCaptureService(dependencies: {
             },
           );
           if (failedCapture)
-            return { ok: true, value: captureResponse(failedCapture, false) };
+            return {
+              ok: true,
+              value: captureResponse(failedCapture, false, verified.captureId),
+            };
+          const stillAccessible = await dependencies.unitOfWork.run(
+            (transaction) =>
+              transaction.captures.hasCurrentAccess({
+                actor: input.actor,
+                captureId: intent.capture.id,
+              }),
+          );
+          if (!stillAccessible) return notFound();
         }
         return { ok: true, value: captureResponse(intent.capture, false) };
       }
@@ -501,7 +524,16 @@ export function createKnowledgeCaptureService(dependencies: {
       }
       try {
         const ready = await dependencies.unitOfWork.run(async (transaction) => {
+          if (
+            !(await transaction.captures.hasCurrentAccess({
+              actor: input.actor,
+              captureId: intent.capture.id,
+            }))
+          ) {
+            return { authorized: false as const, capture: null };
+          }
           const updated = await transaction.captures.markReady({
+            actor: input.actor,
             captureId: intent.capture.id,
             artifactId: artifact.artifactId,
             contentType,
@@ -523,14 +555,24 @@ export function createKnowledgeCaptureService(dependencies: {
               },
             });
           }
-          return updated;
+          return { authorized: true as const, capture: updated };
         });
-        return ready
-          ? { ok: true, value: captureResponse(ready, false) }
-          : { ok: true, value: captureResponse(intent.capture, false) };
+        if (!ready.authorized) return notFound();
+        return ready.capture
+          ? {
+              ok: true,
+              value: captureResponse(ready.capture, false, verified.captureId),
+            }
+          : {
+              ok: true,
+              value: captureResponse(intent.capture, false, verified.captureId),
+            };
       } catch (error) {
         reportInternalError(error);
-        return { ok: true, value: captureResponse(intent.capture, false) };
+        return {
+          ok: true,
+          value: captureResponse(intent.capture, false, verified.captureId),
+        };
       }
     },
 
@@ -546,15 +588,94 @@ export function createKnowledgeCaptureService(dependencies: {
       actor: KnowledgeActor;
       auditActor: KnowledgeAuditActorContext;
       captureId: string;
+      request: KnowledgeCaptureRequestShape & {
+        previewToken: unknown;
+        requestKey: unknown;
+      };
     }): Promise<KnowledgeCaptureResult<ReturnType<typeof captureResponse>>> {
       if (!input.actor.userId || !input.captureId) return invalid();
-      const state = await dependencies.reader.findOwnedArtifactState(input);
+      let prepared: Prepared;
+      try {
+        prepared = prepare(input.actor, input.request);
+      } catch {
+        return invalid();
+      }
+      if (!isValidKnowledgeCaptureRequestKey(input.request.requestKey)) {
+        return invalid();
+      }
+      let verified: { captureId: string };
+      try {
+        verified = tokenCodec.verify({
+          actor: input.actor,
+          binding: prepared.binding,
+          token: input.request.previewToken,
+        });
+      } catch (error) {
+        if (error instanceof KnowledgeCaptureTokenError) {
+          return failure(
+            409,
+            error.code,
+            'Capture preview is invalid or expired',
+          );
+        }
+        throw error;
+      }
+      if (verified.captureId !== input.captureId) return notFound();
+      const requestKeyHash = tokenCodec.requestKeyHash(
+        input.actor,
+        input.request.requestKey,
+      );
+      const payloadHash = tokenCodec.payloadHash(prepared.binding);
+      const resolved = await dependencies.unitOfWork.run(
+        async (transaction) => {
+          if (
+            !(await validGroups(transaction, prepared.binding, input.actor))
+          ) {
+            return { kind: 'not_found' as const };
+          }
+          const capture = await transaction.captures.findByRequestKey({
+            ownerUserId: input.actor.userId,
+            requestKeyHash,
+          });
+          if (!capture) return { kind: 'not_found' as const };
+          if (capture.payloadHash !== payloadHash) {
+            return { kind: 'conflict' as const };
+          }
+          if (
+            !(await transaction.captures.hasCurrentAccess({
+              actor: input.actor,
+              captureId: capture.id,
+            }))
+          ) {
+            return { kind: 'not_found' as const };
+          }
+          return { kind: 'found' as const, capture };
+        },
+      );
+      if (resolved.kind === 'not_found') return notFound();
+      if (resolved.kind === 'conflict') {
+        return failure(
+          409,
+          'idempotency_conflict',
+          'Request key conflicts with another capture',
+        );
+      }
+      const state = await dependencies.reader.findOwnedArtifactState({
+        actor: input.actor,
+        captureId: resolved.capture.id,
+      });
       if (!state) return notFound();
       if (state.capture.status !== 'pending') {
-        return { ok: true, value: captureResponse(state.capture, true) };
+        return {
+          ok: true,
+          value: captureResponse(state.capture, true, verified.captureId),
+        };
       }
       if (!state.contentType || !state.sha256 || state.sizeBytes === null) {
-        return { ok: true, value: captureResponse(state.capture, true) };
+        return {
+          ok: true,
+          value: captureResponse(state.capture, true, verified.captureId),
+        };
       }
       const artifact = await dependencies.artifacts
         .reconcile({
@@ -567,10 +688,22 @@ export function createKnowledgeCaptureService(dependencies: {
         })
         .catch(() => null);
       if (!artifact) {
-        return { ok: true, value: captureResponse(state.capture, true) };
+        return {
+          ok: true,
+          value: captureResponse(state.capture, true, verified.captureId),
+        };
       }
       const ready = await dependencies.unitOfWork.run(async (transaction) => {
+        if (
+          !(await transaction.captures.hasCurrentAccess({
+            actor: input.actor,
+            captureId: state.capture.id,
+          }))
+        ) {
+          return { authorized: false as const, capture: null };
+        }
         const updated = await transaction.captures.markReady({
+          actor: input.actor,
           captureId: state.capture.id,
           artifactId: artifact.artifactId,
           contentType: state.contentType as string,
@@ -592,11 +725,18 @@ export function createKnowledgeCaptureService(dependencies: {
             },
           });
         }
-        return updated;
+        return { authorized: true as const, capture: updated };
       });
-      return ready
-        ? { ok: true, value: captureResponse(ready, false) }
-        : { ok: true, value: captureResponse(state.capture, true) };
+      if (!ready.authorized) return notFound();
+      return ready.capture
+        ? {
+            ok: true,
+            value: captureResponse(ready.capture, false, verified.captureId),
+          }
+        : {
+            ok: true,
+            value: captureResponse(state.capture, true, verified.captureId),
+          };
     },
   };
 }

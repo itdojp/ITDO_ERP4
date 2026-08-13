@@ -81,6 +81,7 @@ function resultEvent(draftId: string, outcome: 'committed' | 'discarded') {
 
 export function KnowledgeCaptureIngress(props: {
   onCommitted?: (itemId: string) => void | Promise<void>;
+  onCommitBusyChange?: (busy: boolean) => void;
 }) {
   const [draftId, setDraftId] = useState('');
   const [draft, setDraft] = useState<IncomingKnowledgeCaptureDraft | null>(
@@ -106,6 +107,19 @@ export function KnowledgeCaptureIngress(props: {
   const generationRef = useRef(0);
   const mutationBusyRef = useRef(false);
   const handoffLockedRef = useRef(false);
+  const unresolved =
+    result?.status === 'pending' || Boolean(uncertainCaptureId);
+  const blocksNavigation =
+    busy === 'commit' || busy === 'reconcile' || unresolved;
+
+  useEffect(() => {
+    props.onCommitBusyChange?.(blocksNavigation);
+  }, [blocksNavigation, props.onCommitBusyChange]);
+
+  useEffect(
+    () => () => props.onCommitBusyChange?.(false),
+    [props.onCommitBusyChange],
+  );
 
   const invalidatePreview = useCallback(() => {
     generationRef.current += 1;
@@ -260,9 +274,7 @@ export function KnowledgeCaptureIngress(props: {
   };
 
   const reconcile = async () => {
-    const captureId =
-      result?.status === 'pending' ? result.captureId : uncertainCaptureId;
-    if (!captureId) return;
+    if (!preview || !requestKeyRef.current || !unresolved) return;
     const generation = generationRef.current + 1;
     generationRef.current = generation;
     operationAbortRef.current?.abort();
@@ -273,7 +285,7 @@ export function KnowledgeCaptureIngress(props: {
     setError('');
     try {
       const value = await reconcileKnowledgeCapture(
-        captureId,
+        { preview, requestKey: requestKeyRef.current },
         controller.signal,
       );
       if (generationRef.current !== generation) return;
@@ -307,9 +319,6 @@ export function KnowledgeCaptureIngress(props: {
 
   if (!draft) return null;
   const handoffLocked = result !== null || Boolean(uncertainCaptureId);
-  const unresolved =
-    result?.status === 'pending' || Boolean(uncertainCaptureId);
-
   return (
     <Card padding="small">
       <section aria-labelledby="knowledge-capture-ingress-title">

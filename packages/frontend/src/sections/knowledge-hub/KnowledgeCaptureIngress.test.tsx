@@ -64,6 +64,7 @@ beforeEach(() => {
   });
   api.commitKnowledgeCapture.mockResolvedValue({
     captureId: 'capture-1',
+    requestCaptureId: 'capture-1',
     itemId: 'item-1',
     snapshotId: 'snapshot-1',
     status: 'ready',
@@ -150,8 +151,10 @@ describe('KnowledgeCaptureIngress', () => {
   });
 
   it('keeps an unknown result pending and reconciles without replaying commit', async () => {
+    const onCommitBusyChange = vi.fn();
     api.commitKnowledgeCapture.mockResolvedValueOnce({
       captureId: 'capture-1',
+      requestCaptureId: 'capture-1',
       itemId: 'item-1',
       snapshotId: 'snapshot-1',
       status: 'pending',
@@ -163,6 +166,7 @@ describe('KnowledgeCaptureIngress', () => {
     });
     api.reconcileKnowledgeCapture.mockResolvedValueOnce({
       captureId: 'capture-1',
+      requestCaptureId: 'capture-1',
       itemId: 'item-1',
       snapshotId: 'snapshot-1',
       status: 'ready',
@@ -176,17 +180,21 @@ describe('KnowledgeCaptureIngress', () => {
     const listener = (event: Event) =>
       events.push((event as CustomEvent).detail);
     window.addEventListener(KNOWLEDGE_CAPTURE_RESULT_EVENT, listener);
-    render(<KnowledgeCaptureIngress />);
+    render(<KnowledgeCaptureIngress onCommitBusyChange={onCommitBusyChange} />);
     deliver();
     fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
     await screen.findByRole('heading', { name: 'Exact preview' });
     fireEvent.click(screen.getByLabelText('このexact previewを保存します'));
     fireEvent.click(screen.getByRole('button', { name: '明示確定して保存' }));
     expect(await screen.findByText(/保存結果を確認中/)).toBeVisible();
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
     fireEvent.click(screen.getByRole('button', { name: '保存結果を再照合' }));
     await waitFor(() =>
       expect(api.reconcileKnowledgeCapture).toHaveBeenCalledWith(
-        'capture-1',
+        expect.objectContaining({
+          preview: expect.objectContaining({ captureId: 'capture-1' }),
+          requestKey: 'opaque-draft-id-1234567890',
+        }),
         expect.any(AbortSignal),
       ),
     );
@@ -196,6 +204,9 @@ describe('KnowledgeCaptureIngress', () => {
       draftId: 'opaque-draft-id-1234567890',
       outcome: 'committed',
     });
+    await waitFor(() =>
+      expect(onCommitBusyChange).toHaveBeenLastCalledWith(false),
+    );
     window.removeEventListener(KNOWLEDGE_CAPTURE_RESULT_EVENT, listener);
   });
 
@@ -205,6 +216,7 @@ describe('KnowledgeCaptureIngress', () => {
     );
     api.reconcileKnowledgeCapture.mockResolvedValueOnce({
       captureId: 'capture-1',
+      requestCaptureId: 'capture-1',
       itemId: 'item-1',
       snapshotId: 'snapshot-1',
       status: 'ready',
@@ -228,7 +240,10 @@ describe('KnowledgeCaptureIngress', () => {
     fireEvent.click(screen.getByRole('button', { name: '保存結果を再照合' }));
     await waitFor(() =>
       expect(api.reconcileKnowledgeCapture).toHaveBeenCalledWith(
-        'capture-1',
+        expect.objectContaining({
+          preview: expect.objectContaining({ captureId: 'capture-1' }),
+          requestKey: 'opaque-draft-id-1234567890',
+        }),
         expect.any(AbortSignal),
       ),
     );
