@@ -49,6 +49,7 @@ import {
   type KnowledgeSnapshot,
 } from './knowledge-hub/knowledgeHubModel';
 import { KnowledgeProvenanceWorkspace } from './knowledge-hub/KnowledgeProvenanceWorkspace';
+import { KnowledgeCaptureIngress } from './knowledge-hub/KnowledgeCaptureIngress';
 
 type LoadStatus = 'idle' | 'loading' | 'success' | 'error';
 type Notice = {
@@ -123,6 +124,8 @@ export const KnowledgeHub: React.FC<{
   const [fileInputKey, setFileInputKey] = useState(0);
   const [captureBusy, setCaptureBusy] = useState(false);
   const [externalCommitBusy, setExternalCommitBusy] = useState(false);
+  const [captureIngressBusy, setCaptureIngressBusy] = useState(false);
+  const [provenanceBusy, setProvenanceBusy] = useState(false);
   const [downloadBusyId, setDownloadBusyId] = useState('');
   const [reconcileBusyId, setReconcileBusyId] = useState('');
   const [pendingAttempt, setPendingAttempt] = useState<PendingAttempt | null>(
@@ -134,30 +137,58 @@ export const KnowledgeHub: React.FC<{
   const deepLinkLoadSequence = useRef(0);
   const deepLinkAbortRef = useRef<AbortController | null>(null);
   const externalCommitBusyRef = useRef(false);
+  const externalCommitBusySourcesRef = useRef(new Set<string>());
   const selectedItemIdRef = useRef('');
 
-  const handleExternalCommitBusyChange = useCallback(
-    (busy: boolean) => {
-      externalCommitBusyRef.current = busy;
-      setExternalCommitBusy(busy);
-      onShareCommitBusyChange?.(busy);
+  const updateExternalCommitBusy = useCallback(
+    (source: 'capture-ingress' | 'provenance', busy: boolean) => {
+      const sources = externalCommitBusySourcesRef.current;
+      if (busy) sources.add(source);
+      else sources.delete(source);
+      const nextBusy = sources.size > 0;
+      if (externalCommitBusyRef.current === nextBusy) return;
+      externalCommitBusyRef.current = nextBusy;
+      setExternalCommitBusy(nextBusy);
+      onShareCommitBusyChange?.(nextBusy);
     },
     [onShareCommitBusyChange],
   );
+  const handleCaptureIngressBusyChange = useCallback(
+    (busy: boolean) => {
+      setCaptureIngressBusy(busy);
+      updateExternalCommitBusy('capture-ingress', busy);
+    },
+    [updateExternalCommitBusy],
+  );
+  const handleProvenanceBusyChange = useCallback(
+    (busy: boolean) => {
+      setProvenanceBusy(busy);
+      updateExternalCommitBusy('provenance', busy);
+    },
+    [updateExternalCommitBusy],
+  );
 
-  const selectKnowledgeItem = useCallback((itemId: string) => {
-    if (externalCommitBusyRef.current) {
-      if (selectedItemIdRef.current === itemId) return true;
-      setNotice({
-        tone: 'warning',
-        text: '外部処理の確定結果を確認するまでKnowledge itemを切り替えられません。',
-      });
-      return false;
-    }
-    selectedItemIdRef.current = itemId;
-    setSelectedItemId(itemId);
-    return true;
-  }, []);
+  const selectKnowledgeItem = useCallback(
+    (itemId: string, owningIntent?: 'capture-ingress') => {
+      const busySources = externalCommitBusySourcesRef.current;
+      const ownedOnly =
+        owningIntent === 'capture-ingress' &&
+        busySources.size === 1 &&
+        busySources.has('capture-ingress');
+      if (externalCommitBusyRef.current && !ownedOnly) {
+        if (selectedItemIdRef.current === itemId) return true;
+        setNotice({
+          tone: 'warning',
+          text: '外部処理の確定結果を確認するまでKnowledge itemを切り替えられません。',
+        });
+        return false;
+      }
+      selectedItemIdRef.current = itemId;
+      setSelectedItemId(itemId);
+      return true;
+    },
+    [],
+  );
 
   const selectedItem = useMemo(
     () => items.find((item) => item.id === selectedItemId) ?? null,
@@ -465,6 +496,13 @@ export const KnowledgeHub: React.FC<{
   };
 
   const reconcile = async (snapshot: KnowledgeSnapshot) => {
+    if (externalCommitBusyRef.current) {
+      setNotice({
+        tone: 'warning',
+        text: '外部処理の確定結果を確認するまで別の保存結果を再照合できません。',
+      });
+      return;
+    }
     if (
       !pendingAttempt ||
       pendingAttempt.itemId !== snapshot.knowledgeItemId ||
@@ -736,6 +774,7 @@ export const KnowledgeHub: React.FC<{
                     size="small"
                     variant="secondary"
                     loading={reconcileBusyId === snapshot.id}
+                    disabled={externalCommitBusy}
                     onClick={() => void reconcile(snapshot)}
                   >
                     保存結果を再照合
@@ -762,6 +801,16 @@ export const KnowledgeHub: React.FC<{
           <Alert variant={notice.tone}>{notice.text}</Alert>
         </div>
       ) : null}
+
+      <KnowledgeCaptureIngress
+        mutationBlocked={provenanceBusy}
+        onCommitBusyChange={handleCaptureIngressBusyChange}
+        onCommitted={async (itemId) => {
+          await loadItems();
+          if (!selectKnowledgeItem(itemId, 'capture-ingress')) return;
+          await loadSnapshots(itemId);
+        }}
+      />
 
       <div className="knowledge-hub-primary-grid">
         <WorkflowPanel
@@ -983,7 +1032,8 @@ export const KnowledgeHub: React.FC<{
             itemScope={selectedItem.scope}
             organizationId={selectedItem.organizationId}
             snapshots={snapshots}
-            onCommitBusyChange={handleExternalCommitBusyChange}
+            mutationBlocked={captureIngressBusy}
+            onCommitBusyChange={handleProvenanceBusyChange}
           />
         ) : (
           <AsyncStatePanel

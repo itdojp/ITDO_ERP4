@@ -7,11 +7,15 @@ import { fileURLToPath } from 'node:url';
 const MIN_DATABASE_URL = 'postgresql://user:pass@localhost:5432/postgres';
 const VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET =
   'knowledge-cursor-test-signing-secret-v1';
+const VALID_KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET =
+  'knowledge-capture-idempotency-test-secret-v1';
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const BACKEND_DIR = resolve(TEST_DIR, '..');
 
 const BASE_ENV = {
   DATABASE_URL: MIN_DATABASE_URL,
+  KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET:
+    VALID_KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET,
 };
 
 function runNodeScript(script, overrides = {}) {
@@ -92,10 +96,7 @@ test('envValidation: Chat custom OpenAI destination requires an independent host
     CHAT_EXTERNAL_LLM_OPENAI_BASE_URL: 'https://api.openai.com:444/v1',
   });
   assert.notEqual(nonStandardOpenAiPort.status, 0);
-  assert.match(
-    nonStandardOpenAiPort.stderr,
-    /CHAT_EXTERNAL_LLM_ALLOWED_HOSTS/,
-  );
+  assert.match(nonStandardOpenAiPort.stderr, /CHAT_EXTERNAL_LLM_ALLOWED_HOSTS/);
 
   const canonicalDefaultPort = runEnvValidation({
     CHAT_EXTERNAL_LLM_PROVIDER: 'openai',
@@ -443,6 +444,32 @@ test('envValidation: production requires a knowledge cursor signing secret', () 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /KNOWLEDGE_CURSOR_SIGNING_SECRET/);
   assert.match(result.stderr, /production/);
+});
+
+test('envValidation: capture idempotency secret is stable and required in production', () => {
+  const short = runEnvValidation({
+    NODE_ENV: 'development',
+    KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET: 'short-secret',
+  });
+  assert.notEqual(short.status, 0);
+  assert.match(short.stderr, /KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET/);
+  assert.match(short.stderr, /32 UTF-8 bytes/);
+
+  const missing = runEnvValidation({
+    NODE_ENV: 'production',
+    KNOWLEDGE_CURSOR_SIGNING_SECRET: VALID_KNOWLEDGE_CURSOR_SIGNING_SECRET,
+    KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET: '',
+    AUTH_MODE: 'jwt_bff',
+    JWT_ISSUER: 'https://accounts.google.com',
+    JWT_AUDIENCE: 'client-id.apps.googleusercontent.com',
+    JWT_JWKS_URL: 'https://www.googleapis.com/oauth2/v3/certs',
+    GOOGLE_OIDC_CLIENT_SECRET: 'secret',
+    GOOGLE_OIDC_REDIRECT_URI: 'https://app.example.com/auth/google/callback',
+    AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
+  });
+  assert.notEqual(missing.status, 0);
+  assert.match(missing.stderr, /KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET/);
+  assert.match(missing.stderr, /production/);
 });
 
 test('envValidation: production + AUTH_MODE=hybrid is rejected even with explicit fallback flag', () => {

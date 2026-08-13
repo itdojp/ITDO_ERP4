@@ -29,6 +29,7 @@ export function KnowledgeProvenanceWorkspace(props: {
   itemScope: KnowledgeScope;
   organizationId: string | null;
   snapshots: readonly KnowledgeSnapshot[];
+  mutationBlocked?: boolean;
   onCommitBusyChange?: (busy: boolean) => void;
 }) {
   const { onCommitBusyChange } = props;
@@ -45,6 +46,7 @@ export function KnowledgeProvenanceWorkspace(props: {
 
   const selectTab = (value: string) => {
     if (!isWorkspaceTab(value)) return;
+    if (props.mutationBlocked) return;
     if (
       commitBusy &&
       !(
@@ -113,6 +115,12 @@ export function KnowledgeProvenanceWorkspace(props: {
           itemの切り替えを停止しています。
         </Alert>
       ) : null}
+      {props.mutationBlocked ? (
+        <Alert variant="warning">
+          Browser captureの確定結果を確認するまで、他のKnowledge
+          mutationを開始できません。
+        </Alert>
+      ) : null}
       <Tabs
         className="knowledge-provenance-workspace-tabs"
         value={activeTab}
@@ -121,14 +129,19 @@ export function KnowledgeProvenanceWorkspace(props: {
         items={workspaceTabs.map((tab) => ({
           ...tab,
           disabled:
-            commitBusy &&
-            !(
-              (shareCommitBusy && tab.id === 'share') ||
-              (llmCommitBusy && tab.id === 'external-llm')
-            ),
+            props.mutationBlocked ||
+            (commitBusy &&
+              !(
+                (shareCommitBusy && tab.id === 'share') ||
+                (llmCommitBusy && tab.id === 'external-llm')
+              )),
         }))}
         renderPanel={() => (
-          <div className="knowledge-provenance-retained-panels">
+          <fieldset
+            className="knowledge-provenance-retained-panels"
+            disabled={props.mutationBlocked}
+            aria-busy={props.mutationBlocked}
+          >
             {visitedTabs.has('annotations') ? (
               <div
                 className="knowledge-provenance-retained-panel"
@@ -182,7 +195,7 @@ export function KnowledgeProvenanceWorkspace(props: {
                 />
               </div>
             ) : null}
-          </div>
+          </fieldset>
         )}
         fullWidth
         panelClassName="knowledge-provenance-workspace-panel"

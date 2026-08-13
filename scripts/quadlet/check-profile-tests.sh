@@ -145,6 +145,8 @@ SAKURA_VPS_PROFILE=private-smoke
 DATABASE_URL=postgresql://erp4:REPLACE_WITH_STRONG_PASSWORD@erp4-postgres:5432/postgres?schema=public
 PORT=3001
 NODE_ENV=development
+KNOWLEDGE_CURSOR_SIGNING_SECRET=REPLACE_WITH_PRIVATE_SMOKE_KNOWLEDGE_CURSOR_SIGNING_SECRET
+KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET=REPLACE_WITH_PRIVATE_SMOKE_KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET
 AUTH_MODE=header
 AUTH_ALLOW_HEADER_FALLBACK_IN_PROD=false
 ALLOWED_ORIGINS=http://erp4-frontend:8080
@@ -169,6 +171,7 @@ DATABASE_URL=postgresql://erp4:REPLACE_WITH_STRONG_PASSWORD@erp4-postgres:5432/p
 PORT=3001
 NODE_ENV=production
 KNOWLEDGE_CURSOR_SIGNING_SECRET=REPLACE_WITH_TRIAL_KNOWLEDGE_CURSOR_SIGNING_SECRET
+KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET=REPLACE_WITH_TRIAL_KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET
 AUTH_MODE=jwt_bff
 AUTH_ALLOW_HEADER_FALLBACK_IN_PROD=false
 ALLOWED_ORIGINS=https://trial-app.example.com
@@ -866,6 +869,18 @@ cp -a "$https_dir" "$https_short_cursor_secret_dir"
 sed -i 's/^KNOWLEDGE_CURSOR_SIGNING_SECRET=.*/KNOWLEDGE_CURSOR_SIGNING_SECRET=short/' "$https_short_cursor_secret_dir/erp4-backend.env"
 run_failure 'https-trial rejects short knowledge cursor signing secret' 'at least 32 UTF-8 bytes' \
   "$CHECK_ENV" --profile https-trial --target-dir "$https_short_cursor_secret_dir" --frontend-build-env "$https_frontend"
+
+https_missing_capture_secret_dir="$WORK_DIR/https-missing-capture-secret"
+cp -a "$https_dir" "$https_missing_capture_secret_dir"
+sed -i '/^KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET=/d' "$https_missing_capture_secret_dir/erp4-backend.env"
+run_failure 'https-trial rejects missing capture idempotency secret' 'missing required key: KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET' \
+  "$CHECK_ENV" --profile https-trial --target-dir "$https_missing_capture_secret_dir" --frontend-build-env "$https_frontend"
+
+https_short_capture_secret_dir="$WORK_DIR/https-short-capture-secret"
+cp -a "$https_dir" "$https_short_capture_secret_dir"
+sed -i 's/^KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET=.*/KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET=short/' "$https_short_capture_secret_dir/erp4-backend.env"
+run_failure 'https-trial rejects short capture idempotency secret' 'at least 32 UTF-8 bytes' \
+  "$CHECK_ENV" --profile https-trial --target-dir "$https_short_capture_secret_dir" --frontend-build-env "$https_frontend"
 
 production_gdrive_dir="$WORK_DIR/production-gdrive"
 cp -a "$https_dir" "$production_gdrive_dir"

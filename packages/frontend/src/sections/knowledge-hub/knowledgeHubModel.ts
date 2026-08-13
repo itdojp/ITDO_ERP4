@@ -284,6 +284,7 @@ export function validateKnowledgeCapture(
 
 export type KnowledgeHubErrorCode =
   | 'budget_hard_limit'
+  | 'capture_transaction_conflict_pre_dispatch'
   | 'confirmation_required'
   | 'execution_failed'
   | 'forbidden'
@@ -314,12 +315,15 @@ export type KnowledgeHubErrorCode =
   | 'snapshot_state_conflict'
   | 'snapshot_storage_failed'
   | 'snapshot_storage_pending'
+  | 'capture_pending'
   | 'unknown_error'
   | 'stale_preview'
   | 'version_conflict';
 
 const errorMessages: Record<KnowledgeHubErrorCode, string> = {
   budget_hard_limit: '利用上限に達しているため、外部LLMへ送信していません。',
+  capture_transaction_conflict_pre_dispatch:
+    '保存処理が競合しました。外部保存は開始していません。もう一度プレビューしてください。',
   confirmation_required: '外部送信内容を確認して明示的に同意してください。',
   execution_failed:
     '実行結果を確定できませんでした。自動再送せず、状態を確認してください。',
@@ -362,6 +366,8 @@ const errorMessages: Record<KnowledgeHubErrorCode, string> = {
   snapshot_storage_failed: 'スナップショットを保存できませんでした。',
   snapshot_storage_pending:
     '保存結果を確認中です。自動再送せず、再照合してください。',
+  capture_pending:
+    'ブラウザー共有の保存結果を確認中です。自動再送せず、再照合してください。',
   unknown_error: '処理を完了できませんでした。再試行してください。',
   stale_preview:
     'sourceまたは権限がプレビュー後に変わりました。もう一度プレビューしてください。',
