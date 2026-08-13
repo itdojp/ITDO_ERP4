@@ -16,6 +16,7 @@ import type {
   KnowledgeCaptureTransaction,
   KnowledgeCaptureUnitOfWork,
 } from './knowledgeCapturePorts.js';
+import { KnowledgeCaptureTransactionConflictError } from './knowledgeCapturePorts.js';
 import {
   createKnowledgeCaptureTokenCodec,
   KnowledgeCaptureTokenError,
@@ -46,6 +47,7 @@ export type KnowledgeCaptureRequestShape = {
   scope: unknown;
   organizationGroupAccountIds: unknown;
   sourceType: unknown;
+  requestKey: unknown;
 };
 
 type Prepared = {
@@ -67,6 +69,14 @@ function invalid() {
 
 function notFound() {
   return failure(404, 'not_found', 'Capture was not found');
+}
+
+function transactionConflict(code = 'capture_transaction_conflict') {
+  return failure(
+    409,
+    code,
+    'Capture state changed concurrently; inspect the existing result before retrying',
+  );
 }
 
 function auditActor(
@@ -179,12 +189,26 @@ async function validGroups(
   if (binding.scope === 'personal') return true;
   if (!binding.organizationId) return false;
   return (
-    (await transaction.captures.countActiveGroupsForActor({
+    (await transaction.captures.lockActiveGroupsForActor({
       actorUserId: actor.userId,
       organizationId: binding.organizationId,
       groupAccountIds: binding.groupAccountIds,
     })) === binding.groupAccountIds.length
   );
+}
+
+async function hasCurrentBindingAccess(
+  transaction: KnowledgeCaptureTransaction,
+  binding: KnowledgeCapturePreviewBinding,
+  actor: KnowledgeActor,
+  captureId: string,
+) {
+  if (!(await validGroups(transaction, binding, actor))) return false;
+  return transaction.captures.hasCurrentBindingAccess({
+    actor,
+    captureId,
+    requiredGroupAccountIds: binding.groupAccountIds,
+  });
 }
 
 export function createKnowledgeCaptureService(dependencies: {
@@ -205,6 +229,23 @@ export function createKnowledgeCaptureService(dependencies: {
   const randomId = dependencies.randomId ?? randomUUID;
   const reportInternalError =
     dependencies.reportInternalError ?? (() => undefined);
+  const currentBindingAccess = async (
+    actor: KnowledgeActor,
+    binding: KnowledgeCapturePreviewBinding,
+    captureId: string,
+  ): Promise<boolean | null> => {
+    try {
+      return await dependencies.unitOfWork.run((transaction) =>
+        hasCurrentBindingAccess(transaction, binding, actor, captureId),
+      );
+    } catch (error) {
+      if (error instanceof KnowledgeCaptureTransactionConflictError) {
+        reportInternalError(error);
+        return null;
+      }
+      throw error;
+    }
+  };
 
   return {
     async preview(input: {
@@ -231,6 +272,9 @@ export function createKnowledgeCaptureService(dependencies: {
       }>
     > {
       if (!input.actor.userId) return failure(403, 'forbidden', 'Forbidden');
+      if (!isValidKnowledgeCaptureRequestKey(input.request.requestKey)) {
+        return invalid();
+      }
       let prepared: Prepared;
       try {
         prepared = prepare(input.actor, input.request);
@@ -240,30 +284,42 @@ export function createKnowledgeCaptureService(dependencies: {
       const token = tokenCodec.create({
         actor: input.actor,
         binding: prepared.binding,
+        requestKey: input.request.requestKey,
       });
       const payloadHash = tokenCodec.payloadHash(prepared.binding);
-      const outcome = await dependencies.unitOfWork.run(async (transaction) => {
-        if (!(await validGroups(transaction, prepared.binding, input.actor))) {
-          return { authorized: false as const, duplicate: null };
+      let outcome;
+      try {
+        outcome = await dependencies.unitOfWork.run(async (transaction) => {
+          if (
+            !(await validGroups(transaction, prepared.binding, input.actor))
+          ) {
+            return { authorized: false as const, duplicate: null };
+          }
+          const duplicate = await transaction.captures.findRecentByPayload({
+            ownerUserId: input.actor.userId,
+            payloadHash,
+          });
+          await transaction.audit.write({
+            action: 'knowledge_capture_previewed',
+            actor: auditActor(input.actor, input.auditActor),
+            targetId: token.captureId,
+            metadata: {
+              channel: prepared.canonical.draft.channel,
+              scope: prepared.binding.scope,
+              fieldCount: prepared.canonical.selectedFields.length,
+              byteCount: prepared.canonical.payloadByteCount,
+              resultCode: duplicate ? 'duplicate_candidate' : 'preview_ready',
+            },
+          });
+          return { authorized: true as const, duplicate };
+        });
+      } catch (error) {
+        if (error instanceof KnowledgeCaptureTransactionConflictError) {
+          reportInternalError(error);
+          return transactionConflict();
         }
-        const duplicate = await transaction.captures.findRecentByPayload({
-          ownerUserId: input.actor.userId,
-          payloadHash,
-        });
-        await transaction.audit.write({
-          action: 'knowledge_capture_previewed',
-          actor: auditActor(input.actor, input.auditActor),
-          targetId: token.captureId,
-          metadata: {
-            channel: prepared.canonical.draft.channel,
-            scope: prepared.binding.scope,
-            fieldCount: prepared.canonical.selectedFields.length,
-            byteCount: prepared.canonical.payloadByteCount,
-            resultCode: duplicate ? 'duplicate_candidate' : 'preview_ready',
-          },
-        });
-        return { authorized: true as const, duplicate };
-      });
+        throw error;
+      }
       if (!outcome.authorized) return notFound();
       return {
         ok: true,
@@ -318,6 +374,7 @@ export function createKnowledgeCaptureService(dependencies: {
         verified = tokenCodec.verify({
           actor: input.actor,
           binding: prepared.binding,
+          requestKey: input.request.requestKey,
           token: input.request.previewToken,
         });
       } catch (error) {
@@ -343,94 +400,109 @@ export function createKnowledgeCaptureService(dependencies: {
       const contentType = 'text/plain';
       const itemId = randomId();
       const snapshotId = randomId();
-      const intent = await dependencies.unitOfWork.run(async (transaction) => {
-        if (!(await validGroups(transaction, prepared.binding, input.actor))) {
-          return { kind: 'not_found' as const };
-        }
-        const existing = await transaction.captures.findByRequestKey({
-          ownerUserId: input.actor.userId,
-          requestKeyHash,
-        });
-        if (existing) {
-          if (existing.payloadHash !== payloadHash)
-            return { kind: 'conflict' as const };
+      let intent;
+      try {
+        intent = await dependencies.unitOfWork.run(async (transaction) => {
           if (
-            !(await transaction.captures.hasCurrentAccess({
-              actor: input.actor,
-              captureId: existing.id,
-            }))
+            !(await validGroups(transaction, prepared.binding, input.actor))
           ) {
             return { kind: 'not_found' as const };
           }
+          const existing = await transaction.captures.findByRequestKey({
+            ownerUserId: input.actor.userId,
+            requestKeyHash,
+          });
+          if (existing) {
+            if (existing.payloadHash !== payloadHash)
+              return { kind: 'conflict' as const };
+            if (
+              !(await hasCurrentBindingAccess(
+                transaction,
+                prepared.binding,
+                input.actor,
+                existing.id,
+              ))
+            ) {
+              return { kind: 'not_found' as const };
+            }
+            await transaction.audit.write({
+              action: 'knowledge_capture_duplicate_detected',
+              actor: auditActor(input.actor, input.auditActor),
+              targetId: existing.id,
+              metadata: {
+                channel: existing.channel,
+                scope: existing.scope,
+                fieldCount: existing.selectedFieldCount,
+                byteCount: existing.payloadByteCount,
+                resultCode: 'reused',
+              },
+            });
+            return { kind: 'existing' as const, capture: existing };
+          }
+          const capture = await transaction.captures.createAggregate({
+            id: verified.captureId,
+            ownerUserId: input.actor.userId,
+            requestKeyHash,
+            payloadHash,
+            channel: prepared.canonical.draft.channel,
+            scope: prepared.binding.scope,
+            organizationId: prepared.binding.organizationId,
+            groupAccountIds: prepared.binding.groupAccountIds,
+            sourceType: prepared.binding.sourceType,
+            canonicalUrl: prepared.canonical.selectedFields.includes('url')
+              ? prepared.canonical.draft.url
+              : null,
+            title: prepared.canonical.selectedFields.includes('title')
+              ? prepared.canonical.draft.title
+              : null,
+            sourceAuthor: prepared.canonical.selectedFields.includes('author')
+              ? prepared.canonical.draft.author
+              : null,
+            publishedAt:
+              prepared.canonical.selectedFields.includes('publishedAt') &&
+              prepared.canonical.draft.publishedAt
+                ? new Date(prepared.canonical.draft.publishedAt)
+                : null,
+            capturedAt: new Date(prepared.canonical.draft.capturedAt),
+            itemId,
+            snapshotId,
+            snapshotRequestKeyHash: createHash('sha256')
+              .update(
+                `erp4:knowledge:capture-snapshot-request:v1\0${requestKeyHash}`,
+              )
+              .digest('hex'),
+            snapshotPayloadHash: prepared.canonical.payloadHash,
+            contentType,
+            extractedText: body.toString('utf8'),
+            sha256,
+            sizeBytes: body.length,
+            selectedFieldCount: prepared.canonical.selectedFields.length,
+            payloadByteCount: prepared.canonical.payloadByteCount,
+            createdBy: input.actor.userId,
+          });
           await transaction.audit.write({
-            action: 'knowledge_capture_duplicate_detected',
+            action: 'knowledge_capture_pending',
             actor: auditActor(input.actor, input.auditActor),
-            targetId: existing.id,
+            targetId: capture.id,
             metadata: {
-              channel: existing.channel,
-              scope: existing.scope,
-              fieldCount: existing.selectedFieldCount,
-              byteCount: existing.payloadByteCount,
-              resultCode: 'reused',
+              channel: capture.channel,
+              scope: capture.scope,
+              fieldCount: capture.selectedFieldCount,
+              byteCount: capture.payloadByteCount,
+              resultCode: 'artifact_pending',
             },
           });
-          return { kind: 'existing' as const, capture: existing };
+          return { kind: 'created' as const, capture };
+        });
+      } catch (error) {
+        if (error instanceof KnowledgeCaptureTransactionConflictError) {
+          reportInternalError(error);
+          return transactionConflict(
+            'capture_transaction_conflict_pre_dispatch',
+          );
         }
-        const capture = await transaction.captures.createAggregate({
-          id: verified.captureId,
-          ownerUserId: input.actor.userId,
-          requestKeyHash,
-          payloadHash,
-          channel: prepared.canonical.draft.channel,
-          scope: prepared.binding.scope,
-          organizationId: prepared.binding.organizationId,
-          groupAccountIds: prepared.binding.groupAccountIds,
-          sourceType: prepared.binding.sourceType,
-          canonicalUrl: prepared.canonical.selectedFields.includes('url')
-            ? prepared.canonical.draft.url
-            : null,
-          title: prepared.canonical.selectedFields.includes('title')
-            ? prepared.canonical.draft.title
-            : null,
-          sourceAuthor: prepared.canonical.selectedFields.includes('author')
-            ? prepared.canonical.draft.author
-            : null,
-          publishedAt:
-            prepared.canonical.selectedFields.includes('publishedAt') &&
-            prepared.canonical.draft.publishedAt
-              ? new Date(prepared.canonical.draft.publishedAt)
-              : null,
-          capturedAt: new Date(prepared.canonical.draft.capturedAt),
-          itemId,
-          snapshotId,
-          snapshotRequestKeyHash: createHash('sha256')
-            .update(
-              `erp4:knowledge:capture-snapshot-request:v1\0${requestKeyHash}`,
-            )
-            .digest('hex'),
-          snapshotPayloadHash: prepared.canonical.payloadHash,
-          contentType,
-          extractedText: body.toString('utf8'),
-          sha256,
-          sizeBytes: body.length,
-          selectedFieldCount: prepared.canonical.selectedFields.length,
-          payloadByteCount: prepared.canonical.payloadByteCount,
-          createdBy: input.actor.userId,
-        });
-        await transaction.audit.write({
-          action: 'knowledge_capture_pending',
-          actor: auditActor(input.actor, input.auditActor),
-          targetId: capture.id,
-          metadata: {
-            channel: capture.channel,
-            scope: capture.scope,
-            fieldCount: capture.selectedFieldCount,
-            byteCount: capture.payloadByteCount,
-            resultCode: 'artifact_pending',
-          },
-        });
-        return { kind: 'created' as const, capture };
-      });
+        throw error;
+      }
       if (intent.kind === 'conflict') {
         return failure(
           409,
@@ -446,13 +518,12 @@ export function createKnowledgeCaptureService(dependencies: {
         };
       }
 
-      const accessBeforeStore = await dependencies.unitOfWork.run(
-        (transaction) =>
-          transaction.captures.hasCurrentAccess({
-            actor: input.actor,
-            captureId: intent.capture.id,
-          }),
+      const accessBeforeStore = await currentBindingAccess(
+        input.actor,
+        prepared.binding,
+        intent.capture.id,
       );
+      if (accessBeforeStore === null) return transactionConflict();
       if (!accessBeforeStore) {
         return notFound();
       }
@@ -474,67 +545,109 @@ export function createKnowledgeCaptureService(dependencies: {
           error instanceof KnowledgeArtifactStoreError &&
           error.outcome === 'failed'
         ) {
-          const failedCapture = await dependencies.unitOfWork.run(
-            async (transaction) => {
-              const failed = await transaction.captures.markFailed({
-                actor: input.actor,
-                captureId: intent.capture.id,
-                failedAt: now(),
-                failureCode: 'snapshot_storage_failed',
-              });
-              if (failed) {
-                await transaction.audit.write({
-                  action: 'knowledge_capture_rejected',
-                  actor: auditActor(input.actor, input.auditActor),
-                  targetId: failed.id,
-                  metadata: {
-                    channel: failed.channel,
-                    scope: failed.scope,
-                    fieldCount: failed.selectedFieldCount,
-                    byteCount: failed.payloadByteCount,
-                    resultCode: 'snapshot_storage_failed',
-                  },
+          let failedCapture: KnowledgeCapture | null = null;
+          try {
+            failedCapture = await dependencies.unitOfWork.run(
+              async (transaction) => {
+                const failed = await transaction.captures.markFailed({
+                  actor: input.actor,
+                  captureId: intent.capture.id,
+                  requiredGroupAccountIds: prepared.binding.groupAccountIds,
+                  failedAt: now(),
+                  failureCode: 'snapshot_storage_failed',
                 });
-              }
-              return failed;
-            },
-          );
+                if (failed) {
+                  await transaction.audit.write({
+                    action: 'knowledge_capture_rejected',
+                    actor: auditActor(input.actor, input.auditActor),
+                    targetId: failed.id,
+                    metadata: {
+                      channel: failed.channel,
+                      scope: failed.scope,
+                      fieldCount: failed.selectedFieldCount,
+                      byteCount: failed.payloadByteCount,
+                      resultCode: 'snapshot_storage_failed',
+                    },
+                  });
+                }
+                return failed;
+              },
+            );
+          } catch (finalizationError) {
+            if (
+              !(
+                finalizationError instanceof
+                KnowledgeCaptureTransactionConflictError
+              )
+            ) {
+              throw finalizationError;
+            }
+            reportInternalError(finalizationError);
+          }
           if (failedCapture)
             return {
               ok: true,
               value: captureResponse(failedCapture, false, verified.captureId),
             };
-          const stillAccessible = await dependencies.unitOfWork.run(
-            (transaction) =>
-              transaction.captures.hasCurrentAccess({
-                actor: input.actor,
-                captureId: intent.capture.id,
-              }),
+          const stillAccessible = await currentBindingAccess(
+            input.actor,
+            prepared.binding,
+            intent.capture.id,
           );
+          if (stillAccessible === null) {
+            return transactionConflict('capture_finalization_conflict');
+          }
           if (!stillAccessible) return notFound();
         }
-        return { ok: true, value: captureResponse(intent.capture, false) };
+        const stillAccessible = await currentBindingAccess(
+          input.actor,
+          prepared.binding,
+          intent.capture.id,
+        );
+        if (stillAccessible === null) {
+          return transactionConflict('capture_finalization_conflict');
+        }
+        if (!stillAccessible) return notFound();
+        return {
+          ok: true,
+          value: captureResponse(intent.capture, false, verified.captureId),
+        };
       }
       if (
         artifact.contentType !== contentType ||
         artifact.sha256 !== sha256 ||
         artifact.sizeBytes !== body.length
       ) {
-        return { ok: true, value: captureResponse(intent.capture, false) };
+        const stillAccessible = await currentBindingAccess(
+          input.actor,
+          prepared.binding,
+          intent.capture.id,
+        );
+        if (stillAccessible === null) {
+          return transactionConflict('capture_finalization_conflict');
+        }
+        if (!stillAccessible) return notFound();
+        return {
+          ok: true,
+          value: captureResponse(intent.capture, false, verified.captureId),
+        };
       }
       try {
         const ready = await dependencies.unitOfWork.run(async (transaction) => {
           if (
-            !(await transaction.captures.hasCurrentAccess({
-              actor: input.actor,
-              captureId: intent.capture.id,
-            }))
+            !(await hasCurrentBindingAccess(
+              transaction,
+              prepared.binding,
+              input.actor,
+              intent.capture.id,
+            ))
           ) {
             return { authorized: false as const, capture: null };
           }
           const updated = await transaction.captures.markReady({
             actor: input.actor,
             captureId: intent.capture.id,
+            requiredGroupAccountIds: prepared.binding.groupAccountIds,
             artifactId: artifact.artifactId,
             contentType,
             sha256,
@@ -569,6 +682,15 @@ export function createKnowledgeCaptureService(dependencies: {
             };
       } catch (error) {
         reportInternalError(error);
+        const stillAccessible = await currentBindingAccess(
+          input.actor,
+          prepared.binding,
+          intent.capture.id,
+        );
+        if (stillAccessible === null) {
+          return transactionConflict('capture_finalization_conflict');
+        }
+        if (!stillAccessible) return notFound();
         return {
           ok: true,
           value: captureResponse(intent.capture, false, verified.captureId),
@@ -608,7 +730,9 @@ export function createKnowledgeCaptureService(dependencies: {
         verified = tokenCodec.verify({
           actor: input.actor,
           binding: prepared.binding,
+          requestKey: input.request.requestKey,
           token: input.request.previewToken,
+          allowExpired: true,
         });
       } catch (error) {
         if (error instanceof KnowledgeCaptureTokenError) {
@@ -626,8 +750,9 @@ export function createKnowledgeCaptureService(dependencies: {
         input.request.requestKey,
       );
       const payloadHash = tokenCodec.payloadHash(prepared.binding);
-      const resolved = await dependencies.unitOfWork.run(
-        async (transaction) => {
+      let resolved;
+      try {
+        resolved = await dependencies.unitOfWork.run(async (transaction) => {
           if (
             !(await validGroups(transaction, prepared.binding, input.actor))
           ) {
@@ -642,16 +767,24 @@ export function createKnowledgeCaptureService(dependencies: {
             return { kind: 'conflict' as const };
           }
           if (
-            !(await transaction.captures.hasCurrentAccess({
-              actor: input.actor,
-              captureId: capture.id,
-            }))
+            !(await hasCurrentBindingAccess(
+              transaction,
+              prepared.binding,
+              input.actor,
+              capture.id,
+            ))
           ) {
             return { kind: 'not_found' as const };
           }
           return { kind: 'found' as const, capture };
-        },
-      );
+        });
+      } catch (error) {
+        if (error instanceof KnowledgeCaptureTransactionConflictError) {
+          reportInternalError(error);
+          return transactionConflict('capture_reconcile_conflict');
+        }
+        throw error;
+      }
       if (resolved.kind === 'not_found') return notFound();
       if (resolved.kind === 'conflict') {
         return failure(
@@ -665,6 +798,15 @@ export function createKnowledgeCaptureService(dependencies: {
         captureId: resolved.capture.id,
       });
       if (!state) return notFound();
+      const accessAfterStateRead = await currentBindingAccess(
+        input.actor,
+        prepared.binding,
+        state.capture.id,
+      );
+      if (accessAfterStateRead === null) {
+        return transactionConflict('capture_reconcile_conflict');
+      }
+      if (!accessAfterStateRead) return notFound();
       if (state.capture.status !== 'pending') {
         return {
           ok: true,
@@ -687,46 +829,72 @@ export function createKnowledgeCaptureService(dependencies: {
           snapshotId: state.capture.snapshotId,
         })
         .catch(() => null);
-      if (!artifact) {
+      if (
+        !artifact ||
+        artifact.contentType !== state.contentType ||
+        artifact.sha256 !== state.sha256 ||
+        artifact.sizeBytes !== state.sizeBytes
+      ) {
+        const stillAccessible = await currentBindingAccess(
+          input.actor,
+          prepared.binding,
+          state.capture.id,
+        );
+        if (stillAccessible === null) {
+          return transactionConflict('capture_reconcile_conflict');
+        }
+        if (!stillAccessible) return notFound();
         return {
           ok: true,
           value: captureResponse(state.capture, true, verified.captureId),
         };
       }
-      const ready = await dependencies.unitOfWork.run(async (transaction) => {
-        if (
-          !(await transaction.captures.hasCurrentAccess({
+      let ready;
+      try {
+        ready = await dependencies.unitOfWork.run(async (transaction) => {
+          if (
+            !(await hasCurrentBindingAccess(
+              transaction,
+              prepared.binding,
+              input.actor,
+              state.capture.id,
+            ))
+          ) {
+            return { authorized: false as const, capture: null };
+          }
+          const updated = await transaction.captures.markReady({
             actor: input.actor,
             captureId: state.capture.id,
-          }))
-        ) {
-          return { authorized: false as const, capture: null };
-        }
-        const updated = await transaction.captures.markReady({
-          actor: input.actor,
-          captureId: state.capture.id,
-          artifactId: artifact.artifactId,
-          contentType: state.contentType as string,
-          sha256: state.sha256 as string,
-          sizeBytes: state.sizeBytes as number,
-          committedAt: now(),
-        });
-        if (updated) {
-          await transaction.audit.write({
-            action: 'knowledge_capture_reconciled',
-            actor: auditActor(input.actor, input.auditActor),
-            targetId: updated.id,
-            metadata: {
-              channel: updated.channel,
-              scope: updated.scope,
-              fieldCount: updated.selectedFieldCount,
-              byteCount: updated.payloadByteCount,
-              resultCode: 'ready',
-            },
+            requiredGroupAccountIds: prepared.binding.groupAccountIds,
+            artifactId: artifact.artifactId,
+            contentType: state.contentType as string,
+            sha256: state.sha256 as string,
+            sizeBytes: state.sizeBytes as number,
+            committedAt: now(),
           });
+          if (updated) {
+            await transaction.audit.write({
+              action: 'knowledge_capture_reconciled',
+              actor: auditActor(input.actor, input.auditActor),
+              targetId: updated.id,
+              metadata: {
+                channel: updated.channel,
+                scope: updated.scope,
+                fieldCount: updated.selectedFieldCount,
+                byteCount: updated.payloadByteCount,
+                resultCode: 'ready',
+              },
+            });
+          }
+          return { authorized: true as const, capture: updated };
+        });
+      } catch (error) {
+        if (error instanceof KnowledgeCaptureTransactionConflictError) {
+          reportInternalError(error);
+          return transactionConflict('capture_reconcile_conflict');
         }
-        return { authorized: true as const, capture: updated };
-      });
+        throw error;
+      }
       if (!ready.authorized) return notFound();
       return ready.capture
         ? {

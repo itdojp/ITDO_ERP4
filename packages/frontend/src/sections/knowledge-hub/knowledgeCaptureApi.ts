@@ -106,7 +106,7 @@ function result(
 }
 
 export async function previewKnowledgeCapture(
-  submission: KnowledgeCaptureSubmission,
+  submission: KnowledgeCaptureSubmission & { requestKey: string },
   signal?: AbortSignal,
 ): Promise<KnowledgeCapturePreview> {
   const value = await requestKnowledgeJson('/knowledge/captures/preview', {

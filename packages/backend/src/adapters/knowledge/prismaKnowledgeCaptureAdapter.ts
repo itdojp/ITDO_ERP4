@@ -23,6 +23,7 @@ type CaptureDbClient = Pick<
   | 'groupAccount'
   | 'knowledgeCaptureRequest'
   | 'knowledgeItem'
+  | 'knowledgeItemGroupGrant'
   | 'knowledgeSnapshot'
 > &
   Pick<Prisma.TransactionClient, '$queryRaw'>;
@@ -164,17 +165,33 @@ function currentCaptureAccessWhere(input: {
 
 async function lockCurrentCaptureAccess(
   client: CaptureDbClient,
-  input: { actor: KnowledgeActor; captureId: string },
+  input: {
+    actor: KnowledgeActor;
+    captureId: string;
+    requiredGroupAccountIds: string[];
+  },
 ) {
   const actorUserId = input.actor.userId.trim();
   const organizationId = input.actor.organizationId?.trim() ?? '';
-  const groupAccountIds = [
+  const actorGroupAccountIds = [
     ...new Set(
       input.actor.groupAccountIds.map((value) => value.trim()).filter(Boolean),
     ),
   ];
+  const requiredGroupAccountIds = [
+    ...new Set(
+      input.requiredGroupAccountIds
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  ].sort();
+  const actorHasRequiredGroups = requiredGroupAccountIds.every((groupId) =>
+    actorGroupAccountIds.includes(groupId),
+  );
   const organizationAccess =
-    organizationId && groupAccountIds.length > 0
+    organizationId &&
+    requiredGroupAccountIds.length > 0 &&
+    actorHasRequiredGroups
       ? Prisma.sql`
           OR (
             capture."scope" = 'organization'
@@ -191,7 +208,7 @@ async function lockCurrentCaptureAccess(
               JOIN "UserAccount" user_row
                 ON user_row."id" = membership_row."userId"
               WHERE grant_row."knowledgeItemId" = item."id"
-                AND group_row."id" IN (${Prisma.join(groupAccountIds)})
+                AND group_row."id" IN (${Prisma.join(requiredGroupAccountIds)})
                 AND group_row."active" = true
                 AND membership_row."userId" = ${actorUserId}
                 AND user_row."active" = true
@@ -222,14 +239,17 @@ async function lockCurrentCaptureAccess(
     FOR SHARE OF capture, item
   `);
   if (captureRows.length !== 1) return false;
-  if (!organizationId || groupAccountIds.length === 0) return true;
   const capture = await client.knowledgeCaptureRequest.findUnique({
     where: { id: input.captureId },
     select: { knowledgeItemId: true, scope: true },
   });
-  if (!capture || capture.scope === 'personal') return Boolean(capture);
+  if (!capture) return false;
+  if (capture.scope === 'personal') {
+    return requiredGroupAccountIds.length === 0;
+  }
+  if (!organizationId || requiredGroupAccountIds.length === 0) return false;
   const accessRows = await client.$queryRaw<Array<{ id: string }>>(Prisma.sql`
-    SELECT grant_row."id"
+    SELECT group_row."id"
     FROM "KnowledgeItemGroupGrant" grant_row
     JOIN "GroupAccount" group_row
       ON group_row."id" = grant_row."groupAccountId"
@@ -239,7 +259,7 @@ async function lockCurrentCaptureAccess(
     JOIN "UserAccount" user_row
       ON user_row."id" = membership_row."userId"
     WHERE grant_row."knowledgeItemId" = ${capture.knowledgeItemId}
-      AND group_row."id" IN (${Prisma.join(groupAccountIds)})
+      AND group_row."id" IN (${Prisma.join(requiredGroupAccountIds)})
       AND group_row."active" = true
       AND user_row."active" = true
       AND user_row."deletedAt" IS NULL
@@ -247,33 +267,39 @@ async function lockCurrentCaptureAccess(
     ORDER BY grant_row."id", group_row."id", membership_row."id", user_row."id"
     FOR SHARE OF grant_row, group_row, membership_row, user_row
   `);
-  return accessRows.length > 0;
+  return (
+    new Set(accessRows.map((row) => row.id)).size ===
+    requiredGroupAccountIds.length
+  );
 }
 
 export class PrismaKnowledgeCaptureRepository implements KnowledgeCaptureRepository {
   constructor(private readonly client: CaptureDbClient = prisma) {}
 
-  countActiveGroupsForActor(input: {
+  async lockActiveGroupsForActor(input: {
     actorUserId: string;
     organizationId: string;
     groupAccountIds: string[];
   }) {
-    return this.client.groupAccount.count({
-      where: {
-        id: { in: input.groupAccountIds },
-        active: true,
-        memberships: {
-          some: {
-            userId: input.actorUserId,
-            user: {
-              active: true,
-              deletedAt: null,
-              organization: input.organizationId,
-            },
-          },
-        },
-      },
-    });
+    const groupAccountIds = [...new Set(input.groupAccountIds)].sort();
+    if (groupAccountIds.length === 0) return 0;
+    const rows = await this.client.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT group_row."id"
+      FROM "GroupAccount" group_row
+      JOIN "UserGroup" membership_row
+        ON membership_row."groupId" = group_row."id"
+       AND membership_row."userId" = ${input.actorUserId}
+      JOIN "UserAccount" user_row
+        ON user_row."id" = membership_row."userId"
+      WHERE group_row."id" IN (${Prisma.join(groupAccountIds)})
+        AND group_row."active" = true
+        AND user_row."active" = true
+        AND user_row."deletedAt" IS NULL
+        AND user_row."organization" = ${input.organizationId}
+      ORDER BY group_row."id", membership_row."id", user_row."id"
+      FOR SHARE OF group_row, membership_row, user_row
+    `);
+    return new Set(rows.map((row) => row.id)).size;
   }
 
   async findByRequestKey(input: {
@@ -305,6 +331,14 @@ export class PrismaKnowledgeCaptureRepository implements KnowledgeCaptureReposit
         where: currentCaptureAccessWhere(input),
       })) === 1
     );
+  }
+
+  async hasCurrentBindingAccess(input: {
+    actor: KnowledgeActor;
+    captureId: string;
+    requiredGroupAccountIds: string[];
+  }) {
+    return lockCurrentCaptureAccess(this.client, input);
   }
 
   async findOwnedById(input: { actor: KnowledgeActor; captureId: string }) {
@@ -416,6 +450,7 @@ export class PrismaKnowledgeCaptureRepository implements KnowledgeCaptureReposit
   async markReady(input: {
     actor: KnowledgeActor;
     captureId: string;
+    requiredGroupAccountIds: string[];
     artifactId: string;
     contentType: string;
     sha256: string;
@@ -463,6 +498,7 @@ export class PrismaKnowledgeCaptureRepository implements KnowledgeCaptureReposit
   async markFailed(input: {
     actor: KnowledgeActor;
     captureId: string;
+    requiredGroupAccountIds: string[];
     failedAt: Date;
     failureCode: 'snapshot_storage_failed';
   }) {

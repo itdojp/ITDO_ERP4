@@ -124,6 +124,7 @@ export const KnowledgeHub: React.FC<{
   const [fileInputKey, setFileInputKey] = useState(0);
   const [captureBusy, setCaptureBusy] = useState(false);
   const [externalCommitBusy, setExternalCommitBusy] = useState(false);
+  const [captureIngressBusy, setCaptureIngressBusy] = useState(false);
   const [downloadBusyId, setDownloadBusyId] = useState('');
   const [reconcileBusyId, setReconcileBusyId] = useState('');
   const [pendingAttempt, setPendingAttempt] = useState<PendingAttempt | null>(
@@ -152,7 +153,10 @@ export const KnowledgeHub: React.FC<{
     [onShareCommitBusyChange],
   );
   const handleCaptureIngressBusyChange = useCallback(
-    (busy: boolean) => updateExternalCommitBusy('capture-ingress', busy),
+    (busy: boolean) => {
+      setCaptureIngressBusy(busy);
+      updateExternalCommitBusy('capture-ingress', busy);
+    },
     [updateExternalCommitBusy],
   );
   const handleProvenanceBusyChange = useCallback(
@@ -480,6 +484,13 @@ export const KnowledgeHub: React.FC<{
   };
 
   const reconcile = async (snapshot: KnowledgeSnapshot) => {
+    if (externalCommitBusyRef.current) {
+      setNotice({
+        tone: 'warning',
+        text: '外部処理の確定結果を確認するまで別の保存結果を再照合できません。',
+      });
+      return;
+    }
     if (
       !pendingAttempt ||
       pendingAttempt.itemId !== snapshot.knowledgeItemId ||
@@ -751,6 +762,7 @@ export const KnowledgeHub: React.FC<{
                     size="small"
                     variant="secondary"
                     loading={reconcileBusyId === snapshot.id}
+                    disabled={externalCommitBusy}
                     onClick={() => void reconcile(snapshot)}
                   >
                     保存結果を再照合
@@ -1007,6 +1019,7 @@ export const KnowledgeHub: React.FC<{
             itemScope={selectedItem.scope}
             organizationId={selectedItem.organizationId}
             snapshots={snapshots}
+            mutationBlocked={captureIngressBusy}
             onCommitBusyChange={handleProvenanceBusyChange}
           />
         ) : (

@@ -72,7 +72,11 @@ describe('knowledge capture API boundary', () => {
       scope: 'personal',
       organizationGroupAccountIds: [],
       sourceType: 'web',
+      requestKey: 'private-request-key',
     });
+    expect(JSON.parse(apiResponse.mock.calls[0][1].body).requestKey).toBe(
+      'private-request-key',
+    );
     expect(value.draft).toEqual(draft);
     expect(JSON.stringify(value)).not.toContain('providerKey');
     expect(JSON.stringify(value)).not.toContain('private-canary');

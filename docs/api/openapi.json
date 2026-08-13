@@ -17643,6 +17643,7 @@
                   "requestKey": {
                     "maxLength": 200,
                     "minLength": 1,
+                    "pattern": "^[A-Za-z0-9._-]+$",
                     "type": "string"
                   },
                   "scope": {
@@ -17730,6 +17731,9 @@
                     "itemId": {
                       "type": "string"
                     },
+                    "requestCaptureId": {
+                      "type": "string"
+                    },
                     "reused": {
                       "type": "boolean"
                     },
@@ -17747,6 +17751,7 @@
                   },
                   "required": [
                     "captureId",
+                    "requestCaptureId",
                     "itemId",
                     "snapshotId",
                     "status",
@@ -17792,6 +17797,9 @@
                     "itemId": {
                       "type": "string"
                     },
+                    "requestCaptureId": {
+                      "type": "string"
+                    },
                     "reused": {
                       "type": "boolean"
                     },
@@ -17809,6 +17817,7 @@
                   },
                   "required": [
                     "captureId",
+                    "requestCaptureId",
                     "itemId",
                     "snapshotId",
                     "status",
@@ -17854,6 +17863,9 @@
                     "itemId": {
                       "type": "string"
                     },
+                    "requestCaptureId": {
+                      "type": "string"
+                    },
                     "reused": {
                       "type": "boolean"
                     },
@@ -17871,6 +17883,7 @@
                   },
                   "required": [
                     "captureId",
+                    "requestCaptureId",
                     "itemId",
                     "snapshotId",
                     "status",
@@ -18112,6 +18125,9 @@
                     "itemId": {
                       "type": "string"
                     },
+                    "requestCaptureId": {
+                      "type": "string"
+                    },
                     "reused": {
                       "type": "boolean"
                     },
@@ -18129,6 +18145,7 @@
                   },
                   "required": [
                     "captureId",
+                    "requestCaptureId",
                     "itemId",
                     "snapshotId",
                     "status",
@@ -18274,7 +18291,126 @@
             "application/json": {
               "schema": {
                 "additionalProperties": false,
-                "maxProperties": 0,
+                "properties": {
+                  "draft": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "author": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "capturedAt": {
+                        "type": "string"
+                      },
+                      "channel": {
+                        "enum": [
+                          "pwa_share_target",
+                          "browser_extension"
+                        ],
+                        "type": "string"
+                      },
+                      "description": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "publishedAt": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "schemaVersion": {
+                        "enum": [
+                          1
+                        ],
+                        "type": "integer"
+                      },
+                      "selectedText": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "title": {
+                        "nullable": true,
+                        "type": "string"
+                      },
+                      "url": {
+                        "nullable": true,
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "schemaVersion",
+                      "channel",
+                      "capturedAt"
+                    ],
+                    "type": "object"
+                  },
+                  "organizationGroupAccountIds": {
+                    "items": {
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "maxItems": 100,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "previewToken": {
+                    "maxLength": 4096,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "requestKey": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "pattern": "^[A-Za-z0-9._-]+$",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "enum": [
+                      "personal",
+                      "organization"
+                    ],
+                    "type": "string"
+                  },
+                  "selectedFields": {
+                    "items": {
+                      "enum": [
+                        "title",
+                        "url",
+                        "selectedText",
+                        "description",
+                        "author",
+                        "publishedAt"
+                      ],
+                      "type": "string"
+                    },
+                    "maxItems": 6,
+                    "minItems": 1,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "sourceType": {
+                    "enum": [
+                      "x",
+                      "threads",
+                      "news",
+                      "web",
+                      "pdf",
+                      "image",
+                      "manual",
+                      "other"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "draft",
+                  "selectedFields",
+                  "scope",
+                  "organizationGroupAccountIds",
+                  "sourceType",
+                  "previewToken",
+                  "requestKey"
+                ],
                 "type": "object"
               }
             }
@@ -18312,6 +18448,9 @@
                     "itemId": {
                       "type": "string"
                     },
+                    "requestCaptureId": {
+                      "type": "string"
+                    },
                     "reused": {
                       "type": "boolean"
                     },
@@ -18329,6 +18468,7 @@
                   },
                   "required": [
                     "captureId",
+                    "requestCaptureId",
                     "itemId",
                     "snapshotId",
                     "status",
@@ -18415,6 +18555,41 @@
             "description": "Default Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "additionalProperties": true,
+                      "properties": {
+                        "category": {
+                          "type": "string"
+                        },
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Default Response"
+          },
+          "409": {
             "content": {
               "application/json": {
                 "schema": {
@@ -18559,6 +18734,12 @@
                     "type": "array",
                     "uniqueItems": true
                   },
+                  "requestKey": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "pattern": "^[A-Za-z0-9._-]+$",
+                    "type": "string"
+                  },
                   "scope": {
                     "enum": [
                       "personal",
@@ -18601,7 +18782,8 @@
                   "draft",
                   "selectedFields",
                   "scope",
-                  "organizationGroupAccountIds"
+                  "organizationGroupAccountIds",
+                  "requestKey"
                 ],
                 "type": "object"
               }

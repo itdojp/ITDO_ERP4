@@ -53,6 +53,7 @@ function safeError(error: unknown) {
 }
 
 const definiteCommitRejectionCodes = new Set([
+  'capture_transaction_conflict_pre_dispatch',
   'forbidden',
   'idempotency_conflict',
   'invalid_request',
@@ -79,7 +80,10 @@ function resultEvent(draftId: string, outcome: 'committed' | 'discarded') {
   );
 }
 
-export function KnowledgeCaptureIngress(props: {
+export function KnowledgeCaptureIngress({
+  onCommitted,
+  onCommitBusyChange,
+}: {
   onCommitted?: (itemId: string) => void | Promise<void>;
   onCommitBusyChange?: (busy: boolean) => void;
 }) {
@@ -113,13 +117,10 @@ export function KnowledgeCaptureIngress(props: {
     busy === 'commit' || busy === 'reconcile' || unresolved;
 
   useEffect(() => {
-    props.onCommitBusyChange?.(blocksNavigation);
-  }, [blocksNavigation, props.onCommitBusyChange]);
+    onCommitBusyChange?.(blocksNavigation);
+  }, [blocksNavigation, onCommitBusyChange]);
 
-  useEffect(
-    () => () => props.onCommitBusyChange?.(false),
-    [props.onCommitBusyChange],
-  );
+  useEffect(() => () => onCommitBusyChange?.(false), [onCommitBusyChange]);
 
   const invalidatePreview = useCallback(() => {
     generationRef.current += 1;
@@ -200,6 +201,7 @@ export function KnowledgeCaptureIngress(props: {
           organizationGroupAccountIds:
             scope === 'organization' ? splitKnowledgeGroupIds(groups) : [],
           sourceType,
+          requestKey: draftId,
         },
         controller.signal,
       );
@@ -233,6 +235,7 @@ export function KnowledgeCaptureIngress(props: {
     const controller = new AbortController();
     operationAbortRef.current = controller;
     mutationBusyRef.current = true;
+    onCommitBusyChange?.(true);
     setBusy('commit');
     setError('');
     try {
@@ -247,9 +250,12 @@ export function KnowledgeCaptureIngress(props: {
       if (generationRef.current !== generation) return;
       setResult(value);
       handoffLockedRef.current = value.status !== 'ready';
+      onCommitBusyChange?.(value.status === 'pending');
       if (value.status === 'ready') {
         resultEvent(draftId, 'committed');
-        await props.onCommitted?.(value.itemId);
+        await Promise.resolve(onCommitted?.(value.itemId)).catch(
+          () => undefined,
+        );
       }
     } catch (caught) {
       if (controller.signal.aborted || generationRef.current !== generation)
@@ -259,10 +265,12 @@ export function KnowledgeCaptureIngress(props: {
         setExplicitlyConfirmed(false);
         requestKeyRef.current = '';
         handoffLockedRef.current = false;
+        onCommitBusyChange?.(false);
         setError(safeError(caught));
       } else {
         setUncertainCaptureId(preview.captureId);
         handoffLockedRef.current = true;
+        onCommitBusyChange?.(true);
         setError(
           '保存結果が不明です。自動再送せず、同じrequest keyで再照合してください。',
         );
@@ -281,6 +289,7 @@ export function KnowledgeCaptureIngress(props: {
     const controller = new AbortController();
     operationAbortRef.current = controller;
     mutationBusyRef.current = true;
+    onCommitBusyChange?.(true);
     setBusy('reconcile');
     setError('');
     try {
@@ -292,14 +301,18 @@ export function KnowledgeCaptureIngress(props: {
       setResult(value);
       setUncertainCaptureId('');
       handoffLockedRef.current = value.status !== 'ready';
+      onCommitBusyChange?.(value.status === 'pending');
       if (value.status === 'ready') {
         resultEvent(draftId, 'committed');
-        await props.onCommitted?.(value.itemId);
+        await Promise.resolve(onCommitted?.(value.itemId)).catch(
+          () => undefined,
+        );
       }
     } catch (caught) {
       if (controller.signal.aborted || generationRef.current !== generation)
         return;
       setError(safeError(caught));
+      onCommitBusyChange?.(true);
     } finally {
       mutationBusyRef.current = false;
       if (generationRef.current === generation) setBusy(null);
@@ -307,6 +320,7 @@ export function KnowledgeCaptureIngress(props: {
   };
 
   const discard = () => {
+    onCommitBusyChange?.(false);
     if (draftId) resultEvent(draftId, 'discarded');
     invalidatePreview();
     setDraftId('');
@@ -372,6 +386,27 @@ export function KnowledgeCaptureIngress(props: {
           disabled={busy !== null || handoffLocked}
           onChange={(event) => updateDraft('selectedText', event.target.value)}
         />
+        <Textarea
+          label="説明"
+          value={draft.description ?? ''}
+          rows={3}
+          disabled={busy !== null || handoffLocked}
+          onChange={(event) => updateDraft('description', event.target.value)}
+        />
+        <Input
+          label="著者"
+          value={draft.author ?? ''}
+          maxLength={500}
+          disabled={busy !== null || handoffLocked}
+          onChange={(event) => updateDraft('author', event.target.value)}
+        />
+        <Input
+          label="公開日時"
+          value={draft.publishedAt ?? ''}
+          maxLength={200}
+          disabled={busy !== null || handoffLocked}
+          onChange={(event) => updateDraft('publishedAt', event.target.value)}
+        />
         <Select
           label="source type"
           value={sourceType}
@@ -436,6 +471,24 @@ export function KnowledgeCaptureIngress(props: {
                 <li key={field}>{fieldLabels[field]}</li>
               ))}
             </ul>
+            <dl>
+              {preview.selectedFields.map((field) => (
+                <React.Fragment key={field}>
+                  <dt>{fieldLabels[field]}</dt>
+                  <dd>
+                    <pre>{preview.draft[field] ?? '（空）'}</pre>
+                  </dd>
+                </React.Fragment>
+              ))}
+            </dl>
+            <p>
+              保存しないfield:{' '}
+              {preview.omittedFields.length === 0
+                ? 'なし'
+                : preview.omittedFields
+                    .map((field) => fieldLabels[field])
+                    .join('、')}
+            </p>
             {preview.duplicateCandidate.detected ? (
               <Alert variant="warning">
                 同じ内容の保存候補があります。確定時はrequest

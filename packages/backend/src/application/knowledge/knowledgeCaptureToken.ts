@@ -158,6 +158,25 @@ function bindingFingerprint(
   );
 }
 
+function previewBindingFingerprint(
+  secret: Buffer,
+  input: KnowledgeCapturePreviewBinding,
+  requestKey: string,
+) {
+  return fingerprint(
+    secret,
+    'erp4:knowledge:capture-preview-binding:v1',
+    JSON.stringify({
+      binding: bindingFingerprint(secret, input),
+      requestKey: fingerprint(
+        secret,
+        'erp4:knowledge:capture-preview-request-key:v1',
+        requestKey,
+      ),
+    }),
+  );
+}
+
 function parse(value: Buffer): Envelope {
   let parsed: unknown;
   try {
@@ -245,6 +264,7 @@ export function createKnowledgeCaptureTokenCodec(
     create(input: {
       actor: KnowledgeActor;
       binding: KnowledgeCapturePreviewBinding;
+      requestKey: string;
     }) {
       const issuedAt = now().getTime();
       const captureId = randomId();
@@ -257,7 +277,11 @@ export function createKnowledgeCaptureTokenCodec(
         purpose: PURPOSE,
         captureId,
         actor: actorFingerprint(previewSecret, input.actor),
-        binding: bindingFingerprint(previewSecret, input.binding),
+        binding: previewBindingFingerprint(
+          previewSecret,
+          input.binding,
+          input.requestKey,
+        ),
         issuedAt,
         expiresAt,
       });
@@ -273,7 +297,9 @@ export function createKnowledgeCaptureTokenCodec(
     verify(input: {
       actor: KnowledgeActor;
       binding: KnowledgeCapturePreviewBinding;
+      requestKey: string;
       token: unknown;
+      allowExpired?: boolean;
     }) {
       try {
         if (
@@ -297,11 +323,19 @@ export function createKnowledgeCaptureTokenCodec(
         const envelope = parse(decode(payload));
         if (
           envelope.actor !== actorFingerprint(previewSecret, input.actor) ||
-          envelope.binding !== bindingFingerprint(previewSecret, input.binding)
+          envelope.binding !==
+            previewBindingFingerprint(
+              previewSecret,
+              input.binding,
+              input.requestKey,
+            )
         )
           invalid();
         const current = now().getTime();
-        if (current > envelope.expiresAt + CLOCK_SKEW_MS) {
+        if (
+          !input.allowExpired &&
+          current > envelope.expiresAt + CLOCK_SKEW_MS
+        ) {
           throw new KnowledgeCaptureTokenError('preview_token_expired');
         }
         if (current + CLOCK_SKEW_MS < envelope.issuedAt) invalid();

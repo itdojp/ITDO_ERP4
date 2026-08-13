@@ -88,7 +88,7 @@ export interface KnowledgeCaptureAuditWriter {
 }
 
 export interface KnowledgeCaptureRepository {
-  countActiveGroupsForActor(input: {
+  lockActiveGroupsForActor(input: {
     actorUserId: string;
     organizationId: string;
     groupAccountIds: string[];
@@ -104,6 +104,11 @@ export interface KnowledgeCaptureRepository {
   hasCurrentAccess(input: {
     actor: KnowledgeActor;
     captureId: string;
+  }): Promise<boolean>;
+  hasCurrentBindingAccess(input: {
+    actor: KnowledgeActor;
+    captureId: string;
+    requiredGroupAccountIds: string[];
   }): Promise<boolean>;
   findOwnedById(input: {
     actor: KnowledgeActor;
@@ -125,6 +130,7 @@ export interface KnowledgeCaptureRepository {
   markReady(input: {
     actor: KnowledgeActor;
     captureId: string;
+    requiredGroupAccountIds: string[];
     artifactId: string;
     contentType: string;
     sha256: string;
@@ -134,6 +140,7 @@ export interface KnowledgeCaptureRepository {
   markFailed(input: {
     actor: KnowledgeActor;
     captureId: string;
+    requiredGroupAccountIds: string[];
     failedAt: Date;
     failureCode: KnowledgeCaptureFailureCode;
   }): Promise<KnowledgeCapture | null>;

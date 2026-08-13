@@ -103,6 +103,7 @@ test('capture routes expose allowlisted preview and pending state only', async (
     scope: 'personal',
     organizationGroupAccountIds: [],
     sourceType: 'manual',
+    requestKey: 'private-request-key',
   };
   const preview = await app.inject({
     method: 'POST',
@@ -171,6 +172,7 @@ test('capture HTTP parser allows bounded escaped envelopes above the canonical d
     scope: 'personal',
     organizationGroupAccountIds: [],
     sourceType: 'manual',
+    requestKey: 'private-request-key',
   };
   const raw = Buffer.from(JSON.stringify(payload), 'utf8');
   assert.ok(raw.length > 128 * 1024);
@@ -215,6 +217,40 @@ test('capture routes reject unsupported top-level fields before the service', as
   });
   assert.equal(response.statusCode, 400);
   assert.equal(JSON.stringify(response.json()).includes('private'), false);
+});
+
+test('capture routes reject non-ASCII request keys before the service', async (t) => {
+  let previewCalls = 0;
+  const service = {
+    preview: async () => {
+      previewCalls += 1;
+      throw new Error('must-not-run');
+    },
+    commit: async () => {
+      throw new Error('unused');
+    },
+    detail: async () => {
+      throw new Error('unused');
+    },
+    reconcile: async () => {
+      throw new Error('unused');
+    },
+  };
+  const app = await build(service);
+  t.after(() => app.close());
+  const response = await app.inject({
+    method: 'POST',
+    url: '/knowledge/captures/preview',
+    payload: {
+      draft,
+      selectedFields: ['title'],
+      scope: 'personal',
+      organizationGroupAccountIds: [],
+      requestKey: 'confusable-ＫＥＹ',
+    },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(previewCalls, 0);
 });
 
 test('capture HTTP routes reject malformed UTF-8 before schema normalization', async (t) => {

@@ -19,6 +19,7 @@ const actor = {
   organizationId: 'organization-private-1',
   groupAccountIds: ['group-private-1'],
 };
+const requestKey = 'private-request-key';
 
 function binding(overrides = {}) {
   return {
@@ -51,9 +52,9 @@ test('capture preview token binds actor and exact selection without plaintext', 
     randomId: () => '11111111-2222-4333-8444-123456789012',
   });
   const value = binding();
-  const created = codec.create({ actor, binding: value });
+  const created = codec.create({ actor, binding: value, requestKey });
   assert.deepEqual(
-    codec.verify({ actor, binding: value, token: created.token }),
+    codec.verify({ actor, binding: value, requestKey, token: created.token }),
     {
       captureId: '11111111-2222-4333-8444-123456789012',
       expiresAt: new Date('2026-08-14T00:10:00.000Z'),
@@ -84,11 +85,17 @@ test('capture preview token rejects tamper, actor, payload, scope, and expiry', 
     randomId: () => '11111111-2222-4333-8444-123456789012',
   });
   const value = binding();
-  const { token } = codec.create({ actor, binding: value });
+  const { token } = codec.create({ actor, binding: value, requestKey });
   for (const candidate of [
-    { actor, binding: value, token: `${token.slice(0, -1)}x` },
-    { actor: { ...actor, userId: 'other' }, binding: value, token },
-    { actor, binding: binding({ sourceType: 'web' }), token },
+    { actor, binding: value, requestKey, token: `${token.slice(0, -1)}x` },
+    {
+      actor: { ...actor, userId: 'other' },
+      binding: value,
+      requestKey,
+      token,
+    },
+    { actor, binding: binding({ sourceType: 'web' }), requestKey, token },
+    { actor, binding: value, requestKey: 'other-request-key', token },
     {
       actor,
       binding: binding({
@@ -96,6 +103,7 @@ test('capture preview token rejects tamper, actor, payload, scope, and expiry', 
         organizationId: actor.organizationId,
         groupAccountIds: actor.groupAccountIds,
       }),
+      requestKey,
       token,
     },
   ]) {
@@ -108,10 +116,20 @@ test('capture preview token rejects tamper, actor, payload, scope, and expiry', 
   }
   current = new Date('2026-08-14T00:10:06.000Z');
   assert.throws(
-    () => codec.verify({ actor, binding: value, token }),
+    () => codec.verify({ actor, binding: value, requestKey, token }),
     (error) =>
       error instanceof KnowledgeCaptureTokenError &&
       error.code === 'preview_token_expired',
+  );
+  assert.deepEqual(
+    codec.verify({
+      actor,
+      binding: value,
+      requestKey,
+      token,
+      allowExpired: true,
+    }).captureId,
+    '11111111-2222-4333-8444-123456789012',
   );
 });
 

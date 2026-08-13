@@ -18,12 +18,12 @@ MVP で扱う入力は次の4種類です。
 PWA share targetまたはbrowser extensionから受け取ったdraftは、受信しただけでは保存されません。`ブラウザー共有の確認`で次を実施します。
 
 1. ページタイトル、URL、選択テキスト、説明、著者、公開日時のうち保存するfieldだけを選択します。説明、著者等のmetadataは既定で未選択です。
-2. 必要に応じてタイトル、URL、選択テキストを修正し、source typeを確認します。URLはcredentialを含まないHTTP(S)だけを使用します。
+2. 必要に応じてタイトル、URL、選択テキスト、説明、著者、公開日時を修正し、source typeを確認します。URLはcredentialを含まないHTTP(S)だけを使用します。
 3. scopeは既定の`personal`を使用します。`organization`を選ぶ場合はgroupを入力し、audienceの追加確認を選択します。
-4. `Preview`を選び、selected/omitted fieldと保存byte数を確認します。
+4. `Preview`を選び、backendが正規化した全selected fieldの実値、omitted field名、保存byte数を確認します。field名や件数だけで確定しません。
 5. `このexact previewを保存します`を選んでから確定します。
 
-保存結果が`確認中`の場合、同じ内容を再送せず`保存結果を再照合`を使用します。`破棄`はlocal draftを削除する通知を送ります。preview tokenとrequest keyは画面session内だけに保持し、URL、localStorage、画面、監査logへ表示しません。PWAとextension固有の受信、offline、期限切れ手順は各transportの実装後に追記します。
+保存結果が`確認中`の場合、同じ内容を再送せず`保存結果を再照合`を使用します。通常の保存確定では10分を過ぎたpreviewを再利用できませんが、既にpending ledgerが存在する場合は、同じactor、request key、exact payloadへ束縛された署名済みpreviewから新しい保存処理を作らず再照合できます。確認中はInbox、snapshot再照合、annotation／会話／Synthesis等の別mutationとitem／tab切替を停止します。`破棄`はlocal draftを削除する通知を送ります。preview tokenとrequest keyは画面session内だけに保持し、URL、localStorage、画面、監査logへ表示しません。PWAとextension固有の受信、offline、期限切れ手順は各transportの実装後に追記します。
 
 ## 新しい Inbox 項目へ保存する
 

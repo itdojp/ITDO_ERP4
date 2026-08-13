@@ -284,6 +284,7 @@ export function validateKnowledgeCapture(
 
 export type KnowledgeHubErrorCode =
   | 'budget_hard_limit'
+  | 'capture_transaction_conflict_pre_dispatch'
   | 'confirmation_required'
   | 'execution_failed'
   | 'forbidden'
@@ -321,6 +322,8 @@ export type KnowledgeHubErrorCode =
 
 const errorMessages: Record<KnowledgeHubErrorCode, string> = {
   budget_hard_limit: '利用上限に達しているため、外部LLMへ送信していません。',
+  capture_transaction_conflict_pre_dispatch:
+    '保存処理が競合しました。外部保存は開始していません。もう一度プレビューしてください。',
   confirmation_required: '外部送信内容を確認して明示的に同意してください。',
   execution_failed:
     '実行結果を確定できませんでした。自動再送せず、状態を確認してください。',

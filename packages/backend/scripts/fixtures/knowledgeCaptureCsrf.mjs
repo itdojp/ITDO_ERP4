@@ -37,6 +37,7 @@ await registerKnowledgeCaptureRoutes(app, {
 });
 
 const payload = {
+  requestKey: 'synthetic-csrf-request',
   draft: {
     schemaVersion: 1,
     channel: 'browser_extension',

@@ -31,13 +31,18 @@ vi.mock('../utils/download', () => ({ downloadResponseAsFile }));
 vi.mock('./knowledge-hub/KnowledgeProvenanceWorkspace', () => ({
   KnowledgeProvenanceWorkspace: ({
     itemLabel,
+    mutationBlocked,
     onCommitBusyChange,
   }: {
     itemLabel: string;
+    mutationBlocked?: boolean;
     onCommitBusyChange?: (busy: boolean) => void;
   }) => (
     <div>
       provenance workspace: {itemLabel}
+      <span>
+        {mutationBlocked ? 'capture mutation blocked' : 'mutation open'}
+      </span>
       <button type="button" onClick={() => onCommitBusyChange?.(true)}>
         外部確定intentを保持
       </button>
@@ -208,6 +213,7 @@ describe('KnowledgeHub', () => {
     fireEvent.click(
       screen.getByRole('button', { name: 'capture intentを保持' }),
     );
+    expect(screen.getByText('capture mutation blocked')).toBeVisible();
     fireEvent.click(
       screen.getByRole('button', { name: '外部確定intentを保持' }),
     );
@@ -217,6 +223,7 @@ describe('KnowledgeHub', () => {
     fireEvent.click(
       screen.getByRole('button', { name: 'capture intentを解放' }),
     );
+    expect(screen.getByText('mutation open')).toBeVisible();
     expect(secondItem).toBeDisabled();
     expect(onShareCommitBusyChange).toHaveBeenLastCalledWith(true);
 

@@ -156,6 +156,25 @@ describe('KnowledgeProvenanceWorkspace', () => {
     expect(document.body).not.toHaveTextContent('sensitive-organization-id');
   });
 
+  it('blocks provenance mutations while browser capture outcome is unresolved', () => {
+    render(
+      <KnowledgeProvenanceWorkspace
+        itemId="item-1"
+        itemLabel="capture確定中"
+        itemScope="personal"
+        organizationId={null}
+        snapshots={[]}
+        mutationBlocked
+      />,
+    );
+    expect(
+      screen.getByText(/他のKnowledge mutationを開始できません/),
+    ).toBeVisible();
+    expect(screen.getByRole('tab', { name: '本人annotation' })).toBeDisabled();
+    expect(screen.getByRole('tab', { name: '会話・取込' })).toBeDisabled();
+    expect(screen.getByRole('tab', { name: 'Synthesis・結論' })).toBeDisabled();
+  });
+
   it('keeps the share panel mounted and locks other tabs during a non-abortable commit', () => {
     const onCommitBusyChange = vi.fn();
     render(

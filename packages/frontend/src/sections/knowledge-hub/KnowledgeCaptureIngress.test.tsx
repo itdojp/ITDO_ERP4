@@ -17,6 +17,7 @@ vi.mock('./knowledgeCaptureApi', () => api);
 
 import { KnowledgeCaptureIngress } from './KnowledgeCaptureIngress';
 import { KnowledgeHubApiError } from './knowledgeHubApi';
+import { knowledgeHubErrorMessage } from './knowledgeHubModel';
 import {
   KNOWLEDGE_CAPTURE_DRAFT_EVENT,
   KNOWLEDGE_CAPTURE_RESULT_EVENT,
@@ -101,6 +102,9 @@ describe('KnowledgeCaptureIngress', () => {
     expect(api.previewKnowledgeCapture.mock.calls[0][0].selectedFields).toEqual(
       ['title', 'url', 'selectedText'],
     );
+    expect(api.previewKnowledgeCapture.mock.calls[0][0].requestKey).toBe(
+      'opaque-draft-id-1234567890',
+    );
     expect(
       api.previewKnowledgeCapture.mock.calls[0][0].selectedFields,
     ).not.toContain('description');
@@ -121,6 +125,69 @@ describe('KnowledgeCaptureIngress', () => {
     );
     expect(onCommitted).toHaveBeenCalledWith('item-1');
     expect(await screen.findByText('保存しました。')).toBeVisible();
+  });
+
+  it('shows every selected normalized value in the exact preview', async () => {
+    api.previewKnowledgeCapture.mockResolvedValueOnce({
+      captureId: 'capture-1',
+      draft: {
+        ...draft,
+        title: 'Normalized title',
+        description: 'normalized-private-description',
+      },
+      selectedFields: ['title', 'url', 'selectedText', 'description'],
+      omittedFields: ['author', 'publishedAt'],
+      scope: 'personal',
+      organizationGroupAccountIds: [],
+      sourceType: 'web',
+      fieldCount: 4,
+      byteCount: 150,
+      duplicateCandidate: { detected: false, status: null },
+      requiresOrganizationConfirmation: false,
+      previewToken: 'opaque-preview-token',
+      expiresAt: '2026-08-14T00:10:00.000Z',
+    });
+    render(<KnowledgeCaptureIngress />);
+    deliver();
+    fireEvent.click(await screen.findByRole('checkbox', { name: '説明' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    await screen.findByRole('heading', { name: 'Exact preview' });
+    expect(screen.getByText('Normalized title')).toBeVisible();
+    expect(screen.getByText('normalized-private-description')).toBeVisible();
+    expect(screen.getByText(/保存しないfield: 著者、公開日時/)).toBeVisible();
+  });
+
+  it('acquires the parent navigation lock synchronously before commit I/O', async () => {
+    let resolveCommit!: (value: unknown) => void;
+    api.commitKnowledgeCapture.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCommit = resolve;
+        }),
+    );
+    const onCommitBusyChange = vi.fn();
+    render(<KnowledgeCaptureIngress onCommitBusyChange={onCommitBusyChange} />);
+    deliver();
+    fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
+    await screen.findByRole('heading', { name: 'Exact preview' });
+    fireEvent.click(screen.getByLabelText('このexact previewを保存します'));
+    fireEvent.click(screen.getByRole('button', { name: '明示確定して保存' }));
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
+    resolveCommit({
+      captureId: 'capture-1',
+      requestCaptureId: 'capture-1',
+      itemId: 'item-1',
+      snapshotId: 'snapshot-1',
+      status: 'ready',
+      failureCode: null,
+      reused: false,
+      createdAt: '2026-08-14T00:00:00.000Z',
+      committedAt: '2026-08-14T00:00:01.000Z',
+      failedAt: null,
+    });
+    await waitFor(() =>
+      expect(onCommitBusyChange).toHaveBeenLastCalledWith(false),
+    );
   });
 
   it('requires a second organization audience confirmation', async () => {
@@ -299,5 +366,32 @@ describe('KnowledgeCaptureIngress', () => {
     expect(
       screen.getByRole('button', { name: '明示確定して保存' }),
     ).toBeDisabled();
+  });
+
+  it('releases the intent lock after a transaction conflict before dispatch', async () => {
+    const onCommitBusyChange = vi.fn();
+    api.commitKnowledgeCapture.mockRejectedValueOnce(
+      new KnowledgeHubApiError(
+        'capture_transaction_conflict_pre_dispatch',
+        409,
+      ),
+    );
+    render(<KnowledgeCaptureIngress onCommitBusyChange={onCommitBusyChange} />);
+    deliver();
+    fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
+    fireEvent.click(
+      await screen.findByRole('checkbox', {
+        name: 'このexact previewを保存します',
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: '明示確定して保存' }));
+
+    expect(
+      await screen.findByText(
+        knowledgeHubErrorMessage('capture_transaction_conflict_pre_dispatch'),
+      ),
+    ).toBeInTheDocument();
+    expect(onCommitBusyChange).toHaveBeenCalledWith(false);
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeEnabled();
   });
 });

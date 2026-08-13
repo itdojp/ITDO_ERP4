@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client';
 
 import { createKnowledgeArtifactPort } from '../dist/adapters/knowledge/knowledgeArtifactStorageAdapter.js';
 import {
+  PrismaKnowledgeCaptureAuditWriter,
   PrismaKnowledgeCaptureRepository,
   PrismaKnowledgeCaptureUnitOfWork,
 } from '../dist/adapters/knowledge/prismaKnowledgeCaptureAdapter.js';
@@ -60,7 +61,10 @@ function service(customUnitOfWork = unitOfWork, customArtifacts = artifacts) {
   });
 }
 
-function request(selectedText = 'selected-body') {
+function request(
+  selectedText = 'selected-body',
+  requestKey = 'synthetic-request-key',
+) {
   return {
     draft: {
       schemaVersion: 1,
@@ -77,6 +81,7 @@ function request(selectedText = 'selected-body') {
     scope: 'personal',
     organizationGroupAccountIds: [],
     sourceType: 'web',
+    requestKey,
   };
 }
 
@@ -193,7 +198,7 @@ try {
     /knowledge capture identity is immutable|23514/,
   );
 
-  const auditFailureValue = request('audit-rollback-body');
+  const auditFailureValue = request('audit-rollback-body', 'audit-failure-key');
   const auditFailurePreview = await preview(currentService, auditFailureValue);
   const failingUnitOfWork = {
     run(work) {
@@ -235,7 +240,10 @@ try {
       throw new KnowledgeArtifactStoreError('unknown');
     },
   };
-  const unknownValue = request('unknown-outcome-selected-body');
+  const unknownValue = request(
+    'unknown-outcome-selected-body',
+    'synthetic-unknown-outcome-key',
+  );
   const unknownPreview = await preview(currentService, unknownValue);
   const unknownCommit = await commit(
     service(unitOfWork, unknownAfterStoreArtifacts),
@@ -303,11 +311,11 @@ try {
     },
   };
   const accessLossService = service(unitOfWork, accessLossArtifacts);
-  const accessLossValue = request('access-loss-selected-body');
-  const accessLossPreview = await preview(
-    accessLossService,
-    accessLossValue,
+  const accessLossValue = request(
+    'access-loss-selected-body',
+    'synthetic-access-loss-key',
   );
+  const accessLossPreview = await preview(accessLossService, accessLossValue);
   const accessLossCommit = await commit(
     accessLossService,
     accessLossValue,
@@ -390,7 +398,10 @@ try {
     groupAccountIds: [organizationGroupId],
   };
   const organizationValue = {
-    ...request('organization-selected-body'),
+    ...request(
+      'organization-selected-body',
+      'synthetic-organization-request-key',
+    ),
     scope: 'organization',
     organizationGroupAccountIds: [organizationGroupId],
   };
@@ -413,9 +424,95 @@ try {
   });
   assert.equal(organizationCreated.ok, true);
   assert.equal(organizationCreated.value.status, 'ready');
-  await prisma.userGroup.delete({
-    where: { id: 'synthetic-capture-membership' },
+
+  let releaseIntent;
+  let intentLocked;
+  const intentLockedPromise = new Promise((resolve) => {
+    intentLocked = resolve;
   });
+  const releaseIntentPromise = new Promise((resolve) => {
+    releaseIntent = resolve;
+  });
+  let deletionPromise;
+  let lockingRun = 0;
+  const lockingUnitOfWork = {
+    async run(work) {
+      lockingRun += 1;
+      if (lockingRun === 2) await deletionPromise;
+      return prisma.$transaction(
+        async (client) => {
+          const baseRepository = new PrismaKnowledgeCaptureRepository(client);
+          const captures = new Proxy(baseRepository, {
+            get(target, property, receiver) {
+              if (property === 'createAggregate' && lockingRun === 1) {
+                return async (input) => {
+                  intentLocked();
+                  await releaseIntentPromise;
+                  return target.createAggregate(input);
+                };
+              }
+              const value = Reflect.get(target, property, receiver);
+              return typeof value === 'function' ? value.bind(target) : value;
+            },
+          });
+          return work({
+            captures,
+            audit: new PrismaKnowledgeCaptureAuditWriter(client),
+          });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+    },
+  };
+  const concurrentAclValue = {
+    ...organizationValue,
+    draft: {
+      ...organizationValue.draft,
+      selectedText: 'concurrent-membership-revocation',
+    },
+    requestKey: 'synthetic-concurrent-membership-key',
+  };
+  const concurrentAclPreview = await currentService.preview({
+    actor: organizationActor,
+    auditActor: { source: 'api', requestId: crypto.randomUUID() },
+    request: concurrentAclValue,
+  });
+  assert.equal(concurrentAclPreview.ok, true);
+  const concurrentCommitPromise = service(lockingUnitOfWork).commit({
+    actor: organizationActor,
+    auditActor: { source: 'api', requestId: crypto.randomUUID() },
+    request: {
+      ...concurrentAclValue,
+      confirmed: true,
+      organizationConfirmed: true,
+      previewToken: concurrentAclPreview.value.previewToken,
+    },
+  });
+  await intentLockedPromise;
+  let deletionSettled = false;
+  deletionPromise = prisma.userGroup
+    .delete({ where: { id: 'synthetic-capture-membership' } })
+    .then(() => {
+      deletionSettled = true;
+    });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(deletionSettled, false);
+  releaseIntent();
+  await deletionPromise;
+  const concurrentAclCommit = await concurrentCommitPromise;
+  assert.equal(concurrentAclCommit.ok, false);
+  assert.equal(concurrentAclCommit.statusCode, 404);
+  assert.equal(
+    await prisma.knowledgeCaptureRequest.count({
+      where: {
+        requestKeyHash: tokenCodec.requestKeyHash(
+          organizationActor,
+          concurrentAclValue.requestKey,
+        ),
+      },
+    }),
+    1,
+  );
   const organizationPreviewAfterMembershipLoss = await currentService.preview({
     actor: organizationActor,
     auditActor: { source: 'api', requestId: crypto.randomUUID() },
@@ -479,6 +576,7 @@ try {
       idempotentReplay: true,
       concurrentReplay: true,
       membershipLossFailsClosed: true,
+      concurrentMembershipRevocationLocked: true,
       organizationChangeFailsClosed: true,
       itemAccessLossFailsClosedBeforeFinalization: true,
       pendingIntentMetadataPersistedBeforeArtifactIo: true,

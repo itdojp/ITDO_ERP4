@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { KnowledgeArtifactStoreError } from '../dist/application/knowledge/knowledgeArtifactPort.js';
+import { KnowledgeCaptureTransactionConflictError } from '../dist/application/knowledge/knowledgeCapturePorts.js';
 import { createKnowledgeCaptureTokenCodec } from '../dist/application/knowledge/knowledgeCaptureToken.js';
 import { createKnowledgeCaptureService } from '../dist/application/knowledge/knowledgeCaptureUseCases.js';
 
 const actor = {
   userId: 'owner-1',
   organizationId: 'org-1',
-  groupAccountIds: ['group-1'],
+  groupAccountIds: ['group-1', 'group-2'],
 };
 const now = new Date('2026-08-14T00:00:00.000Z');
 const env = {
@@ -35,6 +36,7 @@ function request(overrides = {}) {
     scope: 'personal',
     organizationGroupAccountIds: [],
     sourceType: 'web',
+    requestKey: 'opaque-client-key',
     ...overrides,
   };
 }
@@ -50,7 +52,14 @@ function createHarness(options = {}) {
     memberGroups: ['group-1'],
     currentAccess: true,
     revokeAccessDuringStore: false,
+    revokeGroupDuringStore: null,
+    revokeAccessDuringReconcile: false,
+    revokeGroupAfterArtifactStateRead: null,
     reconcileArtifact: null,
+    artifactOverride: null,
+    currentTime: now,
+    conflictOnRuns: [],
+    runCount: 0,
     ...options,
   };
   let idIndex = 0;
@@ -65,7 +74,7 @@ function createHarness(options = {}) {
     '33333333-4444-4555-8666-345678901234',
   ];
   const repository = {
-    countActiveGroupsForActor: async ({
+    lockActiveGroupsForActor: async ({
       actorUserId,
       organizationId,
       groupAccountIds,
@@ -93,8 +102,25 @@ function createHarness(options = {}) {
       const capture = captures.get(captureId);
       return Boolean(
         behavior.currentAccess &&
-          capture &&
-          capture.ownerUserId === candidate.userId,
+        capture &&
+        capture.ownerUserId === candidate.userId,
+      );
+    },
+    hasCurrentBindingAccess: async ({
+      actor: candidate,
+      captureId,
+      requiredGroupAccountIds,
+    }) => {
+      const capture = captures.get(captureId);
+      return Boolean(
+        behavior.currentAccess &&
+        capture &&
+        capture.ownerUserId === candidate.userId &&
+        requiredGroupAccountIds.every(
+          (groupId) =>
+            behavior.activeGroups.includes(groupId) &&
+            behavior.memberGroups.includes(groupId),
+        ),
       );
     },
     findOwnedById: async ({ actor: candidate, captureId }) => {
@@ -111,13 +137,19 @@ function createHarness(options = {}) {
         capture.ownerUserId !== candidate.userId
       )
         return null;
-      return {
+      const state = {
         capture: structuredClone(capture),
         contentType: capture.contentType ?? null,
         originalName: 'knowledge-capture.txt',
         sha256: capture.sha256 ?? null,
         sizeBytes: capture.sizeBytes ?? null,
       };
+      if (behavior.revokeGroupAfterArtifactStateRead) {
+        behavior.memberGroups = behavior.memberGroups.filter(
+          (groupId) => groupId !== behavior.revokeGroupAfterArtifactStateRead,
+        );
+      }
+      return state;
     },
     createAggregate: async (input) => {
       const capture = {
@@ -148,13 +180,23 @@ function createHarness(options = {}) {
       captures.set(capture.id, capture);
       return structuredClone(capture);
     },
-    markReady: async ({ actor: candidate, captureId, committedAt }) => {
+    markReady: async ({
+      actor: candidate,
+      captureId,
+      requiredGroupAccountIds,
+      committedAt,
+    }) => {
       const capture = captures.get(captureId);
       if (
         !behavior.currentAccess ||
         !capture ||
         capture.ownerUserId !== candidate.userId ||
-        capture.status !== 'pending'
+        capture.status !== 'pending' ||
+        requiredGroupAccountIds.some(
+          (groupId) =>
+            !behavior.activeGroups.includes(groupId) ||
+            !behavior.memberGroups.includes(groupId),
+        )
       )
         return null;
       Object.assign(capture, {
@@ -164,13 +206,24 @@ function createHarness(options = {}) {
       });
       return structuredClone(capture);
     },
-    markFailed: async ({ actor: candidate, captureId, failedAt, failureCode }) => {
+    markFailed: async ({
+      actor: candidate,
+      captureId,
+      requiredGroupAccountIds,
+      failedAt,
+      failureCode,
+    }) => {
       const capture = captures.get(captureId);
       if (
         !behavior.currentAccess ||
         !capture ||
         capture.ownerUserId !== candidate.userId ||
-        capture.status !== 'pending'
+        capture.status !== 'pending' ||
+        requiredGroupAccountIds.some(
+          (groupId) =>
+            !behavior.activeGroups.includes(groupId) ||
+            !behavior.memberGroups.includes(groupId),
+        )
       )
         return null;
       Object.assign(capture, {
@@ -183,17 +236,27 @@ function createHarness(options = {}) {
     },
   };
   const unitOfWork = {
-    run: async (work) =>
-      work({
+    run: async (work) => {
+      behavior.runCount += 1;
+      if (behavior.conflictOnRuns.includes(behavior.runCount)) {
+        throw new KnowledgeCaptureTransactionConflictError();
+      }
+      return work({
         captures: repository,
         audit: { write: async (entry) => audits.push(structuredClone(entry)) },
-      }),
+      });
+    },
   };
   const artifacts = {
     store: async (input) => {
       assert.match(input.idempotencyNamespace, /^[a-f0-9]{64}$/);
       stored.push(structuredClone(input));
       if (behavior.revokeAccessDuringStore) behavior.currentAccess = false;
+      if (behavior.revokeGroupDuringStore) {
+        behavior.memberGroups = behavior.memberGroups.filter(
+          (groupId) => groupId !== behavior.revokeGroupDuringStore,
+        );
+      }
       if (behavior.storeOutcome !== 'success') {
         throw new KnowledgeArtifactStoreError(behavior.storeOutcome);
       }
@@ -205,11 +268,15 @@ function createHarness(options = {}) {
         provider: 'local',
         sha256: input.sha256,
         sizeBytes: input.sizeBytes,
+        ...(behavior.artifactOverride ?? {}),
       };
     },
     reconcile: async (input) => {
       assert.match(input.idempotencyNamespace, /^[a-f0-9]{64}$/);
       reconciled.push(structuredClone(input));
+      if (behavior.revokeAccessDuringReconcile) {
+        behavior.currentAccess = false;
+      }
       return behavior.reconcileArtifact;
     },
     open: async () => {
@@ -218,7 +285,7 @@ function createHarness(options = {}) {
   };
   const tokenCodec = createKnowledgeCaptureTokenCodec({
     env,
-    now: () => now,
+    now: () => behavior.currentTime,
     randomId: () => previewIds[previewIdIndex++],
   });
   const service = createKnowledgeCaptureService({
@@ -226,7 +293,7 @@ function createHarness(options = {}) {
     reader: repository,
     unitOfWork,
     tokenCodec,
-    now: () => now,
+    now: () => behavior.currentTime,
     randomId: () => ids[idIndex++],
   });
   return { service, captures, audits, stored, reconciled, behavior };
@@ -332,6 +399,7 @@ test('organization requires explicit confirmation and active current groups', as
   const organization = request({
     scope: 'organization',
     organizationGroupAccountIds: ['group-1'],
+    requestKey: 'key-1',
   });
   const preview = await harness.service.preview({
     actor,
@@ -372,6 +440,7 @@ test('organization replay rechecks current membership before returning an existi
   const organization = request({
     scope: 'organization',
     organizationGroupAccountIds: ['group-1'],
+    requestKey: 'organization-replay-key',
   });
   const preview = await harness.service.preview({
     actor,
@@ -452,10 +521,7 @@ test('lost replay response reconciles a prior ledger capture through the signed 
     request: first.base,
   });
   assert.equal(secondPreview.ok, true);
-  assert.notEqual(
-    secondPreview.value.captureId,
-    first.commit.value.captureId,
-  );
+  assert.notEqual(secondPreview.value.captureId, first.commit.value.captureId);
   const replay = await harness.service.commit({
     actor,
     auditActor: {},
@@ -469,10 +535,7 @@ test('lost replay response reconciles a prior ledger capture through the signed 
   });
   assert.equal(replay.ok, true);
   assert.equal(replay.value.captureId, first.commit.value.captureId);
-  assert.equal(
-    replay.value.requestCaptureId,
-    secondPreview.value.captureId,
-  );
+  assert.equal(replay.value.requestCaptureId, secondPreview.value.captureId);
 
   const reconciled = await harness.service.reconcile({
     actor,
@@ -508,7 +571,16 @@ test('capture fails closed when current item access is lost before or during art
 });
 
 test('capture rejects unsafe opaque request keys before ledger hashing', async () => {
-  for (const requestKey of ['\ud800', '\ufffd', '\u0000', '\u061c', '\u009b']) {
+  for (const requestKey of [
+    '\ud800',
+    '\ufffd',
+    '\u0000',
+    '\u061c',
+    '\u009b',
+    'key with space',
+    'ＫＥＹ',
+    'clé',
+  ]) {
     const harness = createHarness();
     const value = request();
     const preview = await harness.service.preview({
@@ -541,4 +613,162 @@ test('deterministic storage failure preserves one failed aggregate', async () =>
   assert.equal(commit.value.status, 'failed');
   assert.equal(commit.value.failureCode, 'snapshot_storage_failed');
   assert.equal(harness.captures.size, 1);
+});
+
+test('organization finalization requires every group bound by the signed preview', async () => {
+  const harness = createHarness({
+    activeGroups: ['group-1', 'group-2'],
+    memberGroups: ['group-1', 'group-2'],
+    revokeGroupDuringStore: 'group-2',
+  });
+  const organization = request({
+    scope: 'organization',
+    organizationGroupAccountIds: ['group-1', 'group-2'],
+    requestKey: 'multi-group-key',
+  });
+  const preview = await harness.service.preview({
+    actor,
+    auditActor: {},
+    request: organization,
+  });
+  assert.equal(preview.ok, true);
+  const result = await harness.service.commit({
+    actor,
+    auditActor: {},
+    request: {
+      ...organization,
+      confirmed: true,
+      organizationConfirmed: true,
+      previewToken: preview.value.previewToken,
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.statusCode, 404);
+  assert.equal(harness.stored.length, 1);
+  assert.equal([...harness.captures.values()][0].status, 'pending');
+});
+
+test('all provider I/O pending paths recheck current access before returning identifiers', async () => {
+  for (const options of [
+    { storeOutcome: 'unknown', revokeAccessDuringStore: true },
+    {
+      revokeAccessDuringStore: true,
+      artifactOverride: { sha256: '0'.repeat(64) },
+    },
+  ]) {
+    const harness = createHarness(options);
+    const { commit } = await previewAndCommit(harness);
+    assert.equal(commit.ok, false);
+    assert.equal(commit.statusCode, 404);
+  }
+
+  const harness = createHarness({ storeOutcome: 'unknown' });
+  const pending = await previewAndCommit(harness);
+  assert.equal(pending.commit.ok, true);
+  assert.equal(pending.commit.value.status, 'pending');
+  harness.behavior.revokeAccessDuringReconcile = true;
+  const reconciled = await harness.service.reconcile({
+    actor,
+    auditActor: {},
+    captureId: pending.preview.value.captureId,
+    request: {
+      ...pending.base,
+      previewToken: pending.preview.value.previewToken,
+      requestKey: pending.base.requestKey,
+    },
+  });
+  assert.equal(reconciled.ok, false);
+  assert.equal(reconciled.statusCode, 404);
+});
+
+test('expired but authentic preview can reconcile an existing pending ledger without store replay', async () => {
+  const harness = createHarness({ storeOutcome: 'unknown' });
+  const pending = await previewAndCommit(harness);
+  assert.equal(pending.commit.value.status, 'pending');
+  harness.behavior.currentTime = new Date('2026-08-14T00:20:00.000Z');
+  harness.behavior.reconcileArtifact = {
+    artifactId: 'artifact-1',
+    contentType: 'text/plain',
+    createdAt: now.toISOString(),
+    originalName: 'knowledge-capture.txt',
+    sha256: harness.stored[0].sha256,
+    sizeBytes: harness.stored[0].sizeBytes,
+    provider: 'local',
+  };
+  const reconciled = await harness.service.reconcile({
+    actor,
+    auditActor: {},
+    captureId: pending.preview.value.captureId,
+    request: {
+      ...pending.base,
+      previewToken: pending.preview.value.previewToken,
+      requestKey: pending.base.requestKey,
+    },
+  });
+  assert.equal(reconciled.ok, true);
+  assert.equal(reconciled.value.status, 'ready');
+  assert.equal(harness.stored.length, 1);
+  assert.equal(harness.reconciled.length, 1);
+});
+
+test('reconcile rechecks every signed organization group after reading terminal state', async () => {
+  const harness = createHarness({
+    activeGroups: ['group-1', 'group-2'],
+    memberGroups: ['group-1', 'group-2'],
+  });
+  const organization = request({
+    scope: 'organization',
+    organizationGroupAccountIds: ['group-1', 'group-2'],
+    requestKey: 'terminal-reconcile-key',
+  });
+  const preview = await harness.service.preview({
+    actor,
+    auditActor: {},
+    request: organization,
+  });
+  assert.equal(preview.ok, true);
+  const committed = await harness.service.commit({
+    actor,
+    auditActor: {},
+    request: {
+      ...organization,
+      confirmed: true,
+      organizationConfirmed: true,
+      previewToken: preview.value.previewToken,
+    },
+  });
+  assert.equal(committed.ok, true);
+  assert.equal(committed.value.status, 'ready');
+  harness.behavior.revokeGroupAfterArtifactStateRead = 'group-2';
+
+  const reconciled = await harness.service.reconcile({
+    actor,
+    auditActor: {},
+    captureId: preview.value.captureId,
+    request: {
+      ...organization,
+      previewToken: preview.value.previewToken,
+    },
+  });
+  assert.equal(reconciled.ok, false);
+  assert.equal(reconciled.statusCode, 404);
+});
+
+test('transaction retry exhaustion is normalized before dispatch and after deterministic failure', async () => {
+  const preDispatch = createHarness({ conflictOnRuns: [2] });
+  const before = await previewAndCommit(preDispatch);
+  assert.equal(before.commit.ok, false);
+  assert.equal(before.commit.statusCode, 409);
+  assert.equal(before.commit.code, 'capture_transaction_conflict_pre_dispatch');
+  assert.equal(preDispatch.stored.length, 0);
+
+  const finalization = createHarness({
+    storeOutcome: 'failed',
+    conflictOnRuns: [4],
+  });
+  const after = await previewAndCommit(finalization);
+  assert.equal(after.commit.ok, true);
+  assert.equal(after.commit.value.status, 'pending');
+  assert.equal(finalization.stored.length, 1);
+  assert.equal([...finalization.captures.values()][0].status, 'pending');
 });

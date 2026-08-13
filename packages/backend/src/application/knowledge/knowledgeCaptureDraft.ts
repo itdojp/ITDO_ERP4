@@ -215,7 +215,7 @@ export function isValidKnowledgeCaptureRequestKey(
 ): value is string {
   return (
     typeof value === 'string' &&
-    value.length > 0 &&
+    /^[A-Za-z0-9._-]+$/.test(value) &&
     Array.from(value).length <= knowledgeCaptureLimits.requestKeyCodePoints &&
     !hasForbiddenControl(value) &&
     !unpairedSurrogatePattern.test(value)

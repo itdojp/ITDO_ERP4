@@ -40,6 +40,12 @@ const allowedRoles = ['admin', 'mgmt', 'exec', 'user'] as const;
 // transport limit. The service independently enforces the canonical 128 KiB
 // draft limit; an excessively escaped representation is still rejected here.
 const bodyLimit = knowledgeCaptureLimits.httpEnvelopeBytes;
+const requestKeySchema = {
+  type: 'string',
+  minLength: 1,
+  maxLength: knowledgeCaptureLimits.requestKeyCodePoints,
+  pattern: '^[A-Za-z0-9._-]+$',
+} as const;
 
 const errorSchema = {
   type: 'object',
@@ -223,19 +229,15 @@ const previewFields = [
   'scope',
   'organizationGroupAccountIds',
   'sourceType',
+  'requestKey',
 ] as const;
 const commitFields = [
   ...previewFields,
   'confirmed',
   'organizationConfirmed',
   'previewToken',
-  'requestKey',
 ] as const;
-const reconcileFields = [
-  ...previewFields,
-  'previewToken',
-  'requestKey',
-] as const;
+const reconcileFields = [...previewFields, 'previewToken'] as const;
 
 function sendFailure(reply: FastifyReply, result: KnowledgeCaptureFailure) {
   const category =
@@ -312,8 +314,12 @@ async function registerKnowledgeCaptureRouteHandlers(
             'selectedFields',
             'scope',
             'organizationGroupAccountIds',
+            'requestKey',
           ],
-          properties: requestProperties,
+          properties: {
+            ...requestProperties,
+            requestKey: requestKeySchema,
+          },
         },
         response: {
           200: previewSchema,
@@ -367,11 +373,7 @@ async function registerKnowledgeCaptureRouteHandlers(
               minLength: 1,
               maxLength: knowledgeCaptureLimits.previewTokenBytes,
             },
-            requestKey: {
-              type: 'string',
-              minLength: 1,
-              maxLength: knowledgeCaptureLimits.requestKeyCodePoints,
-            },
+            requestKey: requestKeySchema,
           },
         },
         response: {
@@ -472,11 +474,7 @@ async function registerKnowledgeCaptureRouteHandlers(
               minLength: 1,
               maxLength: knowledgeCaptureLimits.previewTokenBytes,
             },
-            requestKey: {
-              type: 'string',
-              minLength: 1,
-              maxLength: knowledgeCaptureLimits.requestKeyCodePoints,
-            },
+            requestKey: requestKeySchema,
           },
         },
         response: {
