@@ -174,6 +174,8 @@ typed immutable snapshot row だけから表示する。旧 client は relation 
 
 - MVP は利用者が URL、text、PDF、image、manual note を明示登録する。ログイン済み page の server-side 巡回や SNS の大量収集をしない。
 - server-side fetch を後続で実装する場合、既存 `safeFetch` は scheme、DNS/private address、redirect、timeout の境界として再利用する。現行 helper は response の最大 byte と content type を強制しないため、Knowledge capture port/caller が bounded stream read、Content-Length と実読込 byte、許可 content type を別途 fail closed で検証する。
+- Browser/PWA ingressはURL captureのfetch境界とは分離する。外部browser inputはallowlist canonical draftへ変換し、認証済みKnowledge Hub内でselected/omitted fieldとscopeをpreviewしてからだけmutationする。PWA service worker、extension service worker、content scriptはKnowledge APIを呼ばず、ERP4 session、cookie、CSRF tokenを取得しない。landing URLはopaque draft IDだけを運び、本文、URL、request key、preview tokenをquery/fragmentへ置かない。
+- capture commitはmanual item createとsnapshot appendを順番に再生せず、owner-scoped request ledger、KnowledgeItem、pending KnowledgeSnapshotを同じSerializable transactionへ束縛する。artifact I/Oはtransaction外で一回だけ行い、結果不明はpendingのまま保持する。reconcileは既存owner-scoped artifactをread-only照合してfinalizeするだけで、新しい副作用を生成しない。これによりoffline replayまたはHTTP応答喪失でもitem増殖を防ぐ。
 - HTML/Markdown は原文保存と表示用 sanitized representation を分ける。script、event handler、active embed を実行しない。
 - canonical URL は credential、fragment、既知の tracking parameter を保存/表示前に正規化する。secret 様 query value は audit/application log へ出さない。
 - fixture、snapshot test、test-results に実投稿本文、個人情報、実 account identifier を使わない。

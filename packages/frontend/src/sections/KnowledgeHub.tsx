@@ -49,6 +49,7 @@ import {
   type KnowledgeSnapshot,
 } from './knowledge-hub/knowledgeHubModel';
 import { KnowledgeProvenanceWorkspace } from './knowledge-hub/KnowledgeProvenanceWorkspace';
+import { KnowledgeCaptureIngress } from './knowledge-hub/KnowledgeCaptureIngress';
 
 type LoadStatus = 'idle' | 'loading' | 'success' | 'error';
 type Notice = {
@@ -762,6 +763,14 @@ export const KnowledgeHub: React.FC<{
           <Alert variant={notice.tone}>{notice.text}</Alert>
         </div>
       ) : null}
+
+      <KnowledgeCaptureIngress
+        onCommitted={async (itemId) => {
+          await loadItems();
+          selectKnowledgeItem(itemId);
+          await loadSnapshots(itemId);
+        }}
+      />
 
       <div className="knowledge-hub-primary-grid">
         <WorkflowPanel

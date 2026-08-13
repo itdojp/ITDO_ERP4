@@ -41,6 +41,10 @@
 - [Storage artifact migration evidence template](storage-artifact-migration-template.md)
 - [Storage／backup統合readiness 記録テンプレート](storage-readiness-template.md)
 
+### 2026-08-14
+
+- [Issue #2017 capture ingress foundation 検証](2026-08-14-issue2017-capture-ingress-foundation.md)
+
 ### 2026-08-13
 
 - [Issue #2016 Knowledge external LLM UI / E2E 検証](2026-08-13-issue2016-knowledge-llm-ui.md)

@@ -314,6 +314,7 @@ export type KnowledgeHubErrorCode =
   | 'snapshot_state_conflict'
   | 'snapshot_storage_failed'
   | 'snapshot_storage_pending'
+  | 'capture_pending'
   | 'unknown_error'
   | 'stale_preview'
   | 'version_conflict';
@@ -362,6 +363,8 @@ const errorMessages: Record<KnowledgeHubErrorCode, string> = {
   snapshot_storage_failed: 'スナップショットを保存できませんでした。',
   snapshot_storage_pending:
     '保存結果を確認中です。自動再送せず、再照合してください。',
+  capture_pending:
+    'ブラウザー共有の保存結果を確認中です。自動再送せず、再照合してください。',
   unknown_error: '処理を完了できませんでした。再試行してください。',
   stale_preview:
     'sourceまたは権限がプレビュー後に変わりました。もう一度プレビューしてください。',

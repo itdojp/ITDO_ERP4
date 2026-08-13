@@ -13,6 +13,18 @@ MVP で扱う入力は次の4種類です。
 
 ログイン済みページの自動取得、SNS API巡回、source file削除、Google Driveやオブジェクトストレージへの直接リンク提供は行いません。
 
+## ブラウザー共有の共通確認画面
+
+PWA share targetまたはbrowser extensionから受け取ったdraftは、受信しただけでは保存されません。`ブラウザー共有の確認`で次を実施します。
+
+1. ページタイトル、URL、選択テキスト、説明、著者、公開日時のうち保存するfieldだけを選択します。説明、著者等のmetadataは既定で未選択です。
+2. 必要に応じてタイトル、URL、選択テキストを修正し、source typeを確認します。URLはcredentialを含まないHTTP(S)だけを使用します。
+3. scopeは既定の`personal`を使用します。`organization`を選ぶ場合はgroupを入力し、audienceの追加確認を選択します。
+4. `Preview`を選び、selected/omitted fieldと保存byte数を確認します。
+5. `このexact previewを保存します`を選んでから確定します。
+
+保存結果が`確認中`の場合、同じ内容を再送せず`保存結果を再照合`を使用します。`破棄`はlocal draftを削除する通知を送ります。preview tokenとrequest keyは画面session内だけに保持し、URL、localStorage、画面、監査logへ表示しません。PWAとextension固有の受信、offline、期限切れ手順は各transportの実装後に追記します。
+
 ## 新しい Inbox 項目へ保存する
 
 1. 左メニューの `ナレッジ` から `Knowledge Hub` を開きます。

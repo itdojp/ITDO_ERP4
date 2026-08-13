@@ -160,6 +160,21 @@ enum KnowledgeSnapshotCaptureMethod {
   upload
 }
 
+enum KnowledgeCaptureChannel {
+  pwa_share_target
+  browser_extension
+}
+
+enum KnowledgeCaptureStatus {
+  pending
+  ready
+  failed
+}
+
+enum KnowledgeCaptureFailureCode {
+  snapshot_storage_failed
+}
+
 enum KnowledgeLabelAssignmentSource {
   manual
   import
@@ -2392,6 +2407,7 @@ model KnowledgeItem {
   conversationItems  KnowledgeConversationItem[]
   synthesisSources   KnowledgeSynthesisSource[]
   shares             KnowledgeShare[]
+  captureRequests    KnowledgeCaptureRequest[]
 
   @@unique([id, ownerUserId])
   @@index([ownerUserId, deletedAt, updatedAt])
@@ -2429,11 +2445,41 @@ model KnowledgeSnapshot {
   synthesisSources   KnowledgeSynthesisSource[]
   shareSnapshots     KnowledgeShareSnapshot[]
   llmContextSources  KnowledgeLlmContextSource[]
+  captureRequest     KnowledgeCaptureRequest?
 
   @@unique([knowledgeItemId, version])
   @@unique([id, knowledgeItemId, version])
   @@unique([knowledgeItemId, requestKeyHash])
   @@index([knowledgeItemId, status, createdAt])
+}
+
+model KnowledgeCaptureRequest {
+  id                 String                       @id @default(uuid())
+  ownerUserId        String
+  requestKeyHash     String
+  payloadHash        String
+  channel            KnowledgeCaptureChannel
+  scope              KnowledgeItemScope
+  organizationId     String?
+  knowledgeItem      KnowledgeItem                @relation(fields: [knowledgeItemId, ownerUserId], references: [id, ownerUserId], onDelete: Restrict, onUpdate: Restrict)
+  knowledgeItemId    String
+  snapshot           KnowledgeSnapshot            @relation(fields: [snapshotId, knowledgeItemId, snapshotVersion], references: [id, knowledgeItemId, version], onDelete: Restrict, onUpdate: Restrict)
+  snapshotId         String                       @unique
+  snapshotVersion    Int
+  status             KnowledgeCaptureStatus       @default(pending)
+  failureCode        KnowledgeCaptureFailureCode?
+  selectedFieldCount Int
+  payloadByteCount   Int
+  version            Int                          @default(1)
+  createdAt          DateTime                     @default(now())
+  committedAt        DateTime?
+  failedAt           DateTime?
+  updatedAt          DateTime                     @updatedAt
+
+  @@unique([ownerUserId, requestKeyHash])
+  @@unique([snapshotId, knowledgeItemId, snapshotVersion])
+  @@index([ownerUserId, payloadHash, createdAt])
+  @@index([ownerUserId, status, createdAt])
 }
 
 model KnowledgeItemGroupGrant {

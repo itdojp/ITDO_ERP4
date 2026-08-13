@@ -166,6 +166,42 @@ describe('api helpers', () => {
     );
   });
 
+  it('attaches csrf to first-party non-auth mutations in bff mode', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: 'csrf-knowledge' }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { apiResponse } = await loadApi({
+      apiBase: 'https://api.example.test/erp4',
+      authMode: 'jwt_bff',
+    });
+
+    await apiResponse('/knowledge/captures/preview', {
+      method: 'POST',
+      body: JSON.stringify({ synthetic: true }),
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://api.example.test/erp4/auth/csrf',
+      { method: 'GET', credentials: 'include' },
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'https://api.example.test/erp4/knowledge/captures/preview',
+      {
+        method: 'POST',
+        body: JSON.stringify({ synthetic: true }),
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': 'csrf-knowledge',
+        },
+      },
+    );
+  });
+
   it('refreshes auth state through /me in header mode and preserves bearer token', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({

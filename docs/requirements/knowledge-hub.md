@@ -584,6 +584,16 @@ mutationする。
 - 受け入れ: origin/permission最小化、user gesture、scope preview、idempotency、offline/duplicate/error UX、extension/PWA threat model。
 - rollback/test: permission manifest review、malicious page payload、size/encoding、CSRF/session、browser compatibility、manual evidence。
 
+#### capture ingress foundation
+
+- PWA share targetとbrowser extensionはKnowledge mutationを直接呼ばず、`schemaVersion=1`のcapture draftを認証済みKnowledge Hubへ渡す。landing UIは受信だけでは保存せず、selected field、omitted field、destination scope、source typeのpreviewと明示confirmを必須とする。既定scopeは`personal`であり、`organization`はcurrent actorのorganizationと有効groupを再検査し、別のaudience確認を要求する。
+- draft channelは`pwa_share_target|browser_extension`、field allowlistは`title|url|selectedText|description|author|publishedAt`に固定する。任意metadata、DOM/HTML、cookie、storage、form value、script/style、provider metadataを取り込まない。URLはcredentialを含まないHTTP(S)だけを許可し、fetchしない。title/authorは500 code point、URLは4,096 UTF-8 bytes、selected textは64 KiB、descriptionは16 KiB、publishedAtは200 bytes、canonical draftは128 KiBを上限とし、不正UTF-8、NUL、不要なcontrol、ill-formed Unicode、nested object、prototype keyを拒否する。
+- preview tokenは既存Knowledge signing secretからdomain-separated keyを導出し、canonical actor、channel/capturedAt、exact selected field/payload、scope/organization/group、source type、purpose、10分expiryへ束縛する。本文、raw request key、source IDをtokenへ入れない。previewはbusiness mutationを行わないが、本文非含有mandatory auditを記録する。
+- `KnowledgeCaptureRequest`はowner-scoped opaque request-key HMACとpayload bindingを保持し、KnowledgeItem、version 1 KnowledgeSnapshot、capture ledger、mandatory pending auditをSerializable transactionで一つのintentとして確定する。同じkey/payloadは同じitem/snapshotへ収束し、異なるpayloadはmutation前に409とする。選択済みfieldだけを決定順plain-text snapshotへmaterializeし、非選択fieldはitem、snapshot、ledger、auditへ保存しない。
+- artifact storeはDB transaction外で一回だけ実行する。確定的store failureは`failed`、store/finalization結果不明は`pending`とし、capture IDを返して自動再送しない。reconcileはowner-scoped既存artifactの照合とDB finalizationだけを行い、新しいitem、snapshot、artifactを作らない。履歴ledgerのidentity更新・物理削除とterminal stateからの再遷移をDB triggerで拒否する。
+- JWT BFF modeのpreview/commit/reconcileはsame-originまたは設定済みAPI originへのcredential付きmutationとしてCSRF double-submit tokenを必須とする。share target service workerとextensionはsession/cookie/tokenを読まず、ERP4 APIを直接呼ばない。
+- application rollbackはcapture route/UIを無効化し旧imageへ戻す。expand-only table、item、snapshot、artifact、audit historyは保持し、table dropやsource削除をrollbackにしない。
+
 ### 10. Chatwork / Markdown / JSON import-export
 
 - Depends on: 04、05
