@@ -44,7 +44,30 @@ function bounded(value: string | undefined, maximum: number) {
 function retryable(error: unknown) {
   if (typeof error !== 'object' || error === null || !('code' in error))
     return false;
-  return error.code === 'P2002' || error.code === 'P2034';
+  if (error.code === 'P2002' || error.code === 'P2034') return true;
+  if (error.code !== 'P2010' || !('meta' in error)) return false;
+  const meta = error.meta;
+  if (
+    typeof meta !== 'object' ||
+    meta === null ||
+    !('driverAdapterError' in meta)
+  ) {
+    return false;
+  }
+  const driverAdapterError = meta.driverAdapterError;
+  if (
+    typeof driverAdapterError !== 'object' ||
+    driverAdapterError === null ||
+    !('cause' in driverAdapterError)
+  ) {
+    return false;
+  }
+  const cause = driverAdapterError.cause;
+  if (typeof cause !== 'object' || cause === null) return false;
+  const sqlState =
+    ('originalCode' in cause && cause.originalCode) ||
+    ('code' in cause && cause.code);
+  return sqlState === '40001' || sqlState === '40P01';
 }
 
 function mapCapture(row: CaptureRow): KnowledgeCapture {
@@ -77,9 +100,26 @@ function mapCapture(row: CaptureRow): KnowledgeCapture {
 export class PrismaKnowledgeCaptureRepository implements KnowledgeCaptureRepository {
   constructor(private readonly client: CaptureDbClient = prisma) {}
 
-  countActiveGroups(groupAccountIds: string[]) {
+  countActiveGroupsForActor(input: {
+    actorUserId: string;
+    organizationId: string;
+    groupAccountIds: string[];
+  }) {
     return this.client.groupAccount.count({
-      where: { id: { in: groupAccountIds }, active: true },
+      where: {
+        id: { in: input.groupAccountIds },
+        active: true,
+        memberships: {
+          some: {
+            userId: input.actorUserId,
+            user: {
+              active: true,
+              deletedAt: null,
+              organization: input.organizationId,
+            },
+          },
+        },
+      },
     });
   }
 

@@ -12,10 +12,10 @@
 
 - PWA／extension inputはKnowledge APIを直接mutationせず、allowlist済みcanonical draftとして既存Knowledge Hubの確認画面へ渡す。
 - title 500 code point、URL 4,096 UTF-8 bytes、selected text 64 KiB、description 16 KiB、author 500 code point、日時200 bytes、raw draft合計128 KiB、preview token 4 KiB、request key 200 code point、preview TTL 10分を上限とする。
-- HTTP(S)以外、credential URL、不正UTF-8由来のreplacement character、NUL、不要なcontrol、bidi control、ill-formed Unicode、nested object、prototype key、over-size payloadを保存前に拒否する。
-- scopeはpersonalが既定で、organizationは有効groupの再検査と追加confirmを必須とする。
+- HTTP(S)以外、credential URL、raw HTTP bodyの不正UTF-8、NUL、不要なcontrol、全`Bidi_Control`、ill-formed Unicode、nested object、prototype key、over-size payloadを保存前に拒否する。
+- scopeはpersonalが既定で、organizationはactor userのactive／非削除、current organization、live group membership、group activeの同一transaction再検査と追加confirmを必須とする。
 - preview tokenはactor、channel、capturedAt、選択field／payload、scope／organization／group、source type、purpose、expiryをdomain-separated HMACへ束縛する。本文とraw identifierはtokenへ格納しない。
-- opaque draft IDをserver-sideでactor-scoped HMAC化し、同じkey／payloadと同時replayを同じitem／snapshotへ収束させる。結果不明はpendingで保持し、自動再送せず既存artifactだけをreconcileする。
+- opaque draft IDをserver-sideでactor-scoped HMAC化し、同じkey／payloadと同時replayを同じitem／snapshotへ収束させる。ledger HMACはcursor rotationから独立したproduction専用stable secretを使う。結果不明はpendingで保持し、自動再送せず既存artifactだけをreconcileする。frontendはnetwork、HTTP 5xx、invalid 2xx responseをresult-unknownとして同じcapture ID／request keyへlockする。
 - JWT BFF mutationはcookie／header double-submit CSRFを要求する。frontendはsame-originまたは設定済みAPI originだけへCSRF headerを付与する。
 
 ## 検証結果
@@ -28,8 +28,8 @@
 | old-application実row read/write、health／ready | PASS |
 | OpenAPI export／non-breaking diff | PASS |
 | backend／frontend lint、format、typecheck、build | PASS |
-| backend full coverage | 2,378 / 2,378 PASS、statements 75.60%、branches 72.21%、functions 85.55%、lines 75.60% |
-| frontend full／UI core coverage | 858 / 858 PASS、statements 73.65%、branches 66.68%、functions 73.27%、lines 76.40% |
+| backend full coverage | 2,384 / 2,384 PASS、statements 75.63%、branches 72.28%、functions 85.70%、lines 75.63% |
+| frontend full／UI core coverage | 863 / 863 PASS、statements 73.65%、branches 66.68%、functions 73.27%、lines 76.40% |
 | core E2E | 109 / 109 PASS |
 | full E2E | 155 PASS／34既存条件付きskip／failure 0 |
 | lint／format／typecheck／build／audit／ops-quality | PASS |
@@ -37,7 +37,7 @@
 | docs index／image links、secret scan、`git diff --check` | PASS |
 | `RELEASE_E2E_SCOPE=core make release-readiness` | PASS（core E2E 109 / 109） |
 
-PostgreSQL fixtureはcapture 1件、item 1件、snapshot 1件へ収束し、同時replayで増殖しないこと、mandatory audit failure時にbusiness mutationがrollbackすること、terminal ledgerのupdate／deleteをDBが拒否すること、非選択canaryがsnapshotへ存在しないことを検証した。
+PostgreSQL fixtureはcapture 1件、item 1件、snapshot 1件へ収束し、同時replayで増殖しないこと、real local artifact adapterで`ready`になること、store後のunknown outcomeを新規storeなしでreconcileできること、organization groupの現行membership失効またはactor organization変更後はpreview／同一key replayが404でfail closedになること、mandatory audit failure時にbusiness mutationがrollbackすること、terminal ledgerのupdate／deleteをDBが拒否すること、非選択canaryがsnapshotへ存在しないことを検証した。Prisma adapterの`P2010`で内包されたSQLSTATE `40001|40P01`も最大3 attemptのbounded retry対象として固定した。
 
 ## 未実施範囲
 

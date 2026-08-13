@@ -84,7 +84,11 @@ export interface KnowledgeCaptureAuditWriter {
 }
 
 export interface KnowledgeCaptureRepository {
-  countActiveGroups(groupAccountIds: string[]): Promise<number>;
+  countActiveGroupsForActor(input: {
+    actorUserId: string;
+    organizationId: string;
+    groupAccountIds: string[];
+  }): Promise<number>;
   findByRequestKey(input: {
     ownerUserId: string;
     requestKeyHash: string;

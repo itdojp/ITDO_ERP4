@@ -81,6 +81,9 @@ function hasForbiddenControl(value: string) {
       code === 127 ||
       code === 0xfffd ||
       code === 0xfeff ||
+      code === 0x061c ||
+      code === 0x200e ||
+      code === 0x200f ||
       (code >= 0x202a && code <= 0x202e) ||
       (code >= 0x2066 && code <= 0x2069)
     );

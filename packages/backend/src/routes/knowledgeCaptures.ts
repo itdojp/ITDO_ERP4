@@ -9,6 +9,7 @@ import {
   prismaKnowledgeCaptureUnitOfWork,
 } from '../adapters/knowledge/prismaKnowledgeCaptureAdapter.js';
 import {
+  decodeKnowledgeCaptureJson,
   knowledgeCaptureChannels,
   knowledgeCaptureFieldNames,
   knowledgeCaptureLimits,
@@ -268,7 +269,7 @@ export type KnowledgeCaptureService = ReturnType<
   typeof createKnowledgeCaptureService
 >;
 
-export async function registerKnowledgeCaptureRoutes(
+async function registerKnowledgeCaptureRouteHandlers(
   app: FastifyInstance,
   dependencies: { service?: KnowledgeCaptureService } = {},
 ) {
@@ -462,4 +463,32 @@ export async function registerKnowledgeCaptureRoutes(
       return reply.send(serialize(result.value));
     },
   );
+}
+
+export async function registerKnowledgeCaptureRoutes(
+  app: FastifyInstance,
+  dependencies: { service?: KnowledgeCaptureService } = {},
+) {
+  await app.register(async (captureScope) => {
+    // Fastify's default JSON parser decodes malformed UTF-8 with replacement
+    // characters. Capture input is an external trust boundary, so replace it
+    // only inside this encapsulated route scope with a fatal UTF-8 parser.
+    captureScope.removeContentTypeParser('application/json');
+    captureScope.addContentTypeParser(
+      'application/json',
+      { parseAs: 'buffer' },
+      (_request, body, done) => {
+        try {
+          done(null, decodeKnowledgeCaptureJson(body as Buffer));
+        } catch {
+          const error = Object.assign(
+            new Error('Capture JSON payload is invalid'),
+            { statusCode: 400 },
+          );
+          done(error);
+        }
+      },
+    );
+    await registerKnowledgeCaptureRouteHandlers(captureScope, dependencies);
+  });
 }

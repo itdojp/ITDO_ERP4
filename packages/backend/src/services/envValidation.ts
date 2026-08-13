@@ -268,6 +268,26 @@ export function assertValidBackendEnv() {
       'productionでは必須です',
     );
   }
+  const knowledgeCaptureIdempotencySecret =
+    process.env.KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET;
+  if (
+    knowledgeCaptureIdempotencySecret !== undefined &&
+    knowledgeCaptureIdempotencySecret.length > 0 &&
+    (knowledgeCaptureIdempotencySecret.trim().length === 0 ||
+      Buffer.byteLength(knowledgeCaptureIdempotencySecret, 'utf8') < 32)
+  ) {
+    addIssue(
+      issues,
+      'KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET',
+      '設定する場合は32 UTF-8 bytes以上で指定してください',
+    );
+  } else if (isProd && !normalizeString(knowledgeCaptureIdempotencySecret)) {
+    addIssue(
+      issues,
+      'KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET',
+      'productionでは必須です',
+    );
+  }
   const allowHeaderFallbackRaw = normalizeString(
     process.env.AUTH_ALLOW_HEADER_FALLBACK_IN_PROD,
   );

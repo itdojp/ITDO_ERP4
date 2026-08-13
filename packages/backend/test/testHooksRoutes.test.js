@@ -445,6 +445,7 @@ test('test hook route is disabled in production even when E2E_ENABLE_TEST_HOOKS=
       AUTH_FRONTEND_ORIGIN: 'https://app.example.com',
       AUTH_COOKIE_SECRET: '0123456789abcdef0123456789abcdef',
       KNOWLEDGE_CURSOR_SIGNING_SECRET: '0123456789abcdef0123456789abcdef',
+      KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET: 'abcdef0123456789abcdef0123456789',
       E2E_ENABLE_TEST_HOOKS: '1',
     },
     async () => {

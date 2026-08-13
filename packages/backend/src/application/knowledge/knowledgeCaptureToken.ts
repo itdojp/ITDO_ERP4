@@ -79,9 +79,39 @@ function rootSecret(env: NodeJS.ProcessEnv) {
   return Buffer.from(ephemeralSecret);
 }
 
-function derive(root: Buffer) {
+function derivePreviewKey(root: Buffer) {
   return createHmac('sha256', root)
     .update('erp4:knowledge:capture-preview-key:v1\0', 'utf8')
+    .digest();
+}
+
+function idempotencyRootSecret(env: NodeJS.ProcessEnv, fallback: Buffer) {
+  const configured = env.KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET;
+  if (configured) {
+    if (
+      configured.trim().length === 0 ||
+      Buffer.byteLength(configured, 'utf8') < SECRET_BYTES
+    ) {
+      throw new Error(
+        'KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET must contain at least 32 UTF-8 bytes',
+      );
+    }
+    return Buffer.from(configured, 'utf8');
+  }
+  if ((env.NODE_ENV ?? '').trim().toLowerCase() === 'production') {
+    throw new Error(
+      'KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET is required in production',
+    );
+  }
+  // Non-production keeps the zero-configuration behavior. Production uses a
+  // distinct durable key so cursor rotation cannot invalidate capture ledger
+  // lookups and create duplicate item/snapshot aggregates.
+  return Buffer.from(fallback);
+}
+
+function deriveIdempotencyKey(root: Buffer) {
+  return createHmac('sha256', root)
+    .update('erp4:knowledge:capture-idempotency-key:v1\0', 'utf8')
     .digest();
 }
 
@@ -182,14 +212,19 @@ export function createKnowledgeCaptureTokenCodec(
     randomId?: () => string;
   } = {},
 ) {
-  const secret = derive(rootSecret(options.env ?? process.env));
+  const env = options.env ?? process.env;
+  const root = rootSecret(env);
+  const previewSecret = derivePreviewKey(root);
+  const idempotencySecret = deriveIdempotencyKey(
+    idempotencyRootSecret(env, root),
+  );
   const now = options.now ?? (() => new Date());
   const randomId = options.randomId ?? randomUUID;
 
   function sign(envelope: Envelope) {
     const payload = encode(JSON.stringify(envelope));
     const signature = encode(
-      createHmac('sha256', secret).update(payload, 'ascii').digest(),
+      createHmac('sha256', previewSecret).update(payload, 'ascii').digest(),
     );
     return `${payload}.${signature}`;
   }
@@ -197,14 +232,14 @@ export function createKnowledgeCaptureTokenCodec(
   return {
     requestKeyHash(actor: KnowledgeActor, requestKey: string) {
       return fingerprint(
-        secret,
+        idempotencySecret,
         'erp4:knowledge:capture-request-key:v1',
         `${actor.userId}\0${requestKey}`,
       );
     },
 
     payloadHash(binding: KnowledgeCapturePreviewBinding) {
-      return bindingFingerprint(secret, binding);
+      return bindingFingerprint(idempotencySecret, binding);
     },
 
     create(input: {
@@ -221,8 +256,8 @@ export function createKnowledgeCaptureTokenCodec(
         v: VERSION,
         purpose: PURPOSE,
         captureId,
-        actor: actorFingerprint(secret, input.actor),
-        binding: bindingFingerprint(secret, input.binding),
+        actor: actorFingerprint(previewSecret, input.actor),
+        binding: bindingFingerprint(previewSecret, input.binding),
         issuedAt,
         expiresAt,
       });
@@ -251,7 +286,7 @@ export function createKnowledgeCaptureTokenCodec(
         if (parts.length !== 2) invalid();
         const [payload, encodedSignature] = parts as [string, string];
         const signature = decode(encodedSignature);
-        const expected = createHmac('sha256', secret)
+        const expected = createHmac('sha256', previewSecret)
           .update(payload, 'ascii')
           .digest();
         if (
@@ -261,8 +296,8 @@ export function createKnowledgeCaptureTokenCodec(
           invalid();
         const envelope = parse(decode(payload));
         if (
-          envelope.actor !== actorFingerprint(secret, input.actor) ||
-          envelope.binding !== bindingFingerprint(secret, input.binding)
+          envelope.actor !== actorFingerprint(previewSecret, input.actor) ||
+          envelope.binding !== bindingFingerprint(previewSecret, input.binding)
         )
           invalid();
         const current = now().getTime();

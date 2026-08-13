@@ -65,6 +65,7 @@ Google OIDC をさくらVPS 実機で使う場合は FQDN + HTTPS の origin / r
 - `PORT`
 - `NODE_ENV`
 - `KNOWLEDGE_CURSOR_SIGNING_SECRET`（KnowledgeとChat thread cursorで用途分離して共用。productionでは32 UTF-8 bytes以上。承認済みsecret storeから注入し、実値を記録しない）
+- `KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET`（browser／PWA capture ledger専用。productionでは32 UTF-8 bytes以上。cursor鍵とは独立してstableに維持し、実値を記録しない）
 - `AUTH_MODE`
 - `ALLOWED_ORIGINS`
 - `JWT_JWKS_URL` または `JWT_PUBLIC_KEY`

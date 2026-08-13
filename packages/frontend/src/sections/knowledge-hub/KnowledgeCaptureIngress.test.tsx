@@ -238,6 +238,32 @@ describe('KnowledgeCaptureIngress', () => {
     ).toBeVisible();
   });
 
+  it.each([
+    ['HTTP 502', new KnowledgeHubApiError('unknown_error', 502)],
+    [
+      'invalid success response',
+      new KnowledgeHubApiError('invalid_response', 200),
+    ],
+  ])(
+    'keeps %s as result-unknown instead of releasing the handoff',
+    async (_label, failure) => {
+      api.commitKnowledgeCapture.mockRejectedValueOnce(failure);
+      render(<KnowledgeCaptureIngress />);
+      deliver();
+      fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
+      await screen.findByRole('heading', { name: 'Exact preview' });
+      fireEvent.click(screen.getByLabelText('このexact previewを保存します'));
+      fireEvent.click(screen.getByRole('button', { name: '明示確定して保存' }));
+
+      expect(await screen.findByText(/保存結果が不明/)).toBeVisible();
+      expect(
+        screen.getByRole('button', { name: '保存結果を再照合' }),
+      ).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Preview' })).toBeDisabled();
+      expect(api.commitKnowledgeCapture).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('treats a server rejection as definite and requires a fresh preview', async () => {
     api.commitKnowledgeCapture.mockRejectedValueOnce(
       new KnowledgeHubApiError('preview_token_expired', 409),

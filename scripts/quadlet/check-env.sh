@@ -290,6 +290,7 @@ require_common_runtime_env() {
 
 check_production_profile() {
   require_env_min_utf8_bytes "$BACKEND_ENV" KNOWLEDGE_CURSOR_SIGNING_SECRET 32
+  require_env_min_utf8_bytes "$BACKEND_ENV" KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET 32
   for key in GOOGLE_OIDC_CLIENT_SECRET GOOGLE_OIDC_REDIRECT_URI AUTH_FRONTEND_ORIGIN AUTH_SESSION_COOKIE_SECURE; do
     require_env_key "$BACKEND_ENV" "$key"
   done
@@ -392,6 +393,7 @@ check_https_trial_profile() {
   require_env_lower_value "$BACKEND_ENV" CHAT_ATTACHMENT_PROVIDER local
   require_env_lower_value "$BACKEND_ENV" REPORT_PROVIDER local
   require_env_min_utf8_bytes "$BACKEND_ENV" KNOWLEDGE_CURSOR_SIGNING_SECRET 32
+  require_env_min_utf8_bytes "$BACKEND_ENV" KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET 32
 
   for key in JWT_ISSUER JWT_AUDIENCE GOOGLE_OIDC_CLIENT_SECRET GOOGLE_OIDC_REDIRECT_URI AUTH_FRONTEND_ORIGIN AUTH_SESSION_COOKIE_SECURE; do
     require_env_key "$BACKEND_ENV" "$key"

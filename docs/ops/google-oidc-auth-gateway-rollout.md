@@ -38,6 +38,7 @@ Google 側の詳細手順は別紙の [google-oidc-google-cloud-console](google-
 ```dotenv
 NODE_ENV=production
 KNOWLEDGE_CURSOR_SIGNING_SECRET=replace-with-32-byte-or-longer-secret
+KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET=replace-with-separate-stable-32-byte-or-longer-secret
 AUTH_MODE=jwt_bff
 ALLOWED_ORIGINS=https://app.example.com
 
@@ -58,6 +59,7 @@ GOOGLE_OIDC_POST_LOGIN_REDIRECT_URL=https://app.example.com/
 
 - `GOOGLE_OIDC_CLIENT_SECRET` はシークレットストアで管理する
 - `KNOWLEDGE_CURSOR_SIGNING_SECRET` もシークレットストアで管理し、32 UTF-8 bytes以上を設定する。変更すると発行済みのKnowledge検索cursorは無効になる
+- `KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET` はcapture ledger専用の別secretとして管理し、capture履歴保持中はstableに維持する。cursor secretのrotationへ追従して変更しない
 - `JWT_JWKS_URL` は Google の `jwks_uri` を設定する。固定値運用では OpenID Provider Configuration (`https://accounts.google.com/.well-known/openid-configuration`) の `jwks_uri` を確認する
 - `GOOGLE_OIDC_CLIENT_ID` と `JWT_AUDIENCE` は同じ OAuth client ID を設定する
 - `ALLOWED_ORIGINS` には frontend の公開 origin のみを列挙する

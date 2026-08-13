@@ -2,8 +2,12 @@ import assert from 'node:assert/strict';
 import Fastify from 'fastify';
 import test from 'node:test';
 
-import { registerKnowledgeCaptureRoutes } from '../dist/routes/knowledgeCaptures.js';
 import { mapErrorToResponse } from '../dist/services/errors.js';
+
+process.env.DATABASE_URL ??=
+  'postgresql://test:test@127.0.0.1:5432/test?schema=public';
+const { registerKnowledgeCaptureRoutes } =
+  await import('../dist/routes/knowledgeCaptures.js');
 
 const draft = {
   schemaVersion: 1,
@@ -154,4 +158,50 @@ test('capture routes reject unsupported top-level fields before the service', as
   });
   assert.equal(response.statusCode, 400);
   assert.equal(JSON.stringify(response.json()).includes('private'), false);
+});
+
+test('capture HTTP routes reject malformed UTF-8 before schema normalization', async (t) => {
+  let previewCalls = 0;
+  const service = {
+    preview: async () => {
+      previewCalls += 1;
+      throw new Error('must-not-run');
+    },
+    commit: async () => {
+      throw new Error('unused');
+    },
+    detail: async () => {
+      throw new Error('unused');
+    },
+    reconcile: async () => {
+      throw new Error('unused');
+    },
+  };
+  const app = await build(service);
+  t.after(() => app.close());
+  const raw = Buffer.from(
+    JSON.stringify({
+      draft: { ...draft, BADKEY: 'must-not-leak' },
+      selectedFields: ['title'],
+      scope: 'personal',
+      organizationGroupAccountIds: [],
+      sourceType: 'manual',
+    }),
+    'utf8',
+  );
+  const marker = raw.indexOf(Buffer.from('BADKEY', 'ascii'));
+  assert.notEqual(marker, -1);
+  raw[marker] = 0xc3;
+  raw[marker + 1] = 0x28;
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/knowledge/captures/preview',
+    headers: { 'content-type': 'application/json' },
+    payload: raw,
+  });
+  assert.equal(response.statusCode, 400);
+  assert.equal(previewCalls, 0);
+  assert.equal(response.body.includes('must-not-leak'), false);
+  assert.equal(response.body.includes('\ufffd'), false);
 });

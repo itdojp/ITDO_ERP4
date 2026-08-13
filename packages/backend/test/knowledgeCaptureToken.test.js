@@ -11,6 +11,8 @@ const env = {
   NODE_ENV: 'test',
   KNOWLEDGE_CURSOR_SIGNING_SECRET:
     'knowledge-capture-signing-secret-value-0001',
+  KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET:
+    'knowledge-capture-idempotency-secret-0001',
 };
 const actor = {
   userId: 'owner-private-1',
@@ -117,5 +119,36 @@ test('capture token requires the shared production signing secret', () => {
   assert.throws(
     () => createKnowledgeCaptureTokenCodec({ env: { NODE_ENV: 'production' } }),
     /KNOWLEDGE_CURSOR_SIGNING_SECRET is required/,
+  );
+});
+
+test('capture ledger hashes survive preview signing-key rotation', () => {
+  const first = createKnowledgeCaptureTokenCodec({ env });
+  const rotated = createKnowledgeCaptureTokenCodec({
+    env: {
+      ...env,
+      KNOWLEDGE_CURSOR_SIGNING_SECRET:
+        'knowledge-capture-signing-secret-value-0002',
+    },
+  });
+  const value = binding();
+  assert.equal(
+    first.requestKeyHash(actor, 'private-request-key'),
+    rotated.requestKeyHash(actor, 'private-request-key'),
+  );
+  assert.equal(first.payloadHash(value), rotated.payloadHash(value));
+});
+
+test('capture token requires a stable production idempotency secret', () => {
+  assert.throws(
+    () =>
+      createKnowledgeCaptureTokenCodec({
+        env: {
+          NODE_ENV: 'production',
+          KNOWLEDGE_CURSOR_SIGNING_SECRET:
+            'knowledge-capture-signing-secret-value-0001',
+        },
+      }),
+    /KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET is required/,
   );
 });

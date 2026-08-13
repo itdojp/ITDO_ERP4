@@ -52,6 +52,25 @@ function safeError(error: unknown) {
   );
 }
 
+const definiteCommitRejectionCodes = new Set([
+  'forbidden',
+  'idempotency_conflict',
+  'invalid_request',
+  'not_found',
+  'preview_token_expired',
+  'preview_token_invalid',
+]);
+
+function isDefiniteCommitRejection(error: unknown) {
+  return (
+    error instanceof KnowledgeHubApiError &&
+    error.status !== null &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    definiteCommitRejectionCodes.has(error.code)
+  );
+}
+
 function resultEvent(draftId: string, outcome: 'committed' | 'discarded') {
   window.dispatchEvent(
     new CustomEvent(KNOWLEDGE_CAPTURE_RESULT_EVENT, {
@@ -221,7 +240,7 @@ export function KnowledgeCaptureIngress(props: {
     } catch (caught) {
       if (controller.signal.aborted || generationRef.current !== generation)
         return;
-      if (caught instanceof KnowledgeHubApiError && caught.status !== null) {
+      if (isDefiniteCommitRejection(caught)) {
         setPreview(null);
         setExplicitlyConfirmed(false);
         requestKeyRef.current = '';

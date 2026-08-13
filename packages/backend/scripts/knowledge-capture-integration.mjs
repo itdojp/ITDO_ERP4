@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import path from 'node:path';
 
 import { Prisma } from '@prisma/client';
 
+import { createKnowledgeArtifactPort } from '../dist/adapters/knowledge/knowledgeArtifactStorageAdapter.js';
 import {
   PrismaKnowledgeCaptureRepository,
   PrismaKnowledgeCaptureUnitOfWork,
 } from '../dist/adapters/knowledge/prismaKnowledgeCaptureAdapter.js';
+import { KnowledgeArtifactStoreError } from '../dist/application/knowledge/knowledgeArtifactPort.js';
 import { createKnowledgeCaptureTokenCodec } from '../dist/application/knowledge/knowledgeCaptureToken.js';
 import { createKnowledgeCaptureService } from '../dist/application/knowledge/knowledgeCaptureUseCases.js';
 import { prisma } from '../dist/services/db.js';
@@ -22,66 +26,30 @@ const actor = {
 };
 const repository = new PrismaKnowledgeCaptureRepository(prisma);
 const unitOfWork = new PrismaKnowledgeCaptureUnitOfWork(prisma);
-const artifactsBySnapshot = new Map();
-
-const artifacts = {
-  async store(input) {
-    const row = await prisma.storageArtifact.create({
-      data: {
-        context: 'knowledge_snapshot',
-        provider: 'local',
-        providerKey: `synthetic/${input.sha256}`,
-        status: 'ready',
-        idempotencyKey: input.idempotencyNamespace,
-        originalName: input.originalName,
-        contentType: input.contentType,
-        sizeBytes: BigInt(input.sizeBytes),
-        sha256: input.sha256,
-        ownerType: 'knowledge_snapshot',
-        ownerId: input.snapshotId,
-        createdBy: input.createdBy,
-      },
-    });
-    const artifact = {
-      artifactId: row.id,
-      contentType: row.contentType,
-      createdAt: row.createdAt.toISOString(),
-      originalName: row.originalName,
-      provider: 'local',
-      sha256: row.sha256,
-      sizeBytes: Number(row.sizeBytes),
-    };
-    artifactsBySnapshot.set(input.snapshotId, artifact);
-    return artifact;
-  },
-  async reconcile(input) {
-    const artifact = artifactsBySnapshot.get(input.snapshotId) ?? null;
-    if (
-      !artifact ||
-      artifact.sha256 !== input.sha256 ||
-      artifact.sizeBytes !== input.sizeBytes
-    ) {
-      return null;
-    }
-    return artifact;
-  },
-  async open() {
-    throw new Error('not used');
-  },
-};
+const scratchRoot = path.resolve(process.cwd(), '.codex-local', 'tmp');
+await mkdir(scratchRoot, { recursive: true });
+const knowledgeStorageDir = await mkdtemp(
+  path.join(scratchRoot, 'erp4-knowledge-capture-integration-'),
+);
+const artifacts = createKnowledgeArtifactPort({
+  env: { ...process.env, KNOWLEDGE_STORAGE_DIR: knowledgeStorageDir },
+  provider: 'local',
+});
 
 const tokenCodec = createKnowledgeCaptureTokenCodec({
   env: {
     NODE_ENV: 'test',
     KNOWLEDGE_CURSOR_SIGNING_SECRET:
       'knowledge-capture-integration-signing-secret-0001',
+    KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET:
+      'knowledge-capture-integration-idempotency-secret-0001',
   },
   now: () => now,
 });
 
-function service(customUnitOfWork = unitOfWork) {
+function service(customUnitOfWork = unitOfWork, customArtifacts = artifacts) {
   return createKnowledgeCaptureService({
-    artifacts,
+    artifacts: customArtifacts,
     reader: repository,
     unitOfWork: customUnitOfWork,
     tokenCodec,
@@ -144,8 +112,13 @@ try {
     commit(currentService, value, currentPreview, 'synthetic-request-key'),
     commit(currentService, value, currentPreview, 'synthetic-request-key'),
   ]);
-  assert.equal(concurrent.every((result) => result.ok), true);
-  const created = concurrent.find((result) => result.ok && !result.value.reused);
+  assert.equal(
+    concurrent.every((result) => result.ok),
+    true,
+  );
+  const created = concurrent.find(
+    (result) => result.ok && !result.value.reused,
+  );
   const concurrentReplay = concurrent.find(
     (result) => result.ok && result.value.reused,
   );
@@ -253,6 +226,35 @@ try {
     1,
   );
 
+  let uncertainStoreCalls = 0;
+  const unknownAfterStoreArtifacts = {
+    ...artifacts,
+    async store(input) {
+      uncertainStoreCalls += 1;
+      await artifacts.store(input);
+      throw new KnowledgeArtifactStoreError('unknown');
+    },
+  };
+  const unknownValue = request('unknown-outcome-selected-body');
+  const unknownPreview = await preview(currentService, unknownValue);
+  const unknownCommit = await commit(
+    service(unitOfWork, unknownAfterStoreArtifacts),
+    unknownValue,
+    unknownPreview,
+    'synthetic-unknown-outcome-key',
+  );
+  assert.equal(unknownCommit.ok, true);
+  assert.equal(unknownCommit.value.status, 'pending');
+  assert.equal(uncertainStoreCalls, 1);
+  const unknownReconciled = await currentService.reconcile({
+    actor,
+    auditActor: { source: 'api', requestId: crypto.randomUUID() },
+    captureId: unknownCommit.value.captureId,
+  });
+  assert.equal(unknownReconciled.ok, true);
+  assert.equal(unknownReconciled.value.status, 'ready');
+  assert.equal(uncertainStoreCalls, 1);
+
   const auditText = JSON.stringify(
     await prisma.auditLog.findMany({
       where: { targetTable: 'knowledge_capture_requests' },
@@ -262,6 +264,8 @@ try {
   for (const forbidden of [
     'selected-body',
     'unselected-description-canary',
+    'unknown-outcome-selected-body',
+    'synthetic-unknown-outcome-key',
     'example.invalid',
     'synthetic-request-key',
     created.value.itemId,
@@ -270,6 +274,115 @@ try {
     assert.equal(auditText.includes(forbidden), false, forbidden);
   }
 
+  const organizationGroupId = 'synthetic-capture-group';
+  await prisma.userAccount.create({
+    data: {
+      id: actor.userId,
+      userName: 'synthetic-capture-owner',
+      active: true,
+      organization: actor.organizationId,
+    },
+  });
+  await prisma.groupAccount.create({
+    data: {
+      id: organizationGroupId,
+      displayName: 'Synthetic capture group',
+      active: true,
+    },
+  });
+  await prisma.userGroup.create({
+    data: {
+      id: 'synthetic-capture-membership',
+      userId: actor.userId,
+      groupId: organizationGroupId,
+    },
+  });
+  const organizationActor = {
+    ...actor,
+    groupAccountIds: [organizationGroupId],
+  };
+  const organizationValue = {
+    ...request('organization-selected-body'),
+    scope: 'organization',
+    organizationGroupAccountIds: [organizationGroupId],
+  };
+  const organizationPreview = await currentService.preview({
+    actor: organizationActor,
+    auditActor: { source: 'api', requestId: crypto.randomUUID() },
+    request: organizationValue,
+  });
+  assert.equal(organizationPreview.ok, true);
+  const organizationCreated = await currentService.commit({
+    actor: organizationActor,
+    auditActor: { source: 'api', requestId: crypto.randomUUID() },
+    request: {
+      ...organizationValue,
+      confirmed: true,
+      organizationConfirmed: true,
+      previewToken: organizationPreview.value.previewToken,
+      requestKey: 'synthetic-organization-request-key',
+    },
+  });
+  assert.equal(organizationCreated.ok, true);
+  assert.equal(organizationCreated.value.status, 'ready');
+  await prisma.userGroup.delete({
+    where: { id: 'synthetic-capture-membership' },
+  });
+  const organizationPreviewAfterMembershipLoss = await currentService.preview({
+    actor: organizationActor,
+    auditActor: { source: 'api', requestId: crypto.randomUUID() },
+    request: organizationValue,
+  });
+  assert.equal(organizationPreviewAfterMembershipLoss.ok, false);
+  assert.equal(organizationPreviewAfterMembershipLoss.statusCode, 404);
+  const organizationReplayAfterMembershipLoss = await currentService.commit({
+    actor: organizationActor,
+    auditActor: { source: 'api', requestId: crypto.randomUUID() },
+    request: {
+      ...organizationValue,
+      confirmed: true,
+      organizationConfirmed: true,
+      previewToken: organizationPreview.value.previewToken,
+      requestKey: 'synthetic-organization-request-key',
+    },
+  });
+  assert.equal(organizationReplayAfterMembershipLoss.ok, false);
+  assert.equal(organizationReplayAfterMembershipLoss.statusCode, 404);
+  await prisma.userGroup.create({
+    data: {
+      id: 'synthetic-capture-membership-restored',
+      userId: actor.userId,
+      groupId: organizationGroupId,
+    },
+  });
+  await prisma.userAccount.update({
+    where: { id: actor.userId },
+    data: { organization: 'synthetic-other-organization' },
+  });
+  const organizationPreviewAfterOrganizationChange =
+    await currentService.preview({
+      actor: organizationActor,
+      auditActor: { source: 'api', requestId: crypto.randomUUID() },
+      request: organizationValue,
+    });
+  assert.equal(organizationPreviewAfterOrganizationChange.ok, false);
+  assert.equal(organizationPreviewAfterOrganizationChange.statusCode, 404);
+  const organizationReplayAfterOrganizationChange = await currentService.commit(
+    {
+      actor: organizationActor,
+      auditActor: { source: 'api', requestId: crypto.randomUUID() },
+      request: {
+        ...organizationValue,
+        confirmed: true,
+        organizationConfirmed: true,
+        previewToken: organizationPreview.value.previewToken,
+        requestKey: 'synthetic-organization-request-key',
+      },
+    },
+  );
+  assert.equal(organizationReplayAfterOrganizationChange.ok, false);
+  assert.equal(organizationReplayAfterOrganizationChange.statusCode, 404);
+
   console.log(
     JSON.stringify({
       captureCount,
@@ -277,6 +390,10 @@ try {
       snapshotCount,
       idempotentReplay: true,
       concurrentReplay: true,
+      membershipLossFailsClosed: true,
+      organizationChangeFailsClosed: true,
+      realArtifactAdapterReady: true,
+      realArtifactReconcileNoResend: true,
       auditRollback: true,
       immutableHistory: true,
       unselectedCanaryStored: false,
@@ -284,4 +401,5 @@ try {
   );
 } finally {
   await prisma.$disconnect();
+  await rm(knowledgeStorageDir, { recursive: true, force: true });
 }

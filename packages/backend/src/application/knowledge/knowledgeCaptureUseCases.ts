@@ -156,14 +156,28 @@ function captureResponse(capture: KnowledgeCapture, reused: boolean) {
   };
 }
 
+function captureArtifactNamespace(capture: KnowledgeCapture) {
+  return createHash('sha256')
+    .update('erp4:knowledge:capture-artifact:v1\0', 'utf8')
+    .update(capture.id, 'utf8')
+    .update('\0', 'utf8')
+    .update(capture.requestKeyHash, 'ascii')
+    .digest('hex');
+}
+
 async function validGroups(
   transaction: KnowledgeCaptureTransaction,
   binding: KnowledgeCapturePreviewBinding,
+  actor: KnowledgeActor,
 ) {
   if (binding.scope === 'personal') return true;
+  if (!binding.organizationId) return false;
   return (
-    (await transaction.captures.countActiveGroups(binding.groupAccountIds)) ===
-    binding.groupAccountIds.length
+    (await transaction.captures.countActiveGroupsForActor({
+      actorUserId: actor.userId,
+      organizationId: binding.organizationId,
+      groupAccountIds: binding.groupAccountIds,
+    })) === binding.groupAccountIds.length
   );
 }
 
@@ -223,7 +237,7 @@ export function createKnowledgeCaptureService(dependencies: {
       });
       const payloadHash = tokenCodec.payloadHash(prepared.binding);
       const outcome = await dependencies.unitOfWork.run(async (transaction) => {
-        if (!(await validGroups(transaction, prepared.binding))) {
+        if (!(await validGroups(transaction, prepared.binding, input.actor))) {
           return { authorized: false as const, duplicate: null };
         }
         const duplicate = await transaction.captures.findRecentByPayload({
@@ -326,7 +340,7 @@ export function createKnowledgeCaptureService(dependencies: {
       const itemId = randomId();
       const snapshotId = randomId();
       const intent = await dependencies.unitOfWork.run(async (transaction) => {
-        if (!(await validGroups(transaction, prepared.binding))) {
+        if (!(await validGroups(transaction, prepared.binding, input.actor))) {
           return { kind: 'not_found' as const };
         }
         const existing = await transaction.captures.findByRequestKey({
@@ -438,7 +452,7 @@ export function createKnowledgeCaptureService(dependencies: {
           body,
           contentType,
           createdBy: input.actor.userId,
-          idempotencyNamespace: `knowledge-capture:${intent.capture.id}:${requestKeyHash}`,
+          idempotencyNamespace: captureArtifactNamespace(intent.capture),
           originalName: 'knowledge-capture.txt',
           sha256,
           sizeBytes: body.length,
@@ -545,7 +559,7 @@ export function createKnowledgeCaptureService(dependencies: {
       const artifact = await dependencies.artifacts
         .reconcile({
           contentType: state.contentType,
-          idempotencyNamespace: `knowledge-capture:${state.capture.id}:${state.capture.requestKeyHash}`,
+          idempotencyNamespace: captureArtifactNamespace(state.capture),
           originalName: state.originalName,
           sha256: state.sha256,
           sizeBytes: state.sizeBytes,

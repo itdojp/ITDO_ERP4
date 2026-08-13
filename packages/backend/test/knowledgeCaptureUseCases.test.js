@@ -14,6 +14,8 @@ const now = new Date('2026-08-14T00:00:00.000Z');
 const env = {
   NODE_ENV: 'test',
   KNOWLEDGE_CURSOR_SIGNING_SECRET: 'knowledge-capture-test-signing-secret-0001',
+  KNOWLEDGE_CAPTURE_IDEMPOTENCY_SECRET:
+    'knowledge-capture-test-idempotency-secret-0001',
 };
 
 function request(overrides = {}) {
@@ -45,6 +47,7 @@ function createHarness(options = {}) {
   const behavior = {
     storeOutcome: 'success',
     activeGroups: ['group-1'],
+    memberGroups: ['group-1'],
     reconcileArtifact: null,
     ...options,
   };
@@ -54,8 +57,18 @@ function createHarness(options = {}) {
     'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
   ];
   const repository = {
-    countActiveGroups: async (idsToCheck) =>
-      idsToCheck.filter((id) => behavior.activeGroups.includes(id)).length,
+    countActiveGroupsForActor: async ({
+      actorUserId,
+      organizationId,
+      groupAccountIds,
+    }) =>
+      actorUserId === actor.userId && organizationId === actor.organizationId
+        ? groupAccountIds.filter(
+            (id) =>
+              behavior.activeGroups.includes(id) &&
+              behavior.memberGroups.includes(id),
+          ).length
+        : 0,
     findByRequestKey: async ({ ownerUserId, requestKeyHash }) =>
       [...captures.values()].find(
         (capture) =>
@@ -147,6 +160,7 @@ function createHarness(options = {}) {
   };
   const artifacts = {
     store: async (input) => {
+      assert.match(input.idempotencyNamespace, /^[a-f0-9]{64}$/);
       stored.push(structuredClone(input));
       if (behavior.storeOutcome !== 'success') {
         throw new KnowledgeArtifactStoreError(behavior.storeOutcome);
@@ -162,6 +176,7 @@ function createHarness(options = {}) {
       };
     },
     reconcile: async (input) => {
+      assert.match(input.idempotencyNamespace, /^[a-f0-9]{64}$/);
       reconciled.push(structuredClone(input));
       return behavior.reconcileArtifact;
     },
@@ -320,7 +335,7 @@ test('organization requires explicit confirmation and active current groups', as
   assert.equal(revoked.statusCode, 404);
 });
 
-test('organization replay rechecks active groups before returning an existing capture', async () => {
+test('organization replay rechecks current membership before returning an existing capture', async () => {
   const harness = createHarness();
   const organization = request({
     scope: 'organization',
@@ -344,7 +359,7 @@ test('organization replay rechecks active groups before returning an existing ca
     },
   });
   assert.equal(created.ok, true);
-  harness.behavior.activeGroups = [];
+  harness.behavior.memberGroups = [];
 
   const replayAfterRevocation = await harness.service.commit({
     actor,
