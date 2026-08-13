@@ -28,7 +28,7 @@
 | old-application実row read/write、health／ready | PASS |
 | OpenAPI export／non-breaking diff | PASS |
 | backend／frontend lint、format、typecheck、build | PASS |
-| backend full coverage | 2,377 / 2,377 PASS、statements 75.60%、branches 72.21%、functions 85.55%、lines 75.60% |
+| backend full coverage | 2,378 / 2,378 PASS、statements 75.60%、branches 72.21%、functions 85.55%、lines 75.60% |
 | frontend full／UI core coverage | 858 / 858 PASS、statements 73.65%、branches 66.68%、functions 73.27%、lines 76.40% |
 | core E2E | 109 / 109 PASS |
 | full E2E | 155 PASS／34既存条件付きskip／failure 0 |

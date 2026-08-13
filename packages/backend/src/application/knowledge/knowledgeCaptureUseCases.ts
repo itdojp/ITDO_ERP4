@@ -326,6 +326,9 @@ export function createKnowledgeCaptureService(dependencies: {
       const itemId = randomId();
       const snapshotId = randomId();
       const intent = await dependencies.unitOfWork.run(async (transaction) => {
+        if (!(await validGroups(transaction, prepared.binding))) {
+          return { kind: 'not_found' as const };
+        }
         const existing = await transaction.captures.findByRequestKey({
           ownerUserId: input.actor.userId,
           requestKeyHash,
@@ -346,9 +349,6 @@ export function createKnowledgeCaptureService(dependencies: {
             },
           });
           return { kind: 'existing' as const, capture: existing };
-        }
-        if (!(await validGroups(transaction, prepared.binding))) {
-          return { kind: 'not_found' as const };
         }
         const capture = await transaction.captures.createAggregate({
           id: verified.captureId,

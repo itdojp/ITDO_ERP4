@@ -320,6 +320,49 @@ test('organization requires explicit confirmation and active current groups', as
   assert.equal(revoked.statusCode, 404);
 });
 
+test('organization replay rechecks active groups before returning an existing capture', async () => {
+  const harness = createHarness();
+  const organization = request({
+    scope: 'organization',
+    organizationGroupAccountIds: ['group-1'],
+  });
+  const preview = await harness.service.preview({
+    actor,
+    auditActor: {},
+    request: organization,
+  });
+  assert.equal(preview.ok, true);
+  const created = await harness.service.commit({
+    actor,
+    auditActor: {},
+    request: {
+      ...organization,
+      confirmed: true,
+      organizationConfirmed: true,
+      previewToken: preview.value.previewToken,
+      requestKey: 'organization-replay-key',
+    },
+  });
+  assert.equal(created.ok, true);
+  harness.behavior.activeGroups = [];
+
+  const replayAfterRevocation = await harness.service.commit({
+    actor,
+    auditActor: {},
+    request: {
+      ...organization,
+      confirmed: true,
+      organizationConfirmed: true,
+      previewToken: preview.value.previewToken,
+      requestKey: 'organization-replay-key',
+    },
+  });
+  assert.equal(replayAfterRevocation.ok, false);
+  assert.equal(replayAfterRevocation.statusCode, 404);
+  assert.equal(harness.captures.size, 1);
+  assert.equal(harness.stored.length, 1);
+});
+
 test('unknown artifact outcome remains pending and reconcile never stores again', async () => {
   const harness = createHarness({ storeOutcome: 'unknown' });
   const { commit } = await previewAndCommit(harness);

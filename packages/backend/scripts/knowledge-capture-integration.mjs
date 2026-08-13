@@ -140,14 +140,21 @@ try {
   const currentService = service();
   const value = request();
   const currentPreview = await preview(currentService, value);
-  const created = await commit(
-    currentService,
-    value,
-    currentPreview,
-    'synthetic-request-key',
+  const concurrent = await Promise.all([
+    commit(currentService, value, currentPreview, 'synthetic-request-key'),
+    commit(currentService, value, currentPreview, 'synthetic-request-key'),
+  ]);
+  assert.equal(concurrent.every((result) => result.ok), true);
+  const created = concurrent.find((result) => result.ok && !result.value.reused);
+  const concurrentReplay = concurrent.find(
+    (result) => result.ok && result.value.reused,
   );
+  assert.ok(created?.ok);
+  assert.ok(concurrentReplay?.ok);
   assert.equal(created.ok, true);
   assert.equal(created.value.status, 'ready');
+  assert.equal(concurrentReplay.value.itemId, created.value.itemId);
+  assert.equal(concurrentReplay.value.snapshotId, created.value.snapshotId);
 
   const replay = await commit(
     currentService,
@@ -269,6 +276,7 @@ try {
       itemCount,
       snapshotCount,
       idempotentReplay: true,
+      concurrentReplay: true,
       auditRollback: true,
       immutableHistory: true,
       unselectedCanaryStored: false,
