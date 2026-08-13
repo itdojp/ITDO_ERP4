@@ -57,7 +57,13 @@ export async function loadKnowledgeLlmBudgetPreview(
     return blockedBudgetPreview(policies.length);
   }
   const currencies = new Set(policies.map((policy) => policy.currency));
-  if (currencies.size !== 1) return blockedBudgetPreview(policies.length);
+  if (
+    currencies.size !== 1 ||
+    (input.expectedCurrency !== null &&
+      policies.some((policy) => policy.currency !== input.expectedCurrency))
+  ) {
+    return blockedBudgetPreview(policies.length);
+  }
 
   const subjects: KnowledgeLlmBudgetPreview['subjects'] = [];
   const oneHourAgo = new Date(input.now.getTime() - 60 * 60 * 1000);

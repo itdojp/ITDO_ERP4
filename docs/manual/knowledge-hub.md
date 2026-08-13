@@ -169,7 +169,7 @@ promote後のSynthesis本文とimmutable selected-message snapshotはdestination
 | `予算予約済み`または`送信済み・結果確認中` / `予約中` | grace期間中またはlocal finalizationが未完了      | grace期間後に`保存済み証跡で再照合`を実行する。providerへ再送せず、未dispatchなら予約を解放し、dispatch済みで結果不明なら最大予約額を保持する |
 | hard／rate block                                      | provider dispatch前に予算またはrate guardで拒否  | 管理者にpolicyを確認し、新しいpreviewから再判断する                                                                                           |
 
-`保存済み証跡で再照合`はprovider requestを再送しません。安全な保存済みoutcomeがない場合は結果不明と最大予約額保持を維持します。同じ操作をやり直す場合も自動retryや別provider fallbackは行わず、新しいpreviewと明示confirmが必要です。API key、base URL、provider raw error、source internal IDはUIへ表示しません。
+`保存済み証跡で再照合`はprovider requestを再送しません。grace期間中または新しい保存済みoutcomeがない場合は「状態は変更されませんでした」と表示し、現在の予約／最大予約額保持を維持します。同じ操作をやり直す場合も自動retryや別provider fallbackは行わず、新しいpreviewと明示confirmが必要です。API key、base URL、provider raw error、source internal IDはUIへ表示しません。
 
 ![外部LLM selected-context preview](../test-results/2026-08-13-issue2016-knowledge-llm-ui/02-selected-context-preview.png)
 

@@ -948,6 +948,7 @@ try {
     scope: 'personal',
     organizationId: null,
     maximumCostMicros: 50n,
+    expectedCurrency: 'JPY',
     now,
   });
   assert.equal(versionBudgetPreview.configured, true);
@@ -1014,6 +1015,7 @@ try {
     scope: 'personal',
     organizationId: null,
     maximumCostMicros: 1n,
+    expectedCurrency: 'JPY',
     now,
   });
   assert.equal(versionRatePreview.configured, true);

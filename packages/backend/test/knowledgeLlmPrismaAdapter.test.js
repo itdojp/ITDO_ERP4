@@ -162,6 +162,7 @@ test('budget preview carries monthly and rolling usage across policy versions by
     scope: 'organization',
     organizationId: actor.organizationId,
     maximumCostMicros: 10n,
+    expectedCurrency: 'JPY',
     now: new Date('2026-08-13T00:00:00.000Z'),
   });
 
@@ -196,6 +197,53 @@ test('budget preview carries monthly and rolling usage across policy versions by
   assert.equal(reservationQueries.length, 2);
   for (const query of [...periodQueries, ...reservationQueries]) {
     assert.doesNotMatch(JSON.stringify(query), /active-user-v2|active-org-v2/);
+  }
+});
+
+test('request budget preview fails closed when catalog and policy currencies differ', async () => {
+  const transaction = {
+    knowledgeLlmBudgetPolicy: {
+      findMany: async ({ where }) =>
+        where.OR.map((subject, index) => ({
+          id: `policy-${index}`,
+          subjectType: subject.subjectType,
+          subjectId: subject.subjectId,
+          currency: 'JPY',
+          timezone: 'Asia/Tokyo',
+          softLimitMicros: 90n,
+          hardLimitMicros: 100n,
+          requestsPerHour: 2,
+          version: 1,
+          active: true,
+        })),
+    },
+    knowledgeLlmBudgetPeriod: {
+      findMany: async () => {
+        throw new Error('currency mismatch must fail before period reads');
+      },
+    },
+    knowledgeLlmReservation: {
+      count: async () => {
+        throw new Error('currency mismatch must fail before reservation reads');
+      },
+    },
+  };
+  const adapter = new PrismaKnowledgeLlmRunAdapter({}, transaction);
+
+  for (const input of [
+    { scope: 'personal', organizationId: null },
+    { scope: 'organization', organizationId: actor.organizationId },
+  ]) {
+    const preview = await adapter.budgetPreview({
+      actor,
+      ...input,
+      maximumCostMicros: 1n,
+      expectedCurrency: 'USD',
+      now: new Date('2026-08-13T00:00:00.000Z'),
+    });
+    assert.equal(preview.configured, false);
+    assert.equal(preview.hardLimitBlocked, true);
+    assert.equal(preview.subjects.length, 0);
   }
 });
 

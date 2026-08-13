@@ -706,7 +706,11 @@ describe('KnowledgeLlmPanel', () => {
       expect(apiMocks.reconcileKnowledgeLlmRun).toHaveBeenCalledTimes(1);
     });
     expect(apiMocks.executeKnowledgeLlmRun).toHaveBeenCalledTimes(1);
-    expect(screen.getByText(/providerへ再送していません/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /状態は変更されませんでした。providerへ再送していません/,
+      ),
+    ).toBeInTheDocument();
   });
 
   it.each([

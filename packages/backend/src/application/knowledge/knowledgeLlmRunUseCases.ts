@@ -499,6 +499,7 @@ export function createKnowledgeLlmRunService(input: {
           await input.runPort.budgetPreview({
             ...options,
             maximumCostMicros: 0n,
+            expectedCurrency: null,
             now: clock(),
           }),
         );
@@ -549,6 +550,7 @@ export function createKnowledgeLlmRunService(input: {
           scope: request.scope,
           organizationId: request.organizationId,
           maximumCostMicros: prepared.value.request.maximumCostMicros,
+          expectedCurrency: prepared.value.request.currency,
           now: clock(),
         });
         const shapeHash = requestShapeHash(options.actor, request);

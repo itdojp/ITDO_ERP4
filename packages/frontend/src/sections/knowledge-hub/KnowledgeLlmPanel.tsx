@@ -495,11 +495,24 @@ export function KnowledgeLlmPanel(props: {
         ? await reconcileKnowledgeLlmRun(target, controller.signal)
         : await fetchKnowledgeLlmRun(target, controller.signal);
       if (!isCurrent(generation) || controller.signal.aborted) return;
+      const stateUnchanged =
+        reconcile &&
+        run !== null &&
+        next.executionStatus === run.executionStatus &&
+        next.settlementStatus === run.settlementStatus &&
+        next.failureCode === run.failureCode &&
+        next.actualInputTokens === run.actualInputTokens &&
+        next.actualOutputTokens === run.actualOutputTokens &&
+        next.actualCostMicros === run.actualCostMicros &&
+        next.conversationId === run.conversationId &&
+        next.completedAt === run.completedAt;
       setRun(next);
       setRunLookupId(next.id);
       setNotice(
         reconcile
-          ? '保存済み証跡だけで再照合しました。providerへ再送していません。'
+          ? stateUnchanged
+            ? 'grace期間中または新しい保存済み証跡がないため、状態は変更されませんでした。providerへ再送していません。'
+            : '保存済み証跡だけで再照合しました。providerへ再送していません。'
           : '現在の実行状態を取得しました。',
       );
     } catch (readError) {

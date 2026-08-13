@@ -27,6 +27,8 @@
 | read-only reconciliation | PASS | 保存済みoutcomeだけを照合するfocused E2E |
 | hard limit blockとprovider request 0件 | PASS | synthetic user policy fixture |
 | policy version更新後のbudget/rate preview継続 | PASS | user／organization subject単位のunit test、PostgreSQL 15でinactive versionの月次counter／rolling rateを継続集計 |
+| catalog／policy currency整合 | PASS | request-specific previewがcatalog currencyを束縛し、personal／organizationとも不一致をreservation前にfail closed |
+| source候補cursor機密性 | PASS | LLM候補cursorをAES-256-GCM認証暗号化し、request URL／base64url segmentからsource IDを復元できない回帰test |
 | stale reserved／dispatched runの再照合導線 | PASS | model／component test。provider dispatchは1回のまま、grace期間後のlocal accounting収束だけを実行 |
 | outsider 404とresponse allowlist | PASS | direct API negative E2E、frontend normalization test |
 | 375px responsive layout／semantic label | PASS | component test、sanitized screenshot |
@@ -54,8 +56,8 @@ canaryはexact preview、provider request、run response、画面、監査／app
 | focused real-backend E2E（disabled） | 1 / 1 PASS |
 | focused real-backend E2E（JWT canonical identity + stub） | 1 / 1 PASS |
 | ambient external-provider設定を注入したprocess isolation E2E | Knowledge + Chat summary 2 / 2 PASS、外部request 0件、canary log非含有 |
-| backend full | 2,343 / 2,343 PASS |
-| frontend full | 820 / 820 PASS |
+| backend full | 2,355 / 2,355 PASS |
+| frontend full | 830 / 830 PASS |
 | full E2E | 155 PASS / 34既存条件付きskip / failure 0 |
 | UI core coverage | statements 73.63%、branches 66.65%、functions 73.28%、lines 76.39%（全threshold PASS） |
 | frontend build budget | PASS（initial JS gzip 158.4 KiB） |

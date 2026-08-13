@@ -98,6 +98,99 @@ test('conversation page cursors bind filtered and unfiltered lists separately', 
   );
 });
 
+test('LLM context cursor is authenticated-encrypted and does not expose a source ID in request logs', () => {
+  const codec = createKnowledgeProvenanceCursorCodec(env);
+  const sourceId = 'source-private-canary-123456789012';
+  const boundary = {
+    updatedAt: new Date('2026-08-13T01:02:03.000Z'),
+    id: sourceId,
+  };
+  const cursor = codec.encodePage({
+    kind: 'llm_context_sources',
+    parentId: 'item-private-llm',
+    actor,
+    boundary,
+  });
+
+  assert.equal(cursor.startsWith('v2.'), true);
+  assert.equal(cursor.split('.').length, 4);
+  assert.deepEqual(
+    codec.decodePage({
+      cursor,
+      kind: 'llm_context_sources',
+      parentId: 'item-private-llm',
+      actor,
+    }),
+    boundary,
+  );
+
+  const loggedRequestUrl =
+    `/knowledge/items/opaque/llm/context-candidates?sourceType=snapshot` +
+    `&cursor=${encodeURIComponent(cursor)}`;
+  assert.equal(loggedRequestUrl.includes(sourceId), false);
+  for (const segment of cursor.split('.').slice(1)) {
+    assert.equal(
+      Buffer.from(segment, 'base64url').toString('utf8').includes(sourceId),
+      false,
+    );
+  }
+});
+
+test('LLM context cursor rejects tampering and signed cursor cross-decoding', () => {
+  const codec = createKnowledgeProvenanceCursorCodec(env);
+  const encrypted = codec.encodePage({
+    kind: 'llm_context_sources',
+    parentId: 'item-private-llm',
+    actor,
+    boundary: {
+      updatedAt: new Date('2026-08-13T01:02:03.000Z'),
+      id: 'source-private-canary',
+    },
+  });
+  const segments = encrypted.split('.');
+  segments[2] = `${segments[2].slice(0, -1)}${segments[2].endsWith('A') ? 'B' : 'A'}`;
+  assert.throws(
+    () =>
+      codec.decodePage({
+        cursor: segments.join('.'),
+        kind: 'llm_context_sources',
+        parentId: 'item-private-llm',
+        actor,
+      }),
+    KnowledgeProvenanceCursorError,
+  );
+  assert.throws(
+    () =>
+      codec.decodePage({
+        cursor: encrypted,
+        kind: 'annotations',
+        parentId: 'item-private-llm',
+        actor,
+      }),
+    KnowledgeProvenanceCursorError,
+  );
+
+  const signed = codec.encodePage({
+    kind: 'annotations',
+    parentId: 'item-private-llm',
+    actor,
+    boundary: {
+      updatedAt: new Date('2026-08-13T01:02:03.000Z'),
+      id: 'annotation-1',
+    },
+  });
+  assert.throws(
+    () =>
+      codec.decodePage({
+        cursor: signed,
+        kind: 'llm_context_sources',
+        parentId: 'item-private-llm',
+        actor,
+      }),
+    KnowledgeProvenanceCursorError,
+  );
+});
+
 test('annotation cursors bind the active and include-deleted views separately', () => {
   const codec = createKnowledgeProvenanceCursorCodec(env);
   const cursor = codec.encodePage({

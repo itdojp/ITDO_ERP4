@@ -151,6 +151,7 @@ export interface KnowledgeLlmRunPort {
     scope: KnowledgeLlmRunScope;
     organizationId: string | null;
     maximumCostMicros: bigint;
+    expectedCurrency: string | null;
     now: Date;
   }): Promise<KnowledgeLlmBudgetPreview>;
 

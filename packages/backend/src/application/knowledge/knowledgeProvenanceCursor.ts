@@ -1,4 +1,6 @@
 import {
+  createCipheriv,
+  createDecipheriv,
   createHash,
   createHmac,
   randomBytes,
@@ -13,7 +15,10 @@ import {
 } from './knowledgeProvenancePorts.js';
 
 const CURSOR_VERSION = 1 as const;
+const CONFIDENTIAL_CURSOR_VERSION = 'v2';
 const SECRET_MIN_BYTES = 32;
+const IV_BYTES = 12;
+const AUTH_TAG_BYTES = 16;
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -42,6 +47,10 @@ type CursorEnvelope = {
 };
 
 let ephemeralSecret: Buffer | undefined;
+const CONFIDENTIAL_CURSOR_AAD = Buffer.from(
+  'erp4:knowledge-provenance:llm-context-cursor:v2',
+  'utf8',
+);
 
 export class KnowledgeProvenanceCursorError extends Error {
   readonly code = 'invalid_cursor' as const;
@@ -84,6 +93,15 @@ function actorFingerprint(actor: KnowledgeActor, secret: Uint8Array): string {
     .update('erp4:knowledge-provenance:actor:v1\0', 'utf8')
     .update(canonical, 'utf8')
     .digest('hex');
+}
+
+function confidentialCursorKey(secret: Uint8Array): Buffer {
+  return createHmac('sha256', secret)
+    .update(
+      'erp4:knowledge-provenance:llm-context-cursor-encryption-key:v2\0',
+      'utf8',
+    )
+    .digest();
 }
 
 function resolveSecret(env: NodeJS.ProcessEnv): Buffer {
@@ -188,6 +206,25 @@ export function createKnowledgeProvenanceCursorCodec(
   const secret = resolveSecret(env);
 
   function encode(envelope: CursorEnvelope): string {
+    if (envelope.kind === 'llm_context_sources') {
+      const iv = randomBytes(IV_BYTES);
+      const cipher = createCipheriv(
+        'aes-256-gcm',
+        confidentialCursorKey(secret),
+        iv,
+      );
+      cipher.setAAD(CONFIDENTIAL_CURSOR_AAD);
+      const encrypted = Buffer.concat([
+        cipher.update(stableJson(envelope), 'utf8'),
+        cipher.final(),
+      ]);
+      return [
+        CONFIDENTIAL_CURSOR_VERSION,
+        encodeBase64Url(iv),
+        encodeBase64Url(encrypted),
+        encodeBase64Url(cipher.getAuthTag()),
+      ].join('.');
+    }
     const payload = encodeBase64Url(stableJson(envelope));
     const signature = encodeBase64Url(
       createHmac('sha256', secret).update(payload, 'ascii').digest(),
@@ -202,7 +239,53 @@ export function createKnowledgeProvenanceCursorCodec(
     actor: KnowledgeActor;
   }): CursorEnvelope {
     try {
+      if (
+        input.cursor.length === 0 ||
+        input.cursor.length > knowledgeProvenanceLimits.cursor
+      ) {
+        throw invalidCursor();
+      }
       const segments = input.cursor.split('.');
+      if (input.kind === 'llm_context_sources') {
+        if (segments.length !== 4) throw invalidCursor();
+        const [version, ivSegment, payloadSegment, tagSegment] = segments;
+        if (
+          version !== CONFIDENTIAL_CURSOR_VERSION ||
+          !ivSegment ||
+          !payloadSegment ||
+          !tagSegment
+        ) {
+          throw invalidCursor();
+        }
+        const iv = decodeBase64Url(ivSegment);
+        const encrypted = decodeBase64Url(payloadSegment);
+        const authTag = decodeBase64Url(tagSegment);
+        if (
+          iv.length !== IV_BYTES ||
+          encrypted.length === 0 ||
+          authTag.length !== AUTH_TAG_BYTES
+        ) {
+          throw invalidCursor();
+        }
+        const decipher = createDecipheriv(
+          'aes-256-gcm',
+          confidentialCursorKey(secret),
+          iv,
+        );
+        decipher.setAAD(CONFIDENTIAL_CURSOR_AAD);
+        decipher.setAuthTag(authTag);
+        const envelope = parseEnvelope(
+          Buffer.concat([decipher.update(encrypted), decipher.final()]),
+        );
+        if (
+          envelope.kind !== input.kind ||
+          envelope.parentHash !== hash(input.parentId ?? '') ||
+          envelope.actorFingerprint !== actorFingerprint(input.actor, secret)
+        ) {
+          throw invalidCursor();
+        }
+        return envelope;
+      }
       if (segments.length !== 2) throw invalidCursor();
       const [payloadSegment, signatureSegment] = segments;
       if (!payloadSegment || !signatureSegment) throw invalidCursor();
