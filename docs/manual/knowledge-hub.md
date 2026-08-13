@@ -159,7 +159,7 @@ promote後のSynthesis本文とimmutable selected-message snapshotはdestination
 5. exact source本文、version／SHA-256、選択／省略件数、推定input token、最大予約額、soft／hard／rate状態を確認します。
 6. `上記のexact contentだけを外部providerへ送信することを確認しました`を明示的に選択し、`明示confirmして1回だけ実行`します。
 
-実行中、およびcommitの送信段階を確定できない間は、同じintentとrequest keyを保護するためKnowledge item／tab切替とInbox更新が無効になります。preview tokenとrequest keyは現在のcomponent memoryだけに保持され、localStorage、URL、画面へ保存されません。commit前または確定済みrunの表示中にitem／tabを切り替えた場合は、previewと表示中のprovider結果を破棄します。
+実行中、commitの送信段階を確定できない間、およびrunが`reserved`／`dispatched`の間は、同じintentとrequest keyを保護するためKnowledge item／tab切替とInbox更新が無効になります。preview tokenとrequest keyは現在のcomponent memoryだけに保持され、localStorage、URL、画面へ保存されません。commit前またはterminal runの表示中にitem／tabを切り替えた場合は、previewと表示中のprovider結果を破棄します。`result_ready`／`failed`／`result_unknown`へ到達するまでは、同じrunの状態確認だけを使用してください。
 
 | 表示状態                                              | 意味                                             | 操作                                                                                                                                          |
 | ----------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |

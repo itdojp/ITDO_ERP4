@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   formatKnowledgeLlmCost,
+  knowledgeLlmRunIsPending,
   knowledgeLlmRunNeedsReconciliation,
   validateKnowledgeLlmRequest,
   type KnowledgeLlmCatalog,
@@ -103,6 +104,13 @@ describe('knowledgeLlmModel', () => {
   it('formats integer micro-units only and identifies held/unknown runs', () => {
     expect(formatKnowledgeLlmCost('123', 'JPY')).toBe('123 JPY micro-unit');
     expect(formatKnowledgeLlmCost('1.5', 'JPY')).toBe('-');
+    expect(knowledgeLlmRunIsPending(run)).toBe(false);
+    expect(
+      knowledgeLlmRunIsPending({ ...run, executionStatus: 'reserved' }),
+    ).toBe(true);
+    expect(
+      knowledgeLlmRunIsPending({ ...run, executionStatus: 'dispatched' }),
+    ).toBe(true);
     expect(knowledgeLlmRunNeedsReconciliation(run)).toBe(false);
     expect(
       knowledgeLlmRunNeedsReconciliation({

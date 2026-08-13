@@ -18,8 +18,9 @@ import {
 } from './knowledgeLlmApi';
 import {
   formatKnowledgeLlmCost,
-  knowledgeLlmSourceTypes,
+  knowledgeLlmRunIsPending,
   knowledgeLlmRunNeedsReconciliation,
+  knowledgeLlmSourceTypes,
   validateKnowledgeLlmRequest,
   type KnowledgeLlmCandidate,
   type KnowledgeLlmCatalog,
@@ -412,8 +413,11 @@ export function KnowledgeLlmPanel(props: {
   ]);
   const unresolvedCommit =
     commitAttempted && run === null && runLookupId !== null;
+  const pendingDispatchIntent =
+    unresolvedCommit ||
+    (commitAttempted && run !== null && knowledgeLlmRunIsPending(run));
   const interactionBusy = previewing || committing || reading;
-  const draftLocked = interactionBusy || unresolvedCommit;
+  const draftLocked = interactionBusy || pendingDispatchIntent;
 
   const invalidateDraft = useCallback(() => {
     clearSensitiveResult();
@@ -495,7 +499,7 @@ export function KnowledgeLlmPanel(props: {
       setRun(result.run);
       setRunLookupId(result.run.id);
       setReused(result.reused);
-      releaseDispatchIntent = true;
+      releaseDispatchIntent = !knowledgeLlmRunIsPending(result.run);
       setNotice(
         result.reused
           ? '同じ実行結果を再利用しました。providerへ再送していません。'
@@ -544,7 +548,9 @@ export function KnowledgeLlmPanel(props: {
         next.completedAt === run.completedAt;
       setRun(next);
       setRunLookupId(next.id);
-      if (unresolvedCommit) onCommitBusyChange?.(false);
+      if (pendingDispatchIntent && !knowledgeLlmRunIsPending(next)) {
+        onCommitBusyChange?.(false);
+      }
       setNotice(
         reconcile
           ? stateUnchanged
@@ -554,7 +560,7 @@ export function KnowledgeLlmPanel(props: {
       );
     } catch (readError) {
       if (!isCurrent(generation) || controller.signal.aborted) return;
-      if (isAccessLoss(readError) && unresolvedCommit) {
+      if (isAccessLoss(readError) && pendingDispatchIntent) {
         setError(
           '実行の作成状態をまだ確認できません。新しく実行せず、同じrunの「状態を確認」を再実行してください。',
         );

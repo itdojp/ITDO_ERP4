@@ -682,6 +682,18 @@ describe('KnowledgeLlmPanel', () => {
     );
     apiMocks.fetchKnowledgeLlmRun
       .mockRejectedValueOnce(new KnowledgeHubApiError('not_found', 404))
+      .mockResolvedValueOnce(
+        run({
+          executionStatus: 'dispatched',
+          settlementStatus: 'reserved',
+          actualInputTokens: null,
+          actualOutputTokens: null,
+          actualCostMicros: null,
+          result: null,
+          conversationId: null,
+          completedAt: null,
+        }),
+      )
       .mockResolvedValueOnce(run());
     renderPanelWithNavigationLock(onCommitBusyChange);
     await previewDefaultSource();
@@ -713,11 +725,76 @@ describe('KnowledgeLlmPanel', () => {
     expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
 
     fireEvent.click(screen.getByRole('button', { name: '状態を確認' }));
+    expect(await screen.findByText(/実行状態は確定待ちです/)).toBeVisible();
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
+    expect(screen.getByRole('button', { name: '別tabへ切替' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '別itemへ切替' })).toBeDisabled();
+    expect(apiMocks.executeKnowledgeLlmRun).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: '状態を確認' }));
     expect(await screen.findByText('synthetic result')).toBeInTheDocument();
     expect(onCommitBusyChange).toHaveBeenLastCalledWith(false);
     expect(screen.getByRole('button', { name: '別tabへ切替' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '別itemへ切替' })).toBeEnabled();
-    expect(apiMocks.fetchKnowledgeLlmRun).toHaveBeenCalledTimes(2);
+    expect(apiMocks.fetchKnowledgeLlmRun).toHaveBeenCalledTimes(3);
+    expect(apiMocks.executeKnowledgeLlmRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps parent navigation locked for a non-terminal execute response until the same run becomes terminal', async () => {
+    const onCommitBusyChange = vi.fn();
+    const reserved = run({
+      executionStatus: 'reserved',
+      settlementStatus: 'reserved',
+      actualInputTokens: null,
+      actualOutputTokens: null,
+      actualCostMicros: null,
+      result: null,
+      conversationId: null,
+      dispatchedAt: null,
+      completedAt: null,
+    });
+    const dispatched = run({
+      ...reserved,
+      executionStatus: 'dispatched',
+      dispatchedAt: timestamp,
+    });
+    apiMocks.executeKnowledgeLlmRun.mockResolvedValueOnce({
+      created: true,
+      reused: false,
+      run: reserved,
+    });
+    apiMocks.fetchKnowledgeLlmRun
+      .mockResolvedValueOnce(dispatched)
+      .mockResolvedValueOnce(run());
+    renderPanelWithNavigationLock(onCommitBusyChange);
+    await previewDefaultSource();
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: /上記のexact contentだけを外部providerへ送信/,
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: '明示confirmして1回だけ実行' }),
+    );
+
+    expect(await screen.findByText(/実行状態は確定待ちです/)).toBeVisible();
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
+    expect(screen.getByRole('button', { name: '別tabへ切替' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '別itemへ切替' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: '状態を確認' }));
+    await waitFor(() => {
+      expect(apiMocks.fetchKnowledgeLlmRun).toHaveBeenCalledTimes(1);
+    });
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
+    expect(screen.getByRole('button', { name: '別tabへ切替' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '別itemへ切替' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: '状態を確認' }));
+    expect(await screen.findByText('synthetic result')).toBeInTheDocument();
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(false);
+    expect(screen.getByRole('button', { name: '別tabへ切替' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '別itemへ切替' })).toBeEnabled();
     expect(apiMocks.executeKnowledgeLlmRun).toHaveBeenCalledTimes(1);
   });
 
