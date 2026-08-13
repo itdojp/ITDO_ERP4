@@ -29,13 +29,13 @@
 | OpenAPI export／non-breaking diff | PASS |
 | backend／frontend lint、format、typecheck、build | PASS |
 | backend full coverage | 2,377 / 2,377 PASS、statements 75.60%、branches 72.21%、functions 85.55%、lines 75.60% |
-| frontend full／UI core coverage | 857 / 857 PASS、statements 73.65%、branches 66.68%、functions 73.27%、lines 76.40% |
+| frontend full／UI core coverage | 858 / 858 PASS、statements 73.65%、branches 66.68%、functions 73.27%、lines 76.40% |
 | core E2E | 109 / 109 PASS |
 | full E2E | 155 PASS／34既存条件付きskip／failure 0 |
 | lint／format／typecheck／build／audit／ops-quality | PASS |
 | bounded-context dependency／coverage、frontend build budget | PASS |
 | docs index／image links、secret scan、`git diff --check` | PASS |
-| release-readiness | PR exact head確定前に実行 |
+| `RELEASE_E2E_SCOPE=core make release-readiness` | PASS（core E2E 109 / 109） |
 
 PostgreSQL fixtureはcapture 1件、item 1件、snapshot 1件へ収束し、同時replayで増殖しないこと、mandatory audit failure時にbusiness mutationがrollbackすること、terminal ledgerのupdate／deleteをDBが拒否すること、非選択canaryがsnapshotへ存在しないことを検証した。
 
