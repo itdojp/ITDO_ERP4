@@ -333,6 +333,16 @@ run_smoke 'sakura deploy dry-run with all mutating phases skipped' \
   scripts/ops/sakura-vps-deploy.sh --dry-run --repo-dir "$ROOT_DIR" --target-dir "$SMOKE_DIR/quadlet" --frontend-build-env "$SMOKE_DIR/frontend-build.env" --skip-git-update --skip-npm-ci --skip-build-images --skip-start
 run_smoke 'sakura private-smoke deploy dry-run propagates profile' \
   scripts/ops/sakura-vps-deploy.sh --dry-run --profile private-smoke --repo-dir "$ROOT_DIR" --target-dir "$SMOKE_DIR/quadlet" --frontend-build-env "$SMOKE_DIR/frontend-build.env" --skip-git-update --skip-npm-ci --skip-build-images --skip-start
+printf 'smoke: sakura private-smoke image build propagates profile\n'
+sakura_private_build_output="$(
+  scripts/ops/sakura-vps-deploy.sh --dry-run --profile private-smoke --repo-dir "$ROOT_DIR" \
+    --target-dir "$SMOKE_DIR/quadlet" --frontend-build-env "$SMOKE_DIR/frontend-build.env" \
+    --skip-git-update --skip-npm-ci --skip-start
+)"
+grep -Fq -- 'SAKURA_VPS_PROFILE=private-smoke' <<<"$sakura_private_build_output" || \
+  fail 'sakura private-smoke deploy did not pass its profile to build-images.sh'
+grep -Fq -- 'scripts/quadlet/build-images.sh' <<<"$sakura_private_build_output" || \
+  fail 'sakura private-smoke deploy did not invoke build-images.sh'
 printf 'smoke: sakura update dry-run delegates unit install to update-stack\n'
 sakura_update_output="$(
   scripts/ops/sakura-vps-deploy.sh --dry-run --update-existing --repo-dir "$ROOT_DIR" \

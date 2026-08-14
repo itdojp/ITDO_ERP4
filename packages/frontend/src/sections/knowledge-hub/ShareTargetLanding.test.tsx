@@ -900,6 +900,12 @@ describe('ShareTargetLanding', () => {
     await waitFor(() =>
       expect(markShareTargetDraftCleanupPending).toHaveBeenCalledTimes(2),
     );
+    expect(markShareTargetDraftCleanupPending).toHaveBeenNthCalledWith(
+      2,
+      draftId,
+      'header:synthetic-user',
+      true,
+    );
     await waitFor(() => expect(removeShareTargetDraft).toHaveBeenCalledOnce());
     expect(
       await screen.findByText(/端末内の共有下書きは消去済みです/),

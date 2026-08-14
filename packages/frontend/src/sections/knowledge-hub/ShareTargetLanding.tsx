@@ -85,6 +85,7 @@ export function ShareTargetLanding({
   const authGenerationRef = useRef(0);
   const draftGenerationRef = useRef(0);
   const cleanupTombstoneRef = useRef(false);
+  const cleanupAllowPendingRef = useRef(false);
   const terminalFailureRef = useRef(false);
   const dispatchedRef = useRef('');
   const verifiedActorRef = useRef('');
@@ -119,6 +120,7 @@ export function ShareTargetLanding({
 
   useEffect(() => {
     cleanupTombstoneRef.current = false;
+    cleanupAllowPendingRef.current = false;
     terminalFailureRef.current = false;
   }, [draftId]);
 
@@ -415,6 +417,7 @@ export function ShareTargetLanding({
         );
       }
       cleanupTombstoneRef.current = false;
+      cleanupAllowPendingRef.current = false;
       setCleanupPending(false);
       if (options?.preserveFailure) {
         setStatus('failed');
@@ -439,6 +442,7 @@ export function ShareTargetLanding({
       const detail = captureResultDetail((event as CustomEvent).detail);
       if (!detail || detail.draftId !== draftId) return;
       cleanupTombstoneRef.current = false;
+      cleanupAllowPendingRef.current = detail.outcome !== 'discarded';
       terminalFailureRef.current = detail.outcome === 'failed';
       removeAndClear({
         allowPending: detail.outcome !== 'discarded',
@@ -511,6 +515,7 @@ export function ShareTargetLanding({
               variant="secondary"
               onClick={() =>
                 void removeAndClear({
+                  allowPending: cleanupAllowPendingRef.current,
                   tombstoneExists: cleanupTombstoneRef.current,
                   preserveFailure: terminalFailureRef.current,
                 }).catch(reportCleanupFailure)
