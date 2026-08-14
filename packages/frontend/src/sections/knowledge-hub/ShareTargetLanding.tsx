@@ -475,7 +475,7 @@ export function ShareTargetLanding({
           <p role="status">認証状態を確認しています。</p>
         ) : !authenticated ? (
           <Alert variant="warning">
-            下書きは端末内に保持されています。ログイン後に内容を確認できます。
+            下書きは端末内に保持されています。ログイン後に内容を確認できます。共有端末では、意図したERP4利用者で最初にログインするか、下書きを破棄してください。
           </Alert>
         ) : status === 'missing' ? (
           <Alert variant="warning">

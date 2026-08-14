@@ -419,6 +419,26 @@ export function KnowledgeCaptureIngress({
           },
           preview.draft,
         );
+        if (controller.signal.aborted || generationRef.current !== generation) {
+          // A remote owner may have published pending while this caller was
+          // waiting for the serialized IndexedDB transaction. Only the CAS
+          // winner may compensate its own transition; a loser leaves the
+          // exact pending row untouched for the landing reload.
+          if (pendingTransition.transitioned) {
+            const restored = await markShareTargetDraftStaged(
+              commitDraftId,
+              commitActorKey,
+              pendingOperationId,
+            )
+              .then(() => true)
+              .catch(() => false);
+            publishShareTargetLifecycle(
+              commitDraftId,
+              restored ? 'staged' : 'pending',
+            );
+          }
+          return;
+        }
         if (!pendingTransition.transitioned) {
           setDraft(pendingTransition.draft);
           setSelectedFields(pendingTransition.pendingIntent.selectedFields);
@@ -435,31 +455,12 @@ export function KnowledgeCaptureIngress({
           setResumePending(true);
           setUncertainCaptureId('');
           handoffLockedRef.current = false;
-          publishShareTargetLifecycle(commitDraftId, 'pending');
           onCommitBusyChange?.(true);
           setError(
             '別の画面で保存処理が開始されています。保存中のexact draftを再読込しました。read-only preview後に保存結果を再照合してください。',
           );
           mutationBusyRef.current = false;
           if (generationRef.current === generation) setBusy(null);
-          return;
-        }
-        if (controller.signal.aborted || generationRef.current !== generation) {
-          // The local pending write is deliberately completed atomically. If
-          // auth changed or the component unmounted while IndexedDB was
-          // committing, compensate back to staged before returning and never
-          // start the server mutation.
-          const restored = await markShareTargetDraftStaged(
-            commitDraftId,
-            commitActorKey,
-            pendingOperationId,
-          )
-            .then(() => true)
-            .catch(() => false);
-          publishShareTargetLifecycle(
-            commitDraftId,
-            restored ? 'staged' : 'pending',
-          );
           return;
         }
         publishShareTargetLifecycle(commitDraftId, 'pending');

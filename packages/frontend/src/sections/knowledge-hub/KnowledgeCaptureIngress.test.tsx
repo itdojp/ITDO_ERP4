@@ -462,12 +462,77 @@ describe('KnowledgeCaptureIngress', () => {
     );
     expect(api.commitKnowledgeCapture).not.toHaveBeenCalled();
     expect(localQueue.markShareTargetDraftStaged).not.toHaveBeenCalled();
+    expect(localQueue.publishShareTargetLifecycle).not.toHaveBeenCalledWith(
+      'opaque-draft-id-1234567890',
+      'pending',
+    );
     expect(
       screen.queryByRole('button', { name: '保存結果を再照合' }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Preview' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '破棄' })).toBeDisabled();
     expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it('does not resurrect or notify a CAS loser after the owner pending event purges it', async () => {
+    let resolvePending: (value: {
+      transitioned: false;
+      pendingIntent: {
+        selectedFields: ['title'];
+        scope: 'personal';
+        organizationGroupAccountIds: [];
+        sourceType: 'web';
+      };
+      draft: typeof draft;
+    }) => void = () => undefined;
+    localQueue.markShareTargetDraftPending.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePending = resolve;
+        }),
+    );
+    render(<KnowledgeCaptureIngress />);
+    deliver();
+    fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
+    await screen.findByRole('heading', { name: 'Exact preview' });
+    fireEvent.click(screen.getByLabelText('このexact previewを保存します'));
+    fireEvent.click(screen.getByRole('button', { name: '明示確定して保存' }));
+    await waitFor(() =>
+      expect(localQueue.markShareTargetDraftPending).toHaveBeenCalledOnce(),
+    );
+
+    window.dispatchEvent(
+      new CustomEvent(KNOWLEDGE_CAPTURE_PURGE_EVENT, {
+        detail: {
+          schemaVersion: 1,
+          draftId: 'opaque-draft-id-1234567890',
+        },
+      }),
+    );
+    await act(async () =>
+      resolvePending({
+        transitioned: false,
+        pendingIntent: {
+          selectedFields: ['title'],
+          scope: 'personal',
+          organizationGroupAccountIds: [],
+          sourceType: 'web',
+        },
+        draft: { ...draft, title: 'Owner exact draft' },
+      }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('heading', { name: 'ブラウザー共有の確認' }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(api.commitKnowledgeCapture).not.toHaveBeenCalled();
+    expect(localQueue.markShareTargetDraftStaged).not.toHaveBeenCalled();
+    expect(localQueue.publishShareTargetLifecycle).not.toHaveBeenCalledWith(
+      'opaque-draft-id-1234567890',
+      'pending',
+    );
   });
 
   it('shows every selected normalized value in the exact preview', async () => {
