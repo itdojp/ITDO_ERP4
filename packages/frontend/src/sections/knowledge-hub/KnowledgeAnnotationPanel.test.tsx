@@ -244,7 +244,9 @@ describe('KnowledgeAnnotationPanel', () => {
     const history = await screen.findByRole('region', {
       name: 'アノテーションの改訂履歴',
     });
-    expect(within(history).getByText('過去の引用内容')).toBeInTheDocument();
+    expect(
+      await within(history).findByText('過去の引用内容'),
+    ).toBeInTheDocument();
     expect(within(history).getByText('引用')).toBeInTheDocument();
     expect(within(history).getByText('外部情報')).toBeInTheDocument();
     expect(history).not.toHaveTextContent('database-revision-id');

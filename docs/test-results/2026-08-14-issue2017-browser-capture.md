@@ -70,7 +70,8 @@ Review remediationのcode head `e18653cd46391d52222fe93ff425629fbe2bb969`では�
 
 - PR CIのfrontend jobで、web capture回帰testが新規snapshotの一時描画とselected item変更後の履歴reloadの間にDOM要素を取得し、その要素がmatcher実行前にdetachされる非同期競合を1回検出した。同一exact headのpush CIはPASSし、focused test 20/20もPASSしたが、再実行だけでは解消扱いにしなかった。
 - assertionを固定sleep／timeout延長へ変更せず、現在のDOMに対して`waitFor`でURL表示を確認するよう修正した。productのURL、provider field非表示、privacy契約は変更していない。
-- remediation後はKnowledge Hub focused test 20/20、frontend full 969/969、extension 28/28、frontend lint／format／typecheck、`git diff --check`をPASSした。最終exact headのfull gate、CI、独立reviewはPR #2074を正本とし、以前のheadの結果を再利用しない。
+- 次のexact headではcoverage instrumentation時に、annotation履歴regionの外枠だけを待って内容を同期取得する既存test raceを検出した。履歴内容自体を非同期待機するよう修正し、固定sleep、timeout延長、coverage scope／threshold変更は行っていない。
+- remediation後はKnowledge Hub focused test 20/20、annotation focused coverage test 20/20、frontend full／UI core coverage 969/969、extension 28/28、frontend lint／format／typecheck、`git diff --check`をPASSした。UI core coverageはstatements 73.68%、branches 66.68%、functions 73.30%、lines 76.44%。最終exact headのfull gate、CI、独立reviewはPR #2074を正本とし、以前のheadの結果を再利用しない。
 
 unpacked Chromium E2Eはsynthetic landingによるextension protocolを対象とし、別のreal frontend/backend bridge-protocol E2Eがcapture mutation lifecycleを対象とする。いずれもmulti-tab BroadcastChannel、service-worker強制restart、Chrome／Edge vendor runtime evidence、target proxy通過後のCSP evidenceではない。これらをPASSと過大評価しない。CI/review結果はDraft PRへ記録する。
 
