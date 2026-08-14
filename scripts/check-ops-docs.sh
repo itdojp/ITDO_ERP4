@@ -150,7 +150,66 @@ const files = [
   'docs/ops/sakura-vps-deployment.md',
   'docs/ops/sakura-vps-podman-trial.md',
 ];
+const requiredCommandsByFile = new Map([
+  [
+    'docs/ops/sakura-vps-deployment.md',
+    [
+      'check-env.sh',
+      'build-images.sh',
+      'install-user-units.sh',
+      'start-stack.sh',
+      'check-trial-readiness.sh',
+    ],
+  ],
+  [
+    'docs/ops/sakura-vps-podman-trial.md',
+    [
+      'check-env.sh',
+      'build-images.sh',
+      'install-user-units.sh',
+      'start-stack.sh',
+      'restart-stack.sh',
+      'check-trial-readiness.sh',
+      'collect-trial-evidence.sh',
+    ],
+  ],
+]);
 const failures = [];
+
+function profileInvocationFailures(file, source, commands) {
+  const commandSet = new Set(commands);
+  const found = new Set();
+  const currentFailures = [];
+  for (const [index, rawLine] of source.split(/\r?\n/u).entries()) {
+    const line = rawLine.trim();
+    const match = line.match(/^\.\/scripts\/quadlet\/([a-z0-9-]+\.sh)\b/u);
+    if (!match || !commandSet.has(match[1])) continue;
+    found.add(match[1]);
+    if (!line.includes('--profile "$PROFILE"')) {
+      currentFailures.push(
+        `${file}:${index + 1}: ${match[1]} must receive --profile "$PROFILE"`,
+      );
+    }
+  }
+  for (const command of commandSet) {
+    if (!found.has(command)) {
+      currentFailures.push(`${file}: missing profile-aware invocation for ${command}`);
+    }
+  }
+  return currentFailures;
+}
+
+const negativeFixture = [
+  './scripts/quadlet/check-env.sh --profile "$PROFILE"',
+  './scripts/quadlet/check-env.sh',
+].join('\n');
+if (
+  profileInvocationFailures('negative-fixture', negativeFixture, [
+    'check-env.sh',
+  ]).length !== 1
+) {
+  throw new Error('profile continuity checker must reject every unbound invocation');
+}
 
 for (const file of files) {
   const source = fs.readFileSync(file, 'utf8');
@@ -170,14 +229,13 @@ for (const file of files) {
       failures.push(`${file}: missing profile-specific example ${example}`);
     }
   }
-  for (const command of ['check-env.sh', 'build-images.sh', 'install-user-units.sh', 'start-stack.sh', 'check-trial-readiness.sh']) {
-    const line = source
-      .split(/\r?\n/u)
-      .find((candidate) => candidate.includes(command) && candidate.includes('--profile'));
-    if (!line || !line.includes('"$PROFILE"')) {
-      failures.push(`${file}: ${command} must receive the selected $PROFILE`);
-    }
-  }
+  failures.push(
+    ...profileInvocationFailures(
+      file,
+      source,
+      requiredCommandsByFile.get(file) ?? [],
+    ),
+  );
 }
 
 if (failures.length > 0) {

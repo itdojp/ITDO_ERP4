@@ -230,6 +230,38 @@ describe('shareTargetQueue', () => {
     expect(claims.filter((claim) => claim === null)).toHaveLength(1);
   });
 
+  it('serializes an unauthenticated discard against a concurrent actor claim', async () => {
+    const value = record(1);
+    await storeShareTargetDraftRecord(value, baseTime);
+
+    const [claimResult, removeResult] = await Promise.allSettled([
+      claimShareTargetDraft(value.id, 'synthetic-race-owner', baseTime),
+      removeShareTargetDraft(value.id, undefined, baseTime),
+    ]);
+    const remaining = await getShareTargetDraft(value.id, baseTime);
+
+    if (remaining === null) {
+      expect(claimResult).toMatchObject({
+        status: 'fulfilled',
+        value: null,
+      });
+      expect(removeResult).toMatchObject({ status: 'fulfilled' });
+      return;
+    }
+
+    expect(claimResult.status).toBe('fulfilled');
+    if (claimResult.status === 'fulfilled') {
+      expect(claimResult.value?.claimedByActorHash).toMatch(/^[a-f0-9]{64}$/u);
+    }
+    expect(removeResult).toMatchObject({
+      status: 'rejected',
+      reason: expect.objectContaining({
+        message: 'share_target_actor_mismatch',
+      }),
+    });
+    expect(remaining.claimedByActorHash).toMatch(/^[a-f0-9]{64}$/u);
+  });
+
   it('allows only the claiming actor to remove a current claimed draft', async () => {
     const value = record(1);
     await storeShareTargetDraftRecord(value, baseTime);

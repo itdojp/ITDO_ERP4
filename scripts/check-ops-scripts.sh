@@ -36,6 +36,10 @@ BACKUP_NODE_FILES=(
 E2E_RUNTIME_SHELL_FILES=(
   scripts/e2e-frontend.sh
 )
+TRIAL_EVIDENCE_SHELL_FILES=(
+  scripts/quadlet/collect-trial-evidence.sh
+  scripts/record-sakura-vps-trial.sh
+)
 
 printf '==> Checking ops shell script syntax\n'
 for file in "${OPS_SHELL_FILES[@]}"; do
@@ -48,6 +52,10 @@ for file in "${BACKUP_SHELL_FILES[@]}"; do
   printf 'syntax ok: %s\n' "$file"
 done
 for file in "${E2E_RUNTIME_SHELL_FILES[@]}"; do
+  bash -n "$file"
+  printf 'syntax ok: %s\n' "$file"
+done
+for file in "${TRIAL_EVIDENCE_SHELL_FILES[@]}"; do
   bash -n "$file"
   printf 'syntax ok: %s\n' "$file"
 done
@@ -271,6 +279,27 @@ run_controlled_check() {
   return "$status"
 }
 
+run_expected_failure() {
+  local label="$1"
+  local expected_pattern="$2"
+  shift 2
+  local output status
+  printf 'expected failure: %s\n' "$label"
+  set +e
+  output="$({ "$@"; } 2>&1)"
+  status=$?
+  set -e
+  printf '%s\n' "$output"
+  if [[ "$status" -eq 0 ]]; then
+    printf 'expected non-zero exit in %s\n' "$label" >&2
+    return 1
+  fi
+  if ! grep -Eq "$expected_pattern" <<<"$output"; then
+    printf 'expected diagnostic was not found in %s: %s\n' "$label" "$expected_pattern" >&2
+    return 1
+  fi
+}
+
 gdrive_legacy_env="$SMOKE_DIR/gdrive-legacy-ci.env"
 cat > "$gdrive_legacy_env" <<'ENV'
 CHAT_ATTACHMENT_GDRIVE_CLIENT_ID=placeholder-client-id
@@ -359,5 +388,32 @@ run_controlled_check 'sakura preflight check' 'Summary: failures=[1-9][0-9]*' \
 run_controlled_check 'sakura verify check without live stack' '(failed to connect to systemd user bus|http[[:space:]]+backend health[[:space:]]+failed|db[[:space:]]+postgres ready[[:space:]]+failed|verification failed: [1-9][0-9]* step\(s\))' --require 'OK: Quadlet env validation passed' \
   env TIMEOUT_SECONDS=1 INTERVAL_SECONDS=1 BACKEND_HEALTH_URL=http://127.0.0.1:1/healthz BACKEND_READY_URL=http://127.0.0.1:1/readyz FRONTEND_URL=http://127.0.0.1:1/ \
   scripts/ops/sakura-vps-verify.sh --check --target-dir "$SMOKE_DIR/quadlet" --frontend-build-env "$SMOKE_DIR/frontend-build.env" --markdown-summary "$SMOKE_DIR/verify.md"
+
+trial_evidence_dir="$SMOKE_DIR/trial-evidence"
+trial_report_dir="$SMOKE_DIR/trial-report"
+mkdir -p "$trial_evidence_dir" "$trial_report_dir"
+cat >"$trial_evidence_dir/meta.txt" <<EOF
+host=synthetic-host
+git_commit=$(git rev-parse HEAD)
+profile=private-smoke
+include_proxy=0
+lines=100
+collected_at=2026-08-14T00:00:00Z
+status_stack_exit=0
+logs_stack_exit=0
+list_timers_exit=0
+check_https_exit=
+EOF
+: >"$trial_evidence_dir/status-stack.txt"
+: >"$trial_evidence_dir/logs-stack.txt"
+: >"$trial_evidence_dir/list-timers.txt"
+run_expected_failure 'trial recorder rejects profile provenance mismatch' 'requested PROFILE does not match the collected evidence profile' \
+  env EVIDENCE_DIR="$trial_evidence_dir" OUT_DIR="$trial_report_dir" DATE_STAMP=2026-08-14 RUN_LABEL=mismatch PROFILE=production \
+  scripts/record-sakura-vps-trial.sh
+printf 'smoke: trial recorder accepts matching profile provenance\n'
+env EVIDENCE_DIR="$trial_evidence_dir" OUT_DIR="$trial_report_dir" DATE_STAMP=2026-08-14 RUN_LABEL=match PROFILE=private-smoke \
+  scripts/record-sakura-vps-trial.sh
+grep -Fq -- '- profile: `private-smoke`' "$trial_report_dir/2026-08-14-sakura-vps-trial-match.md" || \
+  fail 'trial recorder did not preserve the collected profile'
 
 printf 'Ops script checks completed.\n'

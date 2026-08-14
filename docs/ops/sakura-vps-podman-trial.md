@@ -118,6 +118,8 @@ vi deploy/quadlet/env/erp4-frontend-build.env
 - `VITE_GOOGLE_CLIENT_ID`（frontend が Google Identity Services を直接使う場合のみ。`AUTH_MODE=jwt_bff` の backend redirect フローだけなら不要）
 - `VITE_PUSH_PUBLIC_KEY`（Push 通知を使う場合）
 
+非公開・隔離済みのPWA intake専用rehearsalでは、`private-smoke`に`VITE_ENABLE_SW=true`と`VITE_PWA_SHARE_TARGET_MODE=enabled`を明示した専用artifactを使用できる。ただし標準`private-smoke`または本番証跡へ流用せず、rehearsal終了後は`decommission` artifactへ戻す。
+
 Google OIDC をさくらVPS 実機で使う場合、Google 側へ登録する origin / redirect URI は FQDN + HTTPS 前提です。`http://<VPS_IP>:3001/auth/google/callback` や raw IP origin は Google Auth Platform に登録できません。先に [sakura-vps-https-proxy](sakura-vps-https-proxy.md) と [google-oidc-google-cloud-console](google-oidc-google-cloud-console.md) を確認してください。
 
 plain HTTP の `8080/3001` 構成は Podman stack 自体の smoke 確認用です。Google OIDC の実 login / session 維持 / CORS 確認は、HTTPS reverse proxy 導入後の `app.example.com` / `api.example.com` で実施してください。
@@ -294,8 +296,8 @@ systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.
 試験稼働の証跡をまとめて採取する場合:
 
 ```bash
-./scripts/quadlet/collect-trial-evidence.sh --lines 100
-./scripts/quadlet/collect-trial-evidence.sh --include-proxy --resolve-ip <VPS_IP>
+./scripts/quadlet/collect-trial-evidence.sh --profile "$PROFILE" --lines 100
+./scripts/quadlet/collect-trial-evidence.sh --profile "$PROFILE" --include-proxy --resolve-ip <VPS_IP>
 ```
 
 `collect-trial-evidence.sh` は `status-stack.sh` / `logs-stack.sh` / `systemctl --user list-timers 'erp4-*'` を timestamp 付きディレクトリへ保存し、`--include-proxy` 指定時だけ `check-https.sh` の結果も追加します。`status-stack.sh` や `check-https.sh` が失敗しても採取自体は継続し、最後に non-zero で終了します。

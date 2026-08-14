@@ -265,7 +265,7 @@ chmod 600 deploy/quadlet/env/erp4-frontend-build.env
 vi deploy/quadlet/env/erp4-frontend-build.env
 ```
 
-profile別exampleの値を基準に、最低限次の4キーを確認する。`private-smoke`では`VITE_AUTH_MODE=header`、`VITE_ENABLE_SW=false`、`VITE_PWA_SHARE_TARGET_MODE=decommission`を維持し、`production`／`https-trial`ではBFF認証とWeb Share Targetを有効にする。
+profile別exampleの値を基準に、最低限次の4キーを確認する。標準の`private-smoke`証跡では`VITE_AUTH_MODE=header`、`VITE_ENABLE_SW=false`、`VITE_PWA_SHARE_TARGET_MODE=decommission`を維持し、`production`／`https-trial`ではBFF認証とWeb Share Targetを有効にする。非公開・隔離済みのPWA intake専用rehearsalだけは`private-smoke`で`VITE_ENABLE_SW=true`と`VITE_PWA_SHARE_TARGET_MODE=enabled`を明示してよいが、標準`private-smoke`または本番証跡として扱わず、終了後は`decommission` artifactへ戻す。
 
 ```dotenv
 VITE_API_BASE=https://api.example.com
@@ -370,7 +370,7 @@ vi ~/.config/containers/systemd/erp4-maintenance.env
 grep -n 'REPLACE_ME' ~/.config/containers/systemd/erp4-maintenance.env   && echo 'replace placeholders before enabling timers' && exit 1 || true
 mkdir -p ~/.local/share/erp4/quadlet-backups ~/.local/share/erp4/db-backups
 chmod 700 ~/.local/share/erp4   ~/.local/share/erp4/quadlet-backups   ~/.local/share/erp4/db-backups
-./scripts/quadlet/check-env.sh
+./scripts/quadlet/check-env.sh --profile "$PROFILE"
 ./scripts/quadlet/backup-db-and-check.sh --max-age-hours 24 --print-prefix
 ```
 

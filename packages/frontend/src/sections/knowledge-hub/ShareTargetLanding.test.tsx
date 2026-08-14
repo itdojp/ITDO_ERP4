@@ -296,6 +296,12 @@ describe('ShareTargetLanding', () => {
         'header:synthetic-user',
         outcome === 'committed',
       );
+      expect(
+        markShareTargetDraftCleanupPending.mock.invocationCallOrder[0],
+      ).toBeLessThan(publishShareTargetLifecycle.mock.invocationCallOrder[0]);
+      expect(
+        publishShareTargetLifecycle.mock.invocationCallOrder[0],
+      ).toBeLessThan(removeShareTargetDraft.mock.invocationCallOrder[0]);
       expect(clearLanding).toHaveBeenCalledTimes(1);
     },
   );
@@ -873,12 +879,13 @@ describe('ShareTargetLanding', () => {
     markShareTargetDraftCleanupPending.mockRejectedValueOnce(
       new Error('storage'),
     );
+    const clearLanding = vi.fn();
     render(
       <ShareTargetLanding
         draftId={draftId}
         knowledgeHubReady
         activateKnowledgeHub={() => true}
-        clearLanding={vi.fn()}
+        clearLanding={clearLanding}
       />,
     );
     await waitFor(() => expect(claimShareTargetDraft).toHaveBeenCalledOnce());
@@ -894,7 +901,9 @@ describe('ShareTargetLanding', () => {
       name: '端末内下書きの削除を再試行',
     });
     expect(markShareTargetDraftCleanupPending).toHaveBeenCalledOnce();
+    expect(publishShareTargetLifecycle).not.toHaveBeenCalled();
     expect(removeShareTargetDraft).not.toHaveBeenCalled();
+    expect(clearLanding).not.toHaveBeenCalled();
 
     fireEvent.click(retry);
     await waitFor(() =>
@@ -907,6 +916,12 @@ describe('ShareTargetLanding', () => {
       true,
     );
     await waitFor(() => expect(removeShareTargetDraft).toHaveBeenCalledOnce());
+    expect(
+      markShareTargetDraftCleanupPending.mock.invocationCallOrder[1],
+    ).toBeLessThan(publishShareTargetLifecycle.mock.invocationCallOrder[0]);
+    expect(
+      publishShareTargetLifecycle.mock.invocationCallOrder[0],
+    ).toBeLessThan(removeShareTargetDraft.mock.invocationCallOrder[0]);
     expect(
       await screen.findByText(/端末内の共有下書きは消去済みです/),
     ).toBeVisible();
