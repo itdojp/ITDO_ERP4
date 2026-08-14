@@ -66,6 +66,12 @@ Review remediationのcode head `e18653cd46391d52222fe93ff425629fbe2bb969`では�
 - frontend response CSP renderer: exact API origin binding、Google Identity script/style allowlist、active／credentialed／injected origin拒否、service-worker／asset locationでのsecurity header継承、template fail-closedをPASS。target response headerは未検証
 - Chromium synthetic browser境界: action gesture、popup、exact-origin handoff、canary非漏えい、pending/staged/delete/idempotent delete: PASS
 
+## Final CI remediation
+
+- PR CIのfrontend jobで、web capture回帰testが新規snapshotの一時描画とselected item変更後の履歴reloadの間にDOM要素を取得し、その要素がmatcher実行前にdetachされる非同期競合を1回検出した。同一exact headのpush CIはPASSし、focused test 20/20もPASSしたが、再実行だけでは解消扱いにしなかった。
+- assertionを固定sleep／timeout延長へ変更せず、現在のDOMに対して`waitFor`でURL表示を確認するよう修正した。productのURL、provider field非表示、privacy契約は変更していない。
+- remediation後はKnowledge Hub focused test 20/20、frontend full 969/969、extension 28/28、frontend lint／format／typecheck、`git diff --check`をPASSした。最終exact headのfull gate、CI、独立reviewはPR #2074を正本とし、以前のheadの結果を再利用しない。
+
 unpacked Chromium E2Eはsynthetic landingによるextension protocolを対象とし、別のreal frontend/backend bridge-protocol E2Eがcapture mutation lifecycleを対象とする。いずれもmulti-tab BroadcastChannel、service-worker強制restart、Chrome／Edge vendor runtime evidence、target proxy通過後のCSP evidenceではない。これらをPASSと過大評価しない。CI/review結果はDraft PRへ記録する。
 
 ## Browser evidence status

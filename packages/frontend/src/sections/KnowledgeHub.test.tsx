@@ -473,9 +473,9 @@ describe('KnowledgeHub', () => {
         url: 'https://example.com/article',
       }),
     );
-    expect(
-      await screen.findByText('https://example.com/article'),
-    ).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByText('https://example.com/article')).toBeVisible(),
+    );
     expect(screen.queryByText(/private-provider/)).not.toBeInTheDocument();
   });
 
