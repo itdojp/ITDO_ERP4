@@ -105,13 +105,25 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return;
 
   if (
-    self.ERP4_SHARE_TARGET_MODE === 'enabled' &&
     event.request.method === 'POST' &&
     url.pathname === '/share-target'
   ) {
-    event.respondWith(
-      self.ERP4ShareTarget.handleRequest(event.request, self.location.origin),
-    );
+    if (self.ERP4_SHARE_TARGET_MODE === 'enabled') {
+      event.respondWith(
+        self.ERP4ShareTarget.handleRequest(event.request, self.location.origin),
+      );
+    } else {
+      event.respondWith(
+        new Response('share_target_disabled', {
+          status: 410,
+          headers: {
+            'cache-control': 'no-store',
+            'content-type': 'text/plain; charset=utf-8',
+            'referrer-policy': 'no-referrer',
+          },
+        }),
+      );
+    }
     return;
   }
 

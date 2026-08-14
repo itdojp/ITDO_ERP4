@@ -75,7 +75,7 @@ set +a
 
 : "${VITE_API_BASE:=}"
 : "${VITE_AUTH_MODE:?VITE_AUTH_MODE is required}"
-: "${VITE_ENABLE_SW:=true}"
+: "${VITE_ENABLE_SW:?VITE_ENABLE_SW is required}"
 : "${VITE_PWA_SHARE_TARGET_MODE:?VITE_PWA_SHARE_TARGET_MODE is required}"
 : "${VITE_PUSH_PUBLIC_KEY:=}"
 : "${VITE_GOOGLE_CLIENT_ID:=}"

@@ -280,6 +280,11 @@ grep -Fq -- '--build-arg VITE_AUTH_MODE=header' "$fake_build_log" || \
   fail 'build-images did not pass explicit frontend auth mode'
 grep -Fq -- '--build-arg VITE_PWA_SHARE_TARGET_MODE=decommission' "$fake_build_log" || \
   fail 'build-images did not pass explicit PWA share-target mode'
+missing_sw_build_env="$WORK_DIR/private-build-missing-sw.env"
+grep -v '^VITE_ENABLE_SW=' "$valid_private_build_env" >"$missing_sw_build_env"
+run_failure 'build-images rejects missing service worker mode' 'VITE_ENABLE_SW is required' \
+  env -u VITE_ENABLE_SW PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile \
+  "$BUILD_IMAGES_SCRIPT" --profile private-smoke --frontend-build-env "$missing_sw_build_env"
 invalid_enabled_build_env="$WORK_DIR/private-build-invalid-enabled.env"
 write_frontend_env "$invalid_enabled_build_env" 'http://erp4-backend:3001' header false enabled
 run_failure 'build-images rejects enabled intake without service worker' 'requires VITE_ENABLE_SW=true' \

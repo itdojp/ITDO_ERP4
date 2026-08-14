@@ -43,6 +43,10 @@ const mainWorkerSource = fs.readFileSync(
   path.resolve(process.cwd(), 'public/sw.js'),
   'utf8',
 );
+const defaultModeSource = fs.readFileSync(
+  path.resolve(process.cwd(), 'public/share-target-mode.js'),
+  'utf8',
+);
 const baseTime = Date.parse('2026-08-14T00:00:00.000Z');
 
 function loadWorkerApi(
@@ -182,6 +186,12 @@ describe('share-target service worker contract', () => {
     expect(source).not.toMatch(/authorization|csrf|bearer/iu);
     expect(source).not.toMatch(/\/knowledge\/captures|\bcaches\b/u);
     expect(source).not.toMatch(/console\.(?:log|error|warn)/u);
+  });
+
+  it('keeps the unconfigured source artifact decommissioned', () => {
+    expect(defaultModeSource.trim()).toBe(
+      "self.ERP4_SHARE_TARGET_MODE = 'decommission';",
+    );
   });
 
   it('closes a late IndexedDB connection after a blocked open', async () => {
@@ -535,11 +545,15 @@ describe('share-target service worker contract', () => {
     ).resolves.toBe(1);
   });
 
-  it('keeps cleanup active but refuses new POST intake in decommission mode', () => {
-    type WorkerFetchEvent = { request: Request; respondWith: unknown };
+  it('keeps cleanup active and rejects decommissioned POST without network fallback', async () => {
+    type WorkerFetchEvent = {
+      request: Request;
+      respondWith: (response: Response | Promise<Response>) => void;
+    };
     let fetchListener: ((event: WorkerFetchEvent) => void) | null = null;
     const handleRequest = vi.fn();
     const purgeExpiredDrafts = vi.fn().mockResolvedValue(0);
+    const fetch = vi.fn();
     const self = {
       ERP4_SHARE_TARGET_MODE: 'decommission',
       ERP4ShareTarget: { handleRequest, purgeExpiredDrafts },
@@ -556,13 +570,16 @@ describe('share-target service worker contract', () => {
       importScripts: () => undefined,
       URL,
       Response,
-      fetch: vi.fn(),
+      fetch,
       caches: {},
       Promise,
       Set,
     });
     expect(fetchListener).not.toBeNull();
-    const respondWith = vi.fn();
+    let interceptedResponse: Response | Promise<Response> | undefined;
+    const respondWith = vi.fn((response: Response | Promise<Response>) => {
+      interceptedResponse = response;
+    });
     const event = {
       request: new Request('https://erp4.example.invalid/share-target', {
         method: 'POST',
@@ -575,8 +592,13 @@ describe('share-target service worker contract', () => {
     ) => void;
     listener(event);
 
-    expect(respondWith).not.toHaveBeenCalled();
+    expect(respondWith).toHaveBeenCalledOnce();
     expect(handleRequest).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    const response = await interceptedResponse;
+    expect(response?.status).toBe(410);
+    expect(response?.headers.get('cache-control')).toBe('no-store');
+    await expect(response?.text()).resolves.toBe('share_target_disabled');
     expect(mainWorkerSource).toContain('purgeExpiredDrafts()');
   });
 });

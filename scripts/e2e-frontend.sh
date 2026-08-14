@@ -466,6 +466,7 @@ if ! wait_for_url "${E2E_API_BASE}/health" "backend"; then
 fi
 
 VITE_API_BASE="$E2E_API_BASE" \
+  ERP4_DEV_SHARE_TARGET_MODE=enabled \
   npm run dev --prefix "$ROOT_DIR/packages/frontend" -- --host 0.0.0.0 --port "$FRONTEND_PORT" \
   >"$FRONTEND_LOG" 2>&1 &
 FRONTEND_PID=$!
