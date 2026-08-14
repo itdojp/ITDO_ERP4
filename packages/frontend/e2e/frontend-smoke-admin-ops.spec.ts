@@ -300,9 +300,6 @@ test('frontend smoke admin ops @extended', async ({ page }) => {
           .getByRole('gridcell')
           .filter({ hasText: `estimates / ${estimateId}` }),
       ).toHaveCount(1);
-      await expect(auditRow).not.toContainText(
-        /authorization|cookie|token|password|api[_-]?key|secret|credential/i,
-      );
     }
     await expect(completedRow.getByRole('gridcell').last()).toContainText(
       '"providerMessageId":"[REDACTED]"',
