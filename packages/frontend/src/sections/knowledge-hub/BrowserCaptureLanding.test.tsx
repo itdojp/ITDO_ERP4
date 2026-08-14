@@ -237,6 +237,89 @@ describe('BrowserCaptureLanding', () => {
     window.removeEventListener(KNOWLEDGE_CAPTURE_PURGE_EVENT, purgeListener);
   });
 
+  it('retains the claimed actor only for terminal cleanup after auth loss', async () => {
+    getAuthState.mockReturnValue({ userId: 'synthetic-user', roles: [] });
+    refreshAuthStateFromServer.mockResolvedValue({
+      userId: 'synthetic-user',
+      roles: [],
+      verifiedActorKey: actorKey,
+    });
+    getBrowserCaptureDraft.mockResolvedValue(currentRecord());
+    const clearLanding = vi.fn();
+    render(
+      <BrowserCaptureLanding
+        draftId={draftId}
+        knowledgeHubReady
+        activateKnowledgeHub={() => true}
+        clearLanding={clearLanding}
+      />,
+    );
+    await screen.findByText(/Knowledge Hubで送信field/);
+
+    fireEvent(window, new Event('offline'));
+    expect(await screen.findByText(/ERP4で認証後/)).toBeVisible();
+    window.dispatchEvent(
+      new CustomEvent(KNOWLEDGE_CAPTURE_RESULT_EVENT, {
+        detail: { schemaVersion: 1, draftId, outcome: 'committed' },
+      }),
+    );
+
+    await waitFor(() =>
+      expect(removeBrowserCaptureDraft).toHaveBeenCalledWith(draftId, actorKey),
+    );
+    expect(clearLanding).toHaveBeenCalledOnce();
+    expect(screen.queryByText(draft.selectedText)).not.toBeInTheDocument();
+  });
+
+  it('uses the claimed actor for deterministic expiry cleanup after auth loss', async () => {
+    vi.useFakeTimers();
+    try {
+      const now = Date.parse('2026-08-14T00:00:00.000Z');
+      vi.setSystemTime(now);
+      getAuthState.mockReturnValue({ userId: 'synthetic-user', roles: [] });
+      refreshAuthStateFromServer.mockResolvedValue({
+        userId: 'synthetic-user',
+        roles: [],
+        verifiedActorKey: actorKey,
+      });
+      getBrowserCaptureDraft.mockResolvedValue({
+        ...currentRecord(),
+        createdAt: new Date(now).toISOString(),
+        expiresAt: new Date(now + 1_000).toISOString(),
+      });
+      render(
+        <BrowserCaptureLanding
+          draftId={draftId}
+          knowledgeHubReady
+          activateKnowledgeHub={() => true}
+          clearLanding={vi.fn()}
+        />,
+      );
+
+      await act(async () => {
+        for (let index = 0; index < 8; index += 1) await Promise.resolve();
+      });
+      expect(getBrowserCaptureDraft).toHaveBeenCalledWith(
+        draftId,
+        actorKey,
+        expect.any(AbortSignal),
+      );
+      fireEvent(window, new Event('offline'));
+      await act(async () => {
+        vi.advanceTimersByTime(1_001);
+        await Promise.resolve();
+      });
+
+      expect(removeBrowserCaptureDraft).toHaveBeenCalledWith(draftId, actorKey);
+      expect(publishBrowserCaptureLifecycle).toHaveBeenCalledWith(
+        draftId,
+        'cleanup_pending',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('purges content but preserves a content-free terminal failure result', async () => {
     getAuthState.mockReturnValue({ userId: 'synthetic-user', roles: [] });
     refreshAuthStateFromServer.mockResolvedValue({

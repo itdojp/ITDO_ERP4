@@ -84,6 +84,7 @@ export function BrowserCaptureLanding({
   const authGenerationRef = useRef(0);
   const draftGenerationRef = useRef(0);
   const verifiedActorRef = useRef('');
+  const cleanupActorKeyRef = useRef('');
   const dispatchedRef = useRef('');
   const terminalOutcomeRef = useRef<CaptureResultDetail['outcome'] | null>(
     null,
@@ -98,7 +99,10 @@ export function BrowserCaptureLanding({
     draftControllerRef.current?.abort();
     draftControllerRef.current = null;
     dispatchedRef.current = '';
-    setExpiresAtMs(null);
+    // Keep the claimed draft's expiry timer alive after auth loss. The live
+    // actor state and page content are still purged immediately; the retained
+    // key is memory-only and can only drive idempotent extension-draft delete.
+    if (!cleanupActorKeyRef.current) setExpiresAtMs(null);
     window.dispatchEvent(
       new CustomEvent(KNOWLEDGE_CAPTURE_PURGE_EVENT, {
         detail: { schemaVersion: 1, draftId },
@@ -250,6 +254,8 @@ export function BrowserCaptureLanding({
     terminalOutcomeRef.current = null;
     terminalCleanupPendingRef.current = false;
     manualRetryRequiredRef.current = false;
+    cleanupActorKeyRef.current = '';
+    setExpiresAtMs(null);
   }, [draftId]);
 
   useEffect(
@@ -309,6 +315,7 @@ export function BrowserCaptureLanding({
           setStatus('missing');
           return;
         }
+        cleanupActorKeyRef.current = authenticatedActorKey;
         const expiresAt = Date.parse(capture.expiresAt);
         if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
           purgeHandoff();
@@ -361,13 +368,18 @@ export function BrowserCaptureLanding({
   ]);
 
   useEffect(() => {
-    if (expiresAtMs === null || !authenticatedActorKey) return;
+    const cleanupActorKey = cleanupActorKeyRef.current;
+    if (expiresAtMs === null || !cleanupActorKey) return;
     const remaining = expiresAtMs - Date.now();
     const expire = () => {
       purgeHandoff();
       setStatus('missing');
-      void removeBrowserCaptureDraft(draftId, authenticatedActorKey)
-        .then(() => publishBrowserCaptureLifecycle(draftId, 'cleanup_pending'))
+      void removeBrowserCaptureDraft(draftId, cleanupActorKey)
+        .then(() => {
+          cleanupActorKeyRef.current = '';
+          setExpiresAtMs(null);
+          publishBrowserCaptureLifecycle(draftId, 'cleanup_pending');
+        })
         .catch(() => undefined);
     };
     if (remaining <= 0) {
@@ -376,12 +388,21 @@ export function BrowserCaptureLanding({
     }
     const timeout = window.setTimeout(expire, remaining);
     return () => window.clearTimeout(timeout);
-  }, [authenticatedActorKey, draftId, expiresAtMs, purgeHandoff]);
+  }, [draftId, expiresAtMs, purgeHandoff]);
 
   const removeAndClear = useCallback(async () => {
     purgeHandoff();
-    if (validDraftId && authenticatedActorKey) {
-      await removeBrowserCaptureDraft(draftId, authenticatedActorKey);
+    // A terminal result owns cleanup from this point. Cancel the TTL path so
+    // a failed delete is retried only by the explicit cleanup action, never by
+    // a later automatic timer.
+    setExpiresAtMs(null);
+    const cleanupActorKey = cleanupActorKeyRef.current;
+    if (validDraftId) {
+      if (!cleanupActorKey) {
+        throw new BrowserCaptureBridgeError('state_conflict');
+      }
+      await removeBrowserCaptureDraft(draftId, cleanupActorKey);
+      cleanupActorKeyRef.current = '';
       // Publish only after idempotent physical deletion succeeds. A remote
       // tab receiving this content-free message can safely purge and close.
       publishBrowserCaptureLifecycle(draftId, 'cleanup_pending');
@@ -393,13 +414,7 @@ export function BrowserCaptureLanding({
     } else {
       clearLanding();
     }
-  }, [
-    authenticatedActorKey,
-    clearLanding,
-    draftId,
-    purgeHandoff,
-    validDraftId,
-  ]);
+  }, [clearLanding, draftId, purgeHandoff, validDraftId]);
 
   const reportCleanupFailure = useCallback(() => {
     terminalCleanupPendingRef.current = true;

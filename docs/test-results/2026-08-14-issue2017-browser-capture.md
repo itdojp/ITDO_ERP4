@@ -83,7 +83,8 @@ Review remediationのcode head `e18653cd46391d52222fe93ff425629fbe2bb969`では�
 
 - extension session draftの受理済みnonceを末尾31件へ切り詰める実装では、古いnonceがTTL内に履歴から脱落した後で遅延commandとして再受理され得た。受理済みnonceを最大32件までevictせず保持し、上限到達後はfresh terminal delete以外のcommandを`state_conflict`へfail closed化した。deleteはrecord全体を削除し、response loss後の再deleteは本文／存在を開示せずidempotentに完了する。32件到達、最初のnonce再送拒否、terminal cleanupを決定的testで固定した。
 - Knowledge HubのURL capture testはoptimistic snapshot描画だけで成功し得たため、snapshot history requestをdeferredにし、authoritative reload後の別SHA-256を確認してからURL表示とprovider field非表示を検査するよう変更した。product表示、timeout、coverage scope、privacy契約は変更していない。
-- 上記remediationの初回focused結果はextension 30/30、backend capture／canonical URL 27/27、Knowledge Hub 16/16、backend build、extension lint／format／typecheck、backend／frontend format、`git diff --check`がPASS。新exact head確定後に反復、full gate、CI、独立reviewを再実行する。
+- Copilot遅延reviewで、認証喪失によりlive actor stateを消去した後、claim済みsession draftのexpiry／terminal cleanupもactor keyを失って次回worker pruneまで残存し得ることを検出した。live認証とDOM本文は従来どおり即時purgeし、最後にverifiedかつclaim成功したactor keyだけをcomponent memoryへcleanup capabilityとして保持する。これはdraft read／API mutationに再利用せず、TTL expiryまたはterminal result後のidempotent deleteだけに使用し、delete成功時に消去する。auth loss後のterminal resultとfake timerによるTTL expiry cleanupをそれぞれ決定的testで固定した。
+- 上記remediationのfocused結果はextension 30/30、backend capture／canonical URL 27/27、Knowledge Hub 16/16、Browser Capture landing 10/10（cleanup最終treeで20/20反復）、backend build、extension lint／format／typecheck、backend／frontend format、`git diff --check`がPASS。新exact head確定後にfull gate、CI、独立reviewを再実行する。
 
 unpacked Chromium E2Eはsynthetic landingによるextension protocolを対象とし、別のreal frontend/backend bridge-protocol E2Eがcapture mutation lifecycleを対象とする。いずれもmulti-tab BroadcastChannel、service-worker強制restart、Chrome／Edge vendor runtime evidence、target proxy通過後のCSP evidenceではない。これらをPASSと過大評価しない。CI/review結果はDraft PRへ記録する。
 
