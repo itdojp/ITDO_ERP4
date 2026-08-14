@@ -56,6 +56,29 @@ const credentialQueryTokens = new Set([
   "token",
   "verifier",
 ]);
+const credentialPathSegmentNames = new Set([
+  "accesstoken",
+  "apikey",
+  "credential",
+  "jsessionid",
+  "jwt",
+  "password",
+  "passwd",
+  "phpsessid",
+  "privatekey",
+  "pwd",
+  "refreshtoken",
+  "resourcekey",
+  "samlart",
+  "samlartifact",
+  "secret",
+  "session",
+  "sessionid",
+  "sessid",
+  "sid",
+  "ticket",
+  "token",
+]);
 
 export function isPlainRecord(value) {
   return (
@@ -214,6 +237,30 @@ function isCredentialQueryNameDeep(name) {
   return true;
 }
 
+function isCredentialPathSegmentDeep(segment) {
+  let candidate = segment;
+  const maximumLayers = Math.floor(candidate.length / 2) + 1;
+  for (let index = 0; index <= maximumLayers; index += 1) {
+    const compact = candidate.toLowerCase().replace(/[^a-z0-9]/gu, "");
+    if (credentialPathSegmentNames.has(compact)) return true;
+    const decoded = decodePercentBytes(candidate);
+    if (decoded === candidate) return candidate.includes("%");
+    if (index === maximumLayers) return true;
+    candidate = decoded;
+  }
+  return true;
+}
+
+function hasCredentialNamedPath(value) {
+  const segments = value.split("/").filter(Boolean);
+  return segments.some(
+    (segment, index) =>
+      index + 1 < segments.length &&
+      isCredentialPathSegmentDeep(segment) &&
+      segments[index + 1].length > 0,
+  );
+}
+
 function hasCredentialQueryParams(value) {
   const pending = [value.replace(/;/gu, "&")];
   const inspected = new Set();
@@ -251,10 +298,21 @@ function hasCredentialQueryAssignment(value) {
   return assignmentIndex > 0 && hasCredentialQueryParams(value);
 }
 
+function hasUrlParserIgnoredAsciiWhitespace(value) {
+  return value.includes("\t") || value.includes("\n") || value.includes("\r");
+}
+
 function parseNestedHttpUrl(value) {
-  let candidate = value.trim();
+  // WHATWG URL parsing removes ASCII TAB/LF/CR before parsing. Reject these
+  // characters at every decode layer so they cannot split an embedded scheme
+  // during inspection and then be removed by a later URL consumer.
+  let candidate = value;
   const maximumLayers = Math.floor(candidate.length / 2) + 1;
   for (let index = 0; index <= maximumLayers; index += 1) {
+    if (hasUrlParserIgnoredAsciiWhitespace(candidate)) {
+      return { kind: "unsafe" };
+    }
+    candidate = candidate.trim();
     if (
       hasCredentialQueryAssignment(candidate) ||
       hasCredentialQueryText(candidate)
@@ -287,7 +345,7 @@ function parseNestedHttpUrl(value) {
     const decoded = decodePercentBytes(candidate);
     if (decoded === candidate) return { kind: "none" };
     if (index === maximumLayers) return { kind: "unsafe" };
-    candidate = decoded.trim();
+    candidate = decoded;
   }
   return { kind: "unsafe" };
 }
@@ -331,6 +389,7 @@ function hasCredentialBearingPath(url, depth = 0) {
   for (let index = 0; index <= maximumLayers; index += 1) {
     if (
       hasCredentialQueryText(candidate) ||
+      hasCredentialNamedPath(candidate) ||
       candidate
         .split("/")
         .some(
@@ -496,6 +555,21 @@ export function applySelectedFields(draft, selectedFields) {
         selectedFields.includes(field) ? draft[field] : null,
       ]),
     ),
+  };
+}
+
+export function prepareCaptureStageIntent(
+  draft,
+  selectedFields,
+  existingIntent = null,
+) {
+  if (existingIntent !== null) return existingIntent;
+  const selectedDraft = applySelectedFields(draft, selectedFields);
+  if (!selectedDraft) return null;
+  return {
+    id: randomOpaqueId(),
+    requestKey: randomOpaqueKey(),
+    draft: selectedDraft,
   };
 }
 

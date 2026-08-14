@@ -832,6 +832,12 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
       'https://nested.example/path/%3Ftoken%3Dcredential-value',
     ),
     encodeURIComponent('https:alice:credential-value@nested.example/private'),
+    encodeURIComponent('ht\ttps:alice:credential-value@nested.example/private'),
+    encodeURIComponent('ht\ntps:alice:credential-value@nested.example/private'),
+    encodeURIComponent('h\rttps:alice:credential-value@nested.example/private'),
+    encodeURIComponent(
+      encodeURIComponent('ht\ntps:alice:credential-value@nested.example/private'),
+    ),
     encodeURIComponent(
       'https://nested.example/redirect/https%3Aalice%3Acredential-value%40deep.example/private',
     ),
@@ -847,6 +853,29 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     });
     assert.equal(nestedUrl.ok, false);
     assert.equal(nestedUrl.statusCode, 400);
+  }
+  assert.equal(harness.items.size, 1);
+
+  for (const canonicalUrl of [
+    'https://example.com/redirect/ht%0Atps%3Aalice%3Acredential-value%40nested.example%2Fprivate',
+    'https://example.com/redirect/ht%250Atps%253Aalice%253Acredential-value%2540nested.example%252Fprivate',
+    'https://example.com/session/credential-value',
+    'https://example.com/token/credential-value',
+    'https://example.com/sid/credential-value',
+    'https://example.com/%73ession/credential-value',
+    'https://example.com/%2573ession/credential-value',
+  ]) {
+    const nestedPathUrl = await harness.service.create({
+      actor: actor('owner-1'),
+      auditActor: auditActor('owner-1'),
+      body: {
+        scope: 'personal',
+        sourceType: 'web',
+        canonicalUrl,
+      },
+    });
+    assert.equal(nestedPathUrl.ok, false, canonicalUrl);
+    assert.equal(nestedPathUrl.statusCode, 400, canonicalUrl);
   }
   assert.equal(harness.items.size, 1);
 

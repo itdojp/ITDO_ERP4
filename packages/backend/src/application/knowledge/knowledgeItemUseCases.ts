@@ -122,6 +122,29 @@ const credentialQueryTokens = new Set([
   'verifier',
   'state',
 ]);
+const credentialPathSegmentNames = new Set([
+  'accesstoken',
+  'apikey',
+  'credential',
+  'jsessionid',
+  'jwt',
+  'password',
+  'passwd',
+  'phpsessid',
+  'privatekey',
+  'pwd',
+  'refreshtoken',
+  'resourcekey',
+  'samlart',
+  'samlartifact',
+  'secret',
+  'session',
+  'sessionid',
+  'sessid',
+  'sid',
+  'ticket',
+  'token',
+]);
 
 function isCredentialQueryName(name: string): boolean {
   const tokens = name
@@ -209,6 +232,30 @@ function isCredentialQueryNameDeep(name: string): boolean {
   return true;
 }
 
+function isCredentialPathSegmentDeep(segment: string): boolean {
+  let candidate = segment;
+  const decodeLayerLimit = Math.floor(candidate.length / 2) + 1;
+  for (let decodeCount = 0; decodeCount <= decodeLayerLimit; decodeCount += 1) {
+    const compact = candidate.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (credentialPathSegmentNames.has(compact)) return true;
+    const decoded = decodePercentBytes(candidate);
+    if (decoded === candidate) return candidate.includes('%');
+    if (decodeCount === decodeLayerLimit) return true;
+    candidate = decoded;
+  }
+  return true;
+}
+
+function hasCredentialNamedPath(value: string): boolean {
+  const segments = value.split('/').filter(Boolean);
+  return segments.some(
+    (segment, index) =>
+      index + 1 < segments.length &&
+      isCredentialPathSegmentDeep(segment) &&
+      segments[index + 1].length > 0,
+  );
+}
+
 function hasCredentialQueryParams(value: string): boolean {
   // Query-like values are another nesting layer (for example
   // `next=client_assertion=...`). Each queued value is strictly shorter than
@@ -251,13 +298,24 @@ function hasCredentialQueryAssignment(value: string): boolean {
   return assignmentIndex > 0 && hasCredentialQueryParams(value);
 }
 
+function hasUrlParserIgnoredAsciiWhitespace(value: string): boolean {
+  return value.includes('\t') || value.includes('\n') || value.includes('\r');
+}
+
 function parseNestedHttpUrl(value: string): NestedUrlParseResult {
-  let candidate = value.trim();
+  // WHATWG URL parsing removes ASCII TAB/LF/CR before parsing. Reject these
+  // characters at every decode layer so they cannot split an embedded scheme
+  // during inspection and then be removed by a later URL consumer.
+  let candidate = value;
   // Every successful layer replaces at least one three-character %HH sequence
   // with one byte, reducing the value by at least two characters. This bound
   // therefore covers every possible layer while remaining input-size bounded.
   const decodeLayerLimit = Math.floor(candidate.length / 2) + 1;
   for (let decodeCount = 0; decodeCount <= decodeLayerLimit; decodeCount += 1) {
+    if (hasUrlParserIgnoredAsciiWhitespace(candidate)) {
+      return { kind: 'unsafe' };
+    }
+    candidate = candidate.trim();
     if (
       hasCredentialQueryAssignment(candidate) ||
       hasCredentialQueryText(candidate)
@@ -287,7 +345,7 @@ function parseNestedHttpUrl(value: string): NestedUrlParseResult {
     const decoded = decodePercentBytes(candidate);
     if (decoded === candidate) return { kind: 'none' };
     if (decodeCount === decodeLayerLimit) return { kind: 'unsafe' };
-    candidate = decoded.trim();
+    candidate = decoded;
   }
   return { kind: 'unsafe' };
 }
@@ -333,6 +391,7 @@ function hasCredentialBearingPath(url: URL, depth = 0): boolean {
   for (let decodeCount = 0; decodeCount <= decodeLayerLimit; decodeCount += 1) {
     if (
       hasCredentialQueryText(candidate) ||
+      hasCredentialNamedPath(candidate) ||
       candidate
         .split('/')
         .some(

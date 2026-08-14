@@ -1,12 +1,10 @@
 import { ERP4_CAPTURE_ORIGIN } from "./config.js";
 import {
-  applySelectedFields,
   captureFields,
   defaultSelectedFields,
   normalizeCaptureDraft,
   normalizeExtractedCapture,
-  randomOpaqueId,
-  randomOpaqueKey,
+  prepareCaptureStageIntent,
 } from "./capture-contract.js";
 
 const labels = {
@@ -22,6 +20,7 @@ const state = {
   draft: null,
   selectedFields: [],
   stagedId: "",
+  stageIntent: null,
 };
 
 const byId = (id) => document.getElementById(id);
@@ -53,6 +52,7 @@ function render() {
     checkbox.checked = state.selectedFields.includes(field);
     checkbox.disabled = value === null;
     checkbox.addEventListener("change", () => {
+      state.stageIntent = null;
       state.selectedFields = checkbox.checked
         ? [...state.selectedFields, field]
         : state.selectedFields.filter((candidate) => candidate !== field);
@@ -75,6 +75,7 @@ function render() {
 async function captureCurrentTab() {
   setStatus("表示中ページを取得しています。");
   state.stagedId = "";
+  state.stageIntent = null;
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) throw new Error("active_tab_unavailable");
   const result = await chrome.scripting.executeScript({
@@ -103,17 +104,15 @@ async function stageAndOpen() {
   handoff.disabled = true;
   try {
     if (!state.stagedId) {
-      const selectedDraft = applySelectedFields(
+      state.stageIntent = prepareCaptureStageIntent(
         state.draft,
         state.selectedFields,
+        state.stageIntent,
       );
-      if (!selectedDraft) throw new Error("capture_selection_invalid");
-      const id = randomOpaqueId();
+      if (!state.stageIntent) throw new Error("capture_selection_invalid");
       const response = await chrome.runtime.sendMessage({
         type: "erp4-browser-capture-stage-v1",
-        id,
-        requestKey: randomOpaqueKey(),
-        draft: selectedDraft,
+        ...state.stageIntent,
       });
       if (!response?.ok || !response.record?.id) {
         throw new Error(response?.code ?? "storage_unavailable");
@@ -121,6 +120,7 @@ async function stageAndOpen() {
       state.stagedId = response.record.id;
       state.draft = normalizeCaptureDraft(response.record.draft);
       if (!state.draft) throw new Error("storage_unavailable");
+      state.stageIntent = null;
     }
     await openErp4(state.stagedId);
     render();
@@ -143,6 +143,7 @@ async function loadRecent() {
   const draft = normalizeCaptureDraft(response?.record?.draft);
   if (response?.ok && response.record?.id && draft) {
     state.stagedId = response.record.id;
+    state.stageIntent = null;
     state.draft = draft;
     state.selectedFields = captureFields.filter(
       (field) => draft[field] !== null,
@@ -175,6 +176,7 @@ discard.addEventListener("click", () => {
     .then((response) => {
       if (!response?.ok) throw new Error("discard_failed");
       state.stagedId = "";
+      state.stageIntent = null;
       state.draft = null;
       state.selectedFields = [];
       setStatus("draftを破棄しました。");

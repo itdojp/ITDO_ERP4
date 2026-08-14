@@ -3,9 +3,12 @@
 ## 対象
 
 - baseline: `eae84a84b7fcb2e974218381d234242afccdf9cf`
+- pre-merge tested feature commit: `fc2a838dc18de4bb2500b8b6a78a3259479d88d5`
 - channel: `browser_extension`
 - environment: local repository-side synthetic fixture
 - status: Draft／browser runtime evidence未完了
+
+この文書の件数は上記pre-merge feature commitのrepository-side証跡である。base同期後のexact-head gateはDraft PRのcheck／commentへ別途記録し、再実行前の結果を最新headの結果として扱わない。
 
 ## 固定契約
 
@@ -14,6 +17,7 @@
 - action user gesture後にmain frameのURL、title、selection、canonical、description、author、published timeだけを取得する。
 - ERP4 originはbuild時のsingle exact origin。production実値はcommitしない。
 - draftは`chrome.storage.session`へ最大10件、論理read TTL 10分。期限後はreadを拒否し、次のextension実行またはsession終了時に物理削除する。persistent storage、handoff URL、Cache API、logへ本文を保存しない。
+- 初回stageの応答が不明でも、同じpopup内の利用者retryは同じopaque draft ID／request key／selected payloadを再利用し、queueへ別draftを追加しない。popup再open時はsession storageのrecent draftを再利用する。
 - extensionはERP4 API、cookie、token、Authorization、CSRF headerへアクセスしない。認証済みlandingのpreview／confirmだけが既存capture ingressを呼ぶ。
 - bridgeはextension ID、exact origin、opaque draft ID、nonce、actor fingerprintを照合し、受信だけではmutationしない。actor fingerprintはsame-origin XSSに対するauthenticationではない。標準frontend imageはself scriptとbuild時exact API originへ制限したresponse CSPを生成するが、targetの実効CSP／XSS防止／locked profileを有効化前提とする。
 - result unknownは自動retryせず、same request ledgerのread-only reconcileへ戻す。
@@ -38,7 +42,7 @@
 - full E2E: 160 PASS／34既存条件付きSKIP／0 FAIL
 - Playwright Chromium 151 persistent-context unpacked extension E2E: PASS。空の専用Playwright browser cacheからruntime installを行う公式Make targetもPASS
 - real frontend/backend bridge-protocol E2E: authenticated landing → exact preview → explicit commit → item/snapshot作成 → terminal extension draft deleteをPASS
-- unit/static境界: permission allowlist、invalid/build-code-injection origin、credential query/fragment/path/matrix/nested URL、nested URL内の多層encode path/matrix、二重encode query／path、`PHPSESSID`／`sid`／`sessid`等のsession名、nested userinfo、zero/one/two-slash／backslash URL、malicious payload、NUL/control、oversize、unknown metadata、session logical TTL／queue、nonce replay、wrong origin／draft／actor、terminal cleanup response-loss、organization group 21／100／101件境界: PASS
+- unit/static境界: permission allowlist、invalid/build-code-injection origin、credential query/fragment/path/matrix/nested URL、credential/session名付きslash path、nested URL内の多層encode path/matrix、二重encode query／path、percent decode後のASCII TAB／LF／CR scheme分割、`PHPSESSID`／`sid`／`sessid`等のsession名、nested userinfo、zero/one/two-slash／backslash URL、malicious payload、NUL/control、oversize、unknown metadata、session logical TTL／queue、初回stage応答喪失後のexact restage、nonce replay、wrong origin／draft／actor、terminal cleanup response-loss、organization group 21／100／101件境界: PASS
 - server-side canonical URL境界も同じnested path/matrix/session検査を行い、extension/PWA入力がlocal検査を迂回してもcapture draft commit前に拒否するfocused testをPASS
 - frontend response CSP renderer: exact API origin binding、Google Identity script/style allowlist、active／credentialed／injected origin拒否、service-worker／asset locationでのsecurity header継承、template fail-closedをPASS。target response headerは未検証
 - Chromium synthetic browser境界: action gesture、popup、exact-origin handoff、canary非漏えい、pending/staged/delete/idempotent delete: PASS

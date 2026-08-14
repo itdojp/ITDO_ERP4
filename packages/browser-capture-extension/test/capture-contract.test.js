@@ -91,10 +91,21 @@ test("rejects active schemes, credential URLs, malformed Unicode, and nested pay
     "https://example.invalid/?next=https%3A%2Falice%3Asynthetic-pass%40nested.invalid/private",
     "https://example.invalid/?next=https%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate",
     "https://example.invalid/?next=http%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate",
+    "https://example.invalid/?next=ht%09tps%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate",
+    "https://example.invalid/?next=ht%0Atps%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate",
+    "https://example.invalid/?next=h%0Dttps%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate",
+    "https://example.invalid/?next=ht%250Atps%253Aalice%253Asynthetic-pass%2540nested.invalid%252Fprivate",
     "https://example.invalid/redirect/https%3A%2F%2Fnested.invalid%2F%3Faccess_token%3Dsynthetic-secret",
     "https://example.invalid/redirect/https%253A%252F%252Fnested.invalid%252F%253Fsessionid%253Dsynthetic-secret",
     "https://example.invalid/redirect/https%3Aalice%3Asynthetic-pass%40nested.invalid/private",
     "https://example.invalid/redirect/https%253Aalice%253Asynthetic-pass%2540nested.invalid/private",
+    "https://example.invalid/redirect/ht%0Atps%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate",
+    "https://example.invalid/redirect/ht%250Atps%253Aalice%253Asynthetic-pass%2540nested.invalid%252Fprivate",
+    "https://example.invalid/session/synthetic-secret",
+    "https://example.invalid/token/synthetic-secret",
+    "https://example.invalid/sid/synthetic-secret",
+    "https://example.invalid/%73ession/synthetic-secret",
+    "https://example.invalid/%2573ession/synthetic-secret",
     "https://example.invalid/app;jsessionid=synthetic-secret",
     "https://example.invalid/path/%3Ftoken%3Dsynthetic-secret",
     "https://example.invalid/article#access_token=never-stored",
@@ -123,6 +134,19 @@ test("rejects active schemes, credential URLs, malformed Unicode, and nested pay
     ),
     null,
   );
+});
+
+test("keeps ordinary slash routes that do not name a credential value", () => {
+  for (const url of [
+    "https://example.invalid/session",
+    "https://example.invalid/sessions/archive",
+    "https://example.invalid/tokens/example",
+    "https://example.invalid/state/california",
+    "https://example.invalid/code/example",
+    "https://example.invalid/key/rotation",
+  ]) {
+    assert.equal(normalizeExtractedCapture({ url }, capturedAt)?.url, url, url);
+  }
 });
 
 test("strips fragments and tracking parameters before session staging", () => {

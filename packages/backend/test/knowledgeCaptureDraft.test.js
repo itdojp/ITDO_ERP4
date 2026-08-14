@@ -119,7 +119,18 @@ test('rejects unsafe and credential-bearing URL forms', () => {
     'https://example.invalid/?PHPSESSID=synthetic-secret',
     'https://example.invalid/?next=https%3A%2F%2Fnested.invalid%2Fapp%253Bjsessionid%253Dsynthetic-secret',
     'https://example.invalid/?next=https%3A%2F%2Fnested.invalid%2Fpath%2F%253Ftoken%253Dsynthetic-secret',
+    'https://example.invalid/?next=ht%09tps%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate',
+    'https://example.invalid/?next=ht%0Atps%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate',
+    'https://example.invalid/?next=h%0Dttps%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate',
+    'https://example.invalid/?next=ht%250Atps%253Aalice%253Asynthetic-pass%2540nested.invalid%252Fprivate',
     'https://example.invalid/redirect/https%253Aalice%253Asynthetic-pass%2540nested.invalid/private',
+    'https://example.invalid/redirect/ht%0Atps%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate',
+    'https://example.invalid/redirect/ht%250Atps%253Aalice%253Asynthetic-pass%2540nested.invalid%252Fprivate',
+    'https://example.invalid/session/synthetic-secret',
+    'https://example.invalid/token/synthetic-secret',
+    'https://example.invalid/sid/synthetic-secret',
+    'https://example.invalid/%73ession/synthetic-secret',
+    'https://example.invalid/%2573ession/synthetic-secret',
     'not a url',
   ]) {
     assert.throws(
@@ -128,6 +139,19 @@ test('rejects unsafe and credential-bearing URL forms', () => {
         error instanceof KnowledgeCaptureValidationError &&
         error.code === 'capture_url_invalid',
     );
+  }
+});
+
+test('keeps ordinary slash routes that do not name a credential value', () => {
+  for (const url of [
+    'https://example.invalid/session',
+    'https://example.invalid/sessions/archive',
+    'https://example.invalid/tokens/example',
+    'https://example.invalid/state/california',
+    'https://example.invalid/code/example',
+    'https://example.invalid/key/rotation',
+  ]) {
+    assert.equal(normalizeKnowledgeCaptureDraft(draft({ url })).url, url, url);
   }
 });
 

@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   CAPTURE_DRAFT_QUEUE_MAX,
   CAPTURE_DRAFT_TTL_MS,
+  prepareCaptureStageIntent,
 } from "../src/capture-contract.js";
 import { createDraftStore } from "../src/draft-store.js";
 
@@ -256,6 +257,34 @@ test("same local draft ID accepts only the exact staged request", async () => {
       },
     }),
     /state_conflict/u,
+  );
+});
+
+test("popup retry intent converges after a successful stage response is lost", async () => {
+  const storage = memoryStorage();
+  const now = Date.parse("2026-08-14T00:00:00.000Z");
+  const store = createDraftStore(storage, () => now);
+  const draft = input(70).draft;
+  const firstIntent = prepareCaptureStageIntent(
+    draft,
+    ["title", "url", "selectedText"],
+    null,
+  );
+  assert.ok(firstIntent);
+
+  await store.stage(firstIntent);
+  const retryIntent = prepareCaptureStageIntent(
+    draft,
+    ["title", "url", "selectedText"],
+    firstIntent,
+  );
+  assert.strictEqual(retryIntent, firstIntent);
+  assert.equal((await store.stage(retryIntent)).id, firstIntent.id);
+  assert.equal(
+    [...storage.values.keys()].filter((key) =>
+      key.startsWith("erp4-browser-capture-draft:"),
+    ).length,
+    1,
   );
 });
 
