@@ -302,6 +302,14 @@ function hasUrlParserIgnoredAsciiWhitespace(value: string): boolean {
   return value.includes('\t') || value.includes('\n') || value.includes('\r');
 }
 
+function findNestedUrlStart(value: string): number {
+  const absoluteIndex = value.toLowerCase().search(/https?:/);
+  const schemeRelativeIndex = value.search(/[\\/]{2}/);
+  if (absoluteIndex < 0) return schemeRelativeIndex;
+  if (schemeRelativeIndex < 0) return absoluteIndex;
+  return Math.min(absoluteIndex, schemeRelativeIndex);
+}
+
 function parseNestedHttpUrl(value: string): NestedUrlParseResult {
   // WHATWG URL parsing removes ASCII TAB/LF/CR before parsing. Reject these
   // characters at every decode layer so they cannot split an embedded scheme
@@ -322,11 +330,11 @@ function parseNestedHttpUrl(value: string): NestedUrlParseResult {
     ) {
       return { kind: 'unsafe' };
     }
-    const absoluteUrlIndex = candidate.toLowerCase().search(/https?:/);
+    const nestedUrlIndex = findNestedUrlStart(candidate);
     const parseCandidate =
-      absoluteUrlIndex >= 0 ? candidate.slice(absoluteUrlIndex) : candidate;
+      nestedUrlIndex >= 0 ? candidate.slice(nestedUrlIndex) : candidate;
     if (
-      absoluteUrlIndex >= 0 ||
+      nestedUrlIndex >= 0 ||
       parseCandidate.startsWith('//') ||
       parseCandidate.startsWith('/') ||
       parseCandidate.startsWith('\\') ||
@@ -411,7 +419,7 @@ function hasCredentialBearingPath(url: URL, depth = 0): boolean {
         nested.url.password ||
         hasCredentialFragment(nested.url, depth + 1) ||
         hasCredentialBearingNestedUrl(nested.url, depth + 1) ||
-        (/https?:/i.test(candidate) &&
+        (findNestedUrlStart(candidate) >= 0 &&
           (depth >= 3 || hasCredentialBearingPath(nested.url, depth + 1))))
     ) {
       return true;

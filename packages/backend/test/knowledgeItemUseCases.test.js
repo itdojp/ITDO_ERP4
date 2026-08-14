@@ -866,6 +866,10 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
   for (const canonicalUrl of [
     'https://example.com/redirect/ht%0Atps%3Aalice%3Acredential-value%40nested.example%2Fprivate',
     'https://example.com/redirect/ht%250Atps%253Aalice%253Acredential-value%2540nested.example%252Fprivate',
+    'https://example.com/redirect/%5C%5Calice%3Acredential-value%40nested.example/private',
+    'https://example.com/redirect/%5C%2Falice%3Acredential-value%40nested.example/private',
+    'https://example.com/redirect/%2F%2Falice%3Acredential-value%40nested.example/private',
+    'https://example.com/redirect/%255C%255Calice%253Acredential-value%2540nested.example/private',
     'https://example.com/session/credential-value',
     'https://example.com/token/credential-value',
     'https://example.com/sid/credential-value',

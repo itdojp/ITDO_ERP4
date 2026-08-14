@@ -106,12 +106,25 @@ test("freezes popup capture inputs while a stage outcome is unknown", () => {
   const popup = readFileSync(path.join(packageRoot, "src", "popup.js"), "utf8");
   assert.match(
     popup,
-    /checkbox\.disabled = state\.isStaging \|\| value === null/u,
+    /state\.isStaging \|\| state\.stageIntent !== null \|\| state\.stagedId\.length > 0/u,
   );
-  assert.match(popup, /recapture\.disabled = state\.isStaging/u);
+  assert.match(popup, /checkbox\.disabled = inputsLocked \|\| value === null/u);
+  assert.match(popup, /recapture\.disabled = inputsLocked/u);
+  assert.match(
+    popup,
+    /if \(captureInputsLocked\(\)\) throw new Error\("capture_locked"\)/u,
+  );
+  assert.match(
+    popup,
+    /if \(captureInputsLocked\(\)\) \{[\s\S]*checkbox\.checked = state\.selectedFields\.includes\(field\)/u,
+  );
   assert.match(
     popup,
     /state\.isStaging = true;[\s\S]*finally \{[\s\S]*state\.isStaging = false/u,
+  );
+  assert.match(
+    popup,
+    /if \(response\?\.ok === false\) state\.stageIntent = null/u,
   );
 });
 

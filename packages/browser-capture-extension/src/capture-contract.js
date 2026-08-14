@@ -302,6 +302,14 @@ function hasUrlParserIgnoredAsciiWhitespace(value) {
   return value.includes("\t") || value.includes("\n") || value.includes("\r");
 }
 
+function findNestedUrlStart(value) {
+  const absoluteIndex = value.toLowerCase().search(/https?:/u);
+  const schemeRelativeIndex = value.search(/[\\/]{2}/u);
+  if (absoluteIndex < 0) return schemeRelativeIndex;
+  if (schemeRelativeIndex < 0) return absoluteIndex;
+  return Math.min(absoluteIndex, schemeRelativeIndex);
+}
+
 function parseNestedHttpUrl(value) {
   // WHATWG URL parsing removes ASCII TAB/LF/CR before parsing. Reject these
   // characters at every decode layer so they cannot split an embedded scheme
@@ -320,13 +328,13 @@ function parseNestedHttpUrl(value) {
       return { kind: "unsafe" };
     }
     // WHATWG accepts HTTP(S) special URLs with zero, one, or two slash-like
-    // separators. Search from the scheme rather than enumerating separators so
-    // nested userinfo cannot bypass inspection with `https:user:pass@host`.
-    const absoluteUrlIndex = candidate.toLowerCase().search(/https?:/u);
+    // separators. Start at the earliest absolute or scheme-relative marker so
+    // path prefixes cannot hide nested userinfo from the URL parser.
+    const nestedUrlIndex = findNestedUrlStart(candidate);
     const parseCandidate =
-      absoluteUrlIndex >= 0 ? candidate.slice(absoluteUrlIndex) : candidate;
+      nestedUrlIndex >= 0 ? candidate.slice(nestedUrlIndex) : candidate;
     if (
-      absoluteUrlIndex >= 0 ||
+      nestedUrlIndex >= 0 ||
       parseCandidate.startsWith("//") ||
       parseCandidate.startsWith("/") ||
       parseCandidate.startsWith("\\") ||
@@ -409,7 +417,7 @@ function hasCredentialBearingPath(url, depth = 0) {
         nested.url.password ||
         hasCredentialFragment(nested.url, depth + 1) ||
         hasCredentialBearingNestedUrl(nested.url, depth + 1) ||
-        (/https?:/iu.test(candidate) &&
+        (findNestedUrlStart(candidate) >= 0 &&
           (depth >= 3 || hasCredentialBearingPath(nested.url, depth + 1))))
     ) {
       return true;

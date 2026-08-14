@@ -37,8 +37,16 @@ function setStatus(message, tone = "info") {
   status.dataset.tone = tone;
 }
 
+function captureInputsLocked() {
+  return (
+    state.isStaging || state.stageIntent !== null || state.stagedId.length > 0
+  );
+}
+
 function render() {
+  const inputsLocked = captureInputsLocked();
   fields.replaceChildren();
+  recapture.disabled = inputsLocked;
   if (!state.draft) {
     handoff.disabled = true;
     discard.disabled = !state.stagedId;
@@ -51,8 +59,12 @@ function render() {
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = state.selectedFields.includes(field);
-    checkbox.disabled = state.isStaging || value === null;
+    checkbox.disabled = inputsLocked || value === null;
     checkbox.addEventListener("change", () => {
+      if (captureInputsLocked()) {
+        checkbox.checked = state.selectedFields.includes(field);
+        return;
+      }
       state.stageIntent = null;
       state.selectedFields = checkbox.checked
         ? [...state.selectedFields, field]
@@ -70,11 +82,11 @@ function render() {
     fields.append(row);
   }
   handoff.disabled = state.isStaging || state.selectedFields.length === 0;
-  recapture.disabled = state.isStaging;
   discard.disabled = !state.stagedId;
 }
 
 async function captureCurrentTab() {
+  if (captureInputsLocked()) throw new Error("capture_locked");
   setStatus("表示中ページを取得しています。");
   state.stagedId = "";
   state.stageIntent = null;
@@ -102,7 +114,9 @@ async function openErp4(id) {
 }
 
 async function stageAndOpen() {
-  if (!state.draft || state.selectedFields.length === 0) return;
+  if (state.isStaging || !state.draft || state.selectedFields.length === 0) {
+    return;
+  }
   state.isStaging = true;
   render();
   try {
@@ -118,6 +132,7 @@ async function stageAndOpen() {
         ...state.stageIntent,
       });
       if (!response?.ok || !response.record?.id) {
+        if (response?.ok === false) state.stageIntent = null;
         throw new Error(response?.code ?? "storage_unavailable");
       }
       state.stagedId = response.record.id;
