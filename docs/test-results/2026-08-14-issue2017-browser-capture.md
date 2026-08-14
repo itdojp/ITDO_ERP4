@@ -10,6 +10,10 @@
 
 この文書の件数は上記pre-merge feature commitのrepository-side証跡である。base同期後のexact-head gateはDraft PRのcheck／commentへ別途記録し、再実行前の結果を最新headの結果として扱わない。
 
+Review remediationのcode head `e18653cd46391d52222fe93ff425629fbe2bb969`では、extension unit／manifest／static test 27/27とbackend capture／canonical URL focused test 25/25を実行した。scheme-relative backslash userinfo、recordとrecent pointerの非原子的な二重write、stage結果不明中のfield変更を追加修正している。tracked evidence文書を追加するfinal PR headのCI／review completenessはPR #2074を正本とし、この段階ではPENDINGとして扱う。
+
+追加remediation直前のintegration head `cfa8c34eb59ae70a4caf4c376ee95b6839d7d5e3`では、`RELEASE_E2E_SCOPE=core make release-readiness`がexit 0で、backend 2,398/2,398、frontend 969/969、extension 26/26、core E2E 110/110、Playwright Chromium extension E2E、OpenAPI、audit、ops、docs、secret scanをPASSした。この結果は後続`e18653cd...`の修正を含まないため、最終exact-head gateの代替にはしない。
+
 ## 固定契約
 
 - Manifest V3 permissionは`activeTab|scripting|storage`だけ。broad host permission、cookie、tabs、history、webRequest、remote codeを使用しない。
@@ -17,7 +21,7 @@
 - action user gesture後にmain frameのURL、title、selection、canonical、description、author、published timeだけを取得する。
 - ERP4 originはbuild時のsingle exact origin。production実値はcommitしない。
 - draftは`chrome.storage.session`へ最大10件、論理read TTL 10分。期限後はreadを拒否し、次のextension実行またはsession終了時に物理削除する。persistent storage、handoff URL、Cache API、logへ本文を保存しない。
-- 初回stageの応答が不明でも、同じpopup内の利用者retryは同じopaque draft ID／request key／selected payloadを再利用し、queueへ別draftを追加しない。popup再open時はsession storageのrecent draftを再利用する。
+- 初回stageの応答が不明でも、同じpopup内の利用者retryは同じopaque draft ID／request key／selected payloadを再利用し、queueへ別draftを追加しない。recordは一回のstorage writeで保存し、popup再open時は最大10件のbounded record setから未claimの最新draftを導出する。独立recent pointerへ依存しない。
 - extensionはERP4 API、cookie、token、Authorization、CSRF headerへアクセスしない。認証済みlandingのpreview／confirmだけが既存capture ingressを呼ぶ。
 - bridgeはextension ID、exact origin、opaque draft ID、nonce、actor fingerprintを照合し、受信だけではmutationしない。actor fingerprintはsame-origin XSSに対するauthenticationではない。標準frontend imageはself scriptとbuild時exact API originへ制限したresponse CSPを生成するが、targetの実効CSP／XSS防止／locked profileを有効化前提とする。
 - result unknownは自動retryせず、same request ledgerのread-only reconcileへ戻す。
@@ -32,7 +36,7 @@
 - [exact-origin handoff](2026-08-14-issue2017-browser-capture/02-extension-handoff.png)
 - [sanitized Chromium runtime summary](2026-08-14-issue2017-browser-capture/chromium-runtime-summary.json)
 
-## 現在の検証結果
+## Pre-merge feature commitの検証結果
 
 - extension unit／manifest／static security checks: 24/24 PASS
 - frontend bridge／authenticated landing／capture ingress focused tests: PASS。organization group 21／100件を受理し101件を拒否するbridge response normalizationを含む
@@ -42,7 +46,16 @@
 - full E2E: 160 PASS／34既存条件付きSKIP／0 FAIL
 - Playwright Chromium 151 persistent-context unpacked extension E2E: PASS。空の専用Playwright browser cacheからruntime installを行う公式Make targetもPASS
 - real frontend/backend bridge-protocol E2E: authenticated landing → exact preview → explicit commit → item/snapshot作成 → terminal extension draft deleteをPASS
-- unit/static境界: permission allowlist、invalid/build-code-injection origin、credential query/fragment/path/matrix/nested URL、credential/session名付きslash path、nested URL内の多層encode path/matrix、二重encode query／path、percent decode後のASCII TAB／LF／CR scheme分割、`PHPSESSID`／`sid`／`sessid`等のsession名、nested userinfo、zero/one/two-slash／backslash URL、malicious payload、NUL/control、oversize、unknown metadata、session logical TTL／queue、初回stage応答喪失後のexact restage、nonce replay、wrong origin／draft／actor、terminal cleanup response-loss、organization group 21／100／101件境界: PASS
+- unit/static境界（`fc2a838d...`）: permission allowlist、invalid/build-code-injection origin、credential query/fragment/path/matrix/nested URL、nested URL内の多層encode path/matrix、二重encode query／path、`PHPSESSID`／`sid`／`sessid`等のsession名、nested userinfo、zero/one/two-slash／backslash URL、malicious payload、NUL/control、oversize、unknown metadata、session logical TTL／queue、nonce replay、wrong origin／draft／actor、terminal cleanup response-loss、organization group 21／100／101件境界: PASS
+
+## Review remediationのfocused検証結果
+
+- code head: `e18653cd46391d52222fe93ff425629fbe2bb969`
+- extension unit／manifest／static security checks: 27/27 PASS
+- backend capture draft／Knowledge item canonical URL focused tests: 25/25 PASS
+- 追加fixture: credential/session名付きslash path、percent decode後のASCII TAB／LF／CR scheme分割、scheme-relative `\\`／`\/` userinfoと多層encode、initial stage response loss、popup再open、recent pointer非依存、stage結果不明中のcheckbox／recapture freeze
+- extension／backendのformatter、extension lint／typecheck／build、backend build、`git diff --check`: PASS
+- final tracked-evidence headのCI、Copilot、独立correctness/security review、review completeness: PENDING（PR #2074へ記録）
 - server-side canonical URL境界も同じnested path/matrix/session検査を行い、extension/PWA入力がlocal検査を迂回してもcapture draft commit前に拒否するfocused testをPASS
 - frontend response CSP renderer: exact API origin binding、Google Identity script/style allowlist、active／credentialed／injected origin拒否、service-worker／asset locationでのsecurity header継承、template fail-closedをPASS。target response headerは未検証
 - Chromium synthetic browser境界: action gesture、popup、exact-origin handoff、canary非漏えい、pending/staged/delete/idempotent delete: PASS
