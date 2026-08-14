@@ -927,7 +927,7 @@ describe('KnowledgeLlmPanel', () => {
     });
     expect(apiMocks.executeKnowledgeLlmRun).toHaveBeenCalledTimes(1);
     expect(
-      screen.getByText(
+      await screen.findByText(
         /状態は変更されませんでした。providerへ再送していません/,
       ),
     ).toBeInTheDocument();
