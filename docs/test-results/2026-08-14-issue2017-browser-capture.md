@@ -76,8 +76,14 @@ Review remediationのcode head `e18653cd46391d52222fe93ff425629fbe2bb969`では�
 ## Final security review remediation
 
 - 独立security reviewで、文字列全体のUnicode lowercase結果のindexを元文字列へ流用すると、U+0130 `İ`のcase-fold展開により後続HTTP(S) markerの開始位置がずれることを検出した。scannerをUTF-16 indexを保持するASCII code-unit比較へ変更し、U+0130が1個／複数個、zero／one／two-slash userinfoをextensionとbackendの両境界で拒否する。
-- nested URL parseには、一回のtop-level URL正規化全体で共有する128回のoperation budgetを追加した。decode layerまたは再帰をまたいで上限を超えた場合はfail closedとし、128層超の深いencoded nested URL fixtureで決定的に固定した。
-- extension 29/29とbackend capture／canonical URL focused test 26/26を各20回反復し、backend build、extension／backend lint・format、extension typecheck、`git diff --check`をPASSした。最終exact headのfull gate、CI、独立reviewは再実行し、以前の結果を再利用しない。
+- nested URL parseには、一回のtop-level URL正規化全体で共有する128回のoperation budgetを追加した。decode layerまたは再帰をまたいで上限を超えた場合はfail closedとし、単独では上限内となる2個のsibling query valueが合計で上限を超えるfixtureで共有budgetを決定的に固定した。U+0130を含むcredential非保持URLのpositive fixtureも保持する。
+- extension 30/30とbackend capture／canonical URL focused test 27/27をPASSした。以前のsecurity remediation headではextension／backend focused testを各20回反復済みだが、correctness remediation後の新exact headでは反復、full gate、CI、独立reviewを再実行し、以前の結果を最終結果として再利用しない。
+
+## Final correctness review remediation
+
+- extension session draftの受理済みnonceを末尾31件へ切り詰める実装では、古いnonceがTTL内に履歴から脱落した後で遅延commandとして再受理され得た。受理済みnonceを最大32件までevictせず保持し、上限到達後はfresh terminal delete以外のcommandを`state_conflict`へfail closed化した。deleteはrecord全体を削除し、response loss後の再deleteは本文／存在を開示せずidempotentに完了する。32件到達、最初のnonce再送拒否、terminal cleanupを決定的testで固定した。
+- Knowledge HubのURL capture testはoptimistic snapshot描画だけで成功し得たため、snapshot history requestをdeferredにし、authoritative reload後の別SHA-256を確認してからURL表示とprovider field非表示を検査するよう変更した。product表示、timeout、coverage scope、privacy契約は変更していない。
+- 上記remediationの初回focused結果はextension 30/30、backend capture／canonical URL 27/27、Knowledge Hub 16/16、backend build、extension lint／format／typecheck、backend／frontend format、`git diff --check`がPASS。新exact head確定後に反復、full gate、CI、独立reviewを再実行する。
 
 unpacked Chromium E2Eはsynthetic landingによるextension protocolを対象とし、別のreal frontend/backend bridge-protocol E2Eがcapture mutation lifecycleを対象とする。いずれもmulti-tab BroadcastChannel、service-worker強制restart、Chrome／Edge vendor runtime evidence、target proxy通過後のCSP evidenceではない。これらをPASSと過大評価しない。CI/review結果はDraft PRへ記録する。
 

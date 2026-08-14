@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createKnowledgeItemService } from '../dist/application/knowledge/knowledgeItemUseCases.js';
+import {
+  createKnowledgeItemService,
+  normalizeKnowledgeCanonicalUrl,
+} from '../dist/application/knowledge/knowledgeItemUseCases.js';
 
 const fixedNow = new Date('2026-08-04T09:00:00.000Z');
 
@@ -12,6 +15,34 @@ function actor(userId, { organizationId, groupAccountIds = [] } = {}) {
 function auditActor(userId) {
   return { userId, actorRole: 'user', requestId: 'request-1', source: 'api' };
 }
+
+test('shares one nested URL parse budget across sibling query values', () => {
+  const encodeLayers = (value, count) => {
+    let encoded = value;
+    for (let layer = 0; layer < count; layer += 1) {
+      encoded = encodeURIComponent(encoded);
+    }
+    return encoded;
+  };
+  const oneSibling = encodeURIComponent(
+    `//nested.example${encodeLayers('/', 62)}path`,
+  );
+  const withinBudget = `https://example.com/?first=${oneSibling}`;
+  const exhaustedAcrossSiblings = `${withinBudget}&second=${oneSibling}`;
+  const benignUnicode = `https://example.com/?note=${encodeURIComponent('İHTTPS:public.example/article')}`;
+
+  assert.deepEqual(normalizeKnowledgeCanonicalUrl(withinBudget), {
+    ok: true,
+    value: withinBudget,
+  });
+  assert.deepEqual(normalizeKnowledgeCanonicalUrl(exhaustedAcrossSiblings), {
+    ok: false,
+  });
+  assert.deepEqual(normalizeKnowledgeCanonicalUrl(benignUnicode), {
+    ok: true,
+    value: benignUnicode,
+  });
+});
 
 function createHarness({ failAuditAction } = {}) {
   const items = new Map();

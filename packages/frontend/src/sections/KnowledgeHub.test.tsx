@@ -445,9 +445,21 @@ describe('KnowledgeHub', () => {
       }),
       providerKey: 'private-provider-key',
     } as KnowledgeSnapshot;
+    const authoritativeSnapshot = makeSnapshot({
+      id: 'snapshot-authoritative',
+      captureMethod: 'url',
+      sourceUrl: 'https://example.com/article',
+      sha256: 'b'.repeat(64),
+    });
+    let resolveSnapshotHistory!: (value: KnowledgeSnapshot[]) => void;
     apiMocks.createKnowledgeItem.mockResolvedValue(item);
     apiMocks.captureKnowledgeTextOrUrl.mockResolvedValue(snapshot);
-    apiMocks.listKnowledgeSnapshots.mockResolvedValue([snapshot]);
+    apiMocks.listKnowledgeSnapshots.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSnapshotHistory = resolve;
+        }),
+    );
     render(<KnowledgeHub />);
 
     await waitFor(() => expect(apiMocks.listKnowledgeInbox).toHaveBeenCalled());
@@ -474,8 +486,18 @@ describe('KnowledgeHub', () => {
       }),
     );
     await waitFor(() =>
-      expect(screen.getByText('https://example.com/article')).toBeVisible(),
+      expect(apiMocks.listKnowledgeSnapshots).toHaveBeenCalledWith('item-1'),
     );
+    expect(resolveSnapshotHistory).toBeTypeOf('function');
+    await act(async () => {
+      resolveSnapshotHistory([authoritativeSnapshot]);
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole('article', { name: 'version 1' }),
+      ).toHaveTextContent('b'.repeat(64)),
+    );
+    expect(screen.getByText('https://example.com/article')).toBeVisible();
     expect(screen.queryByText(/private-provider/)).not.toBeInTheDocument();
   });
 

@@ -164,12 +164,23 @@ test('rejects unsafe and credential-bearing URL forms', () => {
 });
 
 test('fails closed when the aggregate nested URL parse budget is exhausted', () => {
-  const url = `https://example.invalid/?next=${encodeURIComponent(`//nested.invalid${encodeLayers('/', 130)}path`)}`;
+  const oneSibling = encodeURIComponent(
+    `//nested.invalid${encodeLayers('/', 62)}path`,
+  );
+  const withinBudget = `https://example.invalid/?first=${oneSibling}`;
+  const url = `${withinBudget}&second=${oneSibling}`;
+  const benignUnicode = `https://example.invalid/?note=${encodeURIComponent('İHTTPS:public.invalid/article')}`;
+
+  assert.equal(normalizeKnowledgeCaptureDraft(draft({ url: withinBudget })).url, withinBudget);
   assert.throws(
     () => normalizeKnowledgeCaptureDraft(draft({ url })),
     (error) =>
       error instanceof KnowledgeCaptureValidationError &&
       error.code === 'capture_url_invalid',
+  );
+  assert.equal(
+    normalizeKnowledgeCaptureDraft(draft({ url: benignUnicode })).url,
+    benignUnicode,
   );
 });
 

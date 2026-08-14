@@ -158,8 +158,25 @@ test("rejects active schemes, credential URLs, malformed Unicode, and nested pay
 });
 
 test("fails closed when the aggregate nested URL parse budget is exhausted", () => {
-  const url = `https://example.invalid/?next=${encodeURIComponent(`//nested.invalid${encodeLayers("/", 130)}path`)}`;
-  assert.equal(normalizeExtractedCapture({ url }, capturedAt), null);
+  const oneSibling = encodeURIComponent(
+    `//nested.invalid${encodeLayers("/", 62)}path`,
+  );
+  const withinBudget = `https://example.invalid/?first=${oneSibling}`;
+  const exhaustedAcrossSiblings = `${withinBudget}&second=${oneSibling}`;
+  const benignUnicode = `https://example.invalid/?note=${encodeURIComponent("İHTTPS:public.invalid/article")}`;
+
+  assert.equal(
+    normalizeExtractedCapture({ url: withinBudget }, capturedAt)?.url,
+    withinBudget,
+  );
+  assert.equal(
+    normalizeExtractedCapture({ url: exhaustedAcrossSiblings }, capturedAt),
+    null,
+  );
+  assert.equal(
+    normalizeExtractedCapture({ url: benignUnicode }, capturedAt)?.url,
+    benignUnicode,
+  );
 });
 
 test("keeps ordinary slash routes that do not name a credential value", () => {

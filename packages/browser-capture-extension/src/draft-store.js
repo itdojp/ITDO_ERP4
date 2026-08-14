@@ -12,6 +12,7 @@ import {
 const PREFIX = "erp4-browser-capture-draft:";
 const LEGACY_RECENT_KEY = "erp4-browser-capture-recent";
 const operationPattern = /^[A-Za-z0-9_-]{22,200}$/u;
+const usedNonceLimit = 32;
 
 function key(id) {
   return `${PREFIX}${id}`;
@@ -111,7 +112,7 @@ export function normalizeStoredDraft(value, now = Date.now()) {
     (lifecycle === "staged" &&
       (value.pendingIntent !== null || value.pendingOperationId !== null)) ||
     !Array.isArray(value.usedNonces) ||
-    value.usedNonces.length > 32 ||
+    value.usedNonces.length > usedNonceLimit ||
     value.usedNonces.some(
       (nonce, index) =>
         !isOpaqueKey(nonce) || value.usedNonces.indexOf(nonce) !== index,
@@ -272,10 +273,23 @@ export function createDraftStore(storage, clock = () => Date.now()) {
         if (current.usedNonces.includes(input.nonce)) {
           throw new Error("replayed_nonce");
         }
+        // Never evict a nonce while its draft is live. Forgetting an older
+        // nonce would let a delayed command become valid again within the
+        // draft TTL. Once the bounded history is full, fail closed for every
+        // non-terminal command. A fresh delete remains safe because it
+        // removes the complete record; a lost delete response then converges
+        // through the idempotent not-found branch above.
+        if (current.usedNonces.length >= usedNonceLimit) {
+          if (input.command === "delete") {
+            await storage.remove(key(current.id));
+            return { transitioned: true, record: null };
+          }
+          throw new Error("state_conflict");
+        }
         const claimed = {
           ...current,
           actorFingerprint: input.actorFingerprint,
-          usedNonces: [...current.usedNonces.slice(-30), input.nonce],
+          usedNonces: [...current.usedNonces, input.nonce],
         };
         if (input.command === "get") {
           await storage.set(key(claimed.id), claimed);

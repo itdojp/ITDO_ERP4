@@ -48,6 +48,7 @@ function input(index = 0) {
 const actor = "a".repeat(64);
 const otherActor = "b".repeat(64);
 const nonce = (character) => character.repeat(24);
+const indexedNonce = (index) => `nonce_${String(index).padStart(22, "0")}`;
 const pendingIntent = {
   selectedFields: ["title", "url", "selectedText"],
   scope: "personal",
@@ -143,6 +144,57 @@ test("rejects actor switching and one-time nonce replay without revealing the re
       actorFingerprint: actor,
     }),
     /replayed_nonce/u,
+  );
+});
+
+test("fails closed when nonce history is full and still permits terminal cleanup", async () => {
+  const storage = memoryStorage();
+  const now = Date.parse("2026-08-14T00:00:00.000Z");
+  const store = createDraftStore(storage, () => now);
+  await store.stage(input());
+
+  for (let index = 0; index < 32; index += 1) {
+    await store.command({
+      command: "get",
+      id: input().id,
+      nonce: indexedNonce(index),
+      actorFingerprint: actor,
+    });
+  }
+  await assert.rejects(
+    store.command({
+      command: "get",
+      id: input().id,
+      nonce: indexedNonce(32),
+      actorFingerprint: actor,
+    }),
+    /state_conflict/u,
+  );
+  await assert.rejects(
+    store.command({
+      command: "get",
+      id: input().id,
+      nonce: indexedNonce(0),
+      actorFingerprint: actor,
+    }),
+    /replayed_nonce/u,
+  );
+
+  const removed = await store.command({
+    command: "delete",
+    id: input().id,
+    nonce: indexedNonce(33),
+    actorFingerprint: actor,
+  });
+  assert.equal(removed.record, null);
+  assert.deepEqual(
+    await store.command({
+      command: "delete",
+      id: input().id,
+      nonce: indexedNonce(33),
+      actorFingerprint: actor,
+    }),
+    { transitioned: false, record: null },
   );
 });
 
