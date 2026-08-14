@@ -202,11 +202,17 @@ function profileInvocationFailures(file, source, commands) {
   const currentFailures = [];
   for (const [index, rawLine] of source.split(/\r?\n/u).entries()) {
     const line = rawLine.trim();
-    const matches = line.matchAll(/\.\/scripts\/quadlet\/([a-z0-9-]+\.sh)\b/gu);
-    for (const match of matches) {
+    const matches = [
+      ...line.matchAll(/\.\/scripts\/quadlet\/([a-z0-9-]+\.sh)\b/gu),
+    ];
+    for (const [matchIndex, match] of matches.entries()) {
       if (!commandSet.has(match[1])) continue;
       found.add(match[1]);
-      const invocation = line.slice(match.index);
+      const nextCommandIndex = matches[matchIndex + 1]?.index ?? line.length;
+      const commandSegment = line.slice(match.index, nextCommandIndex);
+      const boundary = commandSegment.search(/&&|\|\||;|(?<!\\)\||\s+#/u);
+      const invocation =
+        boundary === -1 ? commandSegment : commandSegment.slice(0, boundary);
       if (!invocation.includes('--profile "$PROFILE"')) {
         currentFailures.push(
           `${file}:${index + 1}: ${match[1]} must receive --profile "$PROFILE"`,
@@ -255,6 +261,34 @@ if (
 ) {
   throw new Error(
     'profile continuity checker must reject env-prefixed unbound build-images.sh invocations',
+  );
+}
+
+const compoundNegativeFixture =
+  './scripts/quadlet/build-images.sh && ./scripts/quadlet/start-stack.sh --profile "$PROFILE"';
+if (
+  profileInvocationFailures(
+    'negative-fixture-compound-commands.sh',
+    compoundNegativeFixture,
+    ['build-images.sh', 'start-stack.sh'],
+  ).length !== 1
+) {
+  throw new Error(
+    'profile continuity checker must bind every command in a compound invocation',
+  );
+}
+
+const commentNegativeFixture =
+  './scripts/quadlet/build-images.sh # add --profile "$PROFILE" before use';
+if (
+  profileInvocationFailures(
+    'negative-fixture-comment-profile.sh',
+    commentNegativeFixture,
+    ['build-images.sh'],
+  ).length !== 1
+) {
+  throw new Error(
+    'profile continuity checker must ignore profile text in shell comments',
   );
 }
 
