@@ -836,7 +836,14 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     encodeURIComponent('ht\ntps:alice:credential-value@nested.example/private'),
     encodeURIComponent('h\rttps:alice:credential-value@nested.example/private'),
     encodeURIComponent(
-      encodeURIComponent('ht\ntps:alice:credential-value@nested.example/private'),
+      encodeURIComponent(
+        'ht\ntps:alice:credential-value@nested.example/private',
+      ),
+    ),
+    encodeURIComponent('\\\\alice:credential-value@nested.example/private'),
+    encodeURIComponent('\\/alice:credential-value@nested.example/private'),
+    encodeURIComponent(
+      encodeURIComponent('\\\\alice:credential-value@nested.example/private'),
     ),
     encodeURIComponent(
       'https://nested.example/redirect/https%3Aalice%3Acredential-value%40deep.example/private',

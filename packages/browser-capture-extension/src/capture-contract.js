@@ -329,6 +329,7 @@ function parseNestedHttpUrl(value) {
       absoluteUrlIndex >= 0 ||
       parseCandidate.startsWith("//") ||
       parseCandidate.startsWith("/") ||
+      parseCandidate.startsWith("\\") ||
       parseCandidate.startsWith("?")
     ) {
       try {

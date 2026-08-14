@@ -21,6 +21,7 @@ const state = {
   selectedFields: [],
   stagedId: "",
   stageIntent: null,
+  isStaging: false,
 };
 
 const byId = (id) => document.getElementById(id);
@@ -50,7 +51,7 @@ function render() {
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = state.selectedFields.includes(field);
-    checkbox.disabled = value === null;
+    checkbox.disabled = state.isStaging || value === null;
     checkbox.addEventListener("change", () => {
       state.stageIntent = null;
       state.selectedFields = checkbox.checked
@@ -68,7 +69,8 @@ function render() {
     row.append(checkbox, text);
     fields.append(row);
   }
-  handoff.disabled = state.selectedFields.length === 0;
+  handoff.disabled = state.isStaging || state.selectedFields.length === 0;
+  recapture.disabled = state.isStaging;
   discard.disabled = !state.stagedId;
 }
 
@@ -101,7 +103,8 @@ async function openErp4(id) {
 
 async function stageAndOpen() {
   if (!state.draft || state.selectedFields.length === 0) return;
-  handoff.disabled = true;
+  state.isStaging = true;
+  render();
   try {
     if (!state.stagedId) {
       state.stageIntent = prepareCaptureStageIntent(
@@ -123,7 +126,6 @@ async function stageAndOpen() {
       state.stageIntent = null;
     }
     await openErp4(state.stagedId);
-    render();
   } catch (error) {
     setStatus(
       error instanceof Error && error.message === "queue_full"
@@ -131,7 +133,9 @@ async function stageAndOpen() {
         : "handoffを開始できませんでした。自動再送していません。",
       "error",
     );
-    handoff.disabled = false;
+  } finally {
+    state.isStaging = false;
+    render();
   }
 }
 

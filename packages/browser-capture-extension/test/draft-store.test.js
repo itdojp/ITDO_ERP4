@@ -273,6 +273,10 @@ test("popup retry intent converges after a successful stage response is lost", a
   assert.ok(firstIntent);
 
   await store.stage(firstIntent);
+  // A new popup/service-worker instance must recover the staged record from
+  // the bounded record set without a separately-written recent pointer.
+  const reopenedStore = createDraftStore(storage, () => now);
+  assert.equal((await reopenedStore.recent())?.id, firstIntent.id);
   const retryIntent = prepareCaptureStageIntent(
     draft,
     ["title", "url", "selectedText"],
@@ -286,6 +290,7 @@ test("popup retry intent converges after a successful stage response is lost", a
     ).length,
     1,
   );
+  assert.equal(storage.values.has("erp4-browser-capture-recent"), false);
 });
 
 test("accepts the complete source allowlist and enforces exact scope groups", async () => {

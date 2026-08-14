@@ -10,7 +10,7 @@ import {
 } from "./capture-contract.js";
 
 const PREFIX = "erp4-browser-capture-draft:";
-const RECENT_KEY = "erp4-browser-capture-recent";
+const LEGACY_RECENT_KEY = "erp4-browser-capture-recent";
 const operationPattern = /^[A-Za-z0-9_-]{22,200}$/u;
 
 function key(id) {
@@ -167,9 +167,12 @@ export function createDraftStore(storage, clock = () => Date.now()) {
       if (!storageKey.startsWith(PREFIX)) continue;
       if (!normalizeStoredDraft(value, now)) await storage.remove(storageKey);
     }
-    const recent = await storage.get(RECENT_KEY);
-    if (recent !== undefined && !isOpaqueId(recent)) {
-      await storage.remove(RECENT_KEY);
+    // Older builds stored a second recent-pointer key after the draft record.
+    // That two-write sequence could be interrupted between writes. Recent
+    // drafts are now derived from the bounded record set, so remove the legacy
+    // pointer instead of treating it as lifecycle state.
+    if ((await storage.get(LEGACY_RECENT_KEY)) !== undefined) {
+      await storage.remove(LEGACY_RECENT_KEY);
     }
   };
 
@@ -222,16 +225,22 @@ export function createDraftStore(storage, clock = () => Date.now()) {
           usedNonces: [],
         };
         await storage.set(key(record.id), record);
-        await storage.set(RECENT_KEY, record.id);
         return record;
       }),
     recent: () =>
       serialized(async () => {
         await prune();
-        const id = await storage.get(RECENT_KEY);
-        if (!isOpaqueId(id)) return null;
-        const current = await read(id);
-        return current?.actorFingerprint === null ? current : null;
+        const now = clock();
+        const candidates = (await storage.entries())
+          .filter(([storageKey]) => storageKey.startsWith(PREFIX))
+          .map(([, value]) => normalizeStoredDraft(value, now))
+          .filter((value) => value?.actorFingerprint === null)
+          .sort(
+            (left, right) =>
+              Date.parse(right.createdAt) - Date.parse(left.createdAt) ||
+              right.id.localeCompare(left.id),
+          );
+        return candidates[0] ?? null;
       }),
     command: (input) =>
       serialized(async () => {
@@ -315,9 +324,6 @@ export function createDraftStore(storage, clock = () => Date.now()) {
         }
         if (input.command === "delete") {
           await storage.remove(key(claimed.id));
-          if ((await storage.get(RECENT_KEY)) === claimed.id) {
-            await storage.remove(RECENT_KEY);
-          }
           return { transitioned: true, record: null };
         }
         throw new Error("invalid_request");
@@ -328,9 +334,6 @@ export function createDraftStore(storage, clock = () => Date.now()) {
         if (!current) return;
         if (current.actorFingerprint !== null) throw new Error("not_found");
         await storage.remove(key(id));
-        if ((await storage.get(RECENT_KEY)) === id) {
-          await storage.remove(RECENT_KEY);
-        }
       }),
   };
 }
