@@ -89,20 +89,36 @@ cd ITDO_ERP4
 
 ## 3. イメージ build
 
-frontend build 用の env ファイルを用意します。
+frontend build 用の env ファイルを、実行するprofile専用のexampleから用意します。profileを変えても以前のenvを流用しません。
 
 ```bash
-cp deploy/quadlet/env/erp4-frontend-build.env.example deploy/quadlet/env/erp4-frontend-build.env
+PROFILE="${PROFILE:-private-smoke}"
+export PROFILE
+case "$PROFILE" in
+  production) FRONTEND_ENV_EXAMPLE=deploy/quadlet/env/erp4-frontend-build.env.example ;;
+  private-smoke) FRONTEND_ENV_EXAMPLE=deploy/quadlet/env/erp4-frontend-build.private-smoke.env.example ;;
+  https-trial) FRONTEND_ENV_EXAMPLE=deploy/quadlet/env/erp4-frontend-build.https-trial.env.example ;;
+  *) echo "unsupported profile: $PROFILE" >&2; exit 1 ;;
+esac
+cp "$FRONTEND_ENV_EXAMPLE" deploy/quadlet/env/erp4-frontend-build.env
+chmod 600 deploy/quadlet/env/erp4-frontend-build.env
 vi deploy/quadlet/env/erp4-frontend-build.env
 ```
 
-最低限修正する値:
+最低限確認する値:
 
 - `VITE_API_BASE`
   - plain HTTP の stack smoke のみ: `http://YOUR_VPS_HOST:3001`
   - Google OIDC を含む受入確認: `https://api.example.com`
+- `VITE_AUTH_MODE`
+- `VITE_ENABLE_SW`
+- `VITE_PWA_SHARE_TARGET_MODE`
+  - `private-smoke`: `VITE_AUTH_MODE=header`、`VITE_ENABLE_SW=false`、`VITE_PWA_SHARE_TARGET_MODE=decommission`
+  - `production`／`https-trial`: BFF認証とWeb Share Targetを有効にするexample値を維持
 - `VITE_GOOGLE_CLIENT_ID`（frontend が Google Identity Services を直接使う場合のみ。`AUTH_MODE=jwt_bff` の backend redirect フローだけなら不要）
 - `VITE_PUSH_PUBLIC_KEY`（Push 通知を使う場合）
+
+非公開・隔離済みのPWA intake専用rehearsalでは、`private-smoke`に`VITE_ENABLE_SW=true`と`VITE_PWA_SHARE_TARGET_MODE=enabled`を明示した専用artifactを使用できる。ただし標準`private-smoke`または本番証跡へ流用せず、rehearsal終了後は`decommission` artifactへ戻す。
 
 Google OIDC をさくらVPS 実機で使う場合、Google 側へ登録する origin / redirect URI は FQDN + HTTPS 前提です。`http://<VPS_IP>:3001/auth/google/callback` や raw IP origin は Google Auth Platform に登録できません。先に [sakura-vps-https-proxy](sakura-vps-https-proxy.md) と [google-oidc-google-cloud-console](google-oidc-google-cloud-console.md) を確認してください。
 
@@ -111,13 +127,13 @@ plain HTTP の `8080/3001` 構成は Podman stack 自体の smoke 確認用で�
 build 前に frontend build 用 env だけ検証します。
 
 ```bash
-./scripts/quadlet/check-env.sh --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
+./scripts/quadlet/check-env.sh --profile "$PROFILE" --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
 ```
 
 build:
 
 ```bash
-./scripts/quadlet/build-images.sh
+./scripts/quadlet/build-images.sh --profile "$PROFILE" --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
 ```
 
 生成されるイメージは、既定では現在の Git commit 短縮 SHA を tag に使います。タグを明示したい場合は `ERP4_IMAGE_TAG` を設定します。
@@ -126,17 +142,17 @@ build:
 - `localhost/erp4-frontend:<commit-sha>`
 
 ```bash
-ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" ./scripts/quadlet/build-images.sh
+ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" \
+  ./scripts/quadlet/build-images.sh --profile "$PROFILE" --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
 ```
 
 `latest` tag は本番 Quadlet 手順では使いません。Containerfile の base image と Caddy/PostgreSQL image は digest 付き参照を使い、アプリケーション image は commit-derived tag を Quadlet unit へ展開します。
 
 ## 4. Quadlet 配置
 
-profileを先に固定する。非公開試験は `private-smoke`、HTTPS試験は `https-trial`、従来の本番相当構成は `production` を使う。
+section 3で固定したprofileを変更せず、そのprofileでbuildしたimageを配置する。非公開試験は `private-smoke`、HTTPS試験は `https-trial`、従来の本番相当構成は `production` を使う。
 
 ```bash
-PROFILE=private-smoke
 ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" \
   ./scripts/quadlet/install-user-units.sh --profile "$PROFILE"
 ```
@@ -227,14 +243,19 @@ ERP4_DB_BACKUP_SKIP_GLOBALS=0
 ./scripts/quadlet/start-stack.sh --profile "$PROFILE"
 ```
 
-proxyを起動する場合は`private-smoke`のまま実行せず、HTTPS前提を満たした`https-trial`へ切り替えてunit/envを準備します。以下は初回起動前のprofile切替例です。
+proxyを起動する場合は`private-smoke`のbuild済みimage／envのまま途中でprofileを変更しない。新しいshellで`PROFILE`を`https-trial`として明示し、section 3のprofile別env選択、検証、image buildからやり直した後、section 4の配置へ進む。`production`へ切り替える場合も同様に、buildから同じprofileを一貫して使う。
+
+現在のprofileが`https-trial`または`production`で、対応するenv／image／unitを同じprofileで準備済みの場合だけproxyを含めて起動する。
 
 ```bash
-PROFILE=https-trial
-ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" \
-  ./scripts/quadlet/install-user-units.sh --profile "$PROFILE"
-./scripts/quadlet/check-env.sh --profile "$PROFILE"
-./scripts/quadlet/start-stack.sh --profile "$PROFILE" --include-proxy
+case "$PROFILE" in
+  private-smoke)
+    ./scripts/quadlet/start-stack.sh --profile "$PROFILE"
+    ;;
+  production|https-trial)
+    ./scripts/quadlet/start-stack.sh --profile "$PROFILE" --include-proxy
+    ;;
+esac
 ```
 
 手動で分ける場合:
@@ -266,8 +287,8 @@ systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.
 試験稼働の受入確認を 1 コマンドで回す場合は、次を使います。
 
 ```bash
-./scripts/quadlet/check-trial-readiness.sh
-./scripts/quadlet/check-trial-readiness.sh --include-proxy --resolve-ip <VPS_IP>
+./scripts/quadlet/check-trial-readiness.sh --profile "$PROFILE"
+./scripts/quadlet/check-trial-readiness.sh --profile "$PROFILE" --include-proxy --resolve-ip <VPS_IP>
 ```
 
 `check-trial-readiness.sh` は `check-host-prereqs.sh` → `check-env.sh` → `check-stack.sh` を順に実行し、`--include-proxy` 指定時だけ `check-https.sh` を追加します。DNS 切替前に公開ドメイン疎通を仮確認したい場合は `--resolve-ip` を使います。
@@ -275,8 +296,8 @@ systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.
 試験稼働の証跡をまとめて採取する場合:
 
 ```bash
-./scripts/quadlet/collect-trial-evidence.sh --lines 100
-./scripts/quadlet/collect-trial-evidence.sh --include-proxy --resolve-ip <VPS_IP>
+./scripts/quadlet/collect-trial-evidence.sh --profile "$PROFILE" --lines 100
+./scripts/quadlet/collect-trial-evidence.sh --profile "$PROFILE" --include-proxy --resolve-ip <VPS_IP>
 ```
 
 `collect-trial-evidence.sh` は `status-stack.sh` / `logs-stack.sh` / `systemctl --user list-timers 'erp4-*'` を timestamp 付きディレクトリへ保存し、`--include-proxy` 指定時だけ `check-https.sh` の結果も追加します。`status-stack.sh` や `check-https.sh` が失敗しても採取自体は継続し、最後に non-zero で終了します。

@@ -23,7 +23,22 @@ PWA share targetまたはbrowser extensionから受け取ったdraftは、受信
 4. `Preview`を選び、backendが正規化した全selected fieldの実値、omitted field名、保存byte数を確認します。field名や件数だけで確定しません。
 5. `このexact previewを保存します`を選んでから確定します。
 
-保存結果が`確認中`の場合、同じ内容を再送せず`保存結果を再照合`を使用します。通常の保存確定では10分を過ぎたpreviewを再利用できませんが、既にpending ledgerが存在する場合は、同じactor、request key、exact payloadへ束縛された署名済みpreviewから新しい保存処理を作らず再照合できます。確認中はInbox、snapshot再照合、annotation／会話／Synthesis等の別mutationとitem／tab切替を停止します。`破棄`はlocal draftを削除する通知を送ります。preview tokenとrequest keyは画面session内だけに保持し、URL、localStorage、画面、監査logへ表示しません。PWAとextension固有の受信、offline、期限切れ手順は各transportの実装後に追記します。
+保存結果が`確認中`の場合、同じ内容を再送せず`保存結果を再照合`を使用します。保存開始時にはpreviewで正規化されたexact draft（画面で編集した値を含む）とscope／field選択を端末内へ固定するため、reload後も元の共有値へ戻りません。通常の保存確定では10分を過ぎたpreviewを再利用できませんが、既にpending ledgerが存在する場合は、同じactor、request key、exact payloadへ束縛された署名済みpreviewから新しい保存処理を作らず再照合できます。確認中はInbox、snapshot再照合、annotation／会話／Synthesis等の別mutationとitem／tab切替を停止します。`破棄`はlocal draftを削除する通知を送ります。preview tokenは画面session内だけに保持します。request keyはURLへ露出させず、PWAではTTL付きのlocal IndexedDB draftに保存し、最初にserver確認されたactorへclaimした後はactor-boundで扱います。いずれもlocalStorage、画面、監査logへ表示しません。browser extension固有の受信手順はextension実装後に追記します。
+
+### installed PWAから共有する
+
+1. PWAを一度起動し、onlineで画面が表示されることを確認します。初回起動前などservice workerがまだ有効でない場合は保存済みになりません。起動後に共有操作をやり直してください。
+2. OS／browserの共有操作でERP4を選択します。扱うfieldはページタイトル、選択テキスト、HTTP(S) URLだけです。file、画像、PDFはこの経路では共有できません。
+3. 未ログインの場合、本文は表示されず端末内に最大60分保持されます。ログインするか、`共有下書きを破棄`を選びます。
+4. ログイン後、Knowledge Hubの`ブラウザー共有の確認`で内容を確認します。受信しただけでは保存されません。
+5. 保存field、source type、scopeを選択して`Preview`を実行します。scopeは`personal`が既定です。`organization`はgroupと追加確認が必要です。
+6. exact previewを確認し、明示確認後に保存します。保存または破棄が確定するとlocal draftは削除されます。端末内削除に失敗した場合はURLを維持したまま削除再試行を表示します。結果不明／pendingでは削除されず、同じ画面からread-only再照合します。
+
+offline中も受信済みdraftは端末内に保持されますが、自動送信されません。offlineへ移行すると表示中の本文とpreviewを消去し、online復帰時にserver sessionを再確認してから利用者がpreviewを実行します。queueは10件までで、上限時に古いdraftを自動削除しません。各共有gestureは別draft／request keyです。同じlandingの再読込や結果不明後の再照合だけが、URLに出ない保存済みrequest keyでserver-side idempotencyへ収束します。未認証で受信したdraftは、最初にserver確認されたERP4利用者へ端末内で束縛されます。claim前はERP4 accountではなくbrowser profileがlocal trust boundaryであるため、共有端末では意図した利用者で最初にログインするか、内容を受け取らず破棄してください。claim後のログアウトまたは別tabでのaccount切替はactor情報を含まないsession-generation通知で表示中の本文とpreviewを即時消去します。previewの前後と保存／再照合の直前にもserver actorを再確認し、claim済みdraftは別利用者へ表示・保存・削除させません。TTL 60分を過ぎた内容は表示中でも消去され、browserが動作している次のcleanup機会に物理削除されます。本文を含むURLをbookmark／共有する機能はありません。共有下書きを端末に残したくない場合は、同じ利用者でログインした状態から明示的に破棄してください。
+
+意図しない共有下書きが表示された場合は、previewや保存を行わず破棄してください。browser互換のため、service workerからinitiator metadataを取得できないPOSTも端末内stagingまでは受理しますが、ERP4 APIのmutation、自動保存、cookie/session読取は行いません。保存には認証済み画面でのexact previewと明示confirmが必要です。
+
+PWA share targetをrollbackする場合は、先にfrontend build envを`VITE_PWA_SHARE_TARGET_MODE=decommission`としてbuild／配布します。このbridge releaseはmanifestから新規受付を外し、service workerのPOST受付を停止しつつTTL／discard cleanupを維持します。利用者へ残存draftの破棄またはERP4 originのsite data削除を案内し、最大60分のTTLとclient activationを確認してから旧service workerへ戻してください。`sw.js`、`share-target-sw.js`、`share-target-mode.js`は`Cache-Control: no-cache`で再検証されます。旧imageへ即時に戻すだけでは、旧codeが専用IndexedDBを認識せずlocal本文が残る可能性があります。
 
 ## 新しい Inbox 項目へ保存する
 

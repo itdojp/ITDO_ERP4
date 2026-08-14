@@ -44,6 +44,8 @@
 ### 2026-08-14
 
 - [Issue #2017 capture ingress foundation 検証](2026-08-14-issue2017-capture-ingress-foundation.md)
+- [Issue #2017 PWA Web Share Target 検証](2026-08-14-issue2017-pwa-share-target.md)
+  - 証跡: [docs/test-results/2026-08-14-issue2017-pwa-share-target/](2026-08-14-issue2017-pwa-share-target/)
 
 ### 2026-08-13
 

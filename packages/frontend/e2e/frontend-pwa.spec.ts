@@ -150,6 +150,260 @@ async function ensureServiceWorker(page: Page) {
   });
 }
 
+async function ensureControlledServiceWorker(page: Page) {
+  if (!(await ensureServiceWorker(page))) return false;
+  if (
+    !(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)))
+  ) {
+    await page.reload();
+    await expect(
+      page.getByRole('heading', { name: 'ERP4 MVP PoC' }),
+    ).toBeVisible();
+  }
+  return page.evaluate(() => Boolean(navigator.serviceWorker.controller));
+}
+
+test('pwa manifest declares a bounded text-only Web Share Target @pwa', async ({
+  page,
+}) => {
+  await prepare(page);
+  const manifest = await page.evaluate(async () => {
+    const response = await fetch('/manifest.webmanifest', {
+      cache: 'no-store',
+    });
+    return response.json();
+  });
+  expect(manifest.share_target).toEqual({
+    action: '/share-target',
+    method: 'POST',
+    enctype: 'multipart/form-data',
+    params: { title: 'title', text: 'text', url: 'url' },
+  });
+  expect(manifest.share_target.params.files).toBeUndefined();
+});
+
+test('pwa Web Share Target stages locally, resumes explicitly, and never puts content in its URL @pwa @extended', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await prepare(page);
+  expect(await ensureControlledServiceWorker(page)).toBe(true);
+
+  const privateText = `PRIVATE-SHARE-TARGET-${runId()}`;
+  let captureMutationRequests = 0;
+  page.on('request', (request) => {
+    if (
+      /\/knowledge\/captures(?:\/|$)/u.test(new URL(request.url()).pathname)
+    ) {
+      captureMutationRequests += 1;
+    }
+  });
+
+  const staged = await page.evaluate(async (text) => {
+    const form = new FormData();
+    form.set('title', 'Synthetic PWA share');
+    form.set('text', `<script>globalThis.pwaCompromised=true</script>${text}`);
+    form.set('url', 'https://example.invalid/synthetic');
+    const response = await fetch('/share-target', {
+      method: 'POST',
+      body: form,
+    });
+    return {
+      status: response.status,
+      url: response.url,
+      body: await response.text(),
+    };
+  }, privateText);
+
+  expect(staged.status).toBe(200);
+  const landingUrl = new URL(staged.url);
+  const opaqueId = landingUrl.searchParams.get('shareTarget') || '';
+  expect(landingUrl.pathname).toBe('/');
+  expect([...landingUrl.searchParams.keys()]).toEqual(['shareTarget']);
+  expect(opaqueId).toMatch(/^[a-f0-9]{32}$/u);
+  expect(staged.url).not.toContain(privateText);
+  expect(staged.body).not.toContain(privateText);
+  expect(captureMutationRequests).toBe(0);
+
+  await page.goto(staged.url);
+  await expect(
+    page.getByRole('heading', { name: 'ブラウザー共有の確認' }),
+  ).toBeVisible();
+  await expect(page.getByRole('textbox', { name: '選択テキスト' })).toHaveValue(
+    `<script>globalThis.pwaCompromised=true</script>${privateText}`,
+  );
+  expect(
+    await page.evaluate(
+      () =>
+        (globalThis as typeof globalThis & { pwaCompromised?: boolean })
+          .pwaCompromised,
+    ),
+  ).toBeUndefined();
+  expect(captureMutationRequests).toBe(0);
+
+  await page
+    .getByRole('textbox', { name: '選択テキスト' })
+    .fill('Sanitized synthetic selection for PWA verification.');
+  await captureSection(
+    page.locator('section[aria-labelledby="knowledge-capture-ingress-title"]'),
+    '01-pwa-share-preview.png',
+  );
+
+  await page.reload();
+  await expect(
+    page.getByRole('heading', { name: 'ブラウザー共有の確認' }),
+  ).toBeVisible();
+  expect(captureMutationRequests).toBe(0);
+
+  const siblingPage = await page.context().newPage();
+  await siblingPage.goto(staged.url);
+  await expect(
+    siblingPage.getByRole('heading', { name: 'ブラウザー共有の確認' }),
+  ).toBeVisible();
+  await expect(
+    siblingPage.getByRole('textbox', { name: '選択テキスト' }),
+  ).toHaveValue(
+    `<script>globalThis.pwaCompromised=true</script>${privateText}`,
+  );
+
+  await page.getByRole('button', { name: '破棄', exact: true }).click();
+  await expect(page).not.toHaveURL(/shareTarget=/u);
+  await expect(siblingPage).not.toHaveURL(/shareTarget=/u);
+  await expect(
+    siblingPage.getByRole('heading', { name: 'ブラウザー共有の確認' }),
+  ).toHaveCount(0);
+  await expect(siblingPage.getByText(privateText)).toHaveCount(0);
+  await siblingPage.close();
+  const remaining = await page.evaluate(async (id) => {
+    return new Promise<number>((resolve, reject) => {
+      const open = indexedDB.open('erp4-share-target-drafts', 1);
+      open.onerror = () => reject(open.error);
+      open.onsuccess = () => {
+        const database = open.result;
+        const transaction = database.transaction('drafts', 'readonly');
+        const get = transaction.objectStore('drafts').get(id);
+        get.onsuccess = () => resolve(get.result ? 1 : 0);
+        get.onerror = () => reject(get.error);
+        transaction.oncomplete = () => database.close();
+      };
+    });
+  }, opaqueId);
+  expect(remaining).toBe(0);
+});
+
+test('pwa Web Share Target rejects files, unknown fields, wrong media, and oversize input @pwa @extended', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await prepare(page);
+  expect(await ensureControlledServiceWorker(page)).toBe(true);
+
+  const results = await page.evaluate(async () => {
+    const fileForm = new FormData();
+    fileForm.set('text', new Blob(['synthetic']), 'capture.txt');
+    const unknownForm = new FormData();
+    unknownForm.set('provider', 'private-canary');
+    const oversizeForm = new FormData();
+    oversizeForm.set('text', 'a'.repeat(128 * 1024));
+    const [file, unknown, wrongMedia, oversize] = await Promise.all([
+      fetch('/share-target', { method: 'POST', body: fileForm }),
+      fetch('/share-target', { method: 'POST', body: unknownForm }),
+      fetch('/share-target', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      }),
+      fetch('/share-target', { method: 'POST', body: oversizeForm }),
+    ]);
+    return Promise.all(
+      [file, unknown, wrongMedia, oversize].map(async (response) => ({
+        status: response.status,
+        body: await response.text(),
+      })),
+    );
+  });
+
+  expect(results).toEqual([
+    { status: 400, body: 'invalid_payload' },
+    { status: 400, body: 'invalid_payload' },
+    { status: 415, body: 'unsupported_media_type' },
+    { status: 413, body: 'payload_too_large' },
+  ]);
+  expect(JSON.stringify(results)).not.toContain('private-canary');
+});
+
+test('pwa Web Share Target keeps an unauthenticated offline draft and resumes only after login @pwa @extended', async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(120_000);
+  await prepare(page);
+  expect(await ensureControlledServiceWorker(page)).toBe(true);
+  const privateText = `PRIVATE-OFFLINE-DRAFT-${runId()}`;
+  const landingUrl = await page.evaluate(async (text) => {
+    const form = new FormData();
+    form.set('text', text);
+    const response = await fetch('/share-target', {
+      method: 'POST',
+      body: form,
+    });
+    return response.url;
+  }, privateText);
+  await page.evaluate(() => window.localStorage.removeItem('erp4_auth'));
+  // `prepare()` installs authenticated state on every navigation of its page.
+  // Use a fresh page so the unauthenticated resume path is not replaced by
+  // the authenticated state that `prepare()` injects into its own page.
+  const landingPage = await context.newPage();
+  await landingPage.goto(landingUrl);
+
+  await expect(
+    landingPage.getByText(/ログイン後に内容を確認できます/),
+  ).toBeVisible();
+  await context.setOffline(true);
+  await expect(landingPage.getByText(/自動送信されません/)).toBeVisible();
+  await expect(landingPage.getByText(privateText)).toHaveCount(0);
+  await expect(
+    landingPage.getByRole('heading', { name: 'ブラウザー共有の確認' }),
+  ).toHaveCount(0);
+
+  await context.setOffline(false);
+  await landingPage.evaluate((state) => {
+    window.localStorage.setItem('erp4_auth', JSON.stringify(state));
+    window.dispatchEvent(new Event('erp4:auth-updated'));
+  }, authState);
+  await expect(
+    landingPage.getByRole('heading', { name: 'ブラウザー共有の確認' }),
+  ).toBeVisible();
+  await expect(
+    landingPage.getByRole('textbox', { name: '選択テキスト' }),
+  ).toHaveValue(privateText);
+
+  await landingPage.evaluate(() => {
+    window.localStorage.removeItem('erp4_auth');
+    window.dispatchEvent(new Event('erp4:auth-updated'));
+  });
+  await expect(
+    landingPage.getByText(/ログイン後に内容を確認できます/),
+  ).toBeVisible();
+  await expect(landingPage.getByText(privateText)).toHaveCount(0);
+  await expect(
+    landingPage.getByRole('heading', { name: 'ブラウザー共有の確認' }),
+  ).toHaveCount(0);
+
+  await landingPage.evaluate((state) => {
+    window.localStorage.setItem('erp4_auth', JSON.stringify(state));
+    window.dispatchEvent(new Event('erp4:auth-updated'));
+  }, authState);
+  await expect(
+    landingPage.getByRole('heading', { name: 'ブラウザー共有の確認' }),
+  ).toBeVisible();
+  await expect(
+    landingPage.getByRole('textbox', { name: '選択テキスト' }),
+  ).toHaveValue(privateText);
+  await landingPage.getByRole('button', { name: '破棄', exact: true }).click();
+  await expect(landingPage).not.toHaveURL(/shareTarget=/u);
+});
+
 test('pwa offline duplicate time entries @pwa @extended', async ({
   page,
   context,
@@ -206,7 +460,9 @@ test('pwa offline duplicate time entries @pwa @extended', async ({
   await expect
     .poll(
       async () => {
-        const statusText = await offlineQueueSection.getByText(/件数:/).textContent();
+        const statusText = await offlineQueueSection
+          .getByText(/件数:/)
+          .textContent();
         const match = statusText?.match(/件数:\s*(\d+)/);
         return match ? Number(match[1]) : 0;
       },
@@ -216,14 +472,18 @@ test('pwa offline duplicate time entries @pwa @extended', async ({
 
   await context.setOffline(false);
 
-  const resendButton = offlineQueueSection.getByRole('button', { name: '再送' });
+  const resendButton = offlineQueueSection.getByRole('button', {
+    name: '再送',
+  });
   if (await resendButton.isEnabled().catch(() => false)) {
     await resendButton.click();
   }
   await expect
     .poll(
       async () => {
-        const statusText = await offlineQueueSection.getByText(/件数:/).textContent();
+        const statusText = await offlineQueueSection
+          .getByText(/件数:/)
+          .textContent();
         const match = statusText?.match(/件数:\s*(\d+)/);
         return match ? Number(match[1]) : 0;
       },
@@ -318,7 +578,9 @@ test('pwa sw push URL guard is present @pwa', async ({ page }) => {
     return response.text();
   });
   expect(swSource).toContain('normalizeNotificationPath');
-  expect(swSource).toContain('data: { url: normalizeNotificationPath(payload.url) }');
+  expect(swSource).toContain(
+    'data: { url: normalizeNotificationPath(payload.url) }',
+  );
   expect(swSource).toContain('self.clients.openWindow(target.toString())');
 });
 
@@ -407,7 +669,9 @@ test('pwa service worker does not cache api responses @pwa @extended', async ({
   const containsApiEntry = await page.evaluate(async () => {
     const cache = await caches.open('erp4-pwa-v2');
     const keys = await cache.keys();
-    return keys.some((request) => new URL(request.url).pathname.startsWith('/api/'));
+    return keys.some((request) =>
+      new URL(request.url).pathname.startsWith('/api/'),
+    );
   });
   expect(containsApiEntry).toBe(false);
 });

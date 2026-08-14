@@ -18,6 +18,8 @@ OPS_DOC_TARGETS=(
   docs/ops/google-cloud-predeployment.md
   docs/ops/sakura-vps-deployment.md
   docs/ops/sakura-vps-env-checklist.md
+  docs/ops/sakura-vps-podman-trial.md
+  docs/ops/sakura-vps-trial-checklist.md
   docs/ops/sakura-vps-trial-profiles.md
   docs/ops/storage-readiness.md
   docs/ops/ops-automation.md
@@ -139,6 +141,191 @@ if (failures.length > 0) {
   process.exit(1);
 }
 console.log(`relative Markdown links valid for ${files.length} file(s)`);
+NODE
+
+printf '==> Checking Sakura profile continuity in runbooks\n'
+node - <<'NODE'
+const fs = require('fs');
+
+const files = [
+  'docs/ops/sakura-vps-deployment.md',
+  'docs/ops/sakura-vps-podman-trial.md',
+  'docs/ops/sakura-vps-trial-checklist.md',
+];
+const profileExampleFiles = new Set([
+  'docs/ops/sakura-vps-deployment.md',
+  'docs/ops/sakura-vps-podman-trial.md',
+]);
+const requiredCommandsByFile = new Map([
+  [
+    'docs/ops/sakura-vps-deployment.md',
+    [
+      'check-env.sh',
+      'build-images.sh',
+      'install-user-units.sh',
+      'start-stack.sh',
+      'check-trial-readiness.sh',
+    ],
+  ],
+  [
+    'docs/ops/sakura-vps-podman-trial.md',
+    [
+      'check-env.sh',
+      'build-images.sh',
+      'install-user-units.sh',
+      'start-stack.sh',
+      'restart-stack.sh',
+      'rollback-latest.sh',
+      'update-stack.sh',
+      'check-trial-readiness.sh',
+      'collect-trial-evidence.sh',
+    ],
+  ],
+  [
+    'docs/ops/sakura-vps-trial-checklist.md',
+    [
+      'check-env.sh',
+      'build-images.sh',
+      'install-user-units.sh',
+      'start-stack.sh',
+      'check-trial-readiness.sh',
+      'collect-trial-evidence.sh',
+      'rollback-latest.sh',
+    ],
+  ],
+]);
+const failures = [];
+
+function profileInvocationFailures(file, source, commands) {
+  const commandSet = new Set(commands);
+  const found = new Set();
+  const currentFailures = [];
+  for (const [index, rawLine] of source.split(/\r?\n/u).entries()) {
+    const line = rawLine.trim();
+    const matches = [
+      ...line.matchAll(/\.\/scripts\/quadlet\/([a-z0-9-]+\.sh)\b/gu),
+    ];
+    for (const [matchIndex, match] of matches.entries()) {
+      if (!commandSet.has(match[1])) continue;
+      found.add(match[1]);
+      const nextCommandIndex = matches[matchIndex + 1]?.index ?? line.length;
+      const commandSegment = line.slice(match.index, nextCommandIndex);
+      const boundary = commandSegment.search(/&&|\|\||;|(?<!\\)\||\s+#/u);
+      const invocation =
+        boundary === -1 ? commandSegment : commandSegment.slice(0, boundary);
+      if (!invocation.includes('--profile "$PROFILE"')) {
+        currentFailures.push(
+          `${file}:${index + 1}: ${match[1]} must receive --profile "$PROFILE"`,
+        );
+      }
+    }
+  }
+  for (const command of commandSet) {
+    if (!found.has(command)) {
+      currentFailures.push(`${file}: missing profile-aware invocation for ${command}`);
+    }
+  }
+  return currentFailures;
+}
+
+for (const command of [
+  'check-env.sh',
+  'rollback-latest.sh',
+  'update-stack.sh',
+]) {
+  const negativeFixture = [
+    `./scripts/quadlet/${command} --profile "$PROFILE"`,
+    `./scripts/quadlet/${command}`,
+  ].join('\n');
+  if (
+    profileInvocationFailures(`negative-fixture-${command}`, negativeFixture, [
+      command,
+    ]).length !== 1
+  ) {
+    throw new Error(
+      `profile continuity checker must reject every unbound ${command} invocation`,
+    );
+  }
+}
+
+const prefixedNegativeFixture = [
+  'ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" ./scripts/quadlet/build-images.sh --profile "$PROFILE"',
+  'ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" ./scripts/quadlet/build-images.sh',
+].join('\n');
+if (
+  profileInvocationFailures(
+    'negative-fixture-prefixed-build-images.sh',
+    prefixedNegativeFixture,
+    ['build-images.sh'],
+  ).length !== 1
+) {
+  throw new Error(
+    'profile continuity checker must reject env-prefixed unbound build-images.sh invocations',
+  );
+}
+
+const compoundNegativeFixture =
+  './scripts/quadlet/build-images.sh && ./scripts/quadlet/start-stack.sh --profile "$PROFILE"';
+if (
+  profileInvocationFailures(
+    'negative-fixture-compound-commands.sh',
+    compoundNegativeFixture,
+    ['build-images.sh', 'start-stack.sh'],
+  ).length !== 1
+) {
+  throw new Error(
+    'profile continuity checker must bind every command in a compound invocation',
+  );
+}
+
+const commentNegativeFixture =
+  './scripts/quadlet/build-images.sh # add --profile "$PROFILE" before use';
+if (
+  profileInvocationFailures(
+    'negative-fixture-comment-profile.sh',
+    commentNegativeFixture,
+    ['build-images.sh'],
+  ).length !== 1
+) {
+  throw new Error(
+    'profile continuity checker must ignore profile text in shell comments',
+  );
+}
+
+for (const file of files) {
+  const source = fs.readFileSync(file, 'utf8');
+  const assignments = source.match(/^PROFILE=/gm) ?? [];
+  if (assignments.length !== 1) {
+    failures.push(`${file}: expected one PROFILE assignment, found ${assignments.length}`);
+  }
+  if (/--profile\s+(?:production|private-smoke|https-trial)\b/u.test(source)) {
+    failures.push(`${file}: hard-coded --profile breaks build/install continuity`);
+  }
+  if (profileExampleFiles.has(file)) {
+    for (const example of [
+      'erp4-frontend-build.env.example',
+      'erp4-frontend-build.private-smoke.env.example',
+      'erp4-frontend-build.https-trial.env.example',
+    ]) {
+      if (!source.includes(example)) {
+        failures.push(`${file}: missing profile-specific example ${example}`);
+      }
+    }
+  }
+  failures.push(
+    ...profileInvocationFailures(
+      file,
+      source,
+      requiredCommandsByFile.get(file) ?? [],
+    ),
+  );
+}
+
+if (failures.length > 0) {
+  console.error(failures.join('\n'));
+  process.exit(1);
+}
+console.log('Sakura profile continuity valid for deployment, Podman, and trial checklist runbooks');
 NODE
 
 printf 'Ops documentation checks completed.\n'

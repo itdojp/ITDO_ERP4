@@ -50,7 +50,7 @@ cd /opt/itdo/ITDO_ERP4
 ### 3. イメージ build
 
 ```bash
-./scripts/quadlet/build-images.sh
+./scripts/quadlet/build-images.sh --profile "$PROFILE" --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
 ```
 
 最低限の確認:
@@ -58,7 +58,7 @@ cd /opt/itdo/ITDO_ERP4
 - `localhost/erp4-backend:<commit-sha>`
 - `localhost/erp4-frontend:<commit-sha>`
 
-`<commit-sha>` は既定で現在の Git commit 短縮 SHA です。明示したい場合は、`ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" ./scripts/quadlet/build-images.sh` のように同じ tag を指定します。`latest` tag は本番 Quadlet 手順では使いません。
+`<commit-sha>` は既定で現在の Git commit 短縮 SHA です。明示したい場合は、`ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" ./scripts/quadlet/build-images.sh --profile "$PROFILE" --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env` のように同じ tag を指定します。`latest` tag は本番 Quadlet 手順では使いません。
 
 ### 4. Quadlet unit 配置
 

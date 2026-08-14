@@ -25,7 +25,7 @@ Optional env:
   OPERATOR_NAME=...
   TARGET_HOST=...     # default: collected host from meta.txt
   VPS_IP=...
-  PROFILE=production|private-smoke|https-trial  # default: collected profile from meta.txt or production
+  PROFILE=production|private-smoke|https-trial  # default: collected profile from meta.txt
 
 Validation:
 - DATE_STAMP must be a valid calendar date (YYYY-MM-DD)
@@ -207,9 +207,18 @@ main() {
   timers_exit="$(read_meta_value list_timers_exit "$meta_file")"
   https_exit="$(read_meta_value check_https_exit "$meta_file")"
 
-  if [[ -z "$PROFILE" ]]; then
-    PROFILE="${evidence_profile:-production}"
+  [[ -n "$evidence_profile" ]] || die "evidence profile is missing from meta.txt"
+  case "$evidence_profile" in
+    production|private-smoke|https-trial)
+      ;;
+    *)
+      die "evidence profile is invalid in meta.txt: $evidence_profile"
+      ;;
+  esac
+  if [[ -n "$PROFILE" && "$PROFILE" != "$evidence_profile" ]]; then
+    die "requested PROFILE does not match the collected evidence profile"
   fi
+  PROFILE="$evidence_profile"
   case "$PROFILE" in
     production|private-smoke|https-trial)
       ;;

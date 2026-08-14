@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
+import { revalidateCurrentAuthActor } from '../../api';
 import { Alert, Button, Card, Input, Select, Textarea } from '../../ui';
 import {
   commitKnowledgeCapture,
@@ -8,7 +9,9 @@ import {
 } from './knowledgeCaptureApi';
 import {
   defaultKnowledgeCaptureFields,
+  KNOWLEDGE_CAPTURE_AUTH_CHECK_EVENT,
   KNOWLEDGE_CAPTURE_DRAFT_EVENT,
+  KNOWLEDGE_CAPTURE_PURGE_EVENT,
   KNOWLEDGE_CAPTURE_RESULT_EVENT,
   normalizeIncomingKnowledgeCapture,
   splitKnowledgeGroupIds,
@@ -17,6 +20,15 @@ import {
   type KnowledgeCapturePreview,
   type KnowledgeCaptureResult,
 } from './knowledgeCaptureModel';
+import {
+  createShareTargetPendingOperationId,
+  markShareTargetDraftPending,
+  markShareTargetDraftStaged,
+  normalizeShareTargetPendingIntent,
+  publishShareTargetLifecycle,
+  type ShareTargetLifecycle,
+  type ShareTargetPendingIntent,
+} from '../../utils/shareTargetQueue';
 import {
   knowledgeHubErrorMessage,
   type KnowledgeScope,
@@ -33,17 +45,70 @@ const fieldLabels: Record<KnowledgeCaptureField, string> = {
   publishedAt: '公開日時',
 };
 
-type IngressEventDetail = { draftId: string; draft: unknown };
+type IngressEventDetail = {
+  draftId: string;
+  requestKey: string;
+  actorKey: string;
+  lifecycle: Exclude<ShareTargetLifecycle, 'cleanup_pending'>;
+  pendingIntent: ShareTargetPendingIntent | null;
+  draft: unknown;
+};
+type PurgeEventDetail = { draftId: string };
+type AuthCheckEventDetail = { draftId: string; checking: boolean };
+
+function hasControlCharacter(value: string) {
+  return Array.from(value).some((character) => {
+    const code = character.codePointAt(0) ?? -1;
+    return code <= 31 || (code >= 127 && code <= 159);
+  });
+}
 
 function eventDetail(value: unknown): IngressEventDetail | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   if (
     typeof record.draftId !== 'string' ||
-    !/^[A-Za-z0-9_-]{22,128}$/u.test(record.draftId)
+    !/^[A-Za-z0-9_-]{22,128}$/u.test(record.draftId) ||
+    typeof record.requestKey !== 'string' ||
+    !/^[A-Za-z0-9_-]{22,128}$/u.test(record.requestKey) ||
+    typeof record.actorKey !== 'string' ||
+    record.actorKey.length < 1 ||
+    record.actorKey.length > 256 ||
+    hasControlCharacter(record.actorKey) ||
+    (record.lifecycle !== 'staged' && record.lifecycle !== 'pending')
   )
     return null;
-  return { draftId: record.draftId, draft: record.draft };
+  const pendingIntent =
+    record.lifecycle === 'pending'
+      ? normalizeShareTargetPendingIntent(record.pendingIntent)
+      : null;
+  if (record.lifecycle === 'pending' && !pendingIntent) return null;
+  return {
+    draftId: record.draftId,
+    requestKey: record.requestKey,
+    actorKey: record.actorKey,
+    lifecycle: record.lifecycle,
+    pendingIntent,
+    draft: record.draft,
+  };
+}
+
+function purgeEventDetail(value: unknown): PurgeEventDetail | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const draftId = (value as Record<string, unknown>).draftId;
+  return typeof draftId === 'string' && /^[A-Za-z0-9_-]{22,128}$/u.test(draftId)
+    ? { draftId }
+    : null;
+}
+
+function authCheckEventDetail(value: unknown): AuthCheckEventDetail | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  return typeof record.draftId === 'string' &&
+    /^[A-Za-z0-9_-]{22,128}$/u.test(record.draftId) &&
+    typeof record.checking === 'boolean'
+    ? { draftId: record.draftId, checking: record.checking }
+    : null;
 }
 
 function safeError(error: unknown) {
@@ -71,7 +136,10 @@ function isDefiniteCommitRejection(error: unknown) {
   );
 }
 
-function resultEvent(draftId: string, outcome: 'committed' | 'discarded') {
+function resultEvent(
+  draftId: string,
+  outcome: 'committed' | 'failed' | 'discarded',
+) {
   window.dispatchEvent(
     new CustomEvent(KNOWLEDGE_CAPTURE_RESULT_EVENT, {
       detail: { schemaVersion: 1, draftId, outcome },
@@ -107,13 +175,20 @@ export function KnowledgeCaptureIngress({
     null,
   );
   const [error, setError] = useState('');
+  const [resumePending, setResumePending] = useState(false);
+  const [authSuspended, setAuthSuspended] = useState(false);
+  const handoffRequestKeyRef = useRef('');
+  const handoffActorKeyRef = useRef('');
+  const draftIdRef = useRef('');
   const requestKeyRef = useRef('');
   const operationAbortRef = useRef<AbortController | null>(null);
   const generationRef = useRef(0);
   const mutationBusyRef = useRef(false);
   const handoffLockedRef = useRef(false);
   const unresolved =
-    result?.status === 'pending' || Boolean(uncertainCaptureId);
+    resumePending ||
+    result?.status === 'pending' ||
+    Boolean(uncertainCaptureId);
   const blocksNavigation =
     busy === 'commit' || busy === 'reconcile' || unresolved;
 
@@ -136,14 +211,45 @@ export function KnowledgeCaptureIngress({
     handoffLockedRef.current = false;
   }, []);
 
+  const purgeSensitiveDraft = useCallback(() => {
+    onCommitBusyChange?.(false);
+    mutationBusyRef.current = false;
+    invalidatePreview();
+    setBusy(null);
+    setDraftId('');
+    draftIdRef.current = '';
+    setDraft(null);
+    setSelectedFields([]);
+    setGroups('');
+    setScope('personal');
+    setSourceType('manual');
+    setOrganizationConfirmed(false);
+    handoffRequestKeyRef.current = '';
+    handoffActorKeyRef.current = '';
+    setResumePending(false);
+    setAuthSuspended(false);
+  }, [invalidatePreview, onCommitBusyChange]);
+
+  const revalidateHandoffActor = useCallback(
+    async (signal: AbortSignal, generation: number) => {
+      const expectedActorKey = handoffActorKeyRef.current;
+      const valid =
+        expectedActorKey.length > 0 &&
+        (await revalidateCurrentAuthActor(expectedActorKey, signal));
+      if (signal.aborted || generationRef.current !== generation) return false;
+      if (valid) return true;
+      // Trigger the landing controller's fail-closed verification path as well
+      // as synchronously purging the editable payload in this component.
+      window.dispatchEvent(new Event('erp4:auth-updated'));
+      purgeSensitiveDraft();
+      return false;
+    },
+    [purgeSensitiveDraft],
+  );
+
   useEffect(() => {
     const receive = (event: Event) => {
-      if (
-        mutationBlocked ||
-        mutationBusyRef.current ||
-        handoffLockedRef.current
-      )
-        return;
+      if (mutationBusyRef.current || handoffLockedRef.current) return;
       const detail = eventDetail((event as CustomEvent).detail);
       if (!detail) return;
       const normalized = normalizeIncomingKnowledgeCapture(detail.draft);
@@ -153,20 +259,45 @@ export function KnowledgeCaptureIngress({
       }
       invalidatePreview();
       setDraftId(detail.draftId);
+      draftIdRef.current = detail.draftId;
+      handoffRequestKeyRef.current = detail.requestKey;
+      handoffActorKeyRef.current = detail.actorKey;
       setDraft(normalized);
-      setSelectedFields(defaultKnowledgeCaptureFields(normalized));
-      setScope('personal');
-      setGroups('');
-      setSourceType(normalized.url ? 'web' : 'manual');
+      setSelectedFields(
+        detail.pendingIntent?.selectedFields ??
+          defaultKnowledgeCaptureFields(normalized),
+      );
+      setScope(detail.pendingIntent?.scope ?? 'personal');
+      setGroups(
+        detail.pendingIntent?.organizationGroupAccountIds.join('\n') ?? '',
+      );
+      setSourceType(
+        detail.pendingIntent?.sourceType ?? (normalized.url ? 'web' : 'manual'),
+      );
+      setResumePending(detail.lifecycle === 'pending');
       setOrganizationConfirmed(false);
     };
     window.addEventListener(KNOWLEDGE_CAPTURE_DRAFT_EVENT, receive);
+    const purge = (event: Event) => {
+      const detail = purgeEventDetail((event as CustomEvent).detail);
+      if (!detail || detail.draftId !== draftIdRef.current) return;
+      purgeSensitiveDraft();
+    };
+    window.addEventListener(KNOWLEDGE_CAPTURE_PURGE_EVENT, purge);
+    const authCheck = (event: Event) => {
+      const detail = authCheckEventDetail((event as CustomEvent).detail);
+      if (!detail || detail.draftId !== draftIdRef.current) return;
+      setAuthSuspended(detail.checking);
+    };
+    window.addEventListener(KNOWLEDGE_CAPTURE_AUTH_CHECK_EVENT, authCheck);
     return () => {
       window.removeEventListener(KNOWLEDGE_CAPTURE_DRAFT_EVENT, receive);
+      window.removeEventListener(KNOWLEDGE_CAPTURE_PURGE_EVENT, purge);
+      window.removeEventListener(KNOWLEDGE_CAPTURE_AUTH_CHECK_EVENT, authCheck);
       operationAbortRef.current?.abort();
       generationRef.current += 1;
     };
-  }, [invalidatePreview, mutationBlocked]);
+  }, [invalidatePreview, purgeSensitiveDraft]);
 
   const updateDraft = (
     field: keyof IncomingKnowledgeCaptureDraft,
@@ -203,6 +334,9 @@ export function KnowledgeCaptureIngress({
     setBusy('preview');
     setError('');
     try {
+      if (!(await revalidateHandoffActor(controller.signal, generation))) {
+        return;
+      }
       const value = await previewKnowledgeCapture(
         {
           draft,
@@ -211,16 +345,21 @@ export function KnowledgeCaptureIngress({
           organizationGroupAccountIds:
             scope === 'organization' ? splitKnowledgeGroupIds(groups) : [],
           sourceType,
-          requestKey: draftId,
+          requestKey: handoffRequestKeyRef.current,
         },
         controller.signal,
       );
       if (generationRef.current !== generation) return;
+      if (!(await revalidateHandoffActor(controller.signal, generation))) {
+        return;
+      }
       setPreview(value);
-      // The opaque 128-bit handoff ID is stable across an offline/login
-      // resume.  The backend stores only its actor-scoped HMAC.
-      requestKeyRef.current = draftId;
+      requestKeyRef.current = handoffRequestKeyRef.current;
       setExplicitlyConfirmed(false);
+      if (resumePending) {
+        setUncertainCaptureId(value.captureId);
+        handoffLockedRef.current = true;
+      }
     } catch (caught) {
       if (controller.signal.aborted || generationRef.current !== generation)
         return;
@@ -252,6 +391,87 @@ export function KnowledgeCaptureIngress({
     onCommitBusyChange?.(true);
     setBusy('commit');
     setError('');
+    if (!(await revalidateHandoffActor(controller.signal, generation))) {
+      mutationBusyRef.current = false;
+      onCommitBusyChange?.(false);
+      return;
+    }
+    const commitDraftId = draftId;
+    const commitActorKey = handoffActorKeyRef.current;
+    let pendingOperationId = '';
+    if (commitDraftId && commitActorKey) {
+      try {
+        pendingOperationId = createShareTargetPendingOperationId();
+        const pendingTransition = await markShareTargetDraftPending(
+          commitDraftId,
+          commitActorKey,
+          pendingOperationId,
+          {
+            selectedFields: preview.selectedFields,
+            scope: preview.scope,
+            organizationGroupAccountIds: preview.organizationGroupAccountIds,
+            sourceType: preview.sourceType,
+          },
+          preview.draft,
+        );
+        if (controller.signal.aborted || generationRef.current !== generation) {
+          // A remote owner may have published pending while this caller was
+          // waiting for the serialized IndexedDB transaction. Only the CAS
+          // winner may compensate its own transition; a loser leaves the
+          // exact pending row untouched for the landing reload.
+          if (pendingTransition.transitioned) {
+            const restored = await markShareTargetDraftStaged(
+              commitDraftId,
+              commitActorKey,
+              pendingOperationId,
+            )
+              .then(() => true)
+              .catch(() => false);
+            publishShareTargetLifecycle(
+              commitDraftId,
+              restored ? 'staged' : 'pending',
+            );
+          }
+          return;
+        }
+        if (!pendingTransition.transitioned) {
+          setDraft(pendingTransition.draft);
+          setSelectedFields(pendingTransition.pendingIntent.selectedFields);
+          setScope(pendingTransition.pendingIntent.scope);
+          setGroups(
+            pendingTransition.pendingIntent.organizationGroupAccountIds.join(
+              '\n',
+            ),
+          );
+          setSourceType(pendingTransition.pendingIntent.sourceType);
+          setPreview(null);
+          requestKeyRef.current = '';
+          setExplicitlyConfirmed(false);
+          setResumePending(true);
+          setUncertainCaptureId('');
+          handoffLockedRef.current = false;
+          onCommitBusyChange?.(true);
+          setError(
+            '別の画面で保存処理が開始されています。保存中のexact draftを再読込しました。read-only preview後に保存結果を再照合してください。',
+          );
+          mutationBusyRef.current = false;
+          if (generationRef.current === generation) setBusy(null);
+          return;
+        }
+        publishShareTargetLifecycle(commitDraftId, 'pending');
+      } catch {
+        if (controller.signal.aborted || generationRef.current !== generation) {
+          return;
+        }
+        mutationBusyRef.current = false;
+        onCommitBusyChange?.(false);
+        if (generationRef.current === generation) setBusy(null);
+        setError(
+          '端末内の共有下書きを保存中として固定できませんでした。外部送信は開始していません。',
+        );
+        return;
+      }
+    }
     try {
       const value = await commitKnowledgeCapture(
         {
@@ -270,6 +490,9 @@ export function KnowledgeCaptureIngress({
           () => undefined,
         );
         onCommitBusyChange?.(false);
+      } else if (value.status === 'failed') {
+        resultEvent(draftId, 'failed');
+        onCommitBusyChange?.(false);
       } else {
         onCommitBusyChange?.(true);
       }
@@ -277,10 +500,33 @@ export function KnowledgeCaptureIngress({
       if (controller.signal.aborted || generationRef.current !== generation)
         return;
       if (isDefiniteCommitRejection(caught)) {
+        let localStateRestored = true;
+        if (draftId && handoffActorKeyRef.current) {
+          try {
+            await markShareTargetDraftStaged(
+              draftId,
+              handoffActorKeyRef.current,
+              pendingOperationId,
+            );
+            publishShareTargetLifecycle(draftId, 'staged');
+          } catch {
+            localStateRestored = false;
+          }
+        }
+        if (!localStateRestored) {
+          setUncertainCaptureId(preview.captureId);
+          handoffLockedRef.current = true;
+          onCommitBusyChange?.(true);
+          setError(
+            '端末内の保存状態を復元できませんでした。新規送信せず、状態を確認してください。',
+          );
+          return;
+        }
         setPreview(null);
         setExplicitlyConfirmed(false);
         requestKeyRef.current = '';
         handoffLockedRef.current = false;
+        setResumePending(false);
         onCommitBusyChange?.(false);
         setError(safeError(caught));
       } else {
@@ -313,6 +559,10 @@ export function KnowledgeCaptureIngress({
     setBusy('reconcile');
     setError('');
     try {
+      if (!(await revalidateHandoffActor(controller.signal, generation))) {
+        onCommitBusyChange?.(false);
+        return;
+      }
       const value = await reconcileKnowledgeCapture(
         { preview, requestKey: requestKeyRef.current },
         controller.signal,
@@ -326,6 +576,9 @@ export function KnowledgeCaptureIngress({
         await Promise.resolve(onCommitted?.(value.itemId)).catch(
           () => undefined,
         );
+        onCommitBusyChange?.(false);
+      } else if (value.status === 'failed') {
+        resultEvent(draftId, 'failed');
         onCommitBusyChange?.(false);
       } else {
         onCommitBusyChange?.(true);
@@ -342,20 +595,14 @@ export function KnowledgeCaptureIngress({
   };
 
   const discard = () => {
-    onCommitBusyChange?.(false);
     if (draftId) resultEvent(draftId, 'discarded');
-    invalidatePreview();
-    setDraftId('');
-    setDraft(null);
-    setSelectedFields([]);
-    setGroups('');
-    setScope('personal');
-    setOrganizationConfirmed(false);
+    purgeSensitiveDraft();
   };
 
-  if (!draft) return null;
+  if (!draft || authSuspended) return null;
   const handoffLocked = result !== null || Boolean(uncertainCaptureId);
-  const controlsBlocked = mutationBlocked || busy !== null || handoffLocked;
+  const actionBlocked = mutationBlocked || busy !== null || handoffLocked;
+  const controlsBlocked = actionBlocked || resumePending;
   return (
     <Card padding="small">
       <section aria-labelledby="knowledge-capture-ingress-title">
@@ -563,23 +810,35 @@ export function KnowledgeCaptureIngress({
           </Alert>
         ) : null}
 
+        {resumePending && !preview ? (
+          <Alert variant="warning">
+            前回の保存結果を確認するため、まずread-only
+            previewを再作成してください。
+          </Alert>
+        ) : null}
+
         <div className="knowledge-capture-ingress-actions">
           <Button
             variant="secondary"
             loading={busy === 'preview'}
-            disabled={controlsBlocked}
+            disabled={actionBlocked}
             onClick={() => void runPreview()}
           >
             Preview
           </Button>
           <Button
             loading={busy === 'commit'}
-            disabled={!preview || !explicitlyConfirmed || controlsBlocked}
+            disabled={
+              !preview ||
+              !explicitlyConfirmed ||
+              controlsBlocked ||
+              resumePending
+            }
             onClick={() => void commit()}
           >
             明示確定して保存
           </Button>
-          {unresolved ? (
+          {preview && unresolved ? (
             <Button
               variant="secondary"
               loading={busy === 'reconcile'}

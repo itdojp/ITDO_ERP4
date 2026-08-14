@@ -22,6 +22,7 @@ RESTORE_CONFIG="$ROOT_DIR/scripts/quadlet/restore-config.sh"
 START_STACK="$ROOT_DIR/scripts/quadlet/start-stack.sh"
 RESTART_STACK="$ROOT_DIR/scripts/quadlet/restart-stack.sh"
 UPDATE_STACK="$ROOT_DIR/scripts/quadlet/update-stack.sh"
+BUILD_IMAGES_SCRIPT="$ROOT_DIR/scripts/quadlet/build-images.sh"
 ROLLBACK_LATEST="$ROOT_DIR/scripts/quadlet/rollback-latest.sh"
 LEGACY_NATIVE_UNIT_FIXTURES="$ROOT_DIR/scripts/quadlet/test-fixtures/markerless-native-units-92ca4385"
 
@@ -198,9 +199,14 @@ ENV
 write_frontend_env() {
   local file="$1"
   local api_base="$2"
+  local auth_mode="${3:-header}"
+  local service_worker="${4:-false}"
+  local share_target_mode="${5:-decommission}"
   cat >"$file" <<ENV
 VITE_API_BASE=$api_base
-VITE_ENABLE_SW=false
+VITE_AUTH_MODE=$auth_mode
+VITE_ENABLE_SW=$service_worker
+VITE_PWA_SHARE_TARGET_MODE=$share_target_mode
 ENV
 }
 
@@ -246,6 +252,65 @@ make_https_dir() {
   write_private_containers "$dir"
   write_https_caddy "$dir"
 }
+
+fake_build_bin="$WORK_DIR/fake-build-bin"
+fake_build_log="$WORK_DIR/fake-build.log"
+mkdir -p "$fake_build_bin"
+cat >"$fake_build_bin/podman" <<EOF_FAKE_PODMAN
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"$fake_build_log"
+EOF_FAKE_PODMAN
+chmod +x "$fake_build_bin/podman"
+valid_private_build_env="$WORK_DIR/private-build.env"
+write_frontend_env "$valid_private_build_env" 'http://erp4-backend:3001' header
+run_failure 'build-images rejects missing frontend build env' 'frontend build env file is required: .*erp4-frontend-build.*\.env; copy the profile-matching .*\.env\.example and set FRONTEND_BUILD_ENV_FILE or pass --frontend-build-env FILE' \
+  env -u FRONTEND_BUILD_ENV_FILE PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile \
+  SAKURA_VPS_PROFILE=production "$BUILD_IMAGES_SCRIPT"
+run_failure 'check-env guides missing frontend build env setup' 'frontend build env file not found: .*erp4-frontend-build.*\.env; copy the profile-matching .*\.env\.example and pass --frontend-build-env FILE' \
+  env -u FRONTEND_BUILD_ENV_FILE "$CHECK_ENV" --profile production --skip-runtime
+wrong_production_build_env="$WORK_DIR/wrong-production-build.env"
+write_frontend_env "$wrong_production_build_env" 'https://api.example.com' header
+run_failure 'build-images rejects production header auth' 'rejects VITE_AUTH_MODE=header' \
+  env PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile SAKURA_VPS_PROFILE=production \
+  FRONTEND_BUILD_ENV_FILE="$wrong_production_build_env" "$BUILD_IMAGES_SCRIPT"
+run_success 'build-images accepts explicit private-smoke frontend mode' \
+  env PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile \
+  "$BUILD_IMAGES_SCRIPT" --profile private-smoke --frontend-build-env "$valid_private_build_env"
+grep -Fq -- '--build-arg VITE_AUTH_MODE=header' "$fake_build_log" || \
+  fail 'build-images did not pass explicit frontend auth mode'
+grep -Fq -- '--build-arg VITE_PWA_SHARE_TARGET_MODE=decommission' "$fake_build_log" || \
+  fail 'build-images did not pass explicit PWA share-target mode'
+missing_sw_build_env="$WORK_DIR/private-build-missing-sw.env"
+grep -v '^VITE_ENABLE_SW=' "$valid_private_build_env" >"$missing_sw_build_env"
+run_failure 'build-images rejects missing service worker mode' 'VITE_ENABLE_SW is required' \
+  env -u VITE_ENABLE_SW PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile \
+  "$BUILD_IMAGES_SCRIPT" --profile private-smoke --frontend-build-env "$missing_sw_build_env"
+invalid_enabled_build_env="$WORK_DIR/private-build-invalid-enabled.env"
+write_frontend_env "$invalid_enabled_build_env" 'http://erp4-backend:3001' header false enabled
+run_failure 'build-images rejects enabled intake without service worker' 'requires VITE_ENABLE_SW=true' \
+  env PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile \
+  "$BUILD_IMAGES_SCRIPT" --profile private-smoke --frontend-build-env "$invalid_enabled_build_env"
+invalid_enabled_target="$WORK_DIR/private-invalid-enabled-target"
+make_private_dir "$invalid_enabled_target"
+run_failure 'check-env rejects enabled intake without service worker' 'requires VITE_ENABLE_SW=true' \
+  env QUADLET_TARGET_DIR="$invalid_enabled_target" "$CHECK_ENV" --profile private-smoke \
+  --target-dir "$invalid_enabled_target" --skip-runtime --frontend-build-env "$invalid_enabled_build_env"
+valid_enabled_build_env="$WORK_DIR/private-build-enabled.env"
+write_frontend_env "$valid_enabled_build_env" 'http://erp4-backend:3001' header true enabled
+: >"$fake_build_log"
+run_success 'build-images accepts enabled intake with service worker' \
+  env PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile \
+  "$BUILD_IMAGES_SCRIPT" --profile private-smoke --frontend-build-env "$valid_enabled_build_env"
+grep -Fq -- '--build-arg VITE_PWA_SHARE_TARGET_MODE=enabled' "$fake_build_log" || \
+  fail 'build-images did not pass enabled PWA share-target mode'
+valid_decommission_build_env="$WORK_DIR/private-build-decommission.env"
+write_frontend_env "$valid_decommission_build_env" 'http://erp4-backend:3001' header
+: >"$fake_build_log"
+run_success 'build-images accepts the explicit decommission bridge' \
+  env PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile \
+  "$BUILD_IMAGES_SCRIPT" --profile private-smoke --frontend-build-env "$valid_decommission_build_env"
+grep -Fq -- '--build-arg VITE_PWA_SHARE_TARGET_MODE=decommission' "$fake_build_log" || \
+  fail 'build-images did not pass the decommission bridge mode'
 
 installed_private_dir="$WORK_DIR/installed-private"
 installed_private_systemd_dir="$WORK_DIR/installed-private-systemd"
@@ -342,6 +407,8 @@ write_private_backend_env "$installed_private_dir"
 write_frontend_env "$installed_private_frontend" 'http://erp4-backend:3001'
 run_success 'installed private-smoke target passes env validation' \
   "$CHECK_ENV" --profile private-smoke --target-dir "$installed_private_dir" --frontend-build-env "$installed_private_frontend"
+run_success 'runtime env validation does not depend on a build-time env file' \
+  env -u FRONTEND_BUILD_ENV_FILE "$CHECK_ENV" --profile private-smoke --target-dir "$installed_private_dir"
 
 link_backup_quadlet_dir="$WORK_DIR/link-backup-quadlet"
 link_backup_systemd_dir="$WORK_DIR/link-backup-systemd"
@@ -664,6 +731,19 @@ run_success 'update stack propagates private-smoke profile' \
   "$UPDATE_STACK" --profile private-smoke --skip-build --skip-stack-check
 grep -Fq -- '--profile private-smoke' "$profile_args_file" || fail 'update-stack did not propagate private-smoke to install-user-units'
 
+update_build_profile_file="$WORK_DIR/update-build-profile.txt"
+fake_update_build="$WORK_DIR/fake-update-build.sh"
+cat >"$fake_update_build" <<EOF_FAKE_UPDATE_BUILD
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >"$update_build_profile_file"
+EOF_FAKE_UPDATE_BUILD
+chmod +x "$fake_update_build"
+run_success 'update stack propagates private-smoke profile to image build' \
+  env QUADLET_TARGET_DIR="$installed_private_dir" BUILD_IMAGES="$fake_update_build" SYSTEMCTL=true \
+  "$UPDATE_STACK" --profile private-smoke --skip-install-units --skip-stack-check
+grep -Fxq -- '--profile private-smoke' "$update_build_profile_file" || \
+  fail 'update-stack did not propagate private-smoke to build-images'
+
 update_target_dir="$WORK_DIR/update-profile-target"
 update_systemctl_log="$WORK_DIR/update-profile-systemctl.log"
 update_podman_log="$WORK_DIR/update-profile-podman.log"
@@ -827,6 +907,13 @@ write_frontend_env "$private_frontend" 'http://erp4-backend:3001'
 run_success 'private-smoke minimal env without Google OIDC' \
   "$CHECK_ENV" --profile private-smoke --target-dir "$private_dir" --frontend-build-env "$private_frontend"
 
+private_backend_bff_dir="$WORK_DIR/private-backend-bff"
+cp -a "$private_dir" "$private_backend_bff_dir"
+sed -i 's/^AUTH_MODE=.*/AUTH_MODE=jwt_bff/' \
+  "$private_backend_bff_dir/erp4-backend.env"
+run_failure 'private-smoke rejects backend jwt_bff with header frontend' 'requires AUTH_MODE=header' \
+  "$CHECK_ENV" --profile private-smoke --target-dir "$private_backend_bff_dir" --frontend-build-env "$private_frontend"
+
 publish_dir="$WORK_DIR/private-publish"
 cp -a "$private_dir" "$publish_dir"
 printf 'PublishPort=127.0.0.1:55432:5432\n' >>"$publish_dir/erp4-postgres.container"
@@ -854,9 +941,35 @@ run_failure 'private-smoke rejects production header auth' 'production header au
 https_dir="$WORK_DIR/https"
 https_frontend="$WORK_DIR/https-frontend.env"
 make_https_dir "$https_dir"
-write_frontend_env "$https_frontend" 'https://trial-api.example.com'
+write_frontend_env "$https_frontend" 'https://trial-api.example.com' jwt_bff
 run_success 'https-trial minimal env' \
   "$CHECK_ENV" --profile https-trial --target-dir "$https_dir" --frontend-build-env "$https_frontend"
+
+https_decommission_frontend="$WORK_DIR/https-decommission-frontend.env"
+cp "$https_frontend" "$https_decommission_frontend"
+sed -i 's/^VITE_PWA_SHARE_TARGET_MODE=.*/VITE_PWA_SHARE_TARGET_MODE=decommission/' \
+  "$https_decommission_frontend"
+run_success 'https-trial accepts explicit share-target decommission bridge' \
+  "$CHECK_ENV" --profile https-trial --target-dir "$https_dir" --frontend-build-env "$https_decommission_frontend"
+
+https_invalid_share_target_frontend="$WORK_DIR/https-invalid-share-target-frontend.env"
+cp "$https_frontend" "$https_invalid_share_target_frontend"
+sed -i 's/^VITE_PWA_SHARE_TARGET_MODE=.*/VITE_PWA_SHARE_TARGET_MODE=disabled/' \
+  "$https_invalid_share_target_frontend"
+run_failure 'https-trial rejects unknown share-target mode' 'VITE_PWA_SHARE_TARGET_MODE=enabled\|decommission' \
+  "$CHECK_ENV" --profile https-trial --target-dir "$https_dir" --frontend-build-env "$https_invalid_share_target_frontend"
+
+https_header_frontend="$WORK_DIR/https-header-frontend.env"
+write_frontend_env "$https_header_frontend" 'https://trial-api.example.com' header
+run_failure 'https-trial rejects frontend header auth' 'requires VITE_AUTH_MODE=jwt_bff' \
+  "$CHECK_ENV" --profile https-trial --target-dir "$https_dir" --frontend-build-env "$https_header_frontend"
+
+https_backend_header_dir="$WORK_DIR/https-backend-header"
+cp -a "$https_dir" "$https_backend_header_dir"
+sed -i 's/^AUTH_MODE=.*/AUTH_MODE=header/' \
+  "$https_backend_header_dir/erp4-backend.env"
+run_failure 'https-trial rejects backend header auth' 'requires AUTH_MODE=jwt_bff' \
+  "$CHECK_ENV" --profile https-trial --target-dir "$https_backend_header_dir" --frontend-build-env "$https_frontend"
 
 https_missing_cursor_secret_dir="$WORK_DIR/https-missing-cursor-secret"
 cp -a "$https_dir" "$https_missing_cursor_secret_dir"
@@ -901,6 +1014,13 @@ sed -i \
   "$production_gdrive_dir/erp4-backend.env"
 run_success 'production accepts common Google Drive credentials' \
   "$CHECK_ENV" --profile production --target-dir "$production_gdrive_dir" --frontend-build-env "$https_frontend"
+
+production_backend_header_dir="$WORK_DIR/production-backend-header"
+cp -a "$production_gdrive_dir" "$production_backend_header_dir"
+sed -i 's/^AUTH_MODE=.*/AUTH_MODE=header/' \
+  "$production_backend_header_dir/erp4-backend.env"
+run_failure 'production rejects backend header auth before deployment' 'invalid for the production profile; expected jwt_bff' \
+  "$CHECK_ENV" --profile production --target-dir "$production_backend_header_dir" --frontend-build-env "$https_frontend"
 
 production_gdrive_missing_dir="$WORK_DIR/production-gdrive-missing"
 cp -a "$production_gdrive_dir" "$production_gdrive_missing_dir"
@@ -1037,6 +1157,11 @@ run_failure 'trial readiness requires https-trial proxy checks' 'https-trial req
 
 storage_service="$ROOT_DIR/deploy/quadlet/erp4-storage-readiness.service"
 storage_timer="$ROOT_DIR/deploy/quadlet/erp4-storage-readiness.timer"
+frontend_nginx="$ROOT_DIR/deploy/containers/frontend.nginx.conf"
+grep -Eq 'share-target-sw\|share-target-mode' "$frontend_nginx" || \
+  fail 'frontend cache policy must cover share-target worker helpers'
+grep -Fq 'Cache-Control "no-cache"' "$frontend_nginx" || \
+  fail 'frontend worker helper cache policy must revalidate deployments'
 grep -Fq 'Type=oneshot' "$storage_service" || fail 'storage readiness must remain oneshot'
 grep -Fq './scripts/storage-readiness.sh --format json' "$storage_service" || fail 'storage readiness service entrypoint missing'
 grep -Fq 'SyslogIdentifier=erp4-storage-readiness' "$storage_service" || fail 'storage readiness journal identifier missing'

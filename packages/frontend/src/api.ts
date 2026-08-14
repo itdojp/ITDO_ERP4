@@ -5,6 +5,8 @@ export type AuthState = {
   groupIds?: string[];
   groupAccountIds?: string[];
   token?: string;
+  /** Server-verified and auth-mode namespaced; never persisted locally. */
+  verifiedActorKey?: string;
 };
 
 type SessionResponse = {
@@ -20,7 +22,8 @@ type SessionResponse = {
   };
 };
 
-const AUTH_STORAGE_KEY = 'erp4_auth';
+export const AUTH_STORAGE_KEY = 'erp4_auth';
+export const AUTH_SESSION_CHANGE_CHANNEL = 'erp4-auth-session-change-v1';
 const API_BASE = (import.meta.env.VITE_API_BASE || '').trim();
 const AUTH_MODE = (import.meta.env.VITE_AUTH_MODE || 'header')
   .trim()
@@ -28,6 +31,52 @@ const AUTH_MODE = (import.meta.env.VITE_AUTH_MODE || 'header')
 const API_BASE_VALID = API_BASE === '' || /^https?:\/\//i.test(API_BASE);
 let warnedInvalidBase = false;
 let authCsrfTokenCache: string | null = null;
+const authSessionChangeListeners = new Set<() => void>();
+let authSessionChangeChannel: BroadcastChannel | null = null;
+
+function normalizeAuthSessionChange(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return record.schemaVersion === 1 && record.event === 'session_changed';
+}
+
+function getAuthSessionChangeChannel() {
+  if (typeof BroadcastChannel === 'undefined') return null;
+  if (authSessionChangeChannel) return authSessionChangeChannel;
+  const channel = new BroadcastChannel(AUTH_SESSION_CHANGE_CHANNEL);
+  channel.onmessage = (event: MessageEvent<unknown>) => {
+    if (!normalizeAuthSessionChange(event.data)) return;
+    for (const listener of authSessionChangeListeners) listener();
+  };
+  authSessionChangeChannel = channel;
+  return channel;
+}
+
+function closeUnusedAuthSessionChangeChannel() {
+  if (authSessionChangeListeners.size !== 0 || !authSessionChangeChannel)
+    return;
+  authSessionChangeChannel.close();
+  authSessionChangeChannel = null;
+}
+
+function publishAuthSessionChange() {
+  const channel = getAuthSessionChangeChannel();
+  if (!channel) return;
+  // The message intentionally contains neither actor identity nor auth data.
+  // BroadcastChannel does not deliver to its sending object; the existing
+  // window event remains the same-tab notification path.
+  channel.postMessage({ schemaVersion: 1, event: 'session_changed' });
+  closeUnusedAuthSessionChangeChannel();
+}
+
+export function subscribeAuthSessionChanges(listener: () => void) {
+  if (!getAuthSessionChangeChannel()) return () => undefined;
+  authSessionChangeListeners.add(listener);
+  return () => {
+    authSessionChangeListeners.delete(listener);
+    closeUnusedAuthSessionChangeChannel();
+  };
+}
 
 export function isBffAuthMode() {
   return AUTH_MODE === 'jwt_bff';
@@ -49,9 +98,13 @@ export function setAuthState(state: AuthState | null) {
   if (!state) {
     authCsrfTokenCache = null;
     window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    publishAuthSessionChange();
     return;
   }
-  window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(state));
+  const persistedState = { ...state };
+  delete persistedState.verifiedActorKey;
+  window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(persistedState));
+  publishAuthSessionChange();
 }
 
 function buildAuthHeaders(): Record<string, string> {
@@ -249,25 +302,42 @@ export async function apiWithAuth<T>(
   });
 }
 
-export async function refreshAuthStateFromServer() {
+export async function refreshAuthStateFromServer(options?: {
+  dispatchEvent?: boolean;
+  allowCachedFallback?: boolean;
+  persistState?: boolean;
+  signal?: AbortSignal;
+}) {
+  const dispatchEvent = options?.dispatchEvent !== false;
+  const allowCachedFallback = options?.allowCachedFallback !== false;
+  const persistState = options?.persistState !== false;
   const current = getAuthState();
   try {
-    const res = isBffAuthMode()
-      ? await api<SessionResponse>('/auth/session')
-      : await api<{ user?: Partial<AuthState> & { userId?: string } }>('/me');
+    const res: SessionResponse = isBffAuthMode()
+      ? await api<SessionResponse>('/auth/session', {
+          ...(options?.signal ? { signal: options.signal } : {}),
+        })
+      : await api<{ user?: Partial<AuthState> & { userId?: string } }>('/me', {
+          ...(options?.signal ? { signal: options.signal } : {}),
+        });
     const user = res.user;
-    if (!user || typeof user.userId !== 'string' || !user.userId.trim()) {
+    const userId = typeof user?.userId === 'string' ? user.userId.trim() : '';
+    const bffActorId =
+      typeof res.session?.userAccountId === 'string'
+        ? res.session.userAccountId.trim()
+        : '';
+    if (!user || !userId || (isBffAuthMode() && !bffActorId)) {
       if (isBffAuthMode()) {
-        setAuthState(null);
-        if (typeof window !== 'undefined') {
+        if (persistState) setAuthState(null);
+        if (persistState && dispatchEvent && typeof window !== 'undefined') {
           window.dispatchEvent(new Event('erp4:auth-updated'));
         }
         return null;
       }
-      return current;
+      return allowCachedFallback ? current : null;
     }
     const next: AuthState = {
-      userId: user.userId,
+      userId,
       roles: Array.isArray(user.roles) ? user.roles : [],
       projectIds:
         Array.isArray(user.projectIds) && user.projectIds.length
@@ -283,21 +353,52 @@ export async function refreshAuthStateFromServer() {
           : undefined,
       token: isBffAuthMode() ? undefined : current?.token,
     };
-    setAuthState(next);
-    if (typeof window !== 'undefined') {
+    if (persistState) setAuthState(next);
+    if (persistState && dispatchEvent && typeof window !== 'undefined') {
       window.dispatchEvent(new Event('erp4:auth-updated'));
     }
-    return next;
+    return {
+      ...next,
+      verifiedActorKey: `${isBffAuthMode() ? 'bff' : 'header'}:${
+        isBffAuthMode() ? bffActorId : userId
+      }`,
+    };
   } catch (err) {
     if (isBffAuthMode()) {
-      setAuthState(null);
-      if (typeof window !== 'undefined') {
+      if (persistState) setAuthState(null);
+      if (persistState && dispatchEvent && typeof window !== 'undefined') {
         window.dispatchEvent(new Event('erp4:auth-updated'));
       }
       return null;
     }
-    return current;
+    return allowCachedFallback ? current : null;
   }
+}
+
+/** Revalidates the canonical server actor without persisting auth data. */
+export async function revalidateCurrentAuthActor(
+  expectedActorKey: string,
+  signal?: AbortSignal,
+) {
+  if (
+    expectedActorKey.length < 1 ||
+    expectedActorKey.length > 256 ||
+    Array.from(expectedActorKey).some((character) => {
+      const code = character.codePointAt(0) ?? -1;
+      return code <= 31 || (code >= 127 && code <= 159);
+    })
+  ) {
+    return false;
+  }
+  const current = getAuthState();
+  if (!isBffAuthMode() && !current?.userId) return false;
+  const verified = await refreshAuthStateFromServer({
+    dispatchEvent: false,
+    allowCachedFallback: false,
+    persistState: false,
+    ...(signal ? { signal } : {}),
+  });
+  return verified?.verifiedActorKey === expectedActorKey;
 }
 
 export function buildApiUrl(path: string) {

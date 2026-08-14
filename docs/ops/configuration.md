@@ -49,6 +49,8 @@ backend は起動時に環境変数の検証を行い、不正/不足があれ�
 認証:
 
 - `AUTH_MODE=header|jwt|hybrid|jwt_bff`（未設定時は `header`）
+- frontend buildの`VITE_AUTH_MODE`はprivate smokeで`header`、production／https-trialで`jwt_bff`を明示し、backend `AUTH_MODE`と一致させる。Quadlet env checkは不一致／未指定を拒否する
+- frontend buildの`VITE_PWA_SHARE_TARGET_MODE=enabled|decommission`を必須とし、未指定の直接buildはfail closedとする。`enabled`はbounded POST handlerを所有するservice workerが必要なため`VITE_ENABLE_SW=true`も必須とし、`false + enabled` artifactをContainer／postbuild／profile gateで拒否する。汎用CI／repository品質確認とprivate-smokeは`decommission`を明示する。private-smokeのproduction buildでは既存PWA／Push用service workerが登録され得るが、manifestのshare targetとPOST intakeは無効である。公式release artifact workflowは`VITE_AUTH_MODE=jwt_bff`、`VITE_ENABLE_SW=true`、`VITE_PWA_SHARE_TARGET_MODE=enabled`を明示する。段階rollbackのbridge releaseは`decommission`でmanifest／service workerの新規受付を止めながら期限切れ・明示discard cleanupを維持し、Container/profile gateを迂回したheader-auth artifactを生成しない
 - `AUTH_ALLOW_HEADER_FALLBACK_IN_PROD`（任意、指定時は `true|false|1|0`）
 - `NODE_ENV=production` では `AUTH_MODE=jwt_bff` のみ許可
 - `AUTH_ALLOW_HEADER_FALLBACK_IN_PROD` は PoC・開発・限定運用向け。production の起動許可には使われない

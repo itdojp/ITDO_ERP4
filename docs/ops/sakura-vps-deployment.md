@@ -250,19 +250,28 @@ git status --short --branch
 
 ## 6. build-time env
 
-`deploy/quadlet/env/erp4-frontend-build.env` を用意する。
+`deploy/quadlet/env/erp4-frontend-build.env` を、実行するprofile専用のexampleから用意する。profileを変えても以前のenvを流用しない。
 
 ```bash
-cp deploy/quadlet/env/erp4-frontend-build.env.example deploy/quadlet/env/erp4-frontend-build.env
+PROFILE="${PROFILE:-production}"
+case "$PROFILE" in
+  production) FRONTEND_ENV_EXAMPLE=deploy/quadlet/env/erp4-frontend-build.env.example ;;
+  private-smoke) FRONTEND_ENV_EXAMPLE=deploy/quadlet/env/erp4-frontend-build.private-smoke.env.example ;;
+  https-trial) FRONTEND_ENV_EXAMPLE=deploy/quadlet/env/erp4-frontend-build.https-trial.env.example ;;
+  *) echo "unsupported profile: $PROFILE" >&2; exit 1 ;;
+esac
+cp "$FRONTEND_ENV_EXAMPLE" deploy/quadlet/env/erp4-frontend-build.env
 chmod 600 deploy/quadlet/env/erp4-frontend-build.env
 vi deploy/quadlet/env/erp4-frontend-build.env
 ```
 
-最低限:
+profile別exampleの値を基準に、最低限次の4キーを確認する。標準の`private-smoke`証跡では`VITE_AUTH_MODE=header`、`VITE_ENABLE_SW=false`、`VITE_PWA_SHARE_TARGET_MODE=decommission`を維持し、`production`／`https-trial`ではBFF認証とWeb Share Targetを有効にする。非公開・隔離済みのPWA intake専用rehearsalだけは`private-smoke`で`VITE_ENABLE_SW=true`と`VITE_PWA_SHARE_TARGET_MODE=enabled`を明示してよいが、標準`private-smoke`または本番証跡として扱わず、終了後は`decommission` artifactへ戻す。
 
 ```dotenv
 VITE_API_BASE=https://api.example.com
+VITE_AUTH_MODE=jwt_bff
 VITE_ENABLE_SW=true
+VITE_PWA_SHARE_TARGET_MODE=enabled
 ```
 
 Google OIDC の backend redirect フローだけを使う場合、`VITE_GOOGLE_CLIENT_ID` は不要。frontend が Google Identity Services を直接使う場合だけ設定する。
@@ -270,12 +279,12 @@ Google OIDC の backend redirect フローだけを使う場合、`VITE_GOOGLE_C
 ## 7. Quadlet unit / runtime env
 
 ```bash
-./scripts/quadlet/check-env.sh --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
-./scripts/quadlet/build-images.sh
-./scripts/quadlet/install-user-units.sh --profile production
+./scripts/quadlet/check-env.sh --profile "$PROFILE" --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
+./scripts/quadlet/build-images.sh --profile "$PROFILE" --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
+./scripts/quadlet/install-user-units.sh --profile "$PROFILE"
 ```
 
-非公開の導入リハーサルでは、上記の `production` を `private-smoke` に置き換える。profileはinstallだけでなくcheck/start/restart/updateにも同じ値を渡す。`private-smoke` installerはCaddyを配置せず、既存Caddy artifactを検出した場合は安全のため停止する。
+profileはenv example選択だけでなくcheck/build/install/start/restart/updateにも同じ値を渡す。`private-smoke` installerはCaddyを配置せず、既存Caddy artifactを検出した場合は安全のため停止する。
 
 runtime env は `~/.config/containers/systemd/` 配下で管理する。
 Quadlet sourceも同ディレクトリへ配置し、native `.service` / `.timer` はinstallerが `~/.config/systemd/user/` へ管理対象symlinkとして登録する。Quadlet generatorはnative unitを生成しないため、手動配置時に両者を混同しない。
@@ -293,8 +302,11 @@ Quadlet sourceも同ディレクトリへ配置し、native `.service` / `.timer
 確認:
 
 ```bash
-./scripts/quadlet/check-env.sh --profile production
-./scripts/quadlet/check-proxy.sh
+./scripts/quadlet/check-env.sh --profile "$PROFILE"
+case "$PROFILE" in
+  private-smoke) ;;
+  production|https-trial) ./scripts/quadlet/check-proxy.sh ;;
+esac
 ```
 
 HTTPS reverse proxy で Caddy を rootless Podman から `80/443` に bind する場合は、起動前に host prerequisite も確認する。
@@ -313,18 +325,19 @@ sudo sysctl --system
 
 ## 8. 起動/疎通
 
-proxyなしの内部確認:
+section 6で固定したprofileをbuild／installから変更せず起動する。`private-smoke`はproxyなし、`production`／`https-trial`はproxy込みとする。
 
 ```bash
-./scripts/quadlet/start-stack.sh --profile private-smoke
-./scripts/quadlet/check-trial-readiness.sh --profile private-smoke
-```
-
-HTTPS proxy込み:
-
-```bash
-./scripts/quadlet/start-stack.sh --profile https-trial --include-proxy
-./scripts/quadlet/check-trial-readiness.sh --profile https-trial --include-proxy --resolve-ip <VPS_IP>
+case "$PROFILE" in
+  private-smoke)
+    ./scripts/quadlet/start-stack.sh --profile "$PROFILE"
+    ./scripts/quadlet/check-trial-readiness.sh --profile "$PROFILE"
+    ;;
+  production|https-trial)
+    ./scripts/quadlet/start-stack.sh --profile "$PROFILE" --include-proxy
+    ./scripts/quadlet/check-trial-readiness.sh --profile "$PROFILE" --include-proxy --resolve-ip <VPS_IP>
+    ;;
+esac
 ```
 
 DNS反映後:
@@ -357,7 +370,7 @@ vi ~/.config/containers/systemd/erp4-maintenance.env
 grep -n 'REPLACE_ME' ~/.config/containers/systemd/erp4-maintenance.env   && echo 'replace placeholders before enabling timers' && exit 1 || true
 mkdir -p ~/.local/share/erp4/quadlet-backups ~/.local/share/erp4/db-backups
 chmod 700 ~/.local/share/erp4   ~/.local/share/erp4/quadlet-backups   ~/.local/share/erp4/db-backups
-./scripts/quadlet/check-env.sh
+./scripts/quadlet/check-env.sh --profile "$PROFILE"
 ./scripts/quadlet/backup-db-and-check.sh --max-age-hours 24 --print-prefix
 ```
 

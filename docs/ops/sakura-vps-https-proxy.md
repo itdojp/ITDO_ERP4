@@ -107,9 +107,9 @@ backend / frontend の env を更新した後に build / reload します。
 
 ```bash
 cd /opt/itdo/ITDO_ERP4
-./scripts/quadlet/check-env.sh
+./scripts/quadlet/check-env.sh --profile https-trial --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
 ./scripts/quadlet/check-proxy.sh
-./scripts/quadlet/build-images.sh
+./scripts/quadlet/build-images.sh --profile https-trial --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
 systemctl --user daemon-reload
 systemctl --user restart erp4-migrate.service
 systemctl --user restart erp4-backend.service

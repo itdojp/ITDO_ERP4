@@ -5,6 +5,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
 FRONTEND_BUILD_ENV="${FRONTEND_BUILD_ENV_FILE:-$ROOT_DIR/deploy/quadlet/env/erp4-frontend-build.env}"
 FRONTEND_BUILD_ENV_EXPLICIT=0
+if [[ -n "${FRONTEND_BUILD_ENV_FILE+x}" ]]; then
+  FRONTEND_BUILD_ENV_EXPLICIT=1
+fi
 SKIP_RUNTIME=0
 PROFILE="${SAKURA_VPS_PROFILE:-production}"
 
@@ -19,6 +22,11 @@ warn() {
 
 require_file() {
   [[ -f "$1" ]] || fail "required file not found: $1"
+}
+
+require_frontend_build_env() {
+  [[ -f "$1" ]] || fail \
+    "frontend build env file not found: $1; copy the profile-matching deploy/quadlet/env/erp4-frontend-build*.env.example and pass --frontend-build-env FILE"
 }
 
 usage() {
@@ -305,7 +313,7 @@ check_production_profile() {
       fi
       ;;
     *)
-      warn "AUTH_MODE=$AUTH_MODE_VALUE is outside the tested Quadlet guide scope; expected jwt_bff"
+      fail "AUTH_MODE=$AUTH_MODE_VALUE is invalid for the production profile; expected jwt_bff"
       ;;
   esac
 
@@ -353,6 +361,7 @@ check_production_profile() {
 
 check_private_smoke_profile() {
   require_env_value "$BACKEND_ENV" SAKURA_VPS_PROFILE private-smoke
+  require_env_lower_value "$BACKEND_ENV" AUTH_MODE header
   require_env_lower_value "$BACKEND_ENV" MAIL_TRANSPORT stub
   require_env_lower_value "$BACKEND_ENV" PDF_PROVIDER local
   require_env_lower_value "$BACKEND_ENV" EVIDENCE_ARCHIVE_PROVIDER local
@@ -498,11 +507,31 @@ if [[ "$SKIP_RUNTIME" -eq 0 ]]; then
 fi
 
 if [[ "$FRONTEND_BUILD_ENV_EXPLICIT" -eq 1 || "$SKIP_RUNTIME" -eq 1 ]]; then
-  require_file "$FRONTEND_BUILD_ENV"
-fi
-
-if [[ -f "$FRONTEND_BUILD_ENV" ]]; then
+  require_frontend_build_env "$FRONTEND_BUILD_ENV"
   require_env_key "$FRONTEND_BUILD_ENV" VITE_API_BASE
+  case "$PROFILE" in
+    private-smoke)
+      require_env_lower_value "$FRONTEND_BUILD_ENV" VITE_AUTH_MODE header
+      ;;
+    production|https-trial)
+      require_env_lower_value "$FRONTEND_BUILD_ENV" VITE_AUTH_MODE jwt_bff
+      ;;
+  esac
+  share_target_mode="$(read_env_value "$FRONTEND_BUILD_ENV" VITE_PWA_SHARE_TARGET_MODE)"
+  share_target_mode="${share_target_mode,,}"
+  service_worker_enabled="$(read_env_value "$FRONTEND_BUILD_ENV" VITE_ENABLE_SW)"
+  service_worker_enabled="${service_worker_enabled,,}"
+  case "$share_target_mode" in
+    enabled|decommission) ;;
+    *) fail "$FRONTEND_BUILD_ENV requires VITE_PWA_SHARE_TARGET_MODE=enabled|decommission for profile $PROFILE" ;;
+  esac
+  case "$service_worker_enabled" in
+    true|false) ;;
+    *) fail "$FRONTEND_BUILD_ENV requires VITE_ENABLE_SW=true|false for profile $PROFILE" ;;
+  esac
+  if [[ "$share_target_mode" == "enabled" && "$service_worker_enabled" != "true" ]]; then
+    fail "$FRONTEND_BUILD_ENV requires VITE_ENABLE_SW=true when VITE_PWA_SHARE_TARGET_MODE=enabled"
+  fi
 fi
 
 printf 'OK: Quadlet env validation passed'

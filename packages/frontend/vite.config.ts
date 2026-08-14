@@ -1,5 +1,35 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+
+function shareTargetDevModePlugin(): Plugin {
+  return {
+    name: 'erp4-share-target-dev-mode',
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        const mode = process.env.ERP4_DEV_SHARE_TARGET_MODE;
+        if (mode !== 'enabled' && mode !== 'decommission') {
+          next();
+          return;
+        }
+        const requestUrl = new URL(request.url ?? '/', 'http://localhost');
+        if (
+          request.method !== 'GET' ||
+          requestUrl.pathname !== '/share-target-mode.js'
+        ) {
+          next();
+          return;
+        }
+        response.statusCode = 200;
+        response.setHeader('cache-control', 'no-store');
+        response.setHeader(
+          'content-type',
+          'application/javascript; charset=utf-8',
+        );
+        response.end(`self.ERP4_SHARE_TARGET_MODE = ${JSON.stringify(mode)};\n`);
+      });
+    },
+  };
+}
 
 function frontendManualChunks(moduleId: string) {
   if (!moduleId.includes('/node_modules/')) return null;
@@ -48,7 +78,7 @@ function frontendManualChunks(moduleId: string) {
 }
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [shareTargetDevModePlugin(), react()],
   build: {
     rolldownOptions: {
       output: {
