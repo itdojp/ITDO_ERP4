@@ -519,10 +519,19 @@ if [[ "$FRONTEND_BUILD_ENV_EXPLICIT" -eq 1 || "$SKIP_RUNTIME" -eq 1 ]]; then
   esac
   share_target_mode="$(read_env_value "$FRONTEND_BUILD_ENV" VITE_PWA_SHARE_TARGET_MODE)"
   share_target_mode="${share_target_mode,,}"
+  service_worker_enabled="$(read_env_value "$FRONTEND_BUILD_ENV" VITE_ENABLE_SW)"
+  service_worker_enabled="${service_worker_enabled,,}"
   case "$share_target_mode" in
     enabled|decommission) ;;
     *) fail "$FRONTEND_BUILD_ENV requires VITE_PWA_SHARE_TARGET_MODE=enabled|decommission for profile $PROFILE" ;;
   esac
+  case "$service_worker_enabled" in
+    true|false) ;;
+    *) fail "$FRONTEND_BUILD_ENV requires VITE_ENABLE_SW=true|false for profile $PROFILE" ;;
+  esac
+  if [[ "$share_target_mode" == "enabled" && "$service_worker_enabled" != "true" ]]; then
+    fail "$FRONTEND_BUILD_ENV requires VITE_ENABLE_SW=true when VITE_PWA_SHARE_TARGET_MODE=enabled"
+  fi
 fi
 
 printf 'OK: Quadlet env validation passed'

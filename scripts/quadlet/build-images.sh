@@ -89,6 +89,13 @@ case "$VITE_PWA_SHARE_TARGET_MODE" in
   enabled|decommission) ;;
   *) fail "VITE_PWA_SHARE_TARGET_MODE must be enabled or decommission" ;;
 esac
+case "$VITE_ENABLE_SW" in
+  true|false) ;;
+  *) fail "VITE_ENABLE_SW must be true or false" ;;
+esac
+if [[ "$VITE_PWA_SHARE_TARGET_MODE" == "enabled" && "$VITE_ENABLE_SW" != "true" ]]; then
+  fail "VITE_PWA_SHARE_TARGET_MODE=enabled requires VITE_ENABLE_SW=true"
+fi
 
 printf 'Building ERP4 images with ERP4_IMAGE_TAG=%s\n' "$ERP4_IMAGE_TAG"
 printf '  backend: %s\n' "$BACKEND_IMAGE"

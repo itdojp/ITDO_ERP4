@@ -5,10 +5,25 @@ import { fileURLToPath } from 'node:url';
 export const SHARE_TARGET_MODES = new Set(['enabled', 'decommission']);
 
 export function normalizeShareTargetMode(value) {
-  const mode = String(value ?? '').trim().toLowerCase();
+  const mode = String(value ?? '')
+    .trim()
+    .toLowerCase();
   if (!SHARE_TARGET_MODES.has(mode)) {
     throw new Error(
       'VITE_PWA_SHARE_TARGET_MODE must be enabled or decommission',
+    );
+  }
+  return mode;
+}
+
+export function validateShareTargetServiceWorker(modeInput, enabledInput) {
+  const mode = normalizeShareTargetMode(modeInput);
+  const enabled = String(enabledInput ?? '')
+    .trim()
+    .toLowerCase();
+  if (mode === 'enabled' && enabled !== 'true') {
+    throw new Error(
+      'VITE_PWA_SHARE_TARGET_MODE=enabled requires VITE_ENABLE_SW=true',
     );
   }
   return mode;
@@ -33,7 +48,12 @@ export function shareTargetModeScript(modeInput) {
   return `self.ERP4_SHARE_TARGET_MODE = ${JSON.stringify(mode)};\n`;
 }
 
-export function configureShareTargetBuild({ distDir, mode }) {
+export function configureShareTargetBuild({
+  distDir,
+  mode,
+  serviceWorkerEnabled,
+}) {
+  validateShareTargetServiceWorker(mode, serviceWorkerEnabled);
   const manifestPath = path.join(distDir, 'manifest.webmanifest');
   const modePath = path.join(distDir, 'share-target-mode.js');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -47,5 +67,6 @@ if (invokedPath === fileURLToPath(import.meta.url)) {
   configureShareTargetBuild({
     distDir: path.resolve(process.cwd(), 'dist'),
     mode: process.env.VITE_PWA_SHARE_TARGET_MODE,
+    serviceWorkerEnabled: process.env.VITE_ENABLE_SW,
   });
 }

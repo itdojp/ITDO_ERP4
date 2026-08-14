@@ -6,6 +6,7 @@ import {
   manifestForShareTargetMode,
   normalizeShareTargetMode,
   shareTargetModeScript,
+  validateShareTargetServiceWorker,
 } from './configure-share-target-build.mjs';
 
 const manifest = {
@@ -49,6 +50,22 @@ test('unknown mode fails closed', () => {
   );
 });
 
+test('enabled intake requires an enabled service worker', () => {
+  assert.equal(validateShareTargetServiceWorker('enabled', 'true'), 'enabled');
+  assert.equal(
+    validateShareTargetServiceWorker('decommission', 'false'),
+    'decommission',
+  );
+  assert.throws(
+    () => validateShareTargetServiceWorker('enabled', 'false'),
+    /requires VITE_ENABLE_SW=true/u,
+  );
+  assert.throws(
+    () => validateShareTargetServiceWorker('enabled', undefined),
+    /requires VITE_ENABLE_SW=true/u,
+  );
+});
+
 test('the official release build explicitly enables BFF auth and share-target intake', () => {
   const source = fs.readFileSync(
     new URL('../../../.github/workflows/release.yml', import.meta.url),
@@ -59,6 +76,7 @@ test('the official release build explicitly enables BFF auth and share-target in
   assert.notEqual(start, -1);
   const step = source.slice(start, end === -1 ? undefined : end);
   assert.match(step, /VITE_AUTH_MODE: jwt_bff/u);
+  assert.match(step, /VITE_ENABLE_SW: true/u);
   assert.match(step, /VITE_PWA_SHARE_TARGET_MODE: enabled/u);
   assert.match(step, /npm run build --prefix packages\/frontend/u);
 });

@@ -28,6 +28,8 @@ RUN npm ci --prefix packages/frontend
 COPY packages/frontend ./packages/frontend
 RUN case "$VITE_AUTH_MODE" in header|jwt_bff) ;; *) exit 1 ;; esac \
  && case "$VITE_PWA_SHARE_TARGET_MODE" in enabled|decommission) ;; *) exit 1 ;; esac \
+ && case "$VITE_ENABLE_SW" in true|false) ;; *) exit 1 ;; esac \
+ && if [ "$VITE_PWA_SHARE_TARGET_MODE" = enabled ] && [ "$VITE_ENABLE_SW" != true ]; then exit 1; fi \
  && npm run build --prefix packages/frontend \
  && npm cache clean --force
 

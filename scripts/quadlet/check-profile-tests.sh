@@ -200,11 +200,13 @@ write_frontend_env() {
   local file="$1"
   local api_base="$2"
   local auth_mode="${3:-header}"
+  local service_worker="${4:-false}"
+  local share_target_mode="${5:-decommission}"
   cat >"$file" <<ENV
 VITE_API_BASE=$api_base
 VITE_AUTH_MODE=$auth_mode
-VITE_ENABLE_SW=false
-VITE_PWA_SHARE_TARGET_MODE=enabled
+VITE_ENABLE_SW=$service_worker
+VITE_PWA_SHARE_TARGET_MODE=$share_target_mode
 ENV
 }
 
@@ -276,12 +278,28 @@ run_success 'build-images accepts explicit private-smoke frontend mode' \
   "$BUILD_IMAGES_SCRIPT" --profile private-smoke --frontend-build-env "$valid_private_build_env"
 grep -Fq -- '--build-arg VITE_AUTH_MODE=header' "$fake_build_log" || \
   fail 'build-images did not pass explicit frontend auth mode'
-grep -Fq -- '--build-arg VITE_PWA_SHARE_TARGET_MODE=enabled' "$fake_build_log" || \
+grep -Fq -- '--build-arg VITE_PWA_SHARE_TARGET_MODE=decommission' "$fake_build_log" || \
   fail 'build-images did not pass explicit PWA share-target mode'
+invalid_enabled_build_env="$WORK_DIR/private-build-invalid-enabled.env"
+write_frontend_env "$invalid_enabled_build_env" 'http://erp4-backend:3001' header false enabled
+run_failure 'build-images rejects enabled intake without service worker' 'requires VITE_ENABLE_SW=true' \
+  env PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile \
+  "$BUILD_IMAGES_SCRIPT" --profile private-smoke --frontend-build-env "$invalid_enabled_build_env"
+invalid_enabled_target="$WORK_DIR/private-invalid-enabled-target"
+make_private_dir "$invalid_enabled_target"
+run_failure 'check-env rejects enabled intake without service worker' 'requires VITE_ENABLE_SW=true' \
+  env QUADLET_TARGET_DIR="$invalid_enabled_target" "$CHECK_ENV" --profile private-smoke \
+  --target-dir "$invalid_enabled_target" --skip-runtime --frontend-build-env "$invalid_enabled_build_env"
+valid_enabled_build_env="$WORK_DIR/private-build-enabled.env"
+write_frontend_env "$valid_enabled_build_env" 'http://erp4-backend:3001' header true enabled
+: >"$fake_build_log"
+run_success 'build-images accepts enabled intake with service worker' \
+  env PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile \
+  "$BUILD_IMAGES_SCRIPT" --profile private-smoke --frontend-build-env "$valid_enabled_build_env"
+grep -Fq -- '--build-arg VITE_PWA_SHARE_TARGET_MODE=enabled' "$fake_build_log" || \
+  fail 'build-images did not pass enabled PWA share-target mode'
 valid_decommission_build_env="$WORK_DIR/private-build-decommission.env"
 write_frontend_env "$valid_decommission_build_env" 'http://erp4-backend:3001' header
-sed -i 's/^VITE_PWA_SHARE_TARGET_MODE=.*/VITE_PWA_SHARE_TARGET_MODE=decommission/' \
-  "$valid_decommission_build_env"
 : >"$fake_build_log"
 run_success 'build-images accepts the explicit decommission bridge' \
   env PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile \

@@ -38,6 +38,7 @@ jobs:
       - name: Build (frontend)
         env:
           VITE_AUTH_MODE: jwt_bff
+          VITE_ENABLE_SW: true
           VITE_PWA_SHARE_TARGET_MODE: enabled
         run: npm run build --prefix packages/frontend
       - name: Package artifacts
