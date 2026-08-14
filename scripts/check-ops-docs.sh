@@ -202,13 +202,16 @@ function profileInvocationFailures(file, source, commands) {
   const currentFailures = [];
   for (const [index, rawLine] of source.split(/\r?\n/u).entries()) {
     const line = rawLine.trim();
-    const match = line.match(/^\.\/scripts\/quadlet\/([a-z0-9-]+\.sh)\b/u);
-    if (!match || !commandSet.has(match[1])) continue;
-    found.add(match[1]);
-    if (!line.includes('--profile "$PROFILE"')) {
-      currentFailures.push(
-        `${file}:${index + 1}: ${match[1]} must receive --profile "$PROFILE"`,
-      );
+    const matches = line.matchAll(/\.\/scripts\/quadlet\/([a-z0-9-]+\.sh)\b/gu);
+    for (const match of matches) {
+      if (!commandSet.has(match[1])) continue;
+      found.add(match[1]);
+      const invocation = line.slice(match.index);
+      if (!invocation.includes('--profile "$PROFILE"')) {
+        currentFailures.push(
+          `${file}:${index + 1}: ${match[1]} must receive --profile "$PROFILE"`,
+        );
+      }
     }
   }
   for (const command of commandSet) {
@@ -237,6 +240,22 @@ for (const command of [
       `profile continuity checker must reject every unbound ${command} invocation`,
     );
   }
+}
+
+const prefixedNegativeFixture = [
+  'ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" ./scripts/quadlet/build-images.sh --profile "$PROFILE"',
+  'ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" ./scripts/quadlet/build-images.sh',
+].join('\n');
+if (
+  profileInvocationFailures(
+    'negative-fixture-prefixed-build-images.sh',
+    prefixedNegativeFixture,
+    ['build-images.sh'],
+  ).length !== 1
+) {
+  throw new Error(
+    'profile continuity checker must reject env-prefixed unbound build-images.sh invocations',
+  );
 }
 
 for (const file of files) {
