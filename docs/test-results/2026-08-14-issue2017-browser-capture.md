@@ -14,6 +14,8 @@ Review remediationのcode head `e18653cd46391d52222fe93ff425629fbe2bb969`では�
 
 追加remediation直前のintegration head `cfa8c34eb59ae70a4caf4c376ee95b6839d7d5e3`では、`RELEASE_E2E_SCOPE=core make release-readiness`がexit 0で、backend 2,398/2,398、frontend 969/969、extension 26/26、core E2E 110/110、Playwright Chromium extension E2E、OpenAPI、audit、ops、docs、secret scanをPASSした。この結果は後続`e18653cd...`の修正を含まないため、最終exact-head gateの代替にはしない。
 
+追加review remediationのcode head `945e42b064421f59ba4b9edda8185ecd691a1a9c`では、path prefix後のscheme-relative slash／backslash userinfoと、stage結果不明後のfield再選択／再captureを修正した。extension 27/27を20回反復し、backend capture／canonical URL focused test 25/25、extension／backend lint・format・typecheck／build、`git diff --check`をPASSした。直前のtracked head `0f474357047dce7c2bb9785e28a7b92138fef821`に対するrelease-readinessも38/38、backend 2,398/2,398、frontend 969/969、extension 27/27、core E2E 110/110でPASSしたが、この追加code headを含まないため最終exact-head gateの代替にはしない。
+
 ## 固定契約
 
 - Manifest V3 permissionは`activeTab|scripting|storage`だけ。broad host permission、cookie、tabs、history、webRequest、remote codeを使用しない。
@@ -50,10 +52,11 @@ Review remediationのcode head `e18653cd46391d52222fe93ff425629fbe2bb969`では�
 
 ## Review remediationのfocused検証結果
 
-- code head: `e18653cd46391d52222fe93ff425629fbe2bb969`
+- latest code head: `945e42b064421f59ba4b9edda8185ecd691a1a9c`
 - extension unit／manifest／static security checks: 27/27 PASS
+- extension focused repetition: 20/20 PASS
 - backend capture draft／Knowledge item canonical URL focused tests: 25/25 PASS
-- 追加fixture: credential/session名付きslash path、percent decode後のASCII TAB／LF／CR scheme分割、scheme-relative `\\`／`\/` userinfoと多層encode、initial stage response loss、popup再open、recent pointer非依存、stage結果不明中のcheckbox／recapture freeze
+- 追加fixture: credential/session名付きslash path、percent decode後のASCII TAB／LF／CR scheme分割、queryおよびpath prefix後のscheme-relative `\\`／`\/`／`//` userinfoと多層encode、initial stage response loss、popup再open、recent pointer非依存、stage結果不明中のcheckbox／recapture freezeと同一intent retry
 - extension／backendのformatter、extension lint／typecheck／build、backend build、`git diff --check`: PASS
 - final tracked-evidence headのCI、Copilot、独立correctness/security review、review completeness: PENDING（PR #2074へ記録）
 - server-side canonical URL境界も同じnested path/matrix/session検査を行い、extension/PWA入力がlocal検査を迂回してもcapture draft commit前に拒否するfocused testをPASS
