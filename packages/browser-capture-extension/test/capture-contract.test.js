@@ -11,6 +11,14 @@ import {
 
 const capturedAt = "2026-08-14T00:00:00.000Z";
 
+function encodeLayers(value, count) {
+  let encoded = value;
+  for (let layer = 0; layer < count; layer += 1) {
+    encoded = encodeURIComponent(encoded);
+  }
+  return encoded;
+}
+
 test("normalizes only allowlisted metadata and defaults to minimal fields", () => {
   const value = normalizeExtractedCapture(
     {
@@ -98,6 +106,9 @@ test("rejects active schemes, credential URLs, malformed Unicode, and nested pay
     "https://example.invalid/?next=ht%0Atps%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate",
     "https://example.invalid/?next=h%0Dttps%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate",
     "https://example.invalid/?next=ht%250Atps%253Aalice%253Asynthetic-pass%2540nested.invalid%252Fprivate",
+    `https://example.invalid/?next=${encodeURIComponent("İHTTPS:alice:synthetic-pass@nested.invalid/private")}`,
+    `https://example.invalid/?next=${encodeURIComponent("İİHTTPS:/alice:synthetic-pass@nested.invalid/private")}`,
+    `https://example.invalid/?next=${encodeURIComponent("İHTTPS://alice:synthetic-pass@nested.invalid/private")}`,
     "https://example.invalid/redirect/https%3A%2F%2Fnested.invalid%2F%3Faccess_token%3Dsynthetic-secret",
     "https://example.invalid/redirect/https%253A%252F%252Fnested.invalid%252F%253Fsessionid%253Dsynthetic-secret",
     "https://example.invalid/redirect/https%3Aalice%3Asynthetic-pass%40nested.invalid/private",
@@ -144,6 +155,11 @@ test("rejects active schemes, credential URLs, malformed Unicode, and nested pay
     ),
     null,
   );
+});
+
+test("fails closed when the aggregate nested URL parse budget is exhausted", () => {
+  const url = `https://example.invalid/?next=${encodeURIComponent(`//nested.invalid${encodeLayers("/", 130)}path`)}`;
+  assert.equal(normalizeExtractedCapture({ url }, capturedAt), null);
 });
 
 test("keeps ordinary slash routes that do not name a credential value", () => {

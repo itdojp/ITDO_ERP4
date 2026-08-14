@@ -11,6 +11,14 @@ import {
 
 const capturedAt = '2026-08-14T00:00:00.000Z';
 
+function encodeLayers(value, count) {
+  let encoded = value;
+  for (let layer = 0; layer < count; layer += 1) {
+    encoded = encodeURIComponent(encoded);
+  }
+  return encoded;
+}
+
 function draft(overrides = {}) {
   return {
     schemaVersion: 1,
@@ -123,6 +131,9 @@ test('rejects unsafe and credential-bearing URL forms', () => {
     'https://example.invalid/?next=ht%0Atps%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate',
     'https://example.invalid/?next=h%0Dttps%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate',
     'https://example.invalid/?next=ht%250Atps%253Aalice%253Asynthetic-pass%2540nested.invalid%252Fprivate',
+    `https://example.invalid/?next=${encodeURIComponent('İHTTPS:alice:synthetic-pass@nested.invalid/private')}`,
+    `https://example.invalid/?next=${encodeURIComponent('İİHTTPS:/alice:synthetic-pass@nested.invalid/private')}`,
+    `https://example.invalid/?next=${encodeURIComponent('İHTTPS://alice:synthetic-pass@nested.invalid/private')}`,
     'https://example.invalid/?next=%5C%5Calice%3Asynthetic-pass%40nested.invalid%2Fprivate',
     'https://example.invalid/?next=%5C%2Falice%3Asynthetic-pass%40nested.invalid%2Fprivate',
     'https://example.invalid/?next=%255C%255Calice%253Asynthetic-pass%2540nested.invalid%252Fprivate',
@@ -150,6 +161,16 @@ test('rejects unsafe and credential-bearing URL forms', () => {
         error.code === 'capture_url_invalid',
     );
   }
+});
+
+test('fails closed when the aggregate nested URL parse budget is exhausted', () => {
+  const url = `https://example.invalid/?next=${encodeURIComponent(`//nested.invalid${encodeLayers('/', 130)}path`)}`;
+  assert.throws(
+    () => normalizeKnowledgeCaptureDraft(draft({ url })),
+    (error) =>
+      error instanceof KnowledgeCaptureValidationError &&
+      error.code === 'capture_url_invalid',
+  );
 });
 
 test('keeps ordinary slash routes that do not name a credential value', () => {

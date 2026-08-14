@@ -146,6 +146,7 @@ const credentialPathSegmentNames = new Set([
   'token',
 ]);
 const nestedUrlCandidateLimit = 32;
+const nestedUrlParseOperationLimit = 128;
 
 function isCredentialQueryName(name: string): boolean {
   const tokens = name
@@ -219,6 +220,7 @@ function decodePercentBytes(value: string): string {
 
 type NestedUrlParseResult =
   { kind: 'url'; url: URL } | { kind: 'none' } | { kind: 'unsafe' };
+type NestedUrlParseBudget = { remaining: number };
 
 function isCredentialQueryNameDeep(name: string): boolean {
   let candidate = name;
@@ -303,19 +305,45 @@ function hasUrlParserIgnoredAsciiWhitespace(value: string): boolean {
   return value.includes('\t') || value.includes('\n') || value.includes('\r');
 }
 
+function startsWithAsciiIgnoreCase(
+  value: string,
+  index: number,
+  expected: string,
+): boolean {
+  if (index + expected.length > value.length) return false;
+  for (let offset = 0; offset < expected.length; offset += 1) {
+    const code = value.charCodeAt(index + offset);
+    const foldedCode = code >= 0x41 && code <= 0x5a ? code + 0x20 : code;
+    if (foldedCode !== expected.charCodeAt(offset)) return false;
+  }
+  return true;
+}
+
+function startsWithHttpScheme(value: string, index: number): boolean {
+  return (
+    startsWithAsciiIgnoreCase(value, index, 'http:') ||
+    startsWithAsciiIgnoreCase(value, index, 'https:')
+  );
+}
+
+function createNestedUrlParseBudget(): NestedUrlParseBudget {
+  return { remaining: nestedUrlParseOperationLimit };
+}
+
+function consumeNestedUrlParseBudget(budget: NestedUrlParseBudget): boolean {
+  if (budget.remaining <= 0) return false;
+  budget.remaining -= 1;
+  return true;
+}
+
 function findNestedUrlStarts(value: string): number[] | null {
   const starts: number[] = [];
-  const lower = value.toLowerCase();
   for (let index = 0; index < value.length; index += 1) {
     const current = value[index];
     const next = value[index + 1];
     const isSlashLikePair =
       (current === '/' || current === '\\') && (next === '/' || next === '\\');
-    if (
-      !isSlashLikePair &&
-      !lower.startsWith('http:', index) &&
-      !lower.startsWith('https:', index)
-    ) {
+    if (!isSlashLikePair && !startsWithHttpScheme(value, index)) {
       continue;
     }
     starts.push(index);
@@ -329,7 +357,10 @@ function hasNestedUrlMarker(value: string): boolean {
   return starts === null || starts.length > 0;
 }
 
-function parseNestedHttpUrl(value: string): NestedUrlParseResult {
+function parseNestedHttpUrl(
+  value: string,
+  budget: NestedUrlParseBudget,
+): NestedUrlParseResult {
   // WHATWG URL parsing removes ASCII TAB/LF/CR before parsing. Reject these
   // characters at every decode layer so they cannot split an embedded scheme
   // during inspection and then be removed by a later URL consumer.
@@ -363,8 +394,9 @@ function parseNestedHttpUrl(value: string): NestedUrlParseResult {
     let parseFailed = false;
     for (const nestedUrlIndex of parseStarts) {
       const parseCandidate = candidate.slice(nestedUrlIndex);
+      if (!consumeNestedUrlParseBudget(budget)) return { kind: 'unsafe' };
       try {
-        const parsed = /^https?:/i.test(parseCandidate)
+        const parsed = startsWithHttpScheme(parseCandidate, 0)
           ? new URL(parseCandidate)
           : new URL(parseCandidate, 'https://nested.invalid');
         if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
@@ -390,42 +422,57 @@ function parseNestedHttpUrl(value: string): NestedUrlParseResult {
   return { kind: 'unsafe' };
 }
 
-function hasCredentialFragment(url: URL, depth = 0): boolean {
+function hasCredentialFragment(
+  url: URL,
+  budget: NestedUrlParseBudget,
+  depth = 0,
+): boolean {
   if (!url.hash) return false;
-  const nested = parseNestedHttpUrl(url.hash);
+  const nested = parseNestedHttpUrl(url.hash, budget);
   if (nested.kind === 'unsafe') return true;
   if (nested.kind === 'none') return false;
   if (nested.url.username || nested.url.password || depth >= 3) return true;
   return (
-    hasCredentialFragment(nested.url, depth + 1) ||
-    hasCredentialBearingPath(nested.url, depth + 1) ||
-    hasCredentialBearingNestedUrl(nested.url, depth + 1)
+    hasCredentialFragment(nested.url, budget, depth + 1) ||
+    hasCredentialBearingPath(nested.url, budget, depth + 1) ||
+    hasCredentialBearingNestedUrl(nested.url, budget, depth + 1)
   );
 }
 
-function hasCredentialBearingNestedUrl(url: URL, depth = 0): boolean {
+function hasCredentialBearingNestedUrl(
+  url: URL,
+  budget: NestedUrlParseBudget,
+  depth = 0,
+): boolean {
   for (const [name, value] of url.searchParams.entries()) {
     if (isCredentialQueryNameDeep(name)) return true;
-    const nested = parseNestedHttpUrl(value);
+    const nested = parseNestedHttpUrl(value, budget);
     if (nested.kind === 'unsafe') return true;
     if (nested.kind === 'none') continue;
     const nestedUrl = nested.url;
     if (
       nestedUrl.username ||
       nestedUrl.password ||
-      hasCredentialFragment(nestedUrl, depth + 1) ||
-      hasCredentialBearingPath(nestedUrl, depth + 1)
+      hasCredentialFragment(nestedUrl, budget, depth + 1) ||
+      hasCredentialBearingPath(nestedUrl, budget, depth + 1)
     ) {
       return true;
     }
-    if (depth >= 3 || hasCredentialBearingNestedUrl(nestedUrl, depth + 1)) {
+    if (
+      depth >= 3 ||
+      hasCredentialBearingNestedUrl(nestedUrl, budget, depth + 1)
+    ) {
       return true;
     }
   }
   return false;
 }
 
-function hasCredentialBearingPath(url: URL, depth = 0): boolean {
+function hasCredentialBearingPath(
+  url: URL,
+  budget: NestedUrlParseBudget,
+  depth = 0,
+): boolean {
   let candidate = url.pathname;
   const decodeLayerLimit = Math.floor(candidate.length / 2) + 1;
   for (let decodeCount = 0; decodeCount <= decodeLayerLimit; decodeCount += 1) {
@@ -442,16 +489,17 @@ function hasCredentialBearingPath(url: URL, depth = 0): boolean {
     ) {
       return true;
     }
-    const nested = parseNestedHttpUrl(candidate);
+    const nested = parseNestedHttpUrl(candidate, budget);
     if (nested.kind === 'unsafe') return true;
     if (
       nested.kind === 'url' &&
       (nested.url.username ||
         nested.url.password ||
-        hasCredentialFragment(nested.url, depth + 1) ||
-        hasCredentialBearingNestedUrl(nested.url, depth + 1) ||
+        hasCredentialFragment(nested.url, budget, depth + 1) ||
+        hasCredentialBearingNestedUrl(nested.url, budget, depth + 1) ||
         (hasNestedUrlMarker(candidate) &&
-          (depth >= 3 || hasCredentialBearingPath(nested.url, depth + 1))))
+          (depth >= 3 ||
+            hasCredentialBearingPath(nested.url, budget, depth + 1))))
     ) {
       return true;
     }
@@ -475,13 +523,17 @@ export function normalizeKnowledgeCanonicalUrl(
     if (url.protocol !== 'https:' && url.protocol !== 'http:') {
       return { ok: false };
     }
-    if (hasCredentialFragment(url) || hasCredentialBearingPath(url)) {
+    const budget = createNestedUrlParseBudget();
+    if (
+      hasCredentialFragment(url, budget) ||
+      hasCredentialBearingPath(url, budget)
+    ) {
       return { ok: false };
     }
     url.username = '';
     url.password = '';
     url.hash = '';
-    if (hasCredentialBearingNestedUrl(url)) return { ok: false };
+    if (hasCredentialBearingNestedUrl(url, budget)) return { ok: false };
     for (const name of [...url.searchParams.keys()]) {
       if (trackingQueryName.test(name)) {
         url.searchParams.delete(name);

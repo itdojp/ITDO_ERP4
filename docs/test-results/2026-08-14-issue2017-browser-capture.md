@@ -73,6 +73,12 @@ Review remediationのcode head `e18653cd46391d52222fe93ff425629fbe2bb969`では�
 - 次のexact headではcoverage instrumentation時に、annotation履歴regionの外枠だけを待って内容を同期取得する既存test raceを検出した。履歴内容自体を非同期待機するよう修正し、固定sleep、timeout延長、coverage scope／threshold変更は行っていない。
 - remediation後はKnowledge Hub focused test 20/20、annotation focused coverage test 20/20、frontend full／UI core coverage 969/969、extension 28/28、frontend lint／format／typecheck、`git diff --check`をPASSした。UI core coverageはstatements 73.68%、branches 66.68%、functions 73.30%、lines 76.44%。最終exact headのfull gate、CI、独立reviewはPR #2074を正本とし、以前のheadの結果を再利用しない。
 
+## Final security review remediation
+
+- 独立security reviewで、文字列全体のUnicode lowercase結果のindexを元文字列へ流用すると、U+0130 `İ`のcase-fold展開により後続HTTP(S) markerの開始位置がずれることを検出した。scannerをUTF-16 indexを保持するASCII code-unit比較へ変更し、U+0130が1個／複数個、zero／one／two-slash userinfoをextensionとbackendの両境界で拒否する。
+- nested URL parseには、一回のtop-level URL正規化全体で共有する128回のoperation budgetを追加した。decode layerまたは再帰をまたいで上限を超えた場合はfail closedとし、128層超の深いencoded nested URL fixtureで決定的に固定した。
+- extension 29/29とbackend capture／canonical URL focused test 26/26を各20回反復し、backend build、extension／backend lint・format、extension typecheck、`git diff --check`をPASSした。最終exact headのfull gate、CI、独立reviewは再実行し、以前の結果を再利用しない。
+
 unpacked Chromium E2Eはsynthetic landingによるextension protocolを対象とし、別のreal frontend/backend bridge-protocol E2Eがcapture mutation lifecycleを対象とする。いずれもmulti-tab BroadcastChannel、service-worker強制restart、Chrome／Edge vendor runtime evidence、target proxy通過後のCSP evidenceではない。これらをPASSと過大評価しない。CI/review結果はDraft PRへ記録する。
 
 ## Browser evidence status

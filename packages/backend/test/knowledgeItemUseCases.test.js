@@ -835,6 +835,13 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     encodeURIComponent('ht\ttps:alice:credential-value@nested.example/private'),
     encodeURIComponent('ht\ntps:alice:credential-value@nested.example/private'),
     encodeURIComponent('h\rttps:alice:credential-value@nested.example/private'),
+    encodeURIComponent('İHTTPS:alice:credential-value@nested.example/private'),
+    encodeURIComponent(
+      'İİHTTPS:/alice:credential-value@nested.example/private',
+    ),
+    encodeURIComponent(
+      'İHTTPS://alice:credential-value@nested.example/private',
+    ),
     encodeURIComponent(
       encodeURIComponent(
         'ht\ntps:alice:credential-value@nested.example/private',
@@ -861,6 +868,19 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     assert.equal(nestedUrl.ok, false);
     assert.equal(nestedUrl.statusCode, 400);
   }
+  assert.equal(harness.items.size, 1);
+
+  const parseBudgetUrl = await harness.service.create({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    body: {
+      scope: 'personal',
+      sourceType: 'web',
+      canonicalUrl: `https://example.com/redirect?next=${encodeURIComponent(`//nested.example${encodeLayers('/', 130)}path`)}`,
+    },
+  });
+  assert.equal(parseBudgetUrl.ok, false);
+  assert.equal(parseBudgetUrl.statusCode, 400);
   assert.equal(harness.items.size, 1);
 
   for (const canonicalUrl of [
