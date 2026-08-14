@@ -1,4 +1,5 @@
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -14,12 +15,31 @@ const api = vi.hoisted(() => ({
   reconcileKnowledgeCapture: vi.fn(),
 }));
 vi.mock('./knowledgeCaptureApi', () => api);
+const authGuard = vi.hoisted(() => ({
+  revalidateCurrentAuthActor: vi.fn(),
+}));
+vi.mock('../../api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../api')>();
+  return { ...actual, ...authGuard };
+});
+const localQueue = vi.hoisted(() => ({
+  markShareTargetDraftPending: vi.fn(),
+  markShareTargetDraftStaged: vi.fn(),
+  publishShareTargetLifecycle: vi.fn(),
+}));
+vi.mock('../../utils/shareTargetQueue', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../utils/shareTargetQueue')>();
+  return { ...actual, ...localQueue };
+});
 
 import { KnowledgeCaptureIngress } from './KnowledgeCaptureIngress';
 import { KnowledgeHubApiError } from './knowledgeHubApi';
 import { knowledgeHubErrorMessage } from './knowledgeHubModel';
 import {
+  KNOWLEDGE_CAPTURE_AUTH_CHECK_EVENT,
   KNOWLEDGE_CAPTURE_DRAFT_EVENT,
+  KNOWLEDGE_CAPTURE_PURGE_EVENT,
   KNOWLEDGE_CAPTURE_RESULT_EVENT,
 } from './knowledgeCaptureModel';
 
@@ -40,6 +60,10 @@ function deliver(overrides = {}) {
     new CustomEvent(KNOWLEDGE_CAPTURE_DRAFT_EVENT, {
       detail: {
         draftId: 'opaque-draft-id-1234567890',
+        requestKey: 'opaque-request-key-123456789',
+        actorKey: 'header:synthetic-user',
+        lifecycle: 'staged',
+        pendingIntent: null,
         draft: { ...draft, ...overrides },
       },
     }),
@@ -47,7 +71,17 @@ function deliver(overrides = {}) {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  api.previewKnowledgeCapture.mockReset();
+  api.commitKnowledgeCapture.mockReset();
+  api.reconcileKnowledgeCapture.mockReset();
+  authGuard.revalidateCurrentAuthActor.mockReset().mockResolvedValue(true);
+  localQueue.markShareTargetDraftPending
+    .mockReset()
+    .mockResolvedValue(undefined);
+  localQueue.markShareTargetDraftStaged
+    .mockReset()
+    .mockResolvedValue(undefined);
+  localQueue.publishShareTargetLifecycle.mockReset();
   api.previewKnowledgeCapture.mockResolvedValue({
     captureId: 'capture-1',
     draft,
@@ -79,7 +113,253 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
+it('hides an existing handoff while the canonical actor is being revalidated', async () => {
+  render(<KnowledgeCaptureIngress />);
+  deliver();
+  expect(
+    await screen.findByRole('textbox', { name: '選択テキスト' }),
+  ).toHaveValue('Selected body');
+
+  window.dispatchEvent(
+    new CustomEvent(KNOWLEDGE_CAPTURE_AUTH_CHECK_EVENT, {
+      detail: {
+        schemaVersion: 1,
+        draftId: 'opaque-draft-id-1234567890',
+        checking: true,
+      },
+    }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('heading', { name: 'ブラウザー共有の確認' }),
+    ).not.toBeInTheDocument(),
+  );
+  expect(screen.queryByText('Selected body')).not.toBeInTheDocument();
+
+  window.dispatchEvent(
+    new CustomEvent(KNOWLEDGE_CAPTURE_AUTH_CHECK_EVENT, {
+      detail: {
+        schemaVersion: 1,
+        draftId: 'opaque-draft-id-1234567890',
+        checking: false,
+      },
+    }),
+  );
+  expect(
+    await screen.findByRole('textbox', { name: '選択テキスト' }),
+  ).toHaveValue('Selected body');
+});
+
+it('purges the draft, preview, and request intent when authentication is lost', async () => {
+  render(<KnowledgeCaptureIngress />);
+  deliver();
+  expect(
+    await screen.findByRole('textbox', { name: '選択テキスト' }),
+  ).toHaveValue('Selected body');
+  fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+  await waitFor(() => expect(api.previewKnowledgeCapture).toHaveBeenCalled());
+  await screen.findByRole('heading', { name: 'Exact preview' });
+
+  window.dispatchEvent(
+    new CustomEvent(KNOWLEDGE_CAPTURE_PURGE_EVENT, {
+      detail: {
+        schemaVersion: 1,
+        draftId: 'opaque-draft-id-1234567890',
+      },
+    }),
+  );
+
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('heading', { name: 'ブラウザー共有の確認' }),
+    ).not.toBeInTheDocument(),
+  );
+  expect(screen.queryByText('Selected body')).not.toBeInTheDocument();
+});
+
+it('discards a preview response when the canonical actor changes during the request', async () => {
+  authGuard.revalidateCurrentAuthActor
+    .mockResolvedValueOnce(true)
+    .mockResolvedValueOnce(false);
+  render(<KnowledgeCaptureIngress />);
+  deliver();
+  fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
+
+  await waitFor(() =>
+    expect(authGuard.revalidateCurrentAuthActor).toHaveBeenCalledTimes(2),
+  );
+  expect(api.previewKnowledgeCapture).toHaveBeenCalledTimes(1);
+  expect(
+    screen.queryByRole('heading', { name: 'Exact preview' }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('heading', { name: 'ブラウザー共有の確認' }),
+  ).not.toBeInTheDocument();
+});
+
+it('revalidates the canonical actor before commit and never fixes local pending state for a different session', async () => {
+  render(<KnowledgeCaptureIngress />);
+  deliver();
+  fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
+  await screen.findByRole('heading', { name: 'Exact preview' });
+  authGuard.revalidateCurrentAuthActor.mockResolvedValueOnce(false);
+  fireEvent.click(screen.getByLabelText('このexact previewを保存します'));
+  fireEvent.click(screen.getByRole('button', { name: '明示確定して保存' }));
+
+  await waitFor(() =>
+    expect(
+      screen.queryByRole('heading', { name: 'ブラウザー共有の確認' }),
+    ).not.toBeInTheDocument(),
+  );
+  expect(localQueue.markShareTargetDraftPending).not.toHaveBeenCalled();
+  expect(api.commitKnowledgeCapture).not.toHaveBeenCalled();
+});
+
+it('compensates a completed local pending write when an auth purge wins the race', async () => {
+  let resolvePending: () => void = () => undefined;
+  localQueue.markShareTargetDraftPending.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        resolvePending = resolve;
+      }),
+  );
+  render(<KnowledgeCaptureIngress />);
+  deliver();
+  fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
+  await screen.findByRole('heading', { name: 'Exact preview' });
+  fireEvent.click(screen.getByLabelText('このexact previewを保存します'));
+  fireEvent.click(screen.getByRole('button', { name: '明示確定して保存' }));
+  await waitFor(() =>
+    expect(localQueue.markShareTargetDraftPending).toHaveBeenCalledOnce(),
+  );
+
+  window.dispatchEvent(
+    new CustomEvent(KNOWLEDGE_CAPTURE_PURGE_EVENT, {
+      detail: {
+        schemaVersion: 1,
+        draftId: 'opaque-draft-id-1234567890',
+      },
+    }),
+  );
+  await act(async () => resolvePending());
+
+  await waitFor(() =>
+    expect(localQueue.markShareTargetDraftStaged).toHaveBeenCalledWith(
+      'opaque-draft-id-1234567890',
+      'header:synthetic-user',
+    ),
+  );
+  expect(localQueue.publishShareTargetLifecycle).toHaveBeenLastCalledWith(
+    'opaque-draft-id-1234567890',
+    'staged',
+  );
+  expect(api.commitKnowledgeCapture).not.toHaveBeenCalled();
+});
+
+it('compensates a completed local pending write after unmount and never calls commit', async () => {
+  let resolvePending: () => void = () => undefined;
+  localQueue.markShareTargetDraftPending.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        resolvePending = resolve;
+      }),
+  );
+  const view = render(<KnowledgeCaptureIngress />);
+  deliver();
+  fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
+  await screen.findByRole('heading', { name: 'Exact preview' });
+  fireEvent.click(screen.getByLabelText('このexact previewを保存します'));
+  fireEvent.click(screen.getByRole('button', { name: '明示確定して保存' }));
+  await waitFor(() =>
+    expect(localQueue.markShareTargetDraftPending).toHaveBeenCalledOnce(),
+  );
+
+  view.unmount();
+  await act(async () => resolvePending());
+
+  await waitFor(() =>
+    expect(localQueue.markShareTargetDraftStaged).toHaveBeenCalledWith(
+      'opaque-draft-id-1234567890',
+      'header:synthetic-user',
+    ),
+  );
+  expect(localQueue.publishShareTargetLifecycle).toHaveBeenLastCalledWith(
+    'opaque-draft-id-1234567890',
+    'staged',
+  );
+  expect(api.commitKnowledgeCapture).not.toHaveBeenCalled();
+});
+
 describe('KnowledgeCaptureIngress', () => {
+  it('rehydrates a pending local intent for reconcile without permitting a second commit', async () => {
+    render(<KnowledgeCaptureIngress />);
+    window.dispatchEvent(
+      new CustomEvent(KNOWLEDGE_CAPTURE_DRAFT_EVENT, {
+        detail: {
+          draftId: 'opaque-draft-id-1234567890',
+          requestKey: 'opaque-request-key-123456789',
+          actorKey: 'bff:canonical-account-id',
+          lifecycle: 'pending',
+          pendingIntent: {
+            selectedFields: ['title', 'selectedText'],
+            scope: 'personal',
+            organizationGroupAccountIds: [],
+            sourceType: 'web',
+          },
+          draft,
+        },
+      }),
+    );
+
+    const previewButton = await screen.findByRole('button', {
+      name: 'Preview',
+    });
+    expect(screen.getByRole('textbox', { name: 'URL' })).toBeDisabled();
+    fireEvent.click(previewButton);
+    expect(
+      await screen.findByText(/結果不明のcaptureを保持しています/),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: '明示確定して保存' }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: '保存結果を再照合' }),
+    ).toBeEnabled();
+    expect(api.commitKnowledgeCapture).not.toHaveBeenCalled();
+  });
+
+  it('revalidates the canonical actor before read-only reconcile', async () => {
+    render(<KnowledgeCaptureIngress />);
+    window.dispatchEvent(
+      new CustomEvent(KNOWLEDGE_CAPTURE_DRAFT_EVENT, {
+        detail: {
+          draftId: 'opaque-draft-id-1234567890',
+          requestKey: 'opaque-request-key-123456789',
+          actorKey: 'bff:canonical-account-id',
+          lifecycle: 'pending',
+          pendingIntent: {
+            selectedFields: ['title', 'selectedText'],
+            scope: 'personal',
+            organizationGroupAccountIds: [],
+            sourceType: 'web',
+          },
+          draft,
+        },
+      }),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
+    await screen.findByText(/結果不明のcaptureを保持しています/);
+    authGuard.revalidateCurrentAuthActor.mockResolvedValueOnce(false);
+    fireEvent.click(screen.getByRole('button', { name: '保存結果を再照合' }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('heading', { name: 'ブラウザー共有の確認' }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(api.reconcileKnowledgeCapture).not.toHaveBeenCalled();
+  });
+
   it('does not mutate on receipt and requires preview plus explicit confirmation', async () => {
     const onCommitted = vi.fn();
     render(<KnowledgeCaptureIngress onCommitted={onCommitted} />);
@@ -103,7 +383,7 @@ describe('KnowledgeCaptureIngress', () => {
       ['title', 'url', 'selectedText'],
     );
     expect(api.previewKnowledgeCapture.mock.calls[0][0].requestKey).toBe(
-      'opaque-draft-id-1234567890',
+      'opaque-request-key-123456789',
     );
     expect(
       api.previewKnowledgeCapture.mock.calls[0][0].selectedFields,
@@ -120,8 +400,19 @@ describe('KnowledgeCaptureIngress', () => {
     await waitFor(() =>
       expect(api.commitKnowledgeCapture).toHaveBeenCalledTimes(1),
     );
-    expect(api.commitKnowledgeCapture.mock.calls[0][0].requestKey).toBe(
+    expect(localQueue.markShareTargetDraftPending).toHaveBeenCalledWith(
       'opaque-draft-id-1234567890',
+      'header:synthetic-user',
+      {
+        selectedFields: ['title', 'url', 'selectedText'],
+        scope: 'personal',
+        organizationGroupAccountIds: [],
+        sourceType: 'web',
+      },
+      draft,
+    );
+    expect(api.commitKnowledgeCapture.mock.calls[0][0].requestKey).toBe(
+      'opaque-request-key-123456789',
     );
     expect(onCommitted).toHaveBeenCalledWith('item-1');
     expect(await screen.findByText('保存しました。')).toBeVisible();
@@ -185,6 +476,9 @@ describe('KnowledgeCaptureIngress', () => {
     fireEvent.click(screen.getByLabelText('このexact previewを保存します'));
     fireEvent.click(screen.getByRole('button', { name: '明示確定して保存' }));
     expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
+    await waitFor(() =>
+      expect(api.commitKnowledgeCapture).toHaveBeenCalledTimes(1),
+    );
     resolveCommit({
       captureId: 'capture-1',
       requestCaptureId: 'capture-1',
@@ -295,7 +589,7 @@ describe('KnowledgeCaptureIngress', () => {
       expect(api.reconcileKnowledgeCapture).toHaveBeenCalledWith(
         expect.objectContaining({
           preview: expect.objectContaining({ captureId: 'capture-1' }),
-          requestKey: 'opaque-draft-id-1234567890',
+          requestKey: 'opaque-request-key-123456789',
         }),
         expect.any(AbortSignal),
       ),
@@ -306,6 +600,46 @@ describe('KnowledgeCaptureIngress', () => {
       draftId: 'opaque-draft-id-1234567890',
       outcome: 'committed',
     });
+    await waitFor(() =>
+      expect(onCommitBusyChange).toHaveBeenLastCalledWith(false),
+    );
+    window.removeEventListener(KNOWLEDGE_CAPTURE_RESULT_EVENT, listener);
+  });
+
+  it('emits a terminal failed result so a pending local draft can be tombstoned', async () => {
+    api.commitKnowledgeCapture.mockResolvedValueOnce({
+      captureId: 'capture-1',
+      requestCaptureId: 'capture-1',
+      itemId: 'item-1',
+      snapshotId: 'snapshot-1',
+      status: 'failed',
+      failureCode: 'snapshot_failed',
+      reused: false,
+      createdAt: '2026-08-14T00:00:00.000Z',
+      committedAt: null,
+      failedAt: '2026-08-14T00:00:01.000Z',
+    });
+    const onCommitBusyChange = vi.fn();
+    const events: unknown[] = [];
+    const listener = (event: Event) =>
+      events.push((event as CustomEvent).detail);
+    window.addEventListener(KNOWLEDGE_CAPTURE_RESULT_EVENT, listener);
+    render(<KnowledgeCaptureIngress onCommitBusyChange={onCommitBusyChange} />);
+    deliver();
+    fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
+    await screen.findByRole('heading', { name: 'Exact preview' });
+    fireEvent.click(screen.getByLabelText('このexact previewを保存します'));
+    fireEvent.click(screen.getByRole('button', { name: '明示確定して保存' }));
+
+    expect(await screen.findByText(/保存に失敗しました/)).toBeVisible();
+    expect(events).toContainEqual({
+      schemaVersion: 1,
+      draftId: 'opaque-draft-id-1234567890',
+      outcome: 'failed',
+    });
+    expect(
+      screen.queryByRole('button', { name: '保存結果を再照合' }),
+    ).not.toBeInTheDocument();
     await waitFor(() =>
       expect(onCommitBusyChange).toHaveBeenLastCalledWith(false),
     );
@@ -344,7 +678,7 @@ describe('KnowledgeCaptureIngress', () => {
       expect(api.reconcileKnowledgeCapture).toHaveBeenCalledWith(
         expect.objectContaining({
           preview: expect.objectContaining({ captureId: 'capture-1' }),
-          requestKey: 'opaque-draft-id-1234567890',
+          requestKey: 'opaque-request-key-123456789',
         }),
         expect.any(AbortSignal),
       ),

@@ -396,6 +396,56 @@ test('same key with changed payload conflicts before artifact storage', async ()
   assert.equal(harness.stored.length, 1);
 });
 
+test('commit and reconcile reject a preview issued to a different canonical actor before side effects', async () => {
+  const switchedActor = {
+    ...actor,
+    userId: 'owner-2',
+  };
+  const commitHarness = createHarness();
+  const commitRequest = request();
+  const preview = await commitHarness.service.preview({
+    actor,
+    auditActor: {},
+    request: commitRequest,
+  });
+  assert.equal(preview.ok, true);
+
+  const switchedCommit = await commitHarness.service.commit({
+    actor: switchedActor,
+    auditActor: {},
+    request: {
+      ...commitRequest,
+      confirmed: true,
+      organizationConfirmed: false,
+      previewToken: preview.value.previewToken,
+      requestKey: 'opaque-client-key',
+    },
+  });
+  assert.equal(switchedCommit.ok, false);
+  assert.equal(switchedCommit.code, 'preview_token_invalid');
+  assert.equal(commitHarness.captures.size, 0);
+  assert.equal(commitHarness.stored.length, 0);
+
+  const reconcileHarness = createHarness({ storeOutcome: 'unknown' });
+  const pending = await previewAndCommit(reconcileHarness);
+  assert.equal(pending.commit.ok, true);
+  assert.equal(pending.commit.value.status, 'pending');
+  const switchedReconcile = await reconcileHarness.service.reconcile({
+    actor: switchedActor,
+    auditActor: {},
+    captureId: pending.preview.value.captureId,
+    request: {
+      ...pending.base,
+      previewToken: pending.preview.value.previewToken,
+      requestKey: 'opaque-client-key',
+    },
+  });
+  assert.equal(switchedReconcile.ok, false);
+  assert.equal(switchedReconcile.code, 'preview_token_invalid');
+  assert.equal(reconcileHarness.reconciled.length, 0);
+  assert.equal(reconcileHarness.stored.length, 1);
+});
+
 test('preview does not expose a duplicate whose current item access was revoked', async () => {
   const harness = createHarness();
   const { commit } = await previewAndCommit(harness);

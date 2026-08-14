@@ -6,13 +6,17 @@ FROM ${NODE_IMAGE} AS builder
 WORKDIR /app
 
 ARG VITE_API_BASE=
+ARG VITE_AUTH_MODE
 ARG VITE_ENABLE_SW=true
+ARG VITE_PWA_SHARE_TARGET_MODE
 ARG VITE_PUSH_PUBLIC_KEY=
 ARG VITE_GOOGLE_CLIENT_ID=
 ARG VITE_FEATURE_TIMESHEET_GRID=false
 
 ENV VITE_API_BASE=${VITE_API_BASE}
+ENV VITE_AUTH_MODE=${VITE_AUTH_MODE}
 ENV VITE_ENABLE_SW=${VITE_ENABLE_SW}
+ENV VITE_PWA_SHARE_TARGET_MODE=${VITE_PWA_SHARE_TARGET_MODE}
 ENV VITE_PUSH_PUBLIC_KEY=${VITE_PUSH_PUBLIC_KEY}
 ENV VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID}
 ENV VITE_FEATURE_TIMESHEET_GRID=${VITE_FEATURE_TIMESHEET_GRID}
@@ -22,7 +26,9 @@ COPY packages/frontend/scripts ./packages/frontend/scripts
 RUN npm ci --prefix packages/frontend
 
 COPY packages/frontend ./packages/frontend
-RUN npm run build --prefix packages/frontend \
+RUN case "$VITE_AUTH_MODE" in header|jwt_bff) ;; *) exit 1 ;; esac \
+ && case "$VITE_PWA_SHARE_TARGET_MODE" in enabled|decommission) ;; *) exit 1 ;; esac \
+ && npm run build --prefix packages/frontend \
  && npm cache clean --force
 
 FROM ${NGINX_IMAGE}

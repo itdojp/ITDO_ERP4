@@ -15,7 +15,9 @@ import {
   SectionCard,
 } from '../ui';
 import { CurrentUser } from '../sections/CurrentUser';
+import { ShareTargetLanding } from '../sections/knowledge-hub/ShareTargetLanding';
 import { parseOpenHash, type DeepLinkOpenPayload } from '../utils/deepLink';
+import { purgeExpiredShareTargetDrafts } from '../utils/shareTargetQueue';
 
 type SectionItem = {
   id: string;
@@ -33,6 +35,7 @@ const LEGACY_SECTION_ALIASES: Record<string, string> = {
   'project-chat': 'room-chat',
 };
 const COMMAND_PALETTE_SEARCH_LABEL = 'コマンド検索';
+const SHARE_TARGET_PURGE_INTERVAL_MS = 60 * 1000;
 
 const Dashboard = React.lazy(() =>
   import('../sections/Dashboard').then((module) => ({
@@ -695,6 +698,10 @@ export const App: React.FC = () => {
   const [activeSectionReadyKey, setActiveSectionReadyKey] = useState<
     string | null
   >(null);
+  const [shareTargetDraftId, setShareTargetDraftId] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('shareTarget') ?? '';
+  });
 
   const prepareActiveSectionChange = useCallback(
     (sectionId: string) => {
@@ -715,6 +722,40 @@ export const App: React.FC = () => {
       return true;
     },
     [knowledgeCommitBusy],
+  );
+
+  const clearShareTargetLanding = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      const next = new URL(window.location.href);
+      next.searchParams.delete('shareTarget');
+      window.history.replaceState(
+        null,
+        '',
+        `${next.pathname}${next.search}${next.hash}`,
+      );
+    }
+    setShareTargetDraftId('');
+  }, []);
+
+  useEffect(() => {
+    const purge = () => {
+      purgeExpiredShareTargetDrafts().catch(() => undefined);
+    };
+    purge();
+    const interval = window.setInterval(purge, SHARE_TARGET_PURGE_INTERVAL_MS);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') purge();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, []);
+
+  const activateKnowledgeHubForShareTarget = useCallback(
+    () => prepareActiveSectionChange('knowledge-hub'),
+    [prepareActiveSectionChange],
   );
 
   useEffect(() => {
@@ -1137,6 +1178,17 @@ export const App: React.FC = () => {
         }
       />
       <CurrentUser />
+      {shareTargetDraftId ? (
+        <ShareTargetLanding
+          draftId={shareTargetDraftId}
+          knowledgeHubReady={
+            activeSectionId === 'knowledge-hub' &&
+            activeSectionReadyKey === activeSectionLoadKey
+          }
+          activateKnowledgeHub={activateKnowledgeHubForShareTarget}
+          clearLanding={clearShareTargetLanding}
+        />
+      ) : null}
       {deepLinkError && (
         <div style={{ marginTop: 8 }}>
           <Alert variant="warning">{deepLinkError}</Alert>

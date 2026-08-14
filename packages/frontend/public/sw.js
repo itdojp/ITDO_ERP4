@@ -1,5 +1,14 @@
+importScripts('/share-target-mode.js', '/share-target-sw.js');
+
 const CACHE_NAME = 'erp4-pwa-v2';
-const CORE_ASSETS = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
+const CORE_ASSETS = [
+  '/',
+  '/index.html',
+  '/manifest.webmanifest',
+  '/icon.svg',
+  '/share-target-sw.js',
+  '/share-target-mode.js',
+];
 const OFFLINE_URL = '/index.html';
 const STATIC_CACHE_PATHS = new Set(CORE_ASSETS);
 const STATIC_CACHE_PREFIXES = ['/assets/'];
@@ -19,12 +28,16 @@ function isStaticAssetRequest(request, url) {
   if (request.mode === 'navigate') return false;
   if (isApiLikePath(url.pathname)) return false;
   if (STATIC_CACHE_PATHS.has(url.pathname)) return true;
-  return STATIC_CACHE_PREFIXES.some((prefix) => url.pathname.startsWith(prefix));
+  return STATIC_CACHE_PREFIXES.some((prefix) =>
+    url.pathname.startsWith(prefix),
+  );
 }
 
 function canStoreResponse(response) {
   if (!response || !response.ok) return false;
-  const cacheControl = (response.headers.get('cache-control') || '').toLowerCase();
+  const cacheControl = (
+    response.headers.get('cache-control') || ''
+  ).toLowerCase();
   if (cacheControl.includes('no-store') || cacheControl.includes('private')) {
     return false;
   }
@@ -72,23 +85,37 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter((key) => key !== CACHE_NAME)
-            .map((key) => caches.delete(key)),
+    Promise.all([
+      caches
+        .keys()
+        .then((keys) =>
+          Promise.all(
+            keys
+              .filter((key) => key !== CACHE_NAME)
+              .map((key) => caches.delete(key)),
+          ),
         ),
-      )
-      .then(() => self.clients.claim()),
+      self.ERP4ShareTarget.purgeExpiredDrafts().catch(() => undefined),
+    ]).then(() => self.clients.claim()),
   );
 });
 
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
+
+  if (
+    self.ERP4_SHARE_TARGET_MODE === 'enabled' &&
+    event.request.method === 'POST' &&
+    url.pathname === '/share-target'
+  ) {
+    event.respondWith(
+      self.ERP4ShareTarget.handleRequest(event.request, self.location.origin),
+    );
+    return;
+  }
+
+  if (event.request.method !== 'GET') return;
 
   if (event.request.mode === 'navigate') {
     event.respondWith(
@@ -173,8 +200,9 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const targetPath = normalizeNotificationPath(event.notification?.data?.url);
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(
-      (clientList) => {
+    self.clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
+      .then((clientList) => {
         const target = new URL(targetPath, self.location.origin);
         for (const client of clientList) {
           let clientUrl;
@@ -195,7 +223,6 @@ self.addEventListener('notificationclick', (event) => {
           return self.clients.openWindow(target.toString());
         }
         return undefined;
-      },
-    ),
+      }),
   );
 });

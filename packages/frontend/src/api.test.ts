@@ -2,6 +2,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const AUTH_STORAGE_KEY = 'erp4_auth';
 
+class FakeBroadcastChannel {
+  static instances = new Set<FakeBroadcastChannel>();
+  onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
+  closed = false;
+
+  constructor(readonly name: string) {
+    FakeBroadcastChannel.instances.add(this);
+  }
+
+  postMessage(value: unknown) {
+    for (const channel of FakeBroadcastChannel.instances) {
+      if (channel !== this && channel.name === this.name && !channel.closed) {
+        channel.onmessage?.({ data: value } as MessageEvent<unknown>);
+      }
+    }
+  }
+
+  close() {
+    this.closed = true;
+  }
+}
+
 type AuthStateSeed = {
   userId: string;
   roles: string[];
@@ -44,6 +66,7 @@ describe('api helpers', () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
+    FakeBroadcastChannel.instances.clear();
   });
 
   afterEach(() => {
@@ -51,6 +74,47 @@ describe('api helpers', () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
+    FakeBroadcastChannel.instances.clear();
+  });
+
+  it('broadcasts an actor-free auth generation even when persisted auth JSON is unchanged', async () => {
+    vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel);
+    const { AUTH_SESSION_CHANGE_CHANNEL, setAuthState } = await loadApi();
+    const observer = new FakeBroadcastChannel(AUTH_SESSION_CHANGE_CHANNEL);
+    const received: unknown[] = [];
+    observer.onmessage = (event) => received.push(event.data);
+    const state = {
+      userId: 'legacy-shared-id',
+      roles: ['user'],
+      verifiedActorKey: 'bff:must-not-persist',
+    };
+
+    setAuthState(state);
+    setAuthState(state);
+
+    expect(received).toEqual([
+      { schemaVersion: 1, event: 'session_changed' },
+      { schemaVersion: 1, event: 'session_changed' },
+    ]);
+    expect(JSON.stringify(received)).not.toContain('legacy-shared-id');
+    expect(window.localStorage.getItem(AUTH_STORAGE_KEY)).not.toContain(
+      'must-not-persist',
+    );
+  });
+
+  it('accepts only validated cross-tab auth generation messages', async () => {
+    vi.stubGlobal('BroadcastChannel', FakeBroadcastChannel);
+    const { AUTH_SESSION_CHANGE_CHANNEL, subscribeAuthSessionChanges } =
+      await loadApi();
+    const listener = vi.fn();
+    const unsubscribe = subscribeAuthSessionChanges(listener);
+    const external = new FakeBroadcastChannel(AUTH_SESSION_CHANGE_CHANNEL);
+
+    external.postMessage({ schemaVersion: 1, event: 'other' });
+    external.postMessage({ schemaVersion: 1, event: 'session_changed' });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
   });
 
   it('returns null when auth JSON is invalid', async () => {
@@ -246,10 +310,18 @@ describe('api helpers', () => {
       groupIds: ['g-100'],
       groupAccountIds: ['ga-100'],
       token: 'header-token',
+      verifiedActorKey: 'header:u-002',
     });
     expect(
       JSON.parse(window.localStorage.getItem(AUTH_STORAGE_KEY) ?? '{}'),
-    ).toEqual(next);
+    ).toEqual({
+      userId: 'u-002',
+      roles: ['user'],
+      projectIds: ['p-100'],
+      groupIds: ['g-100'],
+      groupAccountIds: ['ga-100'],
+      token: 'header-token',
+    });
     expect(dispatchSpy).toHaveBeenCalledTimes(1);
     expect(dispatchSpy.mock.calls[0]?.[0]?.type).toBe('erp4:auth-updated');
   });
@@ -315,12 +387,113 @@ describe('api helpers', () => {
       groupIds: undefined,
       groupAccountIds: undefined,
       token: undefined,
+      verifiedActorKey: 'bff:ua-1',
     });
     expect(second).toBeNull();
     expect(window.localStorage.getItem(AUTH_STORAGE_KEY)).toBeNull();
     expect(dispatchSpy).toHaveBeenCalledTimes(2);
     expect(dispatchSpy.mock.calls[0]?.[0]?.type).toBe('erp4:auth-updated');
     expect(dispatchSpy.mock.calls[1]?.[0]?.type).toBe('erp4:auth-updated');
+  });
+
+  it('can verify the server session without recursively dispatching auth-updated', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({
+          user: { userId: 'u-verified', roles: ['user'] },
+          session: { userAccountId: 'account-verified' },
+        }),
+      ),
+    );
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+    seedAuthState({ userId: 'u-cached', roles: ['user'] });
+    const { refreshAuthStateFromServer } = await loadApi({
+      apiBase: 'https://api.example.test/erp4',
+      authMode: 'jwt_bff',
+    });
+
+    await expect(
+      refreshAuthStateFromServer({ dispatchEvent: false }),
+    ).resolves.toEqual(
+      expect.objectContaining({ userId: 'u-verified', token: undefined }),
+    );
+    expect(dispatchSpy).not.toHaveBeenCalled();
+  });
+
+  it('uses the canonical BFF account actor for non-persistent verification', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          user: { userId: 'legacy-shared-id', roles: ['user'] },
+          session: { userAccountId: 'canonical-account-a' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          user: { userId: 'legacy-shared-id', roles: ['user'] },
+          session: { userAccountId: 'canonical-account-b' },
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    seedAuthState({ userId: 'cached-user', roles: ['user'] });
+    const { getAuthState, refreshAuthStateFromServer } = await loadApi({
+      apiBase: 'https://api.example.test/erp4',
+      authMode: 'jwt_bff',
+    });
+
+    const first = await refreshAuthStateFromServer({
+      dispatchEvent: false,
+      allowCachedFallback: false,
+      persistState: false,
+    });
+    const second = await refreshAuthStateFromServer({
+      dispatchEvent: false,
+      allowCachedFallback: false,
+      persistState: false,
+    });
+
+    expect(first?.verifiedActorKey).toBe('bff:canonical-account-a');
+    expect(second?.verifiedActorKey).toBe('bff:canonical-account-b');
+    expect(first?.verifiedActorKey).not.toBe(second?.verifiedActorKey);
+    expect(getAuthState()).toEqual({
+      userId: 'cached-user',
+      roles: ['user'],
+    });
+  });
+
+  it('revalidates the expected canonical actor without persisting a changed BFF session', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          user: { userId: 'legacy-shared-id', roles: ['user'] },
+          session: { userAccountId: 'canonical-account-b' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          user: { userId: 'legacy-shared-id', roles: ['user'] },
+          session: { userAccountId: 'canonical-account-b' },
+        }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    seedAuthState({ userId: 'legacy-shared-id', roles: ['user'] });
+    const { getAuthState, revalidateCurrentAuthActor } = await loadApi({
+      authMode: 'jwt_bff',
+    });
+
+    await expect(
+      revalidateCurrentAuthActor('bff:canonical-account-a'),
+    ).resolves.toBe(false);
+    await expect(
+      revalidateCurrentAuthActor('bff:canonical-account-b'),
+    ).resolves.toBe(true);
+    expect(getAuthState()).toEqual({
+      userId: 'legacy-shared-id',
+      roles: ['user'],
+    });
   });
 
   it('falls back to relative paths and warns once when VITE_API_BASE is invalid', async () => {
@@ -404,6 +577,32 @@ describe('api helpers', () => {
       JSON.parse(window.localStorage.getItem(AUTH_STORAGE_KEY) ?? '{}'),
     ).toEqual(next);
     expect(dispatchSpy).not.toHaveBeenCalled();
+  });
+
+  it('fails closed without erasing the retry candidate when cached fallback is disabled', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('offline'));
+    vi.stubGlobal('fetch', fetchMock);
+    seedAuthState({
+      userId: 'u-retry-after-online',
+      roles: ['user'],
+      token: 'test-only-token',
+    });
+
+    const { getAuthState, refreshAuthStateFromServer } = await loadApi({
+      authMode: 'header',
+    });
+
+    await expect(
+      refreshAuthStateFromServer({
+        dispatchEvent: false,
+        allowCachedFallback: false,
+      }),
+    ).resolves.toBeNull();
+    expect(getAuthState()).toEqual({
+      userId: 'u-retry-after-online',
+      roles: ['user'],
+      token: 'test-only-token',
+    });
   });
 
   it('does not prefetch csrf or set a json content type for FormData on /auth/csrf', async () => {

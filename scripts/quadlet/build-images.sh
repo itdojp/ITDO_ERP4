@@ -6,6 +6,7 @@ NODE_IMAGE="${NODE_IMAGE:-docker.io/library/node:20-bookworm-slim@sha256:3d0f054
 NGINX_IMAGE="${NGINX_IMAGE:-docker.io/library/nginx:1.29-alpine@sha256:3bcf852aed06467cf075c6105892e4d5a6ebbbafa0ce22d35062db9e90ddef4c}"
 BACKEND_BUILD_DATABASE_URL="${BACKEND_BUILD_DATABASE_URL:-postgresql://user:password@localhost:5432/postgres?schema=public}"
 FRONTEND_BUILD_ENV_FILE="${FRONTEND_BUILD_ENV_FILE:-$ROOT_DIR/deploy/quadlet/env/erp4-frontend-build.env}"
+PROFILE="${SAKURA_VPS_PROFILE:-production}"
 
 fail() {
   printf 'ERROR: %s\n' "$*" >&2
@@ -32,18 +33,28 @@ export ERP4_IMAGE_TAG
 BACKEND_IMAGE="${BACKEND_IMAGE:-localhost/erp4-backend:${ERP4_IMAGE_TAG}}"
 FRONTEND_IMAGE="${FRONTEND_IMAGE:-localhost/erp4-frontend:${ERP4_IMAGE_TAG}}"
 
-if [[ -f "$FRONTEND_BUILD_ENV_FILE" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "$FRONTEND_BUILD_ENV_FILE"
-  set +a
-fi
+[[ -f "$FRONTEND_BUILD_ENV_FILE" ]] || fail "frontend build env file is required: $FRONTEND_BUILD_ENV_FILE"
+set -a
+# shellcheck disable=SC1090
+source "$FRONTEND_BUILD_ENV_FILE"
+set +a
 
 : "${VITE_API_BASE:=}"
+: "${VITE_AUTH_MODE:?VITE_AUTH_MODE is required}"
 : "${VITE_ENABLE_SW:=true}"
+: "${VITE_PWA_SHARE_TARGET_MODE:?VITE_PWA_SHARE_TARGET_MODE is required}"
 : "${VITE_PUSH_PUBLIC_KEY:=}"
 : "${VITE_GOOGLE_CLIENT_ID:=}"
 : "${VITE_FEATURE_TIMESHEET_GRID:=false}"
+
+case "$PROFILE:$VITE_AUTH_MODE" in
+  private-smoke:header|production:jwt_bff|https-trial:jwt_bff) ;;
+  *) fail "profile $PROFILE rejects VITE_AUTH_MODE=$VITE_AUTH_MODE" ;;
+esac
+case "$VITE_PWA_SHARE_TARGET_MODE" in
+  enabled|decommission) ;;
+  *) fail "VITE_PWA_SHARE_TARGET_MODE must be enabled or decommission" ;;
+esac
 
 printf 'Building ERP4 images with ERP4_IMAGE_TAG=%s\n' "$ERP4_IMAGE_TAG"
 printf '  backend: %s\n' "$BACKEND_IMAGE"
@@ -60,7 +71,9 @@ podman build \
   --build-arg NODE_IMAGE="$NODE_IMAGE" \
   --build-arg NGINX_IMAGE="$NGINX_IMAGE" \
   --build-arg VITE_API_BASE="$VITE_API_BASE" \
+  --build-arg VITE_AUTH_MODE="$VITE_AUTH_MODE" \
   --build-arg VITE_ENABLE_SW="$VITE_ENABLE_SW" \
+  --build-arg VITE_PWA_SHARE_TARGET_MODE="$VITE_PWA_SHARE_TARGET_MODE" \
   --build-arg VITE_PUSH_PUBLIC_KEY="$VITE_PUSH_PUBLIC_KEY" \
   --build-arg VITE_GOOGLE_CLIENT_ID="$VITE_GOOGLE_CLIENT_ID" \
   --build-arg VITE_FEATURE_TIMESHEET_GRID="$VITE_FEATURE_TIMESHEET_GRID" \

@@ -2,6 +2,9 @@ import type { KnowledgeScope, KnowledgeSourceType } from './knowledgeHubModel';
 
 export const KNOWLEDGE_CAPTURE_DRAFT_EVENT = 'erp4:knowledge-capture-draft';
 export const KNOWLEDGE_CAPTURE_RESULT_EVENT = 'erp4:knowledge-capture-result';
+export const KNOWLEDGE_CAPTURE_PURGE_EVENT = 'erp4:knowledge-capture-purge';
+export const KNOWLEDGE_CAPTURE_AUTH_CHECK_EVENT =
+  'erp4:knowledge-capture-auth-check';
 
 export type KnowledgeCaptureChannel = 'pwa_share_target' | 'browser_extension';
 export type KnowledgeCaptureField =
