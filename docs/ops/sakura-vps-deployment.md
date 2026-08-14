@@ -250,19 +250,28 @@ git status --short --branch
 
 ## 6. build-time env
 
-`deploy/quadlet/env/erp4-frontend-build.env` を用意する。
+`deploy/quadlet/env/erp4-frontend-build.env` を、実行するprofile専用のexampleから用意する。profileを変えても以前のenvを流用しない。
 
 ```bash
-cp deploy/quadlet/env/erp4-frontend-build.env.example deploy/quadlet/env/erp4-frontend-build.env
+PROFILE="${PROFILE:-production}"
+case "$PROFILE" in
+  production) FRONTEND_ENV_EXAMPLE=deploy/quadlet/env/erp4-frontend-build.env.example ;;
+  private-smoke) FRONTEND_ENV_EXAMPLE=deploy/quadlet/env/erp4-frontend-build.private-smoke.env.example ;;
+  https-trial) FRONTEND_ENV_EXAMPLE=deploy/quadlet/env/erp4-frontend-build.https-trial.env.example ;;
+  *) echo "unsupported profile: $PROFILE" >&2; exit 1 ;;
+esac
+cp "$FRONTEND_ENV_EXAMPLE" deploy/quadlet/env/erp4-frontend-build.env
 chmod 600 deploy/quadlet/env/erp4-frontend-build.env
 vi deploy/quadlet/env/erp4-frontend-build.env
 ```
 
-最低限:
+profile別exampleの値を基準に、最低限次の4キーを確認する。`private-smoke`では`VITE_AUTH_MODE=header`、`VITE_ENABLE_SW=false`、`VITE_PWA_SHARE_TARGET_MODE=decommission`を維持し、`production`／`https-trial`ではBFF認証とWeb Share Targetを有効にする。
 
 ```dotenv
 VITE_API_BASE=https://api.example.com
+VITE_AUTH_MODE=jwt_bff
 VITE_ENABLE_SW=true
+VITE_PWA_SHARE_TARGET_MODE=enabled
 ```
 
 Google OIDC の backend redirect フローだけを使う場合、`VITE_GOOGLE_CLIENT_ID` は不要。frontend が Google Identity Services を直接使う場合だけ設定する。
@@ -270,12 +279,12 @@ Google OIDC の backend redirect フローだけを使う場合、`VITE_GOOGLE_C
 ## 7. Quadlet unit / runtime env
 
 ```bash
-./scripts/quadlet/check-env.sh --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
-./scripts/quadlet/build-images.sh --profile production --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
-./scripts/quadlet/install-user-units.sh --profile production
+./scripts/quadlet/check-env.sh --profile "$PROFILE" --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
+./scripts/quadlet/build-images.sh --profile "$PROFILE" --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
+./scripts/quadlet/install-user-units.sh --profile "$PROFILE"
 ```
 
-非公開の導入リハーサルでは、上記の `production` を `private-smoke` に置き換える。profileはinstallだけでなくcheck/start/restart/updateにも同じ値を渡す。`private-smoke` installerはCaddyを配置せず、既存Caddy artifactを検出した場合は安全のため停止する。
+profileはenv example選択だけでなくcheck/build/install/start/restart/updateにも同じ値を渡す。`private-smoke` installerはCaddyを配置せず、既存Caddy artifactを検出した場合は安全のため停止する。
 
 runtime env は `~/.config/containers/systemd/` 配下で管理する。
 Quadlet sourceも同ディレクトリへ配置し、native `.service` / `.timer` はinstallerが `~/.config/systemd/user/` へ管理対象symlinkとして登録する。Quadlet generatorはnative unitを生成しないため、手動配置時に両者を混同しない。

@@ -12,6 +12,12 @@
 - `private-smoke`: Caddy / host publish / 実 OAuth / 外部送信を使わない非公開 smoke。`SAKURA_VPS_PROFILE=private-smoke` を backend env に置き、`./scripts/quadlet/check-env.sh --profile private-smoke` で検査する。
 - `https-trial`: trial 専用 FQDN + HTTPS + trial 専用 OAuth client。`SAKURA_VPS_PROFILE=https-trial` を backend env に置き、`./scripts/quadlet/check-env.sh --profile https-trial` と `./scripts/quadlet/check-trial-readiness.sh --profile https-trial --include-proxy` で検査する。
 
+frontend build envはprofileごとに次のexampleを正とし、profile間で流用しない。
+
+- `production`: `deploy/quadlet/env/erp4-frontend-build.env.example`
+- `private-smoke`: `deploy/quadlet/env/erp4-frontend-build.private-smoke.env.example`
+- `https-trial`: `deploy/quadlet/env/erp4-frontend-build.https-trial.env.example`
+
 ## build-time
 
 ### `deploy/quadlet/env/erp4-frontend-build.env`
@@ -23,7 +29,9 @@
 最低限確認するキー:
 
 - `VITE_API_BASE`
+- `VITE_AUTH_MODE`
 - `VITE_ENABLE_SW`
+- `VITE_PWA_SHARE_TARGET_MODE`
 
 必要時に設定するキー:
 
@@ -34,7 +42,8 @@
 確認コマンド:
 
 ```bash
-./scripts/quadlet/check-env.sh --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
+PROFILE="${PROFILE:-production}"
+./scripts/quadlet/check-env.sh --profile "$PROFILE" --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
 ```
 
 Google OIDC をさくらVPS 実機で使う場合は FQDN + HTTPS の origin / redirect URI が前提です。導入前に [google-cloud-predeployment](google-cloud-predeployment.md) を確認し、Google OIDC の詳細作業は [google-oidc-google-cloud-console](google-oidc-google-cloud-console.md) を参照してください。

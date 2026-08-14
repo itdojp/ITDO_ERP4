@@ -89,18 +89,31 @@ cd ITDO_ERP4
 
 ## 3. イメージ build
 
-frontend build 用の env ファイルを用意します。
+frontend build 用の env ファイルを、実行するprofile専用のexampleから用意します。profileを変えても以前のenvを流用しません。
 
 ```bash
-cp deploy/quadlet/env/erp4-frontend-build.env.example deploy/quadlet/env/erp4-frontend-build.env
+PROFILE="${PROFILE:-production}"
+case "$PROFILE" in
+  production) FRONTEND_ENV_EXAMPLE=deploy/quadlet/env/erp4-frontend-build.env.example ;;
+  private-smoke) FRONTEND_ENV_EXAMPLE=deploy/quadlet/env/erp4-frontend-build.private-smoke.env.example ;;
+  https-trial) FRONTEND_ENV_EXAMPLE=deploy/quadlet/env/erp4-frontend-build.https-trial.env.example ;;
+  *) echo "unsupported profile: $PROFILE" >&2; exit 1 ;;
+esac
+cp "$FRONTEND_ENV_EXAMPLE" deploy/quadlet/env/erp4-frontend-build.env
+chmod 600 deploy/quadlet/env/erp4-frontend-build.env
 vi deploy/quadlet/env/erp4-frontend-build.env
 ```
 
-最低限修正する値:
+最低限確認する値:
 
 - `VITE_API_BASE`
   - plain HTTP の stack smoke のみ: `http://YOUR_VPS_HOST:3001`
   - Google OIDC を含む受入確認: `https://api.example.com`
+- `VITE_AUTH_MODE`
+- `VITE_ENABLE_SW`
+- `VITE_PWA_SHARE_TARGET_MODE`
+  - `private-smoke`: `VITE_AUTH_MODE=header`、`VITE_ENABLE_SW=false`、`VITE_PWA_SHARE_TARGET_MODE=decommission`
+  - `production`／`https-trial`: BFF認証とWeb Share Targetを有効にするexample値を維持
 - `VITE_GOOGLE_CLIENT_ID`（frontend が Google Identity Services を直接使う場合のみ。`AUTH_MODE=jwt_bff` の backend redirect フローだけなら不要）
 - `VITE_PUSH_PUBLIC_KEY`（Push 通知を使う場合）
 
@@ -111,7 +124,6 @@ plain HTTP の `8080/3001` 構成は Podman stack 自体の smoke 確認用で�
 build 前に frontend build 用 env だけ検証します。
 
 ```bash
-PROFILE="${PROFILE:-production}"
 ./scripts/quadlet/check-env.sh --profile "$PROFILE" --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
 ```
 
