@@ -3,7 +3,7 @@
 ## 対象
 
 - baseline: `1f51d5875d43c1986c7acf40ec0a7c18b789f074`
-- validated implementation head: `db3f0edb1dead9a0aec21abb07018eda48e5d64c`
+- validated implementation head: `788838103b84f3b1053e510a4a4fabf12556b1f1`
 - channel: `pwa_share_target`
 - environment: local repository-side synthetic fixture
 
@@ -46,7 +46,7 @@ security reviewで指摘されたinitiator metadata欠落は、両header必須�
 
 Copilot reviewで、decommission時のexact share-target POSTがservice workerの通常fetch pathへ流れ、request bodyがnetworkへfallbackし得る点を検出した。修正後はsource artifactの既定を`decommission`とし、exact same-origin POSTを常にinterceptして、enabled時だけlocal stagingへ進め、それ以外は`410 share_target_disabled`／`no-store`でworker内終端する。公式buildは`VITE_ENABLE_SW`とshare-target modeの明示設定を必須とし、E2EのVite dev serverだけが`ERP4_DEV_SHARE_TARGET_MODE=enabled`を明示して生成modeを返す。最初のfull E2Eではsource既定のfail-closed化によりPWA 3件が410となる回帰を検出したが、source既定を緩めず、このdev-only明示mode bridgeを追加してfocused 4/4とfull 159/159対象PASSを再確認した。service worker focused 21/21、build/config 5/5、profile missing-env negative testもPASSした。この証跡文書を更新する後続commitは検証済みimplementation treeを変更しないdocs-only commitとする。
 
-最終security reviewでは、`sakura-vps-trial-checklist.md`がops docs formatting／link checkとprofile continuity gateの対象外である点を検出した。`db3f0edb1dead9a0aec21abb07018eda48e5d64c`で同checklistを両gateへ追加し、check-env、build、install、start、readiness、evidence、rollbackの各profile-aware呼出しを`--profile "$PROFILE"`へ固定した。新しいexact implementation headで`make ops-quality`、release-readiness 29/29、core E2E 109/109、full E2E 159 PASS／34既存条件付きSKIP／0 FAIL、secret scan、`git diff --check`を再実行してPASSした。
+最終security reviewでは、`sakura-vps-trial-checklist.md`がops docs formatting／link checkとprofile continuity gateの対象外である点を検出した。`db3f0edb1dead9a0aec21abb07018eda48e5d64c`で同checklistを両gateへ追加し、check-env、build、install、start、readiness、evidence、rollbackの各profile-aware呼出しを`--profile "$PROFILE"`へ固定した。続くcorrectness reviewで、環境変数prefix付きのインライン呼出しを行頭限定matcherが見落とす点を検出したため、`788838103b84f3b1053e510a4a4fabf12556b1f1`で行中の全Quadlet invocationを検査し、prefix付き非束縛buildを拒否するnegative fixtureを追加した。新しいexact implementation headで`make ops-quality`、release-readiness 29/29、core E2E 109/109、full E2E 159 PASS／34既存条件付きSKIP／0 FAIL、secret scan、`git diff --check`を再実行してPASSした。
 
 ## Threat model
 
