@@ -169,6 +169,8 @@ const requiredCommandsByFile = new Map([
       'install-user-units.sh',
       'start-stack.sh',
       'restart-stack.sh',
+      'rollback-latest.sh',
+      'update-stack.sh',
       'check-trial-readiness.sh',
       'collect-trial-evidence.sh',
     ],
@@ -199,16 +201,24 @@ function profileInvocationFailures(file, source, commands) {
   return currentFailures;
 }
 
-const negativeFixture = [
-  './scripts/quadlet/check-env.sh --profile "$PROFILE"',
-  './scripts/quadlet/check-env.sh',
-].join('\n');
-if (
-  profileInvocationFailures('negative-fixture', negativeFixture, [
-    'check-env.sh',
-  ]).length !== 1
-) {
-  throw new Error('profile continuity checker must reject every unbound invocation');
+for (const command of [
+  'check-env.sh',
+  'rollback-latest.sh',
+  'update-stack.sh',
+]) {
+  const negativeFixture = [
+    `./scripts/quadlet/${command} --profile "$PROFILE"`,
+    `./scripts/quadlet/${command}`,
+  ].join('\n');
+  if (
+    profileInvocationFailures(`negative-fixture-${command}`, negativeFixture, [
+      command,
+    ]).length !== 1
+  ) {
+    throw new Error(
+      `profile continuity checker must reject every unbound ${command} invocation`,
+    );
+  }
 }
 
 for (const file of files) {

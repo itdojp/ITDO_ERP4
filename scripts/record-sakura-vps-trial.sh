@@ -25,7 +25,7 @@ Optional env:
   OPERATOR_NAME=...
   TARGET_HOST=...     # default: collected host from meta.txt
   VPS_IP=...
-  PROFILE=production|private-smoke|https-trial  # default: collected profile from meta.txt or production
+  PROFILE=production|private-smoke|https-trial  # default: collected profile from meta.txt
 
 Validation:
 - DATE_STAMP must be a valid calendar date (YYYY-MM-DD)
