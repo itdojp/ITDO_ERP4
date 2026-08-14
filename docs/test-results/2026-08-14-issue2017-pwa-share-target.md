@@ -3,7 +3,7 @@
 ## 対象
 
 - baseline: `1f51d5875d43c1986c7acf40ec0a7c18b789f074`
-- validated implementation head: `9578788c5acedb782fb0a537f13ad218b9c8d108`
+- validated implementation head: `87dfe2e682271bdff36007c66fdbba3e01850756`
 - channel: `pwa_share_target`
 - environment: local repository-side synthetic fixture
 
@@ -27,7 +27,7 @@
 - focused frontend lifecycle/unit: landing／queue 40/40 PASS、build/config契約5/5 PASS。実IndexedDB transactionを使うunauthenticated discard／actor claim競合、認証済みtombstone → broadcast → physical delete順序、tombstone失敗時のbroadcast 0件を固定し、race focused testは20/20反復PASS
 - focused backend actor binding: 86/86 PASS。actor Aのpreview tokenをactor Bのcommit／reconcileへ渡すと、store／ledger mutation／reconcile side effect前に`preview_token_invalid`となる
 - focused real-browser PWA: 4/4 PASS。最初の完全一致anchor指定は結合済みPlaywright titleと一致せず`No tests found`となったため、4件の固有titleだけに一致する正規表現へ訂正して再実行した
-- frontend full: 953/953 PASS
+- frontend full: 954/954 PASS
 - backend full: 2397/2397 PASS（canonical actor binding回帰testを含む）
 - core E2E: 109/109 PASS
 - full E2E: 159 PASS / 34既存条件付きSKIP / 0 FAIL
@@ -42,7 +42,9 @@
 
 security reviewで指摘されたinitiator metadata欠落は、両header必須化を一度実装してreal-browser PWA 4件を実行した結果、Chromiumのservice worker Requestでは同一origin POSTでもmetadataが不可視となり3件が拒否される事実を確認した。最終契約はexplicit cross-siteを拒否し、両header欠落だけをlocal IndexedDB stagingに限定して受理する。API mutation、cookie/token読取、自動保存はなく、queue 10件、TTL 60分、認証済みexact preview、明示confirmを防御境界とする。最終focused real-browser PWAは4/4 PASSである。
 
-2026-08-14 JSTにcleanなimplementation head `9578788c5acedb782fb0a537f13ad218b9c8d108`でrelease-readiness 29/29、PWA focused 4/4、full E2E 159 PASS／34既存条件付きSKIP／0 FAIL、frontend 953/953、backend 2397/2397、audit、ops-quality、secret scanを再実行した。独立reviewで検出されたglobal mutation中のsingle-delivery handoff消失、unauthenticated discard／actor claim順序、認証済みtombstone cleanup順序、全runbook invocationのprofile continuity、採取証跡とrecord profileの不一致は修正し、negative／concurrency testで固定した。最後のreview remediationでは`update-stack.sh`と`rollback-latest.sh`をprofile continuity gateへ追加し、各コマンドの非束縛呼び出しを拒否する負例を固定した。また、trial recorderのhelpを実際のfail-closed profile契約へ一致させた。この証跡文書を更新する後続commitは検証済みimplementation treeを変更しないdocs-only commitとする。
+2026-08-14 JSTにcleanなimplementation head `87dfe2e682271bdff36007c66fdbba3e01850756`でrelease-readiness 29/29、PWA focused 4/4、full E2E 159 PASS／34既存条件付きSKIP／0 FAIL、frontend 954/954、backend 2397/2397、audit、ops-quality、secret scanを再実行した。独立reviewで検出されたglobal mutation中のsingle-delivery handoff消失、unauthenticated discard／actor claim順序、認証済みtombstone cleanup順序、全runbook invocationのprofile continuity、採取証跡とrecord profileの不一致は修正し、negative／concurrency testで固定した。最後のreview remediationでは`update-stack.sh`と`rollback-latest.sh`をprofile continuity gateへ追加し、各コマンドの非束縛呼び出しを拒否する負例を固定した。また、trial recorderのhelpを実際のfail-closed profile契約へ一致させた。
+
+Copilot reviewで、decommission時のexact share-target POSTがservice workerの通常fetch pathへ流れ、request bodyがnetworkへfallbackし得る点を検出した。修正後はsource artifactの既定を`decommission`とし、exact same-origin POSTを常にinterceptして、enabled時だけlocal stagingへ進め、それ以外は`410 share_target_disabled`／`no-store`でworker内終端する。公式buildは`VITE_ENABLE_SW`とshare-target modeの明示設定を必須とし、E2EのVite dev serverだけが`ERP4_DEV_SHARE_TARGET_MODE=enabled`を明示して生成modeを返す。最初のfull E2Eではsource既定のfail-closed化によりPWA 3件が410となる回帰を検出したが、source既定を緩めず、このdev-only明示mode bridgeを追加してfocused 4/4とfull 159/159対象PASSを再確認した。service worker focused 21/21、build/config 5/5、profile missing-env negative testもPASSした。この証跡文書を更新する後続commitは検証済みimplementation treeを変更しないdocs-only commitとする。
 
 ## Threat model
 
