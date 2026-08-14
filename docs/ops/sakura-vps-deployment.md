@@ -302,8 +302,11 @@ Quadlet sourceも同ディレクトリへ配置し、native `.service` / `.timer
 確認:
 
 ```bash
-./scripts/quadlet/check-env.sh --profile production
-./scripts/quadlet/check-proxy.sh
+./scripts/quadlet/check-env.sh --profile "$PROFILE"
+case "$PROFILE" in
+  private-smoke) ;;
+  production|https-trial) ./scripts/quadlet/check-proxy.sh ;;
+esac
 ```
 
 HTTPS reverse proxy で Caddy を rootless Podman から `80/443` に bind する場合は、起動前に host prerequisite も確認する。
@@ -322,18 +325,19 @@ sudo sysctl --system
 
 ## 8. 起動/疎通
 
-proxyなしの内部確認:
+section 6で固定したprofileをbuild／installから変更せず起動する。`private-smoke`はproxyなし、`production`／`https-trial`はproxy込みとする。
 
 ```bash
-./scripts/quadlet/start-stack.sh --profile private-smoke
-./scripts/quadlet/check-trial-readiness.sh --profile private-smoke
-```
-
-HTTPS proxy込み:
-
-```bash
-./scripts/quadlet/start-stack.sh --profile https-trial --include-proxy
-./scripts/quadlet/check-trial-readiness.sh --profile https-trial --include-proxy --resolve-ip <VPS_IP>
+case "$PROFILE" in
+  private-smoke)
+    ./scripts/quadlet/start-stack.sh --profile "$PROFILE"
+    ./scripts/quadlet/check-trial-readiness.sh --profile "$PROFILE"
+    ;;
+  production|https-trial)
+    ./scripts/quadlet/start-stack.sh --profile "$PROFILE" --include-proxy
+    ./scripts/quadlet/check-trial-readiness.sh --profile "$PROFILE" --include-proxy --resolve-ip <VPS_IP>
+    ;;
+esac
 ```
 
 DNS反映後:

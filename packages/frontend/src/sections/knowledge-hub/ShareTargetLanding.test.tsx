@@ -962,6 +962,10 @@ describe('ShareTargetLanding', () => {
     expect(screen.getByText(/自動送信されません/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '共有下書きを破棄' }));
     await waitFor(() => expect(clearLanding).toHaveBeenCalled());
+    expect(removeShareTargetDraft).toHaveBeenCalledWith(draftId);
+    expect(removeShareTargetDraft.mock.invocationCallOrder[0]).toBeLessThan(
+      publishShareTargetLifecycle.mock.invocationCallOrder[0],
+    );
     expect(claimShareTargetDraft).not.toHaveBeenCalled();
     if (original) {
       Object.defineProperty(navigatorPrototype, 'onLine', original);
@@ -971,5 +975,40 @@ describe('ShareTargetLanding', () => {
         'onLine',
       );
     }
+  });
+
+  it('does not broadcast an unauthenticated discard when another tab wins the actor claim', async () => {
+    removeShareTargetDraft
+      .mockRejectedValueOnce(new Error('share_target_actor_mismatch'))
+      .mockResolvedValueOnce(undefined);
+    const clearLanding = vi.fn();
+    render(
+      <ShareTargetLanding
+        draftId={draftId}
+        knowledgeHubReady={false}
+        activateKnowledgeHub={() => true}
+        clearLanding={clearLanding}
+      />,
+    );
+
+    await screen.findByText(/ログイン後に内容を確認できます/);
+    fireEvent.click(screen.getByRole('button', { name: '共有下書きを破棄' }));
+
+    const retry = await screen.findByRole('button', {
+      name: '端末内下書きの削除を再試行',
+    });
+    expect(removeShareTargetDraft).toHaveBeenNthCalledWith(1, draftId);
+    expect(publishShareTargetLifecycle).not.toHaveBeenCalled();
+    expect(clearLanding).not.toHaveBeenCalled();
+
+    fireEvent.click(retry);
+    await waitFor(() =>
+      expect(removeShareTargetDraft).toHaveBeenNthCalledWith(2, draftId),
+    );
+    expect(publishShareTargetLifecycle).toHaveBeenCalledWith(
+      draftId,
+      'cleanup_pending',
+    );
+    expect(clearLanding).toHaveBeenCalledOnce();
   });
 });

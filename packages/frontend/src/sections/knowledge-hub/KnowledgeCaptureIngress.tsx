@@ -249,12 +249,7 @@ export function KnowledgeCaptureIngress({
 
   useEffect(() => {
     const receive = (event: Event) => {
-      if (
-        mutationBlocked ||
-        mutationBusyRef.current ||
-        handoffLockedRef.current
-      )
-        return;
+      if (mutationBusyRef.current || handoffLockedRef.current) return;
       const detail = eventDetail((event as CustomEvent).detail);
       if (!detail) return;
       const normalized = normalizeIncomingKnowledgeCapture(detail.draft);
@@ -302,7 +297,7 @@ export function KnowledgeCaptureIngress({
       operationAbortRef.current?.abort();
       generationRef.current += 1;
     };
-  }, [invalidatePreview, mutationBlocked, purgeSensitiveDraft]);
+  }, [invalidatePreview, purgeSensitiveDraft]);
 
   const updateDraft = (
     field: keyof IncomingKnowledgeCaptureDraft,

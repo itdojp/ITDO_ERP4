@@ -409,12 +409,18 @@ export function ShareTargetLanding({
             );
             cleanupTombstoneRef.current = true;
           }
+          // The content-free tombstone is durable before remote tabs are
+          // asked to purge their DOM. Physical deletion may be retried.
+          publishShareTargetLifecycle(draftId, 'cleanup_pending');
+          await removeShareTargetDraft(draftId, authenticatedActorKey);
+        } else {
+          // An unauthenticated discard has no actor claim to tombstone. The
+          // queue transaction must prove the draft is still unclaimed and
+          // delete it before a terminal broadcast; a concurrent claim fails
+          // without hiding the rightful actor's landing in another tab.
+          await removeShareTargetDraft(draftId);
+          publishShareTargetLifecycle(draftId, 'cleanup_pending');
         }
-        publishShareTargetLifecycle(draftId, 'cleanup_pending');
-        await removeShareTargetDraft(
-          draftId,
-          authenticatedActorKey || undefined,
-        );
       }
       cleanupTombstoneRef.current = false;
       cleanupAllowPendingRef.current = false;

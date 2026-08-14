@@ -18,6 +18,7 @@ OPS_DOC_TARGETS=(
   docs/ops/google-cloud-predeployment.md
   docs/ops/sakura-vps-deployment.md
   docs/ops/sakura-vps-env-checklist.md
+  docs/ops/sakura-vps-podman-trial.md
   docs/ops/sakura-vps-trial-profiles.md
   docs/ops/storage-readiness.md
   docs/ops/ops-automation.md
@@ -139,6 +140,51 @@ if (failures.length > 0) {
   process.exit(1);
 }
 console.log(`relative Markdown links valid for ${files.length} file(s)`);
+NODE
+
+printf '==> Checking Sakura profile continuity in runbooks\n'
+node - <<'NODE'
+const fs = require('fs');
+
+const files = [
+  'docs/ops/sakura-vps-deployment.md',
+  'docs/ops/sakura-vps-podman-trial.md',
+];
+const failures = [];
+
+for (const file of files) {
+  const source = fs.readFileSync(file, 'utf8');
+  const assignments = source.match(/^PROFILE=/gm) ?? [];
+  if (assignments.length !== 1) {
+    failures.push(`${file}: expected one PROFILE assignment, found ${assignments.length}`);
+  }
+  if (/--profile\s+(?:production|private-smoke|https-trial)\b/u.test(source)) {
+    failures.push(`${file}: hard-coded --profile breaks build/install continuity`);
+  }
+  for (const example of [
+    'erp4-frontend-build.env.example',
+    'erp4-frontend-build.private-smoke.env.example',
+    'erp4-frontend-build.https-trial.env.example',
+  ]) {
+    if (!source.includes(example)) {
+      failures.push(`${file}: missing profile-specific example ${example}`);
+    }
+  }
+  for (const command of ['check-env.sh', 'build-images.sh', 'install-user-units.sh', 'start-stack.sh']) {
+    const line = source
+      .split(/\r?\n/u)
+      .find((candidate) => candidate.includes(command) && candidate.includes('--profile'));
+    if (!line || !line.includes('"$PROFILE"')) {
+      failures.push(`${file}: ${command} must receive the selected $PROFILE`);
+    }
+  }
+}
+
+if (failures.length > 0) {
+  console.error(failures.join('\n'));
+  process.exit(1);
+}
+console.log('Sakura profile continuity valid for deployment and Podman runbooks');
 NODE
 
 printf 'Ops documentation checks completed.\n'

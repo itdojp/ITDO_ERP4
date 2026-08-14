@@ -92,7 +92,8 @@ cd ITDO_ERP4
 frontend build 用の env ファイルを、実行するprofile専用のexampleから用意します。profileを変えても以前のenvを流用しません。
 
 ```bash
-PROFILE="${PROFILE:-production}"
+PROFILE="${PROFILE:-private-smoke}"
+export PROFILE
 case "$PROFILE" in
   production) FRONTEND_ENV_EXAMPLE=deploy/quadlet/env/erp4-frontend-build.env.example ;;
   private-smoke) FRONTEND_ENV_EXAMPLE=deploy/quadlet/env/erp4-frontend-build.private-smoke.env.example ;;
@@ -147,10 +148,9 @@ ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" \
 
 ## 4. Quadlet 配置
 
-profileを先に固定する。非公開試験は `private-smoke`、HTTPS試験は `https-trial`、従来の本番相当構成は `production` を使う。
+section 3で固定したprofileを変更せず、そのprofileでbuildしたimageを配置する。非公開試験は `private-smoke`、HTTPS試験は `https-trial`、従来の本番相当構成は `production` を使う。
 
 ```bash
-PROFILE=private-smoke
 ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" \
   ./scripts/quadlet/install-user-units.sh --profile "$PROFILE"
 ```
@@ -241,14 +241,19 @@ ERP4_DB_BACKUP_SKIP_GLOBALS=0
 ./scripts/quadlet/start-stack.sh --profile "$PROFILE"
 ```
 
-proxyを起動する場合は`private-smoke`のまま実行せず、HTTPS前提を満たした`https-trial`へ切り替えてunit/envを準備します。以下は初回起動前のprofile切替例です。
+proxyを起動する場合は`private-smoke`のbuild済みimage／envのまま途中でprofileを変更しない。新しいshellで`PROFILE`を`https-trial`として明示し、section 3のprofile別env選択、検証、image buildからやり直した後、section 4の配置へ進む。`production`へ切り替える場合も同様に、buildから同じprofileを一貫して使う。
+
+現在のprofileが`https-trial`または`production`で、対応するenv／image／unitを同じprofileで準備済みの場合だけproxyを含めて起動する。
 
 ```bash
-PROFILE=https-trial
-ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" \
-  ./scripts/quadlet/install-user-units.sh --profile "$PROFILE"
-./scripts/quadlet/check-env.sh --profile "$PROFILE"
-./scripts/quadlet/start-stack.sh --profile "$PROFILE" --include-proxy
+case "$PROFILE" in
+  private-smoke)
+    ./scripts/quadlet/start-stack.sh --profile "$PROFILE"
+    ;;
+  production|https-trial)
+    ./scripts/quadlet/start-stack.sh --profile "$PROFILE" --include-proxy
+    ;;
+esac
 ```
 
 手動で分ける場合:

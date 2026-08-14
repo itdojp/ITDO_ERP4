@@ -616,20 +616,23 @@ describe('KnowledgeCaptureIngress', () => {
     );
   });
 
-  it('rejects incoming drafts and mutations while another Knowledge mutation owns the lock', async () => {
+  it('retains a single incoming handoff read-only while another Knowledge mutation owns the lock', async () => {
     const { rerender } = render(
       <KnowledgeCaptureIngress mutationBlocked={true} />,
     );
     deliver();
     expect(
-      screen.queryByRole('heading', { name: 'ブラウザー共有の確認' }),
-    ).not.toBeInTheDocument();
-
-    rerender(<KnowledgeCaptureIngress mutationBlocked={false} />);
-    deliver();
-    expect(
       await screen.findByRole('heading', { name: 'ブラウザー共有の確認' }),
     ).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeDisabled();
+    expect(
+      screen.getByText(
+        '別のKnowledge保存処理が完了するまで、このcaptureは開始できません。',
+      ),
+    ).toBeVisible();
+
+    rerender(<KnowledgeCaptureIngress mutationBlocked={false} />);
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeEnabled();
     rerender(<KnowledgeCaptureIngress mutationBlocked={true} />);
     expect(screen.getByRole('button', { name: 'Preview' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
