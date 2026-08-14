@@ -32,8 +32,22 @@ type CaptureResultDetail = {
 
 const AUTH_REVALIDATE_INTERVAL_MS = 60 * 1000;
 const AUTH_REVALIDATE_TIMEOUT_MS = 15 * 1000;
+const CLEANUP_REQUIRED_MESSAGE =
+  '保存結果は確定し、画面本文は消去済みです。browser session内draftのcontent-free化は確認できていないため、本文消去だけを再試行してください。';
 const CLEANUP_PENDING_MESSAGE =
   '保存結果は確定し、本文はbrowser session内でも消去済みです。content-free下書きの物理削除だけを再試行してください。';
+
+function terminalCleanupFeedback(tombstoneConfirmed: boolean) {
+  return tombstoneConfirmed
+    ? {
+        status: 'cleanup_pending' as const,
+        message: CLEANUP_PENDING_MESSAGE,
+      }
+    : {
+        status: 'cleanup_required' as const,
+        message: CLEANUP_REQUIRED_MESSAGE,
+      };
+}
 
 function captureResultDetail(value: unknown): CaptureResultDetail | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -79,6 +93,7 @@ export function BrowserCaptureLanding({
     | 'failed'
     | 'missing'
     | 'unavailable'
+    | 'cleanup_required'
     | 'cleanup_pending'
   >('waiting_auth');
   const [error, setError] = useState('');
@@ -114,6 +129,17 @@ export function BrowserCaptureLanding({
     );
   }, [draftId]);
 
+  const detachLandingAddress = useCallback(() => {
+    const next = new URL(window.location.href);
+    if (!next.searchParams.has('browserCapture')) return;
+    next.searchParams.delete('browserCapture');
+    window.history.replaceState(
+      null,
+      '',
+      `${next.pathname}${next.search}${next.hash}`,
+    );
+  }, []);
+
   const dispatchAuthCheck = useCallback(
     (checking: boolean) => {
       window.dispatchEvent(
@@ -136,7 +162,9 @@ export function BrowserCaptureLanding({
       if (purgeBeforeCheck) {
         purgeHandoff();
         setStatus((current) => {
-          if (terminalCleanupPendingRef.current) return 'cleanup_pending';
+          if (terminalCleanupPendingRef.current) {
+            return terminalCleanupFeedback(cleanupTombstoneRef.current).status;
+          }
           if (terminalOutcomeRef.current === 'failed') return 'failed';
           if (manualRetryRequiredRef.current) return 'unavailable';
           return current === 'ready' || current === 'pending'
@@ -173,8 +201,11 @@ export function BrowserCaptureLanding({
           setAuthenticatedActorKey('');
           purgeHandoff();
           if (terminalCleanupPendingRef.current) {
-            setError(CLEANUP_PENDING_MESSAGE);
-            setStatus('cleanup_pending');
+            const feedback = terminalCleanupFeedback(
+              cleanupTombstoneRef.current,
+            );
+            setError(feedback.message);
+            setStatus(feedback.status);
           } else {
             setStatus('waiting_auth');
           }
@@ -187,7 +218,9 @@ export function BrowserCaptureLanding({
         setAuthenticatedActorKey(actorKey);
         dispatchAuthCheck(false);
         setStatus((current) => {
-          if (terminalCleanupPendingRef.current) return 'cleanup_pending';
+          if (terminalCleanupPendingRef.current) {
+            return terminalCleanupFeedback(cleanupTombstoneRef.current).status;
+          }
           if (terminalOutcomeRef.current === 'failed') return 'failed';
           if (manualRetryRequiredRef.current) return 'unavailable';
           return current === 'ready' || current === 'pending'
@@ -221,8 +254,9 @@ export function BrowserCaptureLanding({
       purgeHandoff();
       if (terminalCleanupPendingRef.current) {
         manualRetryRequiredRef.current = false;
-        setError(CLEANUP_PENDING_MESSAGE);
-        setStatus('cleanup_pending');
+        const feedback = terminalCleanupFeedback(cleanupTombstoneRef.current);
+        setError(feedback.message);
+        setStatus(feedback.status);
       } else {
         manualRetryRequiredRef.current = true;
         setError(
@@ -340,6 +374,7 @@ export function BrowserCaptureLanding({
         }
         if (capture.lifecycle === 'cleanup_pending') {
           purgeHandoff();
+          detachLandingAddress();
           cleanupTombstoneRef.current = true;
           terminalCleanupPendingRef.current = true;
           manualRetryRequiredRef.current = false;
@@ -392,6 +427,7 @@ export function BrowserCaptureLanding({
     knowledgeHubReady,
     loadRevision,
     purgeHandoff,
+    detachLandingAddress,
     validDraftId,
   ]);
 
@@ -451,8 +487,9 @@ export function BrowserCaptureLanding({
 
   const reportCleanupFailure = useCallback(() => {
     terminalCleanupPendingRef.current = true;
-    setStatus('cleanup_pending');
-    setError(CLEANUP_PENDING_MESSAGE);
+    const feedback = terminalCleanupFeedback(cleanupTombstoneRef.current);
+    setStatus(feedback.status);
+    setError(feedback.message);
   }, []);
 
   useEffect(() => {
@@ -463,12 +500,16 @@ export function BrowserCaptureLanding({
       terminalCleanupPendingRef.current = false;
       manualRetryRequiredRef.current = false;
       cleanupTombstoneRef.current = false;
+      // Remove the opaque handoff address before extension storage cleanup.
+      // If tombstone persistence is unavailable, reloading the current address
+      // must not rehydrate the terminal draft into a new capture UI.
+      detachLandingAddress();
       void removeAndClear().catch(reportCleanupFailure);
     };
     window.addEventListener(KNOWLEDGE_CAPTURE_RESULT_EVENT, handleResult);
     return () =>
       window.removeEventListener(KNOWLEDGE_CAPTURE_RESULT_EVENT, handleResult);
-  }, [draftId, removeAndClear, reportCleanupFailure]);
+  }, [detachLandingAddress, draftId, removeAndClear, reportCleanupFailure]);
 
   if (!draftId) return null;
 
@@ -480,8 +521,11 @@ export function BrowserCaptureLanding({
           <Alert variant="error">
             下書きの識別子が不正です。本文は読み込みませんでした。
           </Alert>
-        ) : status === 'cleanup_pending' ? (
-          <Alert variant="error">{error || CLEANUP_PENDING_MESSAGE}</Alert>
+        ) : status === 'cleanup_required' || status === 'cleanup_pending' ? (
+          <Alert variant="error">
+            {error ||
+              terminalCleanupFeedback(status === 'cleanup_pending').message}
+          </Alert>
         ) : authChecking ? (
           <p role="status">認証状態を確認しています。</p>
         ) : !authenticated ? (
@@ -529,14 +573,16 @@ export function BrowserCaptureLanding({
               拡張機能へ再接続
             </Button>
           </div>
-        ) : status === 'cleanup_pending' ? (
+        ) : status === 'cleanup_required' || status === 'cleanup_pending' ? (
           <div style={{ marginTop: 8 }}>
             <Button
               size="small"
               variant="secondary"
               onClick={() => void removeAndClear().catch(reportCleanupFailure)}
             >
-              browser session内draftの削除を再試行
+              {status === 'cleanup_pending'
+                ? 'content-free下書きの物理削除を再試行'
+                : 'browser session内draftの本文消去を再試行'}
             </Button>
           </div>
         ) : status === 'failed' ? (

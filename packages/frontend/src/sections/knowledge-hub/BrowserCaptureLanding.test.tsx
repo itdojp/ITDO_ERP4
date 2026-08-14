@@ -142,6 +142,7 @@ describe('BrowserCaptureLanding', () => {
 
   afterEach(() => {
     cleanup();
+    window.history.replaceState(null, '', '/');
   });
 
   it('does not ask the extension for content before server-verified authentication', async () => {
@@ -387,6 +388,68 @@ describe('BrowserCaptureLanding', () => {
     ).toBeVisible();
   });
 
+  it('does not claim session content was erased when tombstone persistence fails', async () => {
+    window.history.replaceState(null, '', `/?browserCapture=${draftId}`);
+    getAuthState.mockReturnValue({ userId: 'synthetic-user', roles: [] });
+    refreshAuthStateFromServer.mockResolvedValue({
+      userId: 'synthetic-user',
+      roles: [],
+      verifiedActorKey: actorKey,
+    });
+    getBrowserCaptureDraft.mockResolvedValue(currentRecord());
+    markBrowserCaptureDraftCleanupPending
+      .mockRejectedValueOnce(
+        new BrowserCaptureBridgeError('storage_unavailable'),
+      )
+      .mockResolvedValueOnce(undefined);
+    const clearLanding = vi.fn();
+    render(
+      <BrowserCaptureLanding
+        draftId={draftId}
+        knowledgeHubReady
+        activateKnowledgeHub={() => true}
+        clearLanding={clearLanding}
+      />,
+    );
+    await screen.findByText(/Knowledge Hubで送信field/);
+
+    window.dispatchEvent(
+      new CustomEvent(KNOWLEDGE_CAPTURE_RESULT_EVENT, {
+        detail: { schemaVersion: 1, draftId, outcome: 'committed' },
+      }),
+    );
+    const retry = await screen.findByRole('button', {
+      name: 'browser session内draftの本文消去を再試行',
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      /content-free化は確認できていない/u,
+    );
+    expect(screen.getByRole('alert')).not.toHaveTextContent(
+      /本文はbrowser session内でも消去済み/u,
+    );
+    expect(removeBrowserCaptureDraft).not.toHaveBeenCalled();
+    expect(window.location.search).not.toContain('browserCapture');
+    expect(screen.queryByText(draft.selectedText)).not.toBeInTheDocument();
+
+    fireEvent(window, new Event('erp4:auth-updated'));
+    await waitFor(() =>
+      expect(refreshAuthStateFromServer).toHaveBeenCalledTimes(2),
+    );
+    expect(
+      screen.getByRole('button', {
+        name: 'browser session内draftの本文消去を再試行',
+      }),
+    ).toBeVisible();
+    expect(screen.queryByText(/物理削除だけを再試行/u)).not.toBeInTheDocument();
+
+    fireEvent.click(retry);
+    await waitFor(() =>
+      expect(markBrowserCaptureDraftCleanupPending).toHaveBeenCalledTimes(2),
+    );
+    expect(removeBrowserCaptureDraft).toHaveBeenCalledOnce();
+    expect(clearLanding).toHaveBeenCalledOnce();
+  });
+
   it('retries only idempotent cleanup after a lost delete response', async () => {
     getAuthState.mockReturnValue({ userId: 'synthetic-user', roles: [] });
     refreshAuthStateFromServer.mockResolvedValue({
@@ -415,7 +478,7 @@ describe('BrowserCaptureLanding', () => {
       }),
     );
     await screen.findByRole('button', {
-      name: 'browser session内draftの削除を再試行',
+      name: 'content-free下書きの物理削除を再試行',
     });
     expect(markBrowserCaptureDraftCleanupPending).toHaveBeenCalledTimes(1);
     expect(clearLanding).not.toHaveBeenCalled();
@@ -434,7 +497,7 @@ describe('BrowserCaptureLanding', () => {
     );
     expect(getBrowserCaptureDraft).toHaveBeenCalledTimes(1);
     const cleanupRetry = screen.getByRole('button', {
-      name: 'browser session内draftの削除を再試行',
+      name: 'content-free下書きの物理削除を再試行',
     });
     expect(cleanupRetry).toBeVisible();
     fireEvent.click(cleanupRetry);
@@ -473,12 +536,12 @@ describe('BrowserCaptureLanding', () => {
       }),
     );
     await screen.findByRole('button', {
-      name: 'browser session内draftの削除を再試行',
+      name: 'content-free下書きの物理削除を再試行',
     });
 
     fireEvent(window, new Event('offline'));
     const retry = await screen.findByRole('button', {
-      name: 'browser session内draftの削除を再試行',
+      name: 'content-free下書きの物理削除を再試行',
     });
     expect(removeBrowserCaptureDraft).toHaveBeenCalledTimes(1);
     expect(getBrowserCaptureDraft).toHaveBeenCalledTimes(1);
@@ -523,7 +586,7 @@ describe('BrowserCaptureLanding', () => {
       }),
     );
     await screen.findByRole('button', {
-      name: 'browser session内draftの削除を再試行',
+      name: 'content-free下書きの物理削除を再試行',
     });
     first.unmount();
 
@@ -538,7 +601,7 @@ describe('BrowserCaptureLanding', () => {
       />,
     );
     const cleanupRetry = await screen.findByRole('button', {
-      name: 'browser session内draftの削除を再試行',
+      name: 'content-free下書きの物理削除を再試行',
     });
     expect(draftEvents).toHaveLength(1);
     expect(screen.queryByText(draft.selectedText)).not.toBeInTheDocument();

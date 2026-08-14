@@ -20,7 +20,7 @@ Review remediationのcode head `e18653cd46391d52222fe93ff425629fbe2bb969`では�
 
 ## 固定契約
 
-- Manifest V3 permissionは`activeTab|scripting|storage`だけ。broad host permission、cookie、tabs、history、webRequest、remote codeを使用しない。
+- Manifest V3 permissionは`activeTab|scripting|storage`だけ。`incognito: not_allowed`でprivate browsingを対象外とし、broad host permission、cookie、tabs、history、webRequest、remote codeを使用しない。
 - minimum Chromium versionは112。session storage 10 MiB契約に基づき、10件・各128 KiB上限とorganization group最大100件を収容する。
 - action user gesture後にmain frameのURL、title、selection、canonical、description、author、published timeだけを取得する。
 - ERP4 originはbuild時のsingle exact origin。production実値はcommitしない。
@@ -87,6 +87,14 @@ Review remediationのcode head `e18653cd46391d52222fe93ff425629fbe2bb969`では�
 - 続くexact-head独立reviewでは、物理削除失敗後のpage reloadがcomponent-memoryのterminal stateを失い、未削除の本文を再表示し得る点を検出した。terminal result時はDOMをpurgeし、content-free tombstoneを永続化してから物理削除する二段階cleanupへ変更した。tombstone化／deleteのresponse loss、物理削除失敗後のremount、auth／network喪失、明示delete-only retryを検証し、本文、request key、preview／commit操作が復元されないことを固定した。
 - 同reviewでserver-side credential query tokenの`policy`欠落とextension compact markerの`pwd`欠落も修正し、`upload_policy`と`clientpwd`のdirect／nested canaryを両境界で拒否した。release-readinessにはfrontend response-CSP／build security testを実行する`frontend-quality-gates`をrequired checkとして追加した。
 - 上記remediation treeのfocused結果はextension 31/31とBrowser Capture bridge／landing 18/18を各20/20反復、backend capture／canonical URL 27/27、frontend quality gates 21/21、Playwright Chromium synthetic extension lifecycleがPASS。新exact head確定後にfull gate、CI、独立reviewを再実行し、以前のheadの結果を最終結果として再利用しない。
+
+## Terminal cleanup／private browsing review remediation
+
+- code head `6b3e0ba3f60faa7d75e0d4b376eb7e5de196a565`の独立correctness reviewとcore E2Eは、real-backend bridge fixtureが`cleanup` commandを実装せず、terminal結果後に本文を含むrecordを返すため、page URLからhandoff IDが消えない問題を検出した。product timeoutを延長せず、fixtureを`staged → pending → cleanup_pending → delete`へ合わせ、cleanup responseがschema、ID、lifecycle、created／expires timeだけを含むことを固定した。
+- tombstone write failureとtombstone確定後の物理delete failureを別phaseにした。terminal結果時はcurrent addressからopaque handoff parameterを先に外し、前者ではbrowser session内本文の消去済みを主張せずcontent-free化から明示再試行する。後者だけがcontent-free下書きの物理削除を再試行する。auth revalidation／offlineでもphaseを昇格させない。
+- page bridgeはsuccess responseの`transitioned`、record有無、command別lifecycleを検証し、意味的に不整合な`get|pending|staged|cleanup|delete` responseをfail closedで拒否する。
+- 生成manifestへ`incognito: not_allowed`を固定し、Chromeのシークレットモード／Edge InPrivateをcapture対象外にした。vendor browser UIによる確認は未実施であり、repository-side manifest testだけを実browser証跡として扱わない。
+- remediation treeではextension unit／manifest／static 31/31、Browser Capture bridge／landing 20/20、frontend quality gates 21/21、frontend typecheck、Playwright Chromium synthetic extension E2E、修正対象のreal-backend bridge E2E 1/1をPASSした。extension unitとBrowser Capture bridge／landingはそれぞれ20回反復した。最終exact headのfull gate、CI、独立reviewはPR #2074を正本とし、この節の結果だけでmerge可能とは扱わない。
 
 unpacked Chromium E2Eはsynthetic landingによるextension protocolを対象とし、別のreal frontend/backend bridge-protocol E2Eがcapture mutation lifecycleを対象とする。いずれもmulti-tab BroadcastChannel、service-worker強制restart、Chrome／Edge vendor runtime evidence、target proxy通過後のCSP evidenceではない。これらをPASSと過大評価しない。CI/review結果はDraft PRへ記録する。
 

@@ -5,6 +5,7 @@ import {
   getBrowserCaptureDraft,
   markBrowserCaptureDraftCleanupPending,
   markBrowserCaptureDraftPending,
+  markBrowserCaptureDraftStaged,
   publishBrowserCaptureLifecycle,
   removeBrowserCaptureDraft,
   subscribeBrowserCaptureLifecycle,
@@ -336,6 +337,67 @@ describe('browserCaptureBridge', () => {
     await expect(getBrowserCaptureDraft(id, actorKey)).rejects.toMatchObject({
       code: 'invalid_request',
     });
+  });
+
+  it('rejects success responses that violate command-specific lifecycle invariants', async () => {
+    let response: Record<string, unknown> = {};
+    vi.spyOn(window, 'postMessage').mockImplementation((message) => {
+      const request = message as Record<string, unknown>;
+      queueMicrotask(() => {
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            source: window,
+            origin: window.location.origin,
+            data: {
+              source: 'erp4-extension',
+              type: 'erp4-browser-capture-response-v1',
+              schemaVersion: 1,
+              command: request.command,
+              id: request.id,
+              nonce: request.nonce,
+              response,
+            },
+          }),
+        );
+      });
+    });
+
+    const expectInvalid = async (operation: () => Promise<unknown>) => {
+      await expect(operation()).rejects.toMatchObject({
+        code: 'invalid_request',
+      });
+    };
+    response = { ok: true, transitioned: 'yes', record: responseRecord() };
+    await expectInvalid(() => getBrowserCaptureDraft(id, actorKey));
+    response = { ok: true, transitioned: false };
+    await expectInvalid(() => getBrowserCaptureDraft(id, actorKey));
+    response = { ok: true, transitioned: true, record: responseRecord() };
+    await expectInvalid(() => getBrowserCaptureDraft(id, actorKey));
+    response = { ok: true, transitioned: true, record: responseRecord() };
+    await expectInvalid(() =>
+      markBrowserCaptureDraftPending(
+        id,
+        actorKey,
+        operationId,
+        {
+          selectedFields: ['title'],
+          scope: 'personal',
+          organizationGroupAccountIds: [],
+          sourceType: 'web',
+        },
+        draft,
+      ),
+    );
+    response = { ok: true, transitioned: false, record: responseRecord() };
+    await expectInvalid(() =>
+      markBrowserCaptureDraftStaged(id, actorKey, operationId),
+    );
+    response = { ok: true, transitioned: true, record: null };
+    await expectInvalid(() =>
+      markBrowserCaptureDraftCleanupPending(id, actorKey),
+    );
+    response = { ok: true, transitioned: true, record: responseRecord() };
+    await expectInvalid(() => removeBrowserCaptureDraft(id, actorKey));
   });
 
   it('broadcasts content-free lifecycle invalidation only to other channel objects', () => {

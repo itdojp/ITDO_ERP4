@@ -273,15 +273,41 @@ function normalizeResponse(
         : 'extension_unavailable',
     );
   }
+  if (
+    typeof response.transitioned !== 'boolean' ||
+    !Object.prototype.hasOwnProperty.call(response, 'record')
+  ) {
+    throw new BrowserCaptureBridgeError('invalid_request');
+  }
   const normalizedRecord =
-    response.record === null || response.record === undefined
-      ? null
-      : normalizeBridgeRecord(response.record);
-  if (response.record != null && !normalizedRecord) {
+    response.record === null ? null : normalizeBridgeRecord(response.record);
+  if (response.record !== null && !normalizedRecord) {
+    throw new BrowserCaptureBridgeError('invalid_request');
+  }
+  const semanticallyValid = (() => {
+    switch (expected.command) {
+      case 'get':
+        return response.transitioned === false && normalizedRecord !== null;
+      case 'pending':
+        return normalizedRecord?.lifecycle === 'pending';
+      case 'staged':
+        return (
+          response.transitioned === true &&
+          normalizedRecord?.lifecycle === 'staged'
+        );
+      case 'cleanup':
+        return normalizedRecord === null
+          ? response.transitioned === false
+          : normalizedRecord.lifecycle === 'cleanup_pending';
+      case 'delete':
+        return normalizedRecord === null;
+    }
+  })();
+  if (!semanticallyValid) {
     throw new BrowserCaptureBridgeError('invalid_request');
   }
   return {
-    transitioned: response.transitioned === true,
+    transitioned: response.transitioned,
     record: normalizedRecord,
   };
 }

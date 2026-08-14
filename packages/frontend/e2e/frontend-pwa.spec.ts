@@ -344,18 +344,20 @@ test('browser capture bridge reaches the authenticated real-backend preview and 
 
   await page.addInitScript(
     ({ id, key, created, expires, text }) => {
-      type Lifecycle = 'staged' | 'pending';
+      type Lifecycle = 'staged' | 'pending' | 'cleanup_pending';
       type BridgeState = {
         lifecycle: Lifecycle;
         deleted: boolean;
         commands: string[];
+        cleanupRecordKeys: string[] | null;
         pendingIntent: Record<string, unknown> | null;
-        draft: Record<string, unknown>;
+        draft: Record<string, unknown> | null;
       };
       const state: BridgeState = {
         lifecycle: 'staged',
         deleted: false,
         commands: [],
+        cleanupRecordKeys: null,
         pendingIntent: null,
         draft: {
           schemaVersion: 1,
@@ -405,9 +407,20 @@ test('browser capture bridge reaches the authenticated real-backend preview and 
           >;
           state.draft = command.draft as Record<string, unknown>;
           transitioned = true;
-        } else if (command.command === 'staged') {
+        } else if (
+          command.command === 'staged' &&
+          state.lifecycle === 'pending'
+        ) {
           state.lifecycle = 'staged';
           state.pendingIntent = null;
+          transitioned = true;
+        } else if (
+          command.command === 'cleanup' &&
+          state.lifecycle !== 'cleanup_pending'
+        ) {
+          state.lifecycle = 'cleanup_pending';
+          state.pendingIntent = null;
+          state.draft = null;
           transitioned = true;
         } else if (command.command === 'delete') {
           state.deleted = true;
@@ -415,16 +428,27 @@ test('browser capture bridge reaches the authenticated real-backend preview and 
         }
         const record = state.deleted
           ? null
-          : {
-              schemaVersion: 1,
-              id,
-              requestKey: key,
-              lifecycle: state.lifecycle,
-              pendingIntent: state.pendingIntent,
-              draft: state.draft,
-              createdAt: created,
-              expiresAt: expires,
-            };
+          : state.lifecycle === 'cleanup_pending'
+            ? {
+                schemaVersion: 1,
+                id,
+                lifecycle: state.lifecycle,
+                createdAt: created,
+                expiresAt: expires,
+              }
+            : {
+                schemaVersion: 1,
+                id,
+                requestKey: key,
+                lifecycle: state.lifecycle,
+                pendingIntent: state.pendingIntent,
+                draft: state.draft,
+                createdAt: created,
+                expiresAt: expires,
+              };
+        if (command.command === 'cleanup' && record) {
+          state.cleanupRecordKeys = Object.keys(record).sort();
+        }
         window.postMessage(
           {
             source: 'erp4-extension',
@@ -485,6 +509,7 @@ test('browser capture bridge reaches the authenticated real-backend preview and 
         __browserCaptureBridgeState?: {
           deleted: boolean;
           commands: string[];
+          cleanupRecordKeys: string[] | null;
         };
       }
     ).__browserCaptureBridgeState;
@@ -492,7 +517,15 @@ test('browser capture bridge reaches the authenticated real-backend preview and 
   });
   expect(lifecycle?.deleted).toBe(true);
   expect(lifecycle?.commands).toContain('pending');
+  expect(lifecycle?.commands).toContain('cleanup');
   expect(lifecycle?.commands).toContain('delete');
+  expect(lifecycle?.cleanupRecordKeys).toEqual([
+    'createdAt',
+    'expiresAt',
+    'id',
+    'lifecycle',
+    'schemaVersion',
+  ]);
 });
 
 test('pwa Web Share Target keeps an unauthenticated offline draft and resumes only after login @pwa @extended', async ({

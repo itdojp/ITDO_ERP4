@@ -24,8 +24,9 @@ npm run build
 ```
 
 生成先は`dist/`です。生成manifestはChrome／Edge 112以降を対象とし、`activeTab`、
-`scripting`、`storage`だけを要求します。ERP4 content scriptは指定したexact originだけへ
-登録します。
+`scripting`、`storage`だけを要求します。`incognito: not_allowed`によりChromeの
+シークレットモード／Edge InPrivateは対象外です。ERP4 content scriptは指定したexact
+originだけへ登録します。
 
 ## Test
 

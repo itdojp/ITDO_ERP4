@@ -55,6 +55,7 @@ test("generates a bounded MV3 manifest for the exact ERP4 origin", () => {
     });
     assert.equal(manifest.manifest_version, 3);
     assert.equal(manifest.minimum_chrome_version, "112");
+    assert.equal(manifest.incognito, "not_allowed");
     assert.deepEqual(manifest.permissions, [
       "activeTab",
       "scripting",

@@ -139,6 +139,7 @@ export function buildExtension({ origin, outDir }) {
     version: "0.1.0",
     description: "選択したページ情報をERP4の確認画面へ安全に引き渡します。",
     minimum_chrome_version: "112",
+    incognito: "not_allowed",
     permissions: ["activeTab", "scripting", "storage"],
     background: {
       service_worker: "service-worker.js",
