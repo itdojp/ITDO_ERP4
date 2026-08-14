@@ -3,6 +3,7 @@
 ## 対象
 
 - baseline: `1f51d5875d43c1986c7acf40ec0a7c18b789f074`
+- validated implementation head: `242552a77e487384c3850df1e870358490e208b0`
 - channel: `pwa_share_target`
 - environment: local repository-side synthetic fixture
 
@@ -23,23 +24,25 @@
 
 ## 検証結果
 
-- focused frontend unit/component: 93/93 PASS。build/config契約4/4 PASS。実IndexedDB＋BroadcastChannel相当を使う同一tab commit／編集後pending reload／reconcile結合testと、auth/lifecycle競合testは20/20反復PASS
+- focused frontend lifecycle/unit: 62/62 PASS。build/config契約5/5 PASS。実IndexedDB＋BroadcastChannel相当を使う同一tab commit／編集後pending reload／reconcile結合testと、auth/lifecycle競合testは20/20反復PASS
 - focused backend actor binding: 86/86 PASS。actor Aのpreview tokenをactor Bのcommit／reconcileへ渡すと、store／ledger mutation／reconcile side effect前に`preview_token_invalid`となる
-- focused real-browser PWA: 4/4 PASS
-- frontend full: 946/946 PASS
+- focused real-browser PWA: 4/4 PASS。最初の完全一致anchor指定は結合済みPlaywright titleと一致せず`No tests found`となったため、4件の固有titleだけに一致する正規表現へ訂正して再実行した
+- frontend full: 951/951 PASS
 - backend full: 2397/2397 PASS（canonical actor binding回帰testを含む）
 - core E2E: 109/109 PASS
 - full E2E: 159 PASS / 34既存条件付きSKIP / 0 FAIL
 - UI core coverage: statements 73.70%、branches 66.71%、functions 73.31%、lines 76.46%（表示丸め前のthreshold判定もPASS、threshold変更なし）
-- frontend build budget: PASS（entry gzip 22.6 KiB、initial gzip 166.2 KiB、largest gzip 87.1 KiB）
+- frontend build budget: PASS（entry gzip 22.8 KiB、initial gzip 166.4 KiB、largest gzip 87.1 KiB）
+- auth coverage: statements/lines 90.47%、branches 71.64%、functions 98.69%。integrations coverage: statements/lines 91.13%、branches 72.71%、functions 97.09%。全既定thresholdを維持してPASS
 - enabled／decommission実build artifact、worker intake gate、no-cache helper、profile伝播: PASS
-- lint／format-check／typecheck／build／audit／ops-quality／profile test／docs index・image link／`git diff --check`: PASS
+- `RELEASE_E2E_SCOPE=core make release-readiness`: repo-side 29/29 PASS（外部Go依存 #1426／#544／#1432は本Issueのrepo-side証跡ではないためoverall判定はNO-GOのまま）
+- lint／format-check／typecheck／build／audit／ops-quality／profile test／docs index・image link／secret scan／`git diff --check`: PASS
 
-独立reviewで検出された同一tab lifecycle自己通知、編集後exact draft非永続化、terminal failed cleanup、profile auth不一致、IndexedDB teardown／late connection、公式release gate迂回、auth/lifecycle generation競合、tombstone retry phase、同一legacy userIdでのcanonical BFF actor切替TOCTOU、pending IndexedDB transaction中のpurge／unmount競合の指摘は修正済みである。決定的結合testはcommit signalがabortされないこと、pending rowが編集後draftを保持すること、reload後のpreview／reconcileが同じrequest keyとpayloadを使うこと、二度目のcommitを送らないこと、canonical actor変更結果がremote lifecycleで破棄されないこと、別tab session-generation通知で旧actor payloadを即時purgeすること、operation境界のactor不一致ではpreview結果を採用せずcommit／reconcileを呼ばないこと、deferred pending書込中にpurge／unmountしても`staged`へ補償してAPI mutationを行わないことを検証する。server側のactor-bound preview token testはfrontend再検証後のsession切替もside effect前に拒否することを固定する。
+独立reviewで検出された同一tab lifecycle自己通知、編集後exact draft非永続化、terminal failed cleanup、profile auth不一致、IndexedDB teardown／late connection、公式release gate迂回、auth/lifecycle generation競合、tombstone retry phase、同一legacy userIdでのcanonical BFF actor切替TOCTOU、pending IndexedDB transaction中のpurge／unmount競合、cross-tab pending CAS loserによるowner状態の上書き、`enabled + service worker無効`artifactの可能性は修正済みである。決定的結合testはcommit signalがabortされないこと、pending rowが編集後draftを保持すること、reload後のpreview／reconcileが同じrequest keyとpayloadを使うこと、二度目のcommitを送らないこと、canonical actor変更結果がremote lifecycleで破棄されないこと、別tab session-generation通知で旧actor payloadを即時purgeすること、operation境界のactor不一致ではpreview結果を採用せずcommit／reconcileを呼ばないこと、deferred pending書込中にpurge／unmountしてもCAS winnerだけが自身のoperation IDを使って`staged`へ補償し、loserはownerのpending rowを変更・通知・再送しないことを検証する。server側のactor-bound preview token testはfrontend再検証後のsession切替もside effect前に拒否することを固定する。
 
 security reviewで指摘されたinitiator metadata欠落は、両header必須化を一度実装してreal-browser PWA 4件を実行した結果、Chromiumのservice worker Requestでは同一origin POSTでもmetadataが不可視となり3件が拒否される事実を確認した。最終契約はexplicit cross-siteを拒否し、両header欠落だけをlocal IndexedDB stagingに限定して受理する。API mutation、cookie/token読取、自動保存はなく、queue 10件、TTL 60分、認証済みexact preview、明示confirmを防御境界とする。最終focused real-browser PWAは4/4 PASSである。
 
-secret scanと`make release-readiness`はsource head確定後のclean treeで再実行する。
+2026-08-14 JSTにcleanなimplementation head `242552a77e487384c3850df1e870358490e208b0`でrelease-readiness、secret scan、PWA focused、full E2E、UI core coverage、build budgetを再実行した。独立correctness/security reviewはいずれもcode blocker 0である。レビューで見つかったprivate-smokeのservice worker説明、request keyの保存媒体、追跡証跡の3件の文書不整合は本証跡更新で修正した。
 
 ## Threat model
 

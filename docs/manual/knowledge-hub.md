@@ -23,7 +23,7 @@ PWA share targetまたはbrowser extensionから受け取ったdraftは、受信
 4. `Preview`を選び、backendが正規化した全selected fieldの実値、omitted field名、保存byte数を確認します。field名や件数だけで確定しません。
 5. `このexact previewを保存します`を選んでから確定します。
 
-保存結果が`確認中`の場合、同じ内容を再送せず`保存結果を再照合`を使用します。保存開始時にはpreviewで正規化されたexact draft（画面で編集した値を含む）とscope／field選択を端末内へ固定するため、reload後も元の共有値へ戻りません。通常の保存確定では10分を過ぎたpreviewを再利用できませんが、既にpending ledgerが存在する場合は、同じactor、request key、exact payloadへ束縛された署名済みpreviewから新しい保存処理を作らず再照合できます。確認中はInbox、snapshot再照合、annotation／会話／Synthesis等の別mutationとitem／tab切替を停止します。`破棄`はlocal draftを削除する通知を送ります。preview tokenとrequest keyは画面session内だけに保持し、URL、localStorage、画面、監査logへ表示しません。browser extension固有の受信手順はextension実装後に追記します。
+保存結果が`確認中`の場合、同じ内容を再送せず`保存結果を再照合`を使用します。保存開始時にはpreviewで正規化されたexact draft（画面で編集した値を含む）とscope／field選択を端末内へ固定するため、reload後も元の共有値へ戻りません。通常の保存確定では10分を過ぎたpreviewを再利用できませんが、既にpending ledgerが存在する場合は、同じactor、request key、exact payloadへ束縛された署名済みpreviewから新しい保存処理を作らず再照合できます。確認中はInbox、snapshot再照合、annotation／会話／Synthesis等の別mutationとitem／tab切替を停止します。`破棄`はlocal draftを削除する通知を送ります。preview tokenは画面session内だけに保持します。request keyはURLへ露出させず、PWAではTTL付きのlocal IndexedDB draftに保存し、最初にserver確認されたactorへclaimした後はactor-boundで扱います。いずれもlocalStorage、画面、監査logへ表示しません。browser extension固有の受信手順はextension実装後に追記します。
 
 ### installed PWAから共有する
 
