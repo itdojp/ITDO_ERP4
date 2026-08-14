@@ -145,6 +145,7 @@ const credentialPathSegmentNames = new Set([
   'ticket',
   'token',
 ]);
+const nestedUrlCandidateLimit = 32;
 
 function isCredentialQueryName(name: string): boolean {
   const tokens = name
@@ -302,12 +303,30 @@ function hasUrlParserIgnoredAsciiWhitespace(value: string): boolean {
   return value.includes('\t') || value.includes('\n') || value.includes('\r');
 }
 
-function findNestedUrlStart(value: string): number {
-  const absoluteIndex = value.toLowerCase().search(/https?:/);
-  const schemeRelativeIndex = value.search(/[\\/]{2}/);
-  if (absoluteIndex < 0) return schemeRelativeIndex;
-  if (schemeRelativeIndex < 0) return absoluteIndex;
-  return Math.min(absoluteIndex, schemeRelativeIndex);
+function findNestedUrlStarts(value: string): number[] | null {
+  const starts: number[] = [];
+  const lower = value.toLowerCase();
+  for (let index = 0; index < value.length; index += 1) {
+    const current = value[index];
+    const next = value[index + 1];
+    const isSlashLikePair =
+      (current === '/' || current === '\\') && (next === '/' || next === '\\');
+    if (
+      !isSlashLikePair &&
+      !lower.startsWith('http:', index) &&
+      !lower.startsWith('https:', index)
+    ) {
+      continue;
+    }
+    starts.push(index);
+    if (starts.length > nestedUrlCandidateLimit) return null;
+  }
+  return starts;
+}
+
+function hasNestedUrlMarker(value: string): boolean {
+  const starts = findNestedUrlStarts(value);
+  return starts === null || starts.length > 0;
 }
 
 function parseNestedHttpUrl(value: string): NestedUrlParseResult {
@@ -330,29 +349,41 @@ function parseNestedHttpUrl(value: string): NestedUrlParseResult {
     ) {
       return { kind: 'unsafe' };
     }
-    const nestedUrlIndex = findNestedUrlStart(candidate);
-    const parseCandidate =
-      nestedUrlIndex >= 0 ? candidate.slice(nestedUrlIndex) : candidate;
-    if (
-      nestedUrlIndex >= 0 ||
-      parseCandidate.startsWith('//') ||
-      parseCandidate.startsWith('/') ||
-      parseCandidate.startsWith('\\') ||
-      parseCandidate.startsWith('?')
-    ) {
+    const nestedUrlStarts = findNestedUrlStarts(candidate);
+    if (nestedUrlStarts === null) return { kind: 'unsafe' };
+    const parseStarts =
+      nestedUrlStarts.length > 0
+        ? nestedUrlStarts
+        : candidate.startsWith('/') ||
+            candidate.startsWith('\\') ||
+            candidate.startsWith('?')
+          ? [0]
+          : [];
+    let firstParsedUrl: URL | undefined;
+    let parseFailed = false;
+    for (const nestedUrlIndex of parseStarts) {
+      const parseCandidate = candidate.slice(nestedUrlIndex);
       try {
         const parsed = /^https?:/i.test(parseCandidate)
           ? new URL(parseCandidate)
           : new URL(parseCandidate, 'https://nested.invalid');
         if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
-          return { kind: 'url', url: parsed };
+          if (parsed.username || parsed.password) {
+            return { kind: 'url', url: parsed };
+          }
+          firstParsedUrl ??= parsed;
         }
       } catch {
-        // Try one more percent-decoding layer below.
+        parseFailed = true;
       }
     }
+    if (firstParsedUrl && !parseFailed) {
+      return { kind: 'url', url: firstParsedUrl };
+    }
     const decoded = decodePercentBytes(candidate);
-    if (decoded === candidate) return { kind: 'none' };
+    if (decoded === candidate) {
+      return parseFailed ? { kind: 'unsafe' } : { kind: 'none' };
+    }
     if (decodeCount === decodeLayerLimit) return { kind: 'unsafe' };
     candidate = decoded;
   }
@@ -419,7 +450,7 @@ function hasCredentialBearingPath(url: URL, depth = 0): boolean {
         nested.url.password ||
         hasCredentialFragment(nested.url, depth + 1) ||
         hasCredentialBearingNestedUrl(nested.url, depth + 1) ||
-        (findNestedUrlStart(candidate) >= 0 &&
+        (hasNestedUrlMarker(candidate) &&
           (depth >= 3 || hasCredentialBearingPath(nested.url, depth + 1))))
     ) {
       return true;

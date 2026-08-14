@@ -106,6 +106,9 @@ test("rejects active schemes, credential URLs, malformed Unicode, and nested pay
     "https://example.invalid/redirect/%5C%2Falice%3Asynthetic-pass%40nested.invalid/private",
     "https://example.invalid/redirect/%2F%2Falice%3Asynthetic-pass%40nested.invalid/private",
     "https://example.invalid/redirect/%255C%255Calice%253Asynthetic-pass%2540nested.invalid/private",
+    "https://example.invalid/redirect//bad%20host/https:alice:synthetic-pass@nested.invalid/private",
+    "https://example.invalid/redirect/%5C%5Cbad%20host/https%3Aalice%3Asynthetic-pass%40nested.invalid/private",
+    `https://example.invalid/redirect/${"//nested.invalid".repeat(33)}`,
     "https://example.invalid/redirect/ht%0Atps%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate",
     "https://example.invalid/redirect/ht%250Atps%253Aalice%253Asynthetic-pass%2540nested.invalid%252Fprivate",
     "https://example.invalid/session/synthetic-secret",
@@ -151,6 +154,7 @@ test("keeps ordinary slash routes that do not name a credential value", () => {
     "https://example.invalid/state/california",
     "https://example.invalid/code/example",
     "https://example.invalid/key/rotation",
+    "https://example.invalid/redirect//nested.invalid/public",
   ]) {
     assert.equal(normalizeExtractedCapture({ url }, capturedAt)?.url, url, url);
   }

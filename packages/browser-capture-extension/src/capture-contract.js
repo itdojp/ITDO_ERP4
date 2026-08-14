@@ -79,6 +79,7 @@ const credentialPathSegmentNames = new Set([
   "ticket",
   "token",
 ]);
+const nestedUrlCandidateLimit = 32;
 
 export function isPlainRecord(value) {
   return (
@@ -302,12 +303,30 @@ function hasUrlParserIgnoredAsciiWhitespace(value) {
   return value.includes("\t") || value.includes("\n") || value.includes("\r");
 }
 
-function findNestedUrlStart(value) {
-  const absoluteIndex = value.toLowerCase().search(/https?:/u);
-  const schemeRelativeIndex = value.search(/[\\/]{2}/u);
-  if (absoluteIndex < 0) return schemeRelativeIndex;
-  if (schemeRelativeIndex < 0) return absoluteIndex;
-  return Math.min(absoluteIndex, schemeRelativeIndex);
+function findNestedUrlStarts(value) {
+  const starts = [];
+  const lower = value.toLowerCase();
+  for (let index = 0; index < value.length; index += 1) {
+    const current = value[index];
+    const next = value[index + 1];
+    const isSlashLikePair =
+      (current === "/" || current === "\\") && (next === "/" || next === "\\");
+    if (
+      !isSlashLikePair &&
+      !lower.startsWith("http:", index) &&
+      !lower.startsWith("https:", index)
+    ) {
+      continue;
+    }
+    starts.push(index);
+    if (starts.length > nestedUrlCandidateLimit) return null;
+  }
+  return starts;
+}
+
+function hasNestedUrlMarker(value) {
+  const starts = findNestedUrlStarts(value);
+  return starts === null || starts.length > 0;
 }
 
 function parseNestedHttpUrl(value) {
@@ -328,31 +347,43 @@ function parseNestedHttpUrl(value) {
       return { kind: "unsafe" };
     }
     // WHATWG accepts HTTP(S) special URLs with zero, one, or two slash-like
-    // separators. Start at the earliest absolute or scheme-relative marker so
-    // path prefixes cannot hide nested userinfo from the URL parser.
-    const nestedUrlIndex = findNestedUrlStart(candidate);
-    const parseCandidate =
-      nestedUrlIndex >= 0 ? candidate.slice(nestedUrlIndex) : candidate;
-    if (
-      nestedUrlIndex >= 0 ||
-      parseCandidate.startsWith("//") ||
-      parseCandidate.startsWith("/") ||
-      parseCandidate.startsWith("\\") ||
-      parseCandidate.startsWith("?")
-    ) {
+    // separators. Inspect every bounded absolute or scheme-relative marker so
+    // an earlier malformed candidate cannot hide later nested userinfo.
+    const nestedUrlStarts = findNestedUrlStarts(candidate);
+    if (nestedUrlStarts === null) return { kind: "unsafe" };
+    const parseStarts =
+      nestedUrlStarts.length > 0
+        ? nestedUrlStarts
+        : candidate.startsWith("/") ||
+            candidate.startsWith("\\") ||
+            candidate.startsWith("?")
+          ? [0]
+          : [];
+    let firstParsedUrl;
+    let parseFailed = false;
+    for (const nestedUrlIndex of parseStarts) {
+      const parseCandidate = candidate.slice(nestedUrlIndex);
       try {
         const parsed = /^https?:/iu.test(parseCandidate)
           ? new URL(parseCandidate)
           : new URL(parseCandidate, "https://nested.invalid");
         if (parsed.protocol === "https:" || parsed.protocol === "http:") {
-          return { kind: "url", url: parsed };
+          if (parsed.username || parsed.password) {
+            return { kind: "url", url: parsed };
+          }
+          firstParsedUrl ??= parsed;
         }
       } catch {
-        // Inspect one more bounded percent-decoding layer below.
+        parseFailed = true;
       }
     }
+    if (firstParsedUrl && !parseFailed) {
+      return { kind: "url", url: firstParsedUrl };
+    }
     const decoded = decodePercentBytes(candidate);
-    if (decoded === candidate) return { kind: "none" };
+    if (decoded === candidate) {
+      return parseFailed ? { kind: "unsafe" } : { kind: "none" };
+    }
     if (index === maximumLayers) return { kind: "unsafe" };
     candidate = decoded;
   }
@@ -417,7 +448,7 @@ function hasCredentialBearingPath(url, depth = 0) {
         nested.url.password ||
         hasCredentialFragment(nested.url, depth + 1) ||
         hasCredentialBearingNestedUrl(nested.url, depth + 1) ||
-        (findNestedUrlStart(candidate) >= 0 &&
+        (hasNestedUrlMarker(candidate) &&
           (depth >= 3 || hasCredentialBearingPath(nested.url, depth + 1))))
     ) {
       return true;

@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   buildExtension,
@@ -126,6 +126,170 @@ test("freezes popup capture inputs while a stage outcome is unknown", () => {
     popup,
     /if \(response\?\.ok === false\) state\.stageIntent = null/u,
   );
+});
+
+test("preserves one popup stage intent across response and handoff loss", async () => {
+  const packageRoot = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "..",
+  );
+  const testRoot = path.join(packageRoot, "tmp", "popup-behavior-test");
+  mkdirSync(testRoot, { recursive: true });
+  const outDir = mkdtempSync(path.join(testRoot, "fixture-"));
+  const originalDocument = globalThis.document;
+  const originalChrome = globalThis.chrome;
+
+  class FakeElement {
+    constructor() {
+      this.checked = false;
+      this.children = [];
+      this.dataset = {};
+      this.disabled = false;
+      this.listeners = new Map();
+      this.textContent = "";
+    }
+
+    addEventListener(type, listener) {
+      this.listeners.set(type, listener);
+    }
+
+    append(...children) {
+      this.children.push(...children);
+    }
+
+    dispatch(type) {
+      this.listeners.get(type)?.();
+    }
+
+    replaceChildren(...children) {
+      this.children = [...children];
+    }
+  }
+
+  const elements = new Map(
+    ["status", "fields", "handoff", "recapture", "discard", "destination"].map(
+      (id) => [id, new FakeElement()],
+    ),
+  );
+  const stageMessages = [];
+  let captureExecutions = 0;
+  let openAttempts = 0;
+  const waitFor = async (predicate) => {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      if (predicate()) return;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    throw new Error("popup_behavior_timeout");
+  };
+
+  try {
+    buildExtension({
+      origin: "https://erp4.example.invalid",
+      outDir,
+    });
+    globalThis.document = {
+      createElement: () => new FakeElement(),
+      getElementById: (id) => elements.get(id),
+    };
+    globalThis.chrome = {
+      runtime: {
+        async sendMessage(message) {
+          if (message.type === "erp4-browser-capture-recent-v1") {
+            return { ok: false };
+          }
+          if (message.type === "erp4-browser-capture-stage-v1") {
+            stageMessages.push(structuredClone(message));
+            if (stageMessages.length === 1) {
+              throw new Error("synthetic_stage_response_lost");
+            }
+            return {
+              ok: true,
+              record: { id: message.id, draft: message.draft },
+            };
+          }
+          throw new Error("unexpected_message");
+        },
+      },
+      scripting: {
+        async executeScript() {
+          captureExecutions += 1;
+          return [
+            {
+              result: {
+                title: "Synthetic title",
+                url: "https://example.invalid/article",
+                selectedText: "Synthetic selection",
+                description: null,
+                author: null,
+                publishedAt: null,
+              },
+            },
+          ];
+        },
+      },
+      tabs: {
+        async create() {
+          openAttempts += 1;
+          if (openAttempts === 1) {
+            throw new Error("synthetic_handoff_response_lost");
+          }
+          return {};
+        },
+        async query() {
+          return [{ id: 7 }];
+        },
+      },
+    };
+
+    const popupUrl = pathToFileURL(path.join(outDir, "popup.js"));
+    await import(`${popupUrl.href}?behavior=${Date.now()}`);
+    await waitFor(() => elements.get("fields").children.length > 0);
+    assert.equal(captureExecutions, 1);
+
+    elements.get("handoff").dispatch("click");
+    await waitFor(
+      () =>
+        stageMessages.length === 1 &&
+        elements.get("status").dataset.tone === "error",
+    );
+    assert.equal(elements.get("handoff").disabled, false);
+    assert.equal(elements.get("recapture").disabled, true);
+    const firstIntent = stageMessages[0];
+    const selectedCheckbox = elements
+      .get("fields")
+      .children.map((row) => row.children[0])
+      .find((checkbox) => checkbox.checked);
+    assert.equal(selectedCheckbox.disabled, true);
+    selectedCheckbox.checked = false;
+    selectedCheckbox.dispatch("change");
+    assert.equal(selectedCheckbox.checked, true);
+    elements.get("recapture").dispatch("click");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(captureExecutions, 1);
+
+    elements.get("handoff").dispatch("click");
+    await waitFor(() => stageMessages.length === 2 && openAttempts === 1);
+    assert.deepEqual(stageMessages[1], firstIntent);
+    assert.equal(elements.get("recapture").disabled, true);
+    assert.equal(elements.get("discard").disabled, false);
+
+    const rowsBeforeFinalHandoff = elements.get("fields").children;
+    elements.get("handoff").dispatch("click");
+    await waitFor(
+      () =>
+        openAttempts === 2 &&
+        elements.get("fields").children !== rowsBeforeFinalHandoff,
+    );
+    assert.equal(stageMessages.length, 2);
+    assert.match(elements.get("status").textContent, /ERP4を開きました/u);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  } finally {
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+    if (originalChrome === undefined) delete globalThis.chrome;
+    else globalThis.chrome = originalChrome;
+    rmSync(outDir, { recursive: true, force: true });
+  }
 });
 
 test("refuses recursive cleanup outside managed output roots or through symlinks", () => {
