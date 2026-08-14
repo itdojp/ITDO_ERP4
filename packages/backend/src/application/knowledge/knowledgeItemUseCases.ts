@@ -96,7 +96,9 @@ const credentialQueryTokens = new Set([
   'assertion',
   'auth',
   'authorization',
+  'code',
   'credential',
+  'expires',
   'jwt',
   'key',
   'oauth',
@@ -105,13 +107,20 @@ const credentialQueryTokens = new Set([
   'password',
   'pwd',
   'proof',
+  'relaystate',
+  'samlartifact',
+  'samlart',
+  'samlrequest',
+  'sid',
   'secret',
+  'sessid',
   'session',
   'sig',
   'signature',
   'ticket',
   'token',
   'verifier',
+  'state',
 ]);
 
 function isCredentialQueryName(name: string): boolean {
@@ -124,22 +133,27 @@ function isCredentialQueryName(name: string): boolean {
   const compact = name.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (compact.startsWith('xamz') || compact.startsWith('xgoog')) return true;
   if (
-    compact === 'googleaccessid' ||
-    compact === 'awsaccesskeyid' ||
-    compact === 'key' ||
-    compact === 'keypairid' ||
-    compact === 'privatekey' ||
-    compact === 'resourcekey' ||
-    compact === 'samlart' ||
-    compact === 'samlartifact' ||
-    compact === 'samlrequest' ||
-    compact === 'relaystate' ||
-    compact === 'policy' ||
-    compact === 'expires' ||
-    compact === 'auth' ||
-    compact === 'sig' ||
-    compact === 'state' ||
-    compact === 'code'
+    [
+      'auth',
+      'awsaccesskeyid',
+      'code',
+      'expires',
+      'googleaccessid',
+      'key',
+      'keypairid',
+      'phpsessid',
+      'policy',
+      'privatekey',
+      'relaystate',
+      'resourcekey',
+      'samlart',
+      'samlartifact',
+      'samlrequest',
+      'sessid',
+      'sid',
+      'sig',
+      'state',
+    ].includes(compact)
   ) {
     return true;
   }
@@ -173,6 +187,12 @@ function isCredentialQueryName(name: string): boolean {
 
 const percentEncodedByte = /%([0-9a-f]{2})/gi;
 
+function decodePercentBytes(value: string): string {
+  return value.replace(percentEncodedByte, (_match, byte) =>
+    String.fromCharCode(Number.parseInt(byte, 16)),
+  );
+}
+
 type NestedUrlParseResult =
   { kind: 'url'; url: URL } | { kind: 'none' } | { kind: 'unsafe' };
 
@@ -181,9 +201,7 @@ function isCredentialQueryNameDeep(name: string): boolean {
   const decodeLayerLimit = Math.floor(candidate.length / 2) + 1;
   for (let decodeCount = 0; decodeCount <= decodeLayerLimit; decodeCount += 1) {
     if (isCredentialQueryName(candidate)) return true;
-    const decoded = candidate.replace(percentEncodedByte, (_match, byte) =>
-      String.fromCharCode(Number.parseInt(byte, 16)),
-    );
+    const decoded = decodePercentBytes(candidate);
     if (decoded === candidate) return candidate.includes('%');
     if (decodeCount === decodeLayerLimit) return true;
     candidate = decoded;
@@ -246,8 +264,7 @@ function parseNestedHttpUrl(value: string): NestedUrlParseResult {
     ) {
       return { kind: 'unsafe' };
     }
-    const lowerCandidate = candidate.toLowerCase();
-    const absoluteUrlIndex = lowerCandidate.search(/https?:\/\//);
+    const absoluteUrlIndex = candidate.toLowerCase().search(/https?:/);
     const parseCandidate =
       absoluteUrlIndex >= 0 ? candidate.slice(absoluteUrlIndex) : candidate;
     if (
@@ -257,7 +274,9 @@ function parseNestedHttpUrl(value: string): NestedUrlParseResult {
       parseCandidate.startsWith('?')
     ) {
       try {
-        const parsed = new URL(parseCandidate, 'https://nested.invalid');
+        const parsed = /^https?:/i.test(parseCandidate)
+          ? new URL(parseCandidate)
+          : new URL(parseCandidate, 'https://nested.invalid');
         if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
           return { kind: 'url', url: parsed };
         }
@@ -265,9 +284,7 @@ function parseNestedHttpUrl(value: string): NestedUrlParseResult {
         // Try one more percent-decoding layer below.
       }
     }
-    const decoded = candidate.replace(percentEncodedByte, (_match, byte) =>
-      String.fromCharCode(Number.parseInt(byte, 16)),
-    );
+    const decoded = decodePercentBytes(candidate);
     if (decoded === candidate) return { kind: 'none' };
     if (decodeCount === decodeLayerLimit) return { kind: 'unsafe' };
     candidate = decoded.trim();
@@ -283,6 +300,7 @@ function hasCredentialFragment(url: URL, depth = 0): boolean {
   if (nested.url.username || nested.url.password || depth >= 3) return true;
   return (
     hasCredentialFragment(nested.url, depth + 1) ||
+    hasCredentialBearingPath(nested.url, depth + 1) ||
     hasCredentialBearingNestedUrl(nested.url, depth + 1)
   );
 }
@@ -297,7 +315,8 @@ function hasCredentialBearingNestedUrl(url: URL, depth = 0): boolean {
     if (
       nestedUrl.username ||
       nestedUrl.password ||
-      hasCredentialFragment(nestedUrl, depth + 1)
+      hasCredentialFragment(nestedUrl, depth + 1) ||
+      hasCredentialBearingPath(nestedUrl, depth + 1)
     ) {
       return true;
     }
@@ -306,6 +325,43 @@ function hasCredentialBearingNestedUrl(url: URL, depth = 0): boolean {
     }
   }
   return false;
+}
+
+function hasCredentialBearingPath(url: URL, depth = 0): boolean {
+  let candidate = url.pathname;
+  const decodeLayerLimit = Math.floor(candidate.length / 2) + 1;
+  for (let decodeCount = 0; decodeCount <= decodeLayerLimit; decodeCount += 1) {
+    if (
+      hasCredentialQueryText(candidate) ||
+      candidate
+        .split('/')
+        .some(
+          (segment) =>
+            segment.includes(';') &&
+            hasCredentialQueryParams(segment.slice(segment.indexOf(';') + 1)),
+        )
+    ) {
+      return true;
+    }
+    const nested = parseNestedHttpUrl(candidate);
+    if (nested.kind === 'unsafe') return true;
+    if (
+      nested.kind === 'url' &&
+      (nested.url.username ||
+        nested.url.password ||
+        hasCredentialFragment(nested.url, depth + 1) ||
+        hasCredentialBearingNestedUrl(nested.url, depth + 1) ||
+        (/https?:/i.test(candidate) &&
+          (depth >= 3 || hasCredentialBearingPath(nested.url, depth + 1))))
+    ) {
+      return true;
+    }
+    const decoded = decodePercentBytes(candidate);
+    if (decoded === candidate) return false;
+    if (decodeCount === decodeLayerLimit) return true;
+    candidate = decoded;
+  }
+  return true;
 }
 
 export function normalizeKnowledgeCanonicalUrl(
@@ -320,7 +376,9 @@ export function normalizeKnowledgeCanonicalUrl(
     if (url.protocol !== 'https:' && url.protocol !== 'http:') {
       return { ok: false };
     }
-    if (hasCredentialFragment(url)) return { ok: false };
+    if (hasCredentialFragment(url) || hasCredentialBearingPath(url)) {
+      return { ok: false };
+    }
     url.username = '';
     url.password = '';
     url.hash = '';

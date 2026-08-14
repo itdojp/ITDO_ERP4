@@ -28,10 +28,20 @@ const localQueue = vi.hoisted(() => ({
   createShareTargetPendingOperationId: vi.fn(),
   publishShareTargetLifecycle: vi.fn(),
 }));
+const browserBridge = vi.hoisted(() => ({
+  markBrowserCaptureDraftPending: vi.fn(),
+  markBrowserCaptureDraftStaged: vi.fn(),
+  publishBrowserCaptureLifecycle: vi.fn(),
+}));
 vi.mock('../../utils/shareTargetQueue', async (importOriginal) => {
   const actual =
     await importOriginal<typeof import('../../utils/shareTargetQueue')>();
   return { ...actual, ...localQueue };
+});
+vi.mock('../../utils/browserCaptureBridge', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../utils/browserCaptureBridge')>();
+  return { ...actual, ...browserBridge };
 });
 
 import { KnowledgeCaptureIngress } from './KnowledgeCaptureIngress';
@@ -46,7 +56,7 @@ import {
 
 const draft = {
   schemaVersion: 1,
-  channel: 'browser_extension',
+  channel: 'pwa_share_target',
   title: 'Synthetic page',
   url: 'https://example.invalid/',
   selectedText: 'Selected body',
@@ -86,6 +96,13 @@ beforeEach(() => {
     .mockReset()
     .mockReturnValue('a'.repeat(48));
   localQueue.publishShareTargetLifecycle.mockReset();
+  browserBridge.markBrowserCaptureDraftPending
+    .mockReset()
+    .mockResolvedValue({ transitioned: true });
+  browserBridge.markBrowserCaptureDraftStaged
+    .mockReset()
+    .mockResolvedValue(undefined);
+  browserBridge.publishBrowserCaptureLifecycle.mockReset();
   api.previewKnowledgeCapture.mockResolvedValue({
     captureId: 'capture-1',
     draft,
@@ -472,6 +489,56 @@ describe('KnowledgeCaptureIngress', () => {
     expect(screen.getByRole('button', { name: 'Preview' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '破棄' })).toBeDisabled();
     expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it('uses the extension session bridge instead of IndexedDB for a browser draft', async () => {
+    const browserDraft = { ...draft, channel: 'browser_extension' as const };
+    api.previewKnowledgeCapture.mockResolvedValueOnce({
+      captureId: 'capture-browser-1',
+      draft: browserDraft,
+      selectedFields: ['title', 'url', 'selectedText'],
+      omittedFields: ['description'],
+      scope: 'personal',
+      organizationGroupAccountIds: [],
+      sourceType: 'other',
+      fieldCount: 3,
+      byteCount: 120,
+      duplicateCandidate: { detected: false, status: null },
+      requiresOrganizationConfirmation: false,
+      previewToken: 'opaque-preview-token',
+      expiresAt: '2026-08-14T00:10:00.000Z',
+    });
+    render(<KnowledgeCaptureIngress />);
+    deliver({ channel: 'browser_extension' });
+    fireEvent.change(await screen.findByLabelText('source type'), {
+      target: { value: 'other' },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
+    await screen.findByRole('heading', { name: 'Exact preview' });
+    fireEvent.click(screen.getByLabelText('このexact previewを保存します'));
+    fireEvent.click(screen.getByRole('button', { name: '明示確定して保存' }));
+
+    await waitFor(() =>
+      expect(browserBridge.markBrowserCaptureDraftPending).toHaveBeenCalledWith(
+        'opaque-draft-id-1234567890',
+        'header:synthetic-user',
+        'a'.repeat(48),
+        {
+          selectedFields: ['title', 'url', 'selectedText'],
+          scope: 'personal',
+          organizationGroupAccountIds: [],
+          sourceType: 'other',
+        },
+        browserDraft,
+      ),
+    );
+    expect(localQueue.markShareTargetDraftPending).not.toHaveBeenCalled();
+    expect(localQueue.publishShareTargetLifecycle).not.toHaveBeenCalled();
+    expect(browserBridge.publishBrowserCaptureLifecycle).toHaveBeenCalledWith(
+      'opaque-draft-id-1234567890',
+      'pending',
+    );
+    expect(api.commitKnowledgeCapture).toHaveBeenCalledOnce();
   });
 
   it('does not resurrect or notify a CAS loser after the owner pending event purges it', async () => {

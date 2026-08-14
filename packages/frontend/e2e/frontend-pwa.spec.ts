@@ -332,6 +332,169 @@ test('pwa Web Share Target rejects files, unknown fields, wrong media, and overs
   expect(JSON.stringify(results)).not.toContain('private-canary');
 });
 
+test('browser capture bridge reaches the authenticated real-backend preview and commit lifecycle @core @extended', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const draftId = randomUUID().replace(/-/gu, '');
+  const requestKey = randomUUID().replace(/-/gu, '');
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  const selectedText = `Synthetic browser capture ${runId()}`;
+
+  await page.addInitScript(
+    ({ id, key, created, expires, text }) => {
+      type Lifecycle = 'staged' | 'pending';
+      type BridgeState = {
+        lifecycle: Lifecycle;
+        deleted: boolean;
+        commands: string[];
+        pendingIntent: Record<string, unknown> | null;
+        draft: Record<string, unknown>;
+      };
+      const state: BridgeState = {
+        lifecycle: 'staged',
+        deleted: false,
+        commands: [],
+        pendingIntent: null,
+        draft: {
+          schemaVersion: 1,
+          channel: 'browser_extension',
+          title: 'Synthetic browser capture',
+          url: 'https://example.invalid/browser-capture',
+          selectedText: text,
+          description: null,
+          author: null,
+          publishedAt: null,
+          capturedAt: created,
+        },
+      };
+      (
+        globalThis as typeof globalThis & {
+          __browserCaptureBridgeState?: BridgeState;
+        }
+      ).__browserCaptureBridgeState = state;
+
+      window.addEventListener('message', (event) => {
+        if (
+          event.source !== window ||
+          event.origin !== window.location.origin ||
+          !event.data ||
+          typeof event.data !== 'object' ||
+          Array.isArray(event.data)
+        ) {
+          return;
+        }
+        const command = event.data as Record<string, unknown>;
+        if (
+          command.source !== 'erp4-page' ||
+          command.type !== 'erp4-browser-capture-command-v1' ||
+          command.id !== id ||
+          typeof command.command !== 'string' ||
+          typeof command.nonce !== 'string'
+        ) {
+          return;
+        }
+        state.commands.push(command.command);
+        let transitioned = false;
+        if (command.command === 'pending' && state.lifecycle === 'staged') {
+          state.lifecycle = 'pending';
+          state.pendingIntent = command.pendingIntent as Record<
+            string,
+            unknown
+          >;
+          state.draft = command.draft as Record<string, unknown>;
+          transitioned = true;
+        } else if (command.command === 'staged') {
+          state.lifecycle = 'staged';
+          state.pendingIntent = null;
+          transitioned = true;
+        } else if (command.command === 'delete') {
+          state.deleted = true;
+          transitioned = true;
+        }
+        const record = state.deleted
+          ? null
+          : {
+              schemaVersion: 1,
+              id,
+              requestKey: key,
+              lifecycle: state.lifecycle,
+              pendingIntent: state.pendingIntent,
+              draft: state.draft,
+              createdAt: created,
+              expiresAt: expires,
+            };
+        window.postMessage(
+          {
+            source: 'erp4-extension',
+            type: 'erp4-browser-capture-response-v1',
+            schemaVersion: 1,
+            command: command.command,
+            id,
+            nonce: command.nonce,
+            response: { ok: true, transitioned, record },
+          },
+          window.location.origin,
+        );
+      });
+    },
+    {
+      id: draftId,
+      key: requestKey,
+      created: createdAt,
+      expires: expiresAt,
+      text: selectedText,
+    },
+  );
+
+  let captureRequests = 0;
+  page.on('request', (request) => {
+    if (
+      /\/knowledge\/captures(?:\/|$)/u.test(new URL(request.url()).pathname)
+    ) {
+      captureRequests += 1;
+    }
+  });
+  await prepare(page);
+  await page.goto(`${baseUrl}/?browserCapture=${draftId}`);
+
+  await expect(
+    page.getByRole('heading', { name: 'ブラウザー共有の確認' }),
+  ).toBeVisible();
+  await expect(page.getByRole('textbox', { name: '選択テキスト' })).toHaveValue(
+    selectedText,
+  );
+  expect(captureRequests).toBe(0);
+
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Exact preview' }),
+  ).toBeVisible();
+  await page.getByLabel('このexact previewを保存します').check();
+  await page.getByRole('button', { name: '明示確定して保存' }).click();
+  await expect(page).not.toHaveURL(/browserCapture=/u);
+  await expect.poll(() => captureRequests).toBeGreaterThanOrEqual(2);
+  await expect(
+    page.getByRole('button', { name: /Synthetic browser capture/u }),
+  ).toBeVisible();
+
+  const lifecycle = await page.evaluate(() => {
+    const state = (
+      globalThis as typeof globalThis & {
+        __browserCaptureBridgeState?: {
+          deleted: boolean;
+          commands: string[];
+        };
+      }
+    ).__browserCaptureBridgeState;
+    return state ?? null;
+  });
+  expect(lifecycle?.deleted).toBe(true);
+  expect(lifecycle?.commands).toContain('pending');
+  expect(lifecycle?.commands).toContain('delete');
+});
+
 test('pwa Web Share Target keeps an unauthenticated offline draft and resumes only after login @pwa @extended', async ({
   page,
   context,

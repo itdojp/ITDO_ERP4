@@ -13,7 +13,7 @@ while [[ $# -gt 0 ]]; do
       cat <<'EOF'
 Usage: ./scripts/export-sbom.sh [--out <dir>]
 
-Generate SBOM (CycloneDX JSON) for backend/frontend from package-lock.json.
+Generate SBOM (CycloneDX JSON) for backend/frontend/browser extension from package-lock.json.
 EOF
       exit 0
       ;;
@@ -46,5 +46,16 @@ npx -y "@cyclonedx/cyclonedx-npm@${CYCLONEDX_VERSION}" \
   --output-file "${OUT_DIR}/frontend.cdx.json" \
   packages/frontend/package.json
 
+npx -y "@cyclonedx/cyclonedx-npm@${CYCLONEDX_VERSION}" \
+  --package-lock-only \
+  --output-reproducible \
+  --output-format JSON \
+  --spec-version 1.6 \
+  --output-file "${OUT_DIR}/browser-capture-extension.cdx.json" \
+  packages/browser-capture-extension/package.json
+
 echo "Done:"
-ls -la "${OUT_DIR}/backend.cdx.json" "${OUT_DIR}/frontend.cdx.json"
+ls -la \
+  "${OUT_DIR}/backend.cdx.json" \
+  "${OUT_DIR}/frontend.cdx.json" \
+  "${OUT_DIR}/browser-capture-extension.cdx.json"

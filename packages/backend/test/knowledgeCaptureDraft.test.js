@@ -116,6 +116,10 @@ test('rejects unsafe and credential-bearing URL forms', () => {
     'edge://settings',
     'about:blank',
     'https://user:opaque@example.invalid/',
+    'https://example.invalid/?PHPSESSID=synthetic-secret',
+    'https://example.invalid/?next=https%3A%2F%2Fnested.invalid%2Fapp%253Bjsessionid%253Dsynthetic-secret',
+    'https://example.invalid/?next=https%3A%2F%2Fnested.invalid%2Fpath%2F%253Ftoken%253Dsynthetic-secret',
+    'https://example.invalid/redirect/https%253Aalice%253Asynthetic-pass%2540nested.invalid/private',
     'not a url',
   ]) {
     assert.throws(

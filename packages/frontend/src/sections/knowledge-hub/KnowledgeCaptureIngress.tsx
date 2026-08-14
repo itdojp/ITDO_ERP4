@@ -30,6 +30,11 @@ import {
   type ShareTargetPendingIntent,
 } from '../../utils/shareTargetQueue';
 import {
+  markBrowserCaptureDraftPending,
+  markBrowserCaptureDraftStaged,
+  publishBrowserCaptureLifecycle,
+} from '../../utils/browserCaptureBridge';
+import {
   knowledgeHubErrorMessage,
   type KnowledgeScope,
   type KnowledgeSourceType,
@@ -145,6 +150,54 @@ function resultEvent(
       detail: { schemaVersion: 1, draftId, outcome },
     }),
   );
+}
+
+async function markLocalDraftPending(
+  channel: IncomingKnowledgeCaptureDraft['channel'],
+  draftId: string,
+  actorKey: string,
+  operationId: string,
+  pendingIntent: ShareTargetPendingIntent,
+  draft: IncomingKnowledgeCaptureDraft,
+) {
+  return channel === 'browser_extension'
+    ? markBrowserCaptureDraftPending(
+        draftId,
+        actorKey,
+        operationId,
+        pendingIntent,
+        draft,
+      )
+    : markShareTargetDraftPending(
+        draftId,
+        actorKey,
+        operationId,
+        pendingIntent,
+        draft,
+      );
+}
+
+async function markLocalDraftStaged(
+  channel: IncomingKnowledgeCaptureDraft['channel'],
+  draftId: string,
+  actorKey: string,
+  operationId: string,
+) {
+  return channel === 'browser_extension'
+    ? markBrowserCaptureDraftStaged(draftId, actorKey, operationId)
+    : markShareTargetDraftStaged(draftId, actorKey, operationId);
+}
+
+function publishLocalDraftLifecycle(
+  channel: IncomingKnowledgeCaptureDraft['channel'],
+  draftId: string,
+  lifecycle: 'staged' | 'pending',
+) {
+  if (channel === 'pwa_share_target') {
+    publishShareTargetLifecycle(draftId, lifecycle);
+  } else {
+    publishBrowserCaptureLifecycle(draftId, lifecycle);
+  }
 }
 
 export function KnowledgeCaptureIngress({
@@ -402,7 +455,8 @@ export function KnowledgeCaptureIngress({
     if (commitDraftId && commitActorKey) {
       try {
         pendingOperationId = createShareTargetPendingOperationId();
-        const pendingTransition = await markShareTargetDraftPending(
+        const pendingTransition = await markLocalDraftPending(
+          preview.draft.channel,
           commitDraftId,
           commitActorKey,
           pendingOperationId,
@@ -420,14 +474,16 @@ export function KnowledgeCaptureIngress({
           // winner may compensate its own transition; a loser leaves the
           // exact pending row untouched for the landing reload.
           if (pendingTransition.transitioned) {
-            const restored = await markShareTargetDraftStaged(
+            const restored = await markLocalDraftStaged(
+              preview.draft.channel,
               commitDraftId,
               commitActorKey,
               pendingOperationId,
             )
               .then(() => true)
               .catch(() => false);
-            publishShareTargetLifecycle(
+            publishLocalDraftLifecycle(
+              preview.draft.channel,
               commitDraftId,
               restored ? 'staged' : 'pending',
             );
@@ -458,7 +514,11 @@ export function KnowledgeCaptureIngress({
           if (generationRef.current === generation) setBusy(null);
           return;
         }
-        publishShareTargetLifecycle(commitDraftId, 'pending');
+        publishLocalDraftLifecycle(
+          preview.draft.channel,
+          commitDraftId,
+          'pending',
+        );
       } catch {
         if (controller.signal.aborted || generationRef.current !== generation) {
           return;
@@ -503,12 +563,17 @@ export function KnowledgeCaptureIngress({
         let localStateRestored = true;
         if (draftId && handoffActorKeyRef.current) {
           try {
-            await markShareTargetDraftStaged(
+            await markLocalDraftStaged(
+              preview.draft.channel,
               draftId,
               handoffActorKeyRef.current,
               pendingOperationId,
             );
-            publishShareTargetLifecycle(draftId, 'staged');
+            publishLocalDraftLifecycle(
+              preview.draft.channel,
+              draftId,
+              'staged',
+            );
           } catch {
             localStateRestored = false;
           }

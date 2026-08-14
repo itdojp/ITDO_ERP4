@@ -1,28 +1,43 @@
-.PHONY: lint format-check typecheck build test test-backend test-frontend data-quality-test data-quality-blocking data-quality-advisory coverage coverage-auth coverage-integrations coverage-integrations-check coverage-frontend coverage-frontend-core knowledge-provenance-postgres knowledge-provenance-old-app knowledge-conversation-import-postgres knowledge-share-postgres knowledge-share-old-app knowledge-thread-promotion-postgres knowledge-thread-promotion-old-app knowledge-llm-budget-postgres knowledge-llm-old-app chat-thread-postgres chat-thread-old-app e2e ui-evidence ui-visual-regression ui-visual-regression-update mobile-regression-log frontend-dev-api podman-smoke pr-comments audit docs-image-links-check docs-test-results-index-check ops-quality design-system-package-check eslint10-readiness-check eslint10-readiness-record dependabot-alerts-check dependabot-alerts-record dependabot-token-readiness-check dependency-watch-record backup-s3-readiness-check backup-s3-readiness-record backup-s3-restore-record backup-s3-profile-test backup-s3-backup backup-s3-upload backup-s3-download backup-s3-check backup-s3-prune-plan backup-s3-prune-apply backup-gdrive-config-check backup-gdrive-list backup-gdrive-freshness backup-gdrive-stat backup-gdrive-download backup-gdrive-prune-plan storage-readiness storage-readiness-record external-csv-artifact-intake-record production-readiness-external-evidence-check production-readiness-external-evidence-test po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness action-policy-callsites-report action-policy-callsites-report-json action-policy-required-action-gaps action-policy-required-action-gaps-json action-policy-fallback-report action-policy-fallback-report-json release-readiness release-readiness-record action-policy-phase3-readiness action-policy-phase3-readiness-json action-policy-phase3-readiness-record action-policy-phase3-cutover-record action-policy-phase3-trial-record action-policy-phase3-target-trial-record sakura-vps-profile-check bounded-context-coverage-check
+.PHONY: lint format-check typecheck build test test-backend test-frontend test-browser-capture-extension browser-capture-extension-e2e-deps browser-capture-extension-e2e data-quality-test data-quality-blocking data-quality-advisory coverage coverage-auth coverage-integrations coverage-integrations-check coverage-frontend coverage-frontend-core knowledge-provenance-postgres knowledge-provenance-old-app knowledge-conversation-import-postgres knowledge-share-postgres knowledge-share-old-app knowledge-thread-promotion-postgres knowledge-thread-promotion-old-app knowledge-llm-budget-postgres knowledge-llm-old-app chat-thread-postgres chat-thread-old-app e2e ui-evidence ui-visual-regression ui-visual-regression-update mobile-regression-log frontend-dev-api podman-smoke pr-comments audit docs-image-links-check docs-test-results-index-check ops-quality design-system-package-check eslint10-readiness-check eslint10-readiness-record dependabot-alerts-check dependabot-alerts-record dependabot-token-readiness-check dependency-watch-record backup-s3-readiness-check backup-s3-readiness-record backup-s3-restore-record backup-s3-profile-test backup-s3-backup backup-s3-upload backup-s3-download backup-s3-check backup-s3-prune-plan backup-s3-prune-apply backup-gdrive-config-check backup-gdrive-list backup-gdrive-freshness backup-gdrive-stat backup-gdrive-download backup-gdrive-prune-plan storage-readiness storage-readiness-record external-csv-artifact-intake-record production-readiness-external-evidence-check production-readiness-external-evidence-test po-migration-input-readiness-check po-migration-record po-migration-run-and-record av-staging-evidence av-staging-gate av-staging-readiness action-policy-callsites-report action-policy-callsites-report-json action-policy-required-action-gaps action-policy-required-action-gaps-json action-policy-fallback-report action-policy-fallback-report-json release-readiness release-readiness-record action-policy-phase3-readiness action-policy-phase3-readiness-json action-policy-phase3-readiness-record action-policy-phase3-cutover-record action-policy-phase3-trial-record action-policy-phase3-target-trial-record sakura-vps-profile-check bounded-context-coverage-check
 
 lint:
 	npm run lint --prefix packages/backend
 	npm run lint --prefix packages/frontend
+	npm run lint --prefix packages/browser-capture-extension
 
 format-check:
 	npm run format:check --prefix packages/backend
 	npm run format:check --prefix packages/frontend
+	npm run format:check --prefix packages/browser-capture-extension
 
 typecheck:
 	npm run typecheck --prefix packages/backend
 	npm run typecheck --prefix packages/frontend
+	npm run typecheck --prefix packages/browser-capture-extension
 
 build:
 	npm run build --prefix packages/backend
 	VITE_PWA_SHARE_TARGET_MODE=$${VITE_PWA_SHARE_TARGET_MODE:-decommission} npm run build --prefix packages/frontend
+	ERP4_CAPTURE_ORIGIN=$${ERP4_CAPTURE_ORIGIN:-https://erp4.example.invalid} npm run build --prefix packages/browser-capture-extension
 
-test: test-backend test-frontend
+test: test-backend test-frontend test-browser-capture-extension
 
 test-backend:
 	npm run test --prefix packages/backend
 
 test-frontend:
 	npm run test --prefix packages/frontend
+
+test-browser-capture-extension:
+	npm run test --prefix packages/browser-capture-extension
+
+browser-capture-extension-e2e-deps:
+	@command -v xvfb-run >/dev/null || { echo 'xvfb-run is required for browser capture extension E2E' >&2; exit 1; }
+	@test -x packages/frontend/node_modules/.bin/playwright || { echo 'frontend dependencies are required; run npm ci --prefix packages/frontend' >&2; exit 1; }
+	packages/frontend/node_modules/.bin/playwright install chromium
+
+browser-capture-extension-e2e: browser-capture-extension-e2e-deps
+	xvfb-run -a npm run test:chromium --prefix packages/browser-capture-extension
 
 data-quality-test:
 	npm run data-quality:test --prefix packages/backend
@@ -87,6 +102,7 @@ coverage-frontend:
 coverage-frontend-core:
 	npm run coverage:ui-core --prefix packages/frontend
 e2e:
+	$(MAKE) browser-capture-extension-e2e
 	E2E_KNOWLEDGE_LLM_MODE=stub ./scripts/e2e-frontend.sh
 
 ui-evidence:
@@ -114,6 +130,7 @@ pr-comments:
 audit:
 	npm audit --prefix packages/backend --audit-level=high
 	npm audit --prefix packages/frontend --audit-level=high
+	npm audit --prefix packages/browser-capture-extension --audit-level=high
 
 docs-image-links-check:
 	node scripts/check-doc-image-links.mjs

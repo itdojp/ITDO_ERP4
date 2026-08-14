@@ -14,6 +14,7 @@ import {
   markShareTargetDraftCleanupPending,
   markShareTargetDraftPending,
   markShareTargetDraftStaged,
+  normalizeShareTargetPendingIntent,
   publishShareTargetLifecycle,
   purgeExpiredShareTargetDrafts,
   removeShareTargetDraft,
@@ -84,6 +85,26 @@ async function deleteDatabase() {
 }
 
 describe('shareTargetQueue', () => {
+  it('uses the backend-aligned organization group and identifier bounds', () => {
+    const buildIntent = (count: number, idLength = 20) => ({
+      selectedFields: ['title'],
+      scope: 'organization',
+      organizationGroupAccountIds: Array.from(
+        { length: count },
+        (_value, index) =>
+          `${String(index).padStart(3, '0')}${'g'.repeat(idLength - 3)}`,
+      ),
+      sourceType: 'web',
+    });
+    expect(normalizeShareTargetPendingIntent(buildIntent(21))).not.toBeNull();
+    expect(normalizeShareTargetPendingIntent(buildIntent(100))).not.toBeNull();
+    expect(normalizeShareTargetPendingIntent(buildIntent(101))).toBeNull();
+    expect(
+      normalizeShareTargetPendingIntent(buildIntent(1, 100)),
+    ).not.toBeNull();
+    expect(normalizeShareTargetPendingIntent(buildIntent(1, 101))).toBeNull();
+  });
+
   beforeEach(async () => {
     Object.defineProperty(globalThis, 'indexedDB', {
       configurable: true,

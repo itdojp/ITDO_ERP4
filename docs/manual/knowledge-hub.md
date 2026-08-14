@@ -23,7 +23,7 @@ PWA share targetまたはbrowser extensionから受け取ったdraftは、受信
 4. `Preview`を選び、backendが正規化した全selected fieldの実値、omitted field名、保存byte数を確認します。field名や件数だけで確定しません。
 5. `このexact previewを保存します`を選んでから確定します。
 
-保存結果が`確認中`の場合、同じ内容を再送せず`保存結果を再照合`を使用します。保存開始時にはpreviewで正規化されたexact draft（画面で編集した値を含む）とscope／field選択を端末内へ固定するため、reload後も元の共有値へ戻りません。通常の保存確定では10分を過ぎたpreviewを再利用できませんが、既にpending ledgerが存在する場合は、同じactor、request key、exact payloadへ束縛された署名済みpreviewから新しい保存処理を作らず再照合できます。確認中はInbox、snapshot再照合、annotation／会話／Synthesis等の別mutationとitem／tab切替を停止します。`破棄`はlocal draftを削除する通知を送ります。preview tokenは画面session内だけに保持します。request keyはURLへ露出させず、PWAではTTL付きのlocal IndexedDB draftに保存し、最初にserver確認されたactorへclaimした後はactor-boundで扱います。いずれもlocalStorage、画面、監査logへ表示しません。browser extension固有の受信手順はextension実装後に追記します。
+保存結果が`確認中`の場合、同じ内容を再送せず`保存結果を再照合`を使用します。保存開始時にはpreviewで正規化されたexact draft（画面で編集した値を含む）とscope／field選択を端末内へ固定するため、reload後も元の共有値へ戻りません。通常の保存確定では10分を過ぎたpreviewを再利用できませんが、既にpending ledgerが存在する場合は、同じactor、request key、exact payloadへ束縛された署名済みpreviewから新しい保存処理を作らず再照合できます。確認中はInbox、snapshot再照合、annotation／会話／Synthesis等の別mutationとitem／tab切替を停止します。`破棄`はlocal draftを削除する通知を送ります。preview tokenは画面session内だけに保持します。request keyはURLへ露出させず、PWAではTTL付きのlocal IndexedDB、browser extensionでは10分の`chrome.storage.session`に保持します。server確認済みactorへ束縛した後は別actorへ表示・保存・削除させません。いずれもlocalStorage、画面、監査logへ表示しません。
 
 ### installed PWAから共有する
 
@@ -39,6 +39,18 @@ offline中も受信済みdraftは端末内に保持されますが、自動送�
 意図しない共有下書きが表示された場合は、previewや保存を行わず破棄してください。browser互換のため、service workerからinitiator metadataを取得できないPOSTも端末内stagingまでは受理しますが、ERP4 APIのmutation、自動保存、cookie/session読取は行いません。保存には認証済み画面でのexact previewと明示confirmが必要です。
 
 PWA share targetをrollbackする場合は、先にfrontend build envを`VITE_PWA_SHARE_TARGET_MODE=decommission`としてbuild／配布します。このbridge releaseはmanifestから新規受付を外し、service workerのPOST受付を停止しつつTTL／discard cleanupを維持します。利用者へ残存draftの破棄またはERP4 originのsite data削除を案内し、最大60分のTTLとclient activationを確認してから旧service workerへ戻してください。`sw.js`、`share-target-sw.js`、`share-target-mode.js`は`Cache-Control: no-cache`で再検証されます。旧imageへ即時に戻すだけでは、旧codeが専用IndexedDBを認識せずlocal本文が残る可能性があります。
+
+### Chrome／Edge拡張から共有する
+
+拡張のbuild、unpacked install、browser別の確認、rollbackは[Browser Capture拡張運用](browser-capture-extension.md)を参照してください。
+
+1. 共有元ページで必要な文字列だけを選択し、ERP4 Browser Captureのactionを明示的に選びます。拡張はaction操作なしにpageを読みません。
+2. popupでtitle、URL、選択文字列、allowlist metadata、送信／省略field、destination originを確認します。password/form値、DOM HTML、cookie、browser historyは取得されません。
+3. `ERP4で確認`を選びます。draft本文ではなくopaque IDだけを持つERP4画面が開きます。この時点ではKnowledgeへ保存されません。
+4. ERP4へログインし、`Browser Capture下書き`とKnowledge Hubの`ブラウザー共有の確認`を確認します。別accountへ切り替えた場合は旧actorの内容が画面から消去されます。
+5. 保存field、source type、scopeを選び、exact previewを確認してから明示確定します。scopeはpersonalが既定で、organizationはgroupと追加確認が必要です。
+
+ERP4を開けない場合、draftは同じbrowser sessionの拡張storageから10分間だけ読取可能です。期限後はreadを拒否し、次のextension実行またはbrowser session終了時にrecordを物理削除します。自動送信されないため、online／login状態を確認してpopupから再度`ERP4で確認`を選びます。browser sessionを終了するとdraftは失われる場合があります。結果不明時に新しい保存操作を繰り返さず、ERP4画面のread-only再照合を使用してください。確定または破棄後はsession draftを削除します。rollbackは拡張をdisable／uninstallし、ERP4 cookie、session、既存Knowledgeは削除しません。
 
 ## 新しい Inbox 項目へ保存する
 

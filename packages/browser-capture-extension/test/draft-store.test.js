@@ -1,0 +1,389 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  CAPTURE_DRAFT_QUEUE_MAX,
+  CAPTURE_DRAFT_TTL_MS,
+} from "../src/capture-contract.js";
+import { createDraftStore } from "../src/draft-store.js";
+
+function memoryStorage() {
+  const values = new Map();
+  return {
+    values,
+    async entries() {
+      return [...values.entries()];
+    },
+    async get(key) {
+      return values.get(key);
+    },
+    async set(key, value) {
+      values.set(key, structuredClone(value));
+    },
+    async remove(key) {
+      values.delete(key);
+    },
+  };
+}
+
+function input(index = 0) {
+  return {
+    id: index.toString(16).padStart(32, "0"),
+    requestKey: `request_key_${String(index).padStart(22, "0")}`,
+    draft: {
+      schemaVersion: 1,
+      channel: "browser_extension",
+      title: `Synthetic ${index}`,
+      url: "https://example.invalid/",
+      selectedText: "selected",
+      description: null,
+      author: null,
+      publishedAt: null,
+      capturedAt: "2026-08-14T00:00:00.000Z",
+    },
+  };
+}
+
+const actor = "a".repeat(64);
+const otherActor = "b".repeat(64);
+const nonce = (character) => character.repeat(24);
+const pendingIntent = {
+  selectedFields: ["title", "url", "selectedText"],
+  scope: "personal",
+  organizationGroupAccountIds: [],
+  sourceType: "web",
+};
+
+test("claims a staged draft, fixes exact pending intent, and restores only its operation", async () => {
+  const storage = memoryStorage();
+  const now = Date.parse("2026-08-14T00:00:00.000Z");
+  const store = createDraftStore(storage, () => now);
+  const staged = await store.stage(input());
+  assert.equal(staged.actorFingerprint, null);
+
+  const claimed = await store.command({
+    command: "get",
+    id: input().id,
+    nonce: nonce("c"),
+    actorFingerprint: actor,
+  });
+  assert.equal(claimed.record.actorFingerprint, actor);
+
+  const pending = await store.command({
+    command: "pending",
+    id: input().id,
+    nonce: nonce("d"),
+    actorFingerprint: actor,
+    operationId: nonce("o"),
+    pendingIntent,
+    draft: { ...input().draft, title: "Edited exact title" },
+  });
+  assert.equal(pending.transitioned, true);
+  assert.equal(pending.record.lifecycle, "pending");
+  assert.equal(pending.record.draft.title, "Edited exact title");
+
+  const loser = await store.command({
+    command: "pending",
+    id: input().id,
+    nonce: nonce("e"),
+    actorFingerprint: actor,
+    operationId: nonce("p"),
+    pendingIntent,
+    draft: input().draft,
+  });
+  assert.equal(loser.transitioned, false);
+  assert.equal(loser.record.pendingOperationId, nonce("o"));
+
+  await assert.rejects(
+    store.command({
+      command: "staged",
+      id: input().id,
+      nonce: nonce("f"),
+      actorFingerprint: actor,
+      operationId: nonce("p"),
+    }),
+    /state_conflict/u,
+  );
+  const restored = await store.command({
+    command: "staged",
+    id: input().id,
+    nonce: nonce("g"),
+    actorFingerprint: actor,
+    operationId: nonce("o"),
+  });
+  assert.equal(restored.record.lifecycle, "staged");
+});
+
+test("rejects actor switching and one-time nonce replay without revealing the record", async () => {
+  const storage = memoryStorage();
+  const now = Date.parse("2026-08-14T00:00:00.000Z");
+  const store = createDraftStore(storage, () => now);
+  await store.stage(input());
+  await store.command({
+    command: "get",
+    id: input().id,
+    nonce: nonce("h"),
+    actorFingerprint: actor,
+  });
+  await assert.rejects(
+    store.command({
+      command: "get",
+      id: input().id,
+      nonce: nonce("i"),
+      actorFingerprint: otherActor,
+    }),
+    /not_found/u,
+  );
+  await assert.rejects(
+    store.command({
+      command: "get",
+      id: input().id,
+      nonce: nonce("h"),
+      actorFingerprint: actor,
+    }),
+    /replayed_nonce/u,
+  );
+});
+
+test("serializes concurrent pending transitions onto one operation", async () => {
+  const storage = memoryStorage();
+  const now = Date.parse("2026-08-14T00:00:00.000Z");
+  const store = createDraftStore(storage, () => now);
+  await store.stage(input());
+  const [first, second] = await Promise.all([
+    store.command({
+      command: "pending",
+      id: input().id,
+      nonce: nonce("j"),
+      actorFingerprint: actor,
+      operationId: nonce("q"),
+      pendingIntent,
+      draft: input().draft,
+    }),
+    store.command({
+      command: "pending",
+      id: input().id,
+      nonce: nonce("k"),
+      actorFingerprint: actor,
+      operationId: nonce("r"),
+      pendingIntent,
+      draft: input().draft,
+    }),
+  ]);
+  assert.equal([first, second].filter((value) => value.transitioned).length, 1);
+  assert.equal(
+    first.record.pendingOperationId,
+    second.record.pendingOperationId,
+  );
+});
+
+test("bounds the session queue and removes expired content on the next execution", async () => {
+  const storage = memoryStorage();
+  let now = Date.parse("2026-08-14T00:00:00.000Z");
+  const store = createDraftStore(storage, () => now);
+  for (let index = 0; index < CAPTURE_DRAFT_QUEUE_MAX; index += 1) {
+    await store.stage(input(index));
+  }
+  await assert.rejects(
+    store.stage(input(CAPTURE_DRAFT_QUEUE_MAX)),
+    /queue_full/u,
+  );
+  now += CAPTURE_DRAFT_TTL_MS + 1;
+  await store.prune();
+  assert.equal(
+    [...storage.values.keys()].some((key) =>
+      key.startsWith("erp4-browser-capture-draft:"),
+    ),
+    false,
+  );
+});
+
+test("popup discard cannot remove a draft after canonical actor claim", async () => {
+  const storage = memoryStorage();
+  const now = Date.parse("2026-08-14T00:00:00.000Z");
+  const store = createDraftStore(storage, () => now);
+  await store.stage(input());
+  await store.command({
+    command: "get",
+    id: input().id,
+    nonce: nonce("s"),
+    actorFingerprint: actor,
+  });
+  await assert.rejects(store.discardUnclaimed(input().id), /not_found/u);
+  const removed = await store.command({
+    command: "delete",
+    id: input().id,
+    nonce: nonce("t"),
+    actorFingerprint: actor,
+  });
+  assert.equal(removed.record, null);
+});
+
+test("claimed drafts are not returned to the unauthenticated popup", async () => {
+  const storage = memoryStorage();
+  const now = Date.parse("2026-08-14T00:00:00.000Z");
+  const store = createDraftStore(storage, () => now);
+  const stagedInput = input(6);
+  await store.stage(stagedInput);
+  assert.equal((await store.recent())?.id, stagedInput.id);
+  await store.command({
+    command: "get",
+    id: stagedInput.id,
+    nonce: "n".repeat(32),
+    actorFingerprint: "a".repeat(64),
+  });
+  assert.equal(await store.recent(), null);
+  await assert.rejects(store.stage(stagedInput), /not_found/u);
+});
+
+test("same local draft ID accepts only the exact staged request", async () => {
+  const storage = memoryStorage();
+  const now = Date.parse("2026-08-14T00:00:00.000Z");
+  const store = createDraftStore(storage, () => now);
+  const stagedInput = input(7);
+  const first = await store.stage(stagedInput);
+  assert.equal((await store.stage(stagedInput)).id, first.id);
+  await assert.rejects(
+    store.stage({ ...stagedInput, requestKey: "s".repeat(32) }),
+    /state_conflict/u,
+  );
+  await assert.rejects(
+    store.stage({
+      ...stagedInput,
+      draft: {
+        ...stagedInput.draft,
+        title: "Different synthetic title",
+      },
+    }),
+    /state_conflict/u,
+  );
+});
+
+test("accepts the complete source allowlist and enforces exact scope groups", async () => {
+  const storage = memoryStorage();
+  const now = Date.parse("2026-08-14T00:00:00.000Z");
+  const store = createDraftStore(storage, () => now);
+  await store.stage(input(8));
+
+  await assert.rejects(
+    store.command({
+      command: "pending",
+      id: input(8).id,
+      nonce: nonce("u"),
+      actorFingerprint: actor,
+      operationId: nonce("v"),
+      pendingIntent: {
+        ...pendingIntent,
+        organizationGroupAccountIds: ["synthetic-group"],
+      },
+      draft: input(8).draft,
+    }),
+    /invalid_request/u,
+  );
+  await assert.rejects(
+    store.command({
+      command: "pending",
+      id: input(8).id,
+      nonce: nonce("w"),
+      actorFingerprint: actor,
+      operationId: nonce("x"),
+      pendingIntent: {
+        ...pendingIntent,
+        scope: "organization",
+      },
+      draft: input(8).draft,
+    }),
+    /invalid_request/u,
+  );
+
+  const accepted = await store.command({
+    command: "pending",
+    id: input(8).id,
+    nonce: nonce("y"),
+    actorFingerprint: actor,
+    operationId: nonce("z"),
+    pendingIntent: { ...pendingIntent, sourceType: "other" },
+    draft: input(8).draft,
+  });
+  assert.equal(accepted.record.pendingIntent.sourceType, "other");
+
+  await store.stage(input(10));
+  const oneHundredGroups = Array.from(
+    { length: 100 },
+    (_, index) => `synthetic-group-${String(index).padStart(3, "0")}`,
+  );
+  const organization = await store.command({
+    command: "pending",
+    id: input(10).id,
+    nonce: nonce("2"),
+    actorFingerprint: actor,
+    operationId: nonce("3"),
+    pendingIntent: {
+      ...pendingIntent,
+      scope: "organization",
+      organizationGroupAccountIds: oneHundredGroups,
+    },
+    draft: input(10).draft,
+  });
+  assert.equal(
+    organization.record.pendingIntent.organizationGroupAccountIds.length,
+    100,
+  );
+
+  await store.stage(input(11));
+  await assert.rejects(
+    store.command({
+      command: "pending",
+      id: input(11).id,
+      nonce: nonce("4"),
+      actorFingerprint: actor,
+      operationId: nonce("5"),
+      pendingIntent: {
+        ...pendingIntent,
+        scope: "organization",
+        organizationGroupAccountIds: [
+          ...oneHundredGroups,
+          "synthetic-group-over-limit",
+        ],
+      },
+      draft: input(11).draft,
+    }),
+    /invalid_request/u,
+  );
+});
+
+test("terminal delete remains idempotent after a response is lost", async () => {
+  const storage = memoryStorage();
+  const now = Date.parse("2026-08-14T00:00:00.000Z");
+  const store = createDraftStore(storage, () => now);
+  await store.stage(input(9));
+  const first = await store.command({
+    command: "delete",
+    id: input(9).id,
+    nonce: nonce("1"),
+    actorFingerprint: actor,
+  });
+  assert.equal(first.transitioned, true);
+  const retry = await store.command({
+    command: "delete",
+    id: input(9).id,
+    nonce: nonce("2"),
+    actorFingerprint: actor,
+  });
+  assert.deepEqual(retry, { transitioned: false, record: null });
+});
+
+test("popup discard converges after physical deletion response loss", async () => {
+  const storage = memoryStorage();
+  const now = Date.parse("2026-08-14T00:00:00.000Z");
+  const store = createDraftStore(storage, () => now);
+  await store.stage(input(12));
+  await store.discardUnclaimed(input(12).id);
+  await store.discardUnclaimed(input(12).id);
+  assert.equal(
+    [...storage.values.keys()].some((storageKey) =>
+      storageKey.endsWith(input(12).id),
+    ),
+    false,
+  );
+});

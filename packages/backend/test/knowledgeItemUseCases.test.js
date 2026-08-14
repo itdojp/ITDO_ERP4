@@ -825,6 +825,16 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     encodeURIComponent('code_verifier=credential-value'),
     encodeLayers('client_assertion=credential-value', 12),
     '%ZZtoken=credential-value',
+    encodeURIComponent(
+      'https://nested.example/app%3Bjsessionid%3Dcredential-value',
+    ),
+    encodeURIComponent(
+      'https://nested.example/path/%3Ftoken%3Dcredential-value',
+    ),
+    encodeURIComponent('https:alice:credential-value@nested.example/private'),
+    encodeURIComponent(
+      'https://nested.example/redirect/https%3Aalice%3Acredential-value%40deep.example/private',
+    ),
   ]) {
     const nestedUrl = await harness.service.create({
       actor: actor('owner-1'),
