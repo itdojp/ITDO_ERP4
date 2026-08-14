@@ -15,6 +15,7 @@ const {
   refreshAuthStateFromServer,
   subscribeAuthSessionChanges,
   getBrowserCaptureDraft,
+  markBrowserCaptureDraftCleanupPending,
   publishBrowserCaptureLifecycle,
   removeBrowserCaptureDraft,
   subscribeBrowserCaptureLifecycle,
@@ -24,6 +25,7 @@ const {
   refreshAuthStateFromServer: vi.fn(),
   subscribeAuthSessionChanges: vi.fn(),
   getBrowserCaptureDraft: vi.fn(),
+  markBrowserCaptureDraftCleanupPending: vi.fn(),
   publishBrowserCaptureLifecycle: vi.fn(),
   removeBrowserCaptureDraft: vi.fn(),
   subscribeBrowserCaptureLifecycle: vi.fn(),
@@ -42,6 +44,7 @@ vi.mock('../../utils/browserCaptureBridge', async (importOriginal) => {
   return {
     ...actual,
     getBrowserCaptureDraft,
+    markBrowserCaptureDraftCleanupPending,
     publishBrowserCaptureLifecycle,
     removeBrowserCaptureDraft,
     subscribeBrowserCaptureLifecycle,
@@ -98,6 +101,14 @@ const currentRecord = () => ({
   expiresAt: new Date(Date.now() + 60_000).toISOString(),
 });
 
+const cleanupRecord = () => ({
+  schemaVersion: 1 as const,
+  id: draftId,
+  lifecycle: 'cleanup_pending' as const,
+  createdAt: new Date(Date.now()).toISOString(),
+  expiresAt: new Date(Date.now() + 60_000).toISOString(),
+});
+
 let lifecycleListener:
   | ((message: {
       schemaVersion: 1;
@@ -113,6 +124,9 @@ describe('BrowserCaptureLanding', () => {
     refreshAuthStateFromServer.mockReset().mockResolvedValue(null);
     subscribeAuthSessionChanges.mockReset().mockReturnValue(() => undefined);
     getBrowserCaptureDraft.mockReset();
+    markBrowserCaptureDraftCleanupPending
+      .mockReset()
+      .mockResolvedValue(undefined);
     publishBrowserCaptureLifecycle.mockReset();
     removeBrowserCaptureDraft.mockReset().mockResolvedValue(undefined);
     lifecycleListener = null;
@@ -226,6 +240,12 @@ describe('BrowserCaptureLanding', () => {
       }),
     );
     await waitFor(() =>
+      expect(markBrowserCaptureDraftCleanupPending).toHaveBeenCalledWith(
+        draftId,
+        actorKey,
+      ),
+    );
+    await waitFor(() =>
       expect(removeBrowserCaptureDraft).toHaveBeenCalledWith(draftId, actorKey),
     );
     expect(purged.length).toBeGreaterThan(0);
@@ -264,6 +284,12 @@ describe('BrowserCaptureLanding', () => {
       }),
     );
 
+    await waitFor(() =>
+      expect(markBrowserCaptureDraftCleanupPending).toHaveBeenCalledWith(
+        draftId,
+        actorKey,
+      ),
+    );
     await waitFor(() =>
       expect(removeBrowserCaptureDraft).toHaveBeenCalledWith(draftId, actorKey),
     );
@@ -348,6 +374,10 @@ describe('BrowserCaptureLanding', () => {
     expect(
       await screen.findByText(/保存に失敗しました。browser session内/),
     ).toBeVisible();
+    expect(markBrowserCaptureDraftCleanupPending).toHaveBeenCalledWith(
+      draftId,
+      actorKey,
+    );
     expect(removeBrowserCaptureDraft).toHaveBeenCalledWith(draftId, actorKey);
     expect(clearLanding).not.toHaveBeenCalled();
     expect(screen.queryByText(draft.selectedText)).not.toBeInTheDocument();
@@ -387,6 +417,7 @@ describe('BrowserCaptureLanding', () => {
     await screen.findByRole('button', {
       name: 'browser session内draftの削除を再試行',
     });
+    expect(markBrowserCaptureDraftCleanupPending).toHaveBeenCalledTimes(1);
     expect(clearLanding).not.toHaveBeenCalled();
     const authCallsBeforeRevalidation =
       refreshAuthStateFromServer.mock.calls.length;
@@ -411,6 +442,113 @@ describe('BrowserCaptureLanding', () => {
       expect(removeBrowserCaptureDraft).toHaveBeenCalledTimes(2),
     );
     expect(clearLanding).toHaveBeenCalledOnce();
+    expect(markBrowserCaptureDraftCleanupPending).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps delete-only cleanup available after terminal deletion fails and auth is lost', async () => {
+    getAuthState.mockReturnValue({ userId: 'synthetic-user', roles: [] });
+    refreshAuthStateFromServer.mockResolvedValue({
+      userId: 'synthetic-user',
+      roles: [],
+      verifiedActorKey: actorKey,
+    });
+    getBrowserCaptureDraft.mockResolvedValue(currentRecord());
+    removeBrowserCaptureDraft
+      .mockRejectedValueOnce(new Error('synthetic physical delete failure'))
+      .mockResolvedValueOnce(undefined);
+    const clearLanding = vi.fn();
+    render(
+      <BrowserCaptureLanding
+        draftId={draftId}
+        knowledgeHubReady
+        activateKnowledgeHub={() => true}
+        clearLanding={clearLanding}
+      />,
+    );
+    await screen.findByText(/Knowledge Hubで送信field/);
+
+    window.dispatchEvent(
+      new CustomEvent(KNOWLEDGE_CAPTURE_RESULT_EVENT, {
+        detail: { schemaVersion: 1, draftId, outcome: 'committed' },
+      }),
+    );
+    await screen.findByRole('button', {
+      name: 'browser session内draftの削除を再試行',
+    });
+
+    fireEvent(window, new Event('offline'));
+    const retry = await screen.findByRole('button', {
+      name: 'browser session内draftの削除を再試行',
+    });
+    expect(removeBrowserCaptureDraft).toHaveBeenCalledTimes(1);
+    expect(getBrowserCaptureDraft).toHaveBeenCalledTimes(1);
+    fireEvent.click(retry);
+
+    await waitFor(() =>
+      expect(removeBrowserCaptureDraft).toHaveBeenCalledTimes(2),
+    );
+    expect(markBrowserCaptureDraftCleanupPending).toHaveBeenCalledTimes(1);
+    expect(getBrowserCaptureDraft).toHaveBeenCalledTimes(1);
+    expect(clearLanding).toHaveBeenCalledOnce();
+  });
+
+  it('rehydrates a content-free tombstone as delete-only cleanup after remount', async () => {
+    getAuthState.mockReturnValue({ userId: 'synthetic-user', roles: [] });
+    refreshAuthStateFromServer.mockResolvedValue({
+      userId: 'synthetic-user',
+      roles: [],
+      verifiedActorKey: actorKey,
+    });
+    getBrowserCaptureDraft.mockResolvedValueOnce(currentRecord());
+    removeBrowserCaptureDraft
+      .mockRejectedValueOnce(new Error('synthetic physical delete failure'))
+      .mockResolvedValueOnce(undefined);
+    const draftEvents: unknown[] = [];
+    const draftListener = (event: Event) =>
+      draftEvents.push((event as CustomEvent).detail);
+    window.addEventListener(KNOWLEDGE_CAPTURE_DRAFT_EVENT, draftListener);
+
+    const first = render(
+      <BrowserCaptureLanding
+        draftId={draftId}
+        knowledgeHubReady
+        activateKnowledgeHub={() => true}
+        clearLanding={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(draftEvents).toHaveLength(1));
+    window.dispatchEvent(
+      new CustomEvent(KNOWLEDGE_CAPTURE_RESULT_EVENT, {
+        detail: { schemaVersion: 1, draftId, outcome: 'committed' },
+      }),
+    );
+    await screen.findByRole('button', {
+      name: 'browser session内draftの削除を再試行',
+    });
+    first.unmount();
+
+    getBrowserCaptureDraft.mockResolvedValueOnce(cleanupRecord());
+    const clearLanding = vi.fn();
+    render(
+      <BrowserCaptureLanding
+        draftId={draftId}
+        knowledgeHubReady
+        activateKnowledgeHub={() => true}
+        clearLanding={clearLanding}
+      />,
+    );
+    const cleanupRetry = await screen.findByRole('button', {
+      name: 'browser session内draftの削除を再試行',
+    });
+    expect(draftEvents).toHaveLength(1);
+    expect(screen.queryByText(draft.selectedText)).not.toBeInTheDocument();
+    expect(markBrowserCaptureDraftCleanupPending).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(cleanupRetry);
+    await waitFor(() => expect(clearLanding).toHaveBeenCalledOnce());
+    expect(removeBrowserCaptureDraft).toHaveBeenCalledTimes(2);
+    expect(markBrowserCaptureDraftCleanupPending).toHaveBeenCalledTimes(1);
+    window.removeEventListener(KNOWLEDGE_CAPTURE_DRAFT_EVENT, draftListener);
   });
 
   it('purges a stale second tab when another tab reaches a terminal cleanup', async () => {

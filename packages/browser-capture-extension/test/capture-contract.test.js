@@ -85,6 +85,8 @@ test("rejects active schemes, credential URLs, malformed Unicode, and nested pay
     "https://example.invalid/download?Expires=123456",
     "https://example.invalid/?AWSAccessKeyId=synthetic",
     "https://example.invalid/?PHPSESSID=synthetic-secret",
+    "https://example.invalid/?clientpwd=synthetic-secret",
+    "https://example.invalid/?next=https%3A%2F%2Fnested.invalid%2F%3Fclientpwd%3Dsynthetic-secret",
     "https://example.invalid/?sessid=synthetic-secret",
     "https://example.invalid/?sid=synthetic-secret",
     "https://example.invalid/?sessionid=a1b2c3d4e5f6",

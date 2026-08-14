@@ -9,22 +9,32 @@ import {
 
 export const BROWSER_CAPTURE_BRIDGE_TIMEOUT_MS = 5_000;
 
-export type BrowserCaptureLifecycle = 'staged' | 'pending';
-export type BrowserCaptureLocalLifecycle =
-  BrowserCaptureLifecycle | 'cleanup_pending';
+export type BrowserCaptureLifecycle = 'staged' | 'pending' | 'cleanup_pending';
+export type BrowserCaptureLocalLifecycle = BrowserCaptureLifecycle;
 
-export type BrowserCaptureRecord = {
+type BrowserCaptureContentRecord = {
   schemaVersion: 1;
   id: string;
   requestKey: string;
-  lifecycle: BrowserCaptureLifecycle;
+  lifecycle: 'staged' | 'pending';
   pendingIntent: ShareTargetPendingIntent | null;
   draft: IncomingKnowledgeCaptureDraft;
   createdAt: string;
   expiresAt: string;
 };
 
-type BridgeCommand = 'get' | 'pending' | 'staged' | 'delete';
+type BrowserCaptureCleanupRecord = {
+  schemaVersion: 1;
+  id: string;
+  lifecycle: 'cleanup_pending';
+  createdAt: string;
+  expiresAt: string;
+};
+
+export type BrowserCaptureRecord =
+  BrowserCaptureContentRecord | BrowserCaptureCleanupRecord;
+
+type BridgeCommand = 'get' | 'pending' | 'staged' | 'cleanup' | 'delete';
 type BridgeResult = {
   transitioned: boolean;
   record: BrowserCaptureRecord | null;
@@ -153,25 +163,48 @@ export function subscribeBrowserCaptureLifecycle(
 
 function normalizeBridgeRecord(value: unknown): BrowserCaptureRecord | null {
   if (!record(value)) return null;
-  const draft = normalizeIncomingKnowledgeCapture(value.draft);
   const lifecycle = value.lifecycle;
-  const pendingIntent =
-    lifecycle === 'pending'
-      ? normalizeShareTargetPendingIntent(value.pendingIntent)
-      : null;
   const createdAt = exactInstant(value.createdAt);
   const expiresAt = exactInstant(value.expiresAt);
   if (
     value.schemaVersion !== 1 ||
     !isBrowserCaptureDraftId(value.id) ||
+    !createdAt ||
+    !expiresAt ||
+    Date.parse(expiresAt) <= Date.now()
+  ) {
+    return null;
+  }
+  if (lifecycle === 'cleanup_pending') {
+    const allowedFields = new Set([
+      'schemaVersion',
+      'id',
+      'lifecycle',
+      'createdAt',
+      'expiresAt',
+    ]);
+    if (Object.keys(value).some((field) => !allowedFields.has(field))) {
+      return null;
+    }
+    return {
+      schemaVersion: 1,
+      id: value.id,
+      lifecycle,
+      createdAt,
+      expiresAt,
+    };
+  }
+  const draft = normalizeIncomingKnowledgeCapture(value.draft);
+  const pendingIntent =
+    lifecycle === 'pending'
+      ? normalizeShareTargetPendingIntent(value.pendingIntent)
+      : null;
+  if (
     typeof value.requestKey !== 'string' ||
     !opaqueKeyPattern.test(value.requestKey) ||
     (lifecycle !== 'staged' && lifecycle !== 'pending') ||
     !draft ||
     draft.channel !== 'browser_extension' ||
-    !createdAt ||
-    !expiresAt ||
-    Date.parse(expiresAt) <= Date.now() ||
     (lifecycle === 'pending' && !pendingIntent)
   ) {
     return null;
@@ -363,6 +396,9 @@ export async function markBrowserCaptureDraftPending(
     signal,
   );
   if (!result.record) throw new BrowserCaptureBridgeError('not_found');
+  if (result.record.lifecycle === 'cleanup_pending') {
+    throw new BrowserCaptureBridgeError('state_conflict');
+  }
   if (!result.transitioned) {
     if (!result.record.pendingIntent) {
       throw new BrowserCaptureBridgeError('state_conflict');
@@ -386,6 +422,22 @@ export async function markBrowserCaptureDraftStaged(
     throw new BrowserCaptureBridgeError('invalid_request');
   }
   await sendCommand({ command: 'staged', id, actorKey, operationId }, signal);
+}
+
+export async function markBrowserCaptureDraftCleanupPending(
+  id: string,
+  actorKey: string,
+  signal?: AbortSignal,
+) {
+  const result = await sendCommand(
+    { command: 'cleanup', id, actorKey },
+    signal,
+  );
+  // A null record is the idempotent terminal result when the tombstone or the
+  // complete record was already physically deleted before a response arrived.
+  if (result.record && result.record.lifecycle !== 'cleanup_pending') {
+    throw new BrowserCaptureBridgeError('state_conflict');
+  }
 }
 
 export async function removeBrowserCaptureDraft(

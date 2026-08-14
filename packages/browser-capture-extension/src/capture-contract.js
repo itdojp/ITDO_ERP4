@@ -204,6 +204,7 @@ function isCredentialQueryName(name) {
     "password",
     "privatekey",
     "proof",
+    "pwd",
     "resourcekey",
     "samlresponse",
     "secret",

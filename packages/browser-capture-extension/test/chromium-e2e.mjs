@@ -397,6 +397,14 @@ try {
   assert.equal(restored.ok, true);
   assert.equal(restored.record.lifecycle, "staged");
 
+  const tombstone = await landing.evaluate(async () =>
+    window.__ERP4_CAPTURE_SEND_COMMAND__("cleanup"),
+  );
+  assert.equal(tombstone.ok, true);
+  assert.equal(tombstone.record.lifecycle, "cleanup_pending");
+  assert.equal("draft" in tombstone.record, false);
+  assert.equal("requestKey" in tombstone.record, false);
+
   const deleted = await landing.evaluate(async () =>
     window.__ERP4_CAPTURE_SEND_COMMAND__("delete"),
   );
@@ -423,7 +431,8 @@ try {
     originClass: "loopback-ephemeral",
     userGesture: "keyboard action command",
     handoff: "passed",
-    sessionLifecycle: "pending-staged-delete-idempotent-delete passed",
+    sessionLifecycle:
+      "pending-staged-content-free-cleanup-delete-idempotent-delete passed",
   };
   process.stdout.write(`${JSON.stringify(result)}\n`);
   if (evidenceDir) {

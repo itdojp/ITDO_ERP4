@@ -416,6 +416,12 @@ export function createReleaseReadinessPlan(options = {}) {
       "npm run test --prefix packages/frontend",
     ),
     check(
+      "frontend-quality-gates",
+      "Frontend build and response security tests",
+      "CI / frontend",
+      "npm run quality-gates:test --prefix packages/frontend",
+    ),
+    check(
       "frontend-build",
       "Frontend build",
       "CI / frontend",

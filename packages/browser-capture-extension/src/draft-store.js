@@ -13,6 +13,15 @@ const PREFIX = "erp4-browser-capture-draft:";
 const LEGACY_RECENT_KEY = "erp4-browser-capture-recent";
 const operationPattern = /^[A-Za-z0-9_-]{22,200}$/u;
 const usedNonceLimit = 32;
+const cleanupTombstoneKeys = new Set([
+  "schemaVersion",
+  "id",
+  "lifecycle",
+  "actorFingerprint",
+  "createdAt",
+  "expiresAt",
+  "usedNonces",
+]);
 
 function key(id) {
   return `${PREFIX}${id}`;
@@ -83,40 +92,62 @@ function normalizePendingIntent(value) {
 
 export function normalizeStoredDraft(value, now = Date.now()) {
   if (!isPlainRecord(value)) return null;
-  const draft = normalizeCaptureDraft(value.draft);
   const lifecycle = value.lifecycle;
   const actorFingerprint =
     value.actorFingerprint === null ||
     isActorFingerprint(value.actorFingerprint)
       ? value.actorFingerprint
       : undefined;
-  const pendingIntent =
-    lifecycle === "pending"
-      ? normalizePendingIntent(value.pendingIntent)
-      : null;
   if (
     value.schemaVersion !== 1 ||
     !isOpaqueId(value.id) ||
-    !isOpaqueKey(value.requestKey) ||
-    !draft ||
-    (lifecycle !== "staged" && lifecycle !== "pending") ||
     actorFingerprint === undefined ||
     !Number.isFinite(Date.parse(value.createdAt)) ||
     !Number.isFinite(Date.parse(value.expiresAt)) ||
     Date.parse(value.expiresAt) <= now ||
     Date.parse(value.expiresAt) - Date.parse(value.createdAt) !==
       CAPTURE_DRAFT_TTL_MS ||
-    (lifecycle === "pending" &&
-      (!pendingIntent ||
-        !operationPattern.test(value.pendingOperationId ?? ""))) ||
-    (lifecycle === "staged" &&
-      (value.pendingIntent !== null || value.pendingOperationId !== null)) ||
     !Array.isArray(value.usedNonces) ||
     value.usedNonces.length > usedNonceLimit ||
     value.usedNonces.some(
       (nonce, index) =>
         !isOpaqueKey(nonce) || value.usedNonces.indexOf(nonce) !== index,
     )
+  ) {
+    return null;
+  }
+  if (lifecycle === "cleanup_pending") {
+    if (
+      actorFingerprint === null ||
+      Object.keys(value).some((field) => !cleanupTombstoneKeys.has(field))
+    ) {
+      return null;
+    }
+    return {
+      schemaVersion: 1,
+      id: value.id,
+      lifecycle,
+      actorFingerprint,
+      createdAt: value.createdAt,
+      expiresAt: value.expiresAt,
+      usedNonces: [...value.usedNonces],
+    };
+  }
+
+  const draft = normalizeCaptureDraft(value.draft);
+  const pendingIntent =
+    lifecycle === "pending"
+      ? normalizePendingIntent(value.pendingIntent)
+      : null;
+  if (
+    !isOpaqueKey(value.requestKey) ||
+    !draft ||
+    (lifecycle !== "staged" && lifecycle !== "pending") ||
+    (lifecycle === "pending" &&
+      (!pendingIntent ||
+        !operationPattern.test(value.pendingOperationId ?? ""))) ||
+    (lifecycle === "staged" &&
+      (value.pendingIntent !== null || value.pendingOperationId !== null))
   ) {
     return null;
   }
@@ -256,10 +287,10 @@ export function createDraftStore(storage, clock = () => Date.now()) {
         }
         const current = await read(input.id);
         if (!current) {
-          // Terminal cleanup is idempotent. A lost response after physical
-          // deletion must converge without revealing whether the draft ever
-          // existed. Other commands still fail closed.
-          if (input.command === "delete") {
+          // Terminal tombstoning and deletion are idempotent. A lost response
+          // after physical deletion must converge without revealing whether
+          // the draft ever existed. Other commands still fail closed.
+          if (input.command === "cleanup" || input.command === "delete") {
             return { transitioned: false, record: null };
           }
           throw new Error("not_found");
@@ -273,6 +304,27 @@ export function createDraftStore(storage, clock = () => Date.now()) {
         if (current.usedNonces.includes(input.nonce)) {
           throw new Error("replayed_nonce");
         }
+        if (current.lifecycle === "cleanup_pending") {
+          if (input.command === "delete") {
+            await storage.remove(key(current.id));
+            return { transitioned: true, record: null };
+          }
+          if (input.command === "get" || input.command === "cleanup") {
+            // A terminal tombstone contains no capture content or request key.
+            // Once nonce history is full, repeated content-free reads remain
+            // safe and a fresh physical delete must still be possible.
+            if (current.usedNonces.length >= usedNonceLimit) {
+              return { transitioned: false, record: current };
+            }
+            const observed = {
+              ...current,
+              usedNonces: [...current.usedNonces, input.nonce],
+            };
+            await storage.set(key(observed.id), observed);
+            return { transitioned: false, record: observed };
+          }
+          throw new Error("state_conflict");
+        }
         // Never evict a nonce while its draft is live. Forgetting an older
         // nonce would let a delayed command become valid again within the
         // draft TTL. Once the bounded history is full, fail closed for every
@@ -280,6 +332,19 @@ export function createDraftStore(storage, clock = () => Date.now()) {
         // removes the complete record; a lost delete response then converges
         // through the idempotent not-found branch above.
         if (current.usedNonces.length >= usedNonceLimit) {
+          if (input.command === "cleanup") {
+            const tombstone = {
+              schemaVersion: 1,
+              id: current.id,
+              lifecycle: "cleanup_pending",
+              actorFingerprint: input.actorFingerprint,
+              createdAt: current.createdAt,
+              expiresAt: current.expiresAt,
+              usedNonces: [...current.usedNonces],
+            };
+            await storage.set(key(tombstone.id), tombstone);
+            return { transitioned: true, record: tombstone };
+          }
           if (input.command === "delete") {
             await storage.remove(key(current.id));
             return { transitioned: true, record: null };
@@ -291,6 +356,19 @@ export function createDraftStore(storage, clock = () => Date.now()) {
           actorFingerprint: input.actorFingerprint,
           usedNonces: [...current.usedNonces, input.nonce],
         };
+        if (input.command === "cleanup") {
+          const tombstone = {
+            schemaVersion: 1,
+            id: claimed.id,
+            lifecycle: "cleanup_pending",
+            actorFingerprint: claimed.actorFingerprint,
+            createdAt: claimed.createdAt,
+            expiresAt: claimed.expiresAt,
+            usedNonces: [...claimed.usedNonces],
+          };
+          await storage.set(key(tombstone.id), tombstone);
+          return { transitioned: true, record: tombstone };
+        }
         if (input.command === "get") {
           await storage.set(key(claimed.id), claimed);
           return { transitioned: false, record: claimed };

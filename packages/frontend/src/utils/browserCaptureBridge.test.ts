@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   browserCaptureActorFingerprint,
   getBrowserCaptureDraft,
+  markBrowserCaptureDraftCleanupPending,
   markBrowserCaptureDraftPending,
   publishBrowserCaptureLifecycle,
   removeBrowserCaptureDraft,
@@ -41,6 +42,16 @@ function responseRecord(lifecycle: 'staged' | 'pending' = 'staged') {
           }
         : null,
     draft,
+    createdAt: '2099-01-01T00:00:00.000Z',
+    expiresAt: '2099-01-01T00:10:00.000Z',
+  };
+}
+
+function cleanupResponseRecord() {
+  return {
+    schemaVersion: 1,
+    id,
+    lifecycle: 'cleanup_pending',
     createdAt: '2099-01-01T00:00:00.000Z',
     expiresAt: '2099-01-01T00:10:00.000Z',
   };
@@ -191,6 +202,97 @@ describe('browserCaptureBridge', () => {
     );
   });
 
+  it('accepts only a content-free cleanup tombstone before physical deletion', async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    vi.spyOn(window, 'postMessage').mockImplementation((message) => {
+      const request = message as Record<string, unknown>;
+      sent.push(request);
+      queueMicrotask(() => {
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            source: window,
+            origin: window.location.origin,
+            data: {
+              source: 'erp4-extension',
+              type: 'erp4-browser-capture-response-v1',
+              schemaVersion: 1,
+              command: request.command,
+              id: request.id,
+              nonce: request.nonce,
+              response: {
+                ok: true,
+                transitioned: true,
+                record: cleanupResponseRecord(),
+              },
+            },
+          }),
+        );
+      });
+    });
+
+    await markBrowserCaptureDraftCleanupPending(id, actorKey);
+    expect(sent[0].command).toBe('cleanup');
+    expect(sent[0]).not.toHaveProperty('draft');
+
+    vi.restoreAllMocks();
+    vi.spyOn(window, 'postMessage').mockImplementation((message) => {
+      const request = message as Record<string, unknown>;
+      queueMicrotask(() => {
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            source: window,
+            origin: window.location.origin,
+            data: {
+              source: 'erp4-extension',
+              type: 'erp4-browser-capture-response-v1',
+              schemaVersion: 1,
+              command: request.command,
+              id: request.id,
+              nonce: request.nonce,
+              response: {
+                ok: true,
+                transitioned: false,
+                record: null,
+              },
+            },
+          }),
+        );
+      });
+    });
+    await expect(
+      markBrowserCaptureDraftCleanupPending(id, actorKey),
+    ).resolves.toBeUndefined();
+
+    vi.restoreAllMocks();
+    vi.spyOn(window, 'postMessage').mockImplementation((message) => {
+      const request = message as Record<string, unknown>;
+      queueMicrotask(() => {
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            source: window,
+            origin: window.location.origin,
+            data: {
+              source: 'erp4-extension',
+              type: 'erp4-browser-capture-response-v1',
+              schemaVersion: 1,
+              command: request.command,
+              id: request.id,
+              nonce: request.nonce,
+              response: {
+                ok: true,
+                transitioned: false,
+                record: { ...cleanupResponseRecord(), draft },
+              },
+            },
+          }),
+        );
+      });
+    });
+    await expect(getBrowserCaptureDraft(id, actorKey)).rejects.toMatchObject({
+      code: 'invalid_request',
+    });
+  });
+
   it('keeps the backend-aligned organization group bound through bridge normalization', async () => {
     let groupCount = 21;
     vi.spyOn(window, 'postMessage').mockImplementation((message) => {
@@ -221,7 +323,11 @@ describe('browserCaptureBridge', () => {
     for (const acceptedCount of [21, 100]) {
       groupCount = acceptedCount;
       const value = await getBrowserCaptureDraft(id, actorKey);
-      expect(value?.pendingIntent?.organizationGroupAccountIds).toHaveLength(
+      expect(value?.lifecycle).toBe('pending');
+      if (!value || value.lifecycle === 'cleanup_pending') {
+        throw new Error('expected pending content record');
+      }
+      expect(value.pendingIntent?.organizationGroupAccountIds).toHaveLength(
         acceptedCount,
       );
     }

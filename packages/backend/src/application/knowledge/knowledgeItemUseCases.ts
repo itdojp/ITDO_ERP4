@@ -105,6 +105,7 @@ const credentialQueryTokens = new Set([
   'passphrase',
   'passwd',
   'password',
+  'policy',
   'pwd',
   'proof',
   'relaystate',

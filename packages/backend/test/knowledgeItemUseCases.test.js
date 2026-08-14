@@ -747,6 +747,8 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
   for (const credentialQuery of [
     'key=google-api-key-value',
     'policy=signed-policy-value',
+    'upload_policy=signed-policy-value',
+    'clientpwd=credential-value',
     'expires=1700000000',
     'state=oauth-state-value',
     'code=authorization-code-value',
@@ -834,6 +836,12 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     'https://drive.google.com/open?resourcekey=drive-resource-key-value&authuser=0';
   for (const nestedValue of [
     encodeURIComponent(nestedCredentialUrl),
+    encodeURIComponent(
+      'https://nested.example/file?upload_policy=credential-value',
+    ),
+    encodeURIComponent(
+      'https://nested.example/file?clientpwd=credential-value',
+    ),
     encodeURIComponent(nestedCredentialUrl.replace('https://', 'HTTPS://')),
     encodeURIComponent(encodeURIComponent(nestedCredentialUrl)),
     encodeLayers(` ${nestedCredentialUrl}`, 2),
@@ -1025,6 +1033,8 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
   for (const credentialQuery of [
     'key=google-api-key-value',
     'policy=signed-policy-value',
+    'upload_policy=signed-policy-value',
+    'clientpwd=credential-value',
     'expires=1700000000',
     'state=oauth-state-value',
     'code=authorization-code-value',

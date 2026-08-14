@@ -125,6 +125,10 @@ test('rejects unsafe and credential-bearing URL forms', () => {
     'about:blank',
     'https://user:opaque@example.invalid/',
     'https://example.invalid/?PHPSESSID=synthetic-secret',
+    'https://example.invalid/?upload_policy=synthetic-secret',
+    'https://example.invalid/?clientpwd=synthetic-secret',
+    'https://example.invalid/?next=https%3A%2F%2Fnested.invalid%2F%3Fupload_policy%3Dsynthetic-secret',
+    'https://example.invalid/?next=https%3A%2F%2Fnested.invalid%2F%3Fclientpwd%3Dsynthetic-secret',
     'https://example.invalid/?next=https%3A%2F%2Fnested.invalid%2Fapp%253Bjsessionid%253Dsynthetic-secret',
     'https://example.invalid/?next=https%3A%2F%2Fnested.invalid%2Fpath%2F%253Ftoken%253Dsynthetic-secret',
     'https://example.invalid/?next=ht%09tps%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate',
@@ -171,7 +175,10 @@ test('fails closed when the aggregate nested URL parse budget is exhausted', () 
   const url = `${withinBudget}&second=${oneSibling}`;
   const benignUnicode = `https://example.invalid/?note=${encodeURIComponent('İHTTPS:public.invalid/article')}`;
 
-  assert.equal(normalizeKnowledgeCaptureDraft(draft({ url: withinBudget })).url, withinBudget);
+  assert.equal(
+    normalizeKnowledgeCaptureDraft(draft({ url: withinBudget })).url,
+    withinBudget,
+  );
   assert.throws(
     () => normalizeKnowledgeCaptureDraft(draft({ url })),
     (error) =>

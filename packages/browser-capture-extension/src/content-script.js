@@ -1,6 +1,6 @@
 (() => {
   const exactOrigin = __ERP4_CAPTURE_ORIGIN_JSON__;
-  const commands = new Set(["get", "pending", "staged", "delete"]);
+  const commands = new Set(["get", "pending", "staged", "cleanup", "delete"]);
   const opaqueId = /^[0-9a-f]{32}$/u;
   const opaqueKey = /^[A-Za-z0-9_-]{22,200}$/u;
   const actorFingerprint = /^[0-9a-f]{64}$/u;

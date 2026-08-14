@@ -27,6 +27,15 @@ const safeCode = (error) => {
 
 function safeRecord(record) {
   if (!record) return null;
+  if (record.lifecycle === "cleanup_pending") {
+    return {
+      schemaVersion: 1,
+      id: record.id,
+      lifecycle: record.lifecycle,
+      createdAt: record.createdAt,
+      expiresAt: record.expiresAt,
+    };
+  }
   return {
     schemaVersion: 1,
     id: record.id,
@@ -77,7 +86,9 @@ async function handleErp4Message(message, sender) {
     !isPlainRecord(message) ||
     message.type !== "erp4-browser-capture-command-v1" ||
     message.schemaVersion !== 1 ||
-    !["get", "pending", "staged", "delete"].includes(message.command) ||
+    !["get", "pending", "staged", "cleanup", "delete"].includes(
+      message.command,
+    ) ||
     !isOpaqueId(message.id) ||
     !isOpaqueKey(message.nonce) ||
     !isActorFingerprint(message.actorFingerprint)

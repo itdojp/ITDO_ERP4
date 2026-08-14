@@ -459,6 +459,106 @@ test("terminal delete remains idempotent after a response is lost", async () => 
   assert.deepEqual(retry, { transitioned: false, record: null });
 });
 
+test("persists a content-free tombstone before retrying physical deletion", async () => {
+  const storage = memoryStorage();
+  const now = Date.parse("2026-08-14T00:00:00.000Z");
+  const store = createDraftStore(storage, () => now);
+  await store.stage(input(13));
+  await store.command({
+    command: "get",
+    id: input(13).id,
+    nonce: nonce("6"),
+    actorFingerprint: actor,
+  });
+
+  const cleanup = await store.command({
+    command: "cleanup",
+    id: input(13).id,
+    nonce: nonce("7"),
+    actorFingerprint: actor,
+  });
+  assert.equal(cleanup.transitioned, true);
+  assert.equal(cleanup.record.lifecycle, "cleanup_pending");
+  for (const sensitiveField of [
+    "requestKey",
+    "draft",
+    "pendingIntent",
+    "pendingOperationId",
+  ]) {
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(cleanup.record, sensitiveField),
+      false,
+    );
+  }
+  assert.equal(await store.recent(), null);
+
+  // A response loss after the tombstone write converges without restoring
+  // content, and a physical delete failure leaves only the tombstone behind.
+  const repeatedCleanup = await store.command({
+    command: "cleanup",
+    id: input(13).id,
+    nonce: nonce("8"),
+    actorFingerprint: actor,
+  });
+  assert.equal(repeatedCleanup.transitioned, false);
+  assert.equal(repeatedCleanup.record.lifecycle, "cleanup_pending");
+
+  const remove = storage.remove.bind(storage);
+  let rejectPhysicalDelete = true;
+  storage.remove = async (storageKey) => {
+    if (rejectPhysicalDelete && storageKey.endsWith(input(13).id)) {
+      rejectPhysicalDelete = false;
+      throw new Error("synthetic physical delete failure");
+    }
+    await remove(storageKey);
+  };
+  await assert.rejects(
+    store.command({
+      command: "delete",
+      id: input(13).id,
+      nonce: nonce("9"),
+      actorFingerprint: actor,
+    }),
+    /synthetic physical delete failure/u,
+  );
+
+  const reopened = createDraftStore(storage, () => now);
+  const observed = await reopened.command({
+    command: "get",
+    id: input(13).id,
+    nonce: nonce("a"),
+    actorFingerprint: actor,
+  });
+  assert.equal(observed.record.lifecycle, "cleanup_pending");
+  assert.equal("draft" in observed.record, false);
+  assert.equal("requestKey" in observed.record, false);
+
+  await reopened.command({
+    command: "delete",
+    id: input(13).id,
+    nonce: nonce("b"),
+    actorFingerprint: actor,
+  });
+  assert.deepEqual(
+    await reopened.command({
+      command: "delete",
+      id: input(13).id,
+      nonce: nonce("c"),
+      actorFingerprint: actor,
+    }),
+    { transitioned: false, record: null },
+  );
+  assert.deepEqual(
+    await reopened.command({
+      command: "cleanup",
+      id: input(13).id,
+      nonce: nonce("d"),
+      actorFingerprint: actor,
+    }),
+    { transitioned: false, record: null },
+  );
+});
+
 test("popup discard converges after physical deletion response loss", async () => {
   const storage = memoryStorage();
   const now = Date.parse("2026-08-14T00:00:00.000Z");

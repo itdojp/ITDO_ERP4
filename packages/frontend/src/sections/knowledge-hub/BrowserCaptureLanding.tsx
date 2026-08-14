@@ -12,6 +12,7 @@ import {
   BrowserCaptureBridgeError,
   getBrowserCaptureDraft,
   isBrowserCaptureDraftId,
+  markBrowserCaptureDraftCleanupPending,
   publishBrowserCaptureLifecycle,
   removeBrowserCaptureDraft,
   subscribeBrowserCaptureLifecycle,
@@ -31,6 +32,8 @@ type CaptureResultDetail = {
 
 const AUTH_REVALIDATE_INTERVAL_MS = 60 * 1000;
 const AUTH_REVALIDATE_TIMEOUT_MS = 15 * 1000;
+const CLEANUP_PENDING_MESSAGE =
+  '保存結果は確定し、本文はbrowser session内でも消去済みです。content-free下書きの物理削除だけを再試行してください。';
 
 function captureResultDetail(value: unknown): CaptureResultDetail | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -85,6 +88,7 @@ export function BrowserCaptureLanding({
   const draftGenerationRef = useRef(0);
   const verifiedActorRef = useRef('');
   const cleanupActorKeyRef = useRef('');
+  const cleanupTombstoneRef = useRef(false);
   const dispatchedRef = useRef('');
   const terminalOutcomeRef = useRef<CaptureResultDetail['outcome'] | null>(
     null,
@@ -168,7 +172,12 @@ export function BrowserCaptureLanding({
           verifiedActorRef.current = '';
           setAuthenticatedActorKey('');
           purgeHandoff();
-          setStatus('waiting_auth');
+          if (terminalCleanupPendingRef.current) {
+            setError(CLEANUP_PENDING_MESSAGE);
+            setStatus('cleanup_pending');
+          } else {
+            setStatus('waiting_auth');
+          }
           return;
         }
         if (verifiedActorRef.current && verifiedActorRef.current !== actorKey) {
@@ -210,11 +219,17 @@ export function BrowserCaptureLanding({
       setAuthChecking(false);
       setOnline(false);
       purgeHandoff();
-      manualRetryRequiredRef.current = true;
-      setError(
-        'オフラインです。自動再接続せず、オンライン復帰後に利用者操作で再試行してください。',
-      );
-      setStatus('unavailable');
+      if (terminalCleanupPendingRef.current) {
+        manualRetryRequiredRef.current = false;
+        setError(CLEANUP_PENDING_MESSAGE);
+        setStatus('cleanup_pending');
+      } else {
+        manualRetryRequiredRef.current = true;
+        setError(
+          'オフラインです。自動再接続せず、オンライン復帰後に利用者操作で再試行してください。',
+        );
+        setStatus('unavailable');
+      }
     };
     const verifyVisibleSession = () => {
       if (
@@ -255,6 +270,7 @@ export function BrowserCaptureLanding({
     terminalCleanupPendingRef.current = false;
     manualRetryRequiredRef.current = false;
     cleanupActorKeyRef.current = '';
+    cleanupTombstoneRef.current = false;
     setExpiresAtMs(null);
   }, [draftId]);
 
@@ -322,6 +338,18 @@ export function BrowserCaptureLanding({
           setStatus('missing');
           return;
         }
+        if (capture.lifecycle === 'cleanup_pending') {
+          purgeHandoff();
+          cleanupTombstoneRef.current = true;
+          terminalCleanupPendingRef.current = true;
+          manualRetryRequiredRef.current = false;
+          dispatchedRef.current = draftId;
+          setExpiresAtMs(null);
+          setError(CLEANUP_PENDING_MESSAGE);
+          setStatus('cleanup_pending');
+          return;
+        }
+        cleanupTombstoneRef.current = false;
         dispatchedRef.current = draftId;
         setExpiresAtMs(expiresAt);
         setStatus(capture.lifecycle === 'pending' ? 'pending' : 'ready');
@@ -401,11 +429,16 @@ export function BrowserCaptureLanding({
       if (!cleanupActorKey) {
         throw new BrowserCaptureBridgeError('state_conflict');
       }
+      if (!cleanupTombstoneRef.current) {
+        await markBrowserCaptureDraftCleanupPending(draftId, cleanupActorKey);
+        cleanupTombstoneRef.current = true;
+        // Other tabs may now purge safely: the extension record no longer
+        // contains request-key or capture content even if deletion fails.
+        publishBrowserCaptureLifecycle(draftId, 'cleanup_pending');
+      }
       await removeBrowserCaptureDraft(draftId, cleanupActorKey);
       cleanupActorKeyRef.current = '';
-      // Publish only after idempotent physical deletion succeeds. A remote
-      // tab receiving this content-free message can safely purge and close.
-      publishBrowserCaptureLifecycle(draftId, 'cleanup_pending');
+      cleanupTombstoneRef.current = false;
     }
     terminalCleanupPendingRef.current = false;
     if (terminalOutcomeRef.current === 'failed') {
@@ -419,9 +452,7 @@ export function BrowserCaptureLanding({
   const reportCleanupFailure = useCallback(() => {
     terminalCleanupPendingRef.current = true;
     setStatus('cleanup_pending');
-    setError(
-      '保存結果は確定しています。本文は画面から消去済みです。browser session内draftの削除だけを再試行してください。',
-    );
+    setError(CLEANUP_PENDING_MESSAGE);
   }, []);
 
   useEffect(() => {
@@ -431,6 +462,7 @@ export function BrowserCaptureLanding({
       terminalOutcomeRef.current = detail.outcome;
       terminalCleanupPendingRef.current = false;
       manualRetryRequiredRef.current = false;
+      cleanupTombstoneRef.current = false;
       void removeAndClear().catch(reportCleanupFailure);
     };
     window.addEventListener(KNOWLEDGE_CAPTURE_RESULT_EVENT, handleResult);
@@ -448,6 +480,8 @@ export function BrowserCaptureLanding({
           <Alert variant="error">
             下書きの識別子が不正です。本文は読み込みませんでした。
           </Alert>
+        ) : status === 'cleanup_pending' ? (
+          <Alert variant="error">{error || CLEANUP_PENDING_MESSAGE}</Alert>
         ) : authChecking ? (
           <p role="status">認証状態を確認しています。</p>
         ) : !authenticated ? (
@@ -467,7 +501,7 @@ export function BrowserCaptureLanding({
             保存に失敗しました。browser
             session内の下書きは消去済みです。自動再送は行いません。
           </Alert>
-        ) : status === 'unavailable' || status === 'cleanup_pending' ? (
+        ) : status === 'unavailable' ? (
           <Alert variant="error">{error}</Alert>
         ) : status === 'loading' ? (
           <p role="status">拡張機能の下書きを読み込んでいます。</p>

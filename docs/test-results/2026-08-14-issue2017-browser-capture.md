@@ -32,7 +32,7 @@ Review remediationのcode head `e18653cd46391d52222fe93ff425629fbe2bb969`では�
 
 ## Synthetic fixture
 
-別originのsynthetic pageにtitle、選択文字列、canonical URL、allowlist metadataと、password／script／unknown metadata canaryを配置した。browser actionをOS-level keyboard gestureで開き、allowlist fieldだけがpopupとexact-origin handoffへ届くこと、canaryが届かないこと、URLがopaque draft IDだけを運ぶこと、同じdraftの明示再読込が新しいstaging／mutationを作らないことを確認した。synthetic bridgeでは`staged → pending → staged → delete`、response loss相当のidempotent second delete、delete後get拒否も確認した。
+別originのsynthetic pageにtitle、選択文字列、canonical URL、allowlist metadataと、password／script／unknown metadata canaryを配置した。browser actionをOS-level keyboard gestureで開き、allowlist fieldだけがpopupとexact-origin handoffへ届くこと、canaryが届かないこと、URLがopaque draft IDだけを運ぶこと、同じdraftの明示再読込が新しいstaging／mutationを作らないことを確認した。synthetic bridgeでは`staged → pending → staged → cleanup_pending → delete`、content-free tombstone化と物理削除それぞれのresponse lossに対するidempotent再試行、delete後get拒否も確認した。
 
 証跡:
 
@@ -64,7 +64,7 @@ Review remediationのcode head `e18653cd46391d52222fe93ff425629fbe2bb969`では�
 - final tracked-evidence headのCI、Copilot、独立correctness/security review、review completeness: PENDING（PR #2074へ記録）
 - server-side canonical URL境界も同じnested path/matrix/session検査を行い、extension/PWA入力がlocal検査を迂回してもcapture draft commit前に拒否するfocused testをPASS
 - frontend response CSP renderer: exact API origin binding、Google Identity script/style allowlist、active／credentialed／injected origin拒否、service-worker／asset locationでのsecurity header継承、template fail-closedをPASS。target response headerは未検証
-- Chromium synthetic browser境界: action gesture、popup、exact-origin handoff、canary非漏えい、pending/staged/delete/idempotent delete: PASS
+- Chromium synthetic browser境界: action gesture、popup、exact-origin handoff、canary非漏えい、pending/staged/content-free cleanup/delete/idempotent delete: PASS
 
 ## Final CI remediation
 
@@ -81,10 +81,12 @@ Review remediationのcode head `e18653cd46391d52222fe93ff425629fbe2bb969`では�
 
 ## Final correctness review remediation
 
-- extension session draftの受理済みnonceを末尾31件へ切り詰める実装では、古いnonceがTTL内に履歴から脱落した後で遅延commandとして再受理され得た。受理済みnonceを最大32件までevictせず保持し、上限到達後はfresh terminal delete以外のcommandを`state_conflict`へfail closed化した。deleteはrecord全体を削除し、response loss後の再deleteは本文／存在を開示せずidempotentに完了する。32件到達、最初のnonce再送拒否、terminal cleanupを決定的testで固定した。
+- extension session draftの受理済みnonceを末尾31件へ切り詰める実装では、古いnonceがTTL内に履歴から脱落した後で遅延commandとして再受理され得た。受理済みnonceを最大32件までevictせず保持し、上限到達後はcontent-bearing commandを`state_conflict`へfail closed化した。terminal cleanupは本文／request key／pending intentを持たない`cleanup_pending` tombstoneへ一回のstorage writeで置換してから物理削除し、各response lossへidempotentに収束する。32件到達、最初のnonce再送拒否、content-free terminal cleanupを決定的testで固定した。
 - Knowledge HubのURL capture testはoptimistic snapshot描画だけで成功し得たため、snapshot history requestをdeferredにし、authoritative reload後の別SHA-256を確認してからURL表示とprovider field非表示を検査するよう変更した。product表示、timeout、coverage scope、privacy契約は変更していない。
-- Copilot遅延reviewで、認証喪失によりlive actor stateを消去した後、claim済みsession draftのexpiry／terminal cleanupもactor keyを失って次回worker pruneまで残存し得ることを検出した。live認証とDOM本文は従来どおり即時purgeし、最後にverifiedかつclaim成功したactor keyだけをcomponent memoryへcleanup capabilityとして保持する。これはdraft read／API mutationに再利用せず、TTL expiryまたはterminal result後のidempotent deleteだけに使用し、delete成功時に消去する。auth loss後のterminal resultとfake timerによるTTL expiry cleanupをそれぞれ決定的testで固定した。
-- 上記remediationのfocused結果はextension 30/30、backend capture／canonical URL 27/27、Knowledge Hub 16/16、Browser Capture landing 10/10（cleanup最終treeで20/20反復）、backend build、extension lint／format／typecheck、backend／frontend format、`git diff --check`がPASS。新exact head確定後にfull gate、CI、独立reviewを再実行する。
+- Copilot遅延reviewで、認証喪失によりlive actor stateを消去した後、claim済みsession draftのexpiry／terminal cleanupもactor keyを失って次回worker pruneまで残存し得ることを検出した。live認証とDOM本文は従来どおり即時purgeし、最後にverifiedかつclaim成功したactor keyだけをcomponent memoryへcleanup capabilityとして保持する。これはdraft read／API mutationに再利用せず、TTL expiryまたはterminal result後のtombstone化／idempotent deleteだけに使用し、delete成功時に消去する。auth loss後のterminal resultとfake timerによるTTL expiry cleanupをそれぞれ決定的testで固定した。
+- 続くexact-head独立reviewでは、物理削除失敗後のpage reloadがcomponent-memoryのterminal stateを失い、未削除の本文を再表示し得る点を検出した。terminal result時はDOMをpurgeし、content-free tombstoneを永続化してから物理削除する二段階cleanupへ変更した。tombstone化／deleteのresponse loss、物理削除失敗後のremount、auth／network喪失、明示delete-only retryを検証し、本文、request key、preview／commit操作が復元されないことを固定した。
+- 同reviewでserver-side credential query tokenの`policy`欠落とextension compact markerの`pwd`欠落も修正し、`upload_policy`と`clientpwd`のdirect／nested canaryを両境界で拒否した。release-readinessにはfrontend response-CSP／build security testを実行する`frontend-quality-gates`をrequired checkとして追加した。
+- 上記remediation treeのfocused結果はextension 31/31とBrowser Capture bridge／landing 18/18を各20/20反復、backend capture／canonical URL 27/27、frontend quality gates 21/21、Playwright Chromium synthetic extension lifecycleがPASS。新exact head確定後にfull gate、CI、独立reviewを再実行し、以前のheadの結果を最終結果として再利用しない。
 
 unpacked Chromium E2Eはsynthetic landingによるextension protocolを対象とし、別のreal frontend/backend bridge-protocol E2Eがcapture mutation lifecycleを対象とする。いずれもmulti-tab BroadcastChannel、service-worker強制restart、Chrome／Edge vendor runtime evidence、target proxy通過後のCSP evidenceではない。これらをPASSと過大評価しない。CI/review結果はDraft PRへ記録する。
 

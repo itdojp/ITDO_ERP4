@@ -47,6 +47,7 @@ test("createReleaseReadinessPlan includes current required quality gates", () =>
     "frontend-format",
     "frontend-typecheck",
     "frontend-test",
+    "frontend-quality-gates",
     "frontend-build",
     "browser-capture-extension-lint",
     "browser-capture-extension-format",

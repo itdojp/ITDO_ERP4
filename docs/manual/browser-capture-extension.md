@@ -43,7 +43,7 @@ ERP4_CAPTURE_ORIGIN=https://erp4.example.invalid \
 3. popupでtitle、現在URL、selection、allowlist metadataだけが表示されることを確認する。password input、script、unknown meta、DOM HTMLがないことを確認する。
 4. `ERP4で確認`を選び、URLには`browserCapture`のopaque IDだけがあることを確認する。
 5. ERP4のserver-confirmed login後にdraftを読み、personal scope、field preview、明示confirmを確認する。
-6. 同じdraftを再読込しても新しいKnowledge item／snapshotが増えず、結果不明では自動retryされないことを確認する。
+6. 同じdraftを再読込しても新しいKnowledge item／snapshotが増えず、結果不明では自動retryされないことを確認する。保存結果確定後に物理削除だけが失敗した場合は、本文を含まないcleanup表示だけが復元され、明示削除retry以外の操作がないことを確認する。
 7. offline／unavailableではsession draftを保持し、利用者が再試行するまでhandoffしないことを確認する。
 8. browser名、完全version、permission画面、popup、handoff、duplicate、offline、disable rollbackをsanitized evidenceへ記録する。
 9. target ERP4 responseの実効CSPを確認する。標準frontend imageはbuild時に`VITE_API_BASE`のexact originを`connect-src`へ束縛したresponse CSPを生成するが、配備先proxyを通過した`/`、SPA route、`/sw.js`、`/share-target-sw.js`、`/assets/*`の最終response headerを必ず再確認する。各responseでCSP、`Referrer-Policy`、`X-Content-Type-Options`が有効であることを確認する。CSP証跡がなく、exact origin application JavaScriptを信頼できない環境ではextensionを有効化しない。
