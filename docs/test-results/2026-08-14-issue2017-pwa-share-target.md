@@ -3,7 +3,7 @@
 ## 対象
 
 - baseline: `1f51d5875d43c1986c7acf40ec0a7c18b789f074`
-- validated implementation head: `242552a77e487384c3850df1e870358490e208b0`
+- validated implementation head: `336eada31cb500383d7cde6b5a515fa210e1ecff`
 - channel: `pwa_share_target`
 - environment: local repository-side synthetic fixture
 
@@ -24,10 +24,10 @@
 
 ## 検証結果
 
-- focused frontend lifecycle/unit: 62/62 PASS。build/config契約5/5 PASS。実IndexedDB＋BroadcastChannel相当を使う同一tab commit／編集後pending reload／reconcile結合testと、auth/lifecycle競合testは20/20反復PASS
+- focused frontend lifecycle/unit: landing／queue 40/40 PASS、build/config契約5/5 PASS。実IndexedDB transactionを使うunauthenticated discard／actor claim競合、認証済みtombstone → broadcast → physical delete順序、tombstone失敗時のbroadcast 0件を固定し、race focused testは20/20反復PASS
 - focused backend actor binding: 86/86 PASS。actor Aのpreview tokenをactor Bのcommit／reconcileへ渡すと、store／ledger mutation／reconcile side effect前に`preview_token_invalid`となる
 - focused real-browser PWA: 4/4 PASS。最初の完全一致anchor指定は結合済みPlaywright titleと一致せず`No tests found`となったため、4件の固有titleだけに一致する正規表現へ訂正して再実行した
-- frontend full: 951/951 PASS
+- frontend full: 953/953 PASS
 - backend full: 2397/2397 PASS（canonical actor binding回帰testを含む）
 - core E2E: 109/109 PASS
 - full E2E: 159 PASS / 34既存条件付きSKIP / 0 FAIL
@@ -42,7 +42,7 @@
 
 security reviewで指摘されたinitiator metadata欠落は、両header必須化を一度実装してreal-browser PWA 4件を実行した結果、Chromiumのservice worker Requestでは同一origin POSTでもmetadataが不可視となり3件が拒否される事実を確認した。最終契約はexplicit cross-siteを拒否し、両header欠落だけをlocal IndexedDB stagingに限定して受理する。API mutation、cookie/token読取、自動保存はなく、queue 10件、TTL 60分、認証済みexact preview、明示confirmを防御境界とする。最終focused real-browser PWAは4/4 PASSである。
 
-2026-08-14 JSTにcleanなimplementation head `242552a77e487384c3850df1e870358490e208b0`でrelease-readiness、secret scan、PWA focused、full E2E、UI core coverage、build budgetを再実行した。独立correctness/security reviewはいずれもcode blocker 0である。レビューで見つかったprivate-smokeのservice worker説明、request keyの保存媒体、追跡証跡の3件の文書不整合は本証跡更新で修正した。
+2026-08-14 JSTにcleanなimplementation head `336eada31cb500383d7cde6b5a515fa210e1ecff`でrelease-readiness 29/29、PWA focused 4/4、full E2E 159 PASS／34既存条件付きSKIP／0 FAIL、frontend 953/953、backend 2397/2397、audit、ops-quality、secret scanを再実行した。独立reviewで検出されたglobal mutation中のsingle-delivery handoff消失、unauthenticated discard／actor claim順序、認証済みtombstone cleanup順序、全runbook invocationのprofile continuity、採取証跡とrecord profileの不一致は修正し、negative／concurrency testで固定した。この証跡文書を更新する後続commitは検証済みimplementation treeを変更しないdocs-only commitとする。
 
 ## Threat model
 
