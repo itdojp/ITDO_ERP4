@@ -285,8 +285,8 @@ systemctl --user status erp4-postgres.service erp4-migrate.service erp4-backend.
 試験稼働の受入確認を 1 コマンドで回す場合は、次を使います。
 
 ```bash
-./scripts/quadlet/check-trial-readiness.sh
-./scripts/quadlet/check-trial-readiness.sh --include-proxy --resolve-ip <VPS_IP>
+./scripts/quadlet/check-trial-readiness.sh --profile "$PROFILE"
+./scripts/quadlet/check-trial-readiness.sh --profile "$PROFILE" --include-proxy --resolve-ip <VPS_IP>
 ```
 
 `check-trial-readiness.sh` は `check-host-prereqs.sh` → `check-env.sh` → `check-stack.sh` を順に実行し、`--include-proxy` 指定時だけ `check-https.sh` を追加します。DNS 切替前に公開ドメイン疎通を仮確認したい場合は `--resolve-ip` を使います。

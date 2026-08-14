@@ -170,7 +170,7 @@ for (const file of files) {
       failures.push(`${file}: missing profile-specific example ${example}`);
     }
   }
-  for (const command of ['check-env.sh', 'build-images.sh', 'install-user-units.sh', 'start-stack.sh']) {
+  for (const command of ['check-env.sh', 'build-images.sh', 'install-user-units.sh', 'start-stack.sh', 'check-trial-readiness.sh']) {
     const line = source
       .split(/\r?\n/u)
       .find((candidate) => candidate.includes(command) && candidate.includes('--profile'));
