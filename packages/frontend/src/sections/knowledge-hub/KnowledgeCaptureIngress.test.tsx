@@ -25,6 +25,7 @@ vi.mock('../../api', async (importOriginal) => {
 const localQueue = vi.hoisted(() => ({
   markShareTargetDraftPending: vi.fn(),
   markShareTargetDraftStaged: vi.fn(),
+  createShareTargetPendingOperationId: vi.fn(),
   publishShareTargetLifecycle: vi.fn(),
 }));
 vi.mock('../../utils/shareTargetQueue', async (importOriginal) => {
@@ -77,10 +78,13 @@ beforeEach(() => {
   authGuard.revalidateCurrentAuthActor.mockReset().mockResolvedValue(true);
   localQueue.markShareTargetDraftPending
     .mockReset()
-    .mockResolvedValue(undefined);
+    .mockResolvedValue({ transitioned: true });
   localQueue.markShareTargetDraftStaged
     .mockReset()
     .mockResolvedValue(undefined);
+  localQueue.createShareTargetPendingOperationId
+    .mockReset()
+    .mockReturnValue('a'.repeat(48));
   localQueue.publishShareTargetLifecycle.mockReset();
   api.previewKnowledgeCapture.mockResolvedValue({
     captureId: 'capture-1',
@@ -219,8 +223,8 @@ it('compensates a completed local pending write when an auth purge wins the race
   let resolvePending: () => void = () => undefined;
   localQueue.markShareTargetDraftPending.mockImplementationOnce(
     () =>
-      new Promise<void>((resolve) => {
-        resolvePending = resolve;
+      new Promise<{ transitioned: true }>((resolve) => {
+        resolvePending = () => resolve({ transitioned: true });
       }),
   );
   render(<KnowledgeCaptureIngress />);
@@ -247,6 +251,7 @@ it('compensates a completed local pending write when an auth purge wins the race
     expect(localQueue.markShareTargetDraftStaged).toHaveBeenCalledWith(
       'opaque-draft-id-1234567890',
       'header:synthetic-user',
+      'a'.repeat(48),
     ),
   );
   expect(localQueue.publishShareTargetLifecycle).toHaveBeenLastCalledWith(
@@ -260,8 +265,8 @@ it('compensates a completed local pending write after unmount and never calls co
   let resolvePending: () => void = () => undefined;
   localQueue.markShareTargetDraftPending.mockImplementationOnce(
     () =>
-      new Promise<void>((resolve) => {
-        resolvePending = resolve;
+      new Promise<{ transitioned: true }>((resolve) => {
+        resolvePending = () => resolve({ transitioned: true });
       }),
   );
   const view = render(<KnowledgeCaptureIngress />);
@@ -281,6 +286,7 @@ it('compensates a completed local pending write after unmount and never calls co
     expect(localQueue.markShareTargetDraftStaged).toHaveBeenCalledWith(
       'opaque-draft-id-1234567890',
       'header:synthetic-user',
+      'a'.repeat(48),
     ),
   );
   expect(localQueue.publishShareTargetLifecycle).toHaveBeenLastCalledWith(
@@ -292,7 +298,8 @@ it('compensates a completed local pending write after unmount and never calls co
 
 describe('KnowledgeCaptureIngress', () => {
   it('rehydrates a pending local intent for reconcile without permitting a second commit', async () => {
-    render(<KnowledgeCaptureIngress />);
+    const onCommitBusyChange = vi.fn();
+    render(<KnowledgeCaptureIngress onCommitBusyChange={onCommitBusyChange} />);
     window.dispatchEvent(
       new CustomEvent(KNOWLEDGE_CAPTURE_DRAFT_EVENT, {
         detail: {
@@ -315,6 +322,13 @@ describe('KnowledgeCaptureIngress', () => {
       name: 'Preview',
     });
     expect(screen.getByRole('textbox', { name: 'URL' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '破棄' })).toBeDisabled();
+    expect(
+      screen.queryByRole('button', { name: '保存結果を再照合' }),
+    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(onCommitBusyChange).toHaveBeenLastCalledWith(true),
+    );
     fireEvent.click(previewButton);
     expect(
       await screen.findByText(/結果不明のcaptureを保持しています/),
@@ -322,9 +336,11 @@ describe('KnowledgeCaptureIngress', () => {
     expect(
       screen.getByRole('button', { name: '明示確定して保存' }),
     ).toBeDisabled();
-    expect(
-      screen.getByRole('button', { name: '保存結果を再照合' }),
-    ).toBeEnabled();
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: '保存結果を再照合' }),
+      ).toBeEnabled(),
+    );
     expect(api.commitKnowledgeCapture).not.toHaveBeenCalled();
   });
 
@@ -403,6 +419,7 @@ describe('KnowledgeCaptureIngress', () => {
     expect(localQueue.markShareTargetDraftPending).toHaveBeenCalledWith(
       'opaque-draft-id-1234567890',
       'header:synthetic-user',
+      'a'.repeat(48),
       {
         selectedFields: ['title', 'url', 'selectedText'],
         scope: 'personal',
@@ -416,6 +433,41 @@ describe('KnowledgeCaptureIngress', () => {
     );
     expect(onCommitted).toHaveBeenCalledWith('item-1');
     expect(await screen.findByText('保存しました。')).toBeVisible();
+  });
+
+  it('does not dispatch when another tab already owns the pending transition', async () => {
+    const onCommitBusyChange = vi.fn();
+    localQueue.markShareTargetDraftPending.mockResolvedValueOnce({
+      transitioned: false,
+      pendingIntent: {
+        selectedFields: ['title'],
+        scope: 'personal',
+        organizationGroupAccountIds: [],
+        sourceType: 'web',
+      },
+      draft: { ...draft, title: 'Exact draft owned by another tab' },
+    });
+    render(<KnowledgeCaptureIngress onCommitBusyChange={onCommitBusyChange} />);
+    deliver();
+    fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
+    await screen.findByRole('heading', { name: 'Exact preview' });
+    fireEvent.click(screen.getByLabelText('このexact previewを保存します'));
+    fireEvent.click(screen.getByRole('button', { name: '明示確定して保存' }));
+
+    expect(
+      await screen.findByText(/別の画面で保存処理が開始されています/),
+    ).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'ページタイトル' })).toHaveValue(
+      'Exact draft owned by another tab',
+    );
+    expect(api.commitKnowledgeCapture).not.toHaveBeenCalled();
+    expect(localQueue.markShareTargetDraftStaged).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole('button', { name: '保存結果を再照合' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '破棄' })).toBeDisabled();
+    expect(onCommitBusyChange).toHaveBeenLastCalledWith(true);
   });
 
   it('shows every selected normalized value in the exact preview', async () => {

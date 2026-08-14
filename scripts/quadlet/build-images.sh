@@ -13,6 +13,39 @@ fail() {
   exit 1
 }
 
+usage() {
+  cat <<USAGE
+Usage: $(basename "$0") [--profile production|private-smoke|https-trial] [--frontend-build-env FILE]
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --profile)
+      [[ $# -ge 2 ]] || fail '--profile requires a name'
+      PROFILE="$2"
+      shift 2
+      ;;
+    --frontend-build-env)
+      [[ $# -ge 2 ]] || fail '--frontend-build-env requires a file path'
+      FRONTEND_BUILD_ENV_FILE="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      fail "unknown argument: $1"
+      ;;
+  esac
+done
+
+case "$PROFILE" in
+  production|private-smoke|https-trial) ;;
+  *) fail "unknown profile: $PROFILE" ;;
+esac
+
 resolve_image_tag() {
   local tag="${ERP4_IMAGE_TAG:-}"
   if [[ -z "$tag" ]]; then
@@ -34,7 +67,7 @@ BACKEND_IMAGE="${BACKEND_IMAGE:-localhost/erp4-backend:${ERP4_IMAGE_TAG}}"
 FRONTEND_IMAGE="${FRONTEND_IMAGE:-localhost/erp4-frontend:${ERP4_IMAGE_TAG}}"
 
 [[ -f "$FRONTEND_BUILD_ENV_FILE" ]] || fail \
-  "frontend build env file is required: $FRONTEND_BUILD_ENV_FILE; copy the profile-matching deploy/quadlet/env/erp4-frontend-build*.env.example and set FRONTEND_BUILD_ENV_FILE"
+  "frontend build env file is required: $FRONTEND_BUILD_ENV_FILE; copy the profile-matching deploy/quadlet/env/erp4-frontend-build*.env.example and set FRONTEND_BUILD_ENV_FILE or pass --frontend-build-env FILE"
 set -a
 # shellcheck disable=SC1090
 source "$FRONTEND_BUILD_ENV_FILE"

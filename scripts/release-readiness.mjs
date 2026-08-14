@@ -414,6 +414,7 @@ export function createReleaseReadinessPlan(options = {}) {
       "Frontend build",
       "CI / frontend",
       "npm run build --prefix packages/frontend",
+      { env: { VITE_PWA_SHARE_TARGET_MODE: "decommission" } },
     ),
     check(
       "audit-backend",

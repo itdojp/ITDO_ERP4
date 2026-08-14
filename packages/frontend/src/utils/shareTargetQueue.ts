@@ -30,6 +30,7 @@ export type ShareTargetDraftRecord = {
   requestKey: string | null;
   claimedByActorHash: string | null;
   lifecycle: ShareTargetLifecycle;
+  pendingOperationId: string | null;
   pendingIntent: ShareTargetPendingIntent | null;
   schemaVersion: 1;
   draft: IncomingKnowledgeCaptureDraft | null;
@@ -57,6 +58,7 @@ const recordKeys = new Set([
   'requestKey',
   'claimedByActorHash',
   'lifecycle',
+  'pendingOperationId',
   'pendingIntent',
   'schemaVersion',
   'draft',
@@ -132,20 +134,6 @@ export function normalizeShareTargetPendingIntent(
   };
 }
 
-function samePendingIntent(
-  left: ShareTargetPendingIntent,
-  right: ShareTargetPendingIntent,
-) {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function sameDraft(
-  left: IncomingKnowledgeCaptureDraft,
-  right: IncomingKnowledgeCaptureDraft,
-) {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
 function normalizeRecord(value: unknown): ShareTargetDraftRecord | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
@@ -189,6 +177,7 @@ function normalizeRecord(value: unknown): ShareTargetDraftRecord | null {
       record.claimedByActorHash === null ||
       record.requestKey !== null ||
       record.draft !== null ||
+      record.pendingOperationId != null ||
       record.pendingIntent !== null
     ) {
       return null;
@@ -198,6 +187,7 @@ function normalizeRecord(value: unknown): ShareTargetDraftRecord | null {
       requestKey: null,
       claimedByActorHash: record.claimedByActorHash,
       lifecycle,
+      pendingOperationId: null,
       pendingIntent: null,
       schemaVersion: 1,
       draft: null,
@@ -215,9 +205,15 @@ function normalizeRecord(value: unknown): ShareTargetDraftRecord | null {
       : record.pendingIntent === null || record.pendingIntent === undefined
         ? null
         : null;
+  const pendingOperationId =
+    lifecycle === 'pending' &&
+    isOpaqueShareTargetDraftId(record.pendingOperationId)
+      ? record.pendingOperationId
+      : null;
   if (
     (lifecycle === 'pending' && pendingIntent === null) ||
-    (lifecycle === 'staged' && record.pendingIntent != null)
+    (lifecycle === 'staged' &&
+      (record.pendingIntent != null || record.pendingOperationId != null))
   ) {
     return null;
   }
@@ -226,12 +222,28 @@ function normalizeRecord(value: unknown): ShareTargetDraftRecord | null {
     requestKey: record.requestKey,
     claimedByActorHash: record.claimedByActorHash,
     lifecycle,
+    // Pending rows written before operation ownership was introduced remain
+    // readable for read-only reconciliation, but cannot be reset to staged.
+    pendingOperationId,
     pendingIntent,
     schemaVersion: 1,
     draft,
     createdAt: record.createdAt,
     expiresAt: record.expiresAt,
   };
+}
+
+export function createShareTargetPendingOperationId(
+  cryptoValue = globalThis.crypto,
+) {
+  if (typeof cryptoValue?.getRandomValues !== 'function') {
+    throw new Error('share_target_secure_random_unavailable');
+  }
+  const bytes = new Uint8Array(24);
+  cryptoValue.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(
+    '',
+  );
 }
 
 async function hashActor(actorKey: string): Promise<string> {
@@ -420,21 +432,30 @@ export async function claimShareTargetDraft(
 export async function markShareTargetDraftPending(
   id: string,
   actorKey: string,
+  operationId: string,
   intent: ShareTargetPendingIntent,
   exactDraft: IncomingKnowledgeCaptureDraft,
   nowMs = Date.now(),
-): Promise<void> {
+): Promise<
+  | { transitioned: true }
+  | {
+      transitioned: false;
+      pendingIntent: ShareTargetPendingIntent;
+      draft: IncomingKnowledgeCaptureDraft;
+    }
+> {
   const actorHash = await hashActor(actorKey);
   const normalizedIntent = normalizeShareTargetPendingIntent(intent);
   const normalizedDraft = normalizeIncomingKnowledgeCapture(exactDraft);
   if (
     !isOpaqueShareTargetDraftId(id) ||
+    !isOpaqueShareTargetDraftId(operationId) ||
     !normalizedIntent ||
     !normalizedDraft
   ) {
     throw new Error('share_target_invalid_transition');
   }
-  await withObjectStore('readwrite', async (store) => {
+  return withObjectStore('readwrite', async (store) => {
     const normalized = normalizeRecord(
       await requestResult<unknown>(store.get(id)),
     );
@@ -446,27 +467,34 @@ export async function markShareTargetDraftPending(
     ) {
       throw new Error('share_target_invalid_transition');
     }
-    if (
-      normalized.lifecycle === 'pending' &&
-      normalized.pendingIntent &&
-      (!samePendingIntent(normalized.pendingIntent, normalizedIntent) ||
-        !normalized.draft ||
-        !sameDraft(normalized.draft, normalizedDraft))
-    ) {
-      throw new Error('share_target_invalid_transition');
+    // IndexedDB serializes readwrite transactions. Only the caller that sees
+    // staged owns the transition and may dispatch or compensate it. A second
+    // tab observing pending must reconcile instead of replaying the mutation.
+    if (normalized.lifecycle === 'pending') {
+      if (!normalized.pendingIntent || !normalized.draft) {
+        throw new Error('share_target_invalid_transition');
+      }
+      return {
+        transitioned: false,
+        pendingIntent: normalized.pendingIntent,
+        draft: normalized.draft,
+      };
     }
     store.put({
       ...normalized,
       lifecycle: 'pending',
+      pendingOperationId: operationId,
       pendingIntent: normalizedIntent,
       draft: normalizedDraft,
     });
+    return { transitioned: true };
   });
 }
 
 export async function markShareTargetDraftStaged(
   id: string,
   actorKey: string,
+  operationId: string,
   nowMs = Date.now(),
 ): Promise<void> {
   const actorHash = await hashActor(actorKey);
@@ -478,11 +506,17 @@ export async function markShareTargetDraftStaged(
       !normalized ||
       new Date(normalized.expiresAt).getTime() <= nowMs ||
       normalized.claimedByActorHash !== actorHash ||
-      normalized.lifecycle !== 'pending'
+      normalized.lifecycle !== 'pending' ||
+      normalized.pendingOperationId !== operationId
     ) {
       throw new Error('share_target_invalid_transition');
     }
-    store.put({ ...normalized, lifecycle: 'staged', pendingIntent: null });
+    store.put({
+      ...normalized,
+      lifecycle: 'staged',
+      pendingOperationId: null,
+      pendingIntent: null,
+    });
   });
 }
 
@@ -511,6 +545,7 @@ export async function markShareTargetDraftCleanupPending(
       requestKey: null,
       claimedByActorHash: actorHash,
       lifecycle: 'cleanup_pending',
+      pendingOperationId: null,
       pendingIntent: null,
       schemaVersion: 1,
       draft: null,

@@ -271,7 +271,7 @@ Google OIDC の backend redirect フローだけを使う場合、`VITE_GOOGLE_C
 
 ```bash
 ./scripts/quadlet/check-env.sh --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
-./scripts/quadlet/build-images.sh
+./scripts/quadlet/build-images.sh --profile production --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
 ./scripts/quadlet/install-user-units.sh --profile production
 ```
 

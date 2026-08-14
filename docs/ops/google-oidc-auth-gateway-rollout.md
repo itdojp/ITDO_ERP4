@@ -106,7 +106,7 @@ node packages/backend/dist/index.js
 
 ```bash
 npm ci --prefix packages/frontend
-VITE_AUTH_MODE=jwt_bff VITE_API_BASE=https://api.example.com npm run build --prefix packages/frontend
+VITE_AUTH_MODE=jwt_bff VITE_API_BASE=https://api.example.com VITE_PWA_SHARE_TARGET_MODE=enabled npm run build --prefix packages/frontend
 ```
 
 ## 確認項目

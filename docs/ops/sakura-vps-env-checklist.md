@@ -191,7 +191,7 @@ real mode、write/delete probe、timer有効化、restore、retention applyは�
 1. `PROFILE=private-smoke` または `PROFILE=https-trial` を固定
 2. `deploy/quadlet/env/erp4-frontend-build.env` を編集
 3. `./scripts/quadlet/check-env.sh --profile "$PROFILE" --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env`
-4. `./scripts/quadlet/build-images.sh`
+4. `./scripts/quadlet/build-images.sh --profile "$PROFILE" --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env`
 5. `./scripts/quadlet/install-user-units.sh --profile "$PROFILE"`
 6. `~/.config/containers/systemd/` 配下の runtime / proxy / maintenance env を編集
 7. `./scripts/quadlet/check-env.sh --profile "$PROFILE"`

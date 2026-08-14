@@ -105,6 +105,7 @@ function record(): ShareTargetDraftRecord {
     requestKey,
     claimedByActorHash: null,
     lifecycle: 'staged',
+    pendingOperationId: null,
     pendingIntent: null,
     schemaVersion: 1,
     draft: incomingDraft(),
@@ -143,7 +144,13 @@ function capturePreview(submission: KnowledgeCaptureSubmission) {
   };
 }
 
-function Harness({ clearLanding }: { clearLanding: () => void }) {
+function Harness({
+  clearLanding,
+  onCommitBusyChange,
+}: {
+  clearLanding: () => void;
+  onCommitBusyChange?: (busy: boolean) => void;
+}) {
   return (
     <>
       <ShareTargetLanding
@@ -152,7 +159,7 @@ function Harness({ clearLanding }: { clearLanding: () => void }) {
         activateKnowledgeHub={() => true}
         clearLanding={clearLanding}
       />
-      <KnowledgeCaptureIngress />
+      <KnowledgeCaptureIngress onCommitBusyChange={onCommitBusyChange} />
     </>
   );
 }
@@ -289,10 +296,23 @@ describe('PWA share-target lifecycle integration', () => {
 
     first.unmount();
     const clearLanding = vi.fn();
-    render(<Harness clearLanding={clearLanding} />);
+    const onCommitBusyChange = vi.fn();
+    render(
+      <Harness
+        clearLanding={clearLanding}
+        onCommitBusyChange={onCommitBusyChange}
+      />,
+    );
     expect(
       await screen.findByRole('textbox', { name: 'ページタイトル' }),
     ).toHaveValue('Edited exact title');
+    expect(screen.getByRole('button', { name: '破棄' })).toBeDisabled();
+    expect(
+      screen.queryByRole('button', { name: '保存結果を再照合' }),
+    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(onCommitBusyChange).toHaveBeenLastCalledWith(true),
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
     await waitFor(() =>
       expect(captureApi.previewKnowledgeCapture).toHaveBeenLastCalledWith(

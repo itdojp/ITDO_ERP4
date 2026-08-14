@@ -21,6 +21,7 @@ import {
   type KnowledgeCaptureResult,
 } from './knowledgeCaptureModel';
 import {
+  createShareTargetPendingOperationId,
   markShareTargetDraftPending,
   markShareTargetDraftStaged,
   normalizeShareTargetPendingIntent,
@@ -185,7 +186,9 @@ export function KnowledgeCaptureIngress({
   const mutationBusyRef = useRef(false);
   const handoffLockedRef = useRef(false);
   const unresolved =
-    result?.status === 'pending' || Boolean(uncertainCaptureId);
+    resumePending ||
+    result?.status === 'pending' ||
+    Boolean(uncertainCaptureId);
   const blocksNavigation =
     busy === 'commit' || busy === 'reconcile' || unresolved;
 
@@ -400,11 +403,14 @@ export function KnowledgeCaptureIngress({
     }
     const commitDraftId = draftId;
     const commitActorKey = handoffActorKeyRef.current;
+    let pendingOperationId = '';
     if (commitDraftId && commitActorKey) {
       try {
-        await markShareTargetDraftPending(
+        pendingOperationId = createShareTargetPendingOperationId();
+        const pendingTransition = await markShareTargetDraftPending(
           commitDraftId,
           commitActorKey,
+          pendingOperationId,
           {
             selectedFields: preview.selectedFields,
             scope: preview.scope,
@@ -413,6 +419,31 @@ export function KnowledgeCaptureIngress({
           },
           preview.draft,
         );
+        if (!pendingTransition.transitioned) {
+          setDraft(pendingTransition.draft);
+          setSelectedFields(pendingTransition.pendingIntent.selectedFields);
+          setScope(pendingTransition.pendingIntent.scope);
+          setGroups(
+            pendingTransition.pendingIntent.organizationGroupAccountIds.join(
+              '\n',
+            ),
+          );
+          setSourceType(pendingTransition.pendingIntent.sourceType);
+          setPreview(null);
+          requestKeyRef.current = '';
+          setExplicitlyConfirmed(false);
+          setResumePending(true);
+          setUncertainCaptureId('');
+          handoffLockedRef.current = false;
+          publishShareTargetLifecycle(commitDraftId, 'pending');
+          onCommitBusyChange?.(true);
+          setError(
+            '別の画面で保存処理が開始されています。保存中のexact draftを再読込しました。read-only preview後に保存結果を再照合してください。',
+          );
+          mutationBusyRef.current = false;
+          if (generationRef.current === generation) setBusy(null);
+          return;
+        }
         if (controller.signal.aborted || generationRef.current !== generation) {
           // The local pending write is deliberately completed atomically. If
           // auth changed or the component unmounted while IndexedDB was
@@ -421,6 +452,7 @@ export function KnowledgeCaptureIngress({
           const restored = await markShareTargetDraftStaged(
             commitDraftId,
             commitActorKey,
+            pendingOperationId,
           )
             .then(() => true)
             .catch(() => false);
@@ -478,6 +510,7 @@ export function KnowledgeCaptureIngress({
             await markShareTargetDraftStaged(
               draftId,
               handoffActorKeyRef.current,
+              pendingOperationId,
             );
             publishShareTargetLifecycle(draftId, 'staged');
           } catch {
@@ -781,6 +814,13 @@ export function KnowledgeCaptureIngress({
           </Alert>
         ) : null}
 
+        {resumePending && !preview ? (
+          <Alert variant="warning">
+            前回の保存結果を確認するため、まずread-only
+            previewを再作成してください。
+          </Alert>
+        ) : null}
+
         <div className="knowledge-capture-ingress-actions">
           <Button
             variant="secondary"
@@ -802,7 +842,7 @@ export function KnowledgeCaptureIngress({
           >
             明示確定して保存
           </Button>
-          {unresolved ? (
+          {preview && unresolved ? (
             <Button
               variant="secondary"
               loading={busy === 'reconcile'}

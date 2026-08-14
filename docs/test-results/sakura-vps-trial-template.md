@@ -24,7 +24,7 @@
 
 ## 2. build / 配置 / 起動
 
-- `./scripts/quadlet/build-images.sh`
+- `./scripts/quadlet/build-images.sh --profile "$PROFILE" --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env`
   - backend image:
   - frontend image:
 - `./scripts/quadlet/install-user-units.sh --profile <profile>`

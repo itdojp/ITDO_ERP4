@@ -8,6 +8,7 @@ import type { IncomingKnowledgeCaptureDraft } from '../sections/knowledge-hub/kn
 import {
   getShareTargetDraft,
   claimShareTargetDraft,
+  createShareTargetPendingOperationId,
   isOpaqueShareTargetDraftId,
   listShareTargetDrafts,
   markShareTargetDraftCleanupPending,
@@ -20,6 +21,7 @@ import {
   SHARE_TARGET_DRAFT_TTL_MS,
   SHARE_TARGET_LIFECYCLE_CHANNEL,
   SHARE_TARGET_QUEUE_LIMIT,
+  SHARE_TARGET_STORE_NAME,
   storeShareTargetDraftRecord,
   subscribeShareTargetLifecycle,
   type ShareTargetDraftRecord,
@@ -60,6 +62,7 @@ function record(index: number): ShareTargetDraftRecord {
     requestKey: (index + 100).toString(16).padStart(32, '0'),
     claimedByActorHash: null,
     lifecycle: 'staged',
+    pendingOperationId: null,
     pendingIntent: null,
     schemaVersion: 1,
     draft: draft(index),
@@ -252,6 +255,7 @@ describe('shareTargetQueue', () => {
     const value = record(1);
     const exactDraft = { ...draft(1), title: 'Edited exact title' };
     const actorKey = 'bff:synthetic-account';
+    const operationId = 'a'.repeat(48);
     const intent = {
       selectedFields: ['title', 'selectedText'] as const,
       scope: 'personal' as const,
@@ -263,6 +267,7 @@ describe('shareTargetQueue', () => {
     await markShareTargetDraftPending(
       value.id,
       actorKey,
+      operationId,
       { ...intent, selectedFields: [...intent.selectedFields] },
       exactDraft,
       baseTime,
@@ -276,18 +281,27 @@ describe('shareTargetQueue', () => {
       markShareTargetDraftPending(
         value.id,
         actorKey,
+        'b'.repeat(48),
         { ...intent, selectedFields: [...intent.selectedFields] },
         { ...exactDraft, title: 'Conflicting edit' },
         baseTime,
       ),
-    ).rejects.toThrow('share_target_invalid_transition');
+    ).resolves.toMatchObject({
+      transitioned: false,
+      draft: exactDraft,
+      pendingIntent: intent,
+    });
     await expect(
       removeShareTargetDraft(value.id, actorKey, baseTime),
     ).rejects.toThrow('share_target_pending');
 
-    await markShareTargetDraftStaged(value.id, actorKey, baseTime);
+    await expect(
+      markShareTargetDraftStaged(value.id, actorKey, 'b'.repeat(48), baseTime),
+    ).rejects.toThrow('share_target_invalid_transition');
+    await markShareTargetDraftStaged(value.id, actorKey, operationId, baseTime);
     expect(await getShareTargetDraft(value.id, baseTime)).toMatchObject({
       lifecycle: 'staged',
+      pendingOperationId: null,
       pendingIntent: null,
       draft: exactDraft,
     });
@@ -310,11 +324,127 @@ describe('shareTargetQueue', () => {
       requestKey: null,
       draft: null,
       lifecycle: 'cleanup_pending',
+      pendingOperationId: null,
       pendingIntent: null,
     });
     expect(JSON.stringify(tombstone)).not.toContain('Synthetic selected text');
     await removeShareTargetDraft(value.id, actorKey, baseTime);
     await expect(getShareTargetDraft(value.id, baseTime)).resolves.toBeNull();
+  });
+
+  it('grants one pending operation ownership across concurrent tabs', async () => {
+    const value = record(1);
+    const actorKey = 'header:synthetic-owner';
+    const intent = {
+      selectedFields: ['title'] as const,
+      scope: 'personal' as const,
+      organizationGroupAccountIds: [],
+      sourceType: 'web' as const,
+    };
+    await storeShareTargetDraftRecord(value, baseTime);
+    await claimShareTargetDraft(value.id, actorKey, baseTime);
+
+    const results = await Promise.all([
+      markShareTargetDraftPending(
+        value.id,
+        actorKey,
+        'a'.repeat(48),
+        { ...intent, selectedFields: [...intent.selectedFields] },
+        value.draft!,
+        baseTime,
+      ),
+      markShareTargetDraftPending(
+        value.id,
+        actorKey,
+        'b'.repeat(48),
+        { ...intent, selectedFields: [...intent.selectedFields] },
+        value.draft!,
+        baseTime,
+      ),
+    ]);
+
+    expect(results.filter((result) => result.transitioned)).toHaveLength(1);
+    expect(results.filter((result) => !result.transitioned)).toHaveLength(1);
+    expect(
+      (await getShareTargetDraft(value.id, baseTime))?.pendingOperationId,
+    ).toMatch(/^(a{48}|b{48})$/u);
+  });
+
+  it('keeps legacy pending rows read-only when operation ownership is absent', async () => {
+    const value = record(1);
+    const actorKey = 'header:synthetic-owner';
+    const intent = {
+      selectedFields: ['title'] as const,
+      scope: 'personal' as const,
+      organizationGroupAccountIds: [],
+      sourceType: 'web' as const,
+    };
+    await storeShareTargetDraftRecord(value, baseTime);
+    await claimShareTargetDraft(value.id, actorKey, baseTime);
+    await markShareTargetDraftPending(
+      value.id,
+      actorKey,
+      'a'.repeat(48),
+      { ...intent, selectedFields: [...intent.selectedFields] },
+      value.draft!,
+      baseTime,
+    );
+
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = fakeIndexedDB.open(SHARE_TARGET_DB_NAME);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(
+        SHARE_TARGET_STORE_NAME,
+        'readwrite',
+      );
+      const store = transaction.objectStore(SHARE_TARGET_STORE_NAME);
+      const getRequest = store.get(value.id);
+      getRequest.onsuccess = () => {
+        try {
+          const legacy = { ...getRequest.result };
+          delete legacy.pendingOperationId;
+          store.put(legacy);
+        } catch (error) {
+          reject(error);
+          transaction.abort();
+        }
+      };
+      getRequest.onerror = () => reject(getRequest.error);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+    database.close();
+
+    await expect(
+      getShareTargetDraft(value.id, baseTime),
+    ).resolves.toMatchObject({
+      lifecycle: 'pending',
+      pendingOperationId: null,
+      pendingIntent: intent,
+    });
+    await expect(
+      markShareTargetDraftStaged(value.id, actorKey, 'a'.repeat(48), baseTime),
+    ).rejects.toThrow('share_target_invalid_transition');
+  });
+
+  it('creates an opaque pending operation ID only from secure random bytes', () => {
+    expect(
+      createShareTargetPendingOperationId({
+        getRandomValues(value) {
+          new Uint8Array(value.buffer, value.byteOffset, value.byteLength).fill(
+            0xab,
+          );
+          return value;
+        },
+      } as Crypto),
+    ).toBe('ab'.repeat(24));
+    expect(() => createShareTargetPendingOperationId({} as Crypto)).toThrow(
+      'share_target_secure_random_unavailable',
+    );
   });
 
   it('broadcasts bounded lifecycle state to other tabs but never to the sender tab', () => {

@@ -5,9 +5,7 @@ import { fileURLToPath } from 'node:url';
 export const SHARE_TARGET_MODES = new Set(['enabled', 'decommission']);
 
 export function normalizeShareTargetMode(value) {
-  const mode = String(value ?? 'enabled')
-    .trim()
-    .toLowerCase();
+  const mode = String(value ?? '').trim().toLowerCase();
   if (!SHARE_TARGET_MODES.has(mode)) {
     throw new Error(
       'VITE_PWA_SHARE_TARGET_MODE must be enabled or decommission',

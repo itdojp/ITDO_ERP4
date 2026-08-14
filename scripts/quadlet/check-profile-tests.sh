@@ -261,7 +261,7 @@ EOF_FAKE_PODMAN
 chmod +x "$fake_build_bin/podman"
 valid_private_build_env="$WORK_DIR/private-build.env"
 write_frontend_env "$valid_private_build_env" 'http://erp4-backend:3001' header
-run_failure 'build-images rejects missing frontend build env' 'frontend build env file is required: .*erp4-frontend-build.*\.env; copy the profile-matching .*\.env\.example and set FRONTEND_BUILD_ENV_FILE' \
+run_failure 'build-images rejects missing frontend build env' 'frontend build env file is required: .*erp4-frontend-build.*\.env; copy the profile-matching .*\.env\.example and set FRONTEND_BUILD_ENV_FILE or pass --frontend-build-env FILE' \
   env -u FRONTEND_BUILD_ENV_FILE PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile \
   SAKURA_VPS_PROFILE=production "$BUILD_IMAGES_SCRIPT"
 run_failure 'check-env guides missing frontend build env setup' 'frontend build env file not found: .*erp4-frontend-build.*\.env; copy the profile-matching .*\.env\.example and pass --frontend-build-env FILE' \
@@ -272,8 +272,8 @@ run_failure 'build-images rejects production header auth' 'rejects VITE_AUTH_MOD
   env PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile SAKURA_VPS_PROFILE=production \
   FRONTEND_BUILD_ENV_FILE="$wrong_production_build_env" "$BUILD_IMAGES_SCRIPT"
 run_success 'build-images accepts explicit private-smoke frontend mode' \
-  env PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile SAKURA_VPS_PROFILE=private-smoke \
-  FRONTEND_BUILD_ENV_FILE="$valid_private_build_env" "$BUILD_IMAGES_SCRIPT"
+  env PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile \
+  "$BUILD_IMAGES_SCRIPT" --profile private-smoke --frontend-build-env "$valid_private_build_env"
 grep -Fq -- '--build-arg VITE_AUTH_MODE=header' "$fake_build_log" || \
   fail 'build-images did not pass explicit frontend auth mode'
 grep -Fq -- '--build-arg VITE_PWA_SHARE_TARGET_MODE=enabled' "$fake_build_log" || \
@@ -284,8 +284,8 @@ sed -i 's/^VITE_PWA_SHARE_TARGET_MODE=.*/VITE_PWA_SHARE_TARGET_MODE=decommission
   "$valid_decommission_build_env"
 : >"$fake_build_log"
 run_success 'build-images accepts the explicit decommission bridge' \
-  env PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile SAKURA_VPS_PROFILE=private-smoke \
-  FRONTEND_BUILD_ENV_FILE="$valid_decommission_build_env" "$BUILD_IMAGES_SCRIPT"
+  env PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile \
+  "$BUILD_IMAGES_SCRIPT" --profile private-smoke --frontend-build-env "$valid_decommission_build_env"
 grep -Fq -- '--build-arg VITE_PWA_SHARE_TARGET_MODE=decommission' "$fake_build_log" || \
   fail 'build-images did not pass the decommission bridge mode'
 
@@ -384,6 +384,8 @@ write_private_backend_env "$installed_private_dir"
 write_frontend_env "$installed_private_frontend" 'http://erp4-backend:3001'
 run_success 'installed private-smoke target passes env validation' \
   "$CHECK_ENV" --profile private-smoke --target-dir "$installed_private_dir" --frontend-build-env "$installed_private_frontend"
+run_success 'runtime env validation does not depend on a build-time env file' \
+  env -u FRONTEND_BUILD_ENV_FILE "$CHECK_ENV" --profile private-smoke --target-dir "$installed_private_dir"
 
 link_backup_quadlet_dir="$WORK_DIR/link-backup-quadlet"
 link_backup_systemd_dir="$WORK_DIR/link-backup-systemd"
@@ -710,13 +712,13 @@ update_build_profile_file="$WORK_DIR/update-build-profile.txt"
 fake_update_build="$WORK_DIR/fake-update-build.sh"
 cat >"$fake_update_build" <<EOF_FAKE_UPDATE_BUILD
 #!/usr/bin/env bash
-printf '%s\n' "\${SAKURA_VPS_PROFILE:-}" >"$update_build_profile_file"
+printf '%s\n' "\$*" >"$update_build_profile_file"
 EOF_FAKE_UPDATE_BUILD
 chmod +x "$fake_update_build"
 run_success 'update stack propagates private-smoke profile to image build' \
   env QUADLET_TARGET_DIR="$installed_private_dir" BUILD_IMAGES="$fake_update_build" SYSTEMCTL=true \
   "$UPDATE_STACK" --profile private-smoke --skip-install-units --skip-stack-check
-grep -Fxq -- 'private-smoke' "$update_build_profile_file" || \
+grep -Fxq -- '--profile private-smoke' "$update_build_profile_file" || \
   fail 'update-stack did not propagate private-smoke to build-images'
 
 update_target_dir="$WORK_DIR/update-profile-target"

@@ -323,7 +323,7 @@ ui-core scope の対象ファイルは `packages/frontend/coverage-thresholds.js
 ### Build
 
 - backend: `npm run build --prefix packages/backend`
-- frontend: `npm run build --prefix packages/frontend`
+- frontend: `VITE_PWA_SHARE_TARGET_MODE=decommission npm run build --prefix packages/frontend`（公開artifactはprofileに応じて`enabled|decommission`を明示）
 
 ### Typecheck
 

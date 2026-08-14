@@ -4,6 +4,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TARGET_DIR="${QUADLET_TARGET_DIR:-$HOME/.config/containers/systemd}"
 FRONTEND_BUILD_ENV="${FRONTEND_BUILD_ENV_FILE:-$ROOT_DIR/deploy/quadlet/env/erp4-frontend-build.env}"
+FRONTEND_BUILD_ENV_EXPLICIT=0
+if [[ -n "${FRONTEND_BUILD_ENV_FILE+x}" ]]; then
+  FRONTEND_BUILD_ENV_EXPLICIT=1
+fi
 SKIP_RUNTIME=0
 PROFILE="${SAKURA_VPS_PROFILE:-production}"
 
@@ -447,6 +451,7 @@ while [[ $# -gt 0 ]]; do
       fi
       ;;
     --frontend-build-env|--frontend-build-env=*)
+      FRONTEND_BUILD_ENV_EXPLICIT=1
       if [[ "$1" == "--frontend-build-env" ]]; then
         [[ $# -ge 2 ]] || fail "--frontend-build-env requires a file path argument"
         FRONTEND_BUILD_ENV="$2"
@@ -501,22 +506,24 @@ if [[ "$SKIP_RUNTIME" -eq 0 ]]; then
   check_linger
 fi
 
-require_frontend_build_env "$FRONTEND_BUILD_ENV"
-require_env_key "$FRONTEND_BUILD_ENV" VITE_API_BASE
-case "$PROFILE" in
-  private-smoke)
-    require_env_lower_value "$FRONTEND_BUILD_ENV" VITE_AUTH_MODE header
-    ;;
-  production|https-trial)
-    require_env_lower_value "$FRONTEND_BUILD_ENV" VITE_AUTH_MODE jwt_bff
-    ;;
-esac
-share_target_mode="$(read_env_value "$FRONTEND_BUILD_ENV" VITE_PWA_SHARE_TARGET_MODE)"
-share_target_mode="${share_target_mode,,}"
-case "$share_target_mode" in
-  enabled|decommission) ;;
-  *) fail "$FRONTEND_BUILD_ENV requires VITE_PWA_SHARE_TARGET_MODE=enabled|decommission for profile $PROFILE" ;;
-esac
+if [[ "$FRONTEND_BUILD_ENV_EXPLICIT" -eq 1 || "$SKIP_RUNTIME" -eq 1 ]]; then
+  require_frontend_build_env "$FRONTEND_BUILD_ENV"
+  require_env_key "$FRONTEND_BUILD_ENV" VITE_API_BASE
+  case "$PROFILE" in
+    private-smoke)
+      require_env_lower_value "$FRONTEND_BUILD_ENV" VITE_AUTH_MODE header
+      ;;
+    production|https-trial)
+      require_env_lower_value "$FRONTEND_BUILD_ENV" VITE_AUTH_MODE jwt_bff
+      ;;
+  esac
+  share_target_mode="$(read_env_value "$FRONTEND_BUILD_ENV" VITE_PWA_SHARE_TARGET_MODE)"
+  share_target_mode="${share_target_mode,,}"
+  case "$share_target_mode" in
+    enabled|decommission) ;;
+    *) fail "$FRONTEND_BUILD_ENV requires VITE_PWA_SHARE_TARGET_MODE=enabled|decommission for profile $PROFILE" ;;
+  esac
+fi
 
 printf 'OK: Quadlet env validation passed'
 printf ' profile=%s' "$PROFILE"

@@ -135,6 +135,8 @@ jobs:
       - name: Check frontend UI core coverage
         run: npm run coverage:ui-core:check --prefix packages/frontend
       - name: Build frontend
+        env:
+          VITE_PWA_SHARE_TARGET_MODE: decommission
         run: npm run build --prefix packages/frontend
   lint:
     runs-on: ubuntu-latest

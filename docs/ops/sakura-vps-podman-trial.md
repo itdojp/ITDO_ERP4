@@ -111,13 +111,14 @@ plain HTTP の `8080/3001` 構成は Podman stack 自体の smoke 確認用で�
 build 前に frontend build 用 env だけ検証します。
 
 ```bash
-./scripts/quadlet/check-env.sh --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
+PROFILE="${PROFILE:-production}"
+./scripts/quadlet/check-env.sh --profile "$PROFILE" --skip-runtime --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
 ```
 
 build:
 
 ```bash
-./scripts/quadlet/build-images.sh
+./scripts/quadlet/build-images.sh --profile "$PROFILE" --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
 ```
 
 生成されるイメージは、既定では現在の Git commit 短縮 SHA を tag に使います。タグを明示したい場合は `ERP4_IMAGE_TAG` を設定します。
@@ -126,7 +127,8 @@ build:
 - `localhost/erp4-frontend:<commit-sha>`
 
 ```bash
-ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" ./scripts/quadlet/build-images.sh
+ERP4_IMAGE_TAG="$(git rev-parse --short=12 HEAD)" \
+  ./scripts/quadlet/build-images.sh --profile "$PROFILE" --frontend-build-env deploy/quadlet/env/erp4-frontend-build.env
 ```
 
 `latest` tag は本番 Quadlet 手順では使いません。Containerfile の base image と Caddy/PostgreSQL image は digest 付き参照を使い、アプリケーション image は commit-derived tag を Quadlet unit へ展開します。

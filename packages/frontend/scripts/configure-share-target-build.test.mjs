@@ -36,6 +36,10 @@ test('decommission mode removes intake but keeps a worker cleanup gate', () => {
 
 test('unknown mode fails closed', () => {
   assert.throws(
+    () => normalizeShareTargetMode(undefined),
+    /must be enabled or decommission/,
+  );
+  assert.throws(
     () => normalizeShareTargetMode(''),
     /must be enabled or decommission/,
   );

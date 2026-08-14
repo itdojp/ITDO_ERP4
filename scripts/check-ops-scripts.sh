@@ -339,7 +339,7 @@ sakura_private_build_output="$(
     --target-dir "$SMOKE_DIR/quadlet" --frontend-build-env "$SMOKE_DIR/frontend-build.env" \
     --skip-git-update --skip-npm-ci --skip-start
 )"
-grep -Fq -- 'SAKURA_VPS_PROFILE=private-smoke' <<<"$sakura_private_build_output" || \
+grep -Fq -- 'scripts/quadlet/build-images.sh --profile private-smoke --frontend-build-env' <<<"$sakura_private_build_output" || \
   fail 'sakura private-smoke deploy did not pass its profile to build-images.sh'
 grep -Fq -- 'scripts/quadlet/build-images.sh' <<<"$sakura_private_build_output" || \
   fail 'sakura private-smoke deploy did not invoke build-images.sh'

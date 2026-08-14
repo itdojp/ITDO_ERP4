@@ -150,6 +150,7 @@ async function readStoredRecords(): Promise<
     id: string;
     requestKey: string;
     lifecycle: string;
+    pendingOperationId: unknown;
     pendingIntent: unknown;
   }>
 > {
@@ -370,6 +371,7 @@ describe('share-target service worker contract', () => {
       expect(value.requestKey).toMatch(/^[a-f0-9]{32}$/u);
       expect(value.requestKey).not.toBe(value.id);
       expect(value.lifecycle).toBe('staged');
+      expect(value.pendingOperationId).toBeNull();
       expect(value.pendingIntent).toBeNull();
     }
 

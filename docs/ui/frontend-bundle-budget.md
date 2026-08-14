@@ -21,7 +21,7 @@
 
 ## Size budget
 
-`npm run build --prefix packages/frontend` の後に、以下を実行する。
+`VITE_PWA_SHARE_TARGET_MODE=decommission npm run build --prefix packages/frontend` の後に、以下を実行する。公開artifactではprofileに応じて`enabled|decommission`を明示する。
 
 ```bash
 npm run build:budget --prefix packages/frontend

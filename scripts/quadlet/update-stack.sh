@@ -63,7 +63,7 @@ run_build_images() {
     return 0
   fi
 
-  SAKURA_VPS_PROFILE="$PROFILE" "$BUILD_IMAGES"
+  "$BUILD_IMAGES" --profile "$PROFILE"
 }
 
 run_install_units() {

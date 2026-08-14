@@ -328,6 +328,7 @@
         requestKey,
         claimedByActorHash: null,
         lifecycle: 'staged',
+        pendingOperationId: null,
         pendingIntent: null,
         schemaVersion: 1,
         draft,

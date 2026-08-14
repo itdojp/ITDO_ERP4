@@ -14,7 +14,7 @@ typecheck:
 
 build:
 	npm run build --prefix packages/backend
-	npm run build --prefix packages/frontend
+	VITE_PWA_SHARE_TARGET_MODE=$${VITE_PWA_SHARE_TARGET_MODE:-decommission} npm run build --prefix packages/frontend
 
 test: test-backend test-frontend
 
