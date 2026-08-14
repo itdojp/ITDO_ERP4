@@ -19,6 +19,7 @@ OPS_DOC_TARGETS=(
   docs/ops/sakura-vps-deployment.md
   docs/ops/sakura-vps-env-checklist.md
   docs/ops/sakura-vps-podman-trial.md
+  docs/ops/sakura-vps-trial-checklist.md
   docs/ops/sakura-vps-trial-profiles.md
   docs/ops/storage-readiness.md
   docs/ops/ops-automation.md
@@ -149,7 +150,12 @@ const fs = require('fs');
 const files = [
   'docs/ops/sakura-vps-deployment.md',
   'docs/ops/sakura-vps-podman-trial.md',
+  'docs/ops/sakura-vps-trial-checklist.md',
 ];
+const profileExampleFiles = new Set([
+  'docs/ops/sakura-vps-deployment.md',
+  'docs/ops/sakura-vps-podman-trial.md',
+]);
 const requiredCommandsByFile = new Map([
   [
     'docs/ops/sakura-vps-deployment.md',
@@ -173,6 +179,18 @@ const requiredCommandsByFile = new Map([
       'update-stack.sh',
       'check-trial-readiness.sh',
       'collect-trial-evidence.sh',
+    ],
+  ],
+  [
+    'docs/ops/sakura-vps-trial-checklist.md',
+    [
+      'check-env.sh',
+      'build-images.sh',
+      'install-user-units.sh',
+      'start-stack.sh',
+      'check-trial-readiness.sh',
+      'collect-trial-evidence.sh',
+      'rollback-latest.sh',
     ],
   ],
 ]);
@@ -230,13 +248,15 @@ for (const file of files) {
   if (/--profile\s+(?:production|private-smoke|https-trial)\b/u.test(source)) {
     failures.push(`${file}: hard-coded --profile breaks build/install continuity`);
   }
-  for (const example of [
-    'erp4-frontend-build.env.example',
-    'erp4-frontend-build.private-smoke.env.example',
-    'erp4-frontend-build.https-trial.env.example',
-  ]) {
-    if (!source.includes(example)) {
-      failures.push(`${file}: missing profile-specific example ${example}`);
+  if (profileExampleFiles.has(file)) {
+    for (const example of [
+      'erp4-frontend-build.env.example',
+      'erp4-frontend-build.private-smoke.env.example',
+      'erp4-frontend-build.https-trial.env.example',
+    ]) {
+      if (!source.includes(example)) {
+        failures.push(`${file}: missing profile-specific example ${example}`);
+      }
     }
   }
   failures.push(
@@ -252,7 +272,7 @@ if (failures.length > 0) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log('Sakura profile continuity valid for deployment and Podman runbooks');
+console.log('Sakura profile continuity valid for deployment, Podman, and trial checklist runbooks');
 NODE
 
 printf 'Ops documentation checks completed.\n'
