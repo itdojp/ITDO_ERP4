@@ -3,7 +3,7 @@
 ## 対象
 
 - baseline: `1f51d5875d43c1986c7acf40ec0a7c18b789f074`
-- validated implementation head: `336eada31cb500383d7cde6b5a515fa210e1ecff`
+- validated implementation head: `9578788c5acedb782fb0a537f13ad218b9c8d108`
 - channel: `pwa_share_target`
 - environment: local repository-side synthetic fixture
 
@@ -42,7 +42,7 @@
 
 security reviewで指摘されたinitiator metadata欠落は、両header必須化を一度実装してreal-browser PWA 4件を実行した結果、Chromiumのservice worker Requestでは同一origin POSTでもmetadataが不可視となり3件が拒否される事実を確認した。最終契約はexplicit cross-siteを拒否し、両header欠落だけをlocal IndexedDB stagingに限定して受理する。API mutation、cookie/token読取、自動保存はなく、queue 10件、TTL 60分、認証済みexact preview、明示confirmを防御境界とする。最終focused real-browser PWAは4/4 PASSである。
 
-2026-08-14 JSTにcleanなimplementation head `336eada31cb500383d7cde6b5a515fa210e1ecff`でrelease-readiness 29/29、PWA focused 4/4、full E2E 159 PASS／34既存条件付きSKIP／0 FAIL、frontend 953/953、backend 2397/2397、audit、ops-quality、secret scanを再実行した。独立reviewで検出されたglobal mutation中のsingle-delivery handoff消失、unauthenticated discard／actor claim順序、認証済みtombstone cleanup順序、全runbook invocationのprofile continuity、採取証跡とrecord profileの不一致は修正し、negative／concurrency testで固定した。この証跡文書を更新する後続commitは検証済みimplementation treeを変更しないdocs-only commitとする。
+2026-08-14 JSTにcleanなimplementation head `9578788c5acedb782fb0a537f13ad218b9c8d108`でrelease-readiness 29/29、PWA focused 4/4、full E2E 159 PASS／34既存条件付きSKIP／0 FAIL、frontend 953/953、backend 2397/2397、audit、ops-quality、secret scanを再実行した。独立reviewで検出されたglobal mutation中のsingle-delivery handoff消失、unauthenticated discard／actor claim順序、認証済みtombstone cleanup順序、全runbook invocationのprofile continuity、採取証跡とrecord profileの不一致は修正し、negative／concurrency testで固定した。最後のreview remediationでは`update-stack.sh`と`rollback-latest.sh`をprofile continuity gateへ追加し、各コマンドの非束縛呼び出しを拒否する負例を固定した。また、trial recorderのhelpを実際のfail-closed profile契約へ一致させた。この証跡文書を更新する後続commitは検証済みimplementation treeを変更しないdocs-only commitとする。
 
 ## Threat model
 
