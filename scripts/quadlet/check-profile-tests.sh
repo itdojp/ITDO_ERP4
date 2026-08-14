@@ -261,9 +261,11 @@ EOF_FAKE_PODMAN
 chmod +x "$fake_build_bin/podman"
 valid_private_build_env="$WORK_DIR/private-build.env"
 write_frontend_env "$valid_private_build_env" 'http://erp4-backend:3001' header
-run_failure 'build-images rejects missing frontend build env' 'frontend build env file is required' \
-  env PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile SAKURA_VPS_PROFILE=production \
-  FRONTEND_BUILD_ENV_FILE="$WORK_DIR/missing-frontend-build.env" "$BUILD_IMAGES_SCRIPT"
+run_failure 'build-images rejects missing frontend build env' 'frontend build env file is required: .*erp4-frontend-build.*\.env; copy the profile-matching .*\.env\.example and set FRONTEND_BUILD_ENV_FILE' \
+  env -u FRONTEND_BUILD_ENV_FILE PATH="$fake_build_bin:$PATH" ERP4_IMAGE_TAG=test-profile \
+  SAKURA_VPS_PROFILE=production "$BUILD_IMAGES_SCRIPT"
+run_failure 'check-env guides missing frontend build env setup' 'frontend build env file not found: .*erp4-frontend-build.*\.env; copy the profile-matching .*\.env\.example and pass --frontend-build-env FILE' \
+  env -u FRONTEND_BUILD_ENV_FILE "$CHECK_ENV" --profile production --skip-runtime
 wrong_production_build_env="$WORK_DIR/wrong-production-build.env"
 write_frontend_env "$wrong_production_build_env" 'https://api.example.com' header
 run_failure 'build-images rejects production header auth' 'rejects VITE_AUTH_MODE=header' \

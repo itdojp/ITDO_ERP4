@@ -20,6 +20,11 @@ require_file() {
   [[ -f "$1" ]] || fail "required file not found: $1"
 }
 
+require_frontend_build_env() {
+  [[ -f "$1" ]] || fail \
+    "frontend build env file not found: $1; copy the profile-matching deploy/quadlet/env/erp4-frontend-build*.env.example and pass --frontend-build-env FILE"
+}
+
 usage() {
   cat <<USAGE
 Usage: $(basename "$0") [--profile production|private-smoke|https-trial] [--target-dir DIR] [--frontend-build-env FILE] [--skip-runtime]
@@ -496,7 +501,7 @@ if [[ "$SKIP_RUNTIME" -eq 0 ]]; then
   check_linger
 fi
 
-require_file "$FRONTEND_BUILD_ENV"
+require_frontend_build_env "$FRONTEND_BUILD_ENV"
 require_env_key "$FRONTEND_BUILD_ENV" VITE_API_BASE
 case "$PROFILE" in
   private-smoke)

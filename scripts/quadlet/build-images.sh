@@ -33,7 +33,8 @@ export ERP4_IMAGE_TAG
 BACKEND_IMAGE="${BACKEND_IMAGE:-localhost/erp4-backend:${ERP4_IMAGE_TAG}}"
 FRONTEND_IMAGE="${FRONTEND_IMAGE:-localhost/erp4-frontend:${ERP4_IMAGE_TAG}}"
 
-[[ -f "$FRONTEND_BUILD_ENV_FILE" ]] || fail "frontend build env file is required: $FRONTEND_BUILD_ENV_FILE"
+[[ -f "$FRONTEND_BUILD_ENV_FILE" ]] || fail \
+  "frontend build env file is required: $FRONTEND_BUILD_ENV_FILE; copy the profile-matching deploy/quadlet/env/erp4-frontend-build*.env.example and set FRONTEND_BUILD_ENV_FILE"
 set -a
 # shellcheck disable=SC1090
 source "$FRONTEND_BUILD_ENV_FILE"
