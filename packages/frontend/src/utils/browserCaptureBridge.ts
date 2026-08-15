@@ -8,6 +8,7 @@ import {
 } from './shareTargetQueue';
 
 export const BROWSER_CAPTURE_BRIDGE_TIMEOUT_MS = 5_000;
+export const BROWSER_CAPTURE_TERMINAL_FENCE_TTL_MS = 10 * 60 * 1_000;
 
 export type BrowserCaptureLifecycle = 'staged' | 'pending' | 'cleanup_pending';
 // `terminal` invalidates other tabs before extension storage cleanup is
@@ -65,7 +66,10 @@ const lifecycleListeners = new Set<
   }) => void
 >();
 const BROWSER_CAPTURE_LIFECYCLE_CHANNEL = 'erp4-browser-capture-lifecycle-v1';
+const BROWSER_CAPTURE_TERMINAL_FENCE_PREFIX =
+  'erp4-browser-capture-terminal-v1:';
 let lifecycleChannel: BroadcastChannel | null = null;
+let storageLifecycleListening = false;
 
 export class BrowserCaptureBridgeError extends Error {
   readonly code: string;
@@ -119,6 +123,137 @@ function normalizeLifecycleMessage(value: unknown) {
   };
 }
 
+function terminalFenceKey(draftId: string) {
+  return `${BROWSER_CAPTURE_TERMINAL_FENCE_PREFIX}${draftId}`;
+}
+
+function normalizeTerminalFence(value: string | null, expectedDraftId: string) {
+  if (value === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (
+      !record(parsed) ||
+      Object.keys(parsed).some(
+        (field) =>
+          field !== 'schemaVersion' &&
+          field !== 'draftId' &&
+          field !== 'expiresAtMs',
+      ) ||
+      parsed.schemaVersion !== 1 ||
+      parsed.draftId !== expectedDraftId ||
+      !Number.isSafeInteger(parsed.expiresAtMs) ||
+      Number(parsed.expiresAtMs) <= 0
+    ) {
+      return null;
+    }
+    return {
+      schemaVersion: 1 as const,
+      draftId: expectedDraftId,
+      expiresAtMs: Number(parsed.expiresAtMs),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function emitLifecycle(message: {
+  schemaVersion: 1;
+  draftId: string;
+  lifecycle: BrowserCaptureLocalLifecycle;
+}) {
+  for (const listener of lifecycleListeners) listener(message);
+}
+
+function handleTerminalFenceStorage(event: StorageEvent) {
+  if (
+    typeof event.key !== 'string' ||
+    !event.key.startsWith(BROWSER_CAPTURE_TERMINAL_FENCE_PREFIX)
+  ) {
+    return;
+  }
+  const draftId = event.key.slice(BROWSER_CAPTURE_TERMINAL_FENCE_PREFIX.length);
+  const fence = isBrowserCaptureDraftId(draftId)
+    ? normalizeTerminalFence(event.newValue, draftId)
+    : null;
+  const nowMs = Date.now();
+  if (
+    !fence ||
+    fence.expiresAtMs <= nowMs ||
+    fence.expiresAtMs > nowMs + BROWSER_CAPTURE_TERMINAL_FENCE_TTL_MS
+  ) {
+    return;
+  }
+  emitLifecycle({ schemaVersion: 1, draftId, lifecycle: 'terminal' });
+}
+
+function ensureStorageLifecycleListener() {
+  if (storageLifecycleListening || typeof window === 'undefined') return;
+  window.addEventListener('storage', handleTerminalFenceStorage);
+  storageLifecycleListening = true;
+}
+
+export function markBrowserCaptureTerminalFence(
+  draftId: string,
+  nowMs = Date.now(),
+) {
+  if (!isBrowserCaptureDraftId(draftId) || !Number.isSafeInteger(nowMs)) {
+    throw new BrowserCaptureBridgeError('invalid_request');
+  }
+  try {
+    window.localStorage.setItem(
+      terminalFenceKey(draftId),
+      JSON.stringify({
+        schemaVersion: 1,
+        draftId,
+        expiresAtMs: nowMs + BROWSER_CAPTURE_TERMINAL_FENCE_TTL_MS,
+      }),
+    );
+  } catch {
+    throw new BrowserCaptureBridgeError('storage_unavailable');
+  }
+}
+
+export function hasBrowserCaptureTerminalFence(
+  draftId: string,
+  nowMs = Date.now(),
+) {
+  if (!isBrowserCaptureDraftId(draftId) || !Number.isSafeInteger(nowMs)) {
+    return false;
+  }
+  let value: string | null;
+  try {
+    value = window.localStorage.getItem(terminalFenceKey(draftId));
+  } catch {
+    throw new BrowserCaptureBridgeError('storage_unavailable');
+  }
+  if (value === null) return false;
+  const fence = normalizeTerminalFence(value, draftId);
+  if (
+    !fence ||
+    fence.expiresAtMs > nowMs + BROWSER_CAPTURE_TERMINAL_FENCE_TTL_MS
+  ) {
+    throw new BrowserCaptureBridgeError('invalid_request');
+  }
+  if (fence.expiresAtMs <= nowMs) {
+    try {
+      window.localStorage.removeItem(terminalFenceKey(draftId));
+    } catch {
+      throw new BrowserCaptureBridgeError('storage_unavailable');
+    }
+    return false;
+  }
+  return true;
+}
+
+export function clearBrowserCaptureTerminalFence(draftId: string) {
+  if (!isBrowserCaptureDraftId(draftId)) return;
+  try {
+    window.localStorage.removeItem(terminalFenceKey(draftId));
+  } catch {
+    throw new BrowserCaptureBridgeError('storage_unavailable');
+  }
+}
+
 function getLifecycleChannel() {
   if (typeof BroadcastChannel === 'undefined') return null;
   if (lifecycleChannel) return lifecycleChannel;
@@ -126,16 +261,22 @@ function getLifecycleChannel() {
   channel.onmessage = (event: MessageEvent<unknown>) => {
     const message = normalizeLifecycleMessage(event.data);
     if (!message) return;
-    for (const listener of lifecycleListeners) listener(message);
+    emitLifecycle(message);
   };
   lifecycleChannel = channel;
   return channel;
 }
 
 function closeUnusedLifecycleChannel() {
-  if (lifecycleListeners.size !== 0 || !lifecycleChannel) return;
-  lifecycleChannel.close();
-  lifecycleChannel = null;
+  if (lifecycleListeners.size !== 0) return;
+  if (lifecycleChannel) {
+    lifecycleChannel.close();
+    lifecycleChannel = null;
+  }
+  if (storageLifecycleListening && typeof window !== 'undefined') {
+    window.removeEventListener('storage', handleTerminalFenceStorage);
+    storageLifecycleListening = false;
+  }
 }
 
 export function publishBrowserCaptureLifecycle(
@@ -158,7 +299,8 @@ export function subscribeBrowserCaptureLifecycle(
     lifecycle: BrowserCaptureLocalLifecycle;
   }) => void,
 ) {
-  if (!getLifecycleChannel()) return () => undefined;
+  ensureStorageLifecycleListener();
+  getLifecycleChannel();
   lifecycleListeners.add(listener);
   return () => {
     lifecycleListeners.delete(listener);
@@ -355,6 +497,9 @@ function normalizeResponse(
   }
   const normalizedRecord =
     response.record === null ? null : normalizeBridgeRecord(response.record);
+  if (normalizedRecord !== null && normalizedRecord.id !== expected.id) {
+    throw new BrowserCaptureBridgeError('invalid_request');
+  }
   if (response.record !== null && !normalizedRecord) {
     throw new BrowserCaptureBridgeError('invalid_request');
   }

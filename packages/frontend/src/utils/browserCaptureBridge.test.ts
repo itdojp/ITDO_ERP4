@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  BROWSER_CAPTURE_TERMINAL_FENCE_TTL_MS,
   browserCaptureActorFingerprint,
+  clearBrowserCaptureTerminalFence,
   getBrowserCaptureDraft,
+  hasBrowserCaptureTerminalFence,
+  markBrowserCaptureTerminalFence,
   markBrowserCaptureDraftCleanupPending,
   markBrowserCaptureDraftPending,
   markBrowserCaptureDraftStaged,
@@ -76,6 +80,7 @@ function organizationPendingResponseRecord(groupCount: number) {
 }
 
 afterEach(() => {
+  window.localStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -510,6 +515,82 @@ describe('browserCaptureBridge', () => {
     );
     response = { ok: true, transitioned: true, record: responseRecord() };
     await expectInvalid(() => removeBrowserCaptureDraft(id, actorKey));
+
+    const otherId = 'f'.repeat(32);
+    response = {
+      ok: true,
+      transitioned: false,
+      record: { ...responseRecord(), id: otherId },
+    };
+    await expectInvalid(() => getBrowserCaptureDraft(id, actorKey));
+    response = {
+      ok: true,
+      transitioned: true,
+      record: { ...responseRecord('pending'), id: otherId },
+    };
+    await expectInvalid(() =>
+      markBrowserCaptureDraftPending(
+        id,
+        actorKey,
+        operationId,
+        {
+          selectedFields: ['title'],
+          scope: 'personal',
+          organizationGroupAccountIds: [],
+          sourceType: 'web',
+        },
+        draft,
+      ),
+    );
+    response = {
+      ok: true,
+      transitioned: true,
+      record: { ...responseRecord(), id: otherId },
+    };
+    await expectInvalid(() =>
+      markBrowserCaptureDraftStaged(id, actorKey, operationId),
+    );
+    response = {
+      ok: true,
+      transitioned: true,
+      record: { ...cleanupResponseRecord(), id: otherId },
+    };
+    await expectInvalid(() =>
+      markBrowserCaptureDraftCleanupPending(id, actorKey),
+    );
+  });
+
+  it('persists only a bounded content-free terminal fence across reloads', () => {
+    const now = Date.parse('2026-08-15T00:00:00.000Z');
+    markBrowserCaptureTerminalFence(id, now);
+
+    const fenceKey = Object.keys(window.localStorage).find((key) =>
+      key.endsWith(id),
+    );
+    expect(fenceKey).toBeDefined();
+    const serialized = fenceKey
+      ? (window.localStorage.getItem(fenceKey) ?? '')
+      : '';
+    expect(serialized).not.toContain(requestKey);
+    expect(serialized).not.toContain(draft.selectedText);
+    expect(hasBrowserCaptureTerminalFence(id, now + 1)).toBe(true);
+    expect(
+      hasBrowserCaptureTerminalFence(
+        id,
+        now + BROWSER_CAPTURE_TERMINAL_FENCE_TTL_MS + 1,
+      ),
+    ).toBe(false);
+
+    markBrowserCaptureTerminalFence(id, now);
+    clearBrowserCaptureTerminalFence(id);
+    expect(hasBrowserCaptureTerminalFence(id, now + 1)).toBe(false);
+
+    markBrowserCaptureTerminalFence(id, now);
+    if (!fenceKey) throw new Error('expected terminal fence key');
+    window.localStorage.setItem(fenceKey, '{"schemaVersion":2}');
+    expect(() => hasBrowserCaptureTerminalFence(id, now + 1)).toThrowError(
+      /invalid_request/u,
+    );
   });
 
   it('broadcasts content-free lifecycle invalidation only to other channel objects', () => {
@@ -550,6 +631,22 @@ describe('browserCaptureBridge', () => {
       }),
     );
     expect(received).toEqual([
+      { schemaVersion: 1, draftId: id, lifecycle: 'terminal' },
+    ]);
+
+    markBrowserCaptureTerminalFence(id);
+    const fenceKey = Object.keys(window.localStorage).find((key) =>
+      key.endsWith(id),
+    );
+    if (!fenceKey) throw new Error('expected terminal fence key');
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: fenceKey,
+        newValue: window.localStorage.getItem(fenceKey),
+      }),
+    );
+    expect(received).toEqual([
+      { schemaVersion: 1, draftId: id, lifecycle: 'terminal' },
       { schemaVersion: 1, draftId: id, lifecycle: 'terminal' },
     ]);
     unsubscribe();

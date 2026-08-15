@@ -573,6 +573,137 @@ test('browser capture bridge reaches the authenticated real-backend preview and 
   ]);
 });
 
+test('browser capture terminal fence blocks reload-gap rehydration when extension tombstoning fails @core @extended', async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(120_000);
+  const draftId = randomUUID().replace(/-/gu, '');
+  const requestKey = randomUUID().replace(/-/gu, '');
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  const selectedText = `Synthetic reload-gap capture ${runId()}`;
+
+  await context.addInitScript(
+    ({ id, key, created, expires, text }) => {
+      const commands: string[] = [];
+      (
+        globalThis as typeof globalThis & {
+          __terminalFenceBridgeCommands?: string[];
+        }
+      ).__terminalFenceBridgeCommands = commands;
+      window.addEventListener('message', (event) => {
+        if (
+          event.source !== window ||
+          event.origin !== window.location.origin ||
+          !event.data ||
+          typeof event.data !== 'object' ||
+          Array.isArray(event.data)
+        ) {
+          return;
+        }
+        const command = event.data as Record<string, unknown>;
+        if (
+          command.source !== 'erp4-page' ||
+          command.type !== 'erp4-browser-capture-command-v1' ||
+          command.id !== id ||
+          typeof command.command !== 'string' ||
+          typeof command.nonce !== 'string'
+        ) {
+          return;
+        }
+        commands.push(command.command);
+        const response =
+          command.command === 'cleanup'
+            ? { ok: false, code: 'storage_unavailable' }
+            : {
+                ok: true,
+                transitioned: false,
+                record: {
+                  schemaVersion: 1,
+                  id,
+                  requestKey: key,
+                  lifecycle: 'staged',
+                  pendingOperationId: null,
+                  pendingIntent: null,
+                  draft: {
+                    schemaVersion: 1,
+                    channel: 'browser_extension',
+                    title: 'Synthetic reload-gap capture',
+                    url: 'https://example.invalid/browser-capture',
+                    selectedText: text,
+                    description: null,
+                    author: null,
+                    publishedAt: null,
+                    capturedAt: created,
+                  },
+                  createdAt: created,
+                  expiresAt: expires,
+                },
+              };
+        window.postMessage(
+          {
+            source: 'erp4-extension',
+            type: 'erp4-browser-capture-response-v1',
+            schemaVersion: 1,
+            command: command.command,
+            id,
+            nonce: command.nonce,
+            response,
+          },
+          window.location.origin,
+        );
+      });
+    },
+    {
+      id: draftId,
+      key: requestKey,
+      created: createdAt,
+      expires: expiresAt,
+      text: selectedText,
+    },
+  );
+
+  await prepare(page);
+  const staleHandoffUrl = `${baseUrl}/?browserCapture=${draftId}`;
+  await page.goto(staleHandoffUrl);
+  await expect(page.getByRole('textbox', { name: '選択テキスト' })).toHaveValue(
+    selectedText,
+  );
+  await page.getByRole('button', { name: '破棄' }).click();
+  await expect(page).not.toHaveURL(/browserCapture=/u);
+  await expect(
+    page.getByRole('button', {
+      name: 'browser session内draftの本文消去を再試行',
+    }),
+  ).toBeVisible();
+
+  const latePage = await context.newPage();
+  await latePage.goto(staleHandoffUrl);
+  await expect(
+    latePage.getByRole('button', {
+      name: 'browser session内draftの本文消去を再試行',
+    }),
+  ).toBeVisible();
+  await expect(latePage).not.toHaveURL(/browserCapture=/u);
+  await expect(latePage.getByText(selectedText)).toHaveCount(0);
+  const lateState = await latePage.evaluate(() => ({
+    commands:
+      (
+        globalThis as typeof globalThis & {
+          __terminalFenceBridgeCommands?: string[];
+        }
+      ).__terminalFenceBridgeCommands ?? [],
+    fenceValues: Object.keys(window.localStorage)
+      .filter((key) => key.startsWith('erp4-browser-capture-terminal-v1:'))
+      .map((key) => window.localStorage.getItem(key)),
+  }));
+  expect(lateState.commands).not.toContain('get');
+  expect(JSON.stringify(lateState.fenceValues)).not.toContain(selectedText);
+  expect(JSON.stringify(lateState.fenceValues)).not.toContain(requestKey);
+  await latePage.close();
+});
+
 test('pwa Web Share Target keeps an unauthenticated offline draft and resumes only after login @pwa @extended', async ({
   page,
   context,

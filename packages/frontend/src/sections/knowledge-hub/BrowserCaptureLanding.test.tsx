@@ -14,7 +14,10 @@ const {
   isBffAuthMode,
   refreshAuthStateFromServer,
   subscribeAuthSessionChanges,
+  clearBrowserCaptureTerminalFence,
   getBrowserCaptureDraft,
+  hasBrowserCaptureTerminalFence,
+  markBrowserCaptureTerminalFence,
   markBrowserCaptureDraftCleanupPending,
   publishBrowserCaptureLifecycle,
   removeBrowserCaptureDraft,
@@ -24,7 +27,10 @@ const {
   isBffAuthMode: vi.fn(),
   refreshAuthStateFromServer: vi.fn(),
   subscribeAuthSessionChanges: vi.fn(),
+  clearBrowserCaptureTerminalFence: vi.fn(),
   getBrowserCaptureDraft: vi.fn(),
+  hasBrowserCaptureTerminalFence: vi.fn(),
+  markBrowserCaptureTerminalFence: vi.fn(),
   markBrowserCaptureDraftCleanupPending: vi.fn(),
   publishBrowserCaptureLifecycle: vi.fn(),
   removeBrowserCaptureDraft: vi.fn(),
@@ -43,7 +49,10 @@ vi.mock('../../utils/browserCaptureBridge', async (importOriginal) => {
     await importOriginal<typeof import('../../utils/browserCaptureBridge')>();
   return {
     ...actual,
+    clearBrowserCaptureTerminalFence,
     getBrowserCaptureDraft,
+    hasBrowserCaptureTerminalFence,
+    markBrowserCaptureTerminalFence,
     markBrowserCaptureDraftCleanupPending,
     publishBrowserCaptureLifecycle,
     removeBrowserCaptureDraft,
@@ -123,7 +132,10 @@ describe('BrowserCaptureLanding', () => {
     isBffAuthMode.mockReset().mockReturnValue(false);
     refreshAuthStateFromServer.mockReset().mockResolvedValue(null);
     subscribeAuthSessionChanges.mockReset().mockReturnValue(() => undefined);
+    clearBrowserCaptureTerminalFence.mockReset();
     getBrowserCaptureDraft.mockReset();
+    hasBrowserCaptureTerminalFence.mockReset().mockReturnValue(false);
+    markBrowserCaptureTerminalFence.mockReset();
     markBrowserCaptureDraftCleanupPending
       .mockReset()
       .mockResolvedValue(undefined);
@@ -258,6 +270,10 @@ describe('BrowserCaptureLanding', () => {
       draftId,
       'terminal',
     );
+    expect(markBrowserCaptureTerminalFence).toHaveBeenCalledWith(draftId);
+    expect(
+      markBrowserCaptureTerminalFence.mock.invocationCallOrder[0],
+    ).toBeLessThan(publishBrowserCaptureLifecycle.mock.invocationCallOrder[0]);
     expect(
       publishBrowserCaptureLifecycle.mock.invocationCallOrder[0],
     ).toBeLessThan(
@@ -720,6 +736,35 @@ describe('BrowserCaptureLanding', () => {
     );
     expect(clearLanding).toHaveBeenCalledOnce();
     window.removeEventListener(KNOWLEDGE_CAPTURE_PURGE_EVENT, purgeListener);
+  });
+
+  it('keeps a reload-gap tab fail closed when a durable terminal fence exists', async () => {
+    window.history.replaceState(null, '', `/?browserCapture=${draftId}`);
+    getAuthState.mockReturnValue({ userId: 'synthetic-user', roles: [] });
+    refreshAuthStateFromServer.mockResolvedValue({
+      userId: 'synthetic-user',
+      roles: [],
+      verifiedActorKey: actorKey,
+    });
+    hasBrowserCaptureTerminalFence.mockReturnValue(true);
+
+    render(
+      <BrowserCaptureLanding
+        draftId={draftId}
+        knowledgeHubReady
+        activateKnowledgeHub={() => true}
+        clearLanding={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByRole('button', {
+        name: 'browser session内draftの本文消去を再試行',
+      }),
+    ).toBeVisible();
+    expect(getBrowserCaptureDraft).not.toHaveBeenCalled();
+    expect(window.location.search).not.toContain('browserCapture');
+    expect(screen.queryByText(draft.selectedText)).not.toBeInTheDocument();
   });
 
   it('reloads the exact extension record after another tab changes lifecycle', async () => {

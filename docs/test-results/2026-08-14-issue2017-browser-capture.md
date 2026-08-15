@@ -104,6 +104,8 @@ Review remediationのcode head `e18653cd46391d52222fe93ff425629fbe2bb969`では�
 - real-backend E2Eは最初のpending responseだけを喪失させ、preview POST 1件、response-loss中のcommit 0件、明示retry後のcommit POST合計1件、reconcile 0件、mutation bridge command順`pending → pending → cleanup → delete`を確認した。固定sleep、timeout延長、skip、coverage scope／threshold変更は行っていない。
 - remediation treeのfocused結果はextension 31/31、frontend bridge／queue／landing／ingress 65/65、frontend typecheck、real-backend E2E 1/1、`git diff --check`がPASSした。最終exact headのfull gate、CI、独立reviewはPR #2074を正本とし、以前のheadの結果を再利用しない。
 
+追加の独立reviewで、BroadcastChannel subscribe gap中のreload／後発tabと、response envelope内IDに対するinner record IDの未束縛を検出した。terminal結果はextension tombstoneより先にschema／opaque draft ID／最大10分expiryだけのcontent-free same-origin fenceを同期保存する。landingはextension contentを要求する前にfenceを確認し、storage event／BroadcastChannelを受信できなかったtabでも本文、Preview、commitを復元しない。extension record削除後はfenceを消去する。bridgeは`get|pending|staged|cleanup`のnon-null record IDをrequested draft IDへexact bindする。tombstone失敗中に旧handoff URLを別pageで開くreal-browser testを追加し、bridge `get` 0件と本文非表示を固定した。この追加treeのexact-head gateはcommit後に再取得し、以前の結果を再利用しない。
+
 unpacked Chromium E2Eはsynthetic landingによるextension protocolを対象とし、別のreal frontend/backend bridge-protocol E2Eがcapture mutation lifecycleを対象とする。いずれもmulti-tab BroadcastChannel、service-worker強制restart、Chrome／Edge vendor runtime evidence、target proxy通過後のCSP evidenceではない。これらをPASSと過大評価しない。CI/review結果はDraft PRへ記録する。
 
 ## Browser evidence status

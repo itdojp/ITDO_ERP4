@@ -10,8 +10,11 @@ import {
 import { Alert, Button, Card } from '../../ui';
 import {
   BrowserCaptureBridgeError,
+  clearBrowserCaptureTerminalFence,
   getBrowserCaptureDraft,
+  hasBrowserCaptureTerminalFence,
   isBrowserCaptureDraftId,
+  markBrowserCaptureTerminalFence,
   markBrowserCaptureDraftCleanupPending,
   publishBrowserCaptureLifecycle,
   removeBrowserCaptureDraft,
@@ -376,6 +379,30 @@ export function BrowserCaptureLanding({
     draftControllerRef.current = controller;
     setStatus('loading');
     setError('');
+    try {
+      if (hasBrowserCaptureTerminalFence(draftId)) {
+        // A content-free same-origin fence closes the BroadcastChannel
+        // subscribe/reload gap before extension content can be requested.
+        terminalOutcomeRef.current = 'remote_terminal';
+        terminalCleanupPendingRef.current = true;
+        cleanupTombstoneRef.current = false;
+        cleanupActorKeyRef.current = authenticatedActorKey;
+        manualRetryRequiredRef.current = false;
+        setExpiresAtMs(null);
+        purgeHandoff();
+        detachLandingAddress();
+        setError(CLEANUP_REQUIRED_MESSAGE);
+        setStatus('cleanup_required');
+        return;
+      }
+    } catch {
+      manualRetryRequiredRef.current = true;
+      setStatus('unavailable');
+      setError(
+        'Browser Captureのterminal状態を確認できません。本文を読み込まず、利用者操作で再試行してください。',
+      );
+      return;
+    }
     getBrowserCaptureDraft(draftId, authenticatedActorKey, controller.signal)
       .then((capture) => {
         if (
@@ -488,6 +515,15 @@ export function BrowserCaptureLanding({
       if (!cleanupActorKey) {
         throw new BrowserCaptureBridgeError('state_conflict');
       }
+      // This content-free fence is synchronous and survives reload/new tabs.
+      // If the browser storage write is unavailable, still attempt extension
+      // tombstoning: either independent path is sufficient to prevent draft
+      // rehydration, while a failure of both remains an explicit cleanup state.
+      try {
+        markBrowserCaptureTerminalFence(draftId);
+      } catch {
+        // Extension tombstoning below is the independent fail-closed path.
+      }
       if (!cleanupTombstoneRef.current) {
         await markBrowserCaptureDraftCleanupPending(draftId, cleanupActorKey);
         cleanupTombstoneRef.current = true;
@@ -496,6 +532,12 @@ export function BrowserCaptureLanding({
         publishBrowserCaptureLifecycle(draftId, 'cleanup_pending');
       }
       await removeBrowserCaptureDraft(draftId, cleanupActorKey);
+      try {
+        clearBrowserCaptureTerminalFence(draftId);
+      } catch {
+        // The extension content has already been deleted. A remaining
+        // content-free fence only keeps an old handoff URL fail closed.
+      }
       cleanupActorKeyRef.current = '';
       cleanupTombstoneRef.current = false;
     }
@@ -529,6 +571,12 @@ export function BrowserCaptureLanding({
       terminalCleanupPendingRef.current = false;
       manualRetryRequiredRef.current = false;
       cleanupTombstoneRef.current = false;
+      try {
+        markBrowserCaptureTerminalFence(draftId);
+      } catch {
+        // The extension tombstone path remains independent and is attempted
+        // immediately by removeAndClear().
+      }
       // Invalidate all other tabs before any extension storage write. This
       // signal carries no claim that content has already been erased.
       publishBrowserCaptureLifecycle(draftId, 'terminal');
