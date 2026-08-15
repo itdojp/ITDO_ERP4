@@ -334,6 +334,26 @@ describe('shareTargetQueue', () => {
       markShareTargetDraftPending(
         value.id,
         actorKey,
+        operationId,
+        { ...intent, selectedFields: [...intent.selectedFields] },
+        exactDraft,
+        baseTime,
+      ),
+    ).resolves.toEqual({ transitioned: false, owned: true });
+    await expect(
+      markShareTargetDraftPending(
+        value.id,
+        actorKey,
+        operationId,
+        { ...intent, selectedFields: [...intent.selectedFields] },
+        { ...exactDraft, title: 'Mismatched same-operation retry' },
+        baseTime,
+      ),
+    ).rejects.toThrow('share_target_invalid_transition');
+    await expect(
+      markShareTargetDraftPending(
+        value.id,
+        actorKey,
         'b'.repeat(48),
         { ...intent, selectedFields: [...intent.selectedFields] },
         { ...exactDraft, title: 'Conflicting edit' },
@@ -341,6 +361,7 @@ describe('shareTargetQueue', () => {
       ),
     ).resolves.toMatchObject({
       transitioned: false,
+      owned: false,
       draft: exactDraft,
       pendingIntent: intent,
     });
@@ -418,6 +439,9 @@ describe('shareTargetQueue', () => {
 
     expect(results.filter((result) => result.transitioned)).toHaveLength(1);
     expect(results.filter((result) => !result.transitioned)).toHaveLength(1);
+    expect(results.find((result) => !result.transitioned)).toMatchObject({
+      owned: false,
+    });
     expect(
       (await getShareTargetDraft(value.id, baseTime))?.pendingOperationId,
     ).toMatch(/^(a{48}|b{48})$/u);

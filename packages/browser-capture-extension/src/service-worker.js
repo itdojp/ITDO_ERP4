@@ -41,6 +41,7 @@ function safeRecord(record) {
     id: record.id,
     requestKey: record.requestKey,
     lifecycle: record.lifecycle,
+    pendingOperationId: record.pendingOperationId,
     pendingIntent: record.pendingIntent,
     draft: record.draft,
     createdAt: record.createdAt,

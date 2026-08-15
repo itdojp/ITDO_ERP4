@@ -10,6 +10,7 @@ import {
   removeBrowserCaptureDraft,
   subscribeBrowserCaptureLifecycle,
 } from './browserCaptureBridge';
+import type { ShareTargetPendingIntent } from './shareTargetQueue';
 
 const id = '0123456789abcdef0123456789abcdef';
 const actorKey = 'header:synthetic-account';
@@ -33,6 +34,7 @@ function responseRecord(lifecycle: 'staged' | 'pending' = 'staged') {
     id,
     requestKey,
     lifecycle,
+    pendingOperationId: lifecycle === 'pending' ? operationId : null,
     pendingIntent:
       lifecycle === 'pending'
         ? {
@@ -169,6 +171,116 @@ describe('browserCaptureBridge', () => {
       draft,
     );
     expect(value).toEqual({ transitioned: true });
+  });
+
+  it('resumes only the exact pending operation and rejects a mismatched writer attestation', async () => {
+    const exactIntent: ShareTargetPendingIntent = {
+      selectedFields: ['title'],
+      scope: 'personal',
+      organizationGroupAccountIds: [],
+      sourceType: 'web',
+    };
+    let returnedOperationId = operationId;
+    let returnedIntent: ShareTargetPendingIntent = exactIntent;
+    let returnedDraft = draft;
+    let transitioned = false;
+    vi.spyOn(window, 'postMessage').mockImplementation((message) => {
+      const request = message as Record<string, unknown>;
+      queueMicrotask(() => {
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            source: window,
+            origin: window.location.origin,
+            data: {
+              source: 'erp4-extension',
+              type: 'erp4-browser-capture-response-v1',
+              schemaVersion: 1,
+              command: request.command,
+              id: request.id,
+              nonce: request.nonce,
+              response: {
+                ok: true,
+                transitioned,
+                record: {
+                  ...responseRecord('pending'),
+                  pendingOperationId: returnedOperationId,
+                  pendingIntent: returnedIntent,
+                  draft: returnedDraft,
+                },
+              },
+            },
+          }),
+        );
+      });
+    });
+
+    await expect(
+      markBrowserCaptureDraftPending(
+        id,
+        actorKey,
+        operationId,
+        exactIntent,
+        draft,
+      ),
+    ).resolves.toEqual({ transitioned: false, owned: true });
+
+    returnedDraft = { ...draft, selectedText: 'mismatched same-operation' };
+    await expect(
+      markBrowserCaptureDraftPending(
+        id,
+        actorKey,
+        operationId,
+        exactIntent,
+        draft,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_request' });
+    returnedDraft = draft;
+
+    returnedOperationId = 'x'.repeat(32);
+    await expect(
+      markBrowserCaptureDraftPending(
+        id,
+        actorKey,
+        operationId,
+        exactIntent,
+        draft,
+      ),
+    ).resolves.toMatchObject({ transitioned: false, owned: false });
+
+    transitioned = true;
+    await expect(
+      markBrowserCaptureDraftPending(
+        id,
+        actorKey,
+        operationId,
+        exactIntent,
+        draft,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_request' });
+
+    returnedOperationId = operationId;
+    returnedIntent = { ...exactIntent, sourceType: 'manual' };
+    await expect(
+      markBrowserCaptureDraftPending(
+        id,
+        actorKey,
+        operationId,
+        exactIntent,
+        draft,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_request' });
+
+    returnedIntent = exactIntent;
+    returnedDraft = { ...draft, selectedText: 'different' };
+    await expect(
+      markBrowserCaptureDraftPending(
+        id,
+        actorKey,
+        operationId,
+        exactIntent,
+        draft,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_request' });
   });
 
   it('normalizes content-free failures and deletes without sending a draft', async () => {
@@ -434,11 +546,11 @@ describe('browserCaptureBridge', () => {
 
     instances[0].onmessage?.(
       new MessageEvent('message', {
-        data: { schemaVersion: 1, draftId: id, lifecycle: 'cleanup_pending' },
+        data: { schemaVersion: 1, draftId: id, lifecycle: 'terminal' },
       }),
     );
     expect(received).toEqual([
-      { schemaVersion: 1, draftId: id, lifecycle: 'cleanup_pending' },
+      { schemaVersion: 1, draftId: id, lifecycle: 'terminal' },
     ]);
     unsubscribe();
     expect(instances[0].closed).toBe(true);

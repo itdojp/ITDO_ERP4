@@ -105,9 +105,9 @@ export function BrowserCaptureLanding({
   const cleanupActorKeyRef = useRef('');
   const cleanupTombstoneRef = useRef(false);
   const dispatchedRef = useRef('');
-  const terminalOutcomeRef = useRef<CaptureResultDetail['outcome'] | null>(
-    null,
-  );
+  const terminalOutcomeRef = useRef<
+    CaptureResultDetail['outcome'] | 'remote_terminal' | null
+  >(null);
   const terminalCleanupPendingRef = useRef(false);
   const manualRetryRequiredRef = useRef(false);
   const authControllerRef = useRef<AbortController | null>(null);
@@ -314,6 +314,23 @@ export function BrowserCaptureLanding({
         if (message.draftId !== draftId) return;
         purgeHandoff();
         setError('');
+        if (message.lifecycle === 'terminal') {
+          // The sender has reached a terminal product result, but its
+          // content-free tombstone may still fail. Purge every tab before
+          // that storage operation and keep a cleanup-only capability.
+          terminalOutcomeRef.current = 'remote_terminal';
+          terminalCleanupPendingRef.current = true;
+          cleanupTombstoneRef.current = false;
+          manualRetryRequiredRef.current = false;
+          if (!cleanupActorKeyRef.current && authenticatedActorKey) {
+            cleanupActorKeyRef.current = authenticatedActorKey;
+          }
+          setExpiresAtMs(null);
+          detachLandingAddress();
+          setError(CLEANUP_REQUIRED_MESSAGE);
+          setStatus('cleanup_required');
+          return;
+        }
         if (message.lifecycle === 'cleanup_pending') {
           terminalCleanupPendingRef.current = true;
           clearLanding();
@@ -327,7 +344,13 @@ export function BrowserCaptureLanding({
         setStatus('loading');
         setLoadRevision((current) => current + 1);
       }),
-    [clearLanding, draftId, purgeHandoff],
+    [
+      authenticatedActorKey,
+      clearLanding,
+      detachLandingAddress,
+      draftId,
+      purgeHandoff,
+    ],
   );
 
   useEffect(() => {
@@ -432,7 +455,7 @@ export function BrowserCaptureLanding({
   ]);
 
   useEffect(() => {
-    const cleanupActorKey = cleanupActorKeyRef.current;
+    const cleanupActorKey = cleanupActorKeyRef.current || authenticatedActorKey;
     if (expiresAtMs === null || !cleanupActorKey) return;
     const remaining = expiresAtMs - Date.now();
     const expire = () => {
@@ -452,7 +475,7 @@ export function BrowserCaptureLanding({
     }
     const timeout = window.setTimeout(expire, remaining);
     return () => window.clearTimeout(timeout);
-  }, [draftId, expiresAtMs, purgeHandoff]);
+  }, [authenticatedActorKey, draftId, expiresAtMs, purgeHandoff]);
 
   const removeAndClear = useCallback(async () => {
     purgeHandoff();
@@ -460,7 +483,7 @@ export function BrowserCaptureLanding({
     // a failed delete is retried only by the explicit cleanup action, never by
     // a later automatic timer.
     setExpiresAtMs(null);
-    const cleanupActorKey = cleanupActorKeyRef.current;
+    const cleanupActorKey = cleanupActorKeyRef.current || authenticatedActorKey;
     if (validDraftId) {
       if (!cleanupActorKey) {
         throw new BrowserCaptureBridgeError('state_conflict');
@@ -483,7 +506,13 @@ export function BrowserCaptureLanding({
     } else {
       clearLanding();
     }
-  }, [clearLanding, draftId, purgeHandoff, validDraftId]);
+  }, [
+    authenticatedActorKey,
+    clearLanding,
+    draftId,
+    purgeHandoff,
+    validDraftId,
+  ]);
 
   const reportCleanupFailure = useCallback(() => {
     terminalCleanupPendingRef.current = true;
@@ -500,6 +529,9 @@ export function BrowserCaptureLanding({
       terminalCleanupPendingRef.current = false;
       manualRetryRequiredRef.current = false;
       cleanupTombstoneRef.current = false;
+      // Invalidate all other tabs before any extension storage write. This
+      // signal carries no claim that content has already been erased.
+      publishBrowserCaptureLifecycle(draftId, 'terminal');
       // Remove the opaque handoff address before extension storage cleanup.
       // If tombstone persistence is unavailable, reloading the current address
       // must not rehydrate the terminal draft into a new capture UI.

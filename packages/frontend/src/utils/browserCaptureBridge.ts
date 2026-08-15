@@ -10,13 +10,17 @@ import {
 export const BROWSER_CAPTURE_BRIDGE_TIMEOUT_MS = 5_000;
 
 export type BrowserCaptureLifecycle = 'staged' | 'pending' | 'cleanup_pending';
-export type BrowserCaptureLocalLifecycle = BrowserCaptureLifecycle;
+// `terminal` invalidates other tabs before extension storage cleanup is
+// confirmed. It must not be confused with the content-free
+// `cleanup_pending` storage lifecycle.
+export type BrowserCaptureLocalLifecycle = BrowserCaptureLifecycle | 'terminal';
 
 type BrowserCaptureContentRecord = {
   schemaVersion: 1;
   id: string;
   requestKey: string;
   lifecycle: 'staged' | 'pending';
+  pendingOperationId: string | null;
   pendingIntent: ShareTargetPendingIntent | null;
   draft: IncomingKnowledgeCaptureDraft;
   createdAt: string;
@@ -103,7 +107,8 @@ function normalizeLifecycleMessage(value: unknown) {
     !isBrowserCaptureDraftId(value.draftId) ||
     (value.lifecycle !== 'staged' &&
       value.lifecycle !== 'pending' &&
-      value.lifecycle !== 'cleanup_pending')
+      value.lifecycle !== 'cleanup_pending' &&
+      value.lifecycle !== 'terminal')
   ) {
     return null;
   }
@@ -195,6 +200,12 @@ function normalizeBridgeRecord(value: unknown): BrowserCaptureRecord | null {
     };
   }
   const draft = normalizeIncomingKnowledgeCapture(value.draft);
+  const pendingOperationId =
+    lifecycle === 'pending' &&
+    typeof value.pendingOperationId === 'string' &&
+    opaqueKeyPattern.test(value.pendingOperationId)
+      ? value.pendingOperationId
+      : null;
   const pendingIntent =
     lifecycle === 'pending'
       ? normalizeShareTargetPendingIntent(value.pendingIntent)
@@ -205,8 +216,24 @@ function normalizeBridgeRecord(value: unknown): BrowserCaptureRecord | null {
     (lifecycle !== 'staged' && lifecycle !== 'pending') ||
     !draft ||
     draft.channel !== 'browser_extension' ||
-    (lifecycle === 'pending' && !pendingIntent)
+    (lifecycle === 'pending' && (!pendingIntent || !pendingOperationId)) ||
+    (lifecycle === 'staged' &&
+      (value.pendingIntent != null || value.pendingOperationId != null))
   ) {
+    return null;
+  }
+  const allowedFields = new Set([
+    'schemaVersion',
+    'id',
+    'requestKey',
+    'lifecycle',
+    'pendingOperationId',
+    'pendingIntent',
+    'draft',
+    'createdAt',
+    'expiresAt',
+  ]);
+  if (Object.keys(value).some((field) => !allowedFields.has(field))) {
     return null;
   }
   return {
@@ -214,6 +241,7 @@ function normalizeBridgeRecord(value: unknown): BrowserCaptureRecord | null {
     id: value.id,
     requestKey: value.requestKey,
     lifecycle,
+    pendingOperationId,
     pendingIntent,
     draft,
     createdAt,
@@ -249,9 +277,55 @@ export async function browserCaptureActorFingerprint(actorKey: string) {
   ).join('');
 }
 
+function sameStringArray(left: string[], right: string[]) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
+function samePendingIntent(
+  left: ShareTargetPendingIntent,
+  right: ShareTargetPendingIntent,
+) {
+  return (
+    left.scope === right.scope &&
+    left.sourceType === right.sourceType &&
+    sameStringArray(left.selectedFields, right.selectedFields) &&
+    sameStringArray(
+      left.organizationGroupAccountIds,
+      right.organizationGroupAccountIds,
+    )
+  );
+}
+
+function sameCaptureDraft(
+  left: IncomingKnowledgeCaptureDraft,
+  right: IncomingKnowledgeCaptureDraft,
+) {
+  return (
+    left.schemaVersion === right.schemaVersion &&
+    left.channel === right.channel &&
+    left.title === right.title &&
+    left.url === right.url &&
+    left.selectedText === right.selectedText &&
+    left.description === right.description &&
+    left.author === right.author &&
+    left.publishedAt === right.publishedAt &&
+    left.capturedAt === right.capturedAt
+  );
+}
+
 function normalizeResponse(
   value: unknown,
-  expected: { command: BridgeCommand; id: string; nonce: string },
+  expected: {
+    command: BridgeCommand;
+    id: string;
+    nonce: string;
+    operationId?: string;
+    pendingIntent?: ShareTargetPendingIntent;
+    draft?: IncomingKnowledgeCaptureDraft;
+  },
 ): BridgeResult | null {
   if (!record(value)) return null;
   if (
@@ -289,7 +363,25 @@ function normalizeResponse(
       case 'get':
         return response.transitioned === false && normalizedRecord !== null;
       case 'pending':
-        return normalizedRecord?.lifecycle === 'pending';
+        if (normalizedRecord?.lifecycle !== 'pending') return false;
+        // A newly transitioned response attests ownership only when the
+        // extension pinned the exact operation and payload sent by this page.
+        // An existing pending record is returned for caller-side same-owner
+        // recovery versus CAS-loser discrimination.
+        return response.transitioned === false
+          ? true
+          : Boolean(
+              expected.operationId &&
+              expected.pendingIntent &&
+              expected.draft &&
+              normalizedRecord.pendingOperationId === expected.operationId &&
+              normalizedRecord.pendingIntent &&
+              samePendingIntent(
+                normalizedRecord.pendingIntent,
+                expected.pendingIntent,
+              ) &&
+              sameCaptureDraft(normalizedRecord.draft, expected.draft),
+            );
       case 'staged':
         return (
           response.transitioned === true &&
@@ -350,6 +442,9 @@ async function sendCommand(
           command: input.command,
           id: input.id,
           nonce,
+          operationId: input.operationId,
+          pendingIntent: input.pendingIntent,
+          draft: input.draft,
         });
         if (normalized) finish(() => resolve(normalized));
       } catch (error) {
@@ -401,8 +496,10 @@ export async function markBrowserCaptureDraftPending(
   signal?: AbortSignal,
 ): Promise<
   | { transitioned: true }
+  | { transitioned: false; owned: true }
   | {
       transitioned: false;
+      owned: false;
       pendingIntent: ShareTargetPendingIntent;
       draft: IncomingKnowledgeCaptureDraft;
     }
@@ -426,11 +523,21 @@ export async function markBrowserCaptureDraftPending(
     throw new BrowserCaptureBridgeError('state_conflict');
   }
   if (!result.transitioned) {
-    if (!result.record.pendingIntent) {
+    if (!result.record.pendingIntent || !result.record.pendingOperationId) {
       throw new BrowserCaptureBridgeError('state_conflict');
+    }
+    if (result.record.pendingOperationId === operationId) {
+      if (
+        !samePendingIntent(result.record.pendingIntent, pendingIntent) ||
+        !sameCaptureDraft(result.record.draft, draft)
+      ) {
+        throw new BrowserCaptureBridgeError('invalid_request');
+      }
+      return { transitioned: false, owned: true };
     }
     return {
       transitioned: false,
+      owned: false,
       pendingIntent: result.record.pendingIntent,
       draft: result.record.draft,
     };

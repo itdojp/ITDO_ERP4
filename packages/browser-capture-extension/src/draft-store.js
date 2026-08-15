@@ -384,6 +384,14 @@ export function createDraftStore(storage, clock = () => Date.now()) {
             throw new Error("invalid_request");
           }
           if (claimed.lifecycle === "pending") {
+            if (
+              claimed.pendingOperationId === input.operationId &&
+              (JSON.stringify(claimed.pendingIntent) !==
+                JSON.stringify(intent) ||
+                JSON.stringify(claimed.draft) !== JSON.stringify(draft))
+            ) {
+              throw new Error("state_conflict");
+            }
             await storage.set(key(claimed.id), claimed);
             return { transitioned: false, record: claimed };
           }

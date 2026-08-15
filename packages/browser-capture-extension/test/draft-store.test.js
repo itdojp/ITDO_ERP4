@@ -84,6 +84,31 @@ test("claims a staged draft, fixes exact pending intent, and restores only its o
   assert.equal(pending.record.lifecycle, "pending");
   assert.equal(pending.record.draft.title, "Edited exact title");
 
+  const resumed = await store.command({
+    command: "pending",
+    id: input().id,
+    nonce: nonce("h"),
+    actorFingerprint: actor,
+    operationId: nonce("o"),
+    pendingIntent,
+    draft: { ...input().draft, title: "Edited exact title" },
+  });
+  assert.equal(resumed.transitioned, false);
+  assert.equal(resumed.record.pendingOperationId, nonce("o"));
+
+  await assert.rejects(
+    store.command({
+      command: "pending",
+      id: input().id,
+      nonce: nonce("i"),
+      actorFingerprint: actor,
+      operationId: nonce("o"),
+      pendingIntent,
+      draft: { ...input().draft, title: "Mismatched retry" },
+    }),
+    /state_conflict/u,
+  );
+
   const loser = await store.command({
     command: "pending",
     id: input().id,

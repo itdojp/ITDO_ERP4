@@ -456,6 +456,7 @@ describe('KnowledgeCaptureIngress', () => {
     const onCommitBusyChange = vi.fn();
     localQueue.markShareTargetDraftPending.mockResolvedValueOnce({
       transitioned: false,
+      owned: false,
       pendingIntent: {
         selectedFields: ['title'],
         scope: 'personal',
@@ -541,9 +542,72 @@ describe('KnowledgeCaptureIngress', () => {
     expect(api.commitKnowledgeCapture).toHaveBeenCalledOnce();
   });
 
+  it('reuses the exact pending operation after a lost bridge response and commits only on explicit retry', async () => {
+    const browserDraft = { ...draft, channel: 'browser_extension' as const };
+    api.previewKnowledgeCapture.mockResolvedValueOnce({
+      captureId: 'capture-browser-response-loss',
+      draft: browserDraft,
+      selectedFields: ['title', 'url', 'selectedText'],
+      omittedFields: ['description'],
+      scope: 'personal',
+      organizationGroupAccountIds: [],
+      sourceType: 'web',
+      fieldCount: 3,
+      byteCount: 120,
+      duplicateCandidate: { detected: false, status: null },
+      requiresOrganizationConfirmation: false,
+      previewToken: 'opaque-preview-token-response-loss',
+      expiresAt: '2026-08-14T00:10:00.000Z',
+    });
+    browserBridge.markBrowserCaptureDraftPending
+      .mockRejectedValueOnce(new Error('synthetic response loss'))
+      .mockResolvedValueOnce({ transitioned: false, owned: true });
+
+    render(<KnowledgeCaptureIngress />);
+    deliver({ channel: 'browser_extension' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Preview' }));
+    await screen.findByRole('heading', { name: 'Exact preview' });
+    fireEvent.click(screen.getByLabelText('このexact previewを保存します'));
+    const commitButton = screen.getByRole('button', {
+      name: '明示確定して保存',
+    });
+    fireEvent.click(commitButton);
+
+    expect(
+      await screen.findByText(
+        /端末内の共有下書きを保存中として固定できませんでした/u,
+      ),
+    ).toBeVisible();
+    expect(api.commitKnowledgeCapture).not.toHaveBeenCalled();
+    expect(
+      localQueue.createShareTargetPendingOperationId,
+    ).toHaveBeenCalledOnce();
+
+    fireEvent.click(commitButton);
+    await waitFor(() =>
+      expect(api.commitKnowledgeCapture).toHaveBeenCalledOnce(),
+    );
+    expect(browserBridge.markBrowserCaptureDraftPending).toHaveBeenCalledTimes(
+      2,
+    );
+    expect(
+      browserBridge.markBrowserCaptureDraftPending.mock.calls.map(
+        (call) => call[2],
+      ),
+    ).toEqual(['a'.repeat(48), 'a'.repeat(48)]);
+    expect(
+      localQueue.createShareTargetPendingOperationId,
+    ).toHaveBeenCalledOnce();
+    expect(browserBridge.publishBrowserCaptureLifecycle).toHaveBeenCalledWith(
+      'opaque-draft-id-1234567890',
+      'pending',
+    );
+  });
+
   it('does not resurrect or notify a CAS loser after the owner pending event purges it', async () => {
     let resolvePending: (value: {
       transitioned: false;
+      owned: false;
       pendingIntent: {
         selectedFields: ['title'];
         scope: 'personal';
@@ -579,6 +643,7 @@ describe('KnowledgeCaptureIngress', () => {
     await act(async () =>
       resolvePending({
         transitioned: false,
+        owned: false,
         pendingIntent: {
           selectedFields: ['title'],
           scope: 'personal',

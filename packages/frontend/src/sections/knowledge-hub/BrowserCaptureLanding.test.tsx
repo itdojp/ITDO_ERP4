@@ -113,7 +113,7 @@ let lifecycleListener:
   | ((message: {
       schemaVersion: 1;
       draftId: string;
-      lifecycle: 'staged' | 'pending' | 'cleanup_pending';
+      lifecycle: 'staged' | 'pending' | 'cleanup_pending' | 'terminal';
     }) => void)
   | null = null;
 
@@ -254,6 +254,15 @@ describe('BrowserCaptureLanding', () => {
       draftId,
       'cleanup_pending',
     );
+    expect(publishBrowserCaptureLifecycle).toHaveBeenCalledWith(
+      draftId,
+      'terminal',
+    );
+    expect(
+      publishBrowserCaptureLifecycle.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      markBrowserCaptureDraftCleanupPending.mock.invocationCallOrder[0],
+    );
     expect(clearLanding).toHaveBeenCalledOnce();
     window.removeEventListener(KNOWLEDGE_CAPTURE_PURGE_EVENT, purgeListener);
   });
@@ -296,6 +305,10 @@ describe('BrowserCaptureLanding', () => {
     );
     expect(clearLanding).toHaveBeenCalledOnce();
     expect(screen.queryByText(draft.selectedText)).not.toBeInTheDocument();
+    expect(publishBrowserCaptureLifecycle).toHaveBeenCalledWith(
+      draftId,
+      'terminal',
+    );
   });
 
   it('uses the claimed actor for deterministic expiry cleanup after auth loss', async () => {
@@ -641,6 +654,72 @@ describe('BrowserCaptureLanding', () => {
       }),
     );
     expect(clearLanding).toHaveBeenCalledOnce();
+  });
+
+  it('purges and detaches a stale second tab before tombstone persistence is confirmed', async () => {
+    window.history.replaceState(null, '', `/?browserCapture=${draftId}`);
+    getAuthState.mockReturnValue({ userId: 'synthetic-user', roles: [] });
+    refreshAuthStateFromServer.mockResolvedValue({
+      userId: 'synthetic-user',
+      roles: [],
+      verifiedActorKey: actorKey,
+    });
+    getBrowserCaptureDraft.mockResolvedValue(currentRecord());
+    markBrowserCaptureDraftCleanupPending
+      .mockRejectedValueOnce(
+        new BrowserCaptureBridgeError('storage_unavailable'),
+      )
+      .mockResolvedValueOnce(undefined);
+    const clearLanding = vi.fn();
+    const purged: unknown[] = [];
+    const purgeListener = (event: Event) =>
+      purged.push((event as CustomEvent).detail);
+    window.addEventListener(KNOWLEDGE_CAPTURE_PURGE_EVENT, purgeListener);
+    render(
+      <BrowserCaptureLanding
+        draftId={draftId}
+        knowledgeHubReady
+        activateKnowledgeHub={() => true}
+        clearLanding={clearLanding}
+      />,
+    );
+    await screen.findByText(/Knowledge Hubで送信field/u);
+
+    act(() =>
+      lifecycleListener?.({
+        schemaVersion: 1,
+        draftId,
+        lifecycle: 'terminal',
+      }),
+    );
+
+    const firstRetry = await screen.findByRole('button', {
+      name: 'browser session内draftの本文消去を再試行',
+    });
+    expect(window.location.search).not.toContain('browserCapture');
+    expect(screen.queryByText(draft.selectedText)).not.toBeInTheDocument();
+    expect(purged.length).toBeGreaterThan(0);
+    expect(clearLanding).not.toHaveBeenCalled();
+    expect(getBrowserCaptureDraft).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(firstRetry);
+    expect(
+      await screen.findByRole('button', {
+        name: 'browser session内draftの本文消去を再試行',
+      }),
+    ).toBeVisible();
+    expect(removeBrowserCaptureDraft).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'browser session内draftの本文消去を再試行',
+      }),
+    );
+    await waitFor(() =>
+      expect(removeBrowserCaptureDraft).toHaveBeenCalledOnce(),
+    );
+    expect(clearLanding).toHaveBeenCalledOnce();
+    window.removeEventListener(KNOWLEDGE_CAPTURE_PURGE_EVENT, purgeListener);
   });
 
   it('reloads the exact extension record after another tab changes lifecycle', async () => {

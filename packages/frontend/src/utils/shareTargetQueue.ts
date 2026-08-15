@@ -440,8 +440,10 @@ export async function markShareTargetDraftPending(
   nowMs = Date.now(),
 ): Promise<
   | { transitioned: true }
+  | { transitioned: false; owned: true }
   | {
       transitioned: false;
+      owned: false;
       pendingIntent: ShareTargetPendingIntent;
       draft: IncomingKnowledgeCaptureDraft;
     }
@@ -476,8 +478,19 @@ export async function markShareTargetDraftPending(
       if (!normalized.pendingIntent || !normalized.draft) {
         throw new Error('share_target_invalid_transition');
       }
+      if (normalized.pendingOperationId === operationId) {
+        if (
+          JSON.stringify(normalized.pendingIntent) !==
+            JSON.stringify(normalizedIntent) ||
+          JSON.stringify(normalized.draft) !== JSON.stringify(normalizedDraft)
+        ) {
+          throw new Error('share_target_invalid_transition');
+        }
+        return { transitioned: false, owned: true };
+      }
       return {
         transitioned: false,
+        owned: false,
         pendingIntent: normalized.pendingIntent,
         draft: normalized.draft,
       };

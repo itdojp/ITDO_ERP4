@@ -96,6 +96,14 @@ Review remediationのcode head `e18653cd46391d52222fe93ff425629fbe2bb969`では�
 - 生成manifestへ`incognito: not_allowed`を固定し、Chromeのシークレットモード／Edge InPrivateをcapture対象外にした。vendor browser UIによる確認は未実施であり、repository-side manifest testだけを実browser証跡として扱わない。
 - remediation treeではextension unit／manifest／static 31/31、Browser Capture bridge／landing 20/20、frontend quality gates 21/21、frontend typecheck、Playwright Chromium synthetic extension E2E、修正対象のreal-backend bridge E2E 1/1をPASSした。extension unitとBrowser Capture bridge／landingはそれぞれ20回反復した。最終exact headのfull gate、CI、独立reviewはPR #2074を正本とし、この節の結果だけでmerge可能とは扱わない。
 
+## Cross-tab terminal／pending response-loss review remediation
+
+- terminal結果をstorage消去済みの`cleanup_pending`とは分離したcontent-freeなlocal `terminal` lifecycleで他tabへ先行通知する。他tabはtombstone書込みの成否を待たずDOMとhandoff addressをpurgeし、最後に検証済みのcleanup actorによる`cleanup_required`だけを残す。tombstone失敗を注入した複数tab相当のcomponent testで、本文とaddressが復元されず、明示cleanupだけが再試行されることを固定した。
+- pending session write後のbridge response lossでは、exact preview、request key、actor、draft IDへ束縛したoperation IDをcomponent memoryに保持する。自動retryは行わず、利用者の明示retryだけが同じoperation／intent／draftで所有権を回復できる。別operationは従来どおりCAS loser、同じoperationの異なるpayloadはfail closedである。
+- bridge responseは`pendingOperationId`をallowlist fieldとして正規化し、新規遷移時はrequested operation／intent／draftとの完全一致を要求する。response-loss component testは最初のbridge結果不明時にAPI commit 0件、明示retry後に同じoperationでAPI commit 1件へ収束した。
+- real-backend E2Eは最初のpending responseだけを喪失させ、preview POST 1件、response-loss中のcommit 0件、明示retry後のcommit POST合計1件、reconcile 0件、mutation bridge command順`pending → pending → cleanup → delete`を確認した。固定sleep、timeout延長、skip、coverage scope／threshold変更は行っていない。
+- remediation treeのfocused結果はextension 31/31、frontend bridge／queue／landing／ingress 65/65、frontend typecheck、real-backend E2E 1/1、`git diff --check`がPASSした。最終exact headのfull gate、CI、独立reviewはPR #2074を正本とし、以前のheadの結果を再利用しない。
+
 unpacked Chromium E2Eはsynthetic landingによるextension protocolを対象とし、別のreal frontend/backend bridge-protocol E2Eがcapture mutation lifecycleを対象とする。いずれもmulti-tab BroadcastChannel、service-worker強制restart、Chrome／Edge vendor runtime evidence、target proxy通過後のCSP evidenceではない。これらをPASSと過大評価しない。CI/review結果はDraft PRへ記録する。
 
 ## Browser evidence status

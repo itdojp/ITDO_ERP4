@@ -350,15 +350,19 @@ test('browser capture bridge reaches the authenticated real-backend preview and 
         deleted: boolean;
         commands: string[];
         cleanupRecordKeys: string[] | null;
+        pendingOperationId: string | null;
         pendingIntent: Record<string, unknown> | null;
         draft: Record<string, unknown> | null;
+        droppedPendingResponse: boolean;
       };
       const state: BridgeState = {
         lifecycle: 'staged',
         deleted: false,
         commands: [],
         cleanupRecordKeys: null,
+        pendingOperationId: null,
         pendingIntent: null,
+        droppedPendingResponse: false,
         draft: {
           schemaVersion: 1,
           channel: 'browser_extension',
@@ -401,6 +405,7 @@ test('browser capture bridge reaches the authenticated real-backend preview and 
         let transitioned = false;
         if (command.command === 'pending' && state.lifecycle === 'staged') {
           state.lifecycle = 'pending';
+          state.pendingOperationId = command.operationId as string;
           state.pendingIntent = command.pendingIntent as Record<
             string,
             unknown
@@ -412,6 +417,7 @@ test('browser capture bridge reaches the authenticated real-backend preview and 
           state.lifecycle === 'pending'
         ) {
           state.lifecycle = 'staged';
+          state.pendingOperationId = null;
           state.pendingIntent = null;
           transitioned = true;
         } else if (
@@ -419,6 +425,7 @@ test('browser capture bridge reaches the authenticated real-backend preview and 
           state.lifecycle !== 'cleanup_pending'
         ) {
           state.lifecycle = 'cleanup_pending';
+          state.pendingOperationId = null;
           state.pendingIntent = null;
           state.draft = null;
           transitioned = true;
@@ -441,6 +448,7 @@ test('browser capture bridge reaches the authenticated real-backend preview and 
                 id,
                 requestKey: key,
                 lifecycle: state.lifecycle,
+                pendingOperationId: state.pendingOperationId,
                 pendingIntent: state.pendingIntent,
                 draft: state.draft,
                 createdAt: created,
@@ -448,6 +456,17 @@ test('browser capture bridge reaches the authenticated real-backend preview and 
               };
         if (command.command === 'cleanup' && record) {
           state.cleanupRecordKeys = Object.keys(record).sort();
+        }
+        if (
+          command.command === 'pending' &&
+          transitioned &&
+          !state.droppedPendingResponse
+        ) {
+          // The storage transition succeeded, but the first bridge response
+          // is intentionally lost. Only a later explicit user action may
+          // reuse the same operation and dispatch the backend mutation.
+          state.droppedPendingResponse = true;
+          return;
         }
         window.postMessage(
           {
@@ -472,13 +491,11 @@ test('browser capture bridge reaches the authenticated real-backend preview and 
     },
   );
 
-  let captureRequests = 0;
+  const captureRequests: Array<{ method: string; pathname: string }> = [];
   page.on('request', (request) => {
-    if (
-      /\/knowledge\/captures(?:\/|$)/u.test(new URL(request.url()).pathname)
-    ) {
-      captureRequests += 1;
-    }
+    const pathname = new URL(request.url()).pathname;
+    if (/\/knowledge\/captures(?:\/|$)/u.test(pathname))
+      captureRequests.push({ method: request.method(), pathname });
   });
   await prepare(page);
   await page.goto(`${baseUrl}/?browserCapture=${draftId}`);
@@ -489,7 +506,7 @@ test('browser capture bridge reaches the authenticated real-backend preview and 
   await expect(page.getByRole('textbox', { name: '選択テキスト' })).toHaveValue(
     selectedText,
   );
-  expect(captureRequests).toBe(0);
+  expect(captureRequests).toHaveLength(0);
 
   await page.getByRole('button', { name: 'Preview', exact: true }).click();
   await expect(
@@ -497,8 +514,34 @@ test('browser capture bridge reaches the authenticated real-backend preview and 
   ).toBeVisible();
   await page.getByLabel('このexact previewを保存します').check();
   await page.getByRole('button', { name: '明示確定して保存' }).click();
+  await expect(
+    page.getByText(/端末内の共有下書きを保存中として固定できませんでした/u),
+  ).toBeVisible();
+  expect(
+    captureRequests.filter(
+      ({ method, pathname }) =>
+        method === 'POST' && pathname.endsWith('/knowledge/captures'),
+    ),
+  ).toHaveLength(0);
+
+  await page.getByRole('button', { name: '明示確定して保存' }).click();
   await expect(page).not.toHaveURL(/browserCapture=/u);
-  await expect.poll(() => captureRequests).toBeGreaterThanOrEqual(2);
+  await expect
+    .poll(() => ({
+      preview: captureRequests.filter(
+        ({ method, pathname }) =>
+          method === 'POST' && pathname.endsWith('/knowledge/captures/preview'),
+      ).length,
+      commit: captureRequests.filter(
+        ({ method, pathname }) =>
+          method === 'POST' && pathname.endsWith('/knowledge/captures'),
+      ).length,
+      reconcile: captureRequests.filter(
+        ({ method, pathname }) =>
+          method === 'POST' && pathname.endsWith('/reconcile'),
+      ).length,
+    }))
+    .toEqual({ preview: 1, commit: 1, reconcile: 0 });
   await expect(
     page.getByRole('button', { name: /Synthetic browser capture/u }),
   ).toBeVisible();
@@ -516,9 +559,11 @@ test('browser capture bridge reaches the authenticated real-backend preview and 
     return state ?? null;
   });
   expect(lifecycle?.deleted).toBe(true);
-  expect(lifecycle?.commands).toContain('pending');
-  expect(lifecycle?.commands).toContain('cleanup');
-  expect(lifecycle?.commands).toContain('delete');
+  expect(
+    lifecycle?.commands.filter((command) =>
+      ['pending', 'staged', 'cleanup', 'delete'].includes(command),
+    ),
+  ).toEqual(['pending', 'pending', 'cleanup', 'delete']);
   expect(lifecycle?.cleanupRecordKeys).toEqual([
     'createdAt',
     'expiresAt',
