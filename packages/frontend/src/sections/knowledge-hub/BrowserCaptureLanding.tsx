@@ -388,9 +388,9 @@ export function BrowserCaptureLanding({
     try {
       armBrowserCaptureTerminalFence(draftId);
       if (hasBrowserCaptureTerminalFence(draftId)) {
-        // The content-free fence and active lease are reserved before any
-        // extension content request. A missing lease is a terminal state that
-        // late/reloaded tabs must never reactivate.
+        // Two content-free fixed-size fence slots are reserved before any
+        // extension content request. Either terminal slot is monotonic and
+        // late/reloaded tabs must never overwrite it with active state.
         terminalOutcomeRef.current = 'remote_terminal';
         terminalCleanupPendingRef.current = true;
         cleanupTombstoneRef.current = false;

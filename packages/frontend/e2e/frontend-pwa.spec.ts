@@ -695,9 +695,10 @@ test('browser capture terminal fence blocks reload-gap rehydration when extensio
         }
       ).__terminalFenceBridgeCommands ?? [],
     fenceValues: Object.keys(window.localStorage)
-      .filter((key) => key.startsWith('erp4-browser-capture-terminal-v1:'))
+      .filter((key) => key.startsWith('erp4-browser-capture-terminal-v2-'))
       .map((key) => window.localStorage.getItem(key)),
   }));
+  expect(lateState.fenceValues).toHaveLength(2);
   expect(lateState.commands).not.toContain('get');
   expect(JSON.stringify(lateState.fenceValues)).not.toContain(selectedText);
   expect(JSON.stringify(lateState.fenceValues)).not.toContain(requestKey);
@@ -795,17 +796,20 @@ test('browser capture terminal fence drops a get response that was already in fl
 
   await prepare(page);
   await page.goto(`${baseUrl}/?browserCapture=${draftId}`);
-  await page.waitForFunction(() =>
-    Object.keys(window.localStorage).some((key) =>
-      key.startsWith('erp4-browser-capture-active-v1:'),
-    ),
+  await page.waitForFunction(
+    () =>
+      Object.keys(window.localStorage).filter((key) =>
+        key.startsWith('erp4-browser-capture-terminal-v2-'),
+      ).length === 2,
   );
   await page.evaluate(() => {
-    const activeKey = Object.keys(window.localStorage).find((key) =>
-      key.startsWith('erp4-browser-capture-active-v1:'),
+    const terminalKey = Object.keys(window.localStorage).find((key) =>
+      key.startsWith('erp4-browser-capture-terminal-v2-a:'),
     );
-    if (!activeKey) throw new Error('synthetic active lease missing');
-    window.localStorage.removeItem(activeKey);
+    if (!terminalKey) throw new Error('synthetic terminal slot missing');
+    const terminal = JSON.parse(window.localStorage.getItem(terminalKey) ?? '');
+    terminal.state = 't';
+    window.localStorage.setItem(terminalKey, JSON.stringify(terminal));
     (
       globalThis as typeof globalThis & {
         __releaseDeferredBrowserCapture?: () => void;

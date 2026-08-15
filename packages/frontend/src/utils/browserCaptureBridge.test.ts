@@ -569,22 +569,27 @@ describe('browserCaptureBridge', () => {
       key.endsWith(id),
     );
     expect(pairKeys).toHaveLength(2);
-    const activeKey = pairKeys.find((key) => key.includes('-active-'));
-    const fenceKey = pairKeys.find((key) => key.includes('-terminal-'));
-    expect(activeKey).toBeDefined();
-    expect(fenceKey).toBeDefined();
+    const fenceKey = pairKeys[0];
     for (const key of pairKeys) {
       const serialized = window.localStorage.getItem(key) ?? '';
       expect(serialized).not.toContain(requestKey);
       expect(serialized).not.toContain(draft.selectedText);
+      expect(JSON.parse(serialized).state).toBe('a');
     }
     expect(hasBrowserCaptureTerminalFence(id, now + 1)).toBe(false);
 
     markBrowserCaptureTerminalFence(id, now);
     expect(hasBrowserCaptureTerminalFence(id, now + 1)).toBe(true);
-    expect(activeKey ? window.localStorage.getItem(activeKey) : '').toBeNull();
+    expect(
+      pairKeys.map((key) =>
+        JSON.parse(window.localStorage.getItem(key) ?? '{}'),
+      ),
+    ).toEqual([
+      expect.objectContaining({ state: 't' }),
+      expect.objectContaining({ state: 't' }),
+    ]);
 
-    // A late tab must not recreate the active lease.
+    // A late tab must not overwrite the monotonic terminal state.
     armBrowserCaptureTerminalFence(id, now + 2);
     expect(hasBrowserCaptureTerminalFence(id, now + 3)).toBe(true);
     expect(
@@ -601,27 +606,104 @@ describe('browserCaptureBridge', () => {
     markBrowserCaptureTerminalFence(id, now);
     if (!fenceKey) throw new Error('expected terminal fence key');
     window.localStorage.setItem(fenceKey, '{"schemaVersion":2}');
+    expect(hasBrowserCaptureTerminalFence(id, now + 1)).toBe(true);
+  });
+
+  it('keeps partial active initialization fail closed instead of terminal', () => {
+    const now = Date.parse('2026-08-15T00:00:00.000Z');
+    const originalSetItem = Storage.prototype.setItem;
+    const originalRemoveItem = Storage.prototype.removeItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key,
+      value,
+    ) {
+      if (key.includes('-v2-b:')) {
+        throw new DOMException(
+          'synthetic second-slot failure',
+          'QuotaExceededError',
+        );
+      }
+      return originalSetItem.call(this, key, value);
+    });
+    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(function (
+      this: Storage,
+      key,
+    ) {
+      if (key.includes('-v2-a:')) {
+        throw new DOMException('synthetic rollback failure', 'SecurityError');
+      }
+      return originalRemoveItem.call(this, key);
+    });
+
+    expect(() => armBrowserCaptureTerminalFence(id, now)).toThrowError(
+      /storage_unavailable/u,
+    );
     expect(() => hasBrowserCaptureTerminalFence(id, now + 1)).toThrowError(
       /invalid_request/u,
     );
   });
 
-  it('prunes only expired content-free fence records when lifecycle starts', () => {
+  it('rejects malformed active state when no verified terminal sibling exists', () => {
+    const now = Date.parse('2026-08-15T00:00:00.000Z');
+    armBrowserCaptureTerminalFence(id, now);
+    const activeKey = Object.keys(window.localStorage).find((key) =>
+      key.includes('-v2-a:'),
+    );
+    if (!activeKey) throw new Error('expected active terminal-fence slot');
+    window.localStorage.setItem(activeKey, '{"schemaVersion":2}');
+
+    expect(() => hasBrowserCaptureTerminalFence(id, now + 1)).toThrowError(
+      /invalid_request/u,
+    );
+  });
+
+  it('persists terminal when one fixed-size slot update fails', () => {
+    const now = Date.parse('2026-08-15T00:00:00.000Z');
+    armBrowserCaptureTerminalFence(id, now);
+    const originalSetItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (
+      this: Storage,
+      key,
+      value,
+    ) {
+      if (key.includes('-v2-a:') && value.includes('"state":"t"')) {
+        throw new DOMException('synthetic first-slot failure', 'SecurityError');
+      }
+      return originalSetItem.call(this, key, value);
+    });
+
+    markBrowserCaptureTerminalFence(id, now + 1);
+
+    expect(hasBrowserCaptureTerminalFence(id, now + 2)).toBe(true);
+    const states = Object.keys(window.localStorage)
+      .filter((key) => key.endsWith(id))
+      .map((key) => JSON.parse(window.localStorage.getItem(key) ?? '{}').state);
+    expect(states).toEqual(expect.arrayContaining(['a', 't']));
+  });
+
+  it('prunes expired fences after unrelated local storage keys', () => {
     const expiredAt = Date.now() - 1;
     const value = JSON.stringify({
       schemaVersion: 1,
       draftId: id,
       expiresAtMs: expiredAt,
+      state: 't',
     });
-    const fenceKey = `erp4-browser-capture-terminal-v1:${id}`;
-    const activeKey = `erp4-browser-capture-active-v1:${id}`;
-    window.localStorage.setItem(fenceKey, value);
-    window.localStorage.setItem(activeKey, value);
+    for (let index = 0; index < 101; index += 1) {
+      window.localStorage.setItem(`unrelated-${index}`, 'synthetic');
+    }
+    const fenceKeys = [
+      `erp4-browser-capture-terminal-v2-a:${id}`,
+      `erp4-browser-capture-terminal-v2-b:${id}`,
+    ];
+    for (const key of fenceKeys) window.localStorage.setItem(key, value);
 
     const unsubscribe = subscribeBrowserCaptureLifecycle(() => undefined);
 
-    expect(window.localStorage.getItem(fenceKey)).toBeNull();
-    expect(window.localStorage.getItem(activeKey)).toBeNull();
+    for (const key of fenceKeys) {
+      expect(window.localStorage.getItem(key)).toBeNull();
+    }
     unsubscribe();
   });
 
@@ -667,16 +749,17 @@ describe('browserCaptureBridge', () => {
     ]);
 
     armBrowserCaptureTerminalFence(id);
-    const activeKey = Object.keys(window.localStorage).find(
-      (key) => key.endsWith(id) && key.includes('-active-'),
+    const fenceKey = Object.keys(window.localStorage).find((key) =>
+      key.endsWith(id),
     );
-    if (!activeKey) throw new Error('expected active lease key');
+    if (!fenceKey) throw new Error('expected terminal fence key');
     markBrowserCaptureTerminalFence(id);
+    const terminalValue = window.localStorage.getItem(fenceKey);
     window.dispatchEvent(
       new StorageEvent('storage', {
-        key: activeKey,
-        oldValue: '{"schemaVersion":1}',
-        newValue: null,
+        key: fenceKey,
+        oldValue: '{"schemaVersion":1,"state":"a"}',
+        newValue: terminalValue,
       }),
     );
     expect(received).toEqual([
