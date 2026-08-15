@@ -704,6 +704,134 @@ test('browser capture terminal fence blocks reload-gap rehydration when extensio
   await latePage.close();
 });
 
+test('browser capture terminal fence drops a get response that was already in flight @core @extended', async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(120_000);
+  const draftId = randomUUID().replace(/-/gu, '');
+  const requestKey = randomUUID().replace(/-/gu, '');
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  const selectedText = `Synthetic deferred capture ${runId()}`;
+
+  await context.addInitScript(
+    ({ id, key, created, expires, text }) => {
+      let deferredCommand: Record<string, unknown> | null = null;
+      (
+        globalThis as typeof globalThis & {
+          __releaseDeferredBrowserCapture?: () => void;
+        }
+      ).__releaseDeferredBrowserCapture = () => {
+        if (!deferredCommand) return;
+        window.postMessage(
+          {
+            source: 'erp4-extension',
+            type: 'erp4-browser-capture-response-v1',
+            schemaVersion: 1,
+            command: 'get',
+            id,
+            nonce: deferredCommand.nonce,
+            response: {
+              ok: true,
+              transitioned: false,
+              record: {
+                schemaVersion: 1,
+                id,
+                requestKey: key,
+                lifecycle: 'staged',
+                pendingOperationId: null,
+                pendingIntent: null,
+                draft: {
+                  schemaVersion: 1,
+                  channel: 'browser_extension',
+                  title: 'Synthetic deferred capture',
+                  url: 'https://example.invalid/browser-capture',
+                  selectedText: text,
+                  description: null,
+                  author: null,
+                  publishedAt: null,
+                  capturedAt: created,
+                },
+                createdAt: created,
+                expiresAt: expires,
+              },
+            },
+          },
+          window.location.origin,
+        );
+        deferredCommand = null;
+      };
+      window.addEventListener('message', (event) => {
+        if (
+          event.source !== window ||
+          event.origin !== window.location.origin ||
+          !event.data ||
+          typeof event.data !== 'object' ||
+          Array.isArray(event.data)
+        ) {
+          return;
+        }
+        const command = event.data as Record<string, unknown>;
+        if (
+          command.source === 'erp4-page' &&
+          command.type === 'erp4-browser-capture-command-v1' &&
+          command.command === 'get' &&
+          command.id === id &&
+          typeof command.nonce === 'string'
+        ) {
+          deferredCommand = command;
+        }
+      });
+    },
+    {
+      id: draftId,
+      key: requestKey,
+      created: createdAt,
+      expires: expiresAt,
+      text: selectedText,
+    },
+  );
+
+  await prepare(page);
+  await page.goto(`${baseUrl}/?browserCapture=${draftId}`);
+  await page.waitForFunction(() =>
+    Object.keys(window.localStorage).some((key) =>
+      key.startsWith('erp4-browser-capture-active-v1:'),
+    ),
+  );
+  await page.evaluate(() => {
+    const activeKey = Object.keys(window.localStorage).find((key) =>
+      key.startsWith('erp4-browser-capture-active-v1:'),
+    );
+    if (!activeKey) throw new Error('synthetic active lease missing');
+    window.localStorage.removeItem(activeKey);
+    (
+      globalThis as typeof globalThis & {
+        __releaseDeferredBrowserCapture?: () => void;
+      }
+    ).__releaseDeferredBrowserCapture?.();
+  });
+
+  await expect(
+    page.getByRole('button', {
+      name: 'browser session内draftの本文消去を再試行',
+    }),
+  ).toBeVisible();
+  await expect(page).not.toHaveURL(/browserCapture=/u);
+  await expect(page.getByText(selectedText)).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: '選択テキスト' })).toHaveCount(
+    0,
+  );
+  const localValues = await page.evaluate(() =>
+    Object.keys(window.localStorage)
+      .filter((key) => key.startsWith('erp4-browser-capture-'))
+      .map((key) => window.localStorage.getItem(key)),
+  );
+  expect(JSON.stringify(localValues)).not.toContain(selectedText);
+  expect(JSON.stringify(localValues)).not.toContain(requestKey);
+});
+
 test('pwa Web Share Target keeps an unauthenticated offline draft and resumes only after login @pwa @extended', async ({
   page,
   context,

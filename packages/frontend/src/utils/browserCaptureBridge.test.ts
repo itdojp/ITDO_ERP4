@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   BROWSER_CAPTURE_TERMINAL_FENCE_TTL_MS,
+  armBrowserCaptureTerminalFence,
   browserCaptureActorFingerprint,
   clearBrowserCaptureTerminalFence,
   getBrowserCaptureDraft,
@@ -562,18 +563,30 @@ describe('browserCaptureBridge', () => {
 
   it('persists only a bounded content-free terminal fence across reloads', () => {
     const now = Date.parse('2026-08-15T00:00:00.000Z');
-    markBrowserCaptureTerminalFence(id, now);
+    armBrowserCaptureTerminalFence(id, now);
 
-    const fenceKey = Object.keys(window.localStorage).find((key) =>
+    const pairKeys = Object.keys(window.localStorage).filter((key) =>
       key.endsWith(id),
     );
+    expect(pairKeys).toHaveLength(2);
+    const activeKey = pairKeys.find((key) => key.includes('-active-'));
+    const fenceKey = pairKeys.find((key) => key.includes('-terminal-'));
+    expect(activeKey).toBeDefined();
     expect(fenceKey).toBeDefined();
-    const serialized = fenceKey
-      ? (window.localStorage.getItem(fenceKey) ?? '')
-      : '';
-    expect(serialized).not.toContain(requestKey);
-    expect(serialized).not.toContain(draft.selectedText);
+    for (const key of pairKeys) {
+      const serialized = window.localStorage.getItem(key) ?? '';
+      expect(serialized).not.toContain(requestKey);
+      expect(serialized).not.toContain(draft.selectedText);
+    }
+    expect(hasBrowserCaptureTerminalFence(id, now + 1)).toBe(false);
+
+    markBrowserCaptureTerminalFence(id, now);
     expect(hasBrowserCaptureTerminalFence(id, now + 1)).toBe(true);
+    expect(activeKey ? window.localStorage.getItem(activeKey) : '').toBeNull();
+
+    // A late tab must not recreate the active lease.
+    armBrowserCaptureTerminalFence(id, now + 2);
+    expect(hasBrowserCaptureTerminalFence(id, now + 3)).toBe(true);
     expect(
       hasBrowserCaptureTerminalFence(
         id,
@@ -591,6 +604,25 @@ describe('browserCaptureBridge', () => {
     expect(() => hasBrowserCaptureTerminalFence(id, now + 1)).toThrowError(
       /invalid_request/u,
     );
+  });
+
+  it('prunes only expired content-free fence records when lifecycle starts', () => {
+    const expiredAt = Date.now() - 1;
+    const value = JSON.stringify({
+      schemaVersion: 1,
+      draftId: id,
+      expiresAtMs: expiredAt,
+    });
+    const fenceKey = `erp4-browser-capture-terminal-v1:${id}`;
+    const activeKey = `erp4-browser-capture-active-v1:${id}`;
+    window.localStorage.setItem(fenceKey, value);
+    window.localStorage.setItem(activeKey, value);
+
+    const unsubscribe = subscribeBrowserCaptureLifecycle(() => undefined);
+
+    expect(window.localStorage.getItem(fenceKey)).toBeNull();
+    expect(window.localStorage.getItem(activeKey)).toBeNull();
+    unsubscribe();
   });
 
   it('broadcasts content-free lifecycle invalidation only to other channel objects', () => {
@@ -634,15 +666,17 @@ describe('browserCaptureBridge', () => {
       { schemaVersion: 1, draftId: id, lifecycle: 'terminal' },
     ]);
 
-    markBrowserCaptureTerminalFence(id);
-    const fenceKey = Object.keys(window.localStorage).find((key) =>
-      key.endsWith(id),
+    armBrowserCaptureTerminalFence(id);
+    const activeKey = Object.keys(window.localStorage).find(
+      (key) => key.endsWith(id) && key.includes('-active-'),
     );
-    if (!fenceKey) throw new Error('expected terminal fence key');
+    if (!activeKey) throw new Error('expected active lease key');
+    markBrowserCaptureTerminalFence(id);
     window.dispatchEvent(
       new StorageEvent('storage', {
-        key: fenceKey,
-        newValue: window.localStorage.getItem(fenceKey),
+        key: activeKey,
+        oldValue: '{"schemaVersion":1}',
+        newValue: null,
       }),
     );
     expect(received).toEqual([

@@ -14,7 +14,7 @@ const {
   isBffAuthMode,
   refreshAuthStateFromServer,
   subscribeAuthSessionChanges,
-  clearBrowserCaptureTerminalFence,
+  armBrowserCaptureTerminalFence,
   getBrowserCaptureDraft,
   hasBrowserCaptureTerminalFence,
   markBrowserCaptureTerminalFence,
@@ -27,7 +27,7 @@ const {
   isBffAuthMode: vi.fn(),
   refreshAuthStateFromServer: vi.fn(),
   subscribeAuthSessionChanges: vi.fn(),
-  clearBrowserCaptureTerminalFence: vi.fn(),
+  armBrowserCaptureTerminalFence: vi.fn(),
   getBrowserCaptureDraft: vi.fn(),
   hasBrowserCaptureTerminalFence: vi.fn(),
   markBrowserCaptureTerminalFence: vi.fn(),
@@ -49,7 +49,7 @@ vi.mock('../../utils/browserCaptureBridge', async (importOriginal) => {
     await importOriginal<typeof import('../../utils/browserCaptureBridge')>();
   return {
     ...actual,
-    clearBrowserCaptureTerminalFence,
+    armBrowserCaptureTerminalFence,
     getBrowserCaptureDraft,
     hasBrowserCaptureTerminalFence,
     markBrowserCaptureTerminalFence,
@@ -132,7 +132,7 @@ describe('BrowserCaptureLanding', () => {
     isBffAuthMode.mockReset().mockReturnValue(false);
     refreshAuthStateFromServer.mockReset().mockResolvedValue(null);
     subscribeAuthSessionChanges.mockReset().mockReturnValue(() => undefined);
-    clearBrowserCaptureTerminalFence.mockReset();
+    armBrowserCaptureTerminalFence.mockReset();
     getBrowserCaptureDraft.mockReset();
     hasBrowserCaptureTerminalFence.mockReset().mockReturnValue(false);
     markBrowserCaptureTerminalFence.mockReset();
@@ -171,6 +171,33 @@ describe('BrowserCaptureLanding', () => {
     await screen.findByText(/ERP4で認証後/);
     expect(getBrowserCaptureDraft).not.toHaveBeenCalled();
     expect(activateKnowledgeHub).not.toHaveBeenCalled();
+    expect(screen.queryByText(draft.selectedText)).not.toBeInTheDocument();
+  });
+
+  it('fails closed before extension content when the terminal fence cannot be armed', async () => {
+    getAuthState.mockReturnValue({ userId: 'synthetic-user', roles: [] });
+    refreshAuthStateFromServer.mockResolvedValue({
+      userId: 'synthetic-user',
+      roles: [],
+      verifiedActorKey: actorKey,
+    });
+    armBrowserCaptureTerminalFence.mockImplementation(() => {
+      throw new BrowserCaptureBridgeError('storage_unavailable');
+    });
+
+    render(
+      <BrowserCaptureLanding
+        draftId={draftId}
+        knowledgeHubReady
+        activateKnowledgeHub={() => true}
+        clearLanding={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByText(/terminal状態を確認できません/u),
+    ).toBeVisible();
+    expect(getBrowserCaptureDraft).not.toHaveBeenCalled();
     expect(screen.queryByText(draft.selectedText)).not.toBeInTheDocument();
   });
 
@@ -417,7 +444,7 @@ describe('BrowserCaptureLanding', () => {
     ).toBeVisible();
   });
 
-  it('does not claim session content was erased when tombstone persistence fails', async () => {
+  it('does not claim session content was erased when tombstone and delete both fail', async () => {
     window.history.replaceState(null, '', `/?browserCapture=${draftId}`);
     getAuthState.mockReturnValue({ userId: 'synthetic-user', roles: [] });
     refreshAuthStateFromServer.mockResolvedValue({
@@ -430,6 +457,9 @@ describe('BrowserCaptureLanding', () => {
       .mockRejectedValueOnce(
         new BrowserCaptureBridgeError('storage_unavailable'),
       )
+      .mockResolvedValueOnce(undefined);
+    removeBrowserCaptureDraft
+      .mockRejectedValueOnce(new Error('synthetic delete failure'))
       .mockResolvedValueOnce(undefined);
     const clearLanding = vi.fn();
     render(
@@ -456,7 +486,7 @@ describe('BrowserCaptureLanding', () => {
     expect(screen.getByRole('alert')).not.toHaveTextContent(
       /本文はbrowser session内でも消去済み/u,
     );
-    expect(removeBrowserCaptureDraft).not.toHaveBeenCalled();
+    expect(removeBrowserCaptureDraft).toHaveBeenCalledOnce();
     expect(window.location.search).not.toContain('browserCapture');
     expect(screen.queryByText(draft.selectedText)).not.toBeInTheDocument();
 
@@ -475,8 +505,41 @@ describe('BrowserCaptureLanding', () => {
     await waitFor(() =>
       expect(markBrowserCaptureDraftCleanupPending).toHaveBeenCalledTimes(2),
     );
-    expect(removeBrowserCaptureDraft).toHaveBeenCalledOnce();
+    expect(removeBrowserCaptureDraft).toHaveBeenCalledTimes(2);
     expect(clearLanding).toHaveBeenCalledOnce();
+  });
+
+  it('falls back to idempotent delete when tombstone persistence alone fails', async () => {
+    getAuthState.mockReturnValue({ userId: 'synthetic-user', roles: [] });
+    refreshAuthStateFromServer.mockResolvedValue({
+      userId: 'synthetic-user',
+      roles: [],
+      verifiedActorKey: actorKey,
+    });
+    getBrowserCaptureDraft.mockResolvedValue(currentRecord());
+    markBrowserCaptureDraftCleanupPending.mockRejectedValue(
+      new BrowserCaptureBridgeError('storage_unavailable'),
+    );
+    const clearLanding = vi.fn();
+    render(
+      <BrowserCaptureLanding
+        draftId={draftId}
+        knowledgeHubReady
+        activateKnowledgeHub={() => true}
+        clearLanding={clearLanding}
+      />,
+    );
+    await screen.findByText(/Knowledge Hubで送信field/u);
+
+    window.dispatchEvent(
+      new CustomEvent(KNOWLEDGE_CAPTURE_RESULT_EVENT, {
+        detail: { schemaVersion: 1, draftId, outcome: 'committed' },
+      }),
+    );
+
+    await waitFor(() => expect(clearLanding).toHaveBeenCalledOnce());
+    expect(removeBrowserCaptureDraft).toHaveBeenCalledWith(draftId, actorKey);
+    expect(screen.queryByText(draft.selectedText)).not.toBeInTheDocument();
   });
 
   it('retries only idempotent cleanup after a lost delete response', async () => {
@@ -686,6 +749,9 @@ describe('BrowserCaptureLanding', () => {
         new BrowserCaptureBridgeError('storage_unavailable'),
       )
       .mockResolvedValueOnce(undefined);
+    removeBrowserCaptureDraft
+      .mockRejectedValueOnce(new Error('synthetic delete failure'))
+      .mockResolvedValueOnce(undefined);
     const clearLanding = vi.fn();
     const purged: unknown[] = [];
     const purgeListener = (event: Event) =>
@@ -724,7 +790,7 @@ describe('BrowserCaptureLanding', () => {
         name: 'browser session内draftの本文消去を再試行',
       }),
     ).toBeVisible();
-    expect(removeBrowserCaptureDraft).not.toHaveBeenCalled();
+    expect(removeBrowserCaptureDraft).toHaveBeenCalledOnce();
 
     fireEvent.click(
       screen.getByRole('button', {
@@ -732,7 +798,7 @@ describe('BrowserCaptureLanding', () => {
       }),
     );
     await waitFor(() =>
-      expect(removeBrowserCaptureDraft).toHaveBeenCalledOnce(),
+      expect(removeBrowserCaptureDraft).toHaveBeenCalledTimes(2),
     );
     expect(clearLanding).toHaveBeenCalledOnce();
     window.removeEventListener(KNOWLEDGE_CAPTURE_PURGE_EVENT, purgeListener);
@@ -765,6 +831,103 @@ describe('BrowserCaptureLanding', () => {
     expect(getBrowserCaptureDraft).not.toHaveBeenCalled();
     expect(window.location.search).not.toContain('browserCapture');
     expect(screen.queryByText(draft.selectedText)).not.toBeInTheDocument();
+  });
+
+  it('drops an in-flight extension response when the fence becomes terminal before dispatch', async () => {
+    getAuthState.mockReturnValue({ userId: 'synthetic-user', roles: [] });
+    refreshAuthStateFromServer.mockResolvedValue({
+      userId: 'synthetic-user',
+      roles: [],
+      verifiedActorKey: actorKey,
+    });
+    let resolveDraft:
+      ((value: ReturnType<typeof currentRecord>) => void) | null = null;
+    getBrowserCaptureDraft.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveDraft = resolve;
+        }),
+    );
+    hasBrowserCaptureTerminalFence
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    const draftEvents: unknown[] = [];
+    const listener = (event: Event) =>
+      draftEvents.push((event as CustomEvent).detail);
+    window.addEventListener(KNOWLEDGE_CAPTURE_DRAFT_EVENT, listener);
+
+    render(
+      <BrowserCaptureLanding
+        draftId={draftId}
+        knowledgeHubReady
+        activateKnowledgeHub={() => true}
+        clearLanding={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(getBrowserCaptureDraft).toHaveBeenCalledOnce());
+    await act(async () => resolveDraft?.(currentRecord()));
+
+    expect(
+      await screen.findByRole('button', {
+        name: 'browser session内draftの本文消去を再試行',
+      }),
+    ).toBeVisible();
+    expect(draftEvents).toHaveLength(0);
+    expect(screen.queryByText(draft.selectedText)).not.toBeInTheDocument();
+    window.removeEventListener(KNOWLEDGE_CAPTURE_DRAFT_EVENT, listener);
+  });
+
+  it('retains a verified cleanup actor when terminal arrives before auth completes', async () => {
+    getAuthState.mockReturnValue({ userId: 'synthetic-user', roles: [] });
+    let resolveAuth:
+      | ((value: {
+          userId: string;
+          roles: string[];
+          verifiedActorKey: string;
+        }) => void)
+      | null = null;
+    refreshAuthStateFromServer.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveAuth = resolve;
+        }),
+    );
+    render(
+      <BrowserCaptureLanding
+        draftId={draftId}
+        knowledgeHubReady
+        activateKnowledgeHub={() => true}
+        clearLanding={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(lifecycleListener).not.toBeNull());
+    act(() =>
+      lifecycleListener?.({
+        schemaVersion: 1,
+        draftId,
+        lifecycle: 'terminal',
+      }),
+    );
+    await act(async () =>
+      resolveAuth?.({
+        userId: 'synthetic-user',
+        roles: [],
+        verifiedActorKey: actorKey,
+      }),
+    );
+    fireEvent(window, new Event('offline'));
+    const retry = await screen.findByRole('button', {
+      name: 'browser session内draftの本文消去を再試行',
+    });
+    fireEvent.click(retry);
+
+    await waitFor(() =>
+      expect(markBrowserCaptureDraftCleanupPending).toHaveBeenCalledWith(
+        draftId,
+        actorKey,
+      ),
+    );
+    expect(removeBrowserCaptureDraft).toHaveBeenCalledWith(draftId, actorKey);
   });
 
   it('reloads the exact extension record after another tab changes lifecycle', async () => {

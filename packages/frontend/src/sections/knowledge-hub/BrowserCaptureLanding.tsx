@@ -9,8 +9,8 @@ import {
 } from '../../api';
 import { Alert, Button, Card } from '../../ui';
 import {
+  armBrowserCaptureTerminalFence,
   BrowserCaptureBridgeError,
-  clearBrowserCaptureTerminalFence,
   getBrowserCaptureDraft,
   hasBrowserCaptureTerminalFence,
   isBrowserCaptureDraftId,
@@ -218,6 +218,12 @@ export function BrowserCaptureLanding({
           purgeHandoff();
         }
         verifiedActorRef.current = actorKey;
+        if (terminalCleanupPendingRef.current && !cleanupActorKeyRef.current) {
+          // A remote terminal event can arrive while authentication is still
+          // being verified. Retain only the subsequently verified actor key
+          // so offline/manual cleanup remains possible without draft content.
+          cleanupActorKeyRef.current = actorKey;
+        }
         setAuthenticatedActorKey(actorKey);
         dispatchAuthCheck(false);
         setStatus((current) => {
@@ -380,9 +386,11 @@ export function BrowserCaptureLanding({
     setStatus('loading');
     setError('');
     try {
+      armBrowserCaptureTerminalFence(draftId);
       if (hasBrowserCaptureTerminalFence(draftId)) {
-        // A content-free same-origin fence closes the BroadcastChannel
-        // subscribe/reload gap before extension content can be requested.
+        // The content-free fence and active lease are reserved before any
+        // extension content request. A missing lease is a terminal state that
+        // late/reloaded tabs must never reactivate.
         terminalOutcomeRef.current = 'remote_terminal';
         terminalCleanupPendingRef.current = true;
         cleanupTombstoneRef.current = false;
@@ -409,6 +417,32 @@ export function BrowserCaptureLanding({
           controller.signal.aborted ||
           draftGenerationRef.current !== generation
         ) {
+          return;
+        }
+        try {
+          if (hasBrowserCaptureTerminalFence(draftId)) {
+            // The extension response may have been in flight when another tab
+            // committed/discarded the draft. Recheck immediately before any
+            // page event can receive the returned content.
+            terminalOutcomeRef.current = 'remote_terminal';
+            terminalCleanupPendingRef.current = true;
+            cleanupTombstoneRef.current = false;
+            cleanupActorKeyRef.current = authenticatedActorKey;
+            manualRetryRequiredRef.current = false;
+            setExpiresAtMs(null);
+            purgeHandoff();
+            detachLandingAddress();
+            setError(CLEANUP_REQUIRED_MESSAGE);
+            setStatus('cleanup_required');
+            return;
+          }
+        } catch {
+          manualRetryRequiredRef.current = true;
+          purgeHandoff();
+          setStatus('unavailable');
+          setError(
+            'Browser Captureのterminal状態を再確認できません。本文を表示せず、利用者操作で再試行してください。',
+          );
           return;
         }
         if (!capture || capture.id !== draftId) {
@@ -525,19 +559,36 @@ export function BrowserCaptureLanding({
         // Extension tombstoning below is the independent fail-closed path.
       }
       if (!cleanupTombstoneRef.current) {
-        await markBrowserCaptureDraftCleanupPending(draftId, cleanupActorKey);
-        cleanupTombstoneRef.current = true;
-        // Other tabs may now purge safely: the extension record no longer
-        // contains request-key or capture content even if deletion fails.
-        publishBrowserCaptureLifecycle(draftId, 'cleanup_pending');
+        try {
+          await markBrowserCaptureDraftCleanupPending(draftId, cleanupActorKey);
+          cleanupTombstoneRef.current = true;
+          // Other tabs may now purge safely: the extension record no longer
+          // contains request-key or capture content even if deletion fails.
+          publishBrowserCaptureLifecycle(draftId, 'cleanup_pending');
+        } catch (tombstoneError) {
+          // Tombstone persistence and physical delete are independent,
+          // idempotent cleanup paths. If content-free conversion fails, still
+          // attempt delete before exposing a manual cleanup state.
+          try {
+            await removeBrowserCaptureDraft(draftId, cleanupActorKey);
+          } catch {
+            throw tombstoneError;
+          }
+          cleanupActorKeyRef.current = '';
+          cleanupTombstoneRef.current = false;
+          terminalCleanupPendingRef.current = false;
+          if (terminalOutcomeRef.current === 'failed') {
+            setStatus('failed');
+            setError('');
+          } else {
+            clearLanding();
+          }
+          return;
+        }
       }
       await removeBrowserCaptureDraft(draftId, cleanupActorKey);
-      try {
-        clearBrowserCaptureTerminalFence(draftId);
-      } catch {
-        // The extension content has already been deleted. A remaining
-        // content-free fence only keeps an old handoff URL fail closed.
-      }
+      // Keep the content-free terminal sentinel until its bounded TTL. A late
+      // tab or an in-flight `get` must remain fail closed after deletion.
       cleanupActorKeyRef.current = '';
       cleanupTombstoneRef.current = false;
     }

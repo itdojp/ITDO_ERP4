@@ -68,6 +68,8 @@ const lifecycleListeners = new Set<
 const BROWSER_CAPTURE_LIFECYCLE_CHANNEL = 'erp4-browser-capture-lifecycle-v1';
 const BROWSER_CAPTURE_TERMINAL_FENCE_PREFIX =
   'erp4-browser-capture-terminal-v1:';
+const BROWSER_CAPTURE_ACTIVE_LEASE_PREFIX = 'erp4-browser-capture-active-v1:';
+const BROWSER_CAPTURE_FENCE_PRUNE_LIMIT = 100;
 let lifecycleChannel: BroadcastChannel | null = null;
 let storageLifecycleListening = false;
 
@@ -127,6 +129,10 @@ function terminalFenceKey(draftId: string) {
   return `${BROWSER_CAPTURE_TERMINAL_FENCE_PREFIX}${draftId}`;
 }
 
+function activeLeaseKey(draftId: string) {
+  return `${BROWSER_CAPTURE_ACTIVE_LEASE_PREFIX}${draftId}`;
+}
+
 function normalizeTerminalFence(value: string | null, expectedDraftId: string) {
   if (value === null) return null;
   try {
@@ -164,32 +170,138 @@ function emitLifecycle(message: {
   for (const listener of lifecycleListeners) listener(message);
 }
 
+function removeFencePair(storage: Storage, draftId: string) {
+  storage.removeItem(activeLeaseKey(draftId));
+  storage.removeItem(terminalFenceKey(draftId));
+}
+
+function readFencePair(storage: Storage, draftId: string, nowMs: number) {
+  const fenceValue = storage.getItem(terminalFenceKey(draftId));
+  const leaseValue = storage.getItem(activeLeaseKey(draftId));
+  if (fenceValue === null && leaseValue === null) return null;
+  const fence = normalizeTerminalFence(fenceValue, draftId);
+  const lease = normalizeTerminalFence(leaseValue, draftId);
+  if (!fence || (leaseValue !== null && !lease)) {
+    throw new BrowserCaptureBridgeError('invalid_request');
+  }
+  if (
+    fence.expiresAtMs > nowMs + BROWSER_CAPTURE_TERMINAL_FENCE_TTL_MS ||
+    (lease && lease.expiresAtMs !== fence.expiresAtMs)
+  ) {
+    throw new BrowserCaptureBridgeError('invalid_request');
+  }
+  if (fence.expiresAtMs <= nowMs) {
+    removeFencePair(storage, draftId);
+    return null;
+  }
+  return { fence, active: lease !== null };
+}
+
+function pruneExpiredBrowserCaptureFences(nowMs = Date.now()) {
+  if (!Number.isSafeInteger(nowMs) || typeof window === 'undefined') return;
+  const storage = window.localStorage;
+  const candidates: string[] = [];
+  const scanLimit = Math.min(storage.length, BROWSER_CAPTURE_FENCE_PRUNE_LIMIT);
+  for (let index = 0; index < scanLimit; index += 1) {
+    const key = storage.key(index);
+    if (
+      key?.startsWith(BROWSER_CAPTURE_TERMINAL_FENCE_PREFIX) ||
+      key?.startsWith(BROWSER_CAPTURE_ACTIVE_LEASE_PREFIX)
+    ) {
+      candidates.push(key);
+    }
+  }
+  const draftIds = new Set(
+    candidates
+      .map((key) =>
+        key.startsWith(BROWSER_CAPTURE_TERMINAL_FENCE_PREFIX)
+          ? key.slice(BROWSER_CAPTURE_TERMINAL_FENCE_PREFIX.length)
+          : key.slice(BROWSER_CAPTURE_ACTIVE_LEASE_PREFIX.length),
+      )
+      .filter(isBrowserCaptureDraftId),
+  );
+  for (const draftId of draftIds) {
+    const fence = normalizeTerminalFence(
+      storage.getItem(terminalFenceKey(draftId)),
+      draftId,
+    );
+    const lease = normalizeTerminalFence(
+      storage.getItem(activeLeaseKey(draftId)),
+      draftId,
+    );
+    if (
+      (fence && fence.expiresAtMs <= nowMs) ||
+      (!fence && lease && lease.expiresAtMs <= nowMs)
+    ) {
+      removeFencePair(storage, draftId);
+    }
+  }
+}
+
 function handleTerminalFenceStorage(event: StorageEvent) {
   if (
     typeof event.key !== 'string' ||
-    !event.key.startsWith(BROWSER_CAPTURE_TERMINAL_FENCE_PREFIX)
+    !event.key.startsWith(BROWSER_CAPTURE_ACTIVE_LEASE_PREFIX) ||
+    event.newValue !== null
   ) {
     return;
   }
-  const draftId = event.key.slice(BROWSER_CAPTURE_TERMINAL_FENCE_PREFIX.length);
-  const fence = isBrowserCaptureDraftId(draftId)
-    ? normalizeTerminalFence(event.newValue, draftId)
-    : null;
-  const nowMs = Date.now();
-  if (
-    !fence ||
-    fence.expiresAtMs <= nowMs ||
-    fence.expiresAtMs > nowMs + BROWSER_CAPTURE_TERMINAL_FENCE_TTL_MS
-  ) {
-    return;
+  const draftId = event.key.slice(BROWSER_CAPTURE_ACTIVE_LEASE_PREFIX.length);
+  if (!isBrowserCaptureDraftId(draftId)) return;
+  try {
+    if (hasBrowserCaptureTerminalFence(draftId)) {
+      emitLifecycle({ schemaVersion: 1, draftId, lifecycle: 'terminal' });
+    }
+  } catch {
+    // A malformed or unavailable fence cannot authorize a content read. The
+    // landing page performs the same fail-closed check before every read.
   }
-  emitLifecycle({ schemaVersion: 1, draftId, lifecycle: 'terminal' });
 }
 
 function ensureStorageLifecycleListener() {
   if (storageLifecycleListening || typeof window === 'undefined') return;
+  try {
+    pruneExpiredBrowserCaptureFences();
+  } catch {
+    // Initial draft arming below remains fail closed if storage is unavailable.
+  }
   window.addEventListener('storage', handleTerminalFenceStorage);
   storageLifecycleListening = true;
+}
+
+export function armBrowserCaptureTerminalFence(
+  draftId: string,
+  nowMs = Date.now(),
+) {
+  if (!isBrowserCaptureDraftId(draftId) || !Number.isSafeInteger(nowMs)) {
+    throw new BrowserCaptureBridgeError('invalid_request');
+  }
+  try {
+    const storage = window.localStorage;
+    const existing = readFencePair(storage, draftId, nowMs);
+    if (existing) {
+      // A missing active lease is the durable terminal state. Never recreate
+      // it from a reload or late tab.
+      return;
+    }
+    const value = JSON.stringify({
+      schemaVersion: 1,
+      draftId,
+      expiresAtMs: nowMs + BROWSER_CAPTURE_TERMINAL_FENCE_TTL_MS,
+    });
+    // Reserve both content-free records before requesting extension content.
+    // Terminal transition only removes the lease and therefore never needs a
+    // new quota allocation.
+    storage.setItem(terminalFenceKey(draftId), value);
+    storage.setItem(activeLeaseKey(draftId), value);
+    const armed = readFencePair(storage, draftId, nowMs);
+    if (!armed?.active) {
+      throw new BrowserCaptureBridgeError('storage_unavailable');
+    }
+  } catch (caught) {
+    if (caught instanceof BrowserCaptureBridgeError) throw caught;
+    throw new BrowserCaptureBridgeError('storage_unavailable');
+  }
 }
 
 export function markBrowserCaptureTerminalFence(
@@ -200,15 +312,21 @@ export function markBrowserCaptureTerminalFence(
     throw new BrowserCaptureBridgeError('invalid_request');
   }
   try {
-    window.localStorage.setItem(
-      terminalFenceKey(draftId),
-      JSON.stringify({
-        schemaVersion: 1,
-        draftId,
-        expiresAtMs: nowMs + BROWSER_CAPTURE_TERMINAL_FENCE_TTL_MS,
-      }),
-    );
-  } catch {
+    const storage = window.localStorage;
+    const existing = readFencePair(storage, draftId, nowMs);
+    if (!existing) {
+      storage.setItem(
+        terminalFenceKey(draftId),
+        JSON.stringify({
+          schemaVersion: 1,
+          draftId,
+          expiresAtMs: nowMs + BROWSER_CAPTURE_TERMINAL_FENCE_TTL_MS,
+        }),
+      );
+    }
+    storage.removeItem(activeLeaseKey(draftId));
+  } catch (caught) {
+    if (caught instanceof BrowserCaptureBridgeError) throw caught;
     throw new BrowserCaptureBridgeError('storage_unavailable');
   }
 }
@@ -220,35 +338,19 @@ export function hasBrowserCaptureTerminalFence(
   if (!isBrowserCaptureDraftId(draftId) || !Number.isSafeInteger(nowMs)) {
     return false;
   }
-  let value: string | null;
   try {
-    value = window.localStorage.getItem(terminalFenceKey(draftId));
-  } catch {
+    const pair = readFencePair(window.localStorage, draftId, nowMs);
+    return pair !== null && !pair.active;
+  } catch (caught) {
+    if (caught instanceof BrowserCaptureBridgeError) throw caught;
     throw new BrowserCaptureBridgeError('storage_unavailable');
   }
-  if (value === null) return false;
-  const fence = normalizeTerminalFence(value, draftId);
-  if (
-    !fence ||
-    fence.expiresAtMs > nowMs + BROWSER_CAPTURE_TERMINAL_FENCE_TTL_MS
-  ) {
-    throw new BrowserCaptureBridgeError('invalid_request');
-  }
-  if (fence.expiresAtMs <= nowMs) {
-    try {
-      window.localStorage.removeItem(terminalFenceKey(draftId));
-    } catch {
-      throw new BrowserCaptureBridgeError('storage_unavailable');
-    }
-    return false;
-  }
-  return true;
 }
 
 export function clearBrowserCaptureTerminalFence(draftId: string) {
   if (!isBrowserCaptureDraftId(draftId)) return;
   try {
-    window.localStorage.removeItem(terminalFenceKey(draftId));
+    removeFencePair(window.localStorage, draftId);
   } catch {
     throw new BrowserCaptureBridgeError('storage_unavailable');
   }

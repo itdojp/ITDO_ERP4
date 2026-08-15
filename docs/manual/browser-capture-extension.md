@@ -43,7 +43,7 @@ ERP4_CAPTURE_ORIGIN=https://erp4.example.invalid \
 3. popupでtitle、現在URL、selection、allowlist metadataだけが表示されることを確認する。password input、script、unknown meta、DOM HTMLがないことを確認する。
 4. `ERP4で確認`を選び、URLには`browserCapture`のopaque IDだけがあることを確認する。
 5. ERP4のserver-confirmed login後にdraftを読み、personal scope、field preview、明示confirmを確認する。
-6. 同じdraftを再読込しても新しいKnowledge item／snapshotが増えず、結果不明では自動retryされないことを確認する。保存結果確定後にtombstone書込みが失敗した場合はsession内本文の消去済みを主張せず、current URLからhandoff IDを外して本文消去だけを明示再試行することを確認する。reload中または後から同じhandoff URLを開いた別tabでも、content-free terminal fenceにより本文、Preview、commitが復元されないことを確認する。物理削除だけが失敗した場合は、本文を含まないcleanup表示だけが復元され、明示削除retry以外の操作がないことを確認する。
+6. 同じdraftを再読込しても新しいKnowledge item／snapshotが増えず、結果不明では自動retryされないことを確認する。保存結果確定後にtombstone書込みが失敗した場合はsession内本文の消去済みを主張せず、current URLからhandoff IDを外して本文消去だけを明示再試行することを確認する。reload中、extension応答待機中、または後から同じhandoff URLを開いた別tabでも、本文取得前に予約したcontent-free terminal fence／active leaseと表示直前の再検査により本文、Preview、commitが復元されないことを確認する。terminal fenceは物理削除後も最大10分保持される。物理削除だけが失敗した場合は、本文を含まないcleanup表示だけが復元され、明示削除retry以外の操作がないことを確認する。
 7. offline／unavailableではsession draftを保持し、利用者が再試行するまでhandoffしないことを確認する。
 8. browser名、完全version、permission画面、popup、handoff、duplicate、offline、disable rollbackをsanitized evidenceへ記録する。
 9. target ERP4 responseの実効CSPを確認する。標準frontend imageはbuild時に`VITE_API_BASE`のexact originを`connect-src`へ束縛したresponse CSPを生成するが、配備先proxyを通過した`/`、SPA route、`/sw.js`、`/share-target-sw.js`、`/assets/*`の最終response headerを必ず再確認する。各responseでCSP、`Referrer-Policy`、`X-Content-Type-Options`が有効であることを確認する。CSP証跡がなく、exact origin application JavaScriptを信頼できない環境ではextensionを有効化しない。
@@ -60,7 +60,7 @@ Chromium E2Eやstatic manifest reviewをChrome／Edge実runtime evidenceとし�
 - `chrome.storage.session`最大10件、論理read TTL 10分（期限後の物理削除は次のextension実行またはbrowser session終了時）
 - one-time nonce、opaque draft ID、actor fingerprint
 - actor fingerprintはserver-confirmed認証後のactor切替／claim整合用であり、server署名されたattestationではない。ERP4 exact originのapplication JavaScript、target環境で検証済みのCSP、XSS防止、locked browser profileを信頼境界とし、CSP証跡がないdeploymentではextensionを有効化しない
-- extensionはcookie、ERP4 token、CSRF header、page localStorageを取得せず、persistent extension content storageを使わない。ERP4 applicationはreload gapを閉じるためschema／opaque draft ID／最大10分expiryだけのcontent-free terminal fenceをsame-origin localStorageへ保持し、capture本文、request key、actor、tokenは保存しない
+- extensionはcookie、ERP4 token、CSRF header、page localStorageを取得せず、persistent extension content storageを使わない。ERP4 applicationはreload／in-flight response gapを閉じるためschema／opaque draft ID／最大10分の固定expiryだけのcontent-free terminal fence／active leaseをsame-origin localStorageへ保持し、capture本文、request key、actor、tokenは保存しない。terminal時はleaseだけを削除し、sentinelはbounded TTLまで保持する
 - page URLに一般名で埋め込まれたsite固有capabilityは完全自動判定できないため、popupとERP4 exact previewでURLを確認し、秘密値を含み得るURL fieldは保存対象から外す
 - ERP4 APIへ直接fetchせず、認証済み画面の既存CSRF／ACL／preview tokenへ委譲
 
