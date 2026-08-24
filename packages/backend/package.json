@@ -85,6 +85,9 @@
   },
   "overrides": {
     "@mrleebo/prisma-ast": "^0.14.0",
+    "@prisma/config": {
+      "deepmerge-ts": "8.0.2"
+    },
     "@hono/node-server": "^1.19.11",
     "diff": "^4.0.4",
     "fast-xml-parser": "^5.5.5",
