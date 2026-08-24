@@ -26,16 +26,21 @@ COPY packages/frontend/scripts ./packages/frontend/scripts
 RUN npm ci --prefix packages/frontend
 
 COPY packages/frontend ./packages/frontend
+COPY deploy/containers/frontend.nginx.conf /app/frontend.nginx.conf.template
 RUN case "$VITE_AUTH_MODE" in header|jwt_bff) ;; *) exit 1 ;; esac \
  && case "$VITE_PWA_SHARE_TARGET_MODE" in enabled|decommission) ;; *) exit 1 ;; esac \
  && case "$VITE_ENABLE_SW" in true|false) ;; *) exit 1 ;; esac \
  && if [ "$VITE_PWA_SHARE_TARGET_MODE" = enabled ] && [ "$VITE_ENABLE_SW" != true ]; then exit 1; fi \
+ && node packages/frontend/scripts/configure-frontend-security.mjs \
+      --template /app/frontend.nginx.conf.template \
+      --out /app/frontend.nginx.conf \
+      --api-base "$VITE_API_BASE" \
  && npm run build --prefix packages/frontend \
  && npm cache clean --force
 
 FROM ${NGINX_IMAGE}
 
-COPY deploy/containers/frontend.nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/frontend.nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/packages/frontend/dist /usr/share/nginx/html
 
 EXPOSE 8080

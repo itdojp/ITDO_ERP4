@@ -1,0 +1,21 @@
+{
+  "name": "erp4-browser-capture-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "lint": "node ./scripts/static-check.mjs --syntax",
+    "format:check": "prettier --check \"src/**/*.{js,html,css}\" \"scripts/**/*.mjs\" \"test/**/*.{js,mjs}\" \"README.md\" \"package.json\"",
+    "typecheck": "node ./scripts/static-check.mjs",
+    "build": "node ./scripts/build.mjs",
+    "test": "node --test test/*.test.js",
+    "test:chromium": "node ./test/chromium-e2e.mjs",
+    "audit": "npm audit --audit-level=high"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6"
+  }
+}

@@ -31,6 +31,7 @@ test("createReleaseReadinessPlan includes current required quality gates", () =>
   for (const id of [
     "backend-install",
     "frontend-install",
+    "browser-capture-extension-install",
     "backend-prisma-generate",
     "backend-lint",
     "backend-format",
@@ -46,9 +47,16 @@ test("createReleaseReadinessPlan includes current required quality gates", () =>
     "frontend-format",
     "frontend-typecheck",
     "frontend-test",
+    "frontend-quality-gates",
     "frontend-build",
+    "browser-capture-extension-lint",
+    "browser-capture-extension-format",
+    "browser-capture-extension-typecheck",
+    "browser-capture-extension-test",
+    "browser-capture-extension-build",
     "audit-backend",
     "audit-frontend",
+    "audit-browser-capture-extension",
     "data-quality-test",
     "data-quality-blocking",
     "docs-image-links",
@@ -57,6 +65,8 @@ test("createReleaseReadinessPlan includes current required quality gates", () =>
     "ops-scripts",
     "openapi-snapshot",
     "secret-scan",
+    "browser-capture-extension-playwright",
+    "browser-capture-extension-e2e",
     "frontend-e2e",
   ]) {
     assert.ok(ids.includes(id), `${id} is included`);

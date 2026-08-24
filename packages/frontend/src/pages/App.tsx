@@ -15,6 +15,7 @@ import {
   SectionCard,
 } from '../ui';
 import { CurrentUser } from '../sections/CurrentUser';
+import { BrowserCaptureLanding } from '../sections/knowledge-hub/BrowserCaptureLanding';
 import { ShareTargetLanding } from '../sections/knowledge-hub/ShareTargetLanding';
 import { parseOpenHash, type DeepLinkOpenPayload } from '../utils/deepLink';
 import { purgeExpiredShareTargetDrafts } from '../utils/shareTargetQueue';
@@ -702,6 +703,12 @@ export const App: React.FC = () => {
     if (typeof window === 'undefined') return '';
     return new URLSearchParams(window.location.search).get('shareTarget') ?? '';
   });
+  const [browserCaptureDraftId, setBrowserCaptureDraftId] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return (
+      new URLSearchParams(window.location.search).get('browserCapture') ?? ''
+    );
+  });
 
   const prepareActiveSectionChange = useCallback(
     (sectionId: string) => {
@@ -735,6 +742,19 @@ export const App: React.FC = () => {
       );
     }
     setShareTargetDraftId('');
+  }, []);
+
+  const clearBrowserCaptureLanding = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      const next = new URL(window.location.href);
+      next.searchParams.delete('browserCapture');
+      window.history.replaceState(
+        null,
+        '',
+        `${next.pathname}${next.search}${next.hash}`,
+      );
+    }
+    setBrowserCaptureDraftId('');
   }, []);
 
   useEffect(() => {
@@ -1178,7 +1198,13 @@ export const App: React.FC = () => {
         }
       />
       <CurrentUser />
-      {shareTargetDraftId ? (
+      {shareTargetDraftId && browserCaptureDraftId ? (
+        <div style={{ marginTop: 8 }}>
+          <Alert variant="error">
+            複数のcapture入口が同時に指定されています。本文は読み込まず、URLを確認してください。
+          </Alert>
+        </div>
+      ) : shareTargetDraftId ? (
         <ShareTargetLanding
           draftId={shareTargetDraftId}
           knowledgeHubReady={
@@ -1187,6 +1213,16 @@ export const App: React.FC = () => {
           }
           activateKnowledgeHub={activateKnowledgeHubForShareTarget}
           clearLanding={clearShareTargetLanding}
+        />
+      ) : browserCaptureDraftId ? (
+        <BrowserCaptureLanding
+          draftId={browserCaptureDraftId}
+          knowledgeHubReady={
+            activeSectionId === 'knowledge-hub' &&
+            activeSectionReadyKey === activeSectionLoadKey
+          }
+          activateKnowledgeHub={activateKnowledgeHubForShareTarget}
+          clearLanding={clearBrowserCaptureLanding}
         />
       ) : null}
       {deepLinkError && (

@@ -299,6 +299,12 @@ export function createReleaseReadinessPlan(options = {}) {
       "npm ci --prefix packages/frontend",
     ),
     check(
+      "browser-capture-extension-install",
+      "Browser capture extension dependency install",
+      "CI / frontend",
+      "npm ci --prefix packages/browser-capture-extension",
+    ),
+    check(
       "backend-prisma-generate",
       "Backend Prisma generate",
       "CI / backend",
@@ -410,11 +416,48 @@ export function createReleaseReadinessPlan(options = {}) {
       "npm run test --prefix packages/frontend",
     ),
     check(
+      "frontend-quality-gates",
+      "Frontend build and response security tests",
+      "CI / frontend",
+      "npm run quality-gates:test --prefix packages/frontend",
+    ),
+    check(
       "frontend-build",
       "Frontend build",
       "CI / frontend",
       "npm run build --prefix packages/frontend",
       { env: { VITE_PWA_SHARE_TARGET_MODE: "decommission" } },
+    ),
+    check(
+      "browser-capture-extension-lint",
+      "Browser capture extension lint",
+      "CI / frontend",
+      "npm run lint --prefix packages/browser-capture-extension",
+    ),
+    check(
+      "browser-capture-extension-format",
+      "Browser capture extension format check",
+      "CI / lint",
+      "npm run format:check --prefix packages/browser-capture-extension",
+    ),
+    check(
+      "browser-capture-extension-typecheck",
+      "Browser capture extension static security check",
+      "CI / frontend",
+      "npm run typecheck --prefix packages/browser-capture-extension",
+    ),
+    check(
+      "browser-capture-extension-test",
+      "Browser capture extension unit test",
+      "CI / frontend",
+      "npm run test --prefix packages/browser-capture-extension",
+    ),
+    check(
+      "browser-capture-extension-build",
+      "Browser capture extension build",
+      "CI / frontend",
+      "npm run build --prefix packages/browser-capture-extension",
+      { env: { ERP4_CAPTURE_ORIGIN: "https://erp4.example.invalid" } },
     ),
     check(
       "audit-backend",
@@ -427,6 +470,12 @@ export function createReleaseReadinessPlan(options = {}) {
       "Frontend dependency audit",
       "CI / security-audit",
       "npm audit --prefix packages/frontend --audit-level=high",
+    ),
+    check(
+      "audit-browser-capture-extension",
+      "Browser capture extension dependency audit",
+      "CI / security-audit",
+      "npm audit --prefix packages/browser-capture-extension --audit-level=high",
     ),
     check(
       "data-quality-test",
@@ -481,6 +530,18 @@ export function createReleaseReadinessPlan(options = {}) {
       {
         env: { SECRET_SCAN_REPORT_PATH: secretScanReportPath },
       },
+    ),
+    check(
+      "browser-capture-extension-playwright",
+      "Browser capture Chromium runtime install",
+      "CI / e2e-frontend",
+      "command -v xvfb-run >/dev/null && packages/frontend/node_modules/.bin/playwright install chromium",
+    ),
+    check(
+      "browser-capture-extension-e2e",
+      "Browser capture Chromium extension E2E",
+      "CI / e2e-frontend",
+      "xvfb-run -a npm run test:chromium --prefix packages/browser-capture-extension",
     ),
     check(
       "frontend-e2e",

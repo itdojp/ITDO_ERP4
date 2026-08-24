@@ -1162,6 +1162,12 @@ grep -Eq 'share-target-sw\|share-target-mode' "$frontend_nginx" || \
   fail 'frontend cache policy must cover share-target worker helpers'
 grep -Fq 'Cache-Control "no-cache"' "$frontend_nginx" || \
   fail 'frontend worker helper cache policy must revalidate deployments'
+grep -Fq 'Content-Security-Policy' "$frontend_nginx" || \
+  fail 'frontend nginx template must set a response CSP'
+grep -Fq '__ERP4_FRONTEND_CONNECT_SRC__' "$frontend_nginx" || \
+  fail 'frontend nginx template must bind the exact API origin into CSP'
+grep -Fq 'configure-frontend-security.mjs' "$ROOT_DIR/deploy/containers/frontend.Containerfile" || \
+  fail 'frontend image build must render the response CSP'
 grep -Fq 'Type=oneshot' "$storage_service" || fail 'storage readiness must remain oneshot'
 grep -Fq './scripts/storage-readiness.sh --format json' "$storage_service" || fail 'storage readiness service entrypoint missing'
 grep -Fq 'SyslogIdentifier=erp4-storage-readiness' "$storage_service" || fail 'storage readiness journal identifier missing'

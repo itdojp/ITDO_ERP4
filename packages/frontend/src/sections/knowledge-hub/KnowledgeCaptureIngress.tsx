@@ -30,6 +30,11 @@ import {
   type ShareTargetPendingIntent,
 } from '../../utils/shareTargetQueue';
 import {
+  markBrowserCaptureDraftPending,
+  markBrowserCaptureDraftStaged,
+  publishBrowserCaptureLifecycle,
+} from '../../utils/browserCaptureBridge';
+import {
   knowledgeHubErrorMessage,
   type KnowledgeScope,
   type KnowledgeSourceType,
@@ -55,6 +60,13 @@ type IngressEventDetail = {
 };
 type PurgeEventDetail = { draftId: string };
 type AuthCheckEventDetail = { draftId: string; checking: boolean };
+type PendingOperation = {
+  draftId: string;
+  actorKey: string;
+  requestKey: string;
+  previewToken: string;
+  operationId: string;
+};
 
 function hasControlCharacter(value: string) {
   return Array.from(value).some((character) => {
@@ -147,6 +159,54 @@ function resultEvent(
   );
 }
 
+async function markLocalDraftPending(
+  channel: IncomingKnowledgeCaptureDraft['channel'],
+  draftId: string,
+  actorKey: string,
+  operationId: string,
+  pendingIntent: ShareTargetPendingIntent,
+  draft: IncomingKnowledgeCaptureDraft,
+) {
+  return channel === 'browser_extension'
+    ? markBrowserCaptureDraftPending(
+        draftId,
+        actorKey,
+        operationId,
+        pendingIntent,
+        draft,
+      )
+    : markShareTargetDraftPending(
+        draftId,
+        actorKey,
+        operationId,
+        pendingIntent,
+        draft,
+      );
+}
+
+async function markLocalDraftStaged(
+  channel: IncomingKnowledgeCaptureDraft['channel'],
+  draftId: string,
+  actorKey: string,
+  operationId: string,
+) {
+  return channel === 'browser_extension'
+    ? markBrowserCaptureDraftStaged(draftId, actorKey, operationId)
+    : markShareTargetDraftStaged(draftId, actorKey, operationId);
+}
+
+function publishLocalDraftLifecycle(
+  channel: IncomingKnowledgeCaptureDraft['channel'],
+  draftId: string,
+  lifecycle: 'staged' | 'pending',
+) {
+  if (channel === 'pwa_share_target') {
+    publishShareTargetLifecycle(draftId, lifecycle);
+  } else {
+    publishBrowserCaptureLifecycle(draftId, lifecycle);
+  }
+}
+
 export function KnowledgeCaptureIngress({
   onCommitted,
   onCommitBusyChange,
@@ -182,6 +242,10 @@ export function KnowledgeCaptureIngress({
   const draftIdRef = useRef('');
   const requestKeyRef = useRef('');
   const operationAbortRef = useRef<AbortController | null>(null);
+  // Kept only in component memory. If the bridge response is lost after its
+  // session write, an explicit user retry reuses this exact operation rather
+  // than creating a second owner or falling into read-only reconciliation.
+  const pendingOperationRef = useRef<PendingOperation | null>(null);
   const generationRef = useRef(0);
   const mutationBusyRef = useRef(false);
   const handoffLockedRef = useRef(false);
@@ -208,6 +272,7 @@ export function KnowledgeCaptureIngress({
     setExplicitlyConfirmed(false);
     setError('');
     requestKeyRef.current = '';
+    pendingOperationRef.current = null;
     handoffLockedRef.current = false;
   }, []);
 
@@ -327,6 +392,7 @@ export function KnowledgeCaptureIngress({
       return;
     }
     const generation = generationRef.current + 1;
+    pendingOperationRef.current = null;
     generationRef.current = generation;
     operationAbortRef.current?.abort();
     const controller = new AbortController();
@@ -401,8 +467,23 @@ export function KnowledgeCaptureIngress({
     let pendingOperationId = '';
     if (commitDraftId && commitActorKey) {
       try {
-        pendingOperationId = createShareTargetPendingOperationId();
-        const pendingTransition = await markShareTargetDraftPending(
+        const retainedOperation = pendingOperationRef.current;
+        pendingOperationId =
+          retainedOperation?.draftId === commitDraftId &&
+          retainedOperation.actorKey === commitActorKey &&
+          retainedOperation.requestKey === requestKeyRef.current &&
+          retainedOperation.previewToken === preview.previewToken
+            ? retainedOperation.operationId
+            : createShareTargetPendingOperationId();
+        pendingOperationRef.current = {
+          draftId: commitDraftId,
+          actorKey: commitActorKey,
+          requestKey: requestKeyRef.current,
+          previewToken: preview.previewToken,
+          operationId: pendingOperationId,
+        };
+        const pendingTransition = await markLocalDraftPending(
+          preview.draft.channel,
           commitDraftId,
           commitActorKey,
           pendingOperationId,
@@ -419,22 +500,28 @@ export function KnowledgeCaptureIngress({
           // waiting for the serialized IndexedDB transaction. Only the CAS
           // winner may compensate its own transition; a loser leaves the
           // exact pending row untouched for the landing reload.
-          if (pendingTransition.transitioned) {
-            const restored = await markShareTargetDraftStaged(
+          if (
+            pendingTransition.transitioned ||
+            ('owned' in pendingTransition && pendingTransition.owned)
+          ) {
+            const restored = await markLocalDraftStaged(
+              preview.draft.channel,
               commitDraftId,
               commitActorKey,
               pendingOperationId,
             )
               .then(() => true)
               .catch(() => false);
-            publishShareTargetLifecycle(
+            publishLocalDraftLifecycle(
+              preview.draft.channel,
               commitDraftId,
               restored ? 'staged' : 'pending',
             );
           }
           return;
         }
-        if (!pendingTransition.transitioned) {
+        if (!pendingTransition.transitioned && !pendingTransition.owned) {
+          pendingOperationRef.current = null;
           setDraft(pendingTransition.draft);
           setSelectedFields(pendingTransition.pendingIntent.selectedFields);
           setScope(pendingTransition.pendingIntent.scope);
@@ -458,7 +545,11 @@ export function KnowledgeCaptureIngress({
           if (generationRef.current === generation) setBusy(null);
           return;
         }
-        publishShareTargetLifecycle(commitDraftId, 'pending');
+        publishLocalDraftLifecycle(
+          preview.draft.channel,
+          commitDraftId,
+          'pending',
+        );
       } catch {
         if (controller.signal.aborted || generationRef.current !== generation) {
           return;
@@ -485,12 +576,14 @@ export function KnowledgeCaptureIngress({
       setResult(value);
       handoffLockedRef.current = value.status !== 'ready';
       if (value.status === 'ready') {
+        pendingOperationRef.current = null;
         resultEvent(draftId, 'committed');
         await Promise.resolve(onCommitted?.(value.itemId)).catch(
           () => undefined,
         );
         onCommitBusyChange?.(false);
       } else if (value.status === 'failed') {
+        pendingOperationRef.current = null;
         resultEvent(draftId, 'failed');
         onCommitBusyChange?.(false);
       } else {
@@ -503,12 +596,17 @@ export function KnowledgeCaptureIngress({
         let localStateRestored = true;
         if (draftId && handoffActorKeyRef.current) {
           try {
-            await markShareTargetDraftStaged(
+            await markLocalDraftStaged(
+              preview.draft.channel,
               draftId,
               handoffActorKeyRef.current,
               pendingOperationId,
             );
-            publishShareTargetLifecycle(draftId, 'staged');
+            publishLocalDraftLifecycle(
+              preview.draft.channel,
+              draftId,
+              'staged',
+            );
           } catch {
             localStateRestored = false;
           }
@@ -523,6 +621,7 @@ export function KnowledgeCaptureIngress({
           return;
         }
         setPreview(null);
+        pendingOperationRef.current = null;
         setExplicitlyConfirmed(false);
         requestKeyRef.current = '';
         handoffLockedRef.current = false;
@@ -572,12 +671,14 @@ export function KnowledgeCaptureIngress({
       setUncertainCaptureId('');
       handoffLockedRef.current = value.status !== 'ready';
       if (value.status === 'ready') {
+        pendingOperationRef.current = null;
         resultEvent(draftId, 'committed');
         await Promise.resolve(onCommitted?.(value.itemId)).catch(
           () => undefined,
         );
         onCommitBusyChange?.(false);
       } else if (value.status === 'failed') {
+        pendingOperationRef.current = null;
         resultEvent(draftId, 'failed');
         onCommitBusyChange?.(false);
       } else {

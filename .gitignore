@@ -3,6 +3,8 @@ packages/backend/node_modules
 packages/frontend/node_modules
 packages/backend/dist
 packages/frontend/dist
+packages/browser-capture-extension/dist
+packages/browser-capture-extension/tmp
 packages/frontend/.vite
 .env
 packages/backend/.env

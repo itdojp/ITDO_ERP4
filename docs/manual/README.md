@@ -27,6 +27,7 @@
 - 権限/ロールと可視範囲: [role-permissions](role-permissions.md)
 - 初回利用・共通操作: [user-onboarding](user-onboarding.md)
 - Knowledge Hub 保存・annotation・会話取込・Synthesis・選択Chat共有／promote・外部LLM対話・version・download: [knowledge-hub](knowledge-hub.md)
+- Chrome／Edge Browser Capture拡張のbuild・unpacked install・検証・rollback: [browser-capture-extension](browser-capture-extension.md)
 - トラブルシュート: [troubleshooting](troubleshooting.md)
 - Agent Read API（Phase 1）: [agent-read-api-guide](agent-read-api-guide.md)
 - Agent Write ガードレール（Phase 2）: [agent-write-guardrails-guide](agent-write-guardrails-guide.md)

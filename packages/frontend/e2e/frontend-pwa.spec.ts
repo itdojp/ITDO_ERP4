@@ -332,6 +332,510 @@ test('pwa Web Share Target rejects files, unknown fields, wrong media, and overs
   expect(JSON.stringify(results)).not.toContain('private-canary');
 });
 
+test('browser capture bridge reaches the authenticated real-backend preview and commit lifecycle @core @extended', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const draftId = randomUUID().replace(/-/gu, '');
+  const requestKey = randomUUID().replace(/-/gu, '');
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  const selectedText = `Synthetic browser capture ${runId()}`;
+
+  await page.addInitScript(
+    ({ id, key, created, expires, text }) => {
+      type Lifecycle = 'staged' | 'pending' | 'cleanup_pending';
+      type BridgeState = {
+        lifecycle: Lifecycle;
+        deleted: boolean;
+        commands: string[];
+        cleanupRecordKeys: string[] | null;
+        pendingOperationId: string | null;
+        pendingIntent: Record<string, unknown> | null;
+        draft: Record<string, unknown> | null;
+        droppedPendingResponse: boolean;
+      };
+      const state: BridgeState = {
+        lifecycle: 'staged',
+        deleted: false,
+        commands: [],
+        cleanupRecordKeys: null,
+        pendingOperationId: null,
+        pendingIntent: null,
+        droppedPendingResponse: false,
+        draft: {
+          schemaVersion: 1,
+          channel: 'browser_extension',
+          title: 'Synthetic browser capture',
+          url: 'https://example.invalid/browser-capture',
+          selectedText: text,
+          description: null,
+          author: null,
+          publishedAt: null,
+          capturedAt: created,
+        },
+      };
+      (
+        globalThis as typeof globalThis & {
+          __browserCaptureBridgeState?: BridgeState;
+        }
+      ).__browserCaptureBridgeState = state;
+
+      window.addEventListener('message', (event) => {
+        if (
+          event.source !== window ||
+          event.origin !== window.location.origin ||
+          !event.data ||
+          typeof event.data !== 'object' ||
+          Array.isArray(event.data)
+        ) {
+          return;
+        }
+        const command = event.data as Record<string, unknown>;
+        if (
+          command.source !== 'erp4-page' ||
+          command.type !== 'erp4-browser-capture-command-v1' ||
+          command.id !== id ||
+          typeof command.command !== 'string' ||
+          typeof command.nonce !== 'string'
+        ) {
+          return;
+        }
+        state.commands.push(command.command);
+        let transitioned = false;
+        if (command.command === 'pending' && state.lifecycle === 'staged') {
+          state.lifecycle = 'pending';
+          state.pendingOperationId = command.operationId as string;
+          state.pendingIntent = command.pendingIntent as Record<
+            string,
+            unknown
+          >;
+          state.draft = command.draft as Record<string, unknown>;
+          transitioned = true;
+        } else if (
+          command.command === 'staged' &&
+          state.lifecycle === 'pending'
+        ) {
+          state.lifecycle = 'staged';
+          state.pendingOperationId = null;
+          state.pendingIntent = null;
+          transitioned = true;
+        } else if (
+          command.command === 'cleanup' &&
+          state.lifecycle !== 'cleanup_pending'
+        ) {
+          state.lifecycle = 'cleanup_pending';
+          state.pendingOperationId = null;
+          state.pendingIntent = null;
+          state.draft = null;
+          transitioned = true;
+        } else if (command.command === 'delete') {
+          state.deleted = true;
+          transitioned = true;
+        }
+        const record = state.deleted
+          ? null
+          : state.lifecycle === 'cleanup_pending'
+            ? {
+                schemaVersion: 1,
+                id,
+                lifecycle: state.lifecycle,
+                createdAt: created,
+                expiresAt: expires,
+              }
+            : {
+                schemaVersion: 1,
+                id,
+                requestKey: key,
+                lifecycle: state.lifecycle,
+                pendingOperationId: state.pendingOperationId,
+                pendingIntent: state.pendingIntent,
+                draft: state.draft,
+                createdAt: created,
+                expiresAt: expires,
+              };
+        if (command.command === 'cleanup' && record) {
+          state.cleanupRecordKeys = Object.keys(record).sort();
+        }
+        if (
+          command.command === 'pending' &&
+          transitioned &&
+          !state.droppedPendingResponse
+        ) {
+          // The storage transition succeeded, but the first bridge response
+          // is intentionally lost. Only a later explicit user action may
+          // reuse the same operation and dispatch the backend mutation.
+          state.droppedPendingResponse = true;
+          return;
+        }
+        window.postMessage(
+          {
+            source: 'erp4-extension',
+            type: 'erp4-browser-capture-response-v1',
+            schemaVersion: 1,
+            command: command.command,
+            id,
+            nonce: command.nonce,
+            response: { ok: true, transitioned, record },
+          },
+          window.location.origin,
+        );
+      });
+    },
+    {
+      id: draftId,
+      key: requestKey,
+      created: createdAt,
+      expires: expiresAt,
+      text: selectedText,
+    },
+  );
+
+  const captureRequests: Array<{ method: string; pathname: string }> = [];
+  page.on('request', (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (/\/knowledge\/captures(?:\/|$)/u.test(pathname))
+      captureRequests.push({ method: request.method(), pathname });
+  });
+  await prepare(page);
+  await page.goto(`${baseUrl}/?browserCapture=${draftId}`);
+
+  await expect(
+    page.getByRole('heading', { name: 'ブラウザー共有の確認' }),
+  ).toBeVisible();
+  await expect(page.getByRole('textbox', { name: '選択テキスト' })).toHaveValue(
+    selectedText,
+  );
+  expect(captureRequests).toHaveLength(0);
+
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Exact preview' }),
+  ).toBeVisible();
+  await page.getByLabel('このexact previewを保存します').check();
+  await page.getByRole('button', { name: '明示確定して保存' }).click();
+  await expect(
+    page.getByText(/端末内の共有下書きを保存中として固定できませんでした/u),
+  ).toBeVisible();
+  expect(
+    captureRequests.filter(
+      ({ method, pathname }) =>
+        method === 'POST' && pathname.endsWith('/knowledge/captures'),
+    ),
+  ).toHaveLength(0);
+
+  await page.getByRole('button', { name: '明示確定して保存' }).click();
+  await expect(page).not.toHaveURL(/browserCapture=/u);
+  await expect
+    .poll(() => ({
+      preview: captureRequests.filter(
+        ({ method, pathname }) =>
+          method === 'POST' && pathname.endsWith('/knowledge/captures/preview'),
+      ).length,
+      commit: captureRequests.filter(
+        ({ method, pathname }) =>
+          method === 'POST' && pathname.endsWith('/knowledge/captures'),
+      ).length,
+      reconcile: captureRequests.filter(
+        ({ method, pathname }) =>
+          method === 'POST' && pathname.endsWith('/reconcile'),
+      ).length,
+    }))
+    .toEqual({ preview: 1, commit: 1, reconcile: 0 });
+  await expect(
+    page.getByRole('button', { name: /Synthetic browser capture/u }),
+  ).toBeVisible();
+
+  const lifecycle = await page.evaluate(() => {
+    const state = (
+      globalThis as typeof globalThis & {
+        __browserCaptureBridgeState?: {
+          deleted: boolean;
+          commands: string[];
+          cleanupRecordKeys: string[] | null;
+        };
+      }
+    ).__browserCaptureBridgeState;
+    return state ?? null;
+  });
+  expect(lifecycle?.deleted).toBe(true);
+  expect(
+    lifecycle?.commands.filter((command) =>
+      ['pending', 'staged', 'cleanup', 'delete'].includes(command),
+    ),
+  ).toEqual(['pending', 'pending', 'cleanup', 'delete']);
+  expect(lifecycle?.cleanupRecordKeys).toEqual([
+    'createdAt',
+    'expiresAt',
+    'id',
+    'lifecycle',
+    'schemaVersion',
+  ]);
+});
+
+test('browser capture terminal fence blocks reload-gap rehydration when extension tombstoning fails @core @extended', async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(120_000);
+  const draftId = randomUUID().replace(/-/gu, '');
+  const requestKey = randomUUID().replace(/-/gu, '');
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  const selectedText = `Synthetic reload-gap capture ${runId()}`;
+
+  await context.addInitScript(
+    ({ id, key, created, expires, text }) => {
+      const commands: string[] = [];
+      (
+        globalThis as typeof globalThis & {
+          __terminalFenceBridgeCommands?: string[];
+        }
+      ).__terminalFenceBridgeCommands = commands;
+      window.addEventListener('message', (event) => {
+        if (
+          event.source !== window ||
+          event.origin !== window.location.origin ||
+          !event.data ||
+          typeof event.data !== 'object' ||
+          Array.isArray(event.data)
+        ) {
+          return;
+        }
+        const command = event.data as Record<string, unknown>;
+        if (
+          command.source !== 'erp4-page' ||
+          command.type !== 'erp4-browser-capture-command-v1' ||
+          command.id !== id ||
+          typeof command.command !== 'string' ||
+          typeof command.nonce !== 'string'
+        ) {
+          return;
+        }
+        commands.push(command.command);
+        const response =
+          command.command === 'cleanup'
+            ? { ok: false, code: 'storage_unavailable' }
+            : {
+                ok: true,
+                transitioned: false,
+                record: {
+                  schemaVersion: 1,
+                  id,
+                  requestKey: key,
+                  lifecycle: 'staged',
+                  pendingOperationId: null,
+                  pendingIntent: null,
+                  draft: {
+                    schemaVersion: 1,
+                    channel: 'browser_extension',
+                    title: 'Synthetic reload-gap capture',
+                    url: 'https://example.invalid/browser-capture',
+                    selectedText: text,
+                    description: null,
+                    author: null,
+                    publishedAt: null,
+                    capturedAt: created,
+                  },
+                  createdAt: created,
+                  expiresAt: expires,
+                },
+              };
+        window.postMessage(
+          {
+            source: 'erp4-extension',
+            type: 'erp4-browser-capture-response-v1',
+            schemaVersion: 1,
+            command: command.command,
+            id,
+            nonce: command.nonce,
+            response,
+          },
+          window.location.origin,
+        );
+      });
+    },
+    {
+      id: draftId,
+      key: requestKey,
+      created: createdAt,
+      expires: expiresAt,
+      text: selectedText,
+    },
+  );
+
+  await prepare(page);
+  const staleHandoffUrl = `${baseUrl}/?browserCapture=${draftId}`;
+  await page.goto(staleHandoffUrl);
+  await expect(page.getByRole('textbox', { name: '選択テキスト' })).toHaveValue(
+    selectedText,
+  );
+  await page.getByRole('button', { name: '破棄' }).click();
+  await expect(page).not.toHaveURL(/browserCapture=/u);
+  await expect(
+    page.getByRole('button', {
+      name: 'browser session内draftの本文消去を再試行',
+    }),
+  ).toBeVisible();
+
+  const latePage = await context.newPage();
+  await latePage.goto(staleHandoffUrl);
+  await expect(
+    latePage.getByRole('button', {
+      name: 'browser session内draftの本文消去を再試行',
+    }),
+  ).toBeVisible();
+  await expect(latePage).not.toHaveURL(/browserCapture=/u);
+  await expect(latePage.getByText(selectedText)).toHaveCount(0);
+  const lateState = await latePage.evaluate(() => ({
+    commands:
+      (
+        globalThis as typeof globalThis & {
+          __terminalFenceBridgeCommands?: string[];
+        }
+      ).__terminalFenceBridgeCommands ?? [],
+    fenceValues: Object.keys(window.localStorage)
+      .filter((key) => key.startsWith('erp4-browser-capture-terminal-v2-'))
+      .map((key) => window.localStorage.getItem(key)),
+  }));
+  expect(lateState.fenceValues).toHaveLength(2);
+  expect(lateState.commands).not.toContain('get');
+  expect(JSON.stringify(lateState.fenceValues)).not.toContain(selectedText);
+  expect(JSON.stringify(lateState.fenceValues)).not.toContain(requestKey);
+  await latePage.close();
+});
+
+test('browser capture terminal fence drops a get response that was already in flight @core @extended', async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(120_000);
+  const draftId = randomUUID().replace(/-/gu, '');
+  const requestKey = randomUUID().replace(/-/gu, '');
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  const selectedText = `Synthetic deferred capture ${runId()}`;
+
+  await context.addInitScript(
+    ({ id, key, created, expires, text }) => {
+      let deferredCommand: Record<string, unknown> | null = null;
+      (
+        globalThis as typeof globalThis & {
+          __releaseDeferredBrowserCapture?: () => void;
+        }
+      ).__releaseDeferredBrowserCapture = () => {
+        if (!deferredCommand) return;
+        window.postMessage(
+          {
+            source: 'erp4-extension',
+            type: 'erp4-browser-capture-response-v1',
+            schemaVersion: 1,
+            command: 'get',
+            id,
+            nonce: deferredCommand.nonce,
+            response: {
+              ok: true,
+              transitioned: false,
+              record: {
+                schemaVersion: 1,
+                id,
+                requestKey: key,
+                lifecycle: 'staged',
+                pendingOperationId: null,
+                pendingIntent: null,
+                draft: {
+                  schemaVersion: 1,
+                  channel: 'browser_extension',
+                  title: 'Synthetic deferred capture',
+                  url: 'https://example.invalid/browser-capture',
+                  selectedText: text,
+                  description: null,
+                  author: null,
+                  publishedAt: null,
+                  capturedAt: created,
+                },
+                createdAt: created,
+                expiresAt: expires,
+              },
+            },
+          },
+          window.location.origin,
+        );
+        deferredCommand = null;
+      };
+      window.addEventListener('message', (event) => {
+        if (
+          event.source !== window ||
+          event.origin !== window.location.origin ||
+          !event.data ||
+          typeof event.data !== 'object' ||
+          Array.isArray(event.data)
+        ) {
+          return;
+        }
+        const command = event.data as Record<string, unknown>;
+        if (
+          command.source === 'erp4-page' &&
+          command.type === 'erp4-browser-capture-command-v1' &&
+          command.command === 'get' &&
+          command.id === id &&
+          typeof command.nonce === 'string'
+        ) {
+          deferredCommand = command;
+        }
+      });
+    },
+    {
+      id: draftId,
+      key: requestKey,
+      created: createdAt,
+      expires: expiresAt,
+      text: selectedText,
+    },
+  );
+
+  await prepare(page);
+  await page.goto(`${baseUrl}/?browserCapture=${draftId}`);
+  await page.waitForFunction(
+    () =>
+      Object.keys(window.localStorage).filter((key) =>
+        key.startsWith('erp4-browser-capture-terminal-v2-'),
+      ).length === 2,
+  );
+  await page.evaluate(() => {
+    const terminalKey = Object.keys(window.localStorage).find((key) =>
+      key.startsWith('erp4-browser-capture-terminal-v2-a:'),
+    );
+    if (!terminalKey) throw new Error('synthetic terminal slot missing');
+    const terminal = JSON.parse(window.localStorage.getItem(terminalKey) ?? '');
+    terminal.state = 't';
+    window.localStorage.setItem(terminalKey, JSON.stringify(terminal));
+    (
+      globalThis as typeof globalThis & {
+        __releaseDeferredBrowserCapture?: () => void;
+      }
+    ).__releaseDeferredBrowserCapture?.();
+  });
+
+  await expect(
+    page.getByRole('button', {
+      name: 'browser session内draftの本文消去を再試行',
+    }),
+  ).toBeVisible();
+  await expect(page).not.toHaveURL(/browserCapture=/u);
+  await expect(page.getByText(selectedText)).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: '選択テキスト' })).toHaveCount(
+    0,
+  );
+  const localValues = await page.evaluate(() =>
+    Object.keys(window.localStorage)
+      .filter((key) => key.startsWith('erp4-browser-capture-'))
+      .map((key) => window.localStorage.getItem(key)),
+  );
+  expect(JSON.stringify(localValues)).not.toContain(selectedText);
+  expect(JSON.stringify(localValues)).not.toContain(requestKey);
+});
+
 test('pwa Web Share Target keeps an unauthenticated offline draft and resumes only after login @pwa @extended', async ({
   page,
   context,

@@ -15,6 +15,8 @@ export const SHARE_TARGET_DB_VERSION = 1;
 export const SHARE_TARGET_DRAFT_TTL_MS = 60 * 60 * 1000;
 export const SHARE_TARGET_QUEUE_LIMIT = 10;
 export const SHARE_TARGET_LIFECYCLE_CHANNEL = 'erp4-share-target-lifecycle-v1';
+export const KNOWLEDGE_CAPTURE_GROUP_LIMIT = 100;
+export const KNOWLEDGE_CAPTURE_GROUP_ID_MAX_LENGTH = 100;
 
 export type ShareTargetLifecycle = 'staged' | 'pending' | 'cleanup_pending';
 
@@ -104,12 +106,12 @@ export function normalizeShareTargetPendingIntent(
     new Set(record.selectedFields).size !== record.selectedFields.length ||
     (record.scope !== 'personal' && record.scope !== 'organization') ||
     !Array.isArray(record.organizationGroupAccountIds) ||
-    record.organizationGroupAccountIds.length > 20 ||
+    record.organizationGroupAccountIds.length > KNOWLEDGE_CAPTURE_GROUP_LIMIT ||
     record.organizationGroupAccountIds.some(
       (id) =>
         typeof id !== 'string' ||
         id.length < 1 ||
-        id.length > 200 ||
+        id.length > KNOWLEDGE_CAPTURE_GROUP_ID_MAX_LENGTH ||
         hasControlCharacter(id),
     ) ||
     new Set(record.organizationGroupAccountIds).size !==
@@ -438,8 +440,10 @@ export async function markShareTargetDraftPending(
   nowMs = Date.now(),
 ): Promise<
   | { transitioned: true }
+  | { transitioned: false; owned: true }
   | {
       transitioned: false;
+      owned: false;
       pendingIntent: ShareTargetPendingIntent;
       draft: IncomingKnowledgeCaptureDraft;
     }
@@ -474,8 +478,19 @@ export async function markShareTargetDraftPending(
       if (!normalized.pendingIntent || !normalized.draft) {
         throw new Error('share_target_invalid_transition');
       }
+      if (normalized.pendingOperationId === operationId) {
+        if (
+          JSON.stringify(normalized.pendingIntent) !==
+            JSON.stringify(normalizedIntent) ||
+          JSON.stringify(normalized.draft) !== JSON.stringify(normalizedDraft)
+        ) {
+          throw new Error('share_target_invalid_transition');
+        }
+        return { transitioned: false, owned: true };
+      }
       return {
         transitioned: false,
+        owned: false,
         pendingIntent: normalized.pendingIntent,
         draft: normalized.draft,
       };

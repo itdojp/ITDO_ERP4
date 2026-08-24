@@ -96,23 +96,58 @@ const credentialQueryTokens = new Set([
   'assertion',
   'auth',
   'authorization',
+  'code',
   'credential',
+  'expires',
   'jwt',
   'key',
   'oauth',
   'passphrase',
   'passwd',
   'password',
+  'policy',
   'pwd',
   'proof',
+  'relaystate',
+  'samlartifact',
+  'samlart',
+  'samlrequest',
+  'sid',
   'secret',
+  'sessid',
   'session',
   'sig',
   'signature',
   'ticket',
   'token',
   'verifier',
+  'state',
 ]);
+const credentialPathSegmentNames = new Set([
+  'accesstoken',
+  'apikey',
+  'credential',
+  'jsessionid',
+  'jwt',
+  'password',
+  'passwd',
+  'phpsessid',
+  'privatekey',
+  'pwd',
+  'refreshtoken',
+  'resourcekey',
+  'samlart',
+  'samlartifact',
+  'secret',
+  'session',
+  'sessionid',
+  'sessid',
+  'sid',
+  'ticket',
+  'token',
+]);
+const nestedUrlCandidateLimit = 32;
+const nestedUrlParseOperationLimit = 128;
 
 function isCredentialQueryName(name: string): boolean {
   const tokens = name
@@ -124,22 +159,27 @@ function isCredentialQueryName(name: string): boolean {
   const compact = name.toLowerCase().replace(/[^a-z0-9]/g, '');
   if (compact.startsWith('xamz') || compact.startsWith('xgoog')) return true;
   if (
-    compact === 'googleaccessid' ||
-    compact === 'awsaccesskeyid' ||
-    compact === 'key' ||
-    compact === 'keypairid' ||
-    compact === 'privatekey' ||
-    compact === 'resourcekey' ||
-    compact === 'samlart' ||
-    compact === 'samlartifact' ||
-    compact === 'samlrequest' ||
-    compact === 'relaystate' ||
-    compact === 'policy' ||
-    compact === 'expires' ||
-    compact === 'auth' ||
-    compact === 'sig' ||
-    compact === 'state' ||
-    compact === 'code'
+    [
+      'auth',
+      'awsaccesskeyid',
+      'code',
+      'expires',
+      'googleaccessid',
+      'key',
+      'keypairid',
+      'phpsessid',
+      'policy',
+      'privatekey',
+      'relaystate',
+      'resourcekey',
+      'samlart',
+      'samlartifact',
+      'samlrequest',
+      'sessid',
+      'sid',
+      'sig',
+      'state',
+    ].includes(compact)
   ) {
     return true;
   }
@@ -173,22 +213,51 @@ function isCredentialQueryName(name: string): boolean {
 
 const percentEncodedByte = /%([0-9a-f]{2})/gi;
 
+function decodePercentBytes(value: string): string {
+  return value.replace(percentEncodedByte, (_match, byte) =>
+    String.fromCharCode(Number.parseInt(byte, 16)),
+  );
+}
+
 type NestedUrlParseResult =
   { kind: 'url'; url: URL } | { kind: 'none' } | { kind: 'unsafe' };
+type NestedUrlParseBudget = { remaining: number };
 
 function isCredentialQueryNameDeep(name: string): boolean {
   let candidate = name;
   const decodeLayerLimit = Math.floor(candidate.length / 2) + 1;
   for (let decodeCount = 0; decodeCount <= decodeLayerLimit; decodeCount += 1) {
     if (isCredentialQueryName(candidate)) return true;
-    const decoded = candidate.replace(percentEncodedByte, (_match, byte) =>
-      String.fromCharCode(Number.parseInt(byte, 16)),
-    );
+    const decoded = decodePercentBytes(candidate);
     if (decoded === candidate) return candidate.includes('%');
     if (decodeCount === decodeLayerLimit) return true;
     candidate = decoded;
   }
   return true;
+}
+
+function isCredentialPathSegmentDeep(segment: string): boolean {
+  let candidate = segment;
+  const decodeLayerLimit = Math.floor(candidate.length / 2) + 1;
+  for (let decodeCount = 0; decodeCount <= decodeLayerLimit; decodeCount += 1) {
+    const compact = candidate.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (credentialPathSegmentNames.has(compact)) return true;
+    const decoded = decodePercentBytes(candidate);
+    if (decoded === candidate) return candidate.includes('%');
+    if (decodeCount === decodeLayerLimit) return true;
+    candidate = decoded;
+  }
+  return true;
+}
+
+function hasCredentialNamedPath(value: string): boolean {
+  const segments = value.split('/').filter(Boolean);
+  return segments.some(
+    (segment, index) =>
+      index + 1 < segments.length &&
+      isCredentialPathSegmentDeep(segment) &&
+      segments[index + 1].length > 0,
+  );
 }
 
 function hasCredentialQueryParams(value: string): boolean {
@@ -233,79 +302,214 @@ function hasCredentialQueryAssignment(value: string): boolean {
   return assignmentIndex > 0 && hasCredentialQueryParams(value);
 }
 
-function parseNestedHttpUrl(value: string): NestedUrlParseResult {
-  let candidate = value.trim();
+function hasUrlParserIgnoredAsciiWhitespace(value: string): boolean {
+  return value.includes('\t') || value.includes('\n') || value.includes('\r');
+}
+
+function startsWithAsciiIgnoreCase(
+  value: string,
+  index: number,
+  expected: string,
+): boolean {
+  if (index + expected.length > value.length) return false;
+  for (let offset = 0; offset < expected.length; offset += 1) {
+    const code = value.charCodeAt(index + offset);
+    const foldedCode = code >= 0x41 && code <= 0x5a ? code + 0x20 : code;
+    if (foldedCode !== expected.charCodeAt(offset)) return false;
+  }
+  return true;
+}
+
+function startsWithHttpScheme(value: string, index: number): boolean {
+  return (
+    startsWithAsciiIgnoreCase(value, index, 'http:') ||
+    startsWithAsciiIgnoreCase(value, index, 'https:')
+  );
+}
+
+function createNestedUrlParseBudget(): NestedUrlParseBudget {
+  return { remaining: nestedUrlParseOperationLimit };
+}
+
+function consumeNestedUrlParseBudget(budget: NestedUrlParseBudget): boolean {
+  if (budget.remaining <= 0) return false;
+  budget.remaining -= 1;
+  return true;
+}
+
+function findNestedUrlStarts(value: string): number[] | null {
+  const starts: number[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const current = value[index];
+    const next = value[index + 1];
+    const isSlashLikePair =
+      (current === '/' || current === '\\') && (next === '/' || next === '\\');
+    if (!isSlashLikePair && !startsWithHttpScheme(value, index)) {
+      continue;
+    }
+    starts.push(index);
+    if (starts.length > nestedUrlCandidateLimit) return null;
+  }
+  return starts;
+}
+
+function hasNestedUrlMarker(value: string): boolean {
+  const starts = findNestedUrlStarts(value);
+  return starts === null || starts.length > 0;
+}
+
+function parseNestedHttpUrl(
+  value: string,
+  budget: NestedUrlParseBudget,
+): NestedUrlParseResult {
+  // WHATWG URL parsing removes ASCII TAB/LF/CR before parsing. Reject these
+  // characters at every decode layer so they cannot split an embedded scheme
+  // during inspection and then be removed by a later URL consumer.
+  let candidate = value;
   // Every successful layer replaces at least one three-character %HH sequence
   // with one byte, reducing the value by at least two characters. This bound
   // therefore covers every possible layer while remaining input-size bounded.
   const decodeLayerLimit = Math.floor(candidate.length / 2) + 1;
   for (let decodeCount = 0; decodeCount <= decodeLayerLimit; decodeCount += 1) {
+    if (hasUrlParserIgnoredAsciiWhitespace(candidate)) {
+      return { kind: 'unsafe' };
+    }
+    candidate = candidate.trim();
     if (
       hasCredentialQueryAssignment(candidate) ||
       hasCredentialQueryText(candidate)
     ) {
       return { kind: 'unsafe' };
     }
-    const lowerCandidate = candidate.toLowerCase();
-    const absoluteUrlIndex = lowerCandidate.search(/https?:\/\//);
-    const parseCandidate =
-      absoluteUrlIndex >= 0 ? candidate.slice(absoluteUrlIndex) : candidate;
-    if (
-      absoluteUrlIndex >= 0 ||
-      parseCandidate.startsWith('//') ||
-      parseCandidate.startsWith('/') ||
-      parseCandidate.startsWith('?')
-    ) {
+    const nestedUrlStarts = findNestedUrlStarts(candidate);
+    if (nestedUrlStarts === null) return { kind: 'unsafe' };
+    const parseStarts =
+      nestedUrlStarts.length > 0
+        ? nestedUrlStarts
+        : candidate.startsWith('/') ||
+            candidate.startsWith('\\') ||
+            candidate.startsWith('?')
+          ? [0]
+          : [];
+    let firstParsedUrl: URL | undefined;
+    let parseFailed = false;
+    for (const nestedUrlIndex of parseStarts) {
+      const parseCandidate = candidate.slice(nestedUrlIndex);
+      if (!consumeNestedUrlParseBudget(budget)) return { kind: 'unsafe' };
       try {
-        const parsed = new URL(parseCandidate, 'https://nested.invalid');
+        const parsed = startsWithHttpScheme(parseCandidate, 0)
+          ? new URL(parseCandidate)
+          : new URL(parseCandidate, 'https://nested.invalid');
         if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
-          return { kind: 'url', url: parsed };
+          if (parsed.username || parsed.password) {
+            return { kind: 'url', url: parsed };
+          }
+          firstParsedUrl ??= parsed;
         }
       } catch {
-        // Try one more percent-decoding layer below.
+        parseFailed = true;
       }
     }
-    const decoded = candidate.replace(percentEncodedByte, (_match, byte) =>
-      String.fromCharCode(Number.parseInt(byte, 16)),
-    );
-    if (decoded === candidate) return { kind: 'none' };
+    if (firstParsedUrl && !parseFailed) {
+      return { kind: 'url', url: firstParsedUrl };
+    }
+    const decoded = decodePercentBytes(candidate);
+    if (decoded === candidate) {
+      return parseFailed ? { kind: 'unsafe' } : { kind: 'none' };
+    }
     if (decodeCount === decodeLayerLimit) return { kind: 'unsafe' };
-    candidate = decoded.trim();
+    candidate = decoded;
   }
   return { kind: 'unsafe' };
 }
 
-function hasCredentialFragment(url: URL, depth = 0): boolean {
+function hasCredentialFragment(
+  url: URL,
+  budget: NestedUrlParseBudget,
+  depth = 0,
+): boolean {
   if (!url.hash) return false;
-  const nested = parseNestedHttpUrl(url.hash);
+  const nested = parseNestedHttpUrl(url.hash, budget);
   if (nested.kind === 'unsafe') return true;
   if (nested.kind === 'none') return false;
   if (nested.url.username || nested.url.password || depth >= 3) return true;
   return (
-    hasCredentialFragment(nested.url, depth + 1) ||
-    hasCredentialBearingNestedUrl(nested.url, depth + 1)
+    hasCredentialFragment(nested.url, budget, depth + 1) ||
+    hasCredentialBearingPath(nested.url, budget, depth + 1) ||
+    hasCredentialBearingNestedUrl(nested.url, budget, depth + 1)
   );
 }
 
-function hasCredentialBearingNestedUrl(url: URL, depth = 0): boolean {
+function hasCredentialBearingNestedUrl(
+  url: URL,
+  budget: NestedUrlParseBudget,
+  depth = 0,
+): boolean {
   for (const [name, value] of url.searchParams.entries()) {
     if (isCredentialQueryNameDeep(name)) return true;
-    const nested = parseNestedHttpUrl(value);
+    const nested = parseNestedHttpUrl(value, budget);
     if (nested.kind === 'unsafe') return true;
     if (nested.kind === 'none') continue;
     const nestedUrl = nested.url;
     if (
       nestedUrl.username ||
       nestedUrl.password ||
-      hasCredentialFragment(nestedUrl, depth + 1)
+      hasCredentialFragment(nestedUrl, budget, depth + 1) ||
+      hasCredentialBearingPath(nestedUrl, budget, depth + 1)
     ) {
       return true;
     }
-    if (depth >= 3 || hasCredentialBearingNestedUrl(nestedUrl, depth + 1)) {
+    if (
+      depth >= 3 ||
+      hasCredentialBearingNestedUrl(nestedUrl, budget, depth + 1)
+    ) {
       return true;
     }
   }
   return false;
+}
+
+function hasCredentialBearingPath(
+  url: URL,
+  budget: NestedUrlParseBudget,
+  depth = 0,
+): boolean {
+  let candidate = url.pathname;
+  const decodeLayerLimit = Math.floor(candidate.length / 2) + 1;
+  for (let decodeCount = 0; decodeCount <= decodeLayerLimit; decodeCount += 1) {
+    if (
+      hasCredentialQueryText(candidate) ||
+      hasCredentialNamedPath(candidate) ||
+      candidate
+        .split('/')
+        .some(
+          (segment) =>
+            segment.includes(';') &&
+            hasCredentialQueryParams(segment.slice(segment.indexOf(';') + 1)),
+        )
+    ) {
+      return true;
+    }
+    const nested = parseNestedHttpUrl(candidate, budget);
+    if (nested.kind === 'unsafe') return true;
+    if (
+      nested.kind === 'url' &&
+      (nested.url.username ||
+        nested.url.password ||
+        hasCredentialFragment(nested.url, budget, depth + 1) ||
+        hasCredentialBearingNestedUrl(nested.url, budget, depth + 1) ||
+        (hasNestedUrlMarker(candidate) &&
+          (depth >= 3 ||
+            hasCredentialBearingPath(nested.url, budget, depth + 1))))
+    ) {
+      return true;
+    }
+    const decoded = decodePercentBytes(candidate);
+    if (decoded === candidate) return false;
+    if (decodeCount === decodeLayerLimit) return true;
+    candidate = decoded;
+  }
+  return true;
 }
 
 export function normalizeKnowledgeCanonicalUrl(
@@ -320,11 +524,17 @@ export function normalizeKnowledgeCanonicalUrl(
     if (url.protocol !== 'https:' && url.protocol !== 'http:') {
       return { ok: false };
     }
-    if (hasCredentialFragment(url)) return { ok: false };
+    const budget = createNestedUrlParseBudget();
+    if (
+      hasCredentialFragment(url, budget) ||
+      hasCredentialBearingPath(url, budget)
+    ) {
+      return { ok: false };
+    }
     url.username = '';
     url.password = '';
     url.hash = '';
-    if (hasCredentialBearingNestedUrl(url)) return { ok: false };
+    if (hasCredentialBearingNestedUrl(url, budget)) return { ok: false };
     for (const name of [...url.searchParams.keys()]) {
       if (trackingQueryName.test(name)) {
         url.searchParams.delete(name);

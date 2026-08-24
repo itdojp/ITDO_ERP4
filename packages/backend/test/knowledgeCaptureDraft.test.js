@@ -11,6 +11,14 @@ import {
 
 const capturedAt = '2026-08-14T00:00:00.000Z';
 
+function encodeLayers(value, count) {
+  let encoded = value;
+  for (let layer = 0; layer < count; layer += 1) {
+    encoded = encodeURIComponent(encoded);
+  }
+  return encoded;
+}
+
 function draft(overrides = {}) {
   return {
     schemaVersion: 1,
@@ -116,6 +124,38 @@ test('rejects unsafe and credential-bearing URL forms', () => {
     'edge://settings',
     'about:blank',
     'https://user:opaque@example.invalid/',
+    'https://example.invalid/?PHPSESSID=synthetic-secret',
+    'https://example.invalid/?upload_policy=synthetic-secret',
+    'https://example.invalid/?clientpwd=synthetic-secret',
+    'https://example.invalid/?next=https%3A%2F%2Fnested.invalid%2F%3Fupload_policy%3Dsynthetic-secret',
+    'https://example.invalid/?next=https%3A%2F%2Fnested.invalid%2F%3Fclientpwd%3Dsynthetic-secret',
+    'https://example.invalid/?next=https%3A%2F%2Fnested.invalid%2Fapp%253Bjsessionid%253Dsynthetic-secret',
+    'https://example.invalid/?next=https%3A%2F%2Fnested.invalid%2Fpath%2F%253Ftoken%253Dsynthetic-secret',
+    'https://example.invalid/?next=ht%09tps%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate',
+    'https://example.invalid/?next=ht%0Atps%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate',
+    'https://example.invalid/?next=h%0Dttps%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate',
+    'https://example.invalid/?next=ht%250Atps%253Aalice%253Asynthetic-pass%2540nested.invalid%252Fprivate',
+    `https://example.invalid/?next=${encodeURIComponent('İHTTPS:alice:synthetic-pass@nested.invalid/private')}`,
+    `https://example.invalid/?next=${encodeURIComponent('İİHTTPS:/alice:synthetic-pass@nested.invalid/private')}`,
+    `https://example.invalid/?next=${encodeURIComponent('İHTTPS://alice:synthetic-pass@nested.invalid/private')}`,
+    'https://example.invalid/?next=%5C%5Calice%3Asynthetic-pass%40nested.invalid%2Fprivate',
+    'https://example.invalid/?next=%5C%2Falice%3Asynthetic-pass%40nested.invalid%2Fprivate',
+    'https://example.invalid/?next=%255C%255Calice%253Asynthetic-pass%2540nested.invalid%252Fprivate',
+    'https://example.invalid/redirect/https%253Aalice%253Asynthetic-pass%2540nested.invalid/private',
+    'https://example.invalid/redirect/%5C%5Calice%3Asynthetic-pass%40nested.invalid/private',
+    'https://example.invalid/redirect/%5C%2Falice%3Asynthetic-pass%40nested.invalid/private',
+    'https://example.invalid/redirect/%2F%2Falice%3Asynthetic-pass%40nested.invalid/private',
+    'https://example.invalid/redirect/%255C%255Calice%253Asynthetic-pass%2540nested.invalid/private',
+    'https://example.invalid/redirect//bad%20host/https:alice:synthetic-pass@nested.invalid/private',
+    'https://example.invalid/redirect/%5C%5Cbad%20host/https%3Aalice%3Asynthetic-pass%40nested.invalid/private',
+    `https://example.invalid/redirect/${'//nested.invalid'.repeat(33)}`,
+    'https://example.invalid/redirect/ht%0Atps%3Aalice%3Asynthetic-pass%40nested.invalid%2Fprivate',
+    'https://example.invalid/redirect/ht%250Atps%253Aalice%253Asynthetic-pass%2540nested.invalid%252Fprivate',
+    'https://example.invalid/session/synthetic-secret',
+    'https://example.invalid/token/synthetic-secret',
+    'https://example.invalid/sid/synthetic-secret',
+    'https://example.invalid/%73ession/synthetic-secret',
+    'https://example.invalid/%2573ession/synthetic-secret',
     'not a url',
   ]) {
     assert.throws(
@@ -124,6 +164,44 @@ test('rejects unsafe and credential-bearing URL forms', () => {
         error instanceof KnowledgeCaptureValidationError &&
         error.code === 'capture_url_invalid',
     );
+  }
+});
+
+test('fails closed when the aggregate nested URL parse budget is exhausted', () => {
+  const oneSibling = encodeURIComponent(
+    `//nested.invalid${encodeLayers('/', 62)}path`,
+  );
+  const withinBudget = `https://example.invalid/?first=${oneSibling}`;
+  const url = `${withinBudget}&second=${oneSibling}`;
+  const benignUnicode = `https://example.invalid/?note=${encodeURIComponent('İHTTPS:public.invalid/article')}`;
+
+  assert.equal(
+    normalizeKnowledgeCaptureDraft(draft({ url: withinBudget })).url,
+    withinBudget,
+  );
+  assert.throws(
+    () => normalizeKnowledgeCaptureDraft(draft({ url })),
+    (error) =>
+      error instanceof KnowledgeCaptureValidationError &&
+      error.code === 'capture_url_invalid',
+  );
+  assert.equal(
+    normalizeKnowledgeCaptureDraft(draft({ url: benignUnicode })).url,
+    benignUnicode,
+  );
+});
+
+test('keeps ordinary slash routes that do not name a credential value', () => {
+  for (const url of [
+    'https://example.invalid/session',
+    'https://example.invalid/sessions/archive',
+    'https://example.invalid/tokens/example',
+    'https://example.invalid/state/california',
+    'https://example.invalid/code/example',
+    'https://example.invalid/key/rotation',
+    'https://example.invalid/redirect//nested.invalid/public',
+  ]) {
+    assert.equal(normalizeKnowledgeCaptureDraft(draft({ url })).url, url, url);
   }
 });
 

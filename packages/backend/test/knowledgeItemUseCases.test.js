@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createKnowledgeItemService } from '../dist/application/knowledge/knowledgeItemUseCases.js';
+import {
+  createKnowledgeItemService,
+  normalizeKnowledgeCanonicalUrl,
+} from '../dist/application/knowledge/knowledgeItemUseCases.js';
 
 const fixedNow = new Date('2026-08-04T09:00:00.000Z');
 
@@ -12,6 +15,34 @@ function actor(userId, { organizationId, groupAccountIds = [] } = {}) {
 function auditActor(userId) {
   return { userId, actorRole: 'user', requestId: 'request-1', source: 'api' };
 }
+
+test('shares one nested URL parse budget across sibling query values', () => {
+  const encodeLayers = (value, count) => {
+    let encoded = value;
+    for (let layer = 0; layer < count; layer += 1) {
+      encoded = encodeURIComponent(encoded);
+    }
+    return encoded;
+  };
+  const oneSibling = encodeURIComponent(
+    `//nested.example${encodeLayers('/', 62)}path`,
+  );
+  const withinBudget = `https://example.com/?first=${oneSibling}`;
+  const exhaustedAcrossSiblings = `${withinBudget}&second=${oneSibling}`;
+  const benignUnicode = `https://example.com/?note=${encodeURIComponent('İHTTPS:public.example/article')}`;
+
+  assert.deepEqual(normalizeKnowledgeCanonicalUrl(withinBudget), {
+    ok: true,
+    value: withinBudget,
+  });
+  assert.deepEqual(normalizeKnowledgeCanonicalUrl(exhaustedAcrossSiblings), {
+    ok: false,
+  });
+  assert.deepEqual(normalizeKnowledgeCanonicalUrl(benignUnicode), {
+    ok: true,
+    value: benignUnicode,
+  });
+});
 
 function createHarness({ failAuditAction } = {}) {
   const items = new Map();
@@ -716,6 +747,8 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
   for (const credentialQuery of [
     'key=google-api-key-value',
     'policy=signed-policy-value',
+    'upload_policy=signed-policy-value',
+    'clientpwd=credential-value',
     'expires=1700000000',
     'state=oauth-state-value',
     'code=authorization-code-value',
@@ -803,6 +836,12 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     'https://drive.google.com/open?resourcekey=drive-resource-key-value&authuser=0';
   for (const nestedValue of [
     encodeURIComponent(nestedCredentialUrl),
+    encodeURIComponent(
+      'https://nested.example/file?upload_policy=credential-value',
+    ),
+    encodeURIComponent(
+      'https://nested.example/file?clientpwd=credential-value',
+    ),
     encodeURIComponent(nestedCredentialUrl.replace('https://', 'HTTPS://')),
     encodeURIComponent(encodeURIComponent(nestedCredentialUrl)),
     encodeLayers(` ${nestedCredentialUrl}`, 2),
@@ -825,6 +864,36 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     encodeURIComponent('code_verifier=credential-value'),
     encodeLayers('client_assertion=credential-value', 12),
     '%ZZtoken=credential-value',
+    encodeURIComponent(
+      'https://nested.example/app%3Bjsessionid%3Dcredential-value',
+    ),
+    encodeURIComponent(
+      'https://nested.example/path/%3Ftoken%3Dcredential-value',
+    ),
+    encodeURIComponent('https:alice:credential-value@nested.example/private'),
+    encodeURIComponent('ht\ttps:alice:credential-value@nested.example/private'),
+    encodeURIComponent('ht\ntps:alice:credential-value@nested.example/private'),
+    encodeURIComponent('h\rttps:alice:credential-value@nested.example/private'),
+    encodeURIComponent('İHTTPS:alice:credential-value@nested.example/private'),
+    encodeURIComponent(
+      'İİHTTPS:/alice:credential-value@nested.example/private',
+    ),
+    encodeURIComponent(
+      'İHTTPS://alice:credential-value@nested.example/private',
+    ),
+    encodeURIComponent(
+      encodeURIComponent(
+        'ht\ntps:alice:credential-value@nested.example/private',
+      ),
+    ),
+    encodeURIComponent('\\\\alice:credential-value@nested.example/private'),
+    encodeURIComponent('\\/alice:credential-value@nested.example/private'),
+    encodeURIComponent(
+      encodeURIComponent('\\\\alice:credential-value@nested.example/private'),
+    ),
+    encodeURIComponent(
+      'https://nested.example/redirect/https%3Aalice%3Acredential-value%40deep.example/private',
+    ),
   ]) {
     const nestedUrl = await harness.service.create({
       actor: actor('owner-1'),
@@ -837,6 +906,49 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
     });
     assert.equal(nestedUrl.ok, false);
     assert.equal(nestedUrl.statusCode, 400);
+  }
+  assert.equal(harness.items.size, 1);
+
+  const parseBudgetUrl = await harness.service.create({
+    actor: actor('owner-1'),
+    auditActor: auditActor('owner-1'),
+    body: {
+      scope: 'personal',
+      sourceType: 'web',
+      canonicalUrl: `https://example.com/redirect?next=${encodeURIComponent(`//nested.example${encodeLayers('/', 130)}path`)}`,
+    },
+  });
+  assert.equal(parseBudgetUrl.ok, false);
+  assert.equal(parseBudgetUrl.statusCode, 400);
+  assert.equal(harness.items.size, 1);
+
+  for (const canonicalUrl of [
+    'https://example.com/redirect/ht%0Atps%3Aalice%3Acredential-value%40nested.example%2Fprivate',
+    'https://example.com/redirect/ht%250Atps%253Aalice%253Acredential-value%2540nested.example%252Fprivate',
+    'https://example.com/redirect/%5C%5Calice%3Acredential-value%40nested.example/private',
+    'https://example.com/redirect/%5C%2Falice%3Acredential-value%40nested.example/private',
+    'https://example.com/redirect/%2F%2Falice%3Acredential-value%40nested.example/private',
+    'https://example.com/redirect/%255C%255Calice%253Acredential-value%2540nested.example/private',
+    'https://example.com/redirect//bad%20host/https:alice:credential-value@nested.example/private',
+    'https://example.com/redirect/%5C%5Cbad%20host/https%3Aalice%3Acredential-value%40nested.example/private',
+    `https://example.com/redirect/${'//nested.example'.repeat(33)}`,
+    'https://example.com/session/credential-value',
+    'https://example.com/token/credential-value',
+    'https://example.com/sid/credential-value',
+    'https://example.com/%73ession/credential-value',
+    'https://example.com/%2573ession/credential-value',
+  ]) {
+    const nestedPathUrl = await harness.service.create({
+      actor: actor('owner-1'),
+      auditActor: auditActor('owner-1'),
+      body: {
+        scope: 'personal',
+        sourceType: 'web',
+        canonicalUrl,
+      },
+    });
+    assert.equal(nestedPathUrl.ok, false, canonicalUrl);
+    assert.equal(nestedPathUrl.statusCode, 400, canonicalUrl);
   }
   assert.equal(harness.items.size, 1);
 
@@ -921,6 +1033,8 @@ test('canonical URL normalization removes credentials, fragments, tracking, and 
   for (const credentialQuery of [
     'key=google-api-key-value',
     'policy=signed-policy-value',
+    'upload_policy=signed-policy-value',
+    'clientpwd=credential-value',
     'expires=1700000000',
     'state=oauth-state-value',
     'code=authorization-code-value',
