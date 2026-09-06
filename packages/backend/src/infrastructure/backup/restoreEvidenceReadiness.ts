@@ -59,7 +59,7 @@ export async function inspectRestoreEvidence(options: {
   try {
     handle = await open(
       options.evidenceFile,
-      constants.O_RDONLY | constants.O_NOFOLLOW,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
     );
     const info = await handle.stat();
     if (
