@@ -229,3 +229,23 @@ provenance integration は既に成功した current build を共有し、genera
 core/full E2E、release-readiness、GitHub exact-head CI/Copilot/review completeness/cooling は、このローカル検証記録では未完了。共有 WSL の既存プロセスを危険にさらして E2E を起動せず、独立 Draft PR の専用 CI runner 等で追加検証する。確認前に main の脆弱性解消、merge-ready、実環境互換を主張しない。
 
 当日の詳細は ignored `.codex-local/verification/2026-10-25/`。無関係な請求 UI worktree、正本 checkout、PR #2074、既存 container/image metadata の比較結果も同ディレクトリへ保存する。実 credential、実 provider、Sakura、Windows browser 証跡、#2018 は対象外。
+
+### 同日追加確認: proxy address 判定の修正
+
+`npm audit` が 0 件でも、全ての依存に既知の問題がないことは保証できない。GitHub alert #166 は非スコープ版 `proxy-addr` の [GHSA-jqcg-44mw-7w3h](https://github.com/jshttp/proxy-addr/security/advisories/GHSA-jqcg-44mw-7w3h) を通知していたが、main / 修正案の lockfile に存在するのは `@fastify/proxy-addr@5.1.0` だった。通知の依存グラフとの不一致だけを理由に dismiss していない。
+
+fork にも同型の trust 判定が残っていたため、[公式 upstream 修正の移植](https://github.com/fastify/proxy-addr/commit/847d138c29df2c9d36c4eddbd3a64d97cea4048f) を含む **5.1.2** へ通常の `npm update @fastify/proxy-addr --package-lock-only --ignore-scripts --prefix packages/backend` で更新し、clean `npm ci` を実行した。Fastify の許容範囲 `^5.0.0` 内であり、新規 override・直接依存・application source の変更はない。
+
+- `proxyAddressSecurity.test.js` は synthetic IP と public API のみを利用し、実通信しない。
+- mapped IPv6 の短い prefix、複数 subnet、native IPv6、正常な mapped subnet、偽造 forwarded header、Fastify の既定動作を検証する。
+- 更新前 5.1.0: **2 pass / 3 fail**。更新後 5.1.2: **5 pass / 0 fail**。skip なし。
+- 現行 `server.ts` は `trustProxy` を指定せず、アプリ内に直接 proxy trust の設定もない。既定 Fastify が socket address を採用することを確認した。これは現在の経路の非到達性であり、将来 proxy 設定を変更しても安全という主張ではない。
+- GitHub alert 自体の解消は main 反映後の再取得で確認する。audit 0 と GitHub alert 0 を同一視しない。
+
+この追加差分では旧 head の CI/review/cooling を再利用しない。新しい exact head の結果は PR #2105 とローカル台帳へ記録し、full E2E / release-readiness が未実施の間は Draft を維持する。
+
+追加更新後、backend 全体は **2,403 pass / 0 fail / 0 skip**。上記4種類の PostgreSQL integration / old-app gate も再実行して成功し、新規コンテナの残存は 0。
+
+frontend 全体は 954 件成功したが、続く coverage 実行では `ShareTargetLanding.test.tsx` の1件が失敗した。認証再確認 mock の「呼出し2回」を待った直後、非同期の認証完了・再描画を待たずに消去済み表示を同期取得していた。失敗時の画面は「認証状態を確認しています」。該当 assertion だけを `await screen.findByText(...)` に変更し、同じ表示内容・visibility を確認する。application 実装、timeout、sleep、skip、coverage 対象・threshold は変更しない。失敗ログを保持し、単なる再実行による成功とは扱わない。
+
+修正後は対象ファイル全23テストを別 CLI で **20回連続成功**。`--maxWorkers=2` で実行した coverage 付き frontend 全体も **114 files / 954 tests 成功**。既存 threshold checker は statements 73.60%、branches 66.66%、functions 73.14%、lines 76.38% で全項目通過した。backend/frontend の lint / format / typecheck、frontend build budget、`make audit`、PostgreSQL 4 gate、OpenAPI byte 一致、docs / ops / bounded-context / secret scan も再確認した。詳細ログは同日の `proxy-followup/` 配下に保持する。

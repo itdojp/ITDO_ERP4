@@ -865,7 +865,9 @@ describe('ShareTargetLanding', () => {
     await waitFor(() =>
       expect(refreshAuthStateFromServer).toHaveBeenCalledTimes(2),
     );
-    expect(screen.getByText(/端末内の共有下書きは消去済みです/)).toBeVisible();
+    expect(
+      await screen.findByText(/端末内の共有下書きは消去済みです/),
+    ).toBeVisible();
     expect(claimShareTargetDraft).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole('button', { name: '閉じる' }));
     expect(clearLanding).toHaveBeenCalledOnce();
