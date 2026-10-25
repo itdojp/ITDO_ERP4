@@ -41,6 +41,10 @@
 - [Storage artifact migration evidence template](storage-artifact-migration-template.md)
 - [Storage／backup統合readiness 記録テンプレート](storage-readiness-template.md)
 
+### 2026-10-05
+
+- [Issue #2093: dependency audit remediation（2026-10-05）](2026-10-05-issue2093-dependency-audit.md)
+
 ### 2026-08-14
 
 - [Issue #2017 capture ingress foundation 検証](2026-08-14-issue2017-capture-ingress-foundation.md)

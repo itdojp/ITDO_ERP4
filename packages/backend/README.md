@@ -13,6 +13,13 @@ npm run dev
 本番ビルド確認: `npm run build && node dist/index.js`
 補足: Prisma 7 は `prisma.config.ts` を利用します（`DATABASE_URL` が必須）。
 
+`npm run dev` は `tsx watch` で TypeScript/ESM を実行し、変更時に再起動します。
+脆弱性のある `braces` への依存を除くため、`ts-node-dev` から変更しました。
+`tsx` 自体は型検査を行わないため、別途 `npm run typecheck` を実行してください。
+共有一時ディレクトリの変換キャッシュを信頼しないよう、`--no-cache` を指定します。
+本番の `npm run build` / `node dist/index.js` と最低 Node.js 20.19.0 の契約は変更しません。
+既存の移行/運用スクリプト向け `ts-node` は、推移依存ではなく明示的な devDependency として維持します。
+
 ## Tests
 
 ```
@@ -171,6 +178,9 @@ npm run test
 
 ### SMTP smoke test
 
+リポジトリルートで、install 済みの runner を使用します（外部 SMTP 送信ではなく stub/config の検査）。
+
 ```
-npx ts-node --project packages/backend/tsconfig.json scripts/smoke-email.ts
+npm run build --prefix packages/backend
+./packages/backend/node_modules/.bin/tsx --no-cache --tsconfig packages/backend/tsconfig.json scripts/smoke-email.ts
 ```
