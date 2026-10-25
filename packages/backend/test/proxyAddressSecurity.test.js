@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import test from 'node:test';
-import proxyaddr from '@fastify/proxy-addr';
 import Fastify from 'fastify';
+
+// Test Fastify's actual runtime dependency, including non-hoisted layouts.
+const requireFromFastify = createRequire(
+  createRequire(import.meta.url).resolve('fastify'),
+);
+const proxyaddr = requireFromFastify('@fastify/proxy-addr');
 
 test('proxy trust rejects IPv4 addresses outside mapped IPv6 subnets', () => {
   for (const subnet of ['::ffff:10.0.0.0/8', '::/1']) {
