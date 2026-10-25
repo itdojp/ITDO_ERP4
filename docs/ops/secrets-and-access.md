@@ -116,7 +116,7 @@
   - `./scripts/ops/gcp-drive-check.sh --env-file .codex-local/secure/gdrive.env --mode write`
 - メール通知（stub/smtp 設定確認を含む最小チェック）:
   - `npm run build --prefix packages/backend`
-  - `npx ts-node --project packages/backend/tsconfig.json scripts/smoke-email.ts`
+  - `./packages/backend/node_modules/.bin/tsx --no-cache --tsconfig packages/backend/tsconfig.json scripts/smoke-email.ts`（リポジトリルートから実行。install 済み runner に限定し、共有一時ディレクトリの変換キャッシュを使わない）
 - 実施結果は `docs/test-results/` の記録と運用Issueに残す（成功/失敗と原因）。
 - Dependabot token は `make dependabot-token-readiness-check` の結果も併記する。
 

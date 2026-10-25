@@ -7,7 +7,7 @@
     "node": ">=20.19.0"
   },
   "scripts": {
-    "dev": "ts-node-dev --respawn src/index.ts",
+    "dev": "tsx watch --no-cache --clear-screen=false src/index.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node scripts/run-test-command.js",
@@ -52,13 +52,13 @@
     "@sinclair/typebox": "^0.34.52",
     "@types/web-push": "^3.6.4",
     "argon2": "^0.44.0",
-    "fastify": "^5.12.1",
+    "fastify": "^5.12.6",
     "fastify-plugin": "^6.0.0",
     "googleapis": "^173.0.0",
     "iconv-lite": "^0.7.3",
     "ioredis": "^5.11.1",
     "jose": "^6.2.9",
-    "nodemailer": "^9.0.5",
+    "nodemailer": "^10.1.4",
     "pdfkit": "^0.19.1",
     "pg": "^8.23.0",
     "rate-limiter-flexible": "^11.2.0",
@@ -80,13 +80,17 @@
     "openapi-diff": "^0.24.1",
     "prettier": "^3.9.6",
     "prisma": "^7.9.1",
-    "ts-node-dev": "^2.0.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3"
   },
   "overrides": {
     "@mrleebo/prisma-ast": "^0.14.0",
     "@prisma/config": {
       "deepmerge-ts": "8.0.2"
+    },
+    "prisma": {
+      "mysql2": "3.24.5"
     },
     "@hono/node-server": "^1.19.11",
     "diff": "^4.0.4",
